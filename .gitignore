@@ -1,4 +1,4 @@
-# LianYu-PC .gitignore
+# LianYu-PC .gitignore（.env、密钥、构建产物不入库）
 # =====================
 
 # Environment
