@@ -1,6 +1,6 @@
 # frontend — 用户界面（Vue 3 Web 应用）
 
-本目录是 **LianYu-PC 的前端**：登录/注册、首页、角色与角色广场、单聊（SSE）、群聊（WebSocket）、记忆、朋友圈、设置等页面。数据全部请求 [`../backend`](../backend) 的 `/api` 与 `/ws`。
+本目录是 **LianYu-PC 的前端**（Vue 3 单页应用）：登录/注册、首页、角色与角色广场、单聊（SSE）、群聊（WebSocket）、记忆、朋友圈、设置等页面。数据全部请求 [`../backend`](../backend) 的 `/api` 与 `/ws`。
 
 | 项 | 说明 |
 |----|------|
