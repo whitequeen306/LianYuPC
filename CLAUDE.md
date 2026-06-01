@@ -1,5 +1,6 @@
 # CLAUDE.md — LianYu-PC
 
+协作者与 Cursor Agent 约定（技术栈、模块边界、工作守则）。  
 PC 端桌面/Web 复刻版，独立于安卓端项目。
 
 ## 项目根目录
