@@ -1,0 +1,8 @@
+-- Flyway V14 校验和不匹配时：将历史表 checksum 改为与当前 V14 文件一致（仅当已恢复原始 V14 仍报错时用）
+-- 更推荐：保持 V14 不变，用 V15 做数据修正，然后重启后端让 Flyway 自动跑 V15
+--
+-- 若你改过 V14 且必须保留新内容，可执行（把 checksum 改为本地文件值，见启动日志 Resolved locally）:
+-- UPDATE flyway_schema_history SET checksum = -724640786 WHERE version = '14';
+--
+-- 用法:
+--   Get-Content backend\scripts\repair-flyway-v14-checksum.sql -Encoding UTF8 | docker exec -i lianyu-mysql mysql -uroot -proot123 lianyu

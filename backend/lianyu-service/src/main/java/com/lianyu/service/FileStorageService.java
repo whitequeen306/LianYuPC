@@ -1,0 +1,323 @@
+package com.lianyu.service;
+
+import io.minio.GetObjectArgs;
+import io.minio.GetObjectResponse;
+import io.minio.MinioClient;
+import io.minio.PutObjectArgs;
+import io.minio.StatObjectArgs;
+import io.minio.StatObjectResponse;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.InputStream;
+import java.util.Set;
+import java.util.UUID;
+import java.util.regex.Pattern;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class FileStorageService {
+
+    public static final String PUBLIC_FILE_PREFIX = "/api/public/files/";
+
+    private final MinioClient minioClient;
+    private final com.lianyu.storage.minio.MinioConfig minioConfig;
+
+    private static final String AVATAR_PATH = "avatars/";
+    private static final String CHAT_IMAGE_PATH = "chat-images/";
+    private static final String SQUARE_AVATAR_PATH = "square-avatars/";
+    private static final long CHAT_IMAGE_MAX_BYTES = 5L * 1024 * 1024;
+    private static final Set<String> CHAT_IMAGE_TYPES = Set.of(
+            "image/jpeg", "image/png", "image/webp", "image/gif"
+    );
+    private static final Pattern SAFE_OBJECT_KEY = Pattern.compile(
+            "^(avatars/[a-zA-Z0-9._-]+|chat-images/[a-zA-Z0-9._-]+|square-avatars/[a-z0-9._-]+)$"
+    );
+
+    public String uploadAvatar(MultipartFile file) {
+        try {
+            String ext = getExtension(file.getOriginalFilename());
+            String objectName = AVATAR_PATH + UUID.randomUUID().toString().replace("-", "") + ext;
+
+            minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(minioConfig.getBucket())
+                            .object(objectName)
+                            .stream(file.getInputStream(), file.getSize(), -1)
+                            .contentType(file.getContentType())
+                            .build()
+            );
+
+            String publicUrl = toPublicUrl(objectName);
+            log.info("Avatar uploaded: {} -> {} ({} bytes)", objectName, publicUrl, file.getSize());
+            return publicUrl;
+        } catch (Exception e) {
+            log.error("Avatar upload failed", e);
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.UPLOAD_FAILED, "头像上传失败: " + e.getMessage());
+        }
+    }
+
+    public String uploadChatBackground(MultipartFile file) {
+        try {
+            String ext = getExtension(file.getOriginalFilename());
+            String objectName = AVATAR_PATH + "chatbg-" + UUID.randomUUID().toString().replace("-", "") + ext;
+
+            minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(minioConfig.getBucket())
+                            .object(objectName)
+                            .stream(file.getInputStream(), file.getSize(), -1)
+                            .contentType(file.getContentType())
+                            .build()
+            );
+
+            String publicUrl = toPublicUrl(objectName);
+            log.info("Chat background uploaded: {} -> {} ({} bytes)", objectName, publicUrl, file.getSize());
+            return publicUrl;
+        } catch (Exception e) {
+            log.error("Chat background upload failed", e);
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.UPLOAD_FAILED, "聊天背景上传失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 根据 slug 与源文件名推断广场头像 object key（与 {@link #uploadSquareAvatar} 规则一致）。
+     */
+    public String resolveSquareAvatarObjectKey(String slug, String filename) {
+        if (slug == null || !slug.matches("[a-z0-9_]+")) {
+            return null;
+        }
+        String ext = getExtension(filename);
+        if (ext == null || ext.isBlank()) {
+            ext = ".jpg";
+        }
+        return SQUARE_AVATAR_PATH + slug + ext;
+    }
+
+    public boolean objectExists(String objectKey) {
+        if (objectKey == null || objectKey.isBlank()) {
+            return false;
+        }
+        try {
+            statObject(objectKey);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public long objectSize(String objectKey) {
+        if (objectKey == null || objectKey.isBlank()) {
+            return -1L;
+        }
+        try {
+            return statObject(objectKey).size();
+        } catch (Exception e) {
+            return -1L;
+        }
+    }
+
+    /**
+     * 上传角色广场预置头像，object key 固定为 square-avatars/{slug}{ext}。
+     */
+    public String uploadSquareAvatar(String slug, byte[] bytes, String contentType) {
+        if (slug == null || !slug.matches("[a-z0-9_]+")) {
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.BAD_REQUEST, "无效的角色标识");
+        }
+        String ext = switch (contentType != null ? contentType : "") {
+            case "image/png" -> ".png";
+            case "image/webp" -> ".webp";
+            case "image/gif" -> ".gif";
+            default -> ".jpg";
+        };
+        String objectName = SQUARE_AVATAR_PATH + slug + ext;
+        try {
+            minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(minioConfig.getBucket())
+                            .object(objectName)
+                            .stream(new java.io.ByteArrayInputStream(bytes), bytes.length, -1)
+                            .contentType(contentType != null ? contentType : "image/jpeg")
+                            .build()
+            );
+            log.info("Square avatar uploaded: slug={} -> {}", slug, objectName);
+            return objectName;
+        } catch (Exception e) {
+            log.error("Square avatar upload failed: slug={}", slug, e);
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.UPLOAD_FAILED, "广场头像上传失败: " + e.getMessage());
+        }
+    }
+
+    public String uploadChatImage(MultipartFile file) {
+        validateChatImage(file);
+        try {
+            String ext = getExtension(file.getOriginalFilename());
+            String objectName = CHAT_IMAGE_PATH + UUID.randomUUID().toString().replace("-", "") + ext;
+            String contentType = normalizeImageContentType(file);
+
+            minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(minioConfig.getBucket())
+                            .object(objectName)
+                            .stream(file.getInputStream(), file.getSize(), -1)
+                            .contentType(contentType)
+                            .build()
+            );
+
+            String publicUrl = toPublicUrl(objectName);
+            log.info("Chat image uploaded: {} -> {} ({} bytes)", objectName, publicUrl, file.getSize());
+            return publicUrl;
+        } catch (com.lianyu.common.exception.BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Chat image upload failed", e);
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.UPLOAD_FAILED, "图片上传失败: " + e.getMessage());
+        }
+    }
+
+    public byte[] readObjectBytes(String objectKey) {
+        validateObjectKey(objectKey);
+        try (GetObjectResponse object = getObject(objectKey);
+             InputStream in = object) {
+            return in.readAllBytes();
+        } catch (Exception e) {
+            log.error("Read object failed: {}", objectKey, e);
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.NOT_FOUND, "图片读取失败");
+        }
+    }
+
+    public String resolveContentType(String objectKey) {
+        try {
+            StatObjectResponse stat = statObject(objectKey);
+            String contentType = stat.contentType();
+            if (contentType != null && !contentType.isBlank()) {
+                return contentType;
+            }
+        } catch (Exception e) {
+            log.debug("stat object for content type failed: {}", objectKey);
+        }
+        return guessContentTypeFromKey(objectKey);
+    }
+
+    public StatObjectResponse statObject(String objectKey) throws Exception {
+        validateObjectKey(objectKey);
+        return minioClient.statObject(
+                StatObjectArgs.builder()
+                        .bucket(minioConfig.getBucket())
+                        .object(objectKey)
+                        .build());
+    }
+
+    public GetObjectResponse getObject(String objectKey) throws Exception {
+        validateObjectKey(objectKey);
+        return minioClient.getObject(
+                GetObjectArgs.builder()
+                        .bucket(minioConfig.getBucket())
+                        .object(objectKey)
+                        .build());
+    }
+
+    /** 将库中存的 MinIO 直链或 object key 转为浏览器可访问的 API 路径 */
+    public String resolvePublicUrl(String stored) {
+        if (stored == null || stored.isBlank()) {
+            return null;
+        }
+        String trimmed = stored.trim();
+        if (trimmed.startsWith(PUBLIC_FILE_PREFIX)) {
+            return trimmed;
+        }
+        String objectKey = extractObjectKey(trimmed);
+        if (objectKey != null) {
+            return toPublicUrl(objectKey);
+        }
+        return trimmed;
+    }
+
+    public static String toPublicUrl(String objectKey) {
+        return PUBLIC_FILE_PREFIX + objectKey;
+    }
+
+    public static String extractObjectKey(String stored) {
+        if (stored == null || stored.isBlank()) {
+            return null;
+        }
+        if (SAFE_OBJECT_KEY.matcher(stored).matches()) {
+            return stored;
+        }
+        for (String prefix : new String[]{AVATAR_PATH, CHAT_IMAGE_PATH, SQUARE_AVATAR_PATH}) {
+            int idx = stored.indexOf(prefix);
+            if (idx >= 0) {
+                String key = stored.substring(idx);
+                int q = key.indexOf('?');
+                if (q >= 0) {
+                    key = key.substring(0, q);
+                }
+                if (SAFE_OBJECT_KEY.matcher(key).matches()) {
+                    return key;
+                }
+            }
+        }
+        return null;
+    }
+
+    public static void validateObjectKey(String objectKey) {
+        if (objectKey == null || !SAFE_OBJECT_KEY.matcher(objectKey).matches()) {
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.NOT_FOUND, "文件不存在");
+        }
+    }
+
+    private void validateChatImage(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.BAD_REQUEST, "请选择图片文件");
+        }
+        if (file.getSize() > CHAT_IMAGE_MAX_BYTES) {
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.BAD_REQUEST, "图片大小不能超过 5MB");
+        }
+        String contentType = normalizeImageContentType(file);
+        if (!CHAT_IMAGE_TYPES.contains(contentType)) {
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.BAD_REQUEST, "仅支持 JPG / PNG / WebP / GIF 图片");
+        }
+    }
+
+    private String normalizeImageContentType(MultipartFile file) {
+        String contentType = file.getContentType();
+        if (contentType != null && !contentType.isBlank()) {
+            return contentType.toLowerCase();
+        }
+        String filename = file.getOriginalFilename();
+        if (filename != null) {
+            String lower = filename.toLowerCase();
+            if (lower.endsWith(".png")) return "image/png";
+            if (lower.endsWith(".webp")) return "image/webp";
+            if (lower.endsWith(".gif")) return "image/gif";
+        }
+        return "image/jpeg";
+    }
+
+    private String guessContentTypeFromKey(String objectKey) {
+        String lower = objectKey.toLowerCase();
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".webp")) return "image/webp";
+        if (lower.endsWith(".gif")) return "image/gif";
+        return "image/jpeg";
+    }
+
+    private String getExtension(String filename) {
+        if (filename == null) return ".png";
+        int i = filename.lastIndexOf('.');
+        return i >= 0 ? filename.substring(i) : ".png";
+    }
+}

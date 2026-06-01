@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="g" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#e8b86d"/>
+      <stop offset="100%" stop-color="#b8753e"/>
+    </radialGradient>
+  </defs>
+  <circle cx="32" cy="28" r="18" fill="url(#g)" opacity="0.9"/>
+  <text x="32" y="36" text-anchor="middle" font-size="22" fill="#1a1a2e">语</text>
+</svg>

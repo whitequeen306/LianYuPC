@@ -1,0 +1,13 @@
+# 生产环境：关闭 API 文档 UI，避免暴露接口面
+knife4j:
+  enable: false
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+lianyu:
+  api-docs:
+    enabled: false

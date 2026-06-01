@@ -1,0 +1,41 @@
+# LianYu-PC .gitignore
+# =====================
+
+# Environment
+.env
+secrets/platform-keys.txt
+backend/scripts/_vault_reseed.sql
+backend/scripts/out/
+
+# Java / Maven
+backend/target/
+backend/*/target/
+*.class
+*.jar
+*.war
+
+# IDE / editor
+.idea/
+*.iml
+.vscode/
+.cursor/
+*.tmp
+.tmp_*
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Docker
+docker-compose.override.yml
+
+# Local tooling / chat history (may contain secrets)
+.specstory/
+.codegraph/

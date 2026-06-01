@@ -1,0 +1,23 @@
+// Runtime theme tokens (overridden by applyAccentColor in utils/themeColor.js)
+:root {
+  --ly-accent: #f4a6b5;
+  --ly-accent-light: #f8c8d8;
+  --ly-accent-dark: #d48494;
+  --ly-accent-muted: #6b4a52;
+  --ly-accent-rgb: 244, 166, 181;
+  --ly-accent-glow: rgba(244, 166, 181, 0.2);
+
+  --ly-bg-deepest: #111015;
+  --ly-bg-primary: #1a1216;
+  --ly-bg-secondary: #241b20;
+  --ly-bg-surface: #2d2228;
+  --ly-bg-elevated: #35282e;
+  --ly-bg-glass: rgba(45, 34, 40, 0.75);
+  --ly-bg-glass-strong: rgba(45, 34, 40, 0.75);
+  --ly-bg-surface-rgb: 45, 34, 40;
+
+  --ly-text-primary: #f5e6eb;
+  --ly-text-secondary: #b8a0a8;
+  --ly-text-muted: #8a727c;
+  --ly-text-inverse: #2d1f24;
+}

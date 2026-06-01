@@ -1,0 +1,454 @@
+// ===== Global Styles & Atmosphere =====
+
+// --- CSS Reset ---
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: $font-body;
+  font-size: $font-size-base;
+  line-height: $line-height-normal;
+  color: $color-text-primary;
+  background: $color-bg-deepest;
+  min-height: 100vh;
+  overflow-x: hidden;
+  transition: background-color 0.4s ease, color 0.3s ease;
+}
+
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; cursor: pointer; border: none; background: none; }
+input, textarea, select { font-family: inherit; font-size: inherit; }
+img { max-width: 100%; display: block; }
+ul, ol { list-style: none; }
+h1, h2, h3, h4, h5, h6 { font-weight: $font-weight-semibold; line-height: $line-height-tight; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba($color-pink-rgb, 0.15);
+  border-radius: $radius-full;
+  &:hover { background: rgba($color-pink-rgb, 0.25); }
+}
+
+// --- Animated Background Gradient ---
+#app {
+  position: relative;
+  min-height: 100vh;
+  background: $color-bg-primary;
+  transition: background-color 0.4s ease;
+
+  &::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse 80% 60% at 20% 10%, rgba(var(--ly-bg-surface-rgb), 0.35) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 50% at 80% 85%, rgba($color-pink-rgb, 0.04) 0%, transparent 60%),
+      radial-gradient(ellipse 50% 40% at 50% 50%, rgba(var(--ly-bg-surface-rgb), 0.2) 0%, transparent 70%);
+    animation: ambientShift 20s ease-in-out infinite;
+  }
+}
+
+@keyframes ambientShift {
+  0%, 100% { opacity: 0.8; }
+  33% { opacity: 1; }
+  66% { opacity: 0.6; }
+}
+
+// --- Glass Surface ---
+.glass {
+  background: $color-bg-glass;
+  backdrop-filter: blur(20px) saturate(120%);
+  -webkit-backdrop-filter: blur(20px) saturate(120%);
+  border: 1px solid rgba($color-pink-rgb, 0.08);
+}
+
+.glass-strong {
+  background: var(--ly-bg-glass-strong, $color-bg-glass);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid rgba($color-pink-rgb, 0.1);
+}
+
+// --- Text Utilities ---
+.text-gradient {
+  background: linear-gradient(135deg, $color-pink-light 0%, $color-pink-primary 50%, $color-pink-dark 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+// --- Page Transition ---
+.page-enter-active {
+  animation: pageEnter 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.page-leave-active {
+  animation: pageLeave 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes pageEnter {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pageLeave {
+  from { opacity: 1; }
+  to { opacity: 0; transform: translateY(-8px); }
+}
+
+// --- Staggered Reveal ---
+.stagger-item {
+  opacity: 0;
+  animation: fadeSlideUp 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@for $i from 1 through 10 {
+  .stagger-item:nth-child(#{$i}) {
+    animation-delay: #{$i * 0.06}s;
+  }
+}
+
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stagger-item {
+    opacity: 1;
+    animation: none;
+    transform: none;
+  }
+}
+
+// --- Pulse Glow ---
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 20px rgba($color-pink-rgb, 0.1); }
+  50% { box-shadow: 0 0 40px rgba($color-pink-rgb, 0.2), 0 0 60px rgba($color-pink-rgb, 0.05); }
+}
+
+// --- Floating Animation ---
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+
+// ===== Element Plus Theme Overrides =====
+:root {
+  // Primary — pink
+  --el-color-primary: #{$color-pink-primary};
+  --el-color-primary-light-3: #{$color-pink-light};
+  --el-color-primary-light-5: rgba(var(--ly-accent-rgb), 0.5);
+  --el-color-primary-light-7: rgba(var(--ly-accent-rgb), 0.3);
+  --el-color-primary-light-8: rgba(var(--ly-accent-rgb), 0.2);
+  --el-color-primary-light-9: rgba(var(--ly-accent-rgb), 0.1);
+  --el-color-primary-dark-2: #{$color-pink-dark};
+
+  // Status
+  --el-color-success: #{$color-success};
+  --el-color-warning: #{$color-warning};
+  --el-color-danger: #{$color-error};
+  --el-color-info: #{$color-info};
+
+  // Backgrounds
+  --el-bg-color: #{$color-bg-primary};
+  --el-bg-color-page: #{$color-bg-deepest};
+  --el-bg-color-overlay: #{$color-bg-surface};
+  --el-fill-color: #{$color-bg-secondary};
+  --el-fill-color-blank: #{$color-bg-primary};
+  --el-fill-color-light: #{$color-bg-surface};
+
+  // Text
+  --el-text-color-primary: #{$color-text-primary};
+  --el-text-color-regular: #{$color-text-secondary};
+  --el-text-color-secondary: #{$color-text-muted};
+  --el-text-color-placeholder: #{$color-pink-muted};
+
+  // Border
+  --el-border-color: rgba(var(--ly-accent-rgb), 0.1);
+  --el-border-color-light: rgba(var(--ly-accent-rgb), 0.07);
+  --el-border-color-lighter: rgba(var(--ly-accent-rgb), 0.04);
+  --el-border-color-dark: rgba(var(--ly-accent-rgb), 0.18);
+
+  // Border radius
+  --el-border-radius-base: #{$radius-md};
+  --el-border-radius-small: #{$radius-sm};
+  --el-border-radius-round: #{$radius-full};
+
+  // Font
+  --el-font-family: #{$font-body};
+  --el-transition-duration: 0.2s;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+// --- Shared field surface (input + textarea) ---
+@mixin field-surface {
+  background-color: $color-bg-secondary !important;
+  border: 1px solid rgba($color-pink-rgb, 0.14) !important;
+  border-radius: $radius-md !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15) !important;
+  color: $color-text-primary !important;
+  transition: border-color $transition-fast, box-shadow $transition-fast;
+
+  &::placeholder {
+    color: $color-text-muted !important;
+  }
+
+  &:hover {
+    border-color: rgba($color-pink-rgb, 0.28) !important;
+  }
+
+  &:focus,
+  &:focus-visible {
+    border-color: $color-pink-primary !important;
+    box-shadow:
+      inset 0 1px 2px rgba(0, 0, 0, 0.15),
+      0 0 0 3px rgba($color-pink-rgb, 0.18) !important;
+    outline: none !important;
+  }
+}
+
+.el-input__wrapper {
+  @include field-surface;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15) !important;
+
+  &:hover {
+    border-color: rgba($color-pink-rgb, 0.28) !important;
+  }
+
+  &.is-focus {
+    border-color: $color-pink-primary !important;
+    box-shadow:
+      inset 0 1px 2px rgba(0, 0, 0, 0.15),
+      0 0 0 3px rgba($color-pink-rgb, 0.18) !important;
+  }
+}
+
+.el-input__inner {
+  color: $color-text-primary !important;
+
+  &::placeholder {
+    color: $color-text-muted !important;
+  }
+}
+
+.el-textarea__inner {
+  @include field-surface;
+  padding: $space-3 $space-4 !important;
+  line-height: $line-height-relaxed !important;
+  min-height: 88px;
+}
+
+// Form labels
+.el-form-item__label {
+  color: $color-text-secondary !important;
+  font-weight: $font-weight-medium !important;
+  padding-bottom: $space-2 !important;
+}
+
+// Button overrides — default / primary / text
+.el-button {
+  font-weight: $font-weight-medium;
+  border-radius: $radius-pill;
+  min-height: 36px;
+  padding: 8px 18px;
+}
+
+.el-button--default {
+  --el-button-bg-color: #{$color-bg-elevated};
+  --el-button-border-color: rgba(var(--ly-accent-rgb), 0.22);
+  --el-button-hover-bg-color: #{$color-bg-surface};
+  --el-button-hover-border-color: #{$color-pink-primary};
+  --el-button-hover-text-color: #{$color-text-primary};
+  --el-button-text-color: #{$color-text-primary};
+  background-color: var(--el-button-bg-color) !important;
+  border-color: var(--el-button-border-color) !important;
+  color: var(--el-button-text-color) !important;
+}
+
+.el-button--primary {
+  --el-button-bg-color: #{$color-pink-primary};
+  --el-button-border-color: #{$color-pink-primary};
+  --el-button-hover-bg-color: #{$color-pink-light};
+  --el-button-hover-border-color: #{$color-pink-light};
+  --el-button-active-bg-color: #{$color-pink-dark};
+  --el-button-text-color: #{$color-text-inverse};
+  background: linear-gradient(135deg, $color-pink-primary 0%, $color-pink-dark 100%) !important;
+  border: none !important;
+  color: $color-text-inverse !important;
+  font-weight: $font-weight-semibold;
+  letter-spacing: 0.02em;
+  box-shadow: 0 4px 16px rgba($color-pink-rgb, 0.28);
+
+  &:hover {
+    background: linear-gradient(135deg, $color-pink-light 0%, $color-pink-primary 100%) !important;
+    box-shadow: 0 6px 22px rgba($color-pink-rgb, 0.38);
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 10px rgba($color-pink-rgb, 0.22);
+  }
+}
+
+.el-button.is-text {
+  color: $color-text-secondary !important;
+
+  &:hover {
+    color: $color-pink-primary !important;
+    background: rgba($color-pink-rgb, 0.08) !important;
+  }
+}
+
+// Prominent CTA (empty states, headers)
+.btn-cta.el-button--primary {
+  min-height: 44px;
+  padding: 10px 28px !important;
+  font-size: $font-size-base !important;
+  border-radius: $radius-pill !important;
+}
+
+.btn-cta-lg.el-button--primary {
+  min-height: 48px;
+  padding: 12px 32px !important;
+  font-size: $font-size-lg !important;
+}
+
+// Dialog overrides
+.el-dialog {
+  background: $color-bg-surface !important;
+  border: 1px solid rgba($color-pink-rgb, 0.08) !important;
+  border-radius: $radius-xl !important;
+  box-shadow: $shadow-lg, $shadow-glow-pink !important;
+
+  .el-dialog__header {
+    border-bottom: 1px solid rgba($color-pink-rgb, 0.06);
+    padding: $space-6;
+  }
+  .el-dialog__title {
+    color: $color-text-primary;
+    font-weight: $font-weight-semibold;
+  }
+  .el-dialog__body { padding: $space-6; }
+
+  .el-dialog__footer {
+    border-top: 1px solid rgba($color-pink-rgb, 0.08);
+    padding: $space-4 $space-6 $space-6;
+    display: flex;
+    justify-content: flex-end;
+    gap: $space-3;
+  }
+}
+
+// Message box (confirm dialogs)
+.el-message-box {
+  background: $color-bg-surface !important;
+  border: 1px solid rgba($color-pink-rgb, 0.1) !important;
+  border-radius: $radius-xl !important;
+  box-shadow: $shadow-lg !important;
+
+  .el-message-box__title,
+  .el-message-box__content {
+    color: $color-text-primary !important;
+  }
+
+  .el-message-box__btns {
+    display: flex;
+    gap: $space-3;
+    justify-content: flex-end;
+  }
+}
+
+// Select
+.el-select__wrapper {
+  background-color: $color-bg-secondary !important;
+  border: 1px solid rgba($color-pink-rgb, 0.14) !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12) !important;
+
+  &:hover {
+    border-color: rgba($color-pink-rgb, 0.28) !important;
+  }
+
+  &.is-focused {
+    border-color: $color-pink-primary !important;
+    box-shadow: 0 0 0 3px rgba($color-pink-rgb, 0.18) !important;
+  }
+}
+
+.el-select__placeholder {
+  color: $color-text-muted !important;
+}
+
+.el-select__selected-item {
+  color: $color-text-primary !important;
+}
+
+// Table
+.el-table {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: #{$color-bg-secondary};
+  --el-table-row-hover-bg-color: rgba(var(--ly-accent-rgb), 0.04);
+  --el-table-border-color: rgba(var(--ly-accent-rgb), 0.06);
+  --el-table-text-color: #{$color-text-primary};
+  --el-table-header-text-color: #{$color-text-secondary};
+}
+
+// Card
+.el-card {
+  background: $color-bg-glass !important;
+  backdrop-filter: blur(20px) saturate(120%);
+  border: 1px solid rgba($color-pink-rgb, 0.08) !important;
+  border-radius: $radius-lg !important;
+  color: $color-text-primary !important;
+}
+
+// Message/tooltip/popover
+.el-message {
+  background: $color-bg-surface !important;
+  border: 1px solid rgba($color-pink-rgb, 0.08) !important;
+}
+
+.el-popper.is-dark {
+  background: $color-bg-surface !important;
+  border: 1px solid rgba($color-pink-rgb, 0.08) !important;
+}
+
+// Menu
+.el-menu {
+  border-right: none !important;
+  background: transparent !important;
+
+  .el-menu-item {
+    color: $color-text-secondary !important;
+    border-radius: $radius-md;
+    margin: 2px $space-2;
+    transition: all $transition-fast;
+
+    &:hover {
+      color: $color-text-primary !important;
+      background: rgba($color-pink-rgb, 0.06) !important;
+    }
+    &.is-active {
+      color: $color-pink-primary !important;
+      background: rgba($color-pink-rgb, 0.08) !important;
+    }
+  }
+}

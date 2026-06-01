@@ -1,0 +1,179 @@
+# LianYu-PC Docker Compose（默认全栈）
+#
+# 一键启动（前端+后端+全部中间件）:
+#   docker compose up -d --build
+#
+# 访问:
+#   前端: http://localhost:${LIANYU_FRONTEND_PORT:-80}
+#   文档: http://localhost:${LIANYU_FRONTEND_PORT:-80}/doc.html
+#
+# 清库重建（会清空 MySQL/Redis/MinIO/Milvus/RabbitMQ 数据）:
+#   docker compose down -v && docker compose up -d --build
+#
+# 仅本地联调网关（反代宿主机 5173/8080）:
+#   docker compose --profile dev-proxy up -d web-gateway
+
+name: lianyu-pc
+
+services:
+  # 可选：本地联调网关（不打包前后端代码）
+  web-gateway:
+    profiles: ["dev-proxy"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.gateway
+    image: lianyu-pc/web-gateway:dev
+    container_name: lianyu-web-gateway
+    restart: unless-stopped
+    ports:
+      - "${LIANYU_GATEWAY_PORT:-8088}:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # 后端服务（镜像内构建当前源码）
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        APP_REVISION: ${APP_REVISION:-dev}
+    image: lianyu-pc/backend:${APP_REVISION:-dev}
+    container_name: lianyu-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      REDIS_HOST: redis
+      RABBITMQ_HOST: rabbitmq
+      MINIO_ENDPOINT: http://minio:9000
+      MILVUS_HOST: milvus
+      SERVER_PORT: 8080
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+
+  # 前端服务（镜像内构建当前源码，Nginx 反代 backend）
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        APP_REVISION: ${APP_REVISION:-dev}
+    image: lianyu-pc/frontend:${APP_REVISION:-dev}
+    container_name: lianyu-frontend
+    restart: unless-stopped
+    ports:
+      - "${LIANYU_FRONTEND_PORT:-80}:80"
+    depends_on:
+      backend:
+        condition: service_started
+
+  mysql:
+    image: mysql:8.4
+    container_name: lianyu-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: lianyu
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "${MYSQL_PORT:-3307}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: lianyu-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: lianyu-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  milvus:
+    image: milvusdb/milvus:v2.4.0
+    container_name: lianyu-milvus
+    restart: unless-stopped
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_USE_EMBED: "true"
+      COMMON_STORAGETYPE: local
+    ports:
+      - "${MILVUS_PORT:-19530}:19530"
+      - "9091:9091"
+    volumes:
+      - milvus_data:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    container_name: lianyu-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mysql_data:
+  redis_data:
+  rabbitmq_data:
+  milvus_data:
+  minio_data:

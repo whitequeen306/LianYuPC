@@ -1,0 +1,4 @@
+# 本地联调网关：反代宿主机 Vite(5173) + Spring Boot(8080)，含 /doc.html 等 API 文档路径
+FROM nginx:1.27-alpine
+COPY nginx.dev.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80

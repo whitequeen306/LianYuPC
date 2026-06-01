@@ -1,0 +1,97 @@
+// ===== LianYu Design Tokens: "Pink Romance" (Android-aligned) =====
+
+// --- Color Palette (runtime via --ly-bg-* / --ly-text-*) ---
+$color-bg-deepest: var(--ly-bg-deepest, #0e1218);
+$color-bg-primary: var(--ly-bg-primary, #121820);
+$color-bg-secondary: var(--ly-bg-secondary, #171e28);
+$color-bg-surface: var(--ly-bg-surface, #1e2732);
+$color-bg-elevated: var(--ly-bg-elevated, #252f3c);
+$color-bg-glass: var(--ly-bg-glass, rgba(30, 39, 50, 0.75));
+
+// Pink accent (brand) — runtime overridable via --ly-accent-* on :root
+$color-pink-primary: var(--ly-accent, #f4a6b5);
+$color-pink-light: var(--ly-accent-light, #f8c8d8);
+$color-pink-dark: var(--ly-accent-dark, #d48494);
+$color-pink-muted: var(--ly-accent-muted, #6b4a52);
+$color-pink-glow: var(--ly-accent-glow, rgba(244, 166, 181, 0.2));
+$color-pink-rgb: var(--ly-accent-rgb);
+
+// Text
+$color-text-primary: var(--ly-text-primary, #e8edf2);
+$color-text-secondary: var(--ly-text-secondary, #a8b4c0);
+$color-text-muted: var(--ly-text-muted, #728090);
+$color-text-inverse: var(--ly-text-inverse, #141a22);
+
+// Functional
+$color-success: #7EB99F;
+$color-warning: #FFA500;
+$color-error: #FA5151;
+$color-info: #8BA4C8;
+
+// --- Typography ---
+$font-body: 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', system-ui, -apple-system, sans-serif;
+$font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+
+$font-size-xs: 0.75rem;
+$font-size-sm: 0.875rem;
+$font-size-base: 0.9375rem;
+$font-size-lg: 1.125rem;
+$font-size-xl: 1.375rem;
+$font-size-2xl: 1.75rem;
+$font-size-3xl: 2.25rem;
+
+$font-weight-light: 300;
+$font-weight-normal: 400;
+$font-weight-medium: 500;
+$font-weight-semibold: 600;
+$font-weight-bold: 700;
+
+$line-height-tight: 1.25;
+$line-height-normal: 1.6;
+$line-height-relaxed: 1.8;
+
+// --- Spacing ---
+$space-1: 0.25rem;
+$space-2: 0.5rem;
+$space-3: 0.75rem;
+$space-4: 1rem;
+$space-5: 1.25rem;
+$space-6: 1.5rem;
+$space-8: 2rem;
+$space-10: 2.5rem;
+$space-12: 3rem;
+$space-16: 4rem;
+$space-20: 5rem;
+
+// --- Border Radius ---
+$radius-sm: 8px;
+$radius-md: 14px;
+$radius-lg: 24px;
+$radius-xl: 28px;
+$radius-pill: 25px;
+$radius-full: 9999px;
+
+// --- Shadows ---
+$shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+$shadow-md: 0 4px 20px rgba(0, 0, 0, 0.4);
+$shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.5);
+$shadow-glow-pink: 0 0 30px rgba($color-pink-rgb, 0.12), 0 0 60px rgba($color-pink-rgb, 0.05);
+
+// --- Transitions ---
+$transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+$transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+$transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+$transition-spring: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+// --- Layout ---
+$header-height: 64px;
+$sidebar-width: 260px;
+$sidebar-collapsed: 72px;
+$max-content-width: 1200px;
+
+// --- Z-index ---
+$z-sidebar: 100;
+$z-header: 200;
+$z-overlay: 500;
+$z-modal: 600;
+$z-toast: 700;

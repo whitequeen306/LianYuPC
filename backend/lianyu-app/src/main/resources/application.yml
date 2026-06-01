@@ -1,0 +1,337 @@
+spring:
+  application:
+    name: lianyu-pc
+  profiles:
+    active: dev
+  output:
+    ansi:
+      enabled: always
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 20MB
+
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3307}/lianyu?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+    username: ${MYSQL_USER:lianyu}
+    password: ${MYSQL_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      lettuce:
+        pool:
+          enabled: true
+          max-active: 20
+          max-idle: 8
+          min-idle: 2
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        # 启用消费重试（失败后按策略重试，最终由容器 reject 并进入 DLQ）
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1000ms
+          multiplier: 2
+          max-interval: 5000ms
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  ai:
+    openai:
+      # 密钥勿写死入仓；优先 api_key_vault DEFAULT 池，见 .env.example
+      api-key: ${OPENAI_API_KEY:}
+      # Base 可带或不带 /v1，AiChatService 会规范化
+      base-url: ${OPENAI_BASE_URL:}
+      chat:
+        options:
+          model: ${OPENAI_CHAT_MODEL:}
+          temperature: 0.8
+      embedding:
+        options:
+          model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      chat:
+        options:
+          model: ${OLLAMA_CHAT_MODEL:llama3}
+          temperature: 0.8
+
+mybatis-plus:
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+  configuration:
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+    map-underscore-to-camel-case: true
+
+# Sa-Token 登录态（token 存 Redis database 1）
+sa-token:
+  token-name: lianyu-token          # 前端请求头 / localStorage 使用的 token 名
+  timeout: 2592000                  # token 最长有效期（秒），默认 30 天
+  active-timeout: 1800              # 无操作多久后 token 冻结（秒），默认 30 分钟
+  is-concurrent: true               # 允许多设备同时登录
+  is-share: false                   # 各设备 token 不共用
+  token-style: uuid
+  is-log: true
+  alone-redis:
+    database: 1
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+
+# MinIO 对象存储（角色头像等）
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}   # 服务地址
+  access-key: ${MINIO_ACCESS_KEY:}                    # 访问密钥
+  secret-key: ${MINIO_SECRET_KEY:}                    # 秘密密钥
+  bucket: ${MINIO_BUCKET:lianyu}                      # 默认存储桶
+
+# Milvus 向量库（长期记忆向量检索）
+milvus:
+  host: ${MILVUS_HOST:localhost}   # 主机
+  port: ${MILVUS_PORT:19530}       # gRPC 端口
+  database: default                # 数据库名
+  dim: 1024                        # 向量维度（需与 embedding 模型一致）
+
+# LianYu 业务配置
+lianyu:
+  api-docs:
+    enabled: ${LIANYU_API_DOCS_ENABLED:true}
+  auth:
+    rate-limit:
+      per-ip-per-minute: 30
+      per-username-per-minute: 10
+  character:
+    max-per-user: 80
+  ai:
+    # 是否开放 /api/ai/chat 直连（默认关闭，走会话接口）
+    direct-chat-enabled: ${LIANYU_AI_DIRECT_CHAT:false}
+    direct-chat-daily-limit: 50
+    platform:
+      # 平台聊天 key 仅走 MySQL api_key_vault DEFAULT 池（10 槽位 + Redis 轮询），勿在 .env 配置单 key
+      api-keys: ""
+    # 拼进 Prompt 的最近历史消息条数
+    context-window: 20
+    # 记忆向量维度（与 Milvus collection、embedding 一致）
+    embedding-dim: 1024
+    embedding:
+      model: text-embedding-v3
+      api-key: ${EMBEDDING_API_KEY:}
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    vision:
+      enabled: true
+      model: ${LIANYU_VISION_MODEL:qwen3-vl-flash}
+      describe-max-tokens: 320
+      api-key: ${DASHSCOPE_API_KEY:}
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    reranker:
+      model: gte-rerank-v2
+      api-key: ${RERANKER_API_KEY:}
+      url: https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank
+
+  mq:
+    memory:
+      # memory.summary 消费者并发（容器）
+      concurrent-consumers: 2
+      max-concurrent-consumers: 8
+      # 每个消费者一次预取条数
+      prefetch: 20
+      # @RabbitListener 的并发表达式（min-max）
+      listener-concurrency: 2-8
+    push:
+      # push 消费并发（用于 event.broadcast.queue）
+      listener-concurrency: 1-4
+
+  push:
+    # 是否开启 Web Push（需要配置 VAPID 密钥）
+    enabled: ${LIANYU_PUSH_ENABLED:false}
+    # 浏览器通知点击跳转前缀（前端 hash 路由）
+    click-url-prefix: "#/chat/"
+    vapid:
+      # 由你提供 VAPID 公钥/私钥后可开启离线推送
+      public-key: ${LIANYU_PUSH_VAPID_PUBLIC_KEY:}
+      private-key: ${LIANYU_PUSH_VAPID_PRIVATE_KEY:}
+      subject: ${LIANYU_PUSH_VAPID_SUBJECT:mailto:admin@lianyu.local}
+
+  tools:
+    # ToolManager 默认城市（角色 settings 无 city/location 时使用）
+    default-city: 上海
+    time:
+      # 时间工具时区
+      zone-id: Asia/Shanghai
+    weather:
+      # 是否开启天气工具
+      enabled: true
+      # 天气服务基础地址（无需额外 key）
+      base-url: https://wttr.in
+      # 天气缓存时长（分钟）
+      cache-minutes: 15
+
+  group:
+    # 单个群聊最多角色数（不含用户本人）
+    max-members: 4
+    # 群聊：用户发一条消息后，自动追加的角色回复轮数（每轮内多角色可并行）
+    auto-rounds: 2
+    # 同一角色连发多条气泡时，WebSocket 推送间隔（毫秒），模拟真人连发
+    bubble-gap-ms: 500
+    executor:
+      # 群聊并行调用 AI 的线程池（每轮 N 个角色可同时 generate，非 3）
+      core-pool-size: 8
+      max-pool-size: 20
+      queue-capacity: 300
+    mention-judge:
+      # 低置信度情况下，是否启用小模型裁决是否需要补 @
+      enabled: true
+      # 高于此阈值直接采用（Java规则或小模型输出）
+      threshold: 0.8
+      # 低置信度裁决模型（复用平台 deepseek key，不新增 key）
+      model: deepseek-chat
+      # 送给裁决模型的最近上下文条数
+      max-context-messages: 6
+
+  chat:
+    # 全局兜底：单聊最多连发几条（各角色会按 speakingStyle / 人设再覆盖，见 CharacterChatBehaviorResolver）
+    max-replies-per-turn: 3
+    humanize:
+      # 单聊 Prompt：减少一味情绪价值；允许情绪起伏、适度反驳、偶发极短回复（嗯/行）
+      enabled: true
+
+    proactive:
+      # 是否开启「角色主动发消息」定时任务（总开关）
+      enabled: true
+      # 定时扫描间隔（毫秒），默认 45 秒扫一轮候选会话
+      scan-interval-ms: 45000
+      # 每轮扫描最多检查的会话数量（按最近创建排序）
+      scan-limit: 40
+      # 全局兜底：空闲多久后可主动（分钟）；活泼/元气更短，冷静/成熟更长
+      min-idle-minutes: 10
+      # 每轮扫描最多实际发送几条主动消息（避免瞬时打爆 AI）
+      max-conversations-per-run: 1
+      # 每轮群聊主动冒泡上限（与单聊独立计数）
+      max-group-proactive-per-run: 1
+      group-scan-limit: 30
+      # 全局兜底：触发概率（0~1）；话多角色更高，高冷角色更低
+      trigger-probability: 0.25
+      # 全局兜底：主动消息冷却下限（分钟）
+      cooldown-min-minutes: 25
+      # 全局兜底：主动消息冷却上限（分钟）
+      cooldown-max-minutes: 45
+      # 单角色可在 settings.chatBehavior 中覆盖，例如：
+      # {"chatBehavior":{"maxRepliesPerTurn":3,"proactiveEnabled":true,"minIdleMinutes":6,"triggerProbability":0.4}}
+
+    # 新建「单聊会话」时：角色先发一条破冰；若用户在这段时间内仍未回复，系统再让角色发一条简短关心，之后不再自动发（与普通 proactive 独立）
+    opening:
+      enabled: true
+      # 首条破冰发出后，再等多久检查是否发第二条（毫秒），默认 5 分钟
+      followup-delay-ms: 300000
+
+  moments:
+    # 角色朋友圈（非联网 MVP：心情 / 聊天感想 / 系统事件）
+    enabled: true
+    scan-interval-ms: 120000
+    scan-limit: 40
+    max-posts-per-run: 2
+    max-posts-per-character-per-day: 2
+    min-interval-hours: 4
+    trigger-probability: 0.35
+    content-max-chars: 180
+    comments:
+      peer-pick-count: 2
+      content-max-chars: 120
+      # 单条动态下自动评论总上限，避免无限自嗨
+      max-auto-comments-per-post: 8
+      # 评论链后续是否继续出现路人跟评（每次触发概率）
+      followup-peer-probability: 0.45
+      # 动态发出后，首位路人评论随机延迟（秒），避免发帖瞬间扎堆
+      peer-first-delay-min-seconds: 180
+      peer-first-delay-max-seconds: 480
+      # 多位路人评论之间的间隔（秒），一次只来一个
+      peer-stagger-min-seconds: 120
+      peer-stagger-max-seconds: 300
+      # 评论出现后，后续路人跟评延迟（秒）
+      followup-peer-min-seconds: 90
+      followup-peer-max-seconds: 240
+      # 挑选后续评论人时，尽量避开最近已发言的角色窗口
+      recent-participants-window: 4
+      # 发帖人回复某条评论前的等待（秒），模拟不是秒回
+      author-reply-min-seconds: 60
+      author-reply-max-seconds: 120
+    image:
+      # 朋友圈自动配图（文案->提示词->文生图->MinIO）
+      enabled: true
+      trigger-probability: 0.5
+      # DashScope 文生图（兼容 OpenAI /images/generations）
+      model: qwen-image
+      base-url: ${LIANYU_MOMENTS_IMAGE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+      api-key: ${LIANYU_MOMENTS_IMAGE_API_KEY:${DASHSCOPE_API_KEY:}}
+      image-size: 768x768
+      timeout-seconds: 45
+      prompt-max-chars: 240
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when_authorized
+
+springdoc:
+  api-docs:
+    enabled: ${lianyu.api-docs.enabled:true}
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: ${lianyu.api-docs.enabled:true}
+    path: /swagger-ui.html
+
+knife4j:
+  enable: ${lianyu.api-docs.enabled:true}
+  setting:
+    language: zh_cn
+
+server:
+  port: ${SERVER_PORT:8080}   # HTTP 端口，默认 8080
+
+# AI 调用限流 / 熔断（实例名 ai-chat）
+resilience4j:
+  bulkhead:
+    instances:
+      ai-chat:
+        max-concurrent-calls: 16   # 全局 AI 并发上限（群聊多角色并行时共享此池）
+        max-wait-duration: 5s      # 排队等待上限
+  time-limiter:
+    instances:
+      ai-chat:
+        timeout-duration: 30s      # 单次阻塞调用总超时
+  circuit-breaker:
+    instances:
+      ai-chat:
+        sliding-window-size: 20                              # 滑动窗口样本数
+        minimum-number-of-calls: 5                           # 至少调用次数才统计失败率
+        failure-rate-threshold: 50                           # 失败率超此值则熔断（%）
+        wait-duration-in-open-state: 30s                     # 熔断打开后等待多久半开
+        permitted-number-of-calls-in-half-open-state: 3      # 半开状态试探调用次数
+
+logging:
+  level:
+    com.lianyu: DEBUG
+  pattern:
+    console: "%clr(%d{HH:mm:ss.SSS}){faint} %clr(%-5level){highlight} %clr([%X{traceId:-}]){cyan} %clr(%logger{24}){blue} %clr(:){faint} %m%n%wEx"

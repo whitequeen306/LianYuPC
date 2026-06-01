@@ -1,0 +1,3 @@
+ALTER TABLE moments_post
+    ADD COLUMN author_type VARCHAR(16) NOT NULL DEFAULT 'CHARACTER' COMMENT 'CHARACTER | USER' AFTER user_id,
+    MODIFY character_id BIGINT DEFAULT NULL COMMENT 'NULL when author_type=USER';
