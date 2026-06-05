@@ -2,6 +2,10 @@ package com.lianyu.common.util;
 
 import cn.hutool.core.map.MapUtil;
 import cn.hutool.core.util.StrUtil;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -10,6 +14,8 @@ import java.util.Map;
  * 从角色 settings 解析常用字段（city / location）。
  */
 public final class CharacterSettingsUtils {
+
+    private static final Charset WINDOWS_1252 = Charset.forName("Windows-1252");
 
     private CharacterSettingsUtils() {
     }
@@ -37,18 +43,36 @@ public final class CharacterSettingsUtils {
     }
 
     /**
-     * 修复 UTF-8 字节被误按 Latin-1 解码导致的乱码（如「女」→「å¥³」）。
+     * 修复 UTF-8 字节被误按 Windows-1252 / Latin-1 解码导致的乱码。
      */
     public static String fixUtf8Mojibake(String value) {
-        if (StrUtil.isBlank(value) || !looksLikeUtf8Mojibake(value)) {
+        if (StrUtil.isBlank(value) || looksLikeValidCjk(value) || !looksLikeUtf8Mojibake(value)) {
             return value;
         }
-        byte[] bytes = value.getBytes(StandardCharsets.ISO_8859_1);
-        String decoded = new String(bytes, StandardCharsets.UTF_8);
-        if (StrUtil.isBlank(decoded) || decoded.contains("\uFFFD")) {
-            return value;
+        try {
+            byte[] bytes = value.getBytes(WINDOWS_1252);
+            String decoded = StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(bytes))
+                    .toString();
+            if (StrUtil.isNotBlank(decoded) && looksLikeValidCjk(decoded)) {
+                return decoded;
+            }
+        } catch (CharacterCodingException ignored) {
+            // keep original
         }
-        return decoded;
+        return value;
+    }
+
+    private static boolean looksLikeValidCjk(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c >= 0x4E00 && c <= 0x9FFF) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static Map<String, Object> sanitizeSettingsForResponse(Map<String, Object> settings) {
@@ -71,6 +95,11 @@ public final class CharacterSettingsUtils {
         for (int i = 0; i < value.length(); i++) {
             char c = value.charAt(i);
             if (c >= 0x00C0 && c <= 0x00FF) {
+                return true;
+            }
+            if (c == 0x0152 || c == 0x0153 || c == 0x0160 || c == 0x0161
+                    || c == 0x0178 || c == 0x017D || c == 0x017E
+                    || (c >= 0x2013 && c <= 0x201E) || c == 0x2026) {
                 return true;
             }
         }
