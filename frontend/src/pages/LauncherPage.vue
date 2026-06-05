@@ -160,22 +160,16 @@ body:has(.pet-root),
   touch-action: none;
   will-change: transform;
   filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.25));
-  animation: pet-idle 1.2s step-end infinite;
+  animation: pet-idle 1.2s steps(7) infinite;
 }
 
 @keyframes pet-idle {
-  0%   { background-position: 0 0; }
-  14.28% { background-position: -192px 0; }
-  28.57% { background-position: -384px 0; }
-  42.85% { background-position: -576px 0; }
-  57.14% { background-position: -768px 0; }
-  71.42% { background-position: -960px 0; }
-  85.71% { background-position: -1152px 0; }
-  100% { background-position: -1344px 0; }
+  from { background-position: 0 0; }
+  to   { background-position: -1344px 0; }
 }
 
 .pet-body.is-shaking {
-  animation: pet-shake 0.55s ease-in-out 2, pet-idle 1.2s steps(1) infinite !important;
+  animation: pet-shake 0.55s ease-in-out 2, pet-idle 1.2s steps(7) infinite !important;
 }
 
 @keyframes pet-shake {

@@ -60,15 +60,14 @@ function resolveApiOrigin() {
 /** 服务器证书 SHA-256 指纹（构建时注入），用于自签名证书固定 */
 const EXPECTED_CERT_FINGERPRINT = (process.env.LIANYU_CERT_FINGERPRINT || '').trim()
 
+// SPKI 白名单必须在 app.whenReady() 之前！否则无效
+const SPKI = 'EdDpp/Z9REuRjqZLzXXrOW8opTtR8Yph2YM0s+xuLss='
+app.commandLine.appendSwitch('ignore-certificate-errors-spki-list', SPKI)
+
 function configureCertificatePinning() {
   if (!EXPECTED_CERT_FINGERPRINT) return
 
-  // 方式 1：命令行 SPKI 白名单（Electron 官方推荐）
-  const SPKI = 'EdDpp/Z9REuRjqZLzXXrOW8opTtR8Yph2YM0s+xuLss='
-  app.commandLine.appendSwitch('ignore-certificate-errors-spki-list', SPKI)
-  log('cert SPKI pin registered')
-
-  // 方式 2：certificate-error 事件兜底
+  // certificate-error 事件兜底
   app.on('certificate-error', (event, _webContents, url, _error, cert, callback) => {
     const lowercase = cert.fingerprint?.toLowerCase() || ''
     const expected = EXPECTED_CERT_FINGERPRINT.toLowerCase().replace(/:/g, '')
