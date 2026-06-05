@@ -38,7 +38,7 @@ if (-not $env:LIANYU_MASTER_KEY) {
 
 # 与 platform-keys.txt 中 Key 来源一致（官方 Key 用 api.deepseek.com，中转 Key 用对应网关）
 $env:PLATFORM_VAULT_BASE_URL = 'https://api.deepseek.com'
-$env:PLATFORM_VAULT_MODEL = 'deepseek-chat'
+$env:PLATFORM_VAULT_MODEL = 'deepseek-v4-flash'
 
 Push-Location $backend
 mvn -q -pl lianyu-security compile -DskipTests
