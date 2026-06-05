@@ -12,7 +12,6 @@ import {
 } from 'electron'
 import path from 'path'
 import fs from 'fs'
-import crypto from 'crypto'
 import { fileURLToPath } from 'url'
 import {
   readDesktopSettings,
@@ -82,23 +81,8 @@ function configureCertificatePinning() {
   })
 }
 
-function injectCspHeaders() {
-  const ses = session.fromPartition(SHARED_WEB_PREFS.partition)
-  ses.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': [
-          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src https: wss:; media-src 'self';",
-        ],
-      },
-    })
-  })
-}
-
 function configureSecurity() {
   configureCertificatePinning()
-  injectCspHeaders()
 }
 
 function resolveWsUrlPrefix(httpOrigin) {

@@ -152,24 +152,24 @@ body:has(.pet-root),
 .pet-body {
   width: 192px;
   height: 208px;
-  background-image: url('/pet/raiden_spritesheet.webp');
-  background-size: 1536px 208px;
+  background-image: url('/pet/raiden_sprite.png');
+  background-size: 1152px 208px;
   background-repeat: no-repeat;
   background-position: 0 0;
   cursor: pointer;
   touch-action: none;
   will-change: transform;
   filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.25));
-  animation: pet-idle 1.2s steps(7) infinite;
+  animation: pet-idle 1.2s steps(5) infinite;
 }
 
 @keyframes pet-idle {
   from { background-position: 0 0; }
-  to   { background-position: -1344px 0; }
+  to   { background-position: -960px 0; }
 }
 
 .pet-body.is-shaking {
-  animation: pet-shake 0.55s ease-in-out 2, pet-idle 1.2s steps(7) infinite !important;
+  animation: pet-shake 0.55s ease-in-out 2, pet-idle 1.2s steps(5) infinite !important;
 }
 
 @keyframes pet-shake {
