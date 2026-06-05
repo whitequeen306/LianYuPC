@@ -74,7 +74,7 @@ public class CharacterService {
         entity.setOwnerUserId(userId);
         entity.setName(request.getName());
         entity.setAvatarUrl(request.getAvatarUrl());
-        entity.setSettings(request.getSettings());
+        entity.setSettings(CharacterSettingsUtils.normalizeSettings(request.getSettings()));
         entity.setPromptTemplate(request.getPromptTemplate());
         characterMapper.insert(entity);
 
@@ -105,7 +105,8 @@ public class CharacterService {
             entity.setAvatarUrl(request.getAvatarUrl());
         }
         if (request.getSettings() != null) {
-            entity.setSettings(mergeSettings(entity.getSettings(), request.getSettings()));
+            entity.setSettings(CharacterSettingsUtils.normalizeSettings(
+                    mergeSettings(entity.getSettings(), request.getSettings())));
         }
         if (request.getPromptTemplate() != null) {
             entity.setPromptTemplate(request.getPromptTemplate());
@@ -244,7 +245,7 @@ public class CharacterService {
                 .ownerUserId(entity.getOwnerUserId())
                 .name(entity.getName())
                 .avatarUrl(fileStorageService.resolvePublicUrl(entity.getAvatarUrl()))
-                .settings(CharacterSettingsUtils.sanitizeSettingsForResponse(entity.getSettings()))
+                .settings(CharacterSettingsUtils.normalizeSettings(entity.getSettings()))
                 .promptTemplate(entity.getPromptTemplate())
                 .createdAt(entity.getCreatedAt())
                 .updatedAt(entity.getUpdatedAt())

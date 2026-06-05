@@ -6,16 +6,19 @@
       </div>
     </transition>
     <div ref="wrapRef" class="pet-wrap">
-      <div
+      <canvas
         ref="petRef"
-        class="pet-body"
-        :style="{ backgroundImage: `url(${petSpriteUrl})` }"
+        class="pet-canvas"
+        width="192"
+        height="208"
+        aria-hidden="true"
       />
       <div
         ref="hitboxRef"
         class="pet-hitbox"
-        title="点击快速聊天，按住拖动"
+        title="单击选角色，双击跳跃，按住拖动"
         @pointerdown.prevent="onPointerDown"
+        @dblclick.prevent="onDoubleClick"
       />
     </div>
   </div>
@@ -34,31 +37,40 @@ const containerRef = ref(null)
 const wrapRef = ref(null)
 const petRef = ref(null)
 const hitboxRef = ref(null)
-const petSpriteUrl = ref(getPetSpriteUrl(getPetById(DEFAULT_PET_ID)))
 const pointerState = ref(null)
 const toastText = ref('')
 const dragging = ref(false)
-let shakeTimer = null
+let clickTimer = null
 let toastTimer = null
 let unsubscribeLauncherMessage = null
 let unsubscribePetChanged = null
 let gsapCtx = null
+let idleFloatTween = null
 
-const { playAnim } = usePetSpriteAnimator(petRef)
+const { playAnim, playAnimOnce, returnToIdle, setSpriteImage } = usePetSpriteAnimator(petRef)
+
+function setIdleFloatPaused(paused) {
+  if (!idleFloatTween) return
+  if (paused) idleFloatTween.pause()
+  else idleFloatTween.play()
+}
 
 function applyPetId(petId) {
   const pet = getPetById(petId)
   const url = getPetSpriteUrl(pet)
   const img = new Image()
   img.onload = () => {
-    petSpriteUrl.value = url
+    setSpriteImage(img)
     playAnim('idle')
   }
   img.onerror = () => {
-    petSpriteUrl.value = url
     playAnim('idle')
   }
   img.src = url
+}
+
+function resetWrapTransform() {
+  if (wrapRef.value) gsap.set(wrapRef.value, { y: 0 })
 }
 
 function syncMousePassthrough(clientX, clientY) {
@@ -76,6 +88,7 @@ function onDocumentMouseMove(e) {
 }
 
 function onDocumentMouseLeave() {
+  if (dragging.value || pointerState.value) return
   getElectronAPI()?.setLauncherMousePassthrough?.(true)
 }
 
@@ -90,6 +103,15 @@ function releasePointerCapture(state) {
   }
 }
 
+function onDoubleClick() {
+  if (clickTimer) {
+    clearTimeout(clickTimer)
+    clickTimer = null
+  }
+  if (dragging.value || pointerState.value?.moved) return
+  playAnimOnce('jump')
+}
+
 function onPointerDown(e) {
   if (e.button !== 0) return
   getElectronAPI()?.setLauncherMousePassthrough?.(false)
@@ -97,11 +119,14 @@ function onPointerDown(e) {
   pointerState.value = {
     startX: e.screenX,
     startY: e.screenY,
-    grabX: e.clientX,
-    grabY: e.clientY,
+    lastScreenX: e.screenX,
+    lastScreenY: e.screenY,
     pointerId: e.pointerId,
     moved: false,
+    runAnim: null,
   }
+  setIdleFloatPaused(true)
+  resetWrapTransform()
   playAnim('waiting', { loop: true })
   window.addEventListener('pointermove', onPointerMove)
   window.addEventListener('pointerup', onPointerUp)
@@ -116,14 +141,26 @@ function onPointerMove(e) {
   if (!state.moved && (Math.abs(totalDx) > 5 || Math.abs(totalDy) > 5)) {
     state.moved = true
     dragging.value = true
-    getElectronAPI()?.setLauncherDragging?.(true)
-    playAnim(totalDx >= 0 ? 'run-right' : 'run-left', { loop: true })
+    getElectronAPI()?.beginLauncherDrag?.()
+    const runAnim = totalDx >= 0 ? 'run-right' : 'run-left'
+    state.runAnim = runAnim
+    playAnim(runAnim, { loop: true })
   }
   if (state.moved) {
-    getElectronAPI()?.setLauncherScreenPosition?.(
-      e.screenX - state.grabX,
-      e.screenY - state.grabY,
-    )
+    const dx = e.screenX - state.lastScreenX
+    const dy = e.screenY - state.lastScreenY
+    state.lastScreenX = e.screenX
+    state.lastScreenY = e.screenY
+    if (dx !== 0) {
+      const runAnim = dx >= 0 ? 'run-right' : 'run-left'
+      if (state.runAnim !== runAnim) {
+        state.runAnim = runAnim
+        playAnim(runAnim, { loop: true })
+      }
+    }
+    if (dx !== 0 || dy !== 0) {
+      getElectronAPI()?.moveLauncherDrag?.(dx, dy)
+    }
   }
 }
 
@@ -136,37 +173,40 @@ function onPointerUp(e) {
   releasePointerCapture(state)
   dragging.value = false
   if (state && !state.moved) {
-    playAnim('wave')
-    getElectronAPI()?.toggleCharacterPicker?.()
+    clickTimer = setTimeout(() => {
+      clickTimer = null
+      playAnimOnce('wave')
+      getElectronAPI()?.toggleCharacterPicker?.()
+    }, 240)
   } else {
-    playAnim('idle')
-    getElectronAPI()?.setLauncherDragging?.(false)
-    getElectronAPI()?.clampLauncherPosition?.()
+    playAnimOnce('running', () => returnToIdle())
+    getElectronAPI()?.endLauncherDrag?.()
   }
+  setIdleFloatPaused(false)
   pointerState.value = null
   if (e) syncMousePassthrough(e.clientX, e.clientY)
 }
 
 function onContextMenu() {
-  playAnim('review')
+  playAnimOnce('review')
   getElectronAPI()?.openMainWindow?.('#/app')
 }
 
 function showNewMessageHint(payload = {}) {
   const name = payload.characterName || t('launcher.defaultCharacterName')
   toastText.value = t('launcher.newMessageHint', { name })
-  playAnim('jump')
-  clearTimeout(shakeTimer)
+  playAnimOnce('jump')
   clearTimeout(toastTimer)
-  shakeTimer = setTimeout(() => {
-    if (!dragging.value) playAnim('idle')
-  }, 900)
   toastTimer = setTimeout(() => {
     toastText.value = ''
   }, 4200)
 }
 
 onMounted(async () => {
+  document.documentElement.style.background = 'transparent'
+  document.body.style.background = 'transparent'
+  const appEl = document.getElementById('app')
+  if (appEl) appEl.style.background = 'transparent'
   document.addEventListener('mousemove', onDocumentMouseMove)
   document.addEventListener('mouseleave', onDocumentMouseLeave)
   getElectronAPI()?.setLauncherMousePassthrough?.(true)
@@ -174,7 +214,7 @@ onMounted(async () => {
   applyPetId(settings?.launcherPetId || DEFAULT_PET_ID)
   if (wrapRef.value) {
     gsapCtx = gsap.context(() => {
-      gsap.to(wrapRef.value, {
+      idleFloatTween = gsap.to(wrapRef.value, {
         y: -4,
         duration: 2.4,
         ease: 'sine.inOut',
@@ -191,7 +231,7 @@ onMounted(async () => {
 onUnmounted(() => {
   document.removeEventListener('mousemove', onDocumentMouseMove)
   document.removeEventListener('mouseleave', onDocumentMouseLeave)
-  clearTimeout(shakeTimer)
+  clearTimeout(clickTimer)
   clearTimeout(toastTimer)
   unsubscribeLauncherMessage?.()
   unsubscribePetChanged?.()
@@ -205,6 +245,13 @@ body:has(.pet-root),
 #app:has(.pet-root) {
   background: transparent !important;
   overflow: hidden;
+  min-height: 0 !important;
+}
+
+#app:has(.pet-root)::before {
+  display: none !important;
+  content: none !important;
+  animation: none !important;
 }
 </style>
 
@@ -241,18 +288,16 @@ body:has(.pet-root),
   position: relative;
   width: 192px;
   height: 208px;
-  will-change: transform;
   pointer-events: none;
 }
 
-.pet-body {
+.pet-canvas {
+  display: block;
   width: 192px;
   height: 208px;
-  background-size: 1536px 1872px;
-  background-repeat: no-repeat;
-  background-position: 0 0;
   pointer-events: none;
-  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.25));
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
 }
 
 .pet-hitbox {

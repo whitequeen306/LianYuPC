@@ -25,13 +25,13 @@
           <span class="launcher-pick__avatar">
             <img v-if="char.avatarUrl" :src="resolveMediaUrl(char.avatarUrl)" :alt="char.name" />
             <el-icon v-else :size="16"><User /></el-icon>
-            <span
-              v-if="unreadCountForCharacter(char.id) > 0"
-              class="launcher-pick__badge"
-            >{{ formatBadgeCount(unreadCountForCharacter(char.id)) }}</span>
           </span>
           <span class="launcher-pick__name">{{ char.name }}</span>
-          <el-icon v-if="openingId === char.id" class="is-loading" :size="14"><Loading /></el-icon>
+          <span
+            v-if="unreadCountForCharacter(char.id) > 0"
+            class="launcher-pick__badge"
+          >{{ formatBadgeCount(unreadCountForCharacter(char.id)) }}</span>
+          <el-icon v-if="openingId === char.id" class="is-loading launcher-pick__loading-icon" :size="14"><Loading /></el-icon>
         </button>
       </li>
     </ul>
@@ -250,27 +250,29 @@ body:has(.launcher-pick),
 }
 
 .launcher-pick__badge {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
+  flex-shrink: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
   border-radius: 999px;
   background: #ff4d4f;
   color: #fff;
   font-size: 10px;
   font-weight: 700;
-  line-height: 16px;
+  line-height: 18px;
   text-align: center;
-  box-shadow: 0 0 0 2px rgba(14, 14, 22, 0.94);
 }
 
 .launcher-pick__name {
   flex: 1;
+  min-width: 0;
   font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.launcher-pick__loading-icon {
+  flex-shrink: 0;
 }
 </style>

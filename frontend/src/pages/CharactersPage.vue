@@ -540,8 +540,8 @@ async function handleGenerateCharacter() {
     form.name = draft.name || form.name
     form.promptTemplate = draft.promptTemplate || form.promptTemplate
     form.age = draft.age && draft.age !== '未知' ? draft.age : form.age
-    form.gender = draft.gender && draft.gender !== '未知' ? draft.gender : form.gender
-    form.speakingStyle = draft.speakingStyle || form.speakingStyle
+    form.gender = fixUtf8Mojibake(draft.gender && draft.gender !== '未知' ? draft.gender : form.gender)
+    form.speakingStyle = fixUtf8Mojibake(draft.speakingStyle || form.speakingStyle)
     ElMessage.success('角色设定已生成并填充')
   } catch {
     // 错误提示由全局 http 拦截器处理

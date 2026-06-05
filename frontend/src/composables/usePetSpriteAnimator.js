@@ -1,16 +1,47 @@
 import { onMounted, onUnmounted } from 'vue'
 import { PET_ANIMATIONS, PET_FRAME_H, PET_FRAME_W } from '@/constants/petSprite'
 
+/** 待机时随机小动作（权重越高越常见） */
+const IDLE_VARIETY = [
+  { name: 'waiting', weight: 3, loop: true },
+  { name: 'running', weight: 2, loop: true },
+  { name: 'review', weight: 2, loop: false },
+  { name: 'wave', weight: 1, loop: false },
+  { name: 'jump', weight: 1, loop: false },
+  { name: 'failed', weight: 1, loop: false },
+]
+
+function pickIdleVariety() {
+  const total = IDLE_VARIETY.reduce((sum, item) => sum + item.weight, 0)
+  let roll = Math.random() * total
+  for (const item of IDLE_VARIETY) {
+    roll -= item.weight
+    if (roll <= 0) return item
+  }
+  return IDLE_VARIETY[0]
+}
+
 /**
- * JS 驱动 spritesheet 逐帧播放，避免 CSS steps 踩空帧/重叠。
+ * Canvas 逐帧绘制 spritesheet，避免 CSS background 在 Electron 透明窗口出现黑底/晕影。
  */
-export function usePetSpriteAnimator(petRef) {
+export function usePetSpriteAnimator(canvasRef) {
   let timer = null
   let frame = 0
   let currentName = 'idle'
   let animDef = PET_ANIMATIONS.idle
+  let spriteImage = null
   let onCompleteCb = null
   let idleVarietyTimer = null
+  let ctx = null
+
+  function ensureCtx() {
+    const canvas = canvasRef.value
+    if (!canvas) return null
+    if (!ctx) {
+      ctx = canvas.getContext('2d', { alpha: true, desynchronized: true })
+    }
+    return ctx
+  }
 
   function clearTimer() {
     if (timer) {
@@ -20,9 +51,26 @@ export function usePetSpriteAnimator(petRef) {
   }
 
   function renderFrame() {
-    const el = petRef.value
-    if (!el || !animDef) return
-    el.style.backgroundPosition = `-${frame * PET_FRAME_W}px -${animDef.row * PET_FRAME_H}px`
+    const canvas = canvasRef.value
+    const context = ensureCtx()
+    if (!canvas || !context || !animDef || !spriteImage) return
+    context.clearRect(0, 0, PET_FRAME_W, PET_FRAME_H)
+    context.drawImage(
+      spriteImage,
+      frame * PET_FRAME_W,
+      animDef.row * PET_FRAME_H,
+      PET_FRAME_W,
+      PET_FRAME_H,
+      0,
+      0,
+      PET_FRAME_W,
+      PET_FRAME_H,
+    )
+  }
+
+  function setSpriteImage(img) {
+    spriteImage = img
+    renderFrame()
   }
 
   function playAnim(name, { loop, onComplete } = {}) {
@@ -45,7 +93,9 @@ export function usePetSpriteAnimator(petRef) {
           const cb = onCompleteCb
           onCompleteCb = null
           cb?.()
-          playAnim('idle')
+          if (currentName === name) {
+            playAnim('idle')
+          }
           return
         }
       }
@@ -53,13 +103,24 @@ export function usePetSpriteAnimator(petRef) {
     }, 1000 / def.fps)
   }
 
+  function playAnimOnce(name, onComplete) {
+    playAnim(name, { loop: false, onComplete: onComplete || (() => playAnim('idle')) })
+  }
+
+  function returnToIdle() {
+    playAnim('idle')
+  }
+
   function scheduleIdleVariety() {
     clearTimeout(idleVarietyTimer)
-    const delay = 12000 + Math.random() * 18000
+    const delay = 6000 + Math.random() * 10000
     idleVarietyTimer = setTimeout(() => {
-      if (currentName === 'idle') {
-        playAnim(Math.random() > 0.5 ? 'review' : 'waiting')
+      if (currentName !== 'idle') {
+        scheduleIdleVariety()
+        return
       }
+      const pick = pickIdleVariety()
+      playAnim(pick.name, { loop: pick.loop })
       scheduleIdleVariety()
     }, delay)
   }
@@ -72,7 +133,8 @@ export function usePetSpriteAnimator(petRef) {
   onUnmounted(() => {
     clearTimer()
     clearTimeout(idleVarietyTimer)
+    ctx = null
   })
 
-  return { playAnim }
+  return { playAnim, playAnimOnce, returnToIdle, setSpriteImage }
 }

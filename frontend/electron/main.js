@@ -9,6 +9,7 @@ import {
   screen,
   session,
   net,
+  Notification,
 } from 'electron'
 import path from 'path'
 import fs from 'fs'
@@ -312,9 +313,28 @@ function expandLauncherForToast() {
   }, 4800)
 }
 
+function showLauncherMessageNotification(payload = {}) {
+  if (!Notification.isSupported()) return
+  const name = String(payload.characterName || '她').trim() || '她'
+  const body = `${name}给你发消息了哦`
+  const notification = new Notification({
+    title: '恋语',
+    body,
+    silent: false,
+  })
+  notification.on('click', () => {
+    const hash = payload.conversationId
+      ? `#/app/chat/${payload.conversationId}`
+      : '#/app'
+    showMainWindow(hash)
+  })
+  notification.show()
+}
+
 function notifyLauncherWindows(payload) {
   if (!shouldPulseLauncherForMessage()) return
   expandLauncherForToast()
+  showLauncherMessageNotification(payload)
   if (launcherWindow && !launcherWindow.isDestroyed() && launcherWindow.isVisible()) {
     launcherWindow.webContents.send('desktop:launcher-new-message', payload)
   }
@@ -441,12 +461,14 @@ function createLauncherWindow() {
   attachWindowLogging(win, 'launcher')
 
   win.once('ready-to-show', () => {
+    win.setBackgroundColor('#00000000')
     clampLauncherToWorkArea()
     win.show()
     setLauncherMousePassthrough(true)
   })
 
   win.webContents.on('did-finish-load', () => {
+    win.setBackgroundColor('#00000000')
     setLauncherMousePassthrough(true)
   })
 
@@ -728,6 +750,37 @@ function registerIpcHandlers() {
     const next = launcherWindow.getBounds()
     writeLauncherPosition(next.x, next.y)
     repositionPickerNearLauncher()
+  })
+
+  // 同步 IPC：拖动时逐帧位移，避免 invoke 排队导致窗口跟不上鼠标（尤其向右拖）
+  ipcMain.on('desktop:launcher-drag-start', () => {
+    launcherIsDragging = true
+    if (launcherWindow && !launcherWindow.isDestroyed()) {
+      launcherWindow.setBackgroundColor('#00000000')
+    }
+    setLauncherMousePassthrough(false)
+  })
+
+  ipcMain.on('desktop:launcher-drag-move', (_event, { dx, dy }) => {
+    if (!launcherWindow || launcherWindow.isDestroyed()) return
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return
+    if (dx === 0 && dy === 0) return
+    launcherIsDragging = true
+    const bounds = launcherWindow.getBounds()
+    launcherWindow.setPosition(Math.round(bounds.x + dx), Math.round(bounds.y + dy))
+  })
+
+  ipcMain.on('desktop:launcher-drag-end', () => {
+    if (!launcherWindow || launcherWindow.isDestroyed()) {
+      launcherIsDragging = false
+      return
+    }
+    launcherIsDragging = false
+    const bounds = launcherWindow.getBounds()
+    writeLauncherPosition(bounds.x, bounds.y)
+    clampLauncherToWorkArea()
+    repositionPickerNearLauncher()
+    setLauncherMousePassthrough(true)
   })
 
   ipcMain.handle('desktop:set-launcher-screen-position', (_event, { x, y }) => {

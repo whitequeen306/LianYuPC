@@ -3,8 +3,9 @@ import path from 'path'
 import fs from 'fs'
 
 const ALLOWED_PET_IDS = [
-  'raiden', 'ayaka', 'furina', 'ganyu', 'hu-tao', 'klee',
-  'anya', 'lappland', 'new-covenant-exusiai',
+  'raiden', 'ayaka', 'furina', 'ganyu', 'hu-tao', 'klee', 'yoimiya',
+  'anya', 'conan', 'kid', 'shinchan', 'baobao',
+  'lappland', 'chen', 'new-covenant-exusiai', 'march-7th',
 ]
 
 const DEFAULTS = {

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lianyu.common.base.ErrorCode;
 import com.lianyu.common.constant.AiConstants;
 import com.lianyu.common.exception.BusinessException;
+import com.lianyu.common.util.CharacterSettingsUtils;
 import com.lianyu.common.util.OutboundUrlValidator;
 import com.lianyu.common.util.UserInputSanitizer;
 import com.lianyu.service.dto.AiChatRequest;
@@ -337,11 +338,11 @@ public class AiChatService {
         }
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("name", valueOrDefault(root, "name", "未命名角色"));
-        result.put("age", valueOrDefault(root, "age", "未知"));
-        result.put("gender", valueOrDefault(root, "gender", "未知"));
-        result.put("speakingStyle", valueOrDefault(root, "speakingStyle", "温柔"));
-        result.put("promptTemplate", valueOrDefault(root, "promptTemplate", content.trim()));
+        result.put("name", CharacterSettingsUtils.fixUtf8Mojibake(valueOrDefault(root, "name", "未命名角色")));
+        result.put("age", CharacterSettingsUtils.fixUtf8Mojibake(valueOrDefault(root, "age", "未知")));
+        result.put("gender", CharacterSettingsUtils.fixUtf8Mojibake(valueOrDefault(root, "gender", "未知")));
+        result.put("speakingStyle", CharacterSettingsUtils.fixUtf8Mojibake(valueOrDefault(root, "speakingStyle", "温柔")));
+        result.put("promptTemplate", CharacterSettingsUtils.fixUtf8Mojibake(valueOrDefault(root, "promptTemplate", content.trim())));
         result.put("provider", vault.getProvider());
         result.put("model", model);
         return result;

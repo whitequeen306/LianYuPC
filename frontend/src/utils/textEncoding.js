@@ -1,5 +1,6 @@
 /**
- * UTF-8 字节被误按 Windows-1252 / Latin-1 显示时的乱码修复（如「女」→「å¥³」，「温柔」→「æ¸©æŸ"」）。
+ * UTF-8 字节被误按 Windows-1252 / Latin-1 显示时的乱码修复。
+ * 支持单重/双重编码，以及「Ã¦Â¸Â©Ã¦Â¸Â柔」这类混合串。
  */
 
 /** Windows-1252 中 0x80–0x9F 等非 Latin-1 字节对应的 Unicode 码点 → 字节值 */
@@ -28,22 +29,90 @@ function encodeWindows1252(value) {
 }
 
 function looksLikeMojibake(value) {
-  if (/[\u4e00-\u9fff]/.test(value)) return false
   return /[\u00c0-\u00ff\u0152\u0153\u0160\u0161\u0178\u017d\u017e\u2013-\u201e\u2026]/.test(value)
+}
+
+function tryDecodeOnce(value, { fatal = true } = {}) {
+  try {
+    const bytes = encodeWindows1252(value)
+    if (!bytes) return null
+    const decoded = new TextDecoder('utf-8', { fatal }).decode(bytes)
+    if (!decoded) return null
+    if (fatal && decoded.includes('\uFFFD')) return null
+    return decoded.replace(/\uFFFD/g, '')
+  } catch {
+    return null
+  }
+}
+
+function fixMojibakeChunk(text, hasTrailingCjk = false) {
+  let current = text
+  for (let i = 0; i < 4; i++) {
+    if (!looksLikeMojibake(current)) break
+    const decoded = tryDecodeOnce(current, { fatal: false })
+    if (!decoded || decoded === current) break
+    current = decoded
+  }
+  if (!looksLikeMojibake(current)) return current
+
+  if (!hasTrailingCjk) return current
+
+  let result = ''
+  let rest = text
+  while (rest && looksLikeMojibake(rest)) {
+    let progressed = false
+    for (let len = rest.length; len >= 3; len--) {
+      const prefix = rest.slice(0, len)
+      const fixed = fixMojibakeChunk(prefix, false)
+      if (fixed !== prefix && !looksLikeMojibake(fixed)) {
+        result += fixed
+        rest = rest.slice(len)
+        progressed = true
+        break
+      }
+    }
+    if (!progressed) break
+  }
+  return result || current
 }
 
 export function fixUtf8Mojibake(value) {
   if (!value || typeof value !== 'string') return value
-  if (!looksLikeMojibake(value)) return value
-  try {
-    const bytes = encodeWindows1252(value)
-    if (!bytes) return value
-    const decoded = new TextDecoder('utf-8').decode(bytes)
-    if (decoded && /[\u4e00-\u9fff]/.test(decoded) && !decoded.includes('\uFFFD')) {
-      return decoded
+
+  if (/[\u4e00-\u9fff]/.test(value) && looksLikeMojibake(value)) {
+    const parts = value.split(/([\u4e00-\u9fff]+)/)
+    let out = ''
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i]
+      if (!part) continue
+      if (/^[\u4e00-\u9fff]+$/.test(part)) {
+        out += part
+        continue
+      }
+      const nextPart = parts[i + 1] || ''
+      const hasTrailingCjk = /^[\u4e00-\u9fff]+$/.test(nextPart)
+      out += fixMojibakeChunk(part, hasTrailingCjk)
     }
-  } catch {
-    // ignore
+    return out
   }
-  return value
+
+  return fixMojibakeChunk(value, false)
+}
+
+export function sanitizeCharacterSettings(settings) {
+  if (!settings || typeof settings !== 'object') return settings
+  const out = {}
+  for (const [key, value] of Object.entries(settings)) {
+    out[key] = typeof value === 'string' ? fixUtf8Mojibake(value) : value
+  }
+  return out
+}
+
+export function sanitizeCharacter(character) {
+  if (!character || typeof character !== 'object') return character
+  return {
+    ...character,
+    name: typeof character.name === 'string' ? fixUtf8Mojibake(character.name) : character.name,
+    settings: sanitizeCharacterSettings(character.settings),
+  }
 }

@@ -43,39 +43,37 @@ public final class CharacterSettingsUtils {
     }
 
     /**
-     * 修复 UTF-8 字节被误按 Windows-1252 / Latin-1 解码导致的乱码。
+     * 修复 UTF-8 字节被误按 Windows-1252 / Latin-1 解码导致的乱码（含双重编码，如「女」→「å¥³」→「Ã¥Â¥Â³」）。
      */
     public static String fixUtf8Mojibake(String value) {
-        if (StrUtil.isBlank(value) || looksLikeValidCjk(value) || !looksLikeUtf8Mojibake(value)) {
+        if (StrUtil.isBlank(value)) {
             return value;
         }
-        try {
-            byte[] bytes = value.getBytes(WINDOWS_1252);
-            String decoded = StandardCharsets.UTF_8.newDecoder()
-                    .onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT)
-                    .decode(ByteBuffer.wrap(bytes))
-                    .toString();
-            if (StrUtil.isNotBlank(decoded) && looksLikeValidCjk(decoded)) {
-                return decoded;
+        String current = value;
+        for (int attempt = 0; attempt < 4; attempt++) {
+            if (!looksLikeUtf8Mojibake(current)) {
+                break;
             }
-        } catch (CharacterCodingException ignored) {
-            // keep original
-        }
-        return value;
-    }
-
-    private static boolean looksLikeValidCjk(String value) {
-        for (int i = 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            if (c >= 0x4E00 && c <= 0x9FFF) {
-                return true;
+            try {
+                byte[] bytes = current.getBytes(WINDOWS_1252);
+                String decoded = StandardCharsets.UTF_8.newDecoder()
+                        .onMalformedInput(CodingErrorAction.REPORT)
+                        .onUnmappableCharacter(CodingErrorAction.REPORT)
+                        .decode(ByteBuffer.wrap(bytes))
+                        .toString();
+                if (StrUtil.isBlank(decoded) || decoded.equals(current)) {
+                    break;
+                }
+                current = decoded;
+            } catch (CharacterCodingException ignored) {
+                break;
             }
         }
-        return false;
+        return current;
     }
 
-    public static Map<String, Object> sanitizeSettingsForResponse(Map<String, Object> settings) {
+    /** 读/写 settings 前统一规范化字符串字段 */
+    public static Map<String, Object> normalizeSettings(Map<String, Object> settings) {
         if (MapUtil.isEmpty(settings)) {
             return settings;
         }
@@ -89,6 +87,11 @@ public final class CharacterSettingsUtils {
             }
         }
         return sanitized;
+    }
+
+    /** @deprecated 使用 {@link #normalizeSettings} */
+    public static Map<String, Object> sanitizeSettingsForResponse(Map<String, Object> settings) {
+        return normalizeSettings(settings);
     }
 
     private static boolean looksLikeUtf8Mojibake(String value) {

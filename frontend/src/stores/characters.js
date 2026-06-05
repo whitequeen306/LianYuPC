@@ -6,6 +6,7 @@ import {
   deleteCharacter as apiDeleteCharacter,
   updateCharacter as apiUpdateCharacter
 } from '@/api/character'
+import { sanitizeCharacter, sanitizeCharacterSettings } from '@/utils/textEncoding'
 
 /** 会话内列表缓存 TTL（毫秒），写操作会立即失效 */
 const STALE_MS = 60_000
@@ -30,7 +31,7 @@ export const useCharactersStore = defineStore('characters', () => {
     loading.value = true
     try {
       const data = await listCharacters()
-      list.value = Array.isArray(data) ? data : []
+      list.value = Array.isArray(data) ? data.map(sanitizeCharacter) : []
       lastFetchedAt = Date.now()
       return list.value
     } finally {
@@ -39,10 +40,15 @@ export const useCharactersStore = defineStore('characters', () => {
   }
 
   async function create(data) {
-    const created = await apiCreateCharacter(data)
+    const payload = {
+      ...data,
+      name: data?.name,
+      settings: sanitizeCharacterSettings(data?.settings),
+    }
+    const created = await apiCreateCharacter(payload)
     invalidate()
     await fetchList({ force: true })
-    return created
+    return sanitizeCharacter(created)
   }
 
   async function remove(id) {
@@ -52,22 +58,27 @@ export const useCharactersStore = defineStore('characters', () => {
   }
 
   async function update(id, data) {
-    const updated = await apiUpdateCharacter(id, data)
+    const payload = data?.settings
+      ? { ...data, settings: sanitizeCharacterSettings(data.settings) }
+      : data
+    const updated = await apiUpdateCharacter(id, payload)
+    const normalized = sanitizeCharacter(updated)
     const idx = list.value.findIndex(c => c.id === id)
     if (idx >= 0) {
-      list.value[idx] = { ...list.value[idx], ...updated }
+      list.value[idx] = { ...list.value[idx], ...normalized }
     }
     lastFetchedAt = Date.now()
-    return updated
+    return normalized
   }
 
   function upsertLocal(character) {
     if (!character?.id) return
-    const idx = list.value.findIndex(c => c.id === character.id)
+    const normalized = sanitizeCharacter(character)
+    const idx = list.value.findIndex(c => c.id === normalized.id)
     if (idx >= 0) {
-      list.value[idx] = { ...list.value[idx], ...character }
+      list.value[idx] = { ...list.value[idx], ...normalized }
     } else {
-      list.value = [character, ...list.value]
+      list.value = [normalized, ...list.value]
     }
     lastFetchedAt = Date.now()
   }
