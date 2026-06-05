@@ -1,12 +1,9 @@
-import { resolveStaticAsset } from '@/utils/media.js'
-
 /** Codex 8×9 atlas: 1536×1872, cell 192×208 */
-export const PET_SPRITE = resolveStaticAsset('pet/raiden_spritesheet.webp')
 export const PET_FRAME_W = 192
 export const PET_FRAME_H = 208
 export const PET_COLS = 8
 
-/** Row layout per Codex pet spec */
+/** Row layout per Codex pet spec（所有标准桌宠共用） */
 export const PET_ANIMATIONS = {
   idle: { row: 0, frames: 6, fps: 6, loop: true },
   'run-right': { row: 1, frames: 8, fps: 12, loop: true },

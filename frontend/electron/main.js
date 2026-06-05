@@ -604,6 +604,9 @@ function registerIpcHandlers() {
     } else if (next.showLauncherLogo && mainWindow && !mainWindow.isVisible()) {
       showLauncherWindow()
     }
+    if (partial?.launcherPetId != null && launcherWindow && !launcherWindow.isDestroyed()) {
+      loadRoute(launcherWindow, '/launcher')
+    }
     if (tray) {
       tray.setContextMenu(buildTrayMenu())
     }

@@ -2,11 +2,14 @@ import { app } from 'electron'
 import path from 'path'
 import fs from 'fs'
 
+const ALLOWED_PET_IDS = ['raiden', 'ayaka', 'furina', 'ganyu', 'hu-tao', 'klee']
+
 const DEFAULTS = {
   closeToTray: true,
   showLauncherLogo: true,
   launchAtLogin: false,
   closeHintShown: false,
+  launcherPetId: 'raiden',
 }
 
 function settingsPath() {
@@ -23,7 +26,11 @@ export function readDesktopSettings() {
 }
 
 export function writeDesktopSettings(partial) {
-  const next = { ...readDesktopSettings(), ...partial }
+  const sanitized = { ...(partial || {}) }
+  if (sanitized.launcherPetId && !ALLOWED_PET_IDS.includes(sanitized.launcherPetId)) {
+    delete sanitized.launcherPetId
+  }
+  const next = { ...readDesktopSettings(), ...sanitized }
   fs.mkdirSync(path.dirname(settingsPath()), { recursive: true })
   fs.writeFileSync(settingsPath(), JSON.stringify(next, null, 2))
   applyLaunchAtLogin(next.launchAtLogin)

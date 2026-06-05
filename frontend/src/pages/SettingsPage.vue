@@ -35,6 +35,23 @@
           </div>
           <el-switch v-model="desktopForm.launchAtLogin" @change="onDesktopChange" />
         </div>
+        <div class="desktop-settings__pet-block">
+          <div class="desktop-settings__label">桌面桌宠</div>
+          <div class="desktop-settings__hint">关闭主窗口后显示的角色像素桌宠，点击可快速开聊</div>
+          <div class="pet-picker">
+            <button
+              v-for="pet in petCatalog"
+              :key="pet.id"
+              type="button"
+              class="pet-picker__item"
+              :class="{ 'is-active': desktopForm.launcherPetId === pet.id }"
+              @click="selectPet(pet.id)"
+            >
+              <img :src="pet.previewUrl" :alt="petDisplayName(pet)" class="pet-picker__img" />
+              <span class="pet-picker__name">{{ petDisplayName(pet) }}</span>
+            </button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -200,7 +217,9 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useProvidersStore } from '@/stores/providers'
 import { useDesktopStore } from '@/stores/desktop'
+import { useSettingsStore } from '@/stores/settings'
 import { isElectronApp } from '@/utils/electron'
+import { PET_CATALOG, getPetPreviewUrl } from '@/constants/petCatalog'
 
 const { t } = useI18n()
 import { Plus, Edit, Delete, RefreshRight, Loading, Connection } from '@element-plus/icons-vue'
@@ -208,11 +227,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 
 const providersStore = useProvidersStore()
 const desktopStore = useDesktopStore()
+const settingsStore = useSettingsStore()
 const isElectron = isElectronApp()
+const petCatalog = PET_CATALOG.map(p => ({ ...p, previewUrl: getPetPreviewUrl(p) }))
 const desktopForm = reactive({
   closeToTray: true,
   showLauncherLogo: true,
   launchAtLogin: false,
+  launcherPetId: 'raiden',
 })
 const dialogVisible = ref(false)
 const editingVault = ref(null)
@@ -275,14 +297,30 @@ onMounted(async () => {
     desktopForm.closeToTray = desktopStore.closeToTray
     desktopForm.showLauncherLogo = desktopStore.showLauncherLogo
     desktopForm.launchAtLogin = desktopStore.launchAtLogin
+    desktopForm.launcherPetId = desktopStore.launcherPetId
   }
 })
+
+function petDisplayName(pet) {
+  const lang = settingsStore.uiLanguage
+  if (lang === 'en') return pet.nameEn
+  if (lang === 'ja') return pet.nameJa
+  return pet.nameZh
+}
+
+async function selectPet(id) {
+  if (desktopForm.launcherPetId === id) return
+  desktopForm.launcherPetId = id
+  await onDesktopChange()
+  ElMessage.success('桌宠已切换')
+}
 
 async function onDesktopChange() {
   await desktopStore.persist({
     closeToTray: desktopForm.closeToTray,
     showLauncherLogo: desktopForm.showLauncherLogo,
     launchAtLogin: desktopForm.launchAtLogin,
+    launcherPetId: desktopForm.launcherPetId,
   })
 }
 
@@ -478,6 +516,56 @@ async function handleFetchModels(provider) {
   color: $color-text-muted;
   font-size: $font-size-xs;
   margin-top: 2px;
+}
+
+.desktop-settings__pet-block {
+  padding-top: $space-4;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.pet-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: $space-3;
+  margin-top: $space-4;
+}
+
+.pet-picker__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: $space-2;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.15s ease;
+
+  &:hover {
+    background: rgba($color-pink-rgb, 0.08);
+    transform: translateY(-2px);
+  }
+
+  &.is-active {
+    border-color: rgba($color-pink-rgb, 0.65);
+    background: rgba($color-pink-rgb, 0.12);
+    box-shadow: 0 0 0 1px rgba($color-pink-rgb, 0.2);
+  }
+}
+
+.pet-picker__img {
+  width: 64px;
+  height: 70px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.pet-picker__name {
+  font-size: 11px;
+  color: $color-text-secondary;
+  text-align: center;
+  line-height: 1.3;
 }
 
 // Provider grid

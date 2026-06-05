@@ -9,7 +9,7 @@
       <div
         ref="petRef"
         class="pet-body"
-        :style="{ backgroundImage: `url(${PET_SPRITE})` }"
+        :style="{ backgroundImage: `url(${petSpriteUrl})` }"
         title="点击快速聊天，按住拖动"
         @pointerdown.prevent="onPointerDown"
       />
@@ -22,13 +22,14 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { gsap } from 'gsap'
 import { getElectronAPI } from '@/utils/electron'
-import { PET_SPRITE } from '@/constants/petSprite'
+import { DEFAULT_PET_ID, getPetById, getPetSpriteUrl } from '@/constants/petCatalog'
 import { usePetSpriteAnimator } from '@/composables/usePetSpriteAnimator'
 
 const { t } = useI18n()
 const containerRef = ref(null)
 const wrapRef = ref(null)
 const petRef = ref(null)
+const petSpriteUrl = ref(getPetSpriteUrl(getPetById(DEFAULT_PET_ID)))
 const pointerState = ref(null)
 const toastText = ref('')
 const dragging = ref(false)
@@ -104,7 +105,11 @@ function showNewMessageHint(payload = {}) {
   }, 4200)
 }
 
-onMounted(() => {
+onMounted(async () => {
+  const settings = await getElectronAPI()?.getDesktopSettings?.()
+  if (settings?.launcherPetId) {
+    petSpriteUrl.value = getPetSpriteUrl(getPetById(settings.launcherPetId))
+  }
   if (wrapRef.value) {
     gsapCtx = gsap.context(() => {
       gsap.to(wrapRef.value, {
