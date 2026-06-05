@@ -2,7 +2,10 @@ import { app } from 'electron'
 import path from 'path'
 import fs from 'fs'
 
-const ALLOWED_PET_IDS = ['raiden', 'ayaka', 'furina', 'ganyu', 'hu-tao', 'klee']
+const ALLOWED_PET_IDS = [
+  'raiden', 'ayaka', 'furina', 'ganyu', 'hu-tao', 'klee',
+  'anya', 'lappland', 'new-covenant-exusiai',
+]
 
 const DEFAULTS = {
   closeToTray: true,

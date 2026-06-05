@@ -185,9 +185,48 @@ function attachWindowLogging(win, label) {
 function defaultLauncherPosition() {
   const area = screen.getPrimaryDisplay().workArea
   return {
-    x: area.x + area.width - LAUNCHER_COMPACT.width - 8,
-    y: area.y + area.height - LAUNCHER_COMPACT.height - 8,
+    x: Math.round(area.x + (area.width - LAUNCHER_COMPACT.width) / 2),
+    y: Math.round(area.y + (area.height - LAUNCHER_COMPACT.height) / 2),
   }
+}
+
+function resetLauncherCompactSize() {
+  if (!launcherWindow || launcherWindow.isDestroyed()) return
+  clearTimeout(launcherSizeRestoreTimer)
+  const b = launcherWindow.getBounds()
+  if (b.width === LAUNCHER_COMPACT.width && b.height === LAUNCHER_COMPACT.height) return
+  launcherWindow.setBounds({
+    x: b.x + (b.width - LAUNCHER_COMPACT.width),
+    y: b.y + (b.height - LAUNCHER_COMPACT.height),
+    width: LAUNCHER_COMPACT.width,
+    height: LAUNCHER_COMPACT.height,
+  })
+}
+
+function clampLauncherToWorkArea() {
+  if (!launcherWindow || launcherWindow.isDestroyed()) return
+  const bounds = launcherWindow.getBounds()
+  const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y })
+  const area = display.workArea
+  let x = bounds.x
+  let y = bounds.y
+  if (x + bounds.width > area.x + area.width) x = area.x + area.width - bounds.width
+  if (y + bounds.height > area.y + area.height) y = area.y + area.height - bounds.height
+  if (x < area.x) x = area.x
+  if (y < area.y) y = area.y
+  if (x !== bounds.x || y !== bounds.y) {
+    launcherWindow.setPosition(Math.round(x), Math.round(y))
+    writeLauncherPosition(x, y)
+  }
+}
+
+function centerLauncherOnScreen() {
+  if (!launcherWindow || launcherWindow.isDestroyed()) return
+  resetLauncherCompactSize()
+  const pos = defaultLauncherPosition()
+  launcherWindow.setPosition(pos.x, pos.y)
+  writeLauncherPosition(pos.x, pos.y)
+  setLauncherMousePassthrough(true)
 }
 
 function ensureTray() {
@@ -221,7 +260,16 @@ function buildTrayMenu() {
 }
 
 const LAUNCHER_COMPACT = { width: 192, height: 208 }
-const LAUNCHER_EXPANDED = { width: 320, height: 280 }
+const LAUNCHER_EXPANDED = { width: 200, height: 268 }
+
+function setLauncherMousePassthrough(ignore) {
+  if (!launcherWindow || launcherWindow.isDestroyed()) return
+  if (ignore) {
+    launcherWindow.setIgnoreMouseEvents(true, { forward: true })
+  } else {
+    launcherWindow.setIgnoreMouseEvents(false)
+  }
+}
 let launcherSizeRestoreTimer = null
 
 function shouldPulseLauncherForMessage() {
@@ -239,6 +287,7 @@ function expandLauncherForToast() {
     width: LAUNCHER_EXPANDED.width,
     height: LAUNCHER_EXPANDED.height,
   })
+  clampLauncherToWorkArea()
   clearTimeout(launcherSizeRestoreTimer)
   launcherSizeRestoreTimer = setTimeout(() => {
     if (!launcherWindow || launcherWindow.isDestroyed()) return
@@ -249,6 +298,9 @@ function expandLauncherForToast() {
       width: LAUNCHER_COMPACT.width,
       height: LAUNCHER_COMPACT.height,
     })
+    setLauncherMousePassthrough(true)
+    clampLauncherToWorkArea()
+    repositionPickerNearLauncher()
   }, 4800)
 }
 
@@ -269,12 +321,21 @@ function hideLauncherWindow() {
   }
 }
 
-function showLauncherWindow() {
+function showLauncherWindow(options = {}) {
+  const { center = false } = options
   const settings = readDesktopSettings()
   if (!settings.showLauncherLogo) return
   if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) return
   const win = ensureLauncherWindow()
-  win?.show()
+  if (!win) return
+  resetLauncherCompactSize()
+  if (center) {
+    centerLauncherOnScreen()
+  } else {
+    clampLauncherToWorkArea()
+  }
+  win.show()
+  setLauncherMousePassthrough(true)
 }
 
 function showMainWindow(hash = '') {
@@ -288,6 +349,7 @@ function showMainWindow(hash = '') {
     mainWindow.show()
   }
   mainWindow.focus()
+  closeCharacterPicker()
   hideLauncherWindow()
 }
 
@@ -295,7 +357,7 @@ function hideMainToTray() {
   if (!mainWindow || mainWindow.isDestroyed()) return
   mainWindow.hide()
   ensureTray()
-  showLauncherWindow()
+  showLauncherWindow({ center: true })
 }
 
 function createMainWindow() {
@@ -370,15 +432,25 @@ function createLauncherWindow() {
   attachWindowLogging(win, 'launcher')
 
   win.once('ready-to-show', () => {
+    clampLauncherToWorkArea()
     win.show()
+    setLauncherMousePassthrough(true)
+  })
+
+  win.webContents.on('did-finish-load', () => {
+    setLauncherMousePassthrough(true)
   })
 
   let moveTimer = null
   win.on('moved', () => {
+    if (pickerWindow && !pickerWindow.isDestroyed() && pickerWindow.isVisible()) {
+      repositionPickerNearLauncher()
+    }
     if (moveTimer) clearTimeout(moveTimer)
     moveTimer = setTimeout(() => {
       const bounds = win.getBounds()
       writeLauncherPosition(bounds.x, bounds.y)
+      clampLauncherToWorkArea()
       repositionPickerNearLauncher()
     }, 200)
   })
@@ -410,20 +482,24 @@ function repositionPickerNearLauncher() {
   const launcherBounds = launcherWindow.getBounds()
   const pickerBounds = pickerWindow.getBounds()
   const display = screen.getDisplayNearestPoint({
-    x: launcherBounds.x,
-    y: launcherBounds.y,
+    x: launcherBounds.x + launcherBounds.width / 2,
+    y: launcherBounds.y + launcherBounds.height / 2,
   })
   const area = display.workArea
+  const gap = 8
 
-  let x = launcherBounds.x - pickerBounds.width - 8
-  let y = launcherBounds.y
-  if (x < area.x) {
-    x = launcherBounds.x + launcherBounds.width + 8
+  let x = launcherBounds.x + Math.round((launcherBounds.width - pickerBounds.width) / 2)
+  let y = launcherBounds.y - pickerBounds.height - gap
+  if (y < area.y) {
+    y = launcherBounds.y + launcherBounds.height + gap
   }
   if (y + pickerBounds.height > area.y + area.height) {
     y = area.y + area.height - pickerBounds.height
   }
-  if (y < area.y) y = area.y
+  if (x + pickerBounds.width > area.x + area.width) {
+    x = area.x + area.width - pickerBounds.width
+  }
+  if (x < area.x) x = area.x
   pickerWindow.setPosition(Math.round(x), Math.round(y))
 }
 
@@ -476,6 +552,7 @@ function openCharacterPicker(options = {}) {
     win.show()
     win.focus()
   }
+  repositionPickerNearLauncher()
 }
 
 function toggleCharacterPicker(options = {}) {
@@ -595,6 +672,10 @@ function registerIpcHandlers() {
     quitApplication()
   })
 
+  ipcMain.handle('desktop:set-launcher-mouse-passthrough', (_event, ignore) => {
+    setLauncherMousePassthrough(!!ignore)
+  })
+
   ipcMain.handle('desktop:get-settings', () => readDesktopSettings())
 
   ipcMain.handle('desktop:set-settings', (_event, partial) => {
@@ -605,7 +686,9 @@ function registerIpcHandlers() {
       showLauncherWindow()
     }
     if (partial?.launcherPetId != null && launcherWindow && !launcherWindow.isDestroyed()) {
-      loadRoute(launcherWindow, '/launcher')
+      resetLauncherCompactSize()
+      clampLauncherToWorkArea()
+      launcherWindow.webContents.send('desktop:launcher-pet-changed', partial.launcherPetId)
     }
     if (tray) {
       tray.setContextMenu(buildTrayMenu())
@@ -634,6 +717,19 @@ function registerIpcHandlers() {
     launcherWindow.setPosition(Math.round(bounds.x + dx), Math.round(bounds.y + dy))
     const next = launcherWindow.getBounds()
     writeLauncherPosition(next.x, next.y)
+    repositionPickerNearLauncher()
+  })
+
+  ipcMain.handle('desktop:set-launcher-screen-position', (_event, { x, y }) => {
+    if (!launcherWindow || launcherWindow.isDestroyed()) return
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return
+    launcherWindow.setPosition(Math.round(x), Math.round(y))
+    writeLauncherPosition(Math.round(x), Math.round(y))
+    repositionPickerNearLauncher()
+  })
+
+  ipcMain.handle('desktop:clamp-launcher-position', () => {
+    clampLauncherToWorkArea()
     repositionPickerNearLauncher()
   })
 }

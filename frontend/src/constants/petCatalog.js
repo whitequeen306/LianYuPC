@@ -59,6 +59,33 @@ export const PET_CATALOG = [
     sprite: 'pet/klee_spritesheet.webp',
     preview: 'pet/klee_idle0.png',
   },
+  {
+    id: 'anya',
+    nameZh: '阿尼亚',
+    nameEn: 'Anya Forger',
+    nameJa: 'アーニャ',
+    series: '间谍过家家',
+    sprite: 'pet/anya_spritesheet.webp',
+    preview: 'pet/anya_idle0.png',
+  },
+  {
+    id: 'lappland',
+    nameZh: '拉普兰德',
+    nameEn: 'Lappland',
+    nameJa: 'ラップランド',
+    series: '明日方舟',
+    sprite: 'pet/lappland_spritesheet.webp',
+    preview: 'pet/lappland_idle0.png',
+  },
+  {
+    id: 'new-covenant-exusiai',
+    nameZh: '新约能天使',
+    nameEn: 'New Covenant Exusiai',
+    nameJa: '新約エクシア',
+    series: '明日方舟',
+    sprite: 'pet/new-covenant-exusiai_spritesheet.webp',
+    preview: 'pet/new-covenant-exusiai_idle0.png',
+  },
 ]
 
 export function isValidPetId(id) {

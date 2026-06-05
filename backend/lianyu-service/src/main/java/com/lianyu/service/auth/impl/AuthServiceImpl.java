@@ -63,7 +63,7 @@ public class AuthServiceImpl implements AuthService {
         User user = userMapper.selectOne(new LambdaQueryWrapper<User>()
                 .eq(User::getUsername, request.getUsername()));
         if (user == null) {
-            throw new BusinessException(ErrorCode.WRONG_PASSWORD);
+            throw new BusinessException(ErrorCode.ACCOUNT_NOT_REGISTERED);
         }
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             throw new BusinessException(ErrorCode.WRONG_PASSWORD);

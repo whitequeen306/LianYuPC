@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { apiBasePath } from '@/utils/runtime'
-import { humanizeError } from '@/utils/errorMessage'
+import { extractApiError, humanizeError } from '@/utils/errorMessage'
 
 const http = axios.create({
   baseURL: apiBasePath(),
@@ -46,9 +46,17 @@ http.interceptors.response.use(
       clearSessionAndGoLanding()
       return Promise.reject(new Error('登录已过期，请重新登录'))
     }
-    const fallback = error.response?.status >= 500
-      ? '服务暂时不可用，请稍后再试'
-      : '网络异常，请检查连接后重试'
+
+    const apiErr = extractApiError(error)
+    let fallback = '请求失败，请稍后再试'
+    if (!error.response) {
+      fallback = '无法连接服务器，请检查网络后重试'
+    } else if (error.response.status >= 500) {
+      fallback = '服务暂时不可用，请稍后再试'
+    } else if (!apiErr?.message) {
+      fallback = '请求失败，请稍后再试'
+    }
+
     const msg = humanizeError(error, fallback)
     const skipToast = error.config?.skipGlobalError === true
     if (!skipToast && error.response?.status !== 401) {

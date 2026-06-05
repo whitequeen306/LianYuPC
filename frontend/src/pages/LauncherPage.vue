@@ -10,6 +10,10 @@
         ref="petRef"
         class="pet-body"
         :style="{ backgroundImage: `url(${petSpriteUrl})` }"
+      />
+      <div
+        ref="hitboxRef"
+        class="pet-hitbox"
         title="点击快速聊天，按住拖动"
         @pointerdown.prevent="onPointerDown"
       />
@@ -29,6 +33,7 @@ const { t } = useI18n()
 const containerRef = ref(null)
 const wrapRef = ref(null)
 const petRef = ref(null)
+const hitboxRef = ref(null)
 const petSpriteUrl = ref(getPetSpriteUrl(getPetById(DEFAULT_PET_ID)))
 const pointerState = ref(null)
 const toastText = ref('')
@@ -36,27 +41,76 @@ const dragging = ref(false)
 let shakeTimer = null
 let toastTimer = null
 let unsubscribeLauncherMessage = null
+let unsubscribePetChanged = null
 let gsapCtx = null
 
 const { playAnim } = usePetSpriteAnimator(petRef)
 
+function applyPetId(petId) {
+  const pet = getPetById(petId)
+  const url = getPetSpriteUrl(pet)
+  const img = new Image()
+  img.onload = () => {
+    petSpriteUrl.value = url
+    playAnim('idle')
+  }
+  img.onerror = () => {
+    petSpriteUrl.value = url
+    playAnim('idle')
+  }
+  img.src = url
+}
+
+function syncMousePassthrough(clientX, clientY) {
+  if (dragging.value || pointerState.value) {
+    getElectronAPI()?.setLauncherMousePassthrough?.(false)
+    return
+  }
+  const target = document.elementFromPoint(clientX, clientY)
+  const hitInteractive = target?.closest?.('.pet-hitbox, .pet-toast')
+  getElectronAPI()?.setLauncherMousePassthrough?.(!hitInteractive)
+}
+
+function onDocumentMouseMove(e) {
+  syncMousePassthrough(e.clientX, e.clientY)
+}
+
+function onDocumentMouseLeave() {
+  getElectronAPI()?.setLauncherMousePassthrough?.(true)
+}
+
+function releasePointerCapture(state) {
+  if (!state || state.pointerId == null || !hitboxRef.value) return
+  try {
+    if (hitboxRef.value.hasPointerCapture(state.pointerId)) {
+      hitboxRef.value.releasePointerCapture(state.pointerId)
+    }
+  } catch {
+    // ignore
+  }
+}
+
 function onPointerDown(e) {
   if (e.button !== 0) return
+  getElectronAPI()?.setLauncherMousePassthrough?.(false)
+  hitboxRef.value?.setPointerCapture?.(e.pointerId)
   pointerState.value = {
     startX: e.screenX,
     startY: e.screenY,
-    lastX: e.screenX,
-    lastY: e.screenY,
+    grabX: e.clientX,
+    grabY: e.clientY,
+    pointerId: e.pointerId,
     moved: false,
   }
   playAnim('waiting', { loop: true })
   window.addEventListener('pointermove', onPointerMove)
-  window.addEventListener('pointerup', onPointerUp, { once: true })
+  window.addEventListener('pointerup', onPointerUp)
+  window.addEventListener('pointercancel', onPointerUp)
 }
 
 function onPointerMove(e) {
   const state = pointerState.value
-  if (!state) return
+  if (!state || e.pointerId !== state.pointerId) return
   const totalDx = e.screenX - state.startX
   const totalDy = e.screenY - state.startY
   if (!state.moved && (Math.abs(totalDx) > 5 || Math.abs(totalDy) > 5)) {
@@ -65,25 +119,30 @@ function onPointerMove(e) {
     playAnim(totalDx >= 0 ? 'run-right' : 'run-left', { loop: true })
   }
   if (state.moved) {
-    const dx = e.screenX - state.lastX
-    const dy = e.screenY - state.lastY
-    state.lastX = e.screenX
-    state.lastY = e.screenY
-    getElectronAPI()?.moveLauncherByDelta?.(dx, dy)
+    getElectronAPI()?.setLauncherScreenPosition?.(
+      e.screenX - state.grabX,
+      e.screenY - state.grabY,
+    )
   }
 }
 
-function onPointerUp() {
-  window.removeEventListener('pointermove', onPointerMove)
+function onPointerUp(e) {
   const state = pointerState.value
+  if (state && e.pointerId !== state.pointerId) return
+  window.removeEventListener('pointermove', onPointerMove)
+  window.removeEventListener('pointerup', onPointerUp)
+  window.removeEventListener('pointercancel', onPointerUp)
+  releasePointerCapture(state)
   dragging.value = false
   if (state && !state.moved) {
     playAnim('wave')
     getElectronAPI()?.toggleCharacterPicker?.()
   } else {
     playAnim('idle')
+    getElectronAPI()?.clampLauncherPosition?.()
   }
   pointerState.value = null
+  if (e) syncMousePassthrough(e.clientX, e.clientY)
 }
 
 function onContextMenu() {
@@ -106,10 +165,11 @@ function showNewMessageHint(payload = {}) {
 }
 
 onMounted(async () => {
+  document.addEventListener('mousemove', onDocumentMouseMove)
+  document.addEventListener('mouseleave', onDocumentMouseLeave)
+  getElectronAPI()?.setLauncherMousePassthrough?.(true)
   const settings = await getElectronAPI()?.getDesktopSettings?.()
-  if (settings?.launcherPetId) {
-    petSpriteUrl.value = getPetSpriteUrl(getPetById(settings.launcherPetId))
-  }
+  applyPetId(settings?.launcherPetId || DEFAULT_PET_ID)
   if (wrapRef.value) {
     gsapCtx = gsap.context(() => {
       gsap.to(wrapRef.value, {
@@ -123,12 +183,16 @@ onMounted(async () => {
     }, containerRef.value)
   }
   unsubscribeLauncherMessage = getElectronAPI()?.onLauncherNewMessage?.(showNewMessageHint)
+  unsubscribePetChanged = getElectronAPI()?.onLauncherPetChanged?.(applyPetId)
 })
 
 onUnmounted(() => {
+  document.removeEventListener('mousemove', onDocumentMouseMove)
+  document.removeEventListener('mouseleave', onDocumentMouseLeave)
   clearTimeout(shakeTimer)
   clearTimeout(toastTimer)
   unsubscribeLauncherMessage?.()
+  unsubscribePetChanged?.()
   gsapCtx?.revert()
 })
 </script>
@@ -152,6 +216,7 @@ body:has(.pet-root),
   justify-content: flex-end;
   box-sizing: border-box;
   user-select: none;
+  pointer-events: none;
 }
 
 .pet-toast {
@@ -167,10 +232,15 @@ body:has(.pet-root),
   line-height: 1.4;
   text-align: center;
   word-break: break-all;
+  pointer-events: auto;
 }
 
 .pet-wrap {
+  position: relative;
+  width: 192px;
+  height: 208px;
   will-change: transform;
+  pointer-events: none;
 }
 
 .pet-body {
@@ -179,9 +249,20 @@ body:has(.pet-root),
   background-size: 1536px 1872px;
   background-repeat: no-repeat;
   background-position: 0 0;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.25));
+}
+
+.pet-hitbox {
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  width: 120px;
+  height: 156px;
+  transform: translateX(-50%);
   cursor: pointer;
   touch-action: none;
-  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.25));
+  pointer-events: auto;
 }
 
 .pet-toast-fade-enter-active,

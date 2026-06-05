@@ -17,7 +17,8 @@ public enum ErrorCode {
 
     // 用户 1xxx
     USERNAME_EXISTS(1001, "用户名已存在"),
-    WRONG_PASSWORD(1002, "用户名或密码错误"),
+    WRONG_PASSWORD(1002, "密码错误，请重试"),
+    ACCOUNT_NOT_REGISTERED(1006, "该账号还未注册，请先注册试试"),
     USER_NOT_FOUND(1003, "用户不存在"),
     USER_DISABLED(1004, "账号已被禁用"),
     AUTH_RATE_LIMITED(1005, "尝试次数过多，请稍后再试"),

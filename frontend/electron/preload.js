@@ -21,10 +21,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   saveLauncherPosition: (x, y) => ipcRenderer.invoke('desktop:save-launcher-position', { x, y }),
   moveLauncherByDelta: (dx, dy) => ipcRenderer.invoke('desktop:move-launcher-by-delta', { dx, dy }),
+  setLauncherScreenPosition: (x, y) => ipcRenderer.invoke('desktop:set-launcher-screen-position', { x, y }),
+  clampLauncherPosition: () => ipcRenderer.invoke('desktop:clamp-launcher-position'),
+  setLauncherMousePassthrough: (ignore) => ipcRenderer.invoke('desktop:set-launcher-mouse-passthrough', ignore),
   notifyLauncherNewMessage: (payload) => ipcRenderer.invoke('desktop:notify-launcher-new-message', payload),
   onLauncherNewMessage: (callback) => {
     const handler = (_event, payload) => callback(payload)
     ipcRenderer.on('desktop:launcher-new-message', handler)
     return () => ipcRenderer.removeListener('desktop:launcher-new-message', handler)
+  },
+  onLauncherPetChanged: (callback) => {
+    const handler = (_event, petId) => callback(petId)
+    ipcRenderer.on('desktop:launcher-pet-changed', handler)
+    return () => ipcRenderer.removeListener('desktop:launcher-pet-changed', handler)
   },
 })
