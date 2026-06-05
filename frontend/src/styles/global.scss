@@ -466,10 +466,12 @@ html.dark {
   100% { transform: scale(1); }
 }
 
-/* Electron 桌面端：跳过 scroll reveal，避免首屏内容不可见 */
+/* Electron 桌面端：跳过 scroll reveal / 路由过渡，避免首屏内容不可见 */
 html.is-electron .reveal,
 html.is-electron .stagger-item,
-html.is-electron .page-header {
+html.is-electron .page-header,
+html.is-electron .page-enter-active,
+html.is-electron .page-leave-active {
   opacity: 1 !important;
   transform: none !important;
   animation: none !important;

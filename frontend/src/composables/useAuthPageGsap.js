@@ -1,5 +1,6 @@
 import { onMounted, onUnmounted } from 'vue'
 import { gsap } from 'gsap'
+import { isElectronRuntime } from '@/utils/runtime'
 
 /**
  * 登录/注册页入场与背景光晕微动（scoped 到 pageRef 根节点）
@@ -12,8 +13,8 @@ export function useAuthPageGsap(pageRef) {
     if (!root) return
 
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    if (reduced) {
-      gsap.set(root.querySelector('.auth-container'), { autoAlpha: 1 })
+    if (reduced || isElectronRuntime()) {
+      gsap.set(root.querySelectorAll('.auth-container, .form-reveal, .auth-art .art-icon, .auth-art .art-title, .auth-art .art-subtitle, .auth-art .art-decorations'), { autoAlpha: 1, opacity: 1, y: 0, scale: 1, scaleX: 1 })
       return
     }
 

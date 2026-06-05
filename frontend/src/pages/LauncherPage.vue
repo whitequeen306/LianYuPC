@@ -5,13 +5,15 @@
         {{ toastText }}
       </div>
     </transition>
-    <div
-      ref="petRef"
-      class="pet-body"
-      :class="{ 'is-shaking': shaking }"
-      title="点击快速聊天，按住拖动"
-      @pointerdown.prevent="onPointerDown"
-    />
+    <div ref="wrapRef" class="pet-wrap">
+      <div
+        ref="petRef"
+        class="pet-body"
+        :style="{ backgroundImage: `url(${PET_SPRITE})` }"
+        title="点击快速聊天，按住拖动"
+        @pointerdown.prevent="onPointerDown"
+      />
+    </div>
   </div>
 </template>
 
@@ -20,17 +22,22 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { gsap } from 'gsap'
 import { getElectronAPI } from '@/utils/electron'
+import { PET_SPRITE } from '@/constants/petSprite'
+import { usePetSpriteAnimator } from '@/composables/usePetSpriteAnimator'
 
 const { t } = useI18n()
 const containerRef = ref(null)
+const wrapRef = ref(null)
 const petRef = ref(null)
 const pointerState = ref(null)
-const shaking = ref(false)
 const toastText = ref('')
+const dragging = ref(false)
 let shakeTimer = null
 let toastTimer = null
 let unsubscribeLauncherMessage = null
 let gsapCtx = null
+
+const { playAnim } = usePetSpriteAnimator(petRef)
 
 function onPointerDown(e) {
   if (e.button !== 0) return
@@ -41,6 +48,7 @@ function onPointerDown(e) {
     lastY: e.screenY,
     moved: false,
   }
+  playAnim('waiting', { loop: true })
   window.addEventListener('pointermove', onPointerMove)
   window.addEventListener('pointerup', onPointerUp, { once: true })
 }
@@ -52,6 +60,8 @@ function onPointerMove(e) {
   const totalDy = e.screenY - state.startY
   if (!state.moved && (Math.abs(totalDx) > 5 || Math.abs(totalDy) > 5)) {
     state.moved = true
+    dragging.value = true
+    playAnim(totalDx >= 0 ? 'run-right' : 'run-left', { loop: true })
   }
   if (state.moved) {
     const dx = e.screenX - state.lastX
@@ -65,24 +75,29 @@ function onPointerMove(e) {
 function onPointerUp() {
   window.removeEventListener('pointermove', onPointerMove)
   const state = pointerState.value
+  dragging.value = false
   if (state && !state.moved) {
+    playAnim('wave')
     getElectronAPI()?.toggleCharacterPicker?.()
+  } else {
+    playAnim('idle')
   }
   pointerState.value = null
 }
 
 function onContextMenu() {
+  playAnim('review')
   getElectronAPI()?.openMainWindow?.('#/app')
 }
 
 function showNewMessageHint(payload = {}) {
   const name = payload.characterName || t('launcher.defaultCharacterName')
   toastText.value = t('launcher.newMessageHint', { name })
-  shaking.value = true
+  playAnim('jump')
   clearTimeout(shakeTimer)
   clearTimeout(toastTimer)
   shakeTimer = setTimeout(() => {
-    shaking.value = false
+    if (!dragging.value) playAnim('idle')
   }, 900)
   toastTimer = setTimeout(() => {
     toastText.value = ''
@@ -90,9 +105,9 @@ function showNewMessageHint(payload = {}) {
 }
 
 onMounted(() => {
-  if (containerRef.value) {
+  if (wrapRef.value) {
     gsapCtx = gsap.context(() => {
-      gsap.to(petRef.value, {
+      gsap.to(wrapRef.value, {
         y: -4,
         duration: 2.4,
         ease: 'sine.inOut',
@@ -149,35 +164,19 @@ body:has(.pet-root),
   word-break: break-all;
 }
 
+.pet-wrap {
+  will-change: transform;
+}
+
 .pet-body {
   width: 192px;
   height: 208px;
-  background-image: url('/pet/raiden_sprite.png');
-  background-size: 1152px 208px;
+  background-size: 1536px 1872px;
   background-repeat: no-repeat;
   background-position: 0 0;
   cursor: pointer;
   touch-action: none;
-  will-change: transform;
   filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.25));
-  animation: pet-idle 1.2s steps(5) infinite;
-}
-
-@keyframes pet-idle {
-  from { background-position: 0 0; }
-  to   { background-position: -960px 0; }
-}
-
-.pet-body.is-shaking {
-  animation: pet-shake 0.55s ease-in-out 2, pet-idle 1.2s steps(5) infinite !important;
-}
-
-@keyframes pet-shake {
-  0%, 100% { transform: translateX(0) rotate(0deg); }
-  20% { transform: translateX(-5px) rotate(-5deg); }
-  40% { transform: translateX(5px) rotate(5deg); }
-  60% { transform: translateX(-4px) rotate(-4deg); }
-  80% { transform: translateX(4px) rotate(4deg); }
 }
 
 .pet-toast-fade-enter-active,
