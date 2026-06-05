@@ -19,4 +19,8 @@ public class CharacterSquareTemplateResponse {
     private boolean added;
     /** 已加入时对应的个人角色 ID */
     private Long addedCharacterId;
+    /** 点赞数 */
+    private long likeCount;
+    /** 当前用户是否已点赞 */
+    private boolean liked;
 }

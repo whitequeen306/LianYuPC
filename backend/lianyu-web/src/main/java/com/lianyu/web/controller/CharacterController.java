@@ -5,12 +5,14 @@ import com.lianyu.common.base.Result;
 import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.character.CharacterService;
 import com.lianyu.service.square.CharacterSquareService;
+import com.lianyu.service.square.SquareLikeService;
 import com.lianyu.service.storage.FileStorageService;
 import com.lianyu.service.dto.CharacterResponse;
 import com.lianyu.service.dto.AddCharacterFromSquareRequest;
 import com.lianyu.service.dto.CreateCharacterRequest;
 import com.lianyu.service.dto.GenerateCharacterRequest;
 import com.lianyu.service.dto.CharacterSquarePageResponse;
+import com.lianyu.service.dto.SquareLikeToggleResponse;
 import com.lianyu.service.dto.UpdateCharacterRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -32,6 +34,7 @@ public class CharacterController {
 
     private final CharacterService characterService;
     private final CharacterSquareService characterSquareService;
+    private final SquareLikeService squareLikeService;
     private final FileStorageService fileStorageService;
     private final AiChatService aiChatService;
 
@@ -72,6 +75,13 @@ public class CharacterController {
         String uiLang = request.getHeader(CharacterSquareService.HEADER_UI_LANGUAGE);
         return Result.ok(characterSquareService.addTemplateToMyCharacters(
                 userId, templateId, uiLang, body.getCity()));
+    }
+
+    @Operation(summary = "角色广场点赞/取消点赞")
+    @PostMapping("/square/{templateId}/like")
+    public Result<SquareLikeToggleResponse> toggleSquareLike(@PathVariable("templateId") Long templateId) {
+        long userId = StpUtil.getLoginIdAsLong();
+        return Result.ok(squareLikeService.toggleLike(userId, templateId));
     }
 
     @Operation(summary = "获取角色")

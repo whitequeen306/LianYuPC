@@ -203,6 +203,8 @@ export default {
     cityPlaceholder: '如 上海、北京、廣州',
     cityRequired: '請填寫城市',
     confirmAdd: '確認加入',
+    mostLiked: '更多人喜歡的角色',
+    like: '點讚',
     emptyTitle: '暫無角色',
     emptyDesc: '請稍後再來或聯繫管理員'
   },

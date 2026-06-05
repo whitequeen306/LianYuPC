@@ -163,6 +163,8 @@ export default {
     cityPlaceholder: '如 上海、北京、广州',
     cityRequired: '请填写城市',
     confirmAdd: '确认加入',
+    mostLiked: '更多人喜欢的角色',
+    like: '点赞',
     emptyTitle: '暂无角色',
     emptyDesc: '请稍后再来或联系管理员'
   },

@@ -19,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +39,7 @@ public class CharacterSquareService {
 
     private final CharacterSquareTemplateMapper templateMapper;
     private final CharacterMapper characterMapper;
+    private final SquareLikeService squareLikeService;
     @Lazy
     private final CharacterService characterService;
     private final FileStorageService fileStorageService;
@@ -80,6 +82,7 @@ public class CharacterSquareService {
                 .page(safePage)
                 .size(safeSize)
                 .tags(allTags)
+                .userLikes(all.isEmpty() ? Set.of() : squareLikeService.getUserLikes(userId))
                 .build();
     }
 
@@ -87,13 +90,13 @@ public class CharacterSquareService {
         List<CharacterSquareTemplate> templates = templateMapper.selectList(
                 new LambdaQueryWrapper<CharacterSquareTemplate>()
                         .eq(CharacterSquareTemplate::getIsEnabled, 1)
-                        .isNotNull(CharacterSquareTemplate::getSlug)
-                        .orderByAsc(CharacterSquareTemplate::getSortOrder)
-                        .orderByAsc(CharacterSquareTemplate::getId));
+                        .isNotNull(CharacterSquareTemplate::getSlug));
         if (templates.isEmpty()) {
             return List.of();
         }
 
+        Map<Long, Long> likeCounts = squareLikeService.getLikeCounts();
+        Set<Long> userLikes = squareLikeService.getUserLikes(userId);
         Map<Long, Character> addedByTemplateId = loadAddedCharacters(userId);
         Map<String, CharacterSquareTemplate> bySlug = new LinkedHashMap<>();
         for (CharacterSquareTemplate template : templates) {
@@ -105,8 +108,30 @@ public class CharacterSquareService {
         }
 
         return bySlug.values().stream()
-                .map(t -> toTemplateResponse(t, addedByTemplateId.get(t.getId()), uiLang))
+                .sorted(likeCountComparator(likeCounts))
+                .map(t -> toTemplateResponse(
+                        t,
+                        addedByTemplateId.get(t.getId()),
+                        uiLang,
+                        likeCounts.getOrDefault(t.getId(), 0L),
+                        userLikes.contains(t.getId())))
                 .toList();
+    }
+
+    private java.util.Comparator<CharacterSquareTemplate> likeCountComparator(Map<Long, Long> likeCounts) {
+        return (a, b) -> {
+            long likeA = likeCounts.getOrDefault(a.getId(), 0L);
+            long likeB = likeCounts.getOrDefault(b.getId(), 0L);
+            if (likeA != likeB) {
+                return Long.compare(likeB, likeA);
+            }
+            int sortA = a.getSortOrder() != null ? a.getSortOrder() : 0;
+            int sortB = b.getSortOrder() != null ? b.getSortOrder() : 0;
+            if (sortA != sortB) {
+                return Integer.compare(sortA, sortB);
+            }
+            return Long.compare(a.getId(), b.getId());
+        };
     }
 
     private List<String> collectTagLabels(List<CharacterSquareTemplateResponse> templates) {
@@ -193,7 +218,11 @@ public class CharacterSquareService {
     }
 
     private CharacterSquareTemplateResponse toTemplateResponse(
-            CharacterSquareTemplate template, Character added, String uiLang) {
+            CharacterSquareTemplate template,
+            Character added,
+            String uiLang,
+            long likeCount,
+            boolean liked) {
         String slug = normalizeSlug(template);
         CharacterSquareCatalog.LocalePack pack = CharacterSquareCatalog.resolve(slug, uiLang);
         if (pack == null) {
@@ -208,6 +237,8 @@ public class CharacterSquareService {
                     .tagKeys(parseTagKeys(template.getTagsJson()))
                     .added(added != null)
                     .addedCharacterId(added != null ? added.getId() : null)
+                    .likeCount(likeCount)
+                    .liked(liked)
                     .build();
         }
 
@@ -225,6 +256,8 @@ public class CharacterSquareService {
                 .tagKeys(tagKeys)
                 .added(added != null)
                 .addedCharacterId(added != null ? added.getId() : null)
+                .likeCount(likeCount)
+                .liked(liked)
                 .build();
     }
 

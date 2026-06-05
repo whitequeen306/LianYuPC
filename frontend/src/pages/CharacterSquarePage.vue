@@ -72,6 +72,7 @@
         class="template-card glass stagger-item"
         :style="{ animationDelay: `${idx * 0.05}s`, '--shine-delay': `${(idx % 6) * 0.65}s` }"
       >
+        <span v-if="isMostLiked(item.id)" class="most-liked-badge">{{ t('characterSquare.mostLiked') }}</span>
         <span class="template-card__shine" aria-hidden="true" />
         <div class="card-media">
           <img v-if="item.avatarUrl" :src="resolveMediaUrl(item.avatarUrl)" class="avatar-img" :alt="item.name" />
@@ -89,6 +90,19 @@
         </div>
 
         <div class="card-actions">
+          <button
+            type="button"
+            class="like-btn"
+            :class="{ 'like-btn--active': item.liked }"
+            :disabled="likingId === item.id"
+            @click="handleLike(item)"
+          >
+            <el-icon :size="16">
+              <StarFilled v-if="item.liked" />
+              <Star v-else />
+            </el-icon>
+            <span>{{ item.likeCount ?? 0 }}</span>
+          </button>
           <el-button text size="small" @click="openPreview(item)">
             {{ t('characterSquare.preview') }}
           </el-button>
@@ -171,7 +185,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ChatDotRound, Loading, Search, Shop, User } from '@element-plus/icons-vue'
+import { ChatDotRound, Loading, Search, Shop, Star, StarFilled, User } from '@element-plus/icons-vue'
 import { useCharacterSquareStore } from '@/stores/characterSquare'
 import { createConversation } from '@/api/conversation'
 import { getSavedUserCity, saveUserCity } from '@/utils/userCity'
@@ -191,6 +205,7 @@ const activeTag = ref('')
 const searchQuery = ref('')
 const page = ref(1)
 const addingId = ref(null)
+const likingId = ref(null)
 const previewVisible = ref(false)
 const previewItem = ref(null)
 
@@ -204,8 +219,22 @@ const filteredCatalog = computed(() => {
   if (q) {
     list = list.filter(item => (item.name || '').toLowerCase().includes(q))
   }
-  return list
+  return sortByLikes(list)
 })
+
+function sortByLikes(list) {
+  return [...list].sort((a, b) => {
+    const likeDiff = (b.likeCount ?? 0) - (a.likeCount ?? 0)
+    if (likeDiff !== 0) return likeDiff
+    return (a.id ?? 0) - (b.id ?? 0)
+  })
+}
+
+function isMostLiked(templateId) {
+  return sortByLikes(filteredCatalog.value)
+    .slice(0, 3)
+    .some(item => item.id === templateId)
+}
 
 const total = computed(() => filteredCatalog.value.length)
 
@@ -238,7 +267,7 @@ async function loadCatalog(force = false) {
       tag: '',
       force,
     })
-    catalog.value = data?.records || []
+    catalog.value = sortByLikes(data?.records || [])
     allTags.value = data?.tags || []
     page.value = 1
   } finally {
@@ -325,6 +354,25 @@ function markAddedLocal(templateId, characterId) {
       ? { ...item, added: true, addedCharacterId: characterId ?? item.addedCharacterId }
       : item,
   )
+}
+
+async function handleLike(item) {
+  if (!item || likingId.value != null) return
+  likingId.value = item.id
+  try {
+    const result = await squareStore.toggleLike(item.id)
+    item.liked = !!result?.liked
+    item.likeCount = result?.likeCount ?? item.likeCount ?? 0
+    catalog.value = sortByLikes(
+      catalog.value.map(row =>
+        row.id === item.id
+          ? { ...row, liked: item.liked, likeCount: item.likeCount }
+          : row,
+      ),
+    )
+  } finally {
+    likingId.value = null
+  }
 }
 
 async function startChat(characterId) {
@@ -635,6 +683,51 @@ async function startChat(characterId) {
   background: rgba($color-pink-rgb, 0.08);
   color: $color-pink-primary;
   border: 1px solid rgba($color-pink-rgb, 0.12);
+}
+
+.most-liked-badge {
+  position: absolute;
+  top: $space-3;
+  left: $space-3;
+  z-index: 3;
+  max-width: calc(100% - #{$space-6});
+  padding: 4px 10px;
+  border-radius: $radius-full;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-semibold;
+  color: #fff;
+  background: linear-gradient(135deg, rgba($color-pink-rgb, 0.95), rgba(120, 90, 200, 0.92));
+  box-shadow: 0 4px 14px rgba($color-pink-rgb, 0.25);
+}
+
+.like-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: $radius-full;
+  border: 1px solid rgba($color-pink-rgb, 0.16);
+  background: rgba($color-pink-rgb, 0.05);
+  color: $color-text-secondary;
+  cursor: pointer;
+  transition: color $transition-fast, border-color $transition-fast, background $transition-fast;
+
+  &:hover:not(:disabled) {
+    color: $color-pink-primary;
+    border-color: rgba($color-pink-rgb, 0.28);
+    background: rgba($color-pink-rgb, 0.1);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.like-btn--active {
+  color: $color-pink-primary;
+  border-color: rgba($color-pink-rgb, 0.35);
+  background: rgba($color-pink-rgb, 0.14);
 }
 
 .card-actions {

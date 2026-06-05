@@ -163,6 +163,8 @@ export default {
     cityPlaceholder: 'e.g. Shanghai, Beijing, Guangzhou',
     cityRequired: 'Please enter a city',
     confirmAdd: 'Add character',
+    mostLiked: 'Most liked',
+    like: 'Like',
     emptyTitle: 'No characters',
     emptyDesc: 'Please check back later'
   },

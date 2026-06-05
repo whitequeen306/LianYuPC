@@ -158,6 +158,8 @@ export default {
     cityPlaceholder: '例：上海、北京、広州',
     cityRequired: '都市を入力してください',
     confirmAdd: '追加する',
+    mostLiked: '人気のキャラ',
+    like: 'いいね',
     emptyTitle: 'キャラがありません',
     emptyDesc: '後でもう一度お試しください'
   },
