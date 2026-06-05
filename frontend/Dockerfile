@@ -6,10 +6,9 @@ FROM node:20-alpine AS build
 WORKDIR /build
 
 ARG APP_REVISION=dev
-ENV NODE_ENV=production
 
 COPY package.json package-lock.json ./
-RUN npm ci --silent
+RUN npm ci --include=dev --silent
 
 COPY index.html vite.config.js ./
 COPY public public
@@ -24,4 +23,4 @@ LABEL org.opencontainers.image.revision="${APP_REVISION}"
 COPY --from=build /build/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-EXPOSE 80
+EXPOSE 80 443
