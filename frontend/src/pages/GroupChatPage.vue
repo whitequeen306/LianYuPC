@@ -283,7 +283,6 @@
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
-import { Client } from '@stomp/stompjs'
 import {
   getMessages,
   getGroupMembers
@@ -302,7 +301,6 @@ import { useOnboardingHint } from '@/composables/useOnboardingHint'
 import { Plus, ChatDotRound, ArrowLeft, User, UserFilled, Promotion, Delete, Edit, Check, Close } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { resolveMediaUrl } from '@/utils/media'
-import { buildWsUrl } from '@/utils/runtime'
 import { humanizeError } from '@/utils/errorMessage'
 import { dateLocaleForUi } from '@/utils/dateLocale'
 import { resolveGroupDisplayTitle } from '@/utils/groupTitle'
@@ -312,6 +310,7 @@ const MAX_GROUP_MEMBERS = 4
 
 const providersStore = useProvidersStore()
 const notificationsStore = useNotificationsStore()
+const { wsStatus } = storeToRefs(notificationsStore)
 const layoutStore = useLayoutStore()
 const {
   ingestConversations,
@@ -334,7 +333,6 @@ const groupInput = ref('')
 const mentionPopoverVisible = ref(false)
 const speakingCharId = ref(null)
 const streamingChar = ref(null)
-const wsStatus = ref('disconnected')
 const groupMsgListRef = ref(null)
 const groupScrollAnchor = ref(null)
 
@@ -351,7 +349,6 @@ const groupTitleInputRef = ref(null)
 /** @type {import('vue').Ref<Record<number, Array>>} */
 const groupMembersCache = ref({})
 
-let stompClient = null
 let msgCounter = 0
 
 function groupTitleLabel(title) {
@@ -387,7 +384,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   layoutStore.setGroupChatSession(false)
-  disconnectWebSocket()
+  notificationsStore.unsubscribeGroupChat()
 })
 
 watch(
@@ -409,62 +406,17 @@ watch(activeGroup, (group) => {
   layoutStore.setGroupChatSession(!!group)
 }, { immediate: true })
 
-function disconnectWebSocket() {
-  if (stompClient) {
-    stompClient.deactivate()
-    stompClient = null
-  }
-  wsStatus.value = 'disconnected'
-}
-
-function buildBrokerUrl() {
-  return buildWsUrl()
-}
-
 function reconnectWebSocket() {
   if (wsStatus.value === 'connecting') return
-  connectWebSocket(activeGroup.value?.id)
+  notificationsStore.reconnectWebSocket()
+  if (activeGroup.value?.id) {
+    notificationsStore.subscribeGroupChat(activeGroup.value.id, handleGroupEvent)
+  }
 }
 
 function connectWebSocket(groupId) {
   if (!groupId) return
-  disconnectWebSocket()
-
-  const token = localStorage.getItem('lianyu-token')
-  wsStatus.value = 'connecting'
-
-  stompClient = new Client({
-    brokerURL: buildBrokerUrl(),
-    connectHeaders: { token },
-    reconnectDelay: 5000,
-    heartbeatIncoming: 10000,
-    heartbeatOutgoing: 10000,
-
-    onConnect: () => {
-      wsStatus.value = 'connected'
-      stompClient.subscribe(`/topic/group/${groupId}`, (message) => {
-        try {
-          const body = JSON.parse(message.body)
-          handleGroupEvent(body)
-        } catch {}
-      })
-    },
-
-    onDisconnect: () => {
-      wsStatus.value = 'disconnected'
-    },
-
-    onWebSocketError: () => {
-      wsStatus.value = 'disconnected'
-    },
-
-    onStompError: (frame) => {
-      console.warn('STOMP error:', frame.headers['message'])
-      wsStatus.value = 'disconnected'
-    }
-  })
-
-  stompClient.activate()
+  notificationsStore.subscribeGroupChat(groupId, handleGroupEvent)
 }
 
 function handleGroupEvent(body) {
@@ -530,21 +482,19 @@ function handleGroupEvent(body) {
 
 async function sendGroupMessage() {
   const text = groupInput.value.trim()
-  if (!text || wsStatus.value !== 'connected' || !stompClient || !activeGroup.value) return
+  if (!text || wsStatus.value !== 'connected' || !activeGroup.value) return
 
   const userStore = await (async () => {
     const { useUserStore } = await import('@/stores/user')
     return useUserStore()
   })()
 
-  stompClient.publish({
-    destination: `/app/group/${activeGroup.value.id}/send`,
-    body: JSON.stringify({
-      provider: providersStore.vaults[0]?.provider || PLATFORM_PROVIDER,
-      model: providersStore.vaults[0]?.modelDefault || undefined,
-      content: text
-    })
+  const sent = notificationsStore.publishGroupMessage(activeGroup.value.id, {
+    provider: providersStore.vaults[0]?.provider || PLATFORM_PROVIDER,
+    model: providersStore.vaults[0]?.modelDefault || undefined,
+    content: text
   })
+  if (!sent) return
 
   groupMessages.value.push({
     _key: 'g' + (++msgCounter),
@@ -650,7 +600,7 @@ async function openGroup(group, memberIds) {
 
 function leaveGroup() {
   cancelEditGroupTitle()
-  disconnectWebSocket()
+  notificationsStore.unsubscribeGroupChat()
   activeGroup.value = null
   groupMembers.value = []
   groupMessages.value = []

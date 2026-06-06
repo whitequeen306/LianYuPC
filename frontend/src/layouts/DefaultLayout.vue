@@ -4,7 +4,7 @@
     :class="{
       'app-layout--immersive': isImmersive,
       'app-layout--dock-hidden': hideDock,
-      'app-layout--group-session': layoutStore.groupChatSession
+      'app-layout--group-session': layoutStore.groupChatSession,
     }"
   >
     <AppShellAtmosphere />
@@ -95,4 +95,5 @@ onUnmounted(() => {
   padding-left: 0;
   padding-right: 0;
 }
+
 </style>

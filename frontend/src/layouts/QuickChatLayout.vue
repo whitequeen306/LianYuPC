@@ -40,8 +40,7 @@ function closeWindow() {
 .quick-chat-layout {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  min-height: 100vh;
+  min-height: calc(100vh - var(--electron-caption-height, 0px));
   background: #0a0a10;
 }
 

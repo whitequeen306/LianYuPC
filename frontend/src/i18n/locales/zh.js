@@ -75,6 +75,12 @@ export default {
     newMessageHint: '{name}给你发消息了哦',
     defaultCharacterName: '她'
   },
+  desktop: {
+    minimize: '最小化',
+    maximize: '最大化',
+    restore: '还原',
+    close: '关闭'
+  },
   common: {
     loading: '加载中...',
     save: '保存',

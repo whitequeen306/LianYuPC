@@ -41,6 +41,7 @@ let pendingHideAfterHint = false
 let pickerBlurTimer = null
 let pickerOpeningUntil = 0
 let launcherIsDragging = false
+let launcherSuppressMoveSave = false
 
 const SHARED_WEB_PREFS = {
   preload: path.join(__dirname, 'preload.cjs'),
@@ -190,25 +191,47 @@ function attachWindowLogging(win, label) {
   })
 }
 
+function isMainWindowOccupyingDesktop() {
+  if (!mainWindow || mainWindow.isDestroyed()) return false
+  if (mainWindow.isMinimized()) return false
+  return mainWindow.isVisible()
+}
+
+function isPositionWithinAnyWorkArea(x, y) {
+  return screen.getAllDisplays().some((display) => {
+    const area = display.workArea
+    return x >= area.x && y >= area.y && x < area.x + area.width && y < area.y + area.height
+  })
+}
+
 function defaultLauncherPosition() {
   const area = screen.getPrimaryDisplay().workArea
   return {
-    x: Math.round(area.x + (area.width - LAUNCHER_COMPACT.width) / 2),
-    y: Math.round(area.y + (area.height - LAUNCHER_COMPACT.height) / 2),
+    x: Math.round(area.x + (area.width - LAUNCHER_WINDOW.width) / 2),
+    y: Math.round(area.y + (area.height - LAUNCHER_WINDOW.height) / 2),
   }
+}
+
+function resolveLauncherPosition() {
+  const saved = readLauncherPosition()
+  if (saved && isPositionWithinAnyWorkArea(saved.x, saved.y)) {
+    return saved
+  }
+  return defaultLauncherPosition()
 }
 
 function resetLauncherCompactSize() {
   if (!launcherWindow || launcherWindow.isDestroyed()) return
-  clearTimeout(launcherSizeRestoreTimer)
   const b = launcherWindow.getBounds()
-  if (b.width === LAUNCHER_COMPACT.width && b.height === LAUNCHER_COMPACT.height) return
+  if (b.width === LAUNCHER_WINDOW.width && b.height === LAUNCHER_WINDOW.height) return
+  launcherSuppressMoveSave = true
   launcherWindow.setBounds({
-    x: b.x + (b.width - LAUNCHER_COMPACT.width),
-    y: b.y + (b.height - LAUNCHER_COMPACT.height),
-    width: LAUNCHER_COMPACT.width,
-    height: LAUNCHER_COMPACT.height,
+    x: b.x + (b.width - LAUNCHER_WINDOW.width),
+    y: b.y + (b.height - LAUNCHER_WINDOW.height),
+    width: LAUNCHER_WINDOW.width,
+    height: LAUNCHER_WINDOW.height,
   })
+  launcherSuppressMoveSave = false
 }
 
 function clampLauncherToWorkArea() {
@@ -267,8 +290,7 @@ function buildTrayMenu() {
   ])
 }
 
-const LAUNCHER_COMPACT = { width: 192, height: 208 }
-const LAUNCHER_EXPANDED = { width: 200, height: 268 }
+const LAUNCHER_WINDOW = { width: 200, height: 268 }
 
 function setLauncherMousePassthrough(ignore) {
   if (!launcherWindow || launcherWindow.isDestroyed()) return
@@ -278,39 +300,15 @@ function setLauncherMousePassthrough(ignore) {
     launcherWindow.setIgnoreMouseEvents(false)
   }
 }
-let launcherSizeRestoreTimer = null
+
+function expandLauncherForToast() {
+  // 固定窗口尺寸，toast 在预留区域显示，避免 resize 导致窗口位置上漂
+}
 
 function shouldPulseLauncherForMessage() {
   if (!mainWindow || mainWindow.isDestroyed()) return true
   if (!mainWindow.isVisible()) return true
   return !mainWindow.isFocused()
-}
-
-function expandLauncherForToast() {
-  if (!launcherWindow || launcherWindow.isDestroyed() || !launcherWindow.isVisible()) return
-  if (launcherIsDragging) return
-  const b = launcherWindow.getBounds()
-  launcherWindow.setBounds({
-    x: b.x - (LAUNCHER_EXPANDED.width - LAUNCHER_COMPACT.width),
-    y: b.y - (LAUNCHER_EXPANDED.height - LAUNCHER_COMPACT.height),
-    width: LAUNCHER_EXPANDED.width,
-    height: LAUNCHER_EXPANDED.height,
-  })
-  clampLauncherToWorkArea()
-  clearTimeout(launcherSizeRestoreTimer)
-  launcherSizeRestoreTimer = setTimeout(() => {
-    if (!launcherWindow || launcherWindow.isDestroyed()) return
-    const cur = launcherWindow.getBounds()
-    launcherWindow.setBounds({
-      x: cur.x + (cur.width - LAUNCHER_COMPACT.width),
-      y: cur.y + (cur.height - LAUNCHER_COMPACT.height),
-      width: LAUNCHER_COMPACT.width,
-      height: LAUNCHER_COMPACT.height,
-    })
-    setLauncherMousePassthrough(true)
-    clampLauncherToWorkArea()
-    repositionPickerNearLauncher()
-  }, 4800)
 }
 
 function showLauncherMessageNotification(payload = {}) {
@@ -350,10 +348,10 @@ function hideLauncherWindow() {
 }
 
 function showLauncherWindow(options = {}) {
-  const { center = false } = options
+  const { center = false, force = false } = options
   const settings = readDesktopSettings()
   if (!settings.showLauncherLogo) return
-  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) return
+  if (!force && isMainWindowOccupyingDesktop()) return
   const win = ensureLauncherWindow()
   if (!win) return
   resetLauncherCompactSize()
@@ -362,8 +360,18 @@ function showLauncherWindow(options = {}) {
   } else {
     clampLauncherToWorkArea()
   }
-  win.show()
-  setLauncherMousePassthrough(true)
+  const reveal = () => {
+    if (!force && isMainWindowOccupyingDesktop()) return
+    if (!win || win.isDestroyed()) return
+    win.show()
+    win.moveTop()
+    setLauncherMousePassthrough(true)
+  }
+  reveal()
+  if (win.webContents.isLoading()) {
+    win.webContents.once('did-finish-load', reveal)
+  }
+  setTimeout(reveal, 120)
 }
 
 function showMainWindow(hash = '') {
@@ -381,11 +389,39 @@ function showMainWindow(hash = '') {
   hideLauncherWindow()
 }
 
+const CAPTION_BAR_HEIGHT = 36
+const WIN_TITLE_BAR_OVERLAY = {
+  color: '#0a0a10',
+  symbolColor: '#d4d4d8',
+  height: CAPTION_BAR_HEIGHT,
+}
+
+/** Windows 须在 BrowserWindow 构造时传入 titleBarOverlay，否则 setTitleBarOverlay 会抛错 */
+function buildCaptionWindowOptions() {
+  if (process.platform === 'win32') {
+    return {
+      titleBarStyle: 'hidden',
+      titleBarOverlay: WIN_TITLE_BAR_OVERLAY,
+    }
+  }
+  if (process.platform === 'darwin') {
+    return { titleBarStyle: 'hiddenInset' }
+  }
+  return {}
+}
+
+function applyMainWindowCaption(win) {
+  if (!win || win.isDestroyed()) return
+  if (process.platform === 'darwin') {
+    win.setWindowButtonVisibility(true)
+  }
+}
+
 function hideMainToTray() {
   if (!mainWindow || mainWindow.isDestroyed()) return
   mainWindow.hide()
   ensureTray()
-  showLauncherWindow({ center: true })
+  showLauncherWindow({ center: true, force: true })
 }
 
 function createMainWindow() {
@@ -397,6 +433,7 @@ function createMainWindow() {
     title: 'LianYu - 恋语',
     icon: resolveDistPath('logo.png'),
     backgroundColor: '#0a0a10',
+    ...buildCaptionWindowOptions(),
     show: false,
     webPreferences: { ...SHARED_WEB_PREFS },
   })
@@ -405,7 +442,12 @@ function createMainWindow() {
   attachWindowLogging(win, 'main')
 
   win.once('ready-to-show', () => {
+    applyMainWindowCaption(win)
     win.show()
+  })
+
+  win.on('minimize', () => {
+    showLauncherWindow({ center: true, force: true })
   })
 
   win.on('close', (event) => {
@@ -420,7 +462,6 @@ function createMainWindow() {
     if (!settings.closeHintShown) {
       pendingHideAfterHint = true
       win.webContents.send('desktop:close-hint')
-      return
     }
     hideMainToTray()
   })
@@ -441,12 +482,13 @@ function createLauncherWindow() {
     return launcherWindow
   }
 
-  const saved = readLauncherPosition() || defaultLauncherPosition()
+  const saved = resolveLauncherPosition()
   const win = new BrowserWindow({
-    width: LAUNCHER_COMPACT.width,
-    height: LAUNCHER_COMPACT.height,
+    width: LAUNCHER_WINDOW.width,
+    height: LAUNCHER_WINDOW.height,
     x: saved.x,
     y: saved.y,
+    useContentSize: true,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
@@ -455,6 +497,7 @@ function createLauncherWindow() {
     skipTaskbar: true,
     show: false,
     hasShadow: false,
+    thickFrame: false,
     webPreferences: { ...LAUNCHER_WEB_PREFS },
   })
   win.lianyuKind = 'launcher'
@@ -463,7 +506,9 @@ function createLauncherWindow() {
   win.once('ready-to-show', () => {
     win.setBackgroundColor('#00000000')
     clampLauncherToWorkArea()
-    win.show()
+    if (!isMainWindowOccupyingDesktop()) {
+      win.show()
+    }
     setLauncherMousePassthrough(true)
   })
 
@@ -479,6 +524,7 @@ function createLauncherWindow() {
     }
     if (moveTimer) clearTimeout(moveTimer)
     if (launcherIsDragging) return
+    if (launcherSuppressMoveSave) return
     moveTimer = setTimeout(() => {
       const bounds = win.getBounds()
       writeLauncherPosition(bounds.x, bounds.y)
@@ -620,6 +666,7 @@ function openQuickChatWindow(conversationId) {
     title: 'LianYu 聊天',
     icon: resolveDistPath('logo.png'),
     backgroundColor: '#0a0a10',
+    ...buildCaptionWindowOptions(),
     show: false,
     webPreferences: { ...SHARED_WEB_PREFS },
   })
@@ -628,6 +675,7 @@ function openQuickChatWindow(conversationId) {
   attachWindowLogging(win, `quickChat:${id}`)
 
   win.once('ready-to-show', () => {
+    applyMainWindowCaption(win)
     win.show()
   })
 
@@ -692,6 +740,8 @@ function registerIpcHandlers() {
     return { ok: true }
   })
 
+  ipcMain.handle('desktop:get-caption-height', () => CAPTION_BAR_HEIGHT)
+
   ipcMain.handle('desktop:hide-launcher', () => {
     hideLauncherWindow()
   })
@@ -730,10 +780,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle('desktop:ack-close-hint', () => {
     writeDesktopSettings({ closeHintShown: true })
-    if (pendingHideAfterHint) {
-      pendingHideAfterHint = false
-      hideMainToTray()
-    }
+    pendingHideAfterHint = false
   })
 
   ipcMain.handle('desktop:save-launcher-position', (_event, { x, y }) => {

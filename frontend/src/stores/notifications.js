@@ -27,6 +27,59 @@ export const useNotificationsStore = defineStore('notifications', () => {
   let stompClient = null
   let inited = false
   let lastSoundAt = 0
+  let pendingGroupId = null
+  /** @type {((body: object) => void) | null} */
+  let groupMessageHandler = null
+  let groupTopicSubscription = null
+
+  function resubscribeGroupChat() {
+    if (!stompClient?.connected || pendingGroupId == null || !groupMessageHandler) return
+    if (groupTopicSubscription) {
+      groupTopicSubscription.unsubscribe()
+      groupTopicSubscription = null
+    }
+    groupTopicSubscription = stompClient.subscribe(`/topic/group/${pendingGroupId}`, (message) => {
+      try {
+        groupMessageHandler(JSON.parse(message.body))
+      } catch {}
+    })
+  }
+
+  function subscribeGroupChat(groupId, handler) {
+    pendingGroupId = groupId
+    groupMessageHandler = handler
+    if (!stompClient) {
+      connectWebSocket()
+    }
+    resubscribeGroupChat()
+  }
+
+  function unsubscribeGroupChat() {
+    pendingGroupId = null
+    groupMessageHandler = null
+    if (groupTopicSubscription) {
+      groupTopicSubscription.unsubscribe()
+      groupTopicSubscription = null
+    }
+  }
+
+  function reconnectWebSocket() {
+    if (stompClient) {
+      stompClient.deactivate()
+      stompClient = null
+    }
+    wsStatus.value = 'disconnected'
+    connectWebSocket()
+  }
+
+  function publishGroupMessage(groupId, payload) {
+    if (!stompClient?.connected || groupId == null) return false
+    stompClient.publish({
+      destination: `/app/group/${groupId}/send`,
+      body: JSON.stringify(payload)
+    })
+    return true
+  }
 
   async function init() {
     if (inited) return
@@ -41,6 +94,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
 
   function dispose() {
     inited = false
+    unsubscribeGroupChat()
     if (stompClient) {
       stompClient.deactivate()
       stompClient = null
@@ -106,6 +160,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
             unreadCount.value = Number(data?.unreadCount || unreadCount.value)
           } catch {}
         })
+        resubscribeGroupChat()
       },
       onDisconnect: () => {
         wsStatus.value = 'disconnected'
@@ -357,6 +412,10 @@ export const useNotificationsStore = defineStore('notifications', () => {
     refreshLatest,
     markAllRead,
     markConversationRead,
+    subscribeGroupChat,
+    unsubscribeGroupChat,
+    reconnectWebSocket,
+    publishGroupMessage,
     requestBrowserNotificationPermission,
     enablePush,
     disablePush

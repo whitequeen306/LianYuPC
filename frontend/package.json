@@ -1,6 +1,6 @@
 {
   "name": "lianyu-pc",
-  "version": "0.2.37",
+  "version": "0.2.43",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.js",
@@ -69,12 +69,18 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "allowElevation": true,
+      "guid": "8F3C2A1B-4D5E-6F70-8A9B-0C1D2E3F4A5B",
+      "include": "build/installer.nsh",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "LianYu"
+      "shortcutName": "LianYu",
+      "uninstallDisplayName": "LianYu",
+      "deleteAppDataOnUninstall": false
     }
   }
 }

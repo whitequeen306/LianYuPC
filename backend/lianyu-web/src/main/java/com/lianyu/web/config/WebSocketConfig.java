@@ -62,7 +62,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                         "https://localhost:*",
                         "http://127.0.0.1:*",
                         "https://154.219.111.30",
-                        "file://*"
+                        "file://*",
+                        "null"
                 );
     }
 

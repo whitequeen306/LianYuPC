@@ -75,6 +75,12 @@ export default {
     newMessageHint: '{name} sent you a message',
     defaultCharacterName: 'She'
   },
+  desktop: {
+    minimize: 'Minimize',
+    maximize: 'Maximize',
+    restore: 'Restore',
+    close: 'Close'
+  },
   common: {
     loading: 'Loading...',
     save: 'Save',

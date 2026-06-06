@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clampLauncherPosition: () => ipcRenderer.invoke('desktop:clamp-launcher-position'),
   setLauncherMousePassthrough: (ignore) => ipcRenderer.invoke('desktop:set-launcher-mouse-passthrough', ignore),
   notifyLauncherNewMessage: (payload) => ipcRenderer.invoke('desktop:notify-launcher-new-message', payload),
+  getCaptionBarHeight: () => ipcRenderer.invoke('desktop:get-caption-height'),
   onLauncherNewMessage: (callback) => {
     const handler = (_event, payload) => callback(payload)
     ipcRenderer.on('desktop:launcher-new-message', handler)

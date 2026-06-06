@@ -50,6 +50,19 @@ export function usePetSpriteAnimator(canvasRef) {
     }
   }
 
+  function setupCanvasSize() {
+    const canvas = canvasRef.value
+    const context = ensureCtx()
+    if (!canvas || !context) return
+    const dpr = Math.max(1, window.devicePixelRatio || 1)
+    canvas.width = Math.round(PET_FRAME_W * dpr)
+    canvas.height = Math.round(PET_FRAME_H * dpr)
+    canvas.style.width = `${PET_FRAME_W}px`
+    canvas.style.height = `${PET_FRAME_H}px`
+    context.setTransform(dpr, 0, 0, dpr, 0, 0)
+    context.imageSmoothingEnabled = false
+  }
+
   function renderFrame() {
     const canvas = canvasRef.value
     const context = ensureCtx()
@@ -70,6 +83,7 @@ export function usePetSpriteAnimator(canvasRef) {
 
   function setSpriteImage(img) {
     spriteImage = img
+    setupCanvasSize()
     renderFrame()
   }
 
@@ -126,6 +140,7 @@ export function usePetSpriteAnimator(canvasRef) {
   }
 
   onMounted(() => {
+    setupCanvasSize()
     playAnim('idle')
     scheduleIdleVariety()
   })

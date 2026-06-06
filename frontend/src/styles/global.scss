@@ -69,6 +69,26 @@ h1, h2, h3, h4, h5, h6 { font-weight: $font-weight-semibold; line-height: $line-
   66% { opacity: 0.6; }
 }
 
+body.electron-app {
+  --electron-caption-height: 36px;
+  --electron-caption-controls-width: 138px;
+
+  #app {
+    padding-top: var(--electron-caption-height);
+    box-sizing: border-box;
+  }
+}
+
+.electron-caption-drag {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: var(--electron-caption-controls-width);
+  height: var(--electron-caption-height);
+  z-index: 10000;
+  -webkit-app-region: drag;
+}
+
 // --- Glass Surface ---
 .glass {
   background: $color-bg-glass;

@@ -72,6 +72,12 @@ export default {
     newMessageHint: '{name}からメッセージが届いたよ',
     defaultCharacterName: '彼女'
   },
+  desktop: {
+    minimize: '最小化',
+    maximize: '最大化',
+    restore: '元に戻す',
+    close: '閉じる'
+  },
   common: {
     loading: '読み込み中...',
     save: '保存',

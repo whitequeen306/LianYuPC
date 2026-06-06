@@ -202,6 +202,19 @@ async function handleUserMenu(command) {
   border: 1px solid rgba($color-pink-rgb, 0.1);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
   overflow: visible;
+  -webkit-app-region: drag;
+}
+
+.header-brand,
+.header-actions,
+.header-btn,
+.header-avatar,
+:deep(.lang-trigger),
+:deep(.el-dropdown),
+:deep(.el-popover__reference),
+:deep(.el-badge),
+:deep(button) {
+  -webkit-app-region: no-drag;
 }
 
 .header-brand {
