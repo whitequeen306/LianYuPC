@@ -199,7 +199,7 @@ function formatTime(ts) {
 
 <style lang="scss" scoped>
 .memory-page {
-  max-width: 780px;
+  max-width: $narrow-page-max;
 }
 
 .page-header {

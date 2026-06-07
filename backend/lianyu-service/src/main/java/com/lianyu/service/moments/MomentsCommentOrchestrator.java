@@ -501,14 +501,7 @@ public class MomentsCommentOrchestrator {
     }
 
     private String sanitize(String raw) {
-        if (raw == null) {
-            return "";
-        }
-        String t = raw.trim().replaceAll("[\\r\\n]+", " ").replaceAll("\\s{2,}", " ");
-        if (t.length() > commentMaxChars) {
-            t = t.substring(0, commentMaxChars);
-        }
-        return t.length() < 2 ? "" : t;
+        return MomentsTextSanitizer.sanitize(raw, commentMaxChars, 2);
     }
 
     private String trim(String s, int max) {

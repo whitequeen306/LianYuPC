@@ -52,7 +52,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @RequiredArgsConstructor
 public class ConversationService {
 
-    private static final String MESSAGE_SEQ_KEY_PREFIX = "msg_seq:";
+    private static final String SEQ_KEY_PREFIX = "msg_seq:";
     private static final String GROUP_TURN_KEY_PREFIX = "group_chat:turn:";
 
     private final ConversationMapper conversationMapper;
@@ -79,7 +79,6 @@ public class ConversationService {
     @Value("${lianyu.ai.context-window:20}")
     private int contextWindow;
 
-    private static final String SEQ_KEY_PREFIX = "msg_seq:";
     private static final Pattern STAGE_DIRECTION_PARENS =
             Pattern.compile("[（(][^（）()\\n]{1,60}[)）]");
 
@@ -182,7 +181,7 @@ public class ConversationService {
         }
         conversationMapper.deleteById(conversationId);
         redisTemplate.delete(List.of(
-                MESSAGE_SEQ_KEY_PREFIX + conversationId,
+                SEQ_KEY_PREFIX + conversationId,
                 GROUP_TURN_KEY_PREFIX + conversationId
         ));
         log.info("Conversation deleted: id={}, mode={}", conversationId, conversation.getMode());

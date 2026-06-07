@@ -279,6 +279,7 @@ import { useCharacterSquareStore } from '@/stores/characterSquare'
 import { useConversationsStore } from '@/stores/conversations'
 import { listNotifications } from '@/api/notification'
 import { useConversationUnread } from '@/composables/useConversationUnread'
+import { useResponsiveDialogWidth } from '@/composables/useResponsiveDialogWidth'
 import { useNotificationsStore } from '@/stores/notifications'
 import { Plus, Delete, User, Loading, ChatDotRound, UploadFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -294,7 +295,7 @@ const charactersStore = useCharactersStore()
 const characterSquareStore = useCharacterSquareStore()
 const conversationsStore = useConversationsStore()
 const { list: characters, loading: storeLoading } = storeToRefs(charactersStore)
-const dialogWidth = computed(() => window.innerWidth < 600 ? 'calc(100vw - 24px)' : '560px')
+const dialogWidth = useResponsiveDialogWidth(560)
 const loading = computed({
   get: () => storeLoading.value,
   set: (v) => { storeLoading.value = v }

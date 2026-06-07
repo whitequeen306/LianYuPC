@@ -406,7 +406,7 @@ async function handleFetchModels(provider) {
 
 <style lang="scss" scoped>
 .settings-page {
-  max-width: 780px;
+  max-width: $narrow-page-max;
 }
 
 .page-header {

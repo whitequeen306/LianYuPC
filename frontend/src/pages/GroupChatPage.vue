@@ -392,14 +392,7 @@ onUnmounted(() => {
 })
 
 watch(
-  () => notificationsStore.unreadCount,
-  () => {
-    refreshUnreadFromApi()
-  }
-)
-
-watch(
-  () => notificationsStore.latest?.length ?? 0,
+  () => [notificationsStore.unreadCount, notificationsStore.latest?.length ?? 0],
   () => {
     refreshUnreadFromApi()
   }

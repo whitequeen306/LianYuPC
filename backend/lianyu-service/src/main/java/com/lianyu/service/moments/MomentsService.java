@@ -419,32 +419,7 @@ public class MomentsService {
     }
 
     private String sanitizeMomentText(String raw) {
-        if (raw == null) {
-            return "";
-        }
-        String text = raw.trim()
-                .replaceAll("[\\r\\n]+", " ")
-                .replaceAll("\\s{2,}", " ");
-        if (text.length() > contentMaxChars) {
-            text = text.substring(0, contentMaxChars);
-        }
-        if (text.length() < 8) {
-            return "";
-        }
-        return text;
-    }
-
-    private String snippetFromHistory(List<Message> history) {
-        StringBuilder sb = new StringBuilder();
-        for (Message m : history) {
-            if (m.getContent() == null) {
-                continue;
-            }
-            String role = "USER".equalsIgnoreCase(m.getRole()) ? "用户" : "我";
-            String line = m.getContent().length() > 80 ? m.getContent().substring(0, 80) + "…" : m.getContent();
-            sb.append(role).append("：").append(line).append("\n");
-        }
-        return sb.toString();
+        return MomentsTextSanitizer.sanitize(raw, contentMaxChars, 8);
     }
 
     private MessageDto toMessageDto(Message msg) {

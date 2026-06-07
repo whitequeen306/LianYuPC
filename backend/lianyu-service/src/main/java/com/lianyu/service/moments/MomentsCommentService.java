@@ -235,13 +235,6 @@ public class MomentsCommentService {
     }
 
     private String sanitizeComment(String raw) {
-        if (raw == null) {
-            return "";
-        }
-        String text = raw.trim().replaceAll("[\\r\\n]+", " ").replaceAll("\\s{2,}", " ");
-        if (text.length() > 500) {
-            text = text.substring(0, 500);
-        }
-        return text;
+        return MomentsTextSanitizer.sanitizeWithoutMin(raw, 500);
     }
 }

@@ -212,58 +212,17 @@
       </div>
 
       <aside class="moments-atmosphere stagger-item" aria-label="companion spotlight">
-        <div
-          v-if="sidebarCompanion"
-          class="atmosphere-panel glass"
-          @click="goToCharacterChat(sidebarCompanion.characterId)"
-        >
-          <div class="atmosphere-panel__glow" aria-hidden="true" />
-          <div class="atmosphere-panel__orb atmosphere-panel__orb--a" aria-hidden="true" />
-          <div class="atmosphere-panel__orb atmosphere-panel__orb--b" aria-hidden="true" />
-
-          <div class="atmosphere-panel__portrait">
-            <img
-              v-if="sidebarCompanion.avatarUrl"
-              :src="resolveMediaUrl(sidebarCompanion.avatarUrl)"
-              :alt="sidebarCompanion.name"
-              class="atmosphere-panel__img"
-            />
-            <div v-else class="atmosphere-panel__fallback">
-              <el-icon :size="48"><User /></el-icon>
-            </div>
-            <div class="atmosphere-panel__vignette" aria-hidden="true" />
-          </div>
-
-          <div class="atmosphere-panel__body">
-            <span class="atmosphere-panel__eyebrow">{{ t('home.atmosphereEyebrow') }}</span>
-            <h3 class="atmosphere-panel__name">{{ sidebarCompanion.name }}</h3>
-            <div v-if="sidebarCompanion.emotion" class="atmosphere-panel__mood">
-              <EmotionBadge
-                :current-emotion="sidebarCompanion.emotion.currentEmotion"
-                :emotion-intensity="sidebarCompanion.emotion.emotionIntensity"
-                :status-text="sidebarCompanion.emotion.statusText"
-              />
-            </div>
-            <blockquote class="atmosphere-panel__quote">
-              <p>{{ sidebarQuote }}</p>
-            </blockquote>
-            <el-button
-              type="primary"
-              class="atmosphere-panel__cta"
-              @click.stop="goToCharacterChat(sidebarCompanion.characterId)"
-            >
-              {{ t('home.atmosphereContinue') }}
-            </el-button>
-          </div>
-        </div>
-
-        <div v-else class="atmosphere-panel atmosphere-panel--empty glass">
-          <p class="atmosphere-panel__empty-title">{{ t('home.atmosphereEmptyTitle') }}</p>
-          <p class="atmosphere-panel__empty-desc">{{ t('home.atmosphereEmptyDesc') }}</p>
-          <el-button type="primary" class="atmosphere-panel__cta" @click="$router.push('/app/character-square')">
-            {{ t('home.exploreSquare') }}
-          </el-button>
-        </div>
+        <AtmospherePanel
+          :companion="sidebarCompanion"
+          :quote="sidebarQuote"
+          :eyebrow="t('home.atmosphereEyebrow')"
+          :continue-label="t('home.atmosphereContinue')"
+          :empty-title="t('home.atmosphereEmptyTitle')"
+          :empty-desc="t('home.atmosphereEmptyDesc')"
+          :explore-label="t('home.exploreSquare')"
+          @chat="goToCharacterChat"
+          @explore="$router.push('/app/character-square')"
+        />
 
         <section v-if="activeInFeed.length > 1 && !filterCharId" class="moments-sidebar-section glass">
           <div class="moments-sidebar-section__head">
@@ -323,7 +282,6 @@ import {
   RefreshRight,
   User
 } from '@element-plus/icons-vue'
-import { createConversation } from '@/api/conversation'
 import { useCharactersStore } from '@/stores/characters'
 import { useConversationsStore } from '@/stores/conversations'
 import { listAllDiaries, listCharacterStates } from '@/api/characterState'
@@ -337,13 +295,16 @@ import {
 import { resolveMediaUrl } from '@/utils/media'
 import { sanitizeHtml } from '@/utils/sanitize'
 import { feedDateKey, formatFeedDateLabel, formatFeedTime } from '@/utils/feedTime'
-import EmotionBadge from '@/components/EmotionBadge.vue'
+import { truncateText } from '@/utils/text'
+import { useOpenSingleChat } from '@/composables/useOpenSingleChat'
+import AtmospherePanel from '@/components/AtmospherePanel.vue'
 
 const { t } = useI18n()
 const router = useRouter()
 
 const charactersStore = useCharactersStore()
 const conversationsStore = useConversationsStore()
+const { openSingleChat } = useOpenSingleChat()
 const posts = ref([])
 const filterCharId = ref(null)
 const loading = ref(false)
@@ -521,6 +482,21 @@ function setFilter(id) {
   reloadFeed()
 }
 
+async function applyFeedPage(data, { append = false } = {}) {
+  const items = data?.items || []
+  if (append) {
+    posts.value = [...posts.value, ...items]
+  } else {
+    posts.value = items
+  }
+  cursor.value = data?.nextCursor ?? null
+  hasMore.value = !!data?.hasMore
+  for (const post of items) {
+    if (draftByPost[post.id] === undefined) draftByPost[post.id] = ''
+    await loadComments(post.id, true)
+  }
+}
+
 async function reloadFeed() {
   loading.value = true
   cursor.value = null
@@ -532,13 +508,7 @@ async function reloadFeed() {
       characterId: filterCharId.value || undefined,
       limit: 20
     })
-    posts.value = data?.items || []
-    cursor.value = data?.nextCursor ?? null
-    hasMore.value = !!data?.hasMore
-    for (const post of posts.value) {
-      if (draftByPost[post.id] === undefined) draftByPost[post.id] = ''
-      await loadComments(post.id, true)
-    }
+    await applyFeedPage(data)
   } finally {
     loading.value = false
   }
@@ -553,14 +523,7 @@ async function loadMore() {
       cursor: cursor.value,
       limit: 20
     })
-    const items = data?.items || []
-    posts.value = [...posts.value, ...items]
-    cursor.value = data?.nextCursor ?? null
-    hasMore.value = !!data?.hasMore
-    for (const post of items) {
-      if (draftByPost[post.id] === undefined) draftByPost[post.id] = ''
-      await loadComments(post.id, true)
-    }
+    await applyFeedPage(data, { append: true })
   } finally {
     loadingMore.value = false
   }
@@ -719,32 +682,13 @@ function formatTime(iso) {
   return formatFeedTime(iso, t)
 }
 
-function truncateText(text, maxLen) {
-  if (!text) return ''
-  const trimmed = text.trim()
-  if (trimmed.length <= maxLen) return trimmed
-  return `${trimmed.slice(0, maxLen)}…`
-}
-
 function goChat(post) {
   if (!post.conversationId) return
   router.push(`/app/chat/${post.conversationId}`)
 }
 
-async function goToCharacterChat(characterId) {
-  if (!characterId) return
-  try {
-    const convs = await conversationsStore.fetchList()
-    const existing = (convs || []).find(c => c.mode === 'SINGLE' && c.characterId === characterId)
-    if (existing) {
-      router.push({ path: `/app/chat/${existing.id}` })
-      return
-    }
-    const created = await createConversation({ characterId, mode: 'SINGLE' })
-    router.push({ path: `/app/chat/${created.id}` })
-  } catch {
-    router.push('/app/characters')
-  }
+function goToCharacterChat(characterId) {
+  void openSingleChat(characterId)
 }
 </script>
 

@@ -35,7 +35,7 @@
             </div>
             <div class="feed-card__meta">
               <span class="feed-card__name">{{ diary.characterName }}</span>
-              <span class="feed-card__time">{{ formatTime(diary.createdAt) }}</span>
+              <span class="feed-card__time">{{ formatFeedTime(diary.createdAt, t) }}</span>
             </div>
             <span class="feed-card__badge feed-card__badge--diary">{{ t('diary.badge') }}</span>
           </div>
@@ -88,9 +88,6 @@ onMounted(async () => {
   }
 })
 
-function formatTime(iso) {
-  return formatFeedTime(iso, t)
-}
 </script>
 
 <style lang="scss" scoped>

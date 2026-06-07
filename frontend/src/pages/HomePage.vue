@@ -6,8 +6,8 @@
       <p class="companion-lead">{{ t('home.subtitle') }}</p>
     </header>
 
-    <div class="home-layout">
-      <div class="home-main">
+    <div class="moments-layout">
+      <div class="moments-main">
         <section class="companion-section stagger-item">
           <div class="companion-section__head">
             <h2 class="companion-section__title">{{ t('home.feedSection') }}</h2>
@@ -120,51 +120,18 @@
         </section>
       </div>
 
-      <aside class="home-atmosphere stagger-item" aria-label="companion spotlight">
-        <div v-if="featuredCompanion" class="atmosphere-panel glass" @click="goToChat(featuredCompanion.characterId)">
-          <div class="atmosphere-panel__glow" aria-hidden="true" />
-          <div class="atmosphere-panel__orb atmosphere-panel__orb--a" aria-hidden="true" />
-          <div class="atmosphere-panel__orb atmosphere-panel__orb--b" aria-hidden="true" />
-
-          <div class="atmosphere-panel__portrait">
-            <img
-              v-if="featuredCompanion.avatarUrl"
-              :src="resolveMediaUrl(featuredCompanion.avatarUrl)"
-              :alt="featuredCompanion.name"
-              class="atmosphere-panel__img"
-            />
-            <div v-else class="atmosphere-panel__fallback">
-              <el-icon :size="48"><User /></el-icon>
-            </div>
-            <div class="atmosphere-panel__vignette" aria-hidden="true" />
-          </div>
-
-          <div class="atmosphere-panel__body">
-            <span class="atmosphere-panel__eyebrow">{{ t('home.atmosphereEyebrow') }}</span>
-            <h3 class="atmosphere-panel__name">{{ featuredCompanion.name }}</h3>
-            <div v-if="featuredCompanion.emotion" class="atmosphere-panel__mood">
-              <EmotionBadge
-                :current-emotion="featuredCompanion.emotion.currentEmotion"
-                :emotion-intensity="featuredCompanion.emotion.emotionIntensity"
-                :status-text="featuredCompanion.emotion.statusText"
-              />
-            </div>
-            <blockquote class="atmosphere-panel__quote">
-              <p>{{ atmosphereQuote }}</p>
-            </blockquote>
-            <el-button type="primary" class="atmosphere-panel__cta" @click.stop="goToChat(featuredCompanion.characterId)">
-              {{ t('home.atmosphereContinue') }}
-            </el-button>
-          </div>
-        </div>
-
-        <div v-else class="atmosphere-panel atmosphere-panel--empty glass">
-          <p class="atmosphere-panel__empty-title">{{ t('home.atmosphereEmptyTitle') }}</p>
-          <p class="atmosphere-panel__empty-desc">{{ t('home.atmosphereEmptyDesc') }}</p>
-          <el-button type="primary" class="atmosphere-panel__cta" @click="$router.push('/app/character-square')">
-            {{ t('home.exploreSquare') }}
-          </el-button>
-        </div>
+      <aside class="moments-atmosphere stagger-item" aria-label="companion spotlight">
+        <AtmospherePanel
+          :companion="featuredCompanion"
+          :quote="atmosphereQuote"
+          :eyebrow="t('home.atmosphereEyebrow')"
+          :continue-label="t('home.atmosphereContinue')"
+          :empty-title="t('home.atmosphereEmptyTitle')"
+          :empty-desc="t('home.atmosphereEmptyDesc')"
+          :explore-label="t('home.exploreSquare')"
+          @chat="goToChat"
+          @explore="$router.push('/app/character-square')"
+        />
       </aside>
     </div>
   </div>
@@ -183,13 +150,15 @@ import {
   PictureRounded,
   Collection
 } from '@element-plus/icons-vue'
-import { createConversation } from '@/api/conversation'
 import { useCharactersStore } from '@/stores/characters'
 import { useConversationsStore } from '@/stores/conversations'
 import { listAllDiaries, listCharacterStates } from '@/api/characterState'
 import { fetchMomentsFeed } from '@/api/moments'
 import { resolveMediaUrl } from '@/utils/media'
 import { formatFeedTime } from '@/utils/feedTime'
+import { truncateText } from '@/utils/text'
+import { useOpenSingleChat } from '@/composables/useOpenSingleChat'
+import AtmospherePanel from '@/components/AtmospherePanel.vue'
 import EmotionBadge from '@/components/EmotionBadge.vue'
 
 const { t } = useI18n()
@@ -197,6 +166,7 @@ const router = useRouter()
 const userStore = useUserStore()
 const charactersStore = useCharactersStore()
 const conversationsStore = useConversationsStore()
+const { openSingleChat } = useOpenSingleChat()
 const emotionStates = ref([])
 const feedPreview = ref([])
 const feedLoading = ref(true)
@@ -311,13 +281,6 @@ async function loadFeedPreview() {
   }
 }
 
-function truncateText(text, maxLen) {
-  if (!text) return ''
-  const trimmed = text.trim()
-  if (trimmed.length <= maxLen) return trimmed
-  return `${trimmed.slice(0, maxLen)}…`
-}
-
 function formatFeedItemTime(iso) {
   return formatFeedTime(iso, t)
 }
@@ -326,50 +289,14 @@ function openFeedItem(item) {
   router.push(item.route)
 }
 
-async function goToChat(characterId) {
-  if (!characterId) return
-  try {
-    const convs = await conversationsStore.fetchList()
-    const existing = (convs || []).find(c => c.mode === 'SINGLE' && c.characterId === characterId)
-    if (existing) {
-      router.push({ path: `/app/chat/${existing.id}` })
-      return
-    }
-    const created = await createConversation({ characterId, mode: 'SINGLE' })
-    router.push({ path: `/app/chat/${created.id}` })
-  } catch {
-    router.push('/app/characters')
-  }
+function goToChat(characterId) {
+  void openSingleChat(characterId)
 }
 </script>
 
 <style lang="scss" scoped>
 .home-page {
   width: 100%;
-}
-
-.home-layout {
-  display: grid;
-  gap: $space-6;
-
-  @media (min-width: 1024px) {
-    grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
-    gap: $space-8;
-    align-items: start;
-  }
-}
-
-.home-main {
-  min-width: 0;
-}
-
-.home-atmosphere {
-  min-width: 0;
-
-  @media (min-width: 1024px) {
-    position: sticky;
-    top: $space-4;
-  }
 }
 
 .story-actions {
