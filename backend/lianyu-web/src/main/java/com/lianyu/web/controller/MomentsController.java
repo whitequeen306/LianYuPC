@@ -19,6 +19,13 @@ public class MomentsController {
     private final MomentsService momentsService;
     private final MomentsCommentService momentsCommentService;
 
+    @Operation(summary = "发表用户动态")
+    @PostMapping
+    public Result<MomentPostResponse> createPost(@RequestBody @jakarta.validation.Valid CreateMomentPostRequest request) {
+        long userId = StpUtil.getLoginIdAsLong();
+        return Result.ok(momentsService.createUserPost(userId, request));
+    }
+
     @Operation(summary = "朋友圈动态流")
     @GetMapping
     public Result<MomentFeedResponse> feed(

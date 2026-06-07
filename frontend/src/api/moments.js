@@ -23,3 +23,7 @@ export function fetchMomentComments(postId, params = {}) {
 export function addMomentComment(postId, body) {
   return http.post(`/moments/${postId}/comments`, body)
 }
+
+export function createMomentPost(body) {
+  return http.post('/moments', body)
+}

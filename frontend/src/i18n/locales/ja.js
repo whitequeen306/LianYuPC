@@ -262,6 +262,11 @@ export default {
     reply: '返信',
     replyingTo: '{name} に返信',
     you: 'あなた',
+    composeTitle: '投稿する',
+    composePlaceholder: '今の気持ちをシェア…',
+    publish: '投稿',
+    postSent: '投稿しました。キャラがコメントするかもしれません',
+    typeUser: '自分の投稿',
     activeCharacters: 'フィードのキャラ',
     recentDiary: '最近の日記'
   },

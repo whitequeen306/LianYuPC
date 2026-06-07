@@ -74,28 +74,36 @@ public class MomentsCommentOrchestrator {
         this.scheduledExecutorService = scheduledExecutorService;
     }
 
-    @Value("${lianyu.moments.comments.peer-pick-count:2}")
+    @Value("${lianyu.moments.comments.peer-pick-count:3}")
     private int peerPickCount;
+
+    @Value("${lianyu.moments.comments.followup-peer-probability:0.65}")
+    private double followupPeerProbability;
+
+    @Value("${lianyu.moments.comments.peer-guaranteed-min:1}")
+    private int peerGuaranteedMin;
 
     @Value("${lianyu.moments.comments.content-max-chars:120}")
     private int commentMaxChars;
 
-    @Value("${lianyu.moments.comments.peer-first-delay-min-seconds:180}")
+    @Value("${lianyu.moments.comments.peer-first-delay-min-seconds:60}")
     private int peerFirstDelayMinSec;
 
-    @Value("${lianyu.moments.comments.peer-first-delay-max-seconds:480}")
+    @Value("${lianyu.moments.comments.peer-first-delay-max-seconds:180}")
     private int peerFirstDelayMaxSec;
 
-    @Value("${lianyu.moments.comments.peer-stagger-min-seconds:120}")
+    /** 多位路人评论之间的间隔（秒），避免扎堆 */
+    @Value("${lianyu.moments.comments.peer-stagger-min-seconds:60}")
     private int peerStaggerMinSec;
 
-    @Value("${lianyu.moments.comments.peer-stagger-max-seconds:300}")
+    @Value("${lianyu.moments.comments.peer-stagger-max-seconds:180}")
     private int peerStaggerMaxSec;
 
+    /** 发帖人回复评论前的等待（秒），模拟不是秒回 */
     @Value("${lianyu.moments.comments.author-reply-min-seconds:60}")
     private int authorReplyMinSec;
 
-    @Value("${lianyu.moments.comments.author-reply-max-seconds:120}")
+    @Value("${lianyu.moments.comments.author-reply-max-seconds:180}")
     private int authorReplyMaxSec;
 
     /**
@@ -132,29 +140,37 @@ public class MomentsCommentOrchestrator {
         }
 
         Collections.shuffle(candidates);
-        int pick = Math.min(Math.max(1, peerPickCount), candidates.size());
-        List<Character> picked = new ArrayList<>(candidates.subList(0, pick));
+        List<Character> picked = pickPeerCharacters(candidates);
+        if (picked.isEmpty()) {
+            markPeerRoundDone(post, List.of());
+            return;
+        }
         List<Long> pickedIds = picked.stream().map(Character::getId).toList();
         markPeerRoundDone(post, pickedIds);
 
-        long delaySec = randomSeconds(peerFirstDelayMinSec, peerFirstDelayMaxSec);
-        for (int i = 0; i < picked.size(); i++) {
-            Character peer = picked.get(i);
-            long delayMs = delaySec * 1000L;
-            long peerId = peer.getId();
-            scheduledExecutorService.schedule(
-                    () -> executePeerComment(postId, peerId),
-                    delayMs,
-                    TimeUnit.MILLISECONDS
-            );
-            log.debug("Moments peer comment scheduled: postId={}, peer={}, delaySec={}",
-                    postId, peer.getName(), delaySec);
-            if (i < picked.size() - 1) {
-                delaySec += randomSeconds(peerStaggerMinSec, peerStaggerMaxSec);
-            }
-        }
+        long firstDelayMs = randomSeconds(peerFirstDelayMinSec, peerFirstDelayMaxSec) * 1000L;
+        schedulePeerCommentChain(postId, pickedIds, 0, firstDelayMs);
         log.info("Moments peer round scheduled: postId={}, peers={}, firstDelaySec={}",
-                postId, pickedIds, randomSeconds(peerFirstDelayMinSec, peerFirstDelayMaxSec));
+                postId, pickedIds, firstDelayMs / 1000);
+    }
+
+    /**
+     * 链式调度路人评论：上一位评论完成后再等 {@link #peerStaggerMinSec}~{@link #peerStaggerMaxSec} 秒才安排下一位。
+     */
+    private void schedulePeerCommentChain(Long postId, List<Long> peerIds, int index, long delayMs) {
+        if (index >= peerIds.size()) {
+            return;
+        }
+        Long peerId = peerIds.get(index);
+        scheduledExecutorService.schedule(() -> {
+            executePeerComment(postId, peerId);
+            if (index + 1 < peerIds.size()) {
+                long staggerMs = randomSeconds(peerStaggerMinSec, peerStaggerMaxSec) * 1000L;
+                schedulePeerCommentChain(postId, peerIds, index + 1, staggerMs);
+            }
+        }, delayMs, TimeUnit.MILLISECONDS);
+        log.debug("Moments peer comment scheduled: postId={}, peerIndex={}, delayMs={}",
+                postId, index, delayMs);
     }
 
     private void executePeerComment(Long postId, Long peerCharacterId) {
@@ -180,20 +196,35 @@ public class MomentsCommentOrchestrator {
             Character postAuthor = post.getCharacterId() != null
                     ? characterMapper.selectById(post.getCharacterId())
                     : null;
-            String postAuthorName = postAuthor != null ? postAuthor.getName() : "发帖角色";
+            boolean userPost = isUserPost(post);
+            String postAuthorName = userPost ? "用户" : (postAuthor != null ? postAuthor.getName() : "发帖角色");
+
+            String instruction;
+            if (userPost) {
+                instruction = String.format("""
+                        用户刚发了一条朋友圈（不是你的用户专属对话，而是公开动态）：
+                        「%s」
+                        请以你的身份写一条评论：像朋友随口回一句，可以自然称呼用户。
+                        15~60字，不要重复原文，不要话题标签，不要解释自己是AI。
+                        """, trim(post.getContent(), 200));
+            } else {
+                instruction = String.format("""
+                        另一位角色「%s」刚发了一条朋友圈（不是你的用户，也不是你在对主人说话）：
+                        「%s」
+                        请以你的身份，对「%s」这条动态写评论：像同行随口回一句，可以直呼对方名字。
+                        禁止：对用户/主人/Darling 说话；不要使用你专指用户的昵称；不要写「你来找我」这类明显在喊用户的句子。
+                        15~60字，不要重复原文，不要话题标签，不要解释自己是AI。
+                        """, postAuthorName, trim(post.getContent(), 200), postAuthorName);
+            }
 
             String content = generateCharacterComment(
                     post.getUserId(),
                     peer,
                     post,
-                    MomentsCommentAudience.character(postAuthorName),
-                    String.format("""
-                            另一位角色「%s」刚发了一条朋友圈（不是你的用户，也不是你在对主人说话）：
-                            「%s」
-                            请以你的身份，对「%s」这条动态写评论：像同行随口回一句，可以直呼对方名字。
-                            禁止：对用户/主人/Darling 说话；不要使用你专指用户的昵称；不要写「你来找我」这类明显在喊用户的句子。
-                            15~60字，不要重复原文，不要话题标签，不要解释自己是AI。
-                            """, postAuthorName, trim(post.getContent(), 200), postAuthorName)
+                    userPost
+                            ? MomentsCommentAudience.user("用户")
+                            : MomentsCommentAudience.character(postAuthorName),
+                    instruction
             );
             if (content == null) {
                 return;
@@ -210,7 +241,9 @@ public class MomentsCommentOrchestrator {
             );
             if (saved != null) {
                 log.info("Moments peer comment: postId={}, peer={}", post.getId(), peer.getName());
-                scheduleAuthorReply(postId, saved.getId());
+                if (!userPost) {
+                    scheduleAuthorReply(postId, saved.getId());
+                }
             }
         } finally {
             unlock(postId);
@@ -234,8 +267,8 @@ public class MomentsCommentOrchestrator {
                 unlock(postId);
             }
         }, delayMs, TimeUnit.MILLISECONDS);
-        log.debug("Moments author reply scheduled: postId={}, triggerCommentId={}, delayMs={}",
-                postId, triggerCommentId, delayMs);
+        log.debug("Moments author reply scheduled: postId={}, triggerCommentId={}, delaySec={}",
+                postId, triggerCommentId, delayMs / 1000);
     }
 
     private void runAuthorReply(MomentsPost post, MomentsComment trigger) {
@@ -302,14 +335,44 @@ public class MomentsCommentOrchestrator {
         }
     }
 
+    /**
+     * 至少保证 {@link #peerGuaranteedMin} 个角色评论；额外角色按 {@link #followupPeerProbability} 概率加入。
+     */
+    private List<Character> pickPeerCharacters(List<Character> candidates) {
+        if (candidates.isEmpty()) {
+            return List.of();
+        }
+        int guaranteed = Math.min(Math.max(1, peerGuaranteedMin), candidates.size());
+        int maxPick = Math.min(Math.max(guaranteed, peerPickCount), candidates.size());
+        List<Character> picked = new ArrayList<>();
+        for (int i = 0; i < candidates.size() && picked.size() < maxPick; i++) {
+            if (picked.size() < guaranteed) {
+                picked.add(candidates.get(i));
+            } else if (ThreadLocalRandom.current().nextDouble() < followupPeerProbability) {
+                picked.add(candidates.get(i));
+            }
+        }
+        return picked;
+    }
+
     private List<Character> listPeerCandidates(MomentsPost post) {
         Long authorId = post.getCharacterId();
         List<Character> all = characterMapper.selectList(new LambdaQueryWrapper<Character>()
                 .eq(Character::getOwnerUserId, post.getUserId()));
+        if (isUserPost(post)) {
+            return all.stream()
+                    .filter(c -> c.getId() != null)
+                    .filter(c -> !isBlocked(c) && !isDoNotDisturbActive(c))
+                    .collect(Collectors.toList());
+        }
         return all.stream()
                 .filter(c -> c.getId() != null && !c.getId().equals(authorId))
                 .filter(c -> !isBlocked(c) && !isDoNotDisturbActive(c))
                 .collect(Collectors.toList());
+    }
+
+    private static boolean isUserPost(MomentsPost post) {
+        return post != null && "USER".equalsIgnoreCase(post.getAuthorType());
     }
 
     private void markPeerRoundDone(MomentsPost post, List<Long> pickedIds) {

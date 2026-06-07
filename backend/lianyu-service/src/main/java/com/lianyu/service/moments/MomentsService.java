@@ -45,6 +45,9 @@ public class MomentsService {
     public static final String TYPE_MOOD = "MOOD";
     public static final String TYPE_REFLECTION = "REFLECTION";
     public static final String TYPE_SYSTEM = "SYSTEM";
+    public static final String TYPE_USER = "USER";
+    public static final String AUTHOR_CHARACTER = "CHARACTER";
+    public static final String AUTHOR_USER = "USER";
 
     private static final String SEEN_KEY_PREFIX = "moments:feed-seen:";
     private static final String COOLDOWN_KEY_PREFIX = "moments:cooldown:";
@@ -60,6 +63,7 @@ public class MomentsService {
     private final OutputLanguageService outputLanguageService;
     private final StringRedisTemplate redisTemplate;
     private final FileStorageService fileStorageService;
+    private final MomentsCommentOrchestrator momentsCommentOrchestrator;
 
     @Value("${lianyu.moments.content-max-chars:180}")
     private int contentMaxChars;
@@ -92,14 +96,17 @@ public class MomentsService {
             rows = new ArrayList<>(rows.subList(0, realLimit));
         }
 
-        Set<Long> characterIds = rows.stream().map(MomentsPost::getCharacterId).collect(Collectors.toSet());
+        Set<Long> characterIds = rows.stream()
+                .map(MomentsPost::getCharacterId)
+                .filter(id -> id != null && id > 0)
+                .collect(Collectors.toSet());
         Map<Long, Character> characterMap = new HashMap<>();
         if (!characterIds.isEmpty()) {
             characterMapper.selectBatchIds(characterIds).forEach(c -> characterMap.put(c.getId(), c));
         }
 
         List<MomentPostResponse> items = rows.stream()
-                .filter(row -> characterMap.containsKey(row.getCharacterId()))
+                .filter(row -> isUserAuthored(row) || characterMap.containsKey(row.getCharacterId()))
                 .map(row -> toResponse(row, characterMap.get(row.getCharacterId())))
                 .toList();
 
@@ -128,6 +135,31 @@ public class MomentsService {
                 LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
                 Duration.ofDays(90)
         );
+    }
+
+    @Transactional
+    public MomentPostResponse createUserPost(Long userId, CreateMomentPostRequest request) {
+        String content = sanitizeMomentText(request.getContent());
+        if (content.isBlank()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "动态内容不能为空");
+        }
+
+        String hash = sha256(userId + "|USER|" + System.nanoTime() + "|" + normalizeForHash(content));
+        MomentsPost post = new MomentsPost();
+        post.setUserId(userId);
+        post.setAuthorType(AUTHOR_USER);
+        post.setCharacterId(null);
+        post.setConversationId(null);
+        post.setContent(content);
+        post.setPostType(TYPE_USER);
+        post.setVisibility("PRIVATE");
+        post.setMetaJson(Map.of("userAuthored", true));
+        post.setSourceHash(hash);
+        momentsPostMapper.insert(post);
+
+        momentsCommentOrchestrator.afterPostCreated(post.getId());
+        log.info("Moments user post created: userId={}, id={}", userId, post.getId());
+        return toResponse(post, null);
     }
 
     /**
@@ -179,6 +211,7 @@ public class MomentsService {
 
         MomentsPost post = new MomentsPost();
         post.setUserId(userId);
+        post.setAuthorType(AUTHOR_CHARACTER);
         post.setCharacterId(characterId);
         post.setConversationId(conversation.getId());
         post.setContent(generated.content());
@@ -201,6 +234,7 @@ public class MomentsService {
                 character.getName(),
                 post.getContent()
         );
+        momentsCommentOrchestrator.afterPostCreated(post.getId());
         log.info("Moments post created: userId={}, character={}, type={}, id={}",
                 userId, character.getName(), post.getPostType(), post.getId());
         return true;
@@ -428,12 +462,18 @@ public class MomentsService {
     }
 
     private MomentPostResponse toResponse(MomentsPost row, Character character) {
+        boolean userAuthored = isUserAuthored(row);
         return MomentPostResponse.builder()
                 .id(row.getId())
+                .authorType(userAuthored ? AUTHOR_USER : AUTHOR_CHARACTER)
                 .characterId(row.getCharacterId())
-                .characterName(character != null ? character.getName() : "角色")
-                .characterAvatarUrl(character != null
+                .characterName(userAuthored ? null : (character != null ? character.getName() : "角色"))
+                .characterAvatarUrl(userAuthored ? null : (character != null
                         ? fileStorageService.resolvePublicUrl(character.getAvatarUrl())
+                        : null))
+                .userDisplayName(userAuthored ? "你" : null)
+                .imageUrl(row.getImageUrl() != null
+                        ? fileStorageService.resolvePublicUrl(row.getImageUrl())
                         : null)
                 .conversationId(row.getConversationId())
                 .content(row.getContent())
@@ -441,6 +481,10 @@ public class MomentsService {
                 .metaJson(row.getMetaJson())
                 .createdAt(row.getCreatedAt())
                 .build();
+    }
+
+    private static boolean isUserAuthored(MomentsPost row) {
+        return row != null && AUTHOR_USER.equalsIgnoreCase(row.getAuthorType());
     }
 
     private String sha256(String input) {

@@ -268,6 +268,11 @@ export default {
     reply: 'Reply',
     replyingTo: 'Replying to {name}',
     you: 'You',
+    composeTitle: 'Share a moment',
+    composePlaceholder: 'What\'s on your mind…',
+    publish: 'Post',
+    postSent: 'Posted! Characters may comment soon',
+    typeUser: 'My post',
     activeCharacters: 'In this feed',
     recentDiary: 'Recent diary'
   },

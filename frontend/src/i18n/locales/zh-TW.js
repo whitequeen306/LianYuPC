@@ -56,6 +56,11 @@ export default {
     reply: '回覆',
     replyingTo: '回覆 {name}',
     you: '你',
+    composeTitle: '發一條動態',
+    composePlaceholder: '分享此刻的想法…',
+    publish: '發布',
+    postSent: '動態已發布，角色們可能會來評論',
+    typeUser: '我的動態',
     activeCharacters: '動態裡的她',
     recentDiary: '最近日記'
   },

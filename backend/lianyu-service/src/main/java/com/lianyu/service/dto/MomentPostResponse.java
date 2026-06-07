@@ -9,9 +9,13 @@ import lombok.Data;
 @Builder
 public class MomentPostResponse {
     private Long id;
+    /** CHARACTER | USER */
+    private String authorType;
     private Long characterId;
     private String characterName;
     private String characterAvatarUrl;
+    private String userDisplayName;
+    private String imageUrl;
     private Long conversationId;
     private String content;
     private String postType;

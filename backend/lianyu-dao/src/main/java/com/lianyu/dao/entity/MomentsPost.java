@@ -13,7 +13,10 @@ public class MomentsPost {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long userId;
+    /** CHARACTER | USER */
+    private String authorType;
     private Long characterId;
+    private String imageUrl;
     private Long conversationId;
     private String content;
     private String postType;

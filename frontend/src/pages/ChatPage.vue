@@ -224,9 +224,60 @@ const waitingReply = ref(false)
 const awaitingOpening = ref(false)
 const currentProvider = ref('')
 const currentModel = ref('')
+let restoringProviderPref = false
 
 const availableModels = ref([])
 let conversationPollTimer = null
+
+/** 按角色隔离的 API Provider 选择记忆 */
+const PER_CHAR_PROVIDER_KEY = 'lianyu-char-provider'
+function loadCharProviderPref(charId) {
+  if (!charId) return null
+  try {
+    const raw = localStorage.getItem(PER_CHAR_PROVIDER_KEY)
+    if (!raw) return null
+    const map = JSON.parse(raw)
+    return map[charId] || null
+  } catch { return null }
+}
+function saveCharProviderPref(charId, provider, model) {
+  if (!charId) return
+  try {
+    const raw = localStorage.getItem(PER_CHAR_PROVIDER_KEY)
+    const map = raw ? JSON.parse(raw) : {}
+    map[charId] = { provider, model }
+    localStorage.setItem(PER_CHAR_PROVIDER_KEY, JSON.stringify(map))
+  } catch { /* ignore */ }
+}
+
+/** 根据 activeCharacter 恢复该角色的 API Provider 选择记忆 */
+function restoreCharProviderPref() {
+  const charId = activeCharacter.value?.id
+  if (!charId) {
+    currentProvider.value = PLATFORM_PROVIDER
+    currentModel.value = PLATFORM_MODEL
+    loadModels(PLATFORM_PROVIDER)
+    return
+  }
+  const saved = loadCharProviderPref(charId)
+  restoringProviderPref = true
+  if (saved && saved.provider) {
+    currentProvider.value = saved.provider
+    currentModel.value = saved.model || ''
+    if (saved.provider !== PLATFORM_PROVIDER) {
+      loadModels(saved.provider)
+    } else {
+      currentModel.value = PLATFORM_MODEL
+      loadModels(PLATFORM_PROVIDER)
+    }
+  } else {
+    currentProvider.value = PLATFORM_PROVIDER
+    currentModel.value = PLATFORM_MODEL
+    loadModels(PLATFORM_PROVIDER)
+  }
+  // nextTick 后重置 flag，此时 watcher 中的 model 覆盖已执行完毕
+  nextTick(() => { restoringProviderPref = false })
+}
 let fastPollTimer = null
 let fastPollStartedAt = 0
 const FAST_POLL_MS = 2000
@@ -317,15 +368,14 @@ onMounted(async () => {
   }
   await charactersStore.fetchList().catch(() => [])
 
-  currentProvider.value = PLATFORM_PROVIDER
-  currentModel.value = PLATFORM_MODEL
-  loadModels(PLATFORM_PROVIDER)
-
   const convId = route.params.id
   if (convId) {
     skipBounceOnce = true
     await loadConversation(Number(convId))
   }
+
+  // 恢复该角色上次选择的 API Provider（按角色隔离，新角色默认走平台）
+  restoreCharProviderPref()
   startConversationPolling()
   setActiveChatRefreshHandler(refreshActiveChatMessages)
 })
@@ -334,6 +384,8 @@ watch(() => route.params.id, async (id) => {
   if (id) {
     skipBounceOnce = true
     await loadConversation(Number(id))
+    // 切换到不同角色时恢复该角色的 API 选择记忆
+    restoreCharProviderPref()
   }
 })
 
@@ -347,13 +399,22 @@ onUnmounted(() => {
 watch(currentProvider, (p) => {
   if (!p) return
   if (p === PLATFORM_PROVIDER) {
-    currentModel.value = PLATFORM_MODEL
+    if (!restoringProviderPref) currentModel.value = PLATFORM_MODEL
     loadModels(p)
     return
   }
   const vault = providersStore.vaults.find(v => v.provider === p)
-  currentModel.value = vault?.modelDefault || ''
+  if (!restoringProviderPref) {
+    currentModel.value = vault?.modelDefault || ''
+  }
   loadModels(p)
+})
+
+watch(currentModel, (m) => {
+  const charId = activeCharacter.value?.id
+  if (charId && currentProvider.value) {
+    saveCharProviderPref(charId, currentProvider.value, m || '')
+  }
 })
 
 watch(currentConvId, (id) => {

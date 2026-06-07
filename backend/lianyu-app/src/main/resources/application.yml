@@ -317,26 +317,24 @@ lianyu:
     trigger-probability: 0.12
     content-max-chars: 180
     comments:
-      peer-pick-count: 2
+      peer-pick-count: 3
+      peer-guaranteed-min: 1
       content-max-chars: 120
       # 单条动态下自动评论总上限，避免无限自嗨
       max-auto-comments-per-post: 8
-      # 评论链后续是否继续出现路人跟评（每次触发概率）
-      followup-peer-probability: 0.45
-      # 动态发出后，首位路人评论随机延迟（秒），避免发帖瞬间扎堆
-      peer-first-delay-min-seconds: 180
-      peer-first-delay-max-seconds: 480
-      # 多位路人评论之间的间隔（秒），一次只来一个
-      peer-stagger-min-seconds: 120
-      peer-stagger-max-seconds: 300
-      # 评论出现后，后续路人跟评延迟（秒）
-      followup-peer-min-seconds: 90
-      followup-peer-max-seconds: 240
+      # 首位路人评论之外，额外路人跟评概率
+      followup-peer-probability: 0.65
+      # 动态发出后，首位路人评论随机延迟 1~3 分钟
+      peer-first-delay-min-seconds: 60
+      peer-first-delay-max-seconds: 180
+      # 多位路人评论之间的间隔 1~3 分钟，避免扎堆
+      peer-stagger-min-seconds: 60
+      peer-stagger-max-seconds: 180
       # 挑选后续评论人时，尽量避开最近已发言的角色窗口
       recent-participants-window: 4
-      # 发帖人回复某条评论前的等待（秒），模拟不是秒回
+      # 发帖人回复某条评论前的等待 1~3 分钟，模拟不是秒回
       author-reply-min-seconds: 60
-      author-reply-max-seconds: 120
+      author-reply-max-seconds: 180
     image:
       # 朋友圈自动配图（文案->提示词->文生图->MinIO）
       enabled: true

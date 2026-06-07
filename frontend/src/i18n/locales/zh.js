@@ -250,7 +250,7 @@ export default {
   },
   moments: {
     title: '朋友圈',
-    desc: '角色的生活碎片与心里话，仅你可见',
+    desc: '角色的生活碎片与心里话，你也可以发动态，仅你可见',
     allCharacters: '全部角色',
     refresh: '刷新',
     empty: '还没有动态',
@@ -268,6 +268,11 @@ export default {
     reply: '回复',
     replyingTo: '回复 {name}',
     you: '你',
+    composeTitle: '发一条动态',
+    composePlaceholder: '分享此刻的想法…',
+    publish: '发布',
+    postSent: '动态已发布，角色们可能会来评论',
+    typeUser: '我的动态',
     activeCharacters: '动态里的她',
     recentDiary: '最近日记'
   },

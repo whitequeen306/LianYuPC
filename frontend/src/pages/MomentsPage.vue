@@ -40,6 +40,35 @@
           </button>
         </div>
 
+        <div v-if="!filterCharId" class="feed-compose-card glass stagger-item">
+          <div class="feed-compose-card__head">
+            <div class="feed-card__avatar feed-compose-card__avatar">
+              <el-icon :size="18"><User /></el-icon>
+            </div>
+            <span class="feed-compose-card__title">{{ t('moments.composeTitle') }}</span>
+          </div>
+          <el-input
+            v-model="userPostDraft"
+            type="textarea"
+            :rows="2"
+            :autosize="{ minRows: 2, maxRows: 5 }"
+            :placeholder="t('moments.composePlaceholder')"
+            resize="none"
+            maxlength="512"
+            show-word-limit
+          />
+          <div class="feed-compose-card__actions">
+            <el-button
+              type="primary"
+              :loading="userPostSending"
+              :disabled="!userPostDraft.trim()"
+              @click="submitUserPost"
+            >
+              {{ t('moments.publish') }}
+            </el-button>
+          </div>
+        </div>
+
         <div v-if="loading && posts.length === 0" class="feed-empty glass stagger-item">
           <el-icon class="is-loading" :size="28"><Loading /></el-icon>
           <p>{{ t('common.loading') }}</p>
@@ -71,17 +100,18 @@
               <div class="feed-card__head">
                 <div class="feed-card__avatar">
                   <img
-                    v-if="item.post.characterAvatarUrl"
-                    :src="resolveMediaUrl(item.post.characterAvatarUrl)"
-                    :alt="item.post.characterName"
+                    v-if="postAuthorAvatar(item.post)"
+                    :src="resolveMediaUrl(postAuthorAvatar(item.post))"
+                    :alt="postAuthorName(item.post)"
                   />
                   <el-icon v-else :size="18"><User /></el-icon>
                 </div>
                 <div class="feed-card__meta">
-                  <span class="feed-card__name">{{ item.post.characterName }}</span>
+                  <span class="feed-card__name">{{ postAuthorName(item.post) }}</span>
                   <span class="feed-card__time">{{ formatTime(item.post.createdAt) }}</span>
                 </div>
                 <span
+                  v-if="item.post.authorType !== 'USER'"
                   class="feed-card__badge"
                   :class="`feed-card__badge--${item.post.postType?.toLowerCase()}`"
                 >
@@ -299,6 +329,7 @@ import { useConversationsStore } from '@/stores/conversations'
 import { listAllDiaries, listCharacterStates } from '@/api/characterState'
 import {
   addMomentComment,
+  createMomentPost,
   fetchMomentComments,
   fetchMomentsFeed,
   markMomentsSeen
@@ -328,6 +359,8 @@ const draftByPost = reactive({})
 const replyTarget = reactive({})
 const sending = reactive({})
 const expandedComments = reactive({})
+const userPostDraft = ref('')
+const userPostSending = ref(false)
 
 let pollTimer = null
 
@@ -470,11 +503,9 @@ function startCommentPolling() {
   stopCommentPolling()
   pollTimer = setInterval(() => {
     for (const post of posts.value) {
-      if (expandedComments[post.id]) {
-        loadComments(post.id, true)
-      }
+      loadComments(post.id, true)
     }
-  }, 4000)
+  }, 6000)
 }
 
 function stopCommentPolling() {
@@ -642,9 +673,33 @@ async function submitComment(post) {
   }
 }
 
+function postAuthorName(post) {
+  return post.authorType === 'USER' ? t('moments.you') : post.characterName
+}
+
+function postAuthorAvatar(post) {
+  return post.authorType === 'USER' ? null : post.characterAvatarUrl
+}
+
+async function submitUserPost() {
+  const text = userPostDraft.value.trim()
+  if (!text || userPostSending.value) return
+  userPostSending.value = true
+  try {
+    await createMomentPost({ content: text })
+    userPostDraft.value = ''
+    ElMessage.success(t('moments.postSent'))
+    await reloadFeed()
+  } catch {
+    /* http interceptor */
+  } finally {
+    userPostSending.value = false
+  }
+}
+
 function postTypeClass(type) {
   const key = type?.toLowerCase()
-  if (key === 'mood' || key === 'reflection' || key === 'system') {
+  if (key === 'mood' || key === 'reflection' || key === 'system' || key === 'user') {
     return `feed-card--${key}`
   }
   return ''
@@ -654,7 +709,8 @@ function typeLabel(type) {
   const map = {
     MOOD: t('moments.typeMood'),
     REFLECTION: t('moments.typeReflection'),
-    SYSTEM: t('moments.typeSystem')
+    SYSTEM: t('moments.typeSystem'),
+    USER: t('moments.typeUser')
   }
   return map[type] || type
 }
@@ -693,6 +749,34 @@ async function goToCharacterChat(characterId) {
 </script>
 
 <style lang="scss" scoped>
+.feed-compose-card {
+  padding: $space-4;
+  margin-bottom: $space-4;
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: $space-2;
+  }
+
+  &__avatar {
+    flex-shrink: 0;
+  }
+
+  &__title {
+    font-weight: 600;
+    color: $color-text-primary;
+  }
+
+  &__actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+}
+
 .empty-icon {
   width: 72px;
   height: 72px;
