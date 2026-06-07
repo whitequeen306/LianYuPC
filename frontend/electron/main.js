@@ -13,6 +13,7 @@ import {
 } from 'electron'
 import path from 'path'
 import fs from 'fs'
+import crypto from 'crypto'
 import { fileURLToPath } from 'url'
 import {
   readDesktopSettings,
@@ -51,6 +52,7 @@ const SHARED_WEB_PREFS = {
   nodeIntegration: false,
   sandbox: true,
   partition: 'persist:lianyu',
+  devTools: isDebug,
 }
 
 /** 透明桌宠窗口：Windows 上 sandbox 会破坏透明合成，需单独关闭 */
@@ -67,33 +69,131 @@ function resolveApiOrigin() {
   return (trimmed || DEFAULT_API_ORIGIN).replace(/\/$/, '')
 }
 
-/** 服务器证书 SHA-256 指纹（构建时注入），用于自签名证书固定 */
+/** 服务器证书 SPKI SHA-256（Base64）。当证书续期但私钥不变时无需更新此值 */
+const PINNED_SPKI = 'EdDpp/Z9REuRjqZLzXXrOW8opTtR8Yph2YM0s+xuLss='
+
+/** 服务器证书 SHA-256 指纹（构建时注入），用于自签名证书固定二层兜底 */
 const EXPECTED_CERT_FINGERPRINT = (process.env.LIANYU_CERT_FINGERPRINT || '').trim()
 
-// SPKI 白名单必须在 app.whenReady() 之前！否则无效
-const SPKI = 'EdDpp/Z9REuRjqZLzXXrOW8opTtR8Yph2YM0s+xuLss='
-app.commandLine.appendSwitch('ignore-certificate-errors-spki-list', SPKI)
-
 function configureCertificatePinning() {
-  if (!EXPECTED_CERT_FINGERPRINT) return
+  const ses = session.defaultSession
 
-  // certificate-error 事件兜底
-  app.on('certificate-error', (event, _webContents, url, _error, cert, callback) => {
-    const lowercase = cert.fingerprint?.toLowerCase() || ''
-    const expected = EXPECTED_CERT_FINGERPRINT.toLowerCase().replace(/:/g, '')
-    if (lowercase === expected) {
-      log(`cert pin OK for ${url}`)
-      event.preventDefault()
-      callback(true)
+  // 方式一（主力）：接管 TLS 验证，对自签名证书做 SPKI 指纹比对
+  ses.setCertificateVerifyProc((request, callback) => {
+    const { hostname, certificate } = request
+
+    // 只拦截自己服务器的 TLS 连接，其他域名走 Chromium 默认验证
+    const apiOrigin = resolveApiOrigin()
+    let apiHostname = ''
+    try {
+      apiHostname = new URL(apiOrigin).hostname
+    } catch {
+      // ignore
+    }
+    if (!apiHostname || hostname !== apiHostname) {
+      callback(-3) // 使用 Chromium 默认验证
       return
     }
-    log(`cert pin REJECTED for ${url} — got ${lowercase}`)
-    callback(false)
+
+    // 计算服务端证书的 SPKI SHA-256（与 PINNED_SPKI 比对）
+    try {
+      const spki = getSPKIHash(certificate)
+      if (spki === PINNED_SPKI) {
+        callback(0) // 信任
+        return
+      }
+    } catch {
+      // 计算失败则拒绝
+    }
+
+    log(`cert pin REJECTED for ${hostname} — SPKI mismatch`)
+    callback(-2) // 拒绝
   })
+
+  // 方式二（兜底）：certificate-error 事件再校验一次指纹
+  if (EXPECTED_CERT_FINGERPRINT) {
+    app.on('certificate-error', (event, _webContents, url, _error, cert, cb) => {
+      const lowercase = cert.fingerprint?.toLowerCase() || ''
+      const expected = EXPECTED_CERT_FINGERPRINT.toLowerCase().replace(/:/g, '')
+      if (lowercase === expected) {
+        log(`cert-error pin OK for ${url}`)
+        event.preventDefault()
+        cb(true)
+        return
+      }
+      log(`cert-error pin REJECTED for ${url} — got ${lowercase}`)
+      cb(false)
+    })
+  }
+}
+
+/** 从 Electron Certificate 对象计算 SPKI SHA-256（Base64） */
+function getSPKIHash(certificate) {
+  // Electron 的 Certificate 对象包含 subjectPublicKeyInfo 字段
+  const spki = certificate.subjectPublicKeyInfo
+  if (spki) {
+    const hash = crypto.createHash('sha256').update(spki).digest('base64')
+    return hash
+  }
+  // 降级：使用 issuerCert 的 fingerprint
+  throw new Error('SPKI not available')
 }
 
 function configureSecurity() {
   configureCertificatePinning()
+}
+
+/**
+ * 反调试与反抓包：
+ * 1. 生产环境禁用 DevTools（快捷键 + 右键菜单）
+ * 2. 剥离 --inspect / --remote-debugging-port 启动参数
+ * 3. 检测系统代理（Charles/Fiddler/Proxyman 会设系统代理）
+ */
+function configureAntiDebug() {
+  // 剥离调试参数（禁止外部调试器附加）
+  const stripFlags = [
+    '--inspect', '--inspect-brk', '--inspect-port',
+    '--remote-debugging-port', '--remote-debugging-address',
+  ]
+  for (const flag of stripFlags) {
+    app.commandLine.removeSwitch(flag)
+  }
+
+  // 生产环境禁用所有窗口的 DevTools
+  if (!isDebug) {
+    app.on('web-contents-created', (_event, contents) => {
+      contents.on('before-input-event', (_e, input) => {
+        // 屏蔽 Ctrl+Shift+I / F12 / Ctrl+Shift+J / Ctrl+Shift+C
+        if (
+          (input.control && input.shift && (input.key === 'I' || input.key === 'J' || input.key === 'C'))
+          || input.key === 'F12'
+        ) {
+          contents.setIgnoreMenuShortcuts(true)
+        }
+      })
+
+      // 阻止通过代码打开 DevTools
+      contents.on('devtools-opened', () => {
+        if (!contents.isDestroyed()) {
+          contents.closeDevTools()
+        }
+      })
+    })
+  }
+
+  // 系统代理检测（抓包工具会修改系统代理设置）
+  checkSystemProxy()
+}
+
+function checkSystemProxy() {
+  try {
+    const proxySettings = app.resolveProxy('https://example.com')
+    if (proxySettings && proxySettings !== 'DIRECT') {
+      log(`WARNING: system proxy detected: ${proxySettings}`)
+    }
+  } catch {
+    // 检测失败不阻塞启动
+  }
 }
 
 function resolveWsUrlPrefix(httpOrigin) {
@@ -896,6 +996,7 @@ function registerIpcHandlers() {
 app.whenReady().then(() => {
   log('app ready')
   configureSecurity()
+  configureAntiDebug()
   patchDesktopRequestOrigin()
   applyLaunchAtLogin(readDesktopSettings().launchAtLogin)
   registerIpcHandlers()

@@ -1,6 +1,6 @@
 {
   "name": "lianyu-pc",
-  "version": "0.2.55",
+  "version": "0.2.56",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.js",
@@ -61,6 +61,12 @@
         ]
       }
     ],
+    "asar": {
+      "encryption": {
+        "algorithm": "AES-256-GCM",
+        "key": "./build/asar-key.txt"
+      }
+    },
     "afterPack": "scripts/after-pack.mjs",
     "win": {
       "target": "nsis",
