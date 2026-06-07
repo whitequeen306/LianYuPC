@@ -146,7 +146,7 @@ public class MomentsCommentOrchestrator {
 
         MomentsInteractionState state = interactionStateMapper.selectById(post.getId());
         if (state != null && state.getPeerRoundDone() != null && state.getPeerRoundDone() == 1) {
-            if (!fromReconcile) {
+            if (hasPeerCommentFromOtherCharacter(post)) {
                 return;
             }
             resetPeerRoundState(postId);
@@ -155,7 +155,14 @@ public class MomentsCommentOrchestrator {
 
         List<Character> candidates = listPeerCandidates(post);
         if (candidates.isEmpty()) {
-            log.info("Moments peer round skipped (need 2+ characters): postId={}, userId={}",
+            int minChars = isUserPost(post) ? 1 : 2;
+            if (countOwnedCharacters(post.getUserId()) >= minChars) {
+                log.warn("Moments peer round: no available characters (blocked/DND?), will retry: postId={}",
+                        postId);
+                schedulePeerRoundRetry(postId);
+                return;
+            }
+            log.info("Moments peer round skipped (insufficient characters): postId={}, userId={}",
                     postId, post.getUserId());
             markPeerRoundDone(post, List.of());
             return;
@@ -421,15 +428,23 @@ public class MomentsCommentOrchestrator {
         Long authorId = post.getCharacterId();
         List<Character> all = characterMapper.selectList(new LambdaQueryWrapper<Character>()
                 .eq(Character::getOwnerUserId, post.getUserId()));
+        List<Character> available = all.stream()
+                .filter(c -> c.getId() != null)
+                .filter(c -> !isUserPost(post) || !c.getId().equals(authorId))
+                .filter(c -> !isBlocked(c) && !isDoNotDisturbActive(c))
+                .collect(Collectors.toList());
+        if (!available.isEmpty()) {
+            return available;
+        }
         if (isUserPost(post)) {
             return all.stream()
                     .filter(c -> c.getId() != null)
-                    .filter(c -> !isBlocked(c) && !isDoNotDisturbActive(c))
+                    .filter(c -> !isBlocked(c))
                     .collect(Collectors.toList());
         }
         return all.stream()
                 .filter(c -> c.getId() != null && !c.getId().equals(authorId))
-                .filter(c -> !isBlocked(c) && !isDoNotDisturbActive(c))
+                .filter(c -> !isBlocked(c))
                 .collect(Collectors.toList());
     }
 
@@ -487,14 +502,35 @@ public class MomentsCommentOrchestrator {
     }
 
     private boolean hasPeerCommentFromOtherCharacter(MomentsPost post) {
-        if (post == null || post.getCharacterId() == null) {
+        if (post == null) {
             return false;
         }
-        Long count = momentsCommentMapper.selectCount(new LambdaQueryWrapper<MomentsComment>()
+        LambdaQueryWrapper<MomentsComment> qw = new LambdaQueryWrapper<MomentsComment>()
                 .eq(MomentsComment::getPostId, post.getId())
                 .eq(MomentsComment::getSourceType, MomentsCommentService.SOURCE_AUTO_PEER_COMMENT)
-                .ne(MomentsComment::getCharacterId, post.getCharacterId()));
+                .isNotNull(MomentsComment::getCharacterId);
+        if (!isUserPost(post) && post.getCharacterId() != null) {
+            qw.ne(MomentsComment::getCharacterId, post.getCharacterId());
+        }
+        Long count = momentsCommentMapper.selectCount(qw);
         return count != null && count > 0;
+    }
+
+    private long countOwnedCharacters(Long userId) {
+        if (userId == null) {
+            return 0L;
+        }
+        Long count = characterMapper.selectCount(new LambdaQueryWrapper<Character>()
+                .eq(Character::getOwnerUserId, userId));
+        return count == null ? 0L : count;
+    }
+
+    private void schedulePeerRoundRetry(Long postId) {
+        long retryMs = Math.max(60, peerRetryDelaySec) * 1000L;
+        scheduledExecutorService.schedule(
+                () -> schedulePeerRound(postId, true),
+                retryMs,
+                TimeUnit.MILLISECONDS);
     }
 
     private String generateCharacterComment(Long userId,

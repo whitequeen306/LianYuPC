@@ -50,6 +50,7 @@ services:
       MINIO_ENDPOINT: http://minio:9000
       MILVUS_HOST: milvus
       SERVER_PORT: 8080
+      TZ: Asia/Shanghai
     # 仅绑定本机，避免公网明文 HTTP 绕过 Nginx TLS（云端经 frontend:443 反代 backend:8080）
     ports:
       - "127.0.0.1:${SERVER_PORT:-8080}:8080"

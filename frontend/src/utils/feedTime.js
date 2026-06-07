@@ -1,10 +1,24 @@
 /**
+ * API returns LocalDateTime without offset (Asia/Shanghai business time).
+ */
+export function parseFeedDateTime(iso) {
+  if (!iso) return null
+  const raw = String(iso).trim()
+  if (!raw) return null
+  if (/[zZ]$/.test(raw) || /[+-]\d{2}:\d{2}$/.test(raw)) {
+    const d = new Date(raw)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+  const d = new Date(`${raw}+08:00`)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+/**
  * Relative / friendly timestamps for social feed surfaces.
  */
 export function formatFeedTime(iso, t) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return iso
+  const d = parseFeedDateTime(iso)
+  if (!d) return iso || ''
 
   const now = new Date()
   const sameDay = d.toDateString() === now.toDateString()
@@ -28,9 +42,8 @@ export function formatFeedTime(iso, t) {
 }
 
 export function formatFeedDateLabel(iso, t) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return iso
+  const d = parseFeedDateTime(iso)
+  if (!d) return iso || ''
 
   const now = new Date()
   if (d.toDateString() === now.toDateString()) {
@@ -47,8 +60,7 @@ export function formatFeedDateLabel(iso, t) {
 }
 
 export function feedDateKey(iso) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return iso
+  const d = parseFeedDateTime(iso)
+  if (!d) return iso || ''
   return d.toDateString()
 }

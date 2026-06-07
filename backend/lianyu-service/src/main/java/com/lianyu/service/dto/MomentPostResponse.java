@@ -15,6 +15,7 @@ public class MomentPostResponse {
     private String characterName;
     private String characterAvatarUrl;
     private String userDisplayName;
+    private String userAvatarUrl;
     private String imageUrl;
     private Long conversationId;
     private String content;

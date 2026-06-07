@@ -8,10 +8,12 @@ import com.lianyu.dao.entity.Character;
 import com.lianyu.dao.entity.Conversation;
 import com.lianyu.dao.entity.Message;
 import com.lianyu.dao.entity.MomentsPost;
+import com.lianyu.dao.entity.User;
 import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.MessageMapper;
 import com.lianyu.dao.mapper.MomentsPostMapper;
+import com.lianyu.dao.mapper.UserMapper;
 import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.CharacterPromptBuilder;
 import com.lianyu.service.dto.*;
@@ -56,6 +58,7 @@ public class MomentsService {
     private final ConversationMapper conversationMapper;
     private final MessageMapper messageMapper;
     private final CharacterMapper characterMapper;
+    private final UserMapper userMapper;
     private final AiChatService aiChatService;
     private final CharacterPromptBuilder promptBuilder;
     private final MemoryRetriever memoryRetriever;
@@ -67,6 +70,12 @@ public class MomentsService {
 
     @Value("${lianyu.moments.content-max-chars:180}")
     private int contentMaxChars;
+
+    @Value("${lianyu.moments.user-post-min-chars:1}")
+    private int userPostMinChars;
+
+    @Value("${lianyu.moments.character-post-min-chars:8}")
+    private int characterPostMinChars;
 
     @Value("${lianyu.moments.min-interval-hours:4}")
     private int minIntervalHours;
@@ -139,7 +148,7 @@ public class MomentsService {
 
     @Transactional
     public MomentPostResponse createUserPost(Long userId, CreateMomentPostRequest request) {
-        String content = sanitizeMomentText(request.getContent());
+        String content = sanitizeUserMomentText(request.getContent());
         if (content.isBlank()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "动态内容不能为空");
         }
@@ -336,7 +345,7 @@ public class MomentsService {
         } else {
             return null;
         }
-        String content = sanitizeMomentText(template);
+        String content = sanitizeCharacterMomentText(template);
         return new GeneratedMoment(TYPE_SYSTEM, content, meta);
     }
 
@@ -355,7 +364,7 @@ public class MomentsService {
         aiRequest.setMessages(messages);
         try {
             ChatResult result = aiChatService.chatBlocking(userId, aiRequest);
-            return sanitizeMomentText(result.getContent());
+            return sanitizeCharacterMomentText(result.getContent());
         } catch (Exception e) {
             log.debug("Moments AI generation failed: {}", e.getMessage());
             return null;
@@ -418,8 +427,15 @@ public class MomentsService {
         }
     }
 
-    private String sanitizeMomentText(String raw) {
-        return MomentsTextSanitizer.sanitize(raw, contentMaxChars, 8);
+    private String sanitizeUserMomentText(String raw) {
+        int min = Math.max(1, userPostMinChars);
+        return MomentsTextSanitizer.sanitize(raw, contentMaxChars, min);
+    }
+
+    /** 角色 AI / 系统模板动态：保留较高下限，避免过短无意义内容入库。 */
+    private String sanitizeCharacterMomentText(String raw) {
+        int min = Math.max(1, characterPostMinChars);
+        return MomentsTextSanitizer.sanitize(raw, contentMaxChars, min);
     }
 
     private MessageDto toMessageDto(Message msg) {
@@ -438,6 +454,7 @@ public class MomentsService {
 
     private MomentPostResponse toResponse(MomentsPost row, Character character) {
         boolean userAuthored = isUserAuthored(row);
+        User user = userAuthored ? userMapper.selectById(row.getUserId()) : null;
         return MomentPostResponse.builder()
                 .id(row.getId())
                 .authorType(userAuthored ? AUTHOR_USER : AUTHOR_CHARACTER)
@@ -447,6 +464,9 @@ public class MomentsService {
                         ? fileStorageService.resolvePublicUrl(character.getAvatarUrl())
                         : null))
                 .userDisplayName(userAuthored ? "你" : null)
+                .userAvatarUrl(userAuthored && user != null
+                        ? fileStorageService.resolvePublicUrl(user.getAvatarUrl())
+                        : null)
                 .imageUrl(row.getImageUrl() != null
                         ? fileStorageService.resolvePublicUrl(row.getImageUrl())
                         : null)

@@ -43,7 +43,12 @@
         <div v-if="!filterCharId" class="feed-compose-card glass stagger-item">
           <div class="feed-compose-card__head">
             <div class="feed-card__avatar feed-compose-card__avatar">
-              <el-icon :size="18"><User /></el-icon>
+              <img
+                v-if="userStore.avatarUrl"
+                :src="resolveMediaUrl(userStore.avatarUrl)"
+                alt=""
+              />
+              <el-icon v-else :size="18"><User /></el-icon>
             </div>
             <span class="feed-compose-card__title">{{ t('moments.composeTitle') }}</span>
           </div>
@@ -284,6 +289,7 @@ import {
 } from '@element-plus/icons-vue'
 import { useCharactersStore } from '@/stores/characters'
 import { useConversationsStore } from '@/stores/conversations'
+import { useUserStore } from '@/stores/user'
 import { listAllDiaries, listCharacterStates } from '@/api/characterState'
 import {
   addMomentComment,
@@ -304,6 +310,7 @@ const router = useRouter()
 
 const charactersStore = useCharactersStore()
 const conversationsStore = useConversationsStore()
+const userStore = useUserStore()
 const { openSingleChat } = useOpenSingleChat()
 const posts = ref([])
 const filterCharId = ref(null)
@@ -363,15 +370,21 @@ const feedTimeline = computed(() => {
 })
 
 const activeInFeed = computed(() => {
-  const ids = new Set(posts.value.map(p => p.characterId))
+  const ids = new Set(posts.value.map(p => p.characterId).filter(Boolean))
   return charactersStore.list.filter(c => ids.has(c.id)).slice(0, 8)
 })
+
+const firstCharacterPost = computed(() =>
+  posts.value.find(p => p.authorType === 'CHARACTER' && p.characterId)
+)
 
 const sidebarCompanion = computed(() => {
   if (filterCharId.value) {
     const char = charactersStore.list.find(c => c.id === filterCharId.value)
     const emotion = emotionStates.value.find(s => s.characterId === filterCharId.value)
-    const latestPost = posts.value.find(p => p.characterId === filterCharId.value)
+    const latestPost = posts.value.find(
+      p => p.characterId === filterCharId.value && p.authorType === 'CHARACTER'
+    )
     if (!char && !latestPost && !emotion) return null
     return {
       characterId: filterCharId.value,
@@ -381,13 +394,13 @@ const sidebarCompanion = computed(() => {
     }
   }
 
-  const first = posts.value[0]
-  if (first?.characterId) {
-    const emotion = emotionStates.value.find(s => s.characterId === first.characterId)
+  const post = firstCharacterPost.value
+  if (post) {
+    const emotion = emotionStates.value.find(s => s.characterId === post.characterId)
     return {
-      characterId: first.characterId,
-      name: first.characterName,
-      avatarUrl: first.characterAvatarUrl,
+      characterId: post.characterId,
+      name: post.characterName,
+      avatarUrl: post.characterAvatarUrl,
       emotion
     }
   }
@@ -408,13 +421,16 @@ const sidebarCompanion = computed(() => {
 
 const sidebarQuote = computed(() => {
   if (filterCharId.value) {
-    const post = posts.value.find(p => p.characterId === filterCharId.value)
+    const post = posts.value.find(
+      p => p.characterId === filterCharId.value && p.authorType === 'CHARACTER'
+    )
     if (post?.content) return truncateText(post.content, 140)
     const emotion = emotionStates.value.find(s => s.characterId === filterCharId.value)
     if (emotion?.statusText) return emotion.statusText
   }
 
-  if (posts.value[0]?.content) return truncateText(posts.value[0].content, 140)
+  const post = firstCharacterPost.value
+  if (post?.content) return truncateText(post.content, 140)
 
   const emotion = sidebarCompanion.value?.emotion
   if (emotion?.statusText) return emotion.statusText
@@ -425,6 +441,7 @@ const sidebarQuote = computed(() => {
 onMounted(async () => {
   try {
     await charactersStore.fetchList()
+    await userStore.fetchProfile()
   } catch {
     charactersStore.invalidate()
   }
@@ -641,7 +658,10 @@ function postAuthorName(post) {
 }
 
 function postAuthorAvatar(post) {
-  return post.authorType === 'USER' ? null : post.characterAvatarUrl
+  if (post.authorType === 'USER') {
+    return post.userAvatarUrl || userStore.avatarUrl || null
+  }
+  return post.characterAvatarUrl
 }
 
 async function submitUserPost() {

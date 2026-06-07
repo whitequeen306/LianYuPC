@@ -155,7 +155,7 @@ import { useConversationsStore } from '@/stores/conversations'
 import { listAllDiaries, listCharacterStates } from '@/api/characterState'
 import { fetchMomentsFeed } from '@/api/moments'
 import { resolveMediaUrl } from '@/utils/media'
-import { formatFeedTime } from '@/utils/feedTime'
+import { formatFeedTime, parseFeedDateTime } from '@/utils/feedTime'
 import { truncateText } from '@/utils/text'
 import { useOpenSingleChat } from '@/composables/useOpenSingleChat'
 import AtmospherePanel from '@/components/AtmospherePanel.vue'
@@ -181,13 +181,15 @@ const greeting = computed(() => {
 })
 
 const featuredCompanion = computed(() => {
-  const latest = feedPreview.value[0]
-  if (latest?.characterId) {
-    const emotion = emotionStates.value.find(s => s.characterId === latest.characterId)
+  const latestCharacterMoment = feedPreview.value.find(
+    item => item.kind === 'moment' && item.characterId
+  )
+  if (latestCharacterMoment) {
+    const emotion = emotionStates.value.find(s => s.characterId === latestCharacterMoment.characterId)
     return {
-      characterId: latest.characterId,
-      name: latest.characterName,
-      avatarUrl: latest.avatarUrl,
+      characterId: latestCharacterMoment.characterId,
+      name: latestCharacterMoment.characterName,
+      avatarUrl: latestCharacterMoment.avatarUrl,
       emotion
     }
   }
@@ -219,9 +221,11 @@ const featuredCompanion = computed(() => {
 })
 
 const atmosphereQuote = computed(() => {
-  const latest = feedPreview.value[0]
-  if (latest?.content) {
-    return truncateText(latest.content, 140)
+  const latestCharacterMoment = feedPreview.value.find(
+    item => item.kind === 'moment' && item.characterId && item.content
+  )
+  if (latestCharacterMoment?.content) {
+    return truncateText(latestCharacterMoment.content, 140)
   }
   const emotion = featuredCompanion.value?.emotion
   if (emotion?.statusText) {
@@ -253,9 +257,12 @@ async function loadFeedPreview() {
       key: `m-${p.id}`,
       kind: 'moment',
       id: p.id,
+      authorType: p.authorType,
       characterId: p.characterId,
-      characterName: p.characterName,
-      avatarUrl: p.characterAvatarUrl,
+      characterName: p.authorType === 'USER' ? t('moments.you') : p.characterName,
+      avatarUrl: p.authorType === 'USER'
+        ? (p.userAvatarUrl || userStore.avatarUrl)
+        : p.characterAvatarUrl,
       title: '',
       content: p.content,
       createdAt: p.createdAt,
@@ -274,7 +281,11 @@ async function loadFeedPreview() {
       route: '/app/diary'
     }))
     feedPreview.value = [...moments, ...diaries]
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .sort((a, b) => {
+        const ta = parseFeedDateTime(a.createdAt)?.getTime() ?? 0
+        const tb = parseFeedDateTime(b.createdAt)?.getTime() ?? 0
+        return tb - ta
+      })
       .slice(0, 4)
   } finally {
     feedLoading.value = false

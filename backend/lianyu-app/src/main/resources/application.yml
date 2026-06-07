@@ -13,6 +13,9 @@ spring:
     ansi:
       enabled: always
 
+  jackson:
+    time-zone: Asia/Shanghai
+
   servlet:
     multipart:
       max-file-size: 10MB
@@ -316,6 +319,9 @@ lianyu:
     min-interval-hours: 10
     trigger-probability: 0.12
     content-max-chars: 180
+    # 用户手动发动态最少字数；角色 AI 自动生成仍用 character-post-min-chars
+    user-post-min-chars: 1
+    character-post-min-chars: 8
     comments:
       peer-pick-count: 3
       peer-guaranteed-min: 1
