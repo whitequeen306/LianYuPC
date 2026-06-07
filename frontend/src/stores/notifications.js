@@ -7,6 +7,7 @@ import {
   listNotifications,
   markNotificationsRead,
   getPushPublicKey,
+  getPushStatus,
   subscribePush,
   unsubscribePush
 } from '@/api/notification'
@@ -86,10 +87,29 @@ export const useNotificationsStore = defineStore('notifications', () => {
     inited = true
     connectWebSocket()
     await syncPushState()
-    if (localStorage.getItem(PUSH_OPT_OUT_KEY) !== '1' && !pushEnabled.value) {
-      await enablePush({ silent: true })
-    }
+    await ensurePushRegistered()
     void Promise.all([refreshUnreadCount(), refreshLatest()])
+  }
+
+  async function ensurePushRegistered() {
+    if (localStorage.getItem(PUSH_OPT_OUT_KEY) === '1') return
+    const first = await enablePush({ silent: true })
+    if (isElectronRuntime()) {
+      return
+    }
+    if (!canUseWebPush()) {
+      return
+    }
+    try {
+      const status = await getPushStatus({ silent: true })
+      if (status?.serverConfigured && !status?.subscribed) {
+        await enablePush({ silent: true })
+      }
+    } catch {
+      if (!first?.ok && first?.reason === 'no_public_key') {
+        return
+      }
+    }
   }
 
   function dispose() {
@@ -330,10 +350,13 @@ export const useNotificationsStore = defineStore('notifications', () => {
       if (!publicKey) {
         return { ok: false, reason: 'no_public_key' }
       }
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(publicKey)
-      })
+      let sub = await reg.pushManager.getSubscription()
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey)
+        })
+      }
       await subscribePush({
         endpoint: sub.endpoint,
         p256dh: arrayBufferToBase64(sub.getKey('p256dh')),

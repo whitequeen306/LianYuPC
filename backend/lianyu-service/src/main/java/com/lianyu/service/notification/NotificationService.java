@@ -247,6 +247,14 @@ public class NotificationService {
         return vapidPublicKey;
     }
 
+    public boolean isPushServerConfigured() {
+        return pushEnabled && vapidPublicKey != null && !vapidPublicKey.isBlank();
+    }
+
+    public boolean hasActivePushSubscription(Long userId) {
+        return hasAnySubscription(userId);
+    }
+
     private boolean hasAnySubscription(Long userId) {
         Long count = subscriptionMapper.selectCount(new LambdaQueryWrapper<WebPushSubscription>()
                 .eq(WebPushSubscription::getUserId, userId)

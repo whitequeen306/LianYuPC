@@ -55,6 +55,16 @@ public class NotificationController {
         return Result.ok(Map.of("publicKey", notificationService.getVapidPublicKey()));
     }
 
+    @Operation(summary = "Web Push 订阅状态")
+    @GetMapping("/push/status")
+    public Result<Map<String, Object>> getPushStatus() {
+        long userId = StpUtil.getLoginIdAsLong();
+        return Result.ok(Map.of(
+                "serverConfigured", notificationService.isPushServerConfigured(),
+                "subscribed", notificationService.hasActivePushSubscription(userId)
+        ));
+    }
+
     @Operation(summary = "订阅 Web Push")
     @PostMapping("/push/subscribe")
     public Result<Void> subscribe(@Valid @RequestBody PushSubscriptionRequest request) {

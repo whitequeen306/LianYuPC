@@ -24,6 +24,12 @@ export function getPushPublicKey() {
   return http.get('/notifications/push/public-key')
 }
 
+export function getPushStatus(options = {}) {
+  return http.get('/notifications/push/status', {
+    skipGlobalError: options.silent === true
+  })
+}
+
 export function subscribePush(payload) {
   return http.post('/notifications/push/subscribe', payload)
 }

@@ -19,6 +19,7 @@ import com.lianyu.service.memory.MemoryRetriever;
 import com.lianyu.service.support.OutputLanguageService;
 import com.lianyu.service.tools.ChatToolContext;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.*;
 import java.util.concurrent.ScheduledExecutorService;
@@ -106,12 +107,23 @@ public class MomentsCommentOrchestrator {
     @Value("${lianyu.moments.comments.author-reply-max-seconds:180}")
     private int authorReplyMaxSec;
 
+    @Value("${lianyu.moments.comments.peer-retry-delay-seconds:300}")
+    private int peerRetryDelaySec;
+
     /**
      * 动态发布后：错峰安排路人评论（与用户无关，不瞬间扎堆）。
      */
     @Async
     public void afterPostCreated(Long postId) {
-        schedulePeerRound(postId);
+        schedulePeerRound(postId, false);
+    }
+
+    /**
+     * 补偿入口：重置路人轮次并重新调度（用于 AI 失败或过早标记 done 的动态）。
+     */
+    public void reconcilePeerComments(Long postId) {
+        resetPeerRoundState(postId);
+        schedulePeerRound(postId, true);
     }
 
     /**
@@ -122,19 +134,29 @@ public class MomentsCommentOrchestrator {
         scheduleAuthorReply(postId, triggerCommentId);
     }
 
-    private void schedulePeerRound(Long postId) {
+    private void schedulePeerRound(Long postId, boolean fromReconcile) {
         MomentsPost post = momentsPostMapper.selectById(postId);
         if (post == null) {
             return;
         }
 
+        if (hasPeerCommentFromOtherCharacter(post)) {
+            return;
+        }
+
         MomentsInteractionState state = interactionStateMapper.selectById(post.getId());
         if (state != null && state.getPeerRoundDone() != null && state.getPeerRoundDone() == 1) {
-            return;
+            if (!fromReconcile) {
+                return;
+            }
+            resetPeerRoundState(postId);
+            state = interactionStateMapper.selectById(post.getId());
         }
 
         List<Character> candidates = listPeerCandidates(post);
         if (candidates.isEmpty()) {
+            log.info("Moments peer round skipped (need 2+ characters): postId={}, userId={}",
+                    postId, post.getUserId());
             markPeerRoundDone(post, List.of());
             return;
         }
@@ -146,51 +168,80 @@ public class MomentsCommentOrchestrator {
             return;
         }
         List<Long> pickedIds = picked.stream().map(Character::getId).toList();
-        markPeerRoundDone(post, pickedIds);
+        savePeerRoundPending(post, pickedIds);
 
-        long firstDelayMs = randomSeconds(peerFirstDelayMinSec, peerFirstDelayMaxSec) * 1000L;
-        schedulePeerCommentChain(postId, pickedIds, 0, firstDelayMs);
-        log.info("Moments peer round scheduled: postId={}, peers={}, firstDelaySec={}",
-                postId, pickedIds, firstDelayMs / 1000);
+        long firstDelayMs = fromReconcile
+                ? randomSeconds(15, 45) * 1000L
+                : randomSeconds(peerFirstDelayMinSec, peerFirstDelayMaxSec) * 1000L;
+        schedulePeerCommentChain(postId, pickedIds, 0, firstDelayMs, 0);
+        log.info("Moments peer round scheduled: postId={}, peers={}, firstDelaySec={}, reconcile={}",
+                postId, pickedIds, firstDelayMs / 1000, fromReconcile);
     }
 
     /**
      * 链式调度路人评论：上一位评论完成后再等 {@link #peerStaggerMinSec}~{@link #peerStaggerMaxSec} 秒才安排下一位。
      */
-    private void schedulePeerCommentChain(Long postId, List<Long> peerIds, int index, long delayMs) {
+    private void schedulePeerCommentChain(Long postId, List<Long> peerIds, int index, long delayMs, int successCount) {
         if (index >= peerIds.size()) {
+            finalizePeerRound(postId, successCount, peerIds);
             return;
         }
         Long peerId = peerIds.get(index);
         scheduledExecutorService.schedule(() -> {
-            executePeerComment(postId, peerId);
+            int updatedSuccess = successCount;
+            if (executePeerComment(postId, peerId)) {
+                updatedSuccess++;
+            }
             if (index + 1 < peerIds.size()) {
                 long staggerMs = randomSeconds(peerStaggerMinSec, peerStaggerMaxSec) * 1000L;
-                schedulePeerCommentChain(postId, peerIds, index + 1, staggerMs);
+                schedulePeerCommentChain(postId, peerIds, index + 1, staggerMs, updatedSuccess);
+            } else {
+                finalizePeerRound(postId, updatedSuccess, peerIds);
             }
         }, delayMs, TimeUnit.MILLISECONDS);
         log.debug("Moments peer comment scheduled: postId={}, peerIndex={}, delayMs={}",
                 postId, index, delayMs);
     }
 
-    private void executePeerComment(Long postId, Long peerCharacterId) {
-        if (!tryLock(postId)) {
+    private void finalizePeerRound(Long postId, int successCount, List<Long> pickedIds) {
+        MomentsPost post = momentsPostMapper.selectById(postId);
+        if (post == null) {
             return;
+        }
+        if (successCount > 0 || hasPeerCommentFromOtherCharacter(post)) {
+            markPeerRoundDone(post, pickedIds);
+            return;
+        }
+        log.warn("Moments peer round produced zero comments: postId={}, will retry", postId);
+        resetPeerRoundState(postId);
+        long retryMs = Math.max(60, peerRetryDelaySec) * 1000L;
+        scheduledExecutorService.schedule(
+                () -> schedulePeerRound(postId, true),
+                retryMs,
+                TimeUnit.MILLISECONDS);
+    }
+
+    private boolean executePeerComment(Long postId, Long peerCharacterId) {
+        if (!tryLock(postId)) {
+            return false;
         }
         try {
             MomentsPost post = momentsPostMapper.selectById(postId);
             if (post == null) {
-                return;
+                return false;
+            }
+            if (hasPeerCommentFromOtherCharacter(post)) {
+                return true;
             }
 
             String idem = "peer:" + post.getId() + ":" + peerCharacterId;
             if (existsIdempotency(idem)) {
-                return;
+                return true;
             }
 
             Character peer = characterMapper.selectById(peerCharacterId);
             if (peer == null || isBlocked(peer) || isDoNotDisturbActive(peer)) {
-                return;
+                return false;
             }
 
             Character postAuthor = post.getCharacterId() != null
@@ -227,7 +278,7 @@ public class MomentsCommentOrchestrator {
                     instruction
             );
             if (content == null) {
-                return;
+                return false;
             }
 
             MomentsComment saved = momentsCommentService.insertCharacterComment(
@@ -244,13 +295,19 @@ public class MomentsCommentOrchestrator {
                 if (!userPost) {
                     scheduleAuthorReply(postId, saved.getId());
                 }
+                return true;
             }
+            return false;
         } finally {
             unlock(postId);
         }
     }
 
     private void scheduleAuthorReply(Long postId, Long triggerCommentId) {
+        scheduleAuthorReply(postId, triggerCommentId, 0);
+    }
+
+    private void scheduleAuthorReply(Long postId, Long triggerCommentId, int attempt) {
         long delayMs = randomSeconds(authorReplyMinSec, authorReplyMaxSec) * 1000L;
         scheduledExecutorService.schedule(() -> {
             if (!tryLock(postId)) {
@@ -262,33 +319,36 @@ public class MomentsCommentOrchestrator {
                 if (post == null || trigger == null) {
                     return;
                 }
-                runAuthorReply(post, trigger);
+                boolean ok = runAuthorReply(post, trigger);
+                if (!ok && attempt < 1) {
+                    scheduleAuthorReply(postId, triggerCommentId, attempt + 1);
+                }
             } finally {
                 unlock(postId);
             }
         }, delayMs, TimeUnit.MILLISECONDS);
-        log.debug("Moments author reply scheduled: postId={}, triggerCommentId={}, delaySec={}",
-                postId, triggerCommentId, delayMs / 1000);
+        log.debug("Moments author reply scheduled: postId={}, triggerCommentId={}, delaySec={}, attempt={}",
+                postId, triggerCommentId, delayMs / 1000, attempt);
     }
 
-    private void runAuthorReply(MomentsPost post, MomentsComment trigger) {
+    private boolean runAuthorReply(MomentsPost post, MomentsComment trigger) {
         Long authorId = post.getCharacterId();
         if (authorId == null) {
-            return;
+            return true;
         }
         if (MomentsCommentService.AUTHOR_CHARACTER.equals(trigger.getAuthorType())
                 && authorId.equals(trigger.getCharacterId())) {
-            return;
+            return true;
         }
 
         String idem = "author-reply:" + trigger.getId();
         if (existsIdempotency(idem)) {
-            return;
+            return true;
         }
 
         Character author = characterMapper.selectById(authorId);
         if (author == null || isBlocked(author) || isDoNotDisturbActive(author)) {
-            return;
+            return false;
         }
 
         String commenterName = resolveCommenterName(trigger);
@@ -317,7 +377,7 @@ public class MomentsCommentOrchestrator {
                                 trim(trigger.getContent(), 200), commenterName)
         );
         if (content == null) {
-            return;
+            return false;
         }
 
         Long rootId = trigger.getRootId() != null ? trigger.getRootId() : trigger.getId();
@@ -332,7 +392,9 @@ public class MomentsCommentOrchestrator {
         );
         if (saved != null) {
             log.info("Moments author reply: postId={}, triggerCommentId={}", post.getId(), trigger.getId());
+            return true;
         }
+        return false;
     }
 
     /**
@@ -381,20 +443,58 @@ public class MomentsCommentOrchestrator {
             state = new MomentsInteractionState();
             state.setPostId(post.getId());
             state.setUserId(post.getUserId());
-            state.setPeerRoundDone(1);
-            state.setPeerRoundSeq(1);
-            Map<String, Object> meta = new LinkedHashMap<>();
-            meta.put("pickedCharacterIds", pickedIds);
-            state.setLastPeerSampleJson(meta);
+        }
+        state.setPeerRoundDone(1);
+        state.setPeerRoundSeq((state.getPeerRoundSeq() == null ? 0 : state.getPeerRoundSeq()) + 1);
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("pickedCharacterIds", pickedIds);
+        meta.put("completedAt", LocalDateTime.now().toString());
+        state.setLastPeerSampleJson(meta);
+        if (interactionStateMapper.selectById(post.getId()) == null) {
             interactionStateMapper.insert(state);
         } else {
-            state.setPeerRoundDone(1);
-            state.setPeerRoundSeq((state.getPeerRoundSeq() == null ? 0 : state.getPeerRoundSeq()) + 1);
-            Map<String, Object> meta = new LinkedHashMap<>();
-            meta.put("pickedCharacterIds", pickedIds);
-            state.setLastPeerSampleJson(meta);
             interactionStateMapper.updateById(state);
         }
+    }
+
+    private void savePeerRoundPending(MomentsPost post, List<Long> pickedIds) {
+        MomentsInteractionState state = interactionStateMapper.selectById(post.getId());
+        if (state == null) {
+            state = new MomentsInteractionState();
+            state.setPostId(post.getId());
+            state.setUserId(post.getUserId());
+            state.setPeerRoundDone(0);
+            state.setPeerRoundSeq(0);
+        }
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("pickedCharacterIds", pickedIds);
+        meta.put("pendingAt", LocalDateTime.now().toString());
+        state.setLastPeerSampleJson(meta);
+        if (interactionStateMapper.selectById(post.getId()) == null) {
+            interactionStateMapper.insert(state);
+        } else {
+            interactionStateMapper.updateById(state);
+        }
+    }
+
+    private void resetPeerRoundState(Long postId) {
+        MomentsInteractionState state = interactionStateMapper.selectById(postId);
+        if (state == null) {
+            return;
+        }
+        state.setPeerRoundDone(0);
+        interactionStateMapper.updateById(state);
+    }
+
+    private boolean hasPeerCommentFromOtherCharacter(MomentsPost post) {
+        if (post == null || post.getCharacterId() == null) {
+            return false;
+        }
+        Long count = momentsCommentMapper.selectCount(new LambdaQueryWrapper<MomentsComment>()
+                .eq(MomentsComment::getPostId, post.getId())
+                .eq(MomentsComment::getSourceType, MomentsCommentService.SOURCE_AUTO_PEER_COMMENT)
+                .ne(MomentsComment::getCharacterId, post.getCharacterId()));
+        return count != null && count > 0;
     }
 
     private String generateCharacterComment(Long userId,

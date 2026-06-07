@@ -33,4 +33,26 @@ public interface MomentsPostMapper extends BaseMapper<MomentsPost> {
     List<MomentsDailyCountRow> selectTodayCountsByUsersAndCharacters(@Param("start") LocalDateTime start,
                                                                      @Param("userIds") List<Long> userIds,
                                                                      @Param("characterIds") List<Long> characterIds);
+
+    /**
+     * 角色动态缺少「其他角色」路人评论，且账号下至少 2 个角色（否则无法满足互评）。
+     */
+    @Select("""
+            SELECT p.id
+            FROM moments_post p
+            WHERE p.author_type = 'CHARACTER'
+              AND p.created_at < #{before}
+              AND (SELECT COUNT(*) FROM `character` c WHERE c.owner_user_id = p.user_id) >= 2
+              AND NOT EXISTS (
+                SELECT 1 FROM moments_comment mc
+                WHERE mc.post_id = p.id
+                  AND mc.source_type = 'AUTO_PEER_COMMENT'
+                  AND mc.character_id IS NOT NULL
+                  AND mc.character_id <> p.character_id
+              )
+            ORDER BY p.id ASC
+            LIMIT #{limit}
+            """)
+    List<Long> selectPostIdsNeedingPeerComments(@Param("before") LocalDateTime before,
+                                                @Param("limit") int limit);
 }
