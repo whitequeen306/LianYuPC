@@ -530,7 +530,24 @@ async function pollCurrentConversationMessages(force) {
       normalized.at(-1)?.id !== messages.value.at(-1)?.id
     if (changed) {
       skipBounceOnce = true
-      messages.value = normalized
+      // 保留本地 push 后服务端尚未持久化的用户消息，防止竞态条件导致消息"闪现"消失又出现
+      const localPending = messages.value.filter(m => m._tempId && m._tempId.startsWith('u'))
+      const stillPending = localPending.filter(m => {
+        // 通过 content+createdAt 近似匹配判断服务端是否已持久化该消息
+        return !normalized.some(s =>
+          s.role === 'user' && s.content === m.content && Math.abs(new Date(s.createdAt).getTime() - new Date(m.createdAt).getTime()) < 5000
+        )
+      })
+      if (stillPending.length > 0) {
+        // 将尚未持久化的本地消息插入到服务端列表末尾之前（保持时间顺序，倒序插入保持正确位置）
+        const merged = [...normalized]
+        const insertAfter = merged.findLastIndex(m => m.role === 'user')
+        const pos = insertAfter >= 0 ? insertAfter + 1 : merged.length
+        merged.splice(pos, 0, ...stillPending)
+        messages.value = merged
+      } else {
+        messages.value = normalized
+      }
       notificationsStore.markConversationRead(convId)
       syncAwaitingOpening()
       if (!awaitingOpening.value) {
@@ -557,14 +574,7 @@ async function handleSend() {
     return
   }
 
-  inputText.value = ''
-  pendingImageUrl.value = ''
-  await nextTick()
-  // 发送后自动恢复输入焦点
-  const ta = inputTextRef.value?.$el?.querySelector('textarea')
-    || inputTextRef.value?.$el?.getElementsByTagName('textarea')?.[0]
-  if (ta) ta.focus()
-
+  // 先 push 用户消息到列表，再清空输入框，避免视觉空档
   const userMsg = {
     _tempId: 'u' + Date.now(),
     role: 'user',
@@ -573,7 +583,14 @@ async function handleSend() {
     createdAt: new Date().toISOString()
   }
   messages.value.push(userMsg)
+
+  inputText.value = ''
+  pendingImageUrl.value = ''
   await nextTick()
+  // 发送后自动恢复输入焦点
+  const ta = inputTextRef.value?.$el?.querySelector('textarea')
+    || inputTextRef.value?.$el?.getElementsByTagName('textarea')?.[0]
+  if (ta) ta.focus()
   scrollToBottom()
 
   waitingReply.value = true
