@@ -197,7 +197,7 @@ async function handleUserMenu(command) {
   justify-content: space-between;
   width: 100%;
   margin: 0;
-  padding: $space-3 $layout-page-gutter;
+  padding: $space-3 $space-4 $space-3 $layout-page-gutter; // 右侧用较小留白，让按钮靠右置顶
   border-radius: 0;
   background: rgba(var(--ly-bg-surface-rgb), 0.55);
   backdrop-filter: blur(20px) saturate(130%);

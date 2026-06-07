@@ -111,7 +111,7 @@ body.electron-app {
   }
 
   .app-header {
-    padding-right: calc(#{$layout-page-gutter} + var(--electron-caption-controls-width));
+    padding-right: calc(#{$space-4} + var(--electron-caption-controls-width));
   }
 
   .gal-header {
