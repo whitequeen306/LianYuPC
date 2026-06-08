@@ -10,6 +10,9 @@ import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.MessageMapper;
 import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
+import com.lianyu.service.relationship.RelationshipPhase;
+import com.lianyu.service.relationship.RelationshipSnapshot;
+import com.lianyu.service.relationship.RelationshipStateService;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -39,6 +42,7 @@ public class ProactiveChatScheduler {
     private final CharacterChatBehaviorResolver chatBehaviorResolver;
     private final EngagementFrequencyScorer engagementScorer;
     private final StringRedisTemplate redisTemplate;
+    private final RelationshipStateService relationshipStateService;
 
     @Value("${lianyu.chat.proactive.enabled:true}")
     private boolean proactiveEnabled;
@@ -161,6 +165,10 @@ public class ProactiveChatScheduler {
                                Message lastMessage,
                                Message lastUser) {
         if (conv.getCharacterId() == null || !behavior.proactiveEnabled()) {
+            return false;
+        }
+        RelationshipSnapshot snapshot = relationshipStateService.getSnapshot(conv.getUserId(), conv.getCharacterId());
+        if (snapshot.phase() == RelationshipPhase.INJURED) {
             return false;
         }
         if (Boolean.TRUE.equals(redisTemplate.hasKey(cooldownKey(conv.getId())))) {

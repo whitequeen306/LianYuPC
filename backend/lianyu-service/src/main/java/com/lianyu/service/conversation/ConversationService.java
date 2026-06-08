@@ -309,7 +309,8 @@ public class ConversationService {
         ensureCharacterAvailableForProactive(character);
 
         String memoryContext = memoryRetriever.retrieveProfileContext(character.getId(), userId);
-        String systemPrompt = proactiveSystemPrompt(userId, character, memoryContext, null);
+        String relationshipContext = relationshipStateService.buildPromptContext(userId, character.getId());
+        String systemPrompt = proactiveSystemPrompt(userId, character, memoryContext + "\n\n" + relationshipContext, null);
         List<Message> history = getRecentMessages(conversationId, contextWindow);
 
         AiChatRequest aiRequest = new AiChatRequest();
