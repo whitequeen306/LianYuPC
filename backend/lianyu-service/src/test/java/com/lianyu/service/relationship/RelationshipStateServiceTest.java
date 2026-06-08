@@ -19,4 +19,22 @@ class RelationshipStateServiceTest {
         assertEquals(RelationshipPhase.INJURED,
                 RelationshipStateService.derivePhase(snapshot, true, false));
     }
+
+    @Test
+    void recordEvent_increasesTrustAfterRepairSuccess() {
+        RelationshipSnapshot before = RelationshipSnapshot.builder()
+                .trustScore(40)
+                .intimacyScore(25)
+                .securityScore(20)
+                .anticipationScore(20)
+                .phase(RelationshipPhase.INJURED)
+                .build();
+
+        RelationshipSnapshot after = RelationshipStateService.applyEvent(
+                before,
+                RelationshipEventInput.simple(RelationshipEventType.REPAIR_SUCCESS, 2));
+
+        assertEquals(52, after.trustScore());
+        assertEquals(RelationshipPhase.REPAIRING, after.phase());
+    }
 }
