@@ -16,16 +16,16 @@ public class CharacterChatBehaviorResolver {
     @Value("${lianyu.chat.max-replies-per-turn:3}")
     private int defaultMaxReplies;
 
-    @Value("${lianyu.chat.proactive.min-idle-minutes:6}")
+    @Value("${lianyu.chat.proactive.min-idle-minutes:60}")
     private int defaultMinIdle;
 
-    @Value("${lianyu.chat.proactive.trigger-probability:0.36}")
+    @Value("${lianyu.chat.proactive.trigger-probability:0.95}")
     private double defaultTriggerProbability;
 
-    @Value("${lianyu.chat.proactive.cooldown-min-minutes:14}")
+    @Value("${lianyu.chat.proactive.cooldown-min-minutes:55}")
     private int defaultCooldownMin;
 
-    @Value("${lianyu.chat.proactive.cooldown-max-minutes:28}")
+    @Value("${lianyu.chat.proactive.cooldown-max-minutes:65}")
     private int defaultCooldownMax;
 
     public CharacterChatBehavior resolve(Character character) {
@@ -108,11 +108,11 @@ public class CharacterChatBehaviorResolver {
             return StyleProfile.baseline();
         }
         return switch (speakingStyle.trim()) {
-            case "活泼", "元气" -> new StyleProfile(true, 3, 5, 0.50, 10, 24);
-            case "温柔" -> new StyleProfile(true, 2, 7, 0.40, 14, 32);
-            case "傲娇", "毒舌" -> new StyleProfile(true, 2, 10, 0.28, 24, 46);
-            case "冷静", "成熟" -> new StyleProfile(true, 1, 15, 0.16, 38, 78);
-            case "慵懒" -> new StyleProfile(true, 1, 18, 0.18, 34, 68);
+            case "活泼", "元气" -> new StyleProfile(true, 3, 45, 0.95, 50, 60);
+            case "温柔" -> new StyleProfile(true, 2, 55, 0.92, 55, 65);
+            case "傲娇", "毒舌" -> new StyleProfile(true, 2, 65, 0.88, 60, 75);
+            case "冷静", "成熟" -> new StyleProfile(true, 1, 75, 0.82, 70, 90);
+            case "慵懒" -> new StyleProfile(true, 1, 70, 0.85, 65, 80);
             default -> StyleProfile.baseline();
         };
     }
@@ -226,17 +226,17 @@ public class CharacterChatBehaviorResolver {
         }
 
         static StyleProfile baseline() {
-            return new StyleProfile(true, 2, 6, 0.40, 12, 24);
+            return new StyleProfile(true, 2, 60, 0.95, 55, 65);
         }
 
         StyleProfile moreSocial() {
             return new StyleProfile(
                     true,
                     Math.min(5, maxReplies + 1),
-                    Math.max(4, minIdleMinutes - 3),
-                    Math.min(0.65, triggerProbability + 0.12),
-                    Math.max(8, cooldownMinMinutes - 8),
-                    Math.max(cooldownMinMinutes + 5, cooldownMaxMinutes - 10)
+                    Math.max(40, minIdleMinutes - 10),
+                    Math.min(0.98, triggerProbability + 0.03),
+                    Math.max(45, cooldownMinMinutes - 5),
+                    Math.max(cooldownMinMinutes + 5, cooldownMaxMinutes - 5)
             );
         }
 
@@ -244,10 +244,10 @@ public class CharacterChatBehaviorResolver {
             return new StyleProfile(
                     proactiveEnabled,
                     Math.max(1, maxReplies - 1),
-                    minIdleMinutes + 6,
-                    Math.max(0.05, triggerProbability - 0.1),
-                    cooldownMinMinutes + 12,
-                    cooldownMaxMinutes + 20
+                    minIdleMinutes + 15,
+                    Math.max(0.75, triggerProbability - 0.08),
+                    cooldownMinMinutes + 10,
+                    cooldownMaxMinutes + 15
             );
         }
     }

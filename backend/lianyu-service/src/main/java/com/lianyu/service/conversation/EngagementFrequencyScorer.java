@@ -29,9 +29,15 @@ public class EngagementFrequencyScorer {
             return 0.0;
         }
         double base = behavior.triggerProbability();
+        if (lastUserMessageAt != null) {
+            long idleHours = ChronoUnit.HOURS.between(lastUserMessageAt, now);
+            if (idleHours >= Math.max(1, behavior.minIdleMinutes() / 60)) {
+                return clamp(base, 0.85, 0.98);
+            }
+        }
         double activity = activityBoost(userMessagesInWindow, 0.42, 0.16, 1.75);
         double recency = recencyBoost(lastUserMessageAt, now, 72, 0.62);
-        return clamp(base * activity * recency, 0.10, 0.92);
+        return clamp(base * activity * recency, 0.10, 0.98);
     }
 
     /**

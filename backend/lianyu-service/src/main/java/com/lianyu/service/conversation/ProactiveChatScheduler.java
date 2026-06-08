@@ -15,6 +15,7 @@ import com.lianyu.service.relationship.RelationshipSnapshot;
 import com.lianyu.service.relationship.RelationshipStateService;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -101,12 +102,18 @@ public class ProactiveChatScheduler {
                 continue;
             }
             int userMsgs = userMsgCountMap.getOrDefault(conv.getId(), 0L).intValue();
+            LocalDateTime lastActivityAt = lastMessage.getCreatedAt();
             double effectiveProb = engagementScorer.proactiveTriggerProbability(
-                    behavior, userMsgs, lastUser.getCreatedAt(), now);
+                    behavior, userMsgs, lastActivityAt, now);
+            long idleMinutes = lastActivityAt == null ? 0 : ChronoUnit.MINUTES.between(lastActivityAt, now);
+            if (idleMinutes >= behavior.minIdleMinutes()) {
+                effectiveProb = Math.max(effectiveProb, behavior.triggerProbability());
+            }
             if (effectiveProb <= 0.0) {
                 continue;
             }
-            scored.add(new ScoredCandidate(conv, character, behavior, lastUser, effectiveProb));
+            Message contextMessage = lastUser != null ? lastUser : lastMessage;
+            scored.add(new ScoredCandidate(conv, character, behavior, contextMessage, effectiveProb));
         }
 
         if (scored.isEmpty()) {
@@ -174,17 +181,14 @@ public class ProactiveChatScheduler {
         if (Boolean.TRUE.equals(redisTemplate.hasKey(cooldownKey(conv.getId())))) {
             return false;
         }
-        if (lastMessage == null || lastUser == null) {
+        if (lastMessage == null) {
             return false;
         }
-        if (!"USER".equalsIgnoreCase(lastMessage.getRole())) {
+        LocalDateTime lastActivityAt = lastMessage.getCreatedAt();
+        if (lastActivityAt == null) {
             return false;
         }
-        LocalDateTime createdAt = lastUser.getCreatedAt();
-        if (createdAt == null) {
-            return false;
-        }
-        return !createdAt.isAfter(LocalDateTime.now().minusMinutes(Math.max(1, behavior.minIdleMinutes())));
+        return !lastActivityAt.isAfter(LocalDateTime.now().minusMinutes(Math.max(1, behavior.minIdleMinutes())));
     }
 
     private void setCooldown(Long conversationId, CharacterChatBehavior behavior) {

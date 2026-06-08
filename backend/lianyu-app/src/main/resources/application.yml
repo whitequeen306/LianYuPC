@@ -267,19 +267,19 @@ lianyu:
       activity-window-days: 7
       # 每轮扫描最多检查的会话数量（按最近创建排序）
       scan-limit: 40
-      # 全局兜底：空闲多久后可主动（分钟）；活泼/元气更短，冷静/成熟更长
-      min-idle-minutes: 5
+      # 全局兜底：双方多久无消息后角色可主动开口（分钟）
+      min-idle-minutes: 60
       # 每轮扫描最多实际发送几条主动消息（避免瞬时打爆 AI）
-      max-conversations-per-run: 3
+      max-conversations-per-run: 5
       # 每轮群聊主动冒泡上限（与单聊独立计数）
       max-group-proactive-per-run: 1
       group-scan-limit: 30
-      # 全局兜底：性格基础触发概率（0~1）；最终概率还会乘「近期聊天次数」
-      trigger-probability: 0.48
-      # 全局兜底：主动消息冷却下限（分钟）
-      cooldown-min-minutes: 12
+      # 全局兜底：性格基础触发概率（0~1）；达到 min-idle 后还会被抬升到接近必发
+      trigger-probability: 0.95
+      # 全局兜底：主动消息冷却下限（分钟），与 1 小时节奏对齐
+      cooldown-min-minutes: 55
       # 全局兜底：主动消息冷却上限（分钟）
-      cooldown-max-minutes: 22
+      cooldown-max-minutes: 65
       # 主动开口前强制预取真实时间 + 天气（写入 Prompt，非 Tool 调用）
       prefetch-realworld-context: true
       # 单角色可在 settings.chatBehavior 中覆盖，例如：
