@@ -24,7 +24,6 @@ export const THEME_PRESETS = [
 
 /** Cool — background tint */
 export const BG_PRESETS = [
-  { name: '纯白', color: '#FFFFFF' },
   { name: '星夜蓝', color: '#7A9EC4' },
   { name: '深紫蓝', color: '#8B7EC8' },
   { name: '墨青', color: '#6B9090' },
@@ -152,15 +151,7 @@ export function accentVariants(hex) {
   }
 }
 
-function relativeLuminance(r, g, b) {
-  const linear = [r, g, b].map((channel) => {
-    const c = channel / 255
-    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
-  })
-  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
-}
-
-/** 背景色即软件底色；浅色系直接铺色，深色系在选中色上叠层次 */
+/** Background stack + text from cool seed color */
 export function buildBackgroundPalette(bgSeedHex) {
   const seed = normalizeHex(bgSeedHex) || DEFAULT_BACKGROUND
   const rgb = hexToRgb(seed)
@@ -174,75 +165,39 @@ export function buildBackgroundPalette(bgSeedHex) {
         muted: '#728090',
         inverse: '#141A22'
       },
-      bgRgb: '30, 39, 50',
-      isLight: false
+      bgRgb: '30, 39, 50'
     }
   }
 
-  const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b)
-  const isLight = relativeLuminance(rgb.r, rgb.g, rgb.b) > 0.58 || l >= 0.72
+  const { h, s } = rgbToHsl(rgb.r, rgb.g, rgb.b)
+  const bgSat = clamp(s * 0.42 + 0.08, 0.08, 0.28)
+  const textSat = clamp(s * 0.18 + 0.04, 0.04, 0.14)
 
-  let backgrounds
-  let text
-  let glass
-  let bgRgb
+  const backgrounds = {
+    deepest: hslToHex(h, bgSat * 0.7, 0.06),
+    primary: hslToHex(h, bgSat, 0.088),
+    secondary: hslToHex(h, bgSat, 0.115),
+    surface: hslToHex(h, bgSat * 0.95, 0.145),
+    elevated: hslToHex(h, bgSat * 0.9, 0.175)
+  }
 
-  if (isLight) {
-    backgrounds = {
-      deepest: seed,
-      primary: seed,
-      secondary: mixHex(seed, '#000000', 0.035),
-      surface: mixHex(seed, '#000000', 0.07),
-      elevated: mixHex(seed, '#000000', 0.1)
-    }
+  const surfaceRgb = hexToRgb(backgrounds.surface)
+  const glass = surfaceRgb
+    ? `rgba(${surfaceRgb.r}, ${surfaceRgb.g}, ${surfaceRgb.b}, 0.75)`
+    : 'rgba(30, 39, 50, 0.75)'
 
-    const textHue = s < 0.08 ? 220 : h
-    const textSat = clamp(s * 0.22 + 0.03, 0.03, 0.16)
-    text = {
-      primary: hslToHex(textHue, textSat, 0.16),
-      secondary: hslToHex(textHue, textSat * 0.9, 0.34),
-      muted: hslToHex(textHue, textSat * 0.75, 0.5),
-      inverse: seed
-    }
-
-    const surfaceRgb = hexToRgb(backgrounds.surface) || rgb
-    glass = `rgba(${surfaceRgb.r}, ${surfaceRgb.g}, ${surfaceRgb.b}, 0.88)`
-    bgRgb = `${surfaceRgb.r}, ${surfaceRgb.g}, ${surfaceRgb.b}`
-  } else {
-    const primary = l > 0.34 ? mixHex(seed, '#000000', 0.18) : seed
-    const primaryRgb = hexToRgb(primary) || rgb
-    const { h: primaryHue, s: primarySat } = rgbToHsl(primaryRgb.r, primaryRgb.g, primaryRgb.b)
-    const bgSat = clamp(primarySat * 0.55 + 0.06, 0.06, 0.32)
-
-    backgrounds = {
-      deepest: mixHex(primary, '#000000', 0.22),
-      primary,
-      secondary: mixHex(primary, '#FFFFFF', 0.05),
-      surface: mixHex(primary, '#FFFFFF', 0.1),
-      elevated: mixHex(primary, '#FFFFFF', 0.15)
-    }
-
-    const textSat = clamp(primarySat * 0.18 + 0.04, 0.04, 0.14)
-    text = {
-      primary: hslToHex(primaryHue, textSat, 0.92),
-      secondary: hslToHex(primaryHue, textSat * 0.85, 0.7),
-      muted: hslToHex(primaryHue, textSat * 0.7, 0.48),
-      inverse: hslToHex(primaryHue, bgSat + 0.04, 0.12)
-    }
-
-    const surfaceRgb = hexToRgb(backgrounds.surface)
-    glass = surfaceRgb
-      ? `rgba(${surfaceRgb.r}, ${surfaceRgb.g}, ${surfaceRgb.b}, 0.75)`
-      : 'rgba(30, 39, 50, 0.75)'
-    bgRgb = surfaceRgb ? `${surfaceRgb.r}, ${surfaceRgb.g}, ${surfaceRgb.b}` : '30, 39, 50'
+  const text = {
+    primary: hslToHex(h, textSat, 0.92),
+    secondary: hslToHex(h, textSat * 0.85, 0.7),
+    muted: hslToHex(h, textSat * 0.7, 0.48),
+    inverse: hslToHex(h, bgSat + 0.04, 0.12)
   }
 
   return {
     backgrounds,
     glass,
     text,
-    bgRgb,
-    isLight
+    bgRgb: surfaceRgb ? `${surfaceRgb.r}, ${surfaceRgb.g}, ${surfaceRgb.b}` : '30, 39, 50'
   }
 }
 
@@ -252,20 +207,14 @@ export function buildThemePalette(backgroundHex, accentHex) {
   return { ...bg, accent }
 }
 
-function syncDocumentThemeMode(isLight) {
-  const root = document.documentElement
-  root.classList.toggle('ly-light-theme', isLight)
-  root.classList.toggle('dark', !isLight)
-}
-
-/** Apply full theme: user background as app base + warm accent */
+/** Apply full theme: cool backgrounds + warm accent */
 export function applyTheme(backgroundHex, accentHex) {
-  const palette = buildThemePalette(backgroundHex, accentHex)
-  const { accent, backgrounds, glass, text, bgRgb, isLight } = palette
+  const { accent, backgrounds, glass, text, bgRgb } = buildThemePalette(
+    backgroundHex,
+    accentHex
+  )
   const accentRgb = hexToRgb(accent.primary)
   if (!accentRgb) return { background: DEFAULT_BACKGROUND, accent: DEFAULT_ACCENT }
-
-  syncDocumentThemeMode(!!isLight)
 
   const root = document.documentElement
   const accentRgbStr = `${accentRgb.r}, ${accentRgb.g}, ${accentRgb.b}`

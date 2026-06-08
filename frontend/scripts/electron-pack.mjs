@@ -31,6 +31,7 @@ const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
 const outDir = path.join('release', `v${pkg.version}`)
 fs.mkdirSync(path.join(root, outDir), { recursive: true })
 
+execSync('python scripts/regenerate-icon.py', { stdio: 'inherit' })
 execSync('npx vite build', { stdio: 'inherit', env: process.env })
 
 const outputArg = `--config.directories.output=${outDir.replace(/\\/g, '/')}`

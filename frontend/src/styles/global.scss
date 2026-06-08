@@ -64,20 +64,6 @@ h1, h2, h3, h4, h5, h6 { font-weight: $font-weight-semibold; line-height: $line-
   }
 }
 
-html.ly-light-theme {
-  #app {
-    background: $color-bg-primary;
-
-    &::before {
-      opacity: 0.22;
-      animation: none;
-      background:
-        radial-gradient(ellipse 70% 55% at 18% 8%, rgba(var(--ly-bg-surface-rgb), 0.08) 0%, transparent 62%),
-        radial-gradient(ellipse 55% 45% at 82% 88%, rgba($color-pink-rgb, 0.03) 0%, transparent 58%);
-    }
-  }
-}
-
 @keyframes ambientShift {
   0%, 100% { opacity: 0.8; }
   33% { opacity: 1; }
@@ -185,17 +171,6 @@ body.electron-app {
   .el-overlay.is-message-box {
     align-items: flex-start !important;
     padding-top: calc(var(--electron-caption-height) + 16px);
-  }
-}
-
-html.ly-light-theme body.electron-app {
-  &::before {
-    background: $color-bg-primary;
-  }
-
-  .app-header {
-    background: $color-bg-primary;
-    border-bottom-color: rgba(var(--ly-bg-surface-rgb), 0.35);
   }
 }
 

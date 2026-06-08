@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "electron:dev": "node scripts/electron-dev.mjs",
+    "icon:regenerate": "python scripts/regenerate-icon.py",
     "electron:build": "node scripts/electron-pack.mjs",
     "electron:release": "node scripts/electron-release.mjs",
     "electron:release:minor": "node scripts/electron-release.mjs minor",

@@ -16,7 +16,7 @@
 
     <div class="theme-panel">
       <p class="theme-panel-title">主题配色</p>
-      <p class="theme-panel-desc">背景色为软件整体底色 · 按钮色控制强调色</p>
+      <p class="theme-panel-desc">背景偏冷 · 按钮偏暖，可分别调整</p>
 
       <p class="section-label">快捷组合</p>
       <div class="combo-row">
@@ -37,7 +37,7 @@
 
       <div class="section-block">
         <p class="section-label">
-          <span class="label-dot label-dot--cool" />软件底色
+          <span class="label-dot label-dot--cool" />背景 · 偏冷
         </p>
         <div class="preset-row">
           <button
