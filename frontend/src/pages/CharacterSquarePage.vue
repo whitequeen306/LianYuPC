@@ -82,12 +82,19 @@
         </div>
 
         <div class="card-body">
+          <SquareDanmakuLayer :comments="commentsByTemplateId[item.id] || []" />
           <h3 class="char-name">{{ item.name }}</h3>
           <p v-if="item.summary" class="char-summary">{{ item.summary }}</p>
           <div v-if="item.tags?.length" class="tag-row">
             <span v-for="tag in item.tags" :key="tag" class="meta-tag">{{ tag }}</span>
           </div>
         </div>
+
+        <SquareCommentInput
+          :template-id="item.id"
+          :comments="commentsByTemplateId[item.id] || []"
+          @updated="reloadComments(item.id)"
+        />
 
         <div class="card-actions">
           <button
@@ -216,6 +223,9 @@ import { createConversation } from '@/api/conversation'
 import { getSavedUserCity, saveUserCity } from '@/utils/userCity'
 import { resolveMediaUrl } from '@/utils/media'
 import CharacterCityModeForm from '@/components/CharacterCityModeForm.vue'
+import SquareCommentInput from '@/components/SquareCommentInput.vue'
+import SquareDanmakuLayer from '@/components/SquareDanmakuLayer.vue'
+import { fetchSquareComments } from '@/api/characterSquare'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -237,6 +247,7 @@ const previewItem = ref(null)
 const addDialogVisible = ref(false)
 const addCityMode = ref('real')
 const addCity = ref('')
+const commentsByTemplateId = ref({})
 
 const filteredCatalog = computed(() => {
   let list = catalog.value
@@ -285,6 +296,10 @@ watch(searchQuery, () => {
   page.value = 1
 })
 
+watch(templates, (list) => {
+  loadCommentsForTemplates(list.map(item => item.id))
+}, { immediate: false })
+
 onMounted(() => loadCatalog())
 
 async function loadCatalog(force = false) {
@@ -306,6 +321,39 @@ async function loadCatalog(force = false) {
 
 function onPageChange(nextPage) {
   page.value = nextPage
+}
+
+async function loadCommentsForTemplates(templateIds = []) {
+  const ids = [...new Set(templateIds.filter(Boolean))]
+  if (!ids.length) return
+  const entries = await Promise.all(
+    ids.map(async (templateId) => {
+      try {
+        const list = await fetchSquareComments(templateId)
+        return [templateId, Array.isArray(list) ? list : []]
+      } catch {
+        return [templateId, []]
+      }
+    }),
+  )
+  const next = { ...commentsByTemplateId.value }
+  for (const [templateId, list] of entries) {
+    next[templateId] = list
+  }
+  commentsByTemplateId.value = next
+}
+
+async function reloadComments(templateId) {
+  if (!templateId) return
+  try {
+    const list = await fetchSquareComments(templateId)
+    commentsByTemplateId.value = {
+      ...commentsByTemplateId.value,
+      [templateId]: Array.isArray(list) ? list : [],
+    }
+  } catch {
+    /* interceptor */
+  }
 }
 
 function openPreview(item) {
@@ -684,9 +732,12 @@ async function startChat(characterId) {
 }
 
 .card-body {
+  position: relative;
   flex: 1;
   min-width: 0;
   text-align: center;
+  padding-bottom: 46px;
+  overflow: hidden;
 }
 
 .char-name {

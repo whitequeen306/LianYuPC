@@ -5,6 +5,7 @@ import com.lianyu.common.base.Result;
 import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.character.CharacterService;
 import com.lianyu.service.square.CharacterSquareService;
+import com.lianyu.service.square.SquareCommentService;
 import com.lianyu.service.square.SquareLikeService;
 import com.lianyu.service.storage.FileStorageService;
 import com.lianyu.service.dto.CharacterResponse;
@@ -12,6 +13,8 @@ import com.lianyu.service.dto.AddCharacterFromSquareRequest;
 import com.lianyu.service.dto.CreateCharacterRequest;
 import com.lianyu.service.dto.GenerateCharacterRequest;
 import com.lianyu.service.dto.CharacterSquarePageResponse;
+import com.lianyu.service.dto.SquareCommentRequest;
+import com.lianyu.service.dto.SquareCommentResponse;
 import com.lianyu.service.dto.SquareLikeToggleResponse;
 import com.lianyu.service.dto.UpdateCharacterRequest;
 import io.swagger.v3.oas.annotations.Operation;
@@ -35,6 +38,7 @@ public class CharacterController {
     private final CharacterService characterService;
     private final CharacterSquareService characterSquareService;
     private final SquareLikeService squareLikeService;
+    private final SquareCommentService squareCommentService;
     private final FileStorageService fileStorageService;
     private final AiChatService aiChatService;
 
@@ -82,6 +86,30 @@ public class CharacterController {
     public Result<SquareLikeToggleResponse> toggleSquareLike(@PathVariable("templateId") Long templateId) {
         long userId = StpUtil.getLoginIdAsLong();
         return Result.ok(squareLikeService.toggleLike(userId, templateId));
+    }
+
+    @Operation(summary = "角色广场评语列表")
+    @GetMapping("/square/{templateId}/comments")
+    public Result<List<SquareCommentResponse>> listSquareComments(@PathVariable("templateId") Long templateId) {
+        long userId = StpUtil.getLoginIdAsLong();
+        return Result.ok(squareCommentService.listByTemplate(templateId, userId));
+    }
+
+    @Operation(summary = "发表或更新角色广场评语")
+    @PostMapping("/square/{templateId}/comment")
+    public Result<SquareCommentResponse> upsertSquareComment(
+            @PathVariable("templateId") Long templateId,
+            @Valid @RequestBody SquareCommentRequest body) {
+        long userId = StpUtil.getLoginIdAsLong();
+        return Result.ok(squareCommentService.upsert(templateId, userId, body.getContent()));
+    }
+
+    @Operation(summary = "删除自己的角色广场评语")
+    @DeleteMapping("/square/{templateId}/comment")
+    public Result<Void> deleteSquareComment(@PathVariable("templateId") Long templateId) {
+        long userId = StpUtil.getLoginIdAsLong();
+        squareCommentService.deleteOwn(templateId, userId);
+        return Result.ok();
     }
 
     @Operation(summary = "获取角色")
