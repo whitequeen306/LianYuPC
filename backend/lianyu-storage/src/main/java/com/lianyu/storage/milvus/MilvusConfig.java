@@ -32,6 +32,7 @@ public class MilvusConfig {
     private int dim = 1024;
 
     public static final String COLLECTION_MEMORY_VECTORS = "memory_vectors";
+    public static final String COLLECTION_MEMORY_VECTORS_V2 = "memory_vectors_v2";
 
     @Bean
     @org.springframework.context.annotation.Lazy
@@ -49,66 +50,140 @@ public class MilvusConfig {
     public void initCollection() {
         try {
             MilvusServiceClient client = milvusClient();
-            HasCollectionParam hasParam = HasCollectionParam.newBuilder()
-                    .withCollectionName(COLLECTION_MEMORY_VECTORS)
-                    .build();
+            ensureLegacyCollection(client);
+            ensureMemoryVectorsV2(client);
+        } catch (Exception e) {
+            log.error("Milvus collection init failed", e);
+        }
+    }
 
-            if (client.hasCollection(hasParam).getData()) {
-                log.info("Milvus collection '{}' already exists, skipping creation", COLLECTION_MEMORY_VECTORS);
-                client.loadCollection(LoadCollectionParam.newBuilder()
-                        .withCollectionName(COLLECTION_MEMORY_VECTORS)
-                        .build());
-                log.info("Milvus collection '{}' loaded into memory", COLLECTION_MEMORY_VECTORS);
-                return;
-            }
+    private void ensureLegacyCollection(MilvusServiceClient client) {
+        HasCollectionParam hasParam = HasCollectionParam.newBuilder()
+                .withCollectionName(COLLECTION_MEMORY_VECTORS)
+                .build();
 
-            FieldType idField = FieldType.newBuilder()
-                    .withName("id")
-                    .withDataType(io.milvus.grpc.DataType.Int64)
-                    .withPrimaryKey(true)
-                    .withAutoID(true)
-                    .build();
-
-            FieldType charIdField = FieldType.newBuilder()
-                    .withName("character_id")
-                    .withDataType(io.milvus.grpc.DataType.Int64)
-                    .build();
-
-            FieldType userIdField = FieldType.newBuilder()
-                    .withName("user_id")
-                    .withDataType(io.milvus.grpc.DataType.Int64)
-                    .build();
-
-            FieldType vecField = FieldType.newBuilder()
-                    .withName("vector")
-                    .withDataType(io.milvus.grpc.DataType.FloatVector)
-                    .withDimension(dim)
-                    .build();
-
-            CreateCollectionParam createParam = CreateCollectionParam.newBuilder()
-                    .withCollectionName(COLLECTION_MEMORY_VECTORS)
-                    .withFieldTypes(Arrays.asList(idField, charIdField, userIdField, vecField))
-                    .build();
-
-            client.createCollection(createParam);
-            log.info("Milvus collection '{}' created (dim={})", COLLECTION_MEMORY_VECTORS, dim);
-
-            CreateIndexParam indexParam = CreateIndexParam.newBuilder()
-                    .withCollectionName(COLLECTION_MEMORY_VECTORS)
-                    .withFieldName("vector")
-                    .withIndexType(IndexType.IVF_FLAT)
-                    .withMetricType(MetricType.COSINE)
-                    .withExtraParam("{\"nlist\":128}")
-                    .build();
-            client.createIndex(indexParam);
-            log.info("Milvus index created on 'vector' field");
-
+        if (client.hasCollection(hasParam).getData()) {
+            log.info("Milvus collection '{}' already exists, skipping creation", COLLECTION_MEMORY_VECTORS);
             client.loadCollection(LoadCollectionParam.newBuilder()
                     .withCollectionName(COLLECTION_MEMORY_VECTORS)
                     .build());
             log.info("Milvus collection '{}' loaded into memory", COLLECTION_MEMORY_VECTORS);
-        } catch (Exception e) {
-            log.error("Milvus collection init failed", e);
+            return;
         }
+
+        FieldType idField = FieldType.newBuilder()
+                .withName("id")
+                .withDataType(io.milvus.grpc.DataType.Int64)
+                .withPrimaryKey(true)
+                .withAutoID(true)
+                .build();
+
+        FieldType charIdField = FieldType.newBuilder()
+                .withName("character_id")
+                .withDataType(io.milvus.grpc.DataType.Int64)
+                .build();
+
+        FieldType userIdField = FieldType.newBuilder()
+                .withName("user_id")
+                .withDataType(io.milvus.grpc.DataType.Int64)
+                .build();
+
+        FieldType vecField = FieldType.newBuilder()
+                .withName("vector")
+                .withDataType(io.milvus.grpc.DataType.FloatVector)
+                .withDimension(dim)
+                .build();
+
+        CreateCollectionParam createParam = CreateCollectionParam.newBuilder()
+                .withCollectionName(COLLECTION_MEMORY_VECTORS)
+                .withFieldTypes(Arrays.asList(idField, charIdField, userIdField, vecField))
+                .build();
+
+        client.createCollection(createParam);
+        log.info("Milvus collection '{}' created (dim={})", COLLECTION_MEMORY_VECTORS, dim);
+        createVectorIndex(client, COLLECTION_MEMORY_VECTORS);
+        loadCollection(client, COLLECTION_MEMORY_VECTORS);
+    }
+
+    private void ensureMemoryVectorsV2(MilvusServiceClient client) {
+        HasCollectionParam hasParam = HasCollectionParam.newBuilder()
+                .withCollectionName(COLLECTION_MEMORY_VECTORS_V2)
+                .build();
+
+        if (client.hasCollection(hasParam).getData()) {
+            log.info("Milvus collection '{}' already exists, skipping creation", COLLECTION_MEMORY_VECTORS_V2);
+            loadCollection(client, COLLECTION_MEMORY_VECTORS_V2);
+            return;
+        }
+
+        FieldType idField = FieldType.newBuilder()
+                .withName("id")
+                .withDataType(io.milvus.grpc.DataType.Int64)
+                .withPrimaryKey(true)
+                .withAutoID(true)
+                .build();
+
+        FieldType charIdField = FieldType.newBuilder()
+                .withName("character_id")
+                .withDataType(io.milvus.grpc.DataType.Int64)
+                .build();
+
+        FieldType userIdField = FieldType.newBuilder()
+                .withName("user_id")
+                .withDataType(io.milvus.grpc.DataType.Int64)
+                .build();
+
+        FieldType memoryIdField = FieldType.newBuilder()
+                .withName("memory_id")
+                .withDataType(io.milvus.grpc.DataType.Int64)
+                .build();
+
+        FieldType summaryField = FieldType.newBuilder()
+                .withName("summary")
+                .withDataType(io.milvus.grpc.DataType.VarChar)
+                .withMaxLength(512)
+                .build();
+
+        FieldType memoryTypeField = FieldType.newBuilder()
+                .withName("memory_type")
+                .withDataType(io.milvus.grpc.DataType.VarChar)
+                .withMaxLength(32)
+                .build();
+
+        FieldType vecField = FieldType.newBuilder()
+                .withName("vector")
+                .withDataType(io.milvus.grpc.DataType.FloatVector)
+                .withDimension(dim)
+                .build();
+
+        CreateCollectionParam createParam = CreateCollectionParam.newBuilder()
+                .withCollectionName(COLLECTION_MEMORY_VECTORS_V2)
+                .withFieldTypes(Arrays.asList(
+                        idField, charIdField, userIdField, memoryIdField, summaryField, memoryTypeField, vecField))
+                .build();
+
+        client.createCollection(createParam);
+        log.info("Milvus collection '{}' created (dim={})", COLLECTION_MEMORY_VECTORS_V2, dim);
+        createVectorIndex(client, COLLECTION_MEMORY_VECTORS_V2);
+        loadCollection(client, COLLECTION_MEMORY_VECTORS_V2);
+    }
+
+    private void createVectorIndex(MilvusServiceClient client, String collectionName) {
+        CreateIndexParam indexParam = CreateIndexParam.newBuilder()
+                .withCollectionName(collectionName)
+                .withFieldName("vector")
+                .withIndexType(IndexType.IVF_FLAT)
+                .withMetricType(MetricType.COSINE)
+                .withExtraParam("{\"nlist\":128}")
+                .build();
+        client.createIndex(indexParam);
+        log.info("Milvus index created on '{}' vector field", collectionName);
+    }
+
+    private void loadCollection(MilvusServiceClient client, String collectionName) {
+        client.loadCollection(LoadCollectionParam.newBuilder()
+                .withCollectionName(collectionName)
+                .build());
+        log.info("Milvus collection '{}' loaded into memory", collectionName);
     }
 }

@@ -3,27 +3,21 @@ package com.lianyu.service.memory;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lianyu.dao.entity.MemoryMeta;
 import com.lianyu.dao.entity.Message;
+import com.lianyu.dao.enums.MemoryType;
 import com.lianyu.dao.mapper.MemoryMetaMapper;
 import com.lianyu.dao.mapper.MessageMapper;
-import com.lianyu.dao.enums.MemoryType;
-import com.lianyu.service.ai.EmbeddingService;
-import com.lianyu.storage.milvus.MilvusConfig;
-import io.milvus.client.MilvusServiceClient;
-import io.milvus.grpc.MutationResult;
-import io.milvus.param.dml.DeleteParam;
-import io.milvus.param.dml.InsertParam;
 import java.io.Serializable;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.Set;
-import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 
@@ -37,10 +31,11 @@ public class MemoryWriter {
 
     private final MessageMapper messageMapper;
     private final MemoryMetaMapper memoryMetaMapper;
-    private final EmbeddingService embeddingService;
-    private final MilvusServiceClient milvusClient;
     private final RabbitTemplate rabbitTemplate;
     private final MemoryCacheService memoryCacheService;
+    private final MemoryExtractionService memoryExtractionService;
+    private final MemoryVectorStore memoryVectorStore;
+    private final MemoryMilvusSyncService memoryMilvusSyncService;
 
     public void enqueueSummary(Long conversationId, Long characterId, Long userId) {
         MemorySummaryTask task = new MemorySummaryTask(conversationId, characterId, userId);
@@ -61,34 +56,37 @@ public class MemoryWriter {
             }
 
             java.util.Collections.reverse(recentMsgs);
-            List<ProfileFact> facts = extractProfileFacts(recentMsgs);
-            List<MemoryCandidate> relationMemories = extractRelationshipMemories(recentMsgs);
+            List<ExtractedMemory> extracted = memoryExtractionService.extract(recentMsgs, task);
+            if (extracted.isEmpty()) {
+                log.debug("Skip memory write: no extracted memories, convId={}", task.conversationId());
+                return;
+            }
 
             int created = 0;
             int updated = 0;
             int skipped = 0;
-            for (ProfileFact fact : facts) {
-                MemoryUpsertResult result = upsertTypedMemory(task, List.of(fact.sourceMsgId()),
-                        formatProfileSummary(fact.slot(), fact.value()), MemoryType.FACT);
+            for (ExtractedMemory memory : extracted) {
+                List<Long> sourceIds = memory.sourceMsgId() != null
+                        ? List.of(memory.sourceMsgId())
+                        : List.of();
+                MemoryUpsertResult result = upsertTypedMemory(
+                        task,
+                        sourceIds,
+                        memory.summary(),
+                        memory.memoryType(),
+                        memory.importance());
                 switch (result) {
                     case CREATED -> created++;
                     case UPDATED -> updated++;
                     case SKIPPED -> skipped++;
                 }
-            }
-            for (MemoryCandidate candidate : relationMemories) {
-                MemoryUpsertResult result = upsertTypedMemory(task, List.of(candidate.sourceMsgId()),
-                        candidate.summary(), candidate.memoryType());
-                switch (result) {
-                    case CREATED -> created++;
-                    case UPDATED -> updated++;
-                    case SKIPPED -> skipped++;
+                Long memoryId = findMemoryIdByHash(task.userId(), task.characterId(), memory.summary());
+                if (memoryId != null) {
+                    MemoryMeta saved = memoryMetaMapper.selectById(memoryId);
+                    if (saved != null && (saved.getMilvusVecId() == null || saved.getMilvusVecId().isBlank())) {
+                        memoryMilvusSyncService.repairOne(memoryId);
+                    }
                 }
-            }
-
-            if (facts.isEmpty() && relationMemories.isEmpty()) {
-                log.debug("Skip memory write: no facts or relationship memories, convId={}", task.conversationId());
-                return;
             }
 
             log.info("Memory upsert done: convId={}, created={}, updated={}, skipped={}",
@@ -98,55 +96,40 @@ public class MemoryWriter {
             }
         } catch (Exception e) {
             log.error("Memory processing failed for conversation {}", task.conversationId(), e);
-            // 抛出给 Rabbit listener，由容器决定重试/入死信
             throw new RuntimeException("memory summary process failed, convId=" + task.conversationId(), e);
         }
     }
 
     public void deleteVectors(List<String> vectorIds) {
-        if (vectorIds == null || vectorIds.isEmpty()) {
-            return;
-        }
-        List<String> ids = vectorIds.stream()
-                .filter(id -> id != null && !id.isBlank())
-                .distinct()
-                .toList();
-        if (ids.isEmpty()) {
-            return;
-        }
-        try {
-            String expr = ids.stream()
-                    .map(id -> "id == " + id)
-                    .reduce((left, right) -> left + " or " + right)
-                    .orElse(null);
-            if (expr == null || expr.isBlank()) {
-                return;
-            }
-            milvusClient.delete(DeleteParam.newBuilder()
-                    .withCollectionName(MilvusConfig.COLLECTION_MEMORY_VECTORS)
-                    .withExpr(expr)
-                    .build());
-        } catch (Exception e) {
-            log.warn("Milvus delete failed: {}", e.getMessage());
-        }
+        memoryVectorStore.delete(vectorIds);
     }
 
-    private MemoryUpsertResult upsertTypedMemory(MemorySummaryTask task, List<Long> sourceIds,
-                                                   String summary, MemoryType memoryType) {
+    private MemoryUpsertResult upsertTypedMemory(MemorySummaryTask task,
+                                                 List<Long> sourceIds,
+                                                 String summary,
+                                                 MemoryType memoryType,
+                                                 double importance) {
         String sourceHash = computeMemoryHash(task.userId(), task.characterId(), summary);
         MemoryMeta existing = findExistingMemory(task.userId(), task.characterId(), sourceHash);
+        BigDecimal importanceValue = toImportance(importance);
 
         if (existing == null) {
-            String vecId = insertVector(task.characterId(), task.userId(), summary);
             MemoryMeta meta = new MemoryMeta();
             meta.setCharacterId(task.characterId());
             meta.setUserId(task.userId());
             meta.setSummary(summary);
             meta.setMemoryType(memoryType);
+            meta.setImportance(importanceValue);
             meta.setSourceMsgIds(sourceIds);
             meta.setSourceHash(sourceHash);
-            meta.setMilvusVecId(vecId);
             memoryMetaMapper.insert(meta);
+
+            String vecId = memoryVectorStore.insert(
+                    task.characterId(), task.userId(), meta.getId(), summary, memoryType);
+            if (vecId != null) {
+                meta.setMilvusVecId(vecId);
+                memoryMetaMapper.updateById(meta);
+            }
             return MemoryUpsertResult.CREATED;
         }
 
@@ -155,6 +138,9 @@ public class MemoryWriter {
             if (!sourceHash.equals(existing.getSourceHash())) {
                 existing.setSourceHash(sourceHash);
             }
+            if (importanceValue.compareTo(existing.getImportance()) > 0) {
+                existing.setImportance(importanceValue);
+            }
             memoryMetaMapper.updateById(existing);
             return MemoryUpsertResult.SKIPPED;
         }
@@ -162,12 +148,24 @@ public class MemoryWriter {
         String oldVecId = existing.getMilvusVecId();
         existing.setSummary(summary);
         existing.setMemoryType(memoryType);
+        existing.setImportance(importanceValue);
         existing.setSourceMsgIds(mergeSourceIds(existing.getSourceMsgIds(), sourceIds));
         existing.setSourceHash(sourceHash);
-        existing.setMilvusVecId(insertVector(task.characterId(), task.userId(), summary));
         memoryMetaMapper.updateById(existing);
-        deleteVectors(oldVecId == null ? List.of() : List.of(oldVecId));
+
+        if (oldVecId != null && !oldVecId.isBlank()) {
+            memoryVectorStore.delete(List.of(oldVecId));
+        }
+        String vecId = memoryVectorStore.insert(
+                task.characterId(), task.userId(), existing.getId(), summary, memoryType);
+        existing.setMilvusVecId(vecId);
+        memoryMetaMapper.updateById(existing);
         return MemoryUpsertResult.UPDATED;
+    }
+
+    private Long findMemoryIdByHash(Long userId, Long characterId, String summary) {
+        MemoryMeta meta = findExistingMemory(userId, characterId, computeMemoryHash(userId, characterId, summary));
+        return meta != null ? meta.getId() : null;
     }
 
     private MemoryMeta findExistingMemory(Long userId, Long characterId, String sourceHash) {
@@ -180,124 +178,12 @@ public class MemoryWriter {
     private String computeMemoryHash(Long userId, Long characterId, String summary) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
-            md.update(("u:" + userId + "|c:" + characterId + "|text:" + summary).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            md.update(("u:" + userId + "|c:" + characterId + "|text:" + summary)
+                    .getBytes(java.nio.charset.StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(md.digest());
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException(e);
         }
-    }
-
-    private String insertVector(Long characterId, Long userId, String summary) {
-        try {
-            float[] vector = embeddingService.embed(summary, userId);
-            List<List<Float>> vectors = new ArrayList<>();
-            List<Float> floatList = new ArrayList<>(vector.length);
-            for (float f : vector) {
-                floatList.add(f);
-            }
-            vectors.add(floatList);
-
-            List<InsertParam.Field> fields = List.of(
-                    new InsertParam.Field("character_id", List.of(characterId)),
-                    new InsertParam.Field("user_id", List.of(userId)),
-                    new InsertParam.Field("vector", vectors)
-            );
-
-            InsertParam insertParam = InsertParam.newBuilder()
-                    .withCollectionName(MilvusConfig.COLLECTION_MEMORY_VECTORS)
-                    .withFields(fields)
-                    .build();
-
-            MutationResult mr = milvusClient.insert(insertParam).getData();
-            if (mr != null) {
-                return String.valueOf(mr.getIDs().getIntId().getData(0));
-            }
-        } catch (Exception e) {
-            log.warn("Milvus insert failed: {}", e.getMessage());
-        }
-        return null;
-    }
-
-    private List<ProfileFact> extractProfileFacts(List<Message> messages) {
-        List<ProfileFact> facts = new ArrayList<>();
-        for (Message msg : messages) {
-            if (!"USER".equalsIgnoreCase(msg.getRole()) || msg.getContent() == null) {
-                continue;
-            }
-            String text = msg.getContent().trim();
-            if (text.isEmpty()) {
-                continue;
-            }
-            matchAndAdd(facts, msg.getId(), "姓名", text, "我叫([\\p{L}A-Za-z0-9_·]{1,20})");
-            matchAndAdd(facts, msg.getId(), "姓名", text, "我是([\\p{L}A-Za-z0-9_·]{1,20})");
-            matchAndAdd(facts, msg.getId(), "姓名", text, "现在(?:我)?叫([\\p{L}A-Za-z0-9_·]{1,20})");
-            matchAndAdd(facts, msg.getId(), "姓名", text, "改名(?:叫|为|成)([\\p{L}A-Za-z0-9_·]{1,20})");
-            matchAndAdd(facts, msg.getId(), "姓名", text, "名字(?:是|叫)([\\p{L}A-Za-z0-9_·]{1,20})");
-            matchAndAdd(facts, msg.getId(), "爱好", text, "我喜欢([^，。！？；\\n]{1,30})");
-            matchAndAdd(facts, msg.getId(), "忌口", text, "我不吃([^，。！？；\\n]{1,30})");
-            matchAndAdd(facts, msg.getId(), "忌口", text, "我对([^，。！？；\\n]{1,30})过敏");
-            matchAndAdd(facts, msg.getId(), "偏好", text, "我更喜欢([^，。！？；\\n]{1,30})");
-            matchAndAdd(facts, msg.getId(), "禁忌", text, "不要让我([^，。！？；\\n]{1,30})");
-        }
-        // 按 slot 去重，保留最后一次（覆盖旧偏好）
-        java.util.Map<String, ProfileFact> latestBySlot = new java.util.LinkedHashMap<>();
-        for (ProfileFact fact : facts) {
-            latestBySlot.put(fact.slot(), fact);
-        }
-        return new ArrayList<>(latestBySlot.values());
-    }
-
-    private void matchAndAdd(List<ProfileFact> facts, Long sourceMsgId, String slot, String text, String regex) {
-        Matcher matcher = Pattern.compile(regex).matcher(text);
-        while (matcher.find()) {
-            String value = matcher.group(1);
-            if (value != null && !value.isBlank()) {
-                String normalized = normalizeFactValue(value);
-                if (!normalized.isBlank() && isValidFactValue(text, normalized)) {
-                    facts.add(new ProfileFact(slot, normalized, sourceMsgId));
-                }
-            }
-        }
-    }
-
-    /**
-     * 过滤提问句里的伪匹配，例如「我叫什么」「我喜欢什么」。
-     */
-    private boolean isValidFactValue(String fullText, String value) {
-        String t = fullText == null ? "" : fullText.trim().toLowerCase();
-        String v = value.trim().toLowerCase();
-        if (v.isEmpty()) {
-            return false;
-        }
-        String[] invalid = {"什么", "谁", "啥", "哪", "吗", "么", "呢"};
-        for (String token : invalid) {
-            if (v.equals(token) || v.contains(token)) {
-                return false;
-            }
-        }
-        if (t.endsWith("?") || t.endsWith("？")) {
-            return false;
-        }
-        return true;
-    }
-
-    private String formatProfileSummary(String slot, String value) {
-        return profilePrefix(slot) + value;
-    }
-
-    private String profilePrefix(String slot) {
-        return "【长期记忆/" + slot + "】";
-    }
-
-    private String parseProfileValue(String summary) {
-        if (summary == null) {
-            return null;
-        }
-        int idx = summary.indexOf("】");
-        if (idx >= 0 && idx + 1 < summary.length()) {
-            return summary.substring(idx + 1).trim();
-        }
-        return summary.trim();
     }
 
     private List<Long> mergeSourceIds(List<Long> oldIds, List<Long> newIds) {
@@ -311,51 +197,12 @@ public class MemoryWriter {
         return new ArrayList<>(merged);
     }
 
-    private String computeFactHash(Long userId, Long characterId, String slot) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            md.update(("u:" + userId + "|c:" + characterId + "|slot:" + slot).getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(md.digest());
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private String normalizeFactValue(String value) {
-        return value == null ? "" : value.trim().replaceAll("\\s+", " ");
+    private BigDecimal toImportance(double importance) {
+        double clamped = Math.max(0, Math.min(1, importance));
+        return BigDecimal.valueOf(clamped).setScale(2, RoundingMode.HALF_UP);
     }
 
     private enum MemoryUpsertResult { CREATED, UPDATED, SKIPPED }
-    private record ProfileFact(String slot, String value, Long sourceMsgId) {}
-
-    public record MemoryCandidate(String summary, MemoryType memoryType, Long sourceMsgId) {}
-
-    public List<MemoryCandidate> extractRelationshipMemories(List<Message> messages) {
-        List<MemoryCandidate> result = new ArrayList<>();
-        for (Message msg : messages) {
-            if (!"USER".equalsIgnoreCase(msg.getRole()) || msg.getContent() == null) {
-                continue;
-            }
-            String text = msg.getContent().trim();
-            if (text.isEmpty()) {
-                continue;
-            }
-            if (text.contains("只给你叫") || text.contains("以后你可以叫我") || text.contains("专属")) {
-                result.add(new MemoryCandidate("你们形成了专属称呼锚点", MemoryType.RITUAL, msg.getId()));
-            }
-            if (text.contains("我今天很崩溃") || text.contains("我有点难受") || text.contains("我有点害怕")
-                    || text.contains("其实我很") || text.contains("我真的很累")) {
-                result.add(new MemoryCandidate("用户向你暴露了脆弱情绪", MemoryType.EMOTION, msg.getId()));
-            }
-            if (text.contains("对不起") || text.contains("我解释一下") || text.contains("我不是故意的")) {
-                result.add(new MemoryCandidate("用户尝试修复刚才的关系波动", MemoryType.RELATION, msg.getId()));
-            }
-            if (text.contains("约定") || text.contains("答应你") || text.contains("以后我们")) {
-                result.add(new MemoryCandidate("你们之间建立了一个小约定", MemoryType.RELATION, msg.getId()));
-            }
-        }
-        return result;
-    }
 
     public record MemorySummaryTask(Long conversationId, Long characterId,
                                      Long userId) implements Serializable {}

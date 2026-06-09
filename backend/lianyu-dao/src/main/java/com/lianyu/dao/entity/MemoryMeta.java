@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.*;
 import com.lianyu.common.handler.JacksonListTypeHandler;
 import com.lianyu.dao.enums.MemoryType;
 import lombok.Data;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -16,6 +17,7 @@ public class MemoryMeta {
     private Long userId;
     private String summary;
     private MemoryType memoryType;
+    private BigDecimal importance;
     @TableField(typeHandler = JacksonListTypeHandler.class)
     private List<Long> sourceMsgIds;
     private String sourceHash;

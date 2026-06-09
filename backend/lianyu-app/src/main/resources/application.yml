@@ -152,6 +152,17 @@ lianyu:
     # Agentic：结构化 profile 仍预注入；语义回忆由 memory_search Tool 按需调用
     agentic:
       enabled: true
+    extraction:
+      enabled: true
+      model: deepseek-v4-flash
+      importance-threshold: 0.5
+      max-memories-per-turn: 3
+      max-context-messages: 12
+    milvus:
+      collection: memory_vectors_v2
+      resync-on-startup: true
+    retrieval:
+      importance-threshold: 0.5
     cache:
       # 长期记忆读路径：先 Redis，未命中再查 MySQL / Milvus；写入后 invalidate
       enabled: true

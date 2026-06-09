@@ -4,22 +4,20 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lianyu.dao.entity.MemoryMeta;
 import com.lianyu.dao.enums.MemoryType;
 import com.lianyu.dao.mapper.MemoryMetaMapper;
-import com.lianyu.service.ai.EmbeddingService;
 import com.lianyu.service.ai.RerankerService;
 import cn.hutool.core.util.StrUtil;
-import com.lianyu.storage.milvus.MilvusConfig;
-import io.milvus.client.MilvusServiceClient;
-import io.milvus.grpc.SearchResultData;
-import io.milvus.param.dml.SearchParam;
-import io.milvus.param.MetricType;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -27,9 +25,10 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class MemoryRetriever {
 
-    private final EmbeddingService embeddingService;
+    private static final BigDecimal MIN_IMPORTANCE = new BigDecimal("0.50");
+
     private final RerankerService rerankerService;
-    private final MilvusServiceClient milvusClient;
+    private final MemoryVectorStore memoryVectorStore;
     private final MemoryMetaMapper memoryMetaMapper;
     private final MemoryCacheService memoryCacheService;
 
@@ -37,12 +36,20 @@ public class MemoryRetriever {
 
     private static final int SEARCH_CANDIDATE_COUNT = 20;
     private static final float SIMILARITY_THRESHOLD = 0.3f;
+    private static final int LIKE_BOOST_LIMIT = 5;
+
+    @Value("${lianyu.memory.retrieval.importance-threshold:0.5}")
+    private double importanceThreshold;
+
+    public String retrieveProfileContext(Long characterId, Long userId) {
+        return retrieveProfileContext(characterId, userId, null);
+    }
 
     /**
-     * 结构化长期记忆（姓名/爱好等），发消息前预注入 system prompt。
+     * 结构化长期记忆，发消息前预注入 system prompt（路径 A）。
      */
-    public String retrieveProfileContext(Long characterId, Long userId) {
-        List<MemoryMeta> metas = loadRecentMemoryMetas(characterId, userId);
+    public String retrieveProfileContext(Long characterId, Long userId, String lastUserMessage) {
+        List<MemoryMeta> metas = loadContextMemoryMetas(characterId, userId, lastUserMessage);
         String facts = joinByType(metas, MemoryType.FACT, "用户画像");
         String emotions = joinByType(metas, MemoryType.EMOTION, "近期情绪线索");
         String relations = joinByType(metas, MemoryType.RELATION, "关系事件");
@@ -66,7 +73,7 @@ public class MemoryRetriever {
     }
 
     /**
-     * Agentic 语义检索：由 memory_search Tool 调用，不走寒暄过滤。
+     * Agentic 语义检索：由 memory_search Tool 调用（路径 B）。
      */
     public List<String> searchSemantic(Long characterId, Long userId, String query, int topK) {
         if (StrUtil.isBlank(query)) {
@@ -76,48 +83,6 @@ public class MemoryRetriever {
         return retrieveSemantic(characterId, userId, query.trim(), k);
     }
 
-    /**
-     * 结构化长期记忆（姓名/爱好等），在涉及用户身份或爱好的问句时加载。
-     */
-    private List<String> loadProfileFacts(Long characterId, Long userId) {
-        List<String> cached = memoryCacheService.getProfileFacts(userId, characterId);
-        if (cached != null) {
-            return cached;
-        }
-
-        List<MemoryMeta> metas = memoryMetaMapper.selectList(
-                new LambdaQueryWrapper<MemoryMeta>()
-                        .eq(MemoryMeta::getCharacterId, characterId)
-                        .eq(MemoryMeta::getUserId, userId)
-                        .likeRight(MemoryMeta::getSummary, "【长期记忆/")
-                        .orderByDesc(MemoryMeta::getCreatedAt));
-
-        Map<String, String> latestBySlot = new LinkedHashMap<>();
-        for (MemoryMeta meta : metas) {
-            if (meta.getSummary() == null || meta.getSummary().isBlank()) {
-                continue;
-            }
-            String slot = extractProfileSlot(meta.getSummary());
-            if (slot != null && !latestBySlot.containsKey(slot)) {
-                latestBySlot.put(slot, "- " + meta.getSummary());
-            }
-        }
-        List<String> facts = new ArrayList<>(latestBySlot.values());
-        memoryCacheService.putProfileFacts(userId, characterId, facts);
-        return facts;
-    }
-
-    private String extractProfileSlot(String summary) {
-        if (!summary.startsWith("【长期记忆/")) {
-            return null;
-        }
-        int end = summary.indexOf('】');
-        if (end <= "【长期记忆/".length()) {
-            return null;
-        }
-        return summary.substring("【长期记忆/".length(), end);
-    }
-
     private List<String> retrieveSemantic(Long characterId, Long userId, String query, int topK) {
         try {
             List<String> cached = memoryCacheService.getSemanticResults(userId, characterId, query);
@@ -125,75 +90,31 @@ public class MemoryRetriever {
                 return cached.size() > topK ? cached.subList(0, topK) : cached;
             }
 
-            List<MemoryMeta> candidates = new ArrayList<>();
-
-            // Try vector search first
+            List<String> docTexts = new ArrayList<>();
             try {
-                float[] vec = embeddingService.embed(query, userId);
-
-                List<Float> queryVector = new ArrayList<>(vec.length);
-                for (float f : vec) {
-                    queryVector.add(f);
-                }
-
-                SearchParam searchParam = SearchParam.newBuilder()
-                        .withCollectionName(MilvusConfig.COLLECTION_MEMORY_VECTORS)
-                        .withVectorFieldName("vector")
-                        .withVectors(List.of(queryVector))
-                        .withOutFields(List.of("character_id", "user_id"))
-                        .withTopK(Math.max(SEARCH_CANDIDATE_COUNT, topK * 3))
-                        .withMetricType(MetricType.COSINE)
-                        .withExpr("character_id == " + characterId + " && user_id == " + userId)
-                        .build();
-
-                var searchResult = milvusClient.search(searchParam);
-                if (searchResult.getData() == null) {
-                    log.warn("Vector search returned null data, status={}", searchResult.getStatus());
-                    throw new RuntimeException("Vector search returned null");
-                }
-                SearchResultData resultData = searchResult.getData().getResults();
-
-                if (resultData.getIds().getIntId().getDataCount() > 0) {
-                    List<Long> vecIds = new ArrayList<>();
-                    for (int i = 0; i < resultData.getIds().getIntId().getDataCount(); i++) {
-                        long vecId = resultData.getIds().getIntId().getData(i);
-                        float score = resultData.getScores(i);
-                        if (score >= SIMILARITY_THRESHOLD) {
-                            vecIds.add(vecId);
-                        }
-                    }
-
-                    if (!vecIds.isEmpty()) {
-                        for (Long vecId : vecIds) {
-                            MemoryMeta meta = memoryMetaMapper.selectOne(
-                                    new LambdaQueryWrapper<MemoryMeta>()
-                                            .eq(MemoryMeta::getMilvusVecId, String.valueOf(vecId))
-                                            .eq(MemoryMeta::getCharacterId, characterId)
-                                            .eq(MemoryMeta::getUserId, userId)
-                                            .last("LIMIT 1"));
-                            if (meta != null && meta.getSummary() != null) {
-                                candidates.add(meta);
-                            }
-                        }
-                    }
+                List<MemoryVectorStore.VectorHit> hits = memoryVectorStore.search(
+                        characterId,
+                        userId,
+                        query,
+                        Math.max(SEARCH_CANDIDATE_COUNT, topK * 3),
+                        SIMILARITY_THRESHOLD);
+                for (MemoryVectorStore.VectorHit hit : hits) {
+                    docTexts.add(hit.summary());
                 }
             } catch (Exception e) {
                 log.warn("Vector search unavailable, falling back to recent memories: {}", e.getMessage());
             }
 
-            // Fallback: also fetch recent memories without vectors
-            if (candidates.isEmpty()) {
-                candidates.addAll(loadRecentMemoryMetas(characterId, userId));
+            if (docTexts.isEmpty()) {
+                docTexts = loadRecentMemoryMetas(characterId, userId).stream()
+                        .map(m -> m.getSummary() != null ? m.getSummary() : "")
+                        .filter(s -> !s.isBlank())
+                        .toList();
             }
 
-            if (candidates.isEmpty()) {
+            if (docTexts.isEmpty()) {
                 return List.of();
             }
-
-            // Rerank with query
-            List<String> docTexts = candidates.stream()
-                    .map(m -> m.getSummary() != null ? m.getSummary() : "")
-                    .toList();
 
             List<RerankerService.ScoredDoc> reranked;
             try {
@@ -220,30 +141,159 @@ public class MemoryRetriever {
         }
     }
 
-    private List<MemoryMeta> loadRecentMemoryMetas(Long characterId, Long userId) {
-        List<String> cachedSummaries = memoryCacheService.getRecentSummaries(userId, characterId);
-        if (cachedSummaries != null && !cachedSummaries.isEmpty()) {
-            return cachedSummaries.stream()
-                    .map(summary -> {
-                        MemoryMeta meta = new MemoryMeta();
-                        meta.setSummary(summary.startsWith("- ") ? summary.substring(2) : summary);
-                        return meta;
-                    })
-                    .toList();
+    private List<MemoryMeta> loadContextMemoryMetas(Long characterId, Long userId, String lastUserMessage) {
+        List<MemoryMeta> base = loadRecentMemoryMetas(characterId, userId);
+        if (StrUtil.isBlank(lastUserMessage)) {
+            return base;
         }
+        List<MemoryMeta> boosted = loadLikeBoostedMetas(characterId, userId, lastUserMessage.trim());
+        if (boosted.isEmpty()) {
+            return base;
+        }
+        Map<Long, MemoryMeta> merged = new LinkedHashMap<>();
+        for (MemoryMeta meta : base) {
+            if (meta.getId() != null) {
+                merged.put(meta.getId(), meta);
+            }
+        }
+        for (MemoryMeta meta : boosted) {
+            if (meta.getId() != null && !merged.containsKey(meta.getId())) {
+                merged.put(meta.getId(), meta);
+            }
+        }
+        return new ArrayList<>(merged.values());
+    }
 
-        List<MemoryMeta> fallback = memoryMetaMapper.selectList(
+    private List<MemoryMeta> loadLikeBoostedMetas(Long characterId, Long userId, String lastUserMessage) {
+        String keyword = pickLikeKeyword(lastUserMessage);
+        if (keyword == null) {
+            return List.of();
+        }
+        BigDecimal threshold = BigDecimal.valueOf(importanceThreshold).setScale(2, java.math.RoundingMode.HALF_UP);
+        return memoryMetaMapper.selectList(
                 new LambdaQueryWrapper<MemoryMeta>()
                         .eq(MemoryMeta::getCharacterId, characterId)
                         .eq(MemoryMeta::getUserId, userId)
+                        .ge(MemoryMeta::getImportance, threshold)
+                        .like(MemoryMeta::getSummary, keyword)
+                        .orderByDesc(MemoryMeta::getImportance)
+                        .orderByDesc(MemoryMeta::getCreatedAt)
+                        .last("LIMIT " + LIKE_BOOST_LIMIT));
+    }
+
+    private String pickLikeKeyword(String text) {
+        if (text.length() < 4) {
+            return null;
+        }
+        String[] tokens = text.split("\\s+");
+        for (String token : tokens) {
+            String trimmed = token.trim();
+            if (trimmed.length() >= 2 && trimmed.length() <= 12) {
+                return trimmed;
+            }
+        }
+        return text.length() > 12 ? text.substring(0, 12) : text;
+    }
+
+    private List<MemoryMeta> loadRecentMemoryMetas(Long characterId, Long userId) {
+        List<CachedMemoryRow> cachedRows = memoryCacheService.getRecentRows(userId, characterId);
+        if (cachedRows != null && !cachedRows.isEmpty()) {
+            return cachedRows.stream().map(this::toMeta).toList();
+        }
+
+        BigDecimal threshold = BigDecimal.valueOf(importanceThreshold).setScale(2, java.math.RoundingMode.HALF_UP);
+        List<MemoryMeta> fromDb = memoryMetaMapper.selectList(
+                new LambdaQueryWrapper<MemoryMeta>()
+                        .eq(MemoryMeta::getCharacterId, characterId)
+                        .eq(MemoryMeta::getUserId, userId)
+                        .ge(MemoryMeta::getImportance, threshold)
+                        .orderByDesc(MemoryMeta::getImportance)
                         .orderByDesc(MemoryMeta::getCreatedAt)
                         .last("LIMIT " + SEARCH_CANDIDATE_COUNT));
 
-        List<String> summaryLines = fallback.stream()
-                .map(m -> m.getSummary() != null ? m.getSummary() : "")
-                .filter(s -> !s.isBlank())
+        List<MemoryMeta> profileFacts = loadProfileFactMetas(characterId, userId);
+        List<MemoryMeta> merged = mergeMetas(profileFacts, fromDb);
+
+        List<CachedMemoryRow> rows = merged.stream().map(this::toCachedRow).toList();
+        memoryCacheService.putRecentRows(userId, characterId, rows);
+        return merged;
+    }
+
+    private List<MemoryMeta> loadProfileFactMetas(Long characterId, Long userId) {
+        List<String> cached = memoryCacheService.getProfileFacts(userId, characterId);
+        if (cached != null) {
+            return cached.stream().map(line -> {
+                MemoryMeta meta = new MemoryMeta();
+                meta.setSummary(line.startsWith("- ") ? line.substring(2) : line);
+                meta.setMemoryType(MemoryType.FACT);
+                meta.setImportance(MIN_IMPORTANCE);
+                return meta;
+            }).toList();
+        }
+
+        List<MemoryMeta> metas = memoryMetaMapper.selectList(
+                new LambdaQueryWrapper<MemoryMeta>()
+                        .eq(MemoryMeta::getCharacterId, characterId)
+                        .eq(MemoryMeta::getUserId, userId)
+                        .likeRight(MemoryMeta::getSummary, "【长期记忆/")
+                        .orderByDesc(MemoryMeta::getCreatedAt));
+
+        Map<String, MemoryMeta> latestBySlot = new LinkedHashMap<>();
+        for (MemoryMeta meta : metas) {
+            String slot = extractProfileSlot(meta.getSummary());
+            if (slot != null && !latestBySlot.containsKey(slot)) {
+                latestBySlot.put(slot, meta);
+            }
+        }
+        List<String> facts = latestBySlot.values().stream()
+                .map(m -> "- " + m.getSummary())
                 .toList();
-        memoryCacheService.putRecentSummaries(userId, characterId, summaryLines);
-        return fallback;
+        memoryCacheService.putProfileFacts(userId, characterId, facts);
+        return new ArrayList<>(latestBySlot.values());
+    }
+
+    private List<MemoryMeta> mergeMetas(List<MemoryMeta> profileFacts, List<MemoryMeta> recent) {
+        Set<Long> seen = new LinkedHashSet<>();
+        List<MemoryMeta> merged = new ArrayList<>();
+        for (MemoryMeta meta : profileFacts) {
+            if (meta.getId() != null && seen.add(meta.getId())) {
+                merged.add(meta);
+            } else if (meta.getId() == null) {
+                merged.add(meta);
+            }
+        }
+        for (MemoryMeta meta : recent) {
+            if (meta.getId() == null || seen.add(meta.getId())) {
+                merged.add(meta);
+            }
+        }
+        return merged;
+    }
+
+    private String extractProfileSlot(String summary) {
+        if (!summary.startsWith("【长期记忆/")) {
+            return null;
+        }
+        int end = summary.indexOf('】');
+        if (end <= "【长期记忆/".length()) {
+            return null;
+        }
+        return summary.substring("【长期记忆/".length(), end);
+    }
+
+    private MemoryMeta toMeta(CachedMemoryRow row) {
+        MemoryMeta meta = new MemoryMeta();
+        meta.setSummary(row.getSummary());
+        meta.setMemoryType(row.getMemoryType());
+        meta.setImportance(row.getImportance());
+        return meta;
+    }
+
+    private CachedMemoryRow toCachedRow(MemoryMeta meta) {
+        CachedMemoryRow row = new CachedMemoryRow();
+        row.setSummary(meta.getSummary());
+        row.setMemoryType(meta.getMemoryType());
+        row.setImportance(meta.getImportance());
+        return row;
     }
 }

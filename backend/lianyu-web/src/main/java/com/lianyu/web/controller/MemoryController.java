@@ -66,6 +66,7 @@ public class MemoryController {
             m1.put("characterId", m.getCharacterId());
             m1.put("characterName", character != null ? character.getName() : "角色#" + m.getCharacterId());
             m1.put("summary", m.getSummary());
+            m1.put("importance", m.getImportance());
             m1.put("sourceMsgIds", m.getSourceMsgIds());
             m1.put("createdAt", m.getCreatedAt());
             return m1;

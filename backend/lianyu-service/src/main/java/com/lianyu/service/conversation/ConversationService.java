@@ -208,7 +208,8 @@ public class ConversationService {
         // 更新角色情绪
         characterStateService.afterUserMessage(character.getId(), userId, turn.aiUserContent());
 
-        String memoryContext = memoryRetriever.retrieveProfileContext(character.getId(), userId);
+        String memoryContext = memoryRetriever.retrieveProfileContext(
+                character.getId(), userId, turn.aiUserContent());
         String relationshipContext = relationshipStateService.buildPromptContext(userId, character.getId());
         String systemPrompt = buildSystemPromptForUser(
                 userId,
@@ -262,7 +263,8 @@ public class ConversationService {
         // 更新角色情绪
         characterStateService.afterUserMessage(character.getId(), userId, turn.aiUserContent());
 
-        String memoryContext = memoryRetriever.retrieveProfileContext(character.getId(), userId);
+        String memoryContext = memoryRetriever.retrieveProfileContext(
+                character.getId(), userId, turn.aiUserContent());
         String relationshipContext = relationshipStateService.buildPromptContext(userId, character.getId());
         String systemPrompt = buildSystemPromptForUser(
                 userId,

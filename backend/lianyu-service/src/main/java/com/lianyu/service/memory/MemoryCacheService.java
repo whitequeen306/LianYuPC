@@ -27,6 +27,7 @@ public class MemoryCacheService {
     private static final String SEMANTIC_PREFIX = "memory:semantic:";
 
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {};
+    private static final TypeReference<List<CachedMemoryRow>> ROW_LIST = new TypeReference<>() {};
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
@@ -56,12 +57,34 @@ public class MemoryCacheService {
         putList(profileKey(userId, characterId), facts, Duration.ofHours(Math.max(1, profileTtlHours)));
     }
 
-    public List<String> getRecentSummaries(Long userId, Long characterId) {
-        return getList(recentKey(userId, characterId));
+    public List<CachedMemoryRow> getRecentRows(Long userId, Long characterId) {
+        if (!enabled) {
+            return null;
+        }
+        try {
+            String json = redisTemplate.opsForValue().get(recentKey(userId, characterId));
+            if (StrUtil.isBlank(json)) {
+                return null;
+            }
+            return objectMapper.readValue(json, ROW_LIST);
+        } catch (Exception e) {
+            log.debug("memory recent cache read failed: {}", e.getMessage());
+            return null;
+        }
     }
 
-    public void putRecentSummaries(Long userId, Long characterId, List<String> summaries) {
-        putList(recentKey(userId, characterId), summaries, Duration.ofMinutes(Math.max(5, recentTtlMinutes)));
+    public void putRecentRows(Long userId, Long characterId, List<CachedMemoryRow> rows) {
+        if (!enabled || rows == null) {
+            return;
+        }
+        try {
+            redisTemplate.opsForValue().set(
+                    recentKey(userId, characterId),
+                    objectMapper.writeValueAsString(rows),
+                    Duration.ofMinutes(Math.max(5, recentTtlMinutes)));
+        } catch (Exception e) {
+            log.debug("memory recent cache write failed: {}", e.getMessage());
+        }
     }
 
     public List<String> getSemanticResults(Long userId, Long characterId, String query) {
