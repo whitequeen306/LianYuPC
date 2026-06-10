@@ -44,7 +44,7 @@ def main() -> None:
     run(client, mysql_sh + '"SELECT version,success,description FROM flyway_schema_history WHERE version=\'31\';"')
     run(client, mysql_sh + '"DELETE FROM flyway_schema_history WHERE version=\'31\';"')
     run(client, mysql_sh + '"SELECT version,success,description FROM flyway_schema_history WHERE version=\'31\';"')
-    run(client, "cd /opt/lianyu && docker compose up -d --build backend frontend", timeout=1200)
+    run(client, "cd /opt/lianyu && docker compose up -d --build backend api-gateway", timeout=1200)
 
     for attempt in range(12):
         _, stdout, _ = client.exec_command(

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Pull latest main on cloud server and rebuild backend + api-gateway."""
+"""Remove legacy frontend container/images and reclaim Docker build cache on cloud server."""
 import os
 import sys
+import time
 from pathlib import Path
 
 import paramiko
@@ -29,7 +30,7 @@ def run(client: paramiko.SSHClient, cmd: str, timeout: int = 900) -> str:
     err = stderr.read().decode("utf-8", errors="replace")
     code = stdout.channel.recv_exit_status()
     if out.strip():
-        text = out[-5000:]
+        text = out[-8000:]
         sys.stdout.buffer.write(text.encode("utf-8", errors="replace"))
         sys.stdout.buffer.write(b"\n")
     if code != 0:
@@ -51,12 +52,30 @@ def main() -> None:
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     client.connect(HOST, username=USER, password=password, timeout=30)
 
+    print("=== BEFORE ===")
+    run(client, "df -h /")
+    run(client, "docker system df")
+    run(client, "docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'")
+
     run(client, "cd /opt/lianyu && git pull origin main")
+    run(client, "cd /opt/lianyu && docker compose stop frontend 2>/dev/null || true")
+    run(client, "cd /opt/lianyu && docker compose rm -f frontend 2>/dev/null || true")
+    run(client, "docker rm -f lianyu-frontend 2>/dev/null || true")
+    run(client, "docker rmi $(docker images 'lianyu-pc/frontend' -q) 2>/dev/null || true")
+    run(
+        client,
+        "rm -rf /opt/lianyu/frontend/node_modules /opt/lianyu/frontend/dist "
+        "/opt/lianyu/frontend/release /opt/lianyu/frontend/dist-electron "
+        "/opt/lianyu/.deploy-export /opt/lianyu/.deploy-import "
+        "/opt/lianyu/backend/lianyu-*/target 2>/dev/null || true",
+    )
+    run(client, "docker builder prune -af", timeout=600)
+    run(client, "docker image prune -af", timeout=300)
     run(client, "cd /opt/lianyu && docker compose up -d --build backend api-gateway", timeout=1200)
-    import time
+
     for attempt in range(12):
         _, stdout, _ = client.exec_command(
-            "curl -s -o /dev/null -w 'captcha=%{http_code}' http://127.0.0.1:8080/api/auth/captcha",
+            "curl -sk -o /dev/null -w 'gateway=%{http_code}' https://127.0.0.1/api/auth/captcha",
             timeout=30,
         )
         out = stdout.read().decode("utf-8", errors="replace").strip()
@@ -67,10 +86,15 @@ def main() -> None:
             time.sleep(15)
     else:
         raise SystemExit(56)
-    run(client, "docker ps --format 'table {{.Names}}\\t{{.Status}}' | head -8")
+
+    print("\n=== AFTER ===")
+    run(client, "df -h /")
+    run(client, "docker system df")
+    run(client, "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' | head -10")
+    run(client, "du -h --max-depth=1 /opt/lianyu 2>/dev/null | sort -hr | head -12")
 
     client.close()
-    print("DEPLOY_DONE")
+    print("REMOVE_FRONTEND_DONE")
 
 
 if __name__ == "__main__":

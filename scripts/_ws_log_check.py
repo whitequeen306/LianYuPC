@@ -31,8 +31,8 @@ def main() -> None:
 
     cmds = [
         "docker logs lianyu-backend 2>&1 | grep -iE 'WebSocket|STOMP|CONNECT rejected|SUBSCRIBE' | tail -30",
-        "docker logs lianyu-frontend 2>&1 | tail -20",
-        "curl -sk -o /dev/null -w 'nginx_ws=%{http_code}\\n' -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H 'Origin: https://154.219.111.30' https://127.0.0.1/ws",
+        "docker logs lianyu-api-gateway 2>&1 | tail -20",
+        "curl -sk -o /dev/null -w 'gateway_ws=%{http_code}\\n' -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H 'Origin: https://154.219.111.30' https://127.0.0.1/ws",
         "curl -s -o /dev/null -w 'backend_ws=%{http_code}\\n' -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H 'Origin: https://154.219.111.30' http://127.0.0.1:8080/ws",
         "curl -s -o /dev/null -w 'backend_ws_no_origin=%{http_code}\\n' -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' http://127.0.0.1:8080/ws",
     ]

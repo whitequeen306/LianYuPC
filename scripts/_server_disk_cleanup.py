@@ -35,11 +35,18 @@ def main() -> None:
     run(client, "df -h /")
     run(client, "docker system df")
 
-    # 1) Deploy import tarball (already applied)
+    # 1) Deploy / frontend build artifacts (server is backend-only; no Electron build here)
     run(client, "ls -lah /opt/lianyu/.deploy-import/ 2>/dev/null || true")
     run(client, "rm -f /opt/lianyu/.deploy-import/*.tar /opt/lianyu/.deploy-import/*.tar.gz 2>/dev/null; rmdir /opt/lianyu/.deploy-import 2>/dev/null || true")
+    run(
+        client,
+        "rm -rf /opt/lianyu/frontend/node_modules /opt/lianyu/frontend/dist "
+        "/opt/lianyu/frontend/release /opt/lianyu/frontend/dist-electron "
+        "/opt/lianyu/.deploy-export /opt/lianyu/backend/lianyu-*/target 2>/dev/null || true",
+    )
+    run(client, "docker rmi $(docker images 'lianyu-pc/frontend' -q) 2>/dev/null || true")
 
-    # 2) Docker build cache (~30GB) — does not affect running containers
+    # 2) Docker build cache — does not affect running containers
     run(client, "docker builder prune -af", timeout=600)
 
     # 3) Dangling images from old backend builds

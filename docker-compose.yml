@@ -1,11 +1,11 @@
-# LianYu-PC Docker Compose（默认全栈：frontend + backend + 中间件）
+# LianYu-PC Docker Compose（云端：api-gateway + backend + 中间件；前端仅 Electron 本地打包）
 #
-# 一键启动（前端+后端+全部中间件）:
+# 一键启动（API 网关 + 后端 + 全部中间件）:
 #   docker compose up -d --build
 #
 # 访问:
-#   前端: http://localhost:${LIANYU_FRONTEND_PORT:-80}
-#   文档: http://localhost:${LIANYU_FRONTEND_PORT:-80}/doc.html
+#   API: https://localhost/api/  （经 api-gateway TLS 反代 backend:8080）
+#   文档: https://localhost/doc.html
 #
 # 清库重建（会清空 MySQL/Redis/MinIO/Milvus/RabbitMQ 数据）:
 #   docker compose down -v && docker compose up -d --build
@@ -51,7 +51,7 @@ services:
       MILVUS_HOST: milvus
       SERVER_PORT: 8080
       TZ: Asia/Shanghai
-    # 仅绑定本机，避免公网明文 HTTP 绕过 Nginx TLS（云端经 frontend:443 反代 backend:8080）
+    # 仅绑定本机，避免公网明文 HTTP 绕过 TLS 网关（云端经 api-gateway:443 反代 backend:8080）
     ports:
       - "127.0.0.1:${SERVER_PORT:-8080}:8080"
     depends_on:
@@ -66,19 +66,19 @@ services:
       milvus:
         condition: service_healthy
 
-  # 前端服务（镜像内构建当前源码，Nginx 反代 backend）
-  frontend:
+  # API 网关（仅 TLS + /api /ws 反代，不托管前端静态资源；桌面端走 Electron）
+  api-gateway:
     build:
-      context: ./frontend
+      context: ./deploy/api-gateway
       dockerfile: Dockerfile
       args:
         APP_REVISION: ${APP_REVISION:-dev}
-    image: lianyu-pc/frontend:${APP_REVISION:-dev}
-    container_name: lianyu-frontend
+    image: lianyu-pc/api-gateway:${APP_REVISION:-dev}
+    container_name: lianyu-api-gateway
     restart: unless-stopped
     ports:
-      - "${LIANYU_FRONTEND_PORT:-80}:80"
-      - "443:443"
+      - "${LIANYU_GATEWAY_HTTP_PORT:-80}:80"
+      - "${LIANYU_GATEWAY_HTTPS_PORT:-443}:443"
     volumes:
       - ./certs:/etc/nginx/certs:ro
     depends_on:
