@@ -197,6 +197,7 @@ export default {
     lastLineEyebrow: '她最近说',
     continueChat: '继续对话',
     chatDetail: '聊天详情',
+    settings: '设置',
     deleteConfirm: '确定删除角色「{name}」吗？此操作不可恢复。',
     dialogCreate: '创建角色',
     unread: '有未读消息'
@@ -210,6 +211,27 @@ export default {
     realCityPlaceholder: '如 上海、北京、广州',
     realCityHint: '用于精确计算当地时间与天气。',
     fictionalNote: '系统将依据角色名与人设，自动推断其原作中的虚构城市，无需手动填写。'
+  },
+  characterSettings: {
+    pageTitle: '{name} · 设置',
+    pageDesc: '调整与该角色的相处方式，不修改性格设定。',
+    location: '所在城市',
+    realCity: '你的所在城市',
+    realCityHint: '修改后，最近聊天的角色可能会主动关心你是否搬家。',
+    realCityTooLong: '城市名称不能超过 50 个字符',
+    fictionalCityLocked: '该角色使用虚构城市，无法在此修改现实城市。',
+    chatBackground: '聊天背景',
+    useGlobalBackground: '使用全局背景',
+    behavior: '相处偏好',
+    proactiveEnabled: '允许主动消息',
+    showInnerThoughts: '显示括号心理活动',
+    blocked: '拉黑角色',
+    nightRest: '夜间休息',
+    nightRestEnabled: '23:00–08:00 不发主动消息',
+    dndStart: '开始时间',
+    dndEnd: '结束时间',
+    save: '保存设置',
+    saved: '设置已保存'
   },
   chat: {
     placeholder: '输入消息...',

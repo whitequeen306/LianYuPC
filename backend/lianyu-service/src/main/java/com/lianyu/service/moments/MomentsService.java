@@ -16,6 +16,7 @@ import com.lianyu.dao.mapper.MomentsPostMapper;
 import com.lianyu.dao.mapper.UserMapper;
 import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.CharacterPromptBuilder;
+import com.lianyu.service.character.CharacterPreferenceResolver;
 import com.lianyu.service.dto.*;
 import com.lianyu.service.memory.MemoryRetriever;
 import com.lianyu.service.notification.NotificationService;
@@ -116,9 +117,19 @@ public class MomentsService {
             characterMapper.selectBatchIds(characterIds).forEach(c -> characterMap.put(c.getId(), c));
         }
 
+        Set<Long> userIds = rows.stream()
+                .filter(MomentsService::isUserAuthored)
+                .map(MomentsPost::getUserId)
+                .filter(id -> id != null && id > 0)
+                .collect(Collectors.toSet());
+        Map<Long, User> userMap = new HashMap<>();
+        if (!userIds.isEmpty()) {
+            userMapper.selectBatchIds(userIds).forEach(u -> userMap.put(u.getId(), u));
+        }
+
         List<MomentPostResponse> items = rows.stream()
                 .filter(row -> isUserAuthored(row) || characterMap.containsKey(row.getCharacterId()))
-                .map(row -> toResponse(row, characterMap.get(row.getCharacterId())))
+                .map(row -> toResponse(row, characterMap.get(row.getCharacterId()), userMap.get(row.getUserId())))
                 .toList();
 
         Long nextCursor = hasMore && !rows.isEmpty() ? rows.get(rows.size() - 1).getId() : null;
@@ -196,7 +207,7 @@ public class MomentsService {
         }
         Long userId = conversation.getUserId();
         Long characterId = character.getId();
-        if (isBlocked(character) || isDoNotDisturbActive(character)) {
+        if (isBlocked(character) || CharacterPreferenceResolver.isDoNotDisturbActive(character)) {
             return false;
         }
         if (Boolean.TRUE.equals(redisTemplate.hasKey(cooldownKey(userId, characterId)))) {
@@ -457,8 +468,14 @@ public class MomentsService {
     }
 
     private MomentPostResponse toResponse(MomentsPost row, Character character) {
+        return toResponse(row, character, null);
+    }
+
+    private MomentPostResponse toResponse(MomentsPost row, Character character, User user) {
         boolean userAuthored = isUserAuthored(row);
-        User user = userAuthored ? userMapper.selectById(row.getUserId()) : null;
+        if (userAuthored && user == null && row.getUserId() != null) {
+            user = userMapper.selectById(row.getUserId());
+        }
         return MomentPostResponse.builder()
                 .id(row.getId())
                 .authorType(userAuthored ? AUTHOR_USER : AUTHOR_CHARACTER)
@@ -486,11 +503,20 @@ public class MomentsService {
         return row != null && AUTHOR_USER.equalsIgnoreCase(row.getAuthorType());
     }
 
+    private static final ThreadLocal<MessageDigest> SHA256_DIGEST = ThreadLocal.withInitial(() -> {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "SHA-256 init failed");
+        }
+    });
+
     private String sha256(String input) {
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            MessageDigest digest = SHA256_DIGEST.get();
+            digest.reset();
             byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder();
+            StringBuilder hex = new StringBuilder(hash.length * 2);
             for (byte b : hash) {
                 hex.append(String.format("%02x", b));
             }
@@ -520,51 +546,6 @@ public class MomentsService {
             return Boolean.parseBoolean(s);
         }
         return false;
-    }
-
-    private boolean isDoNotDisturbActive(Character character) {
-        if (character == null || character.getSettings() == null) {
-            return false;
-        }
-        Map<String, Object> settings = character.getSettings();
-        if (!booleanSetting(settings, "doNotDisturbEnabled", false)) {
-            return false;
-        }
-        int start = intSetting(settings, "dndStartMinutes", 23 * 60);
-        int end = intSetting(settings, "dndEndMinutes", 8 * 60);
-        int now = LocalTime.now().getHour() * 60 + LocalTime.now().getMinute();
-        if (start == end) {
-            return true;
-        }
-        if (start < end) {
-            return now >= start && now < end;
-        }
-        return now >= start || now < end;
-    }
-
-    private boolean booleanSetting(Map<String, Object> settings, String key, boolean fallback) {
-        Object raw = settings.get(key);
-        if (raw instanceof Boolean b) {
-            return b;
-        }
-        if (raw instanceof String s) {
-            return Boolean.parseBoolean(s);
-        }
-        return fallback;
-    }
-
-    private int intSetting(Map<String, Object> settings, String key, int fallback) {
-        Object raw = settings.get(key);
-        if (raw instanceof Number n) {
-            return n.intValue();
-        }
-        if (raw instanceof String s) {
-            try {
-                return Integer.parseInt(s.trim());
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return fallback;
     }
 
     private record GeneratedMoment(String postType, String content, Map<String, Object> meta) {

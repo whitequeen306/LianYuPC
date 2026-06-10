@@ -109,31 +109,51 @@ public class OutputLanguageService {
     }
 
     public String buildNaturalStyleBlock(String languageCode) {
+        return buildNaturalStyleBlock(languageCode, true);
+    }
+
+    public String buildNaturalStyleBlock(String languageCode, boolean showInnerThoughts) {
         OutputLanguage lang = OutputLanguage.fromCode(languageCode);
         return switch (lang) {
-            case JA -> """
+            case JA -> showInnerThoughts ? """
                     
                     表現要件：
                     - 心の声・内面の独白は括弧で短く書いてよい（例「（本当はちょっと気になってる）」）
                     - 動作・表情・身振りの括弧描写（例「（微笑）」「（ため息）」）は書かない
+                    - ユーザーが日本語で話しているのに英語など他言語で返さない""" : """
+                    
+                    表現要件：
+                    - 括弧での心の声・内面独白は禁止。口に出す言葉だけ書く
                     - ユーザーが日本語で話しているのに英語など他言語で返さない""";
-            case EN -> """
+            case EN -> showInnerThoughts ? """
                     
                     Style:
                     - Inner thoughts may appear briefly in parentheses (e.g. "(I actually care more than I'm letting on)")
                     - Do not use parentheses for physical actions or expressions (e.g. "(smiles)", "(sighs)")
+                    - Reply only in English unless the user clearly switched languages""" : """
+                    
+                    Style:
+                    - Do not use parenthetical inner monologue; only write spoken dialogue
                     - Reply only in English unless the user clearly switched languages""";
-            case ZH_TW -> """
+            case ZH_TW -> showInnerThoughts ? """
                     
                     表達要求：
                     - 心理活動、內心獨白可用括號簡短寫出（如「（其實有點在意）」「（這傢伙怎麼又來了）」），與說出口的話區分開
                     - 不要用括號寫動作、表情、肢體語言（如「（微笑）」「（嘆氣）」「（轉身離開）」）
+                    - 禁止無故夾雜英文/日文等其他語言；必須用繁體中文表述""" : """
+                    
+                    表達要求：
+                    - 禁止輸出括號內心獨白，只寫說出口的話
                     - 禁止無故夾雜英文/日文等其他語言；必須用繁體中文表述""";
-            default -> """
+            default -> showInnerThoughts ? """
                     
                     表达要求：
                     - 心理活动、内心独白可用括号简短写出（如「（其实有点在意）」「（这家伙怎么又来了）」），与说出口的话区分开
                     - 不要用括号写动作、表情、肢体语言（如「（微笑）」「（叹气）」「（转身离开）」）
+                    - 禁止无故夹杂英文/日文等其他语言；必须用简体中文表述""" : """
+                    
+                    表达要求：
+                    - 禁止输出括号内心独白，只写说出口的话
                     - 禁止无故夹杂英文/日文等其他语言；必须用简体中文表述""";
         };
     }

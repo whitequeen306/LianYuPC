@@ -22,8 +22,8 @@
             <el-icon v-else :size="22"><User /></el-icon>
           </div>
           <div>
-            <h1 class="page-title">{{ character.name }} · 聊天详情</h1>
-            <p class="page-desc">配置这个角色的聊天背景、主动消息开关、免打扰与拉黑状态。</p>
+            <h1 class="page-title">{{ t('characterSettings.pageTitle', { name: character.name }) }}</h1>
+            <p class="page-desc">{{ t('characterSettings.pageDesc') }}</p>
           </div>
         </div>
       </div>
@@ -31,9 +31,9 @@
 
     <section class="detail-card glass stagger-item">
       <el-form label-position="top" class="detail-form">
-        <div class="section-title">聊天背景</div>
+        <div class="section-title">{{ t('characterSettings.chatBackground') }}</div>
         <div class="form-grid two-col">
-          <el-form-item label="使用全局背景">
+          <el-form-item :label="t('characterSettings.useGlobalBackground')">
             <el-switch v-model="form.useGlobalChatBackground" />
           </el-form-item>
           <el-form-item label="聊天背景图（上传图片）">
@@ -70,22 +70,41 @@
           </el-form-item>
         </div>
 
-        <div class="section-title">消息与状态</div>
+        <div class="section-title">{{ t('characterSettings.location') }}</div>
+        <template v-if="isRealCityMode">
+          <el-form-item :label="t('characterSettings.realCity')">
+            <el-input
+              v-model="form.city"
+              :placeholder="t('cityMode.realCityPlaceholder')"
+              maxlength="50"
+              show-word-limit
+            />
+            <div class="field-hint">{{ t('characterSettings.realCityHint') }}</div>
+          </el-form-item>
+        </template>
+        <div v-else class="city-mode-form__fictional-note">
+          {{ t('characterSettings.fictionalCityLocked') }}
+        </div>
+
+        <div class="section-title">{{ t('characterSettings.behavior') }}</div>
         <div class="form-grid two-col">
-          <el-form-item label="允许主动消息">
+          <el-form-item :label="t('characterSettings.proactiveEnabled')">
             <el-switch v-model="form.proactiveEnabled" />
           </el-form-item>
-          <el-form-item label="拉黑角色">
+          <el-form-item :label="t('characterSettings.showInnerThoughts')">
+            <el-switch v-model="form.showInnerThoughts" />
+          </el-form-item>
+          <el-form-item :label="t('characterSettings.blocked')">
             <el-switch v-model="form.blocked" />
           </el-form-item>
         </div>
 
-        <div class="section-title">免打扰</div>
+        <div class="section-title">{{ t('characterSettings.nightRest') }}</div>
         <div class="form-grid three-col">
-          <el-form-item label="启用免打扰">
+          <el-form-item :label="t('characterSettings.nightRestEnabled')">
             <el-switch v-model="form.doNotDisturbEnabled" />
           </el-form-item>
-          <el-form-item label="开始时间">
+          <el-form-item :label="t('characterSettings.dndStart')">
             <el-time-select
               v-model="dndStart"
               start="00:00"
@@ -95,7 +114,7 @@
               placeholder="开始时间"
             />
           </el-form-item>
-          <el-form-item label="结束时间">
+          <el-form-item :label="t('characterSettings.dndEnd')">
             <el-time-select
               v-model="dndEnd"
               start="00:00"
@@ -108,7 +127,7 @@
         </div>
 
         <div class="form-actions">
-          <el-button type="primary" class="btn-cta" :loading="saving" @click="handleSave">保存设置</el-button>
+          <el-button type="primary" class="btn-cta" :loading="saving" @click="handleSave">{{ t('characterSettings.save') }}</el-button>
         </div>
       </el-form>
     </section>
@@ -125,6 +144,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Loading, User, WarningFilled } from '@element-plus/icons-vue'
@@ -133,6 +153,7 @@ import { deleteConversation, listConversations } from '@/api/conversation'
 import { resolveMediaUrl } from '@/utils/media'
 import { normalizeHex } from '@/utils/themeColor'
 
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const loading = ref(true)
@@ -143,14 +164,25 @@ const character = ref(null)
 const bgFileInput = ref(null)
 const draggingBg = ref(false)
 
+const isRealCityMode = computed(() => {
+  const settings = character.value?.settings || {}
+  const mode = settings.city_mode
+  if (mode === 'fictional') return false
+  if (mode === 'real') return true
+  const legacy = settings.use_fictional_city
+  return !(legacy === true || legacy === 'true')
+})
+
 const form = reactive({
+  city: '',
   chatBackgroundKey: '',
   chatBackgroundImageUrl: '',
   chatBackgroundPosX: 50,
   chatBackgroundPosY: 50,
   useGlobalChatBackground: true,
   proactiveEnabled: true,
-  doNotDisturbEnabled: false,
+  showInnerThoughts: true,
+  doNotDisturbEnabled: true,
   blocked: false,
   dndStartMinutes: 23 * 60,
   dndEndMinutes: 8 * 60
@@ -195,10 +227,12 @@ async function loadCharacter() {
     form.chatBackgroundPosY = clampPercentage(settings.chatBackgroundPosY, 50)
     form.useGlobalChatBackground = settings.useGlobalChatBackground ?? true
     form.proactiveEnabled = settings.proactiveEnabled ?? true
-    form.doNotDisturbEnabled = settings.doNotDisturbEnabled ?? false
+    form.showInnerThoughts = settings.showInnerThoughts ?? true
+    form.doNotDisturbEnabled = settings.doNotDisturbEnabled ?? true
     form.blocked = settings.blocked ?? false
     form.dndStartMinutes = Number.isFinite(Number(settings.dndStartMinutes)) ? Number(settings.dndStartMinutes) : 23 * 60
     form.dndEndMinutes = Number.isFinite(Number(settings.dndEndMinutes)) ? Number(settings.dndEndMinutes) : 8 * 60
+    form.city = typeof settings.city === 'string' ? settings.city : ''
   } catch {
     character.value = null
   } finally {
@@ -208,6 +242,17 @@ async function loadCharacter() {
 
 async function handleSave() {
   if (!character.value) return
+  if (isRealCityMode.value) {
+    const city = String(form.city || '').trim()
+    if (!city) {
+      ElMessage.warning(t('cityMode.realCityPlaceholder'))
+      return
+    }
+    if (city.length > 50) {
+      ElMessage.warning(t('characterSettings.realCityTooLong'))
+      return
+    }
+  }
   saving.value = true
   try {
     const settings = {
@@ -217,14 +262,18 @@ async function handleSave() {
       chatBackgroundPosY: clampPercentage(form.chatBackgroundPosY),
       useGlobalChatBackground: form.useGlobalChatBackground,
       proactiveEnabled: form.proactiveEnabled,
+      showInnerThoughts: form.showInnerThoughts,
       doNotDisturbEnabled: form.doNotDisturbEnabled,
       dndStartMinutes: clampMinutes(form.dndStartMinutes),
       dndEndMinutes: clampMinutes(form.dndEndMinutes),
       blocked: form.blocked
     }
+    if (isRealCityMode.value) {
+      settings.city = String(form.city || '').trim()
+    }
     const updated = await updateCharacter(character.value.id, { settings })
     character.value = updated
-    ElMessage.success('聊天详情已保存')
+    ElMessage.success(t('characterSettings.saved'))
   } finally {
     saving.value = false
   }
@@ -533,6 +582,24 @@ function clampPercentage(value, fallback = 50) {
 .danger-card p {
   color: $color-text-muted;
   font-size: $font-size-sm;
+}
+
+.field-hint {
+  margin-top: $space-2;
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+  line-height: $line-height-relaxed;
+}
+
+.city-mode-form__fictional-note {
+  margin: 0 0 $space-4;
+  padding: $space-3 $space-4;
+  border-radius: $radius-md;
+  background: rgba($color-pink-rgb, 0.06);
+  border: 1px solid rgba($color-pink-rgb, 0.1);
+  color: $color-text-secondary;
+  font-size: $font-size-sm;
+  line-height: $line-height-relaxed;
 }
 
 @media (max-width: 900px) {

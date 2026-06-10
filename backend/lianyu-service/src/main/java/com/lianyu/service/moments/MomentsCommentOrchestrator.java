@@ -12,6 +12,7 @@ import com.lianyu.dao.mapper.MomentsInteractionStateMapper;
 import com.lianyu.dao.mapper.MomentsPostMapper;
 import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.CharacterPromptBuilder;
+import com.lianyu.service.character.CharacterPreferenceResolver;
 import com.lianyu.service.dto.AiChatRequest;
 import com.lianyu.service.dto.ChatResult;
 import com.lianyu.service.dto.MessageDto;
@@ -247,7 +248,7 @@ public class MomentsCommentOrchestrator {
             }
 
             Character peer = characterMapper.selectById(peerCharacterId);
-            if (peer == null || isBlocked(peer) || isDoNotDisturbActive(peer)) {
+            if (peer == null || isBlocked(peer) || CharacterPreferenceResolver.isDoNotDisturbActive(peer)) {
                 return false;
             }
 
@@ -354,7 +355,7 @@ public class MomentsCommentOrchestrator {
         }
 
         Character author = characterMapper.selectById(authorId);
-        if (author == null || isBlocked(author) || isDoNotDisturbActive(author)) {
+        if (author == null || isBlocked(author) || CharacterPreferenceResolver.isDoNotDisturbActive(author)) {
             return false;
         }
 
@@ -431,7 +432,7 @@ public class MomentsCommentOrchestrator {
         List<Character> available = all.stream()
                 .filter(c -> c.getId() != null)
                 .filter(c -> !isUserPost(post) || !c.getId().equals(authorId))
-                .filter(c -> !isBlocked(c) && !isDoNotDisturbActive(c))
+                .filter(c -> !isBlocked(c) && !CharacterPreferenceResolver.isDoNotDisturbActive(c))
                 .collect(Collectors.toList());
         if (!available.isEmpty()) {
             return available;
@@ -661,48 +662,4 @@ public class MomentsCommentOrchestrator {
         return false;
     }
 
-    private boolean isDoNotDisturbActive(Character character) {
-        if (character == null || character.getSettings() == null) {
-            return false;
-        }
-        Map<String, Object> settings = character.getSettings();
-        if (!booleanSetting(settings, "doNotDisturbEnabled", false)) {
-            return false;
-        }
-        int start = intSetting(settings, "dndStartMinutes", 23 * 60);
-        int end = intSetting(settings, "dndEndMinutes", 8 * 60);
-        int now = LocalTime.now().getHour() * 60 + LocalTime.now().getMinute();
-        if (start == end) {
-            return true;
-        }
-        if (start < end) {
-            return now >= start && now < end;
-        }
-        return now >= start || now < end;
-    }
-
-    private boolean booleanSetting(Map<String, Object> settings, String key, boolean fallback) {
-        Object raw = settings.get(key);
-        if (raw instanceof Boolean b) {
-            return b;
-        }
-        if (raw instanceof String s) {
-            return Boolean.parseBoolean(s);
-        }
-        return fallback;
-    }
-
-    private int intSetting(Map<String, Object> settings, String key, int fallback) {
-        Object raw = settings.get(key);
-        if (raw instanceof Number n) {
-            return n.intValue();
-        }
-        if (raw instanceof String s) {
-            try {
-                return Integer.parseInt(s.trim());
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return fallback;
-    }
 }

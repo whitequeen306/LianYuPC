@@ -196,6 +196,7 @@ export default {
     lastLineEyebrow: 'She recently said',
     continueChat: 'Continue chat',
     chatDetail: 'Chat details',
+    settings: 'Settings',
     deleteConfirm: 'Delete character "{name}"? This cannot be undone.',
     dialogCreate: 'New character',
     unread: 'Unread messages'
@@ -209,6 +210,27 @@ export default {
     realCityPlaceholder: 'e.g. Shanghai, Beijing, Guangzhou',
     realCityHint: 'Used for local time and weather.',
     fictionalNote: 'We infer the canonical fictional city from the character name and persona — no manual input needed.'
+  },
+  characterSettings: {
+    pageTitle: '{name} · Settings',
+    pageDesc: 'Adjust how you interact with this character — personality stays fixed.',
+    location: 'Location',
+    realCity: 'Your city',
+    realCityHint: 'After you change it, your most recently chatted character may ask if you moved.',
+    realCityTooLong: 'City name cannot exceed 50 characters',
+    fictionalCityLocked: 'This character uses a fictional city — real city cannot be edited here.',
+    chatBackground: 'Chat background',
+    useGlobalBackground: 'Use global background',
+    behavior: 'Interaction preferences',
+    proactiveEnabled: 'Allow proactive messages',
+    showInnerThoughts: 'Show parenthetical inner thoughts',
+    blocked: 'Block character',
+    nightRest: 'Night rest',
+    nightRestEnabled: 'No proactive messages 23:00–08:00',
+    dndStart: 'Start time',
+    dndEnd: 'End time',
+    save: 'Save settings',
+    saved: 'Settings saved'
   },
   chat: {
     placeholder: 'Type a message...',

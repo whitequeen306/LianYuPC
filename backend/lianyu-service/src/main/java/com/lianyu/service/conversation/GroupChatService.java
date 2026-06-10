@@ -19,8 +19,10 @@ import com.lianyu.dao.mapper.MessageMapper;
 import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.AssistantReplySplitter;
 import com.lianyu.service.ai.CharacterPromptBuilder;
+import com.lianyu.service.ai.InnerThoughtFilter;
 import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
+import com.lianyu.service.character.CharacterPreferenceResolver;
 import com.lianyu.service.dto.*;
 import com.lianyu.service.memory.MemoryRetriever;
 import com.lianyu.service.notification.NotificationService;
@@ -31,6 +33,7 @@ import jakarta.annotation.Resource;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -93,6 +96,14 @@ public class GroupChatService {
     private static final String SEQ_KEY_PREFIX = "msg_seq:";
     private static final String TURN_KEY_PREFIX = "group_chat:turn:";
     private static final Duration TURN_TTL = Duration.ofMinutes(5);
+    private static final CompletableFuture<?>[] EMPTY_CF_ARRAY = new CompletableFuture<?>[0];
+
+    private static final String IMPLICIT_TRIGGER_WORDS = "(觉得呢|怎么看|你呢|怎么看呢|什么看法|说说看|回答下|回复下)";
+    private static final String IMPLICIT_PUNCTUATION = "[，。！？!?,\\s]*";
+    private static final String IMPLICIT_ASK_PREFIX = "(问问|请问|问下|让)";
+    private static final String IMPLICIT_SENTENCE_END = "(吧|呀|吗)[？?]?";
+
+    private final ConcurrentHashMap<String, Pattern[]> implicitMentionPatterns = new ConcurrentHashMap<>();
 
     @Transactional
     public ConversationResponse createGroup(Long userId, CreateGroupConversationRequest request) {
@@ -195,10 +206,10 @@ public class GroupChatService {
             return false;
         }
 
-        String mentionTarget = pickProactiveMentionTarget(character, members);
+        Map<Long, String> nameMap = loadCharacterNameMap(members);
+        String mentionTarget = pickProactiveMentionTarget(character, members, nameMap);
         String warmHint = (contextHint == null || contextHint.isBlank()) ? "最近群聊" : contextHint.trim();
 
-        Map<Long, String> nameMap = loadCharacterNameMap(members);
         String memoryCtx = memoryRetriever.retrieveProfileContext(character.getId(), userId);
         CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
         int maxPieces = behavior.maxRepliesPerTurn();
@@ -231,7 +242,7 @@ public class GroupChatService {
             dto.setRole(msg.getRole().toLowerCase());
             String content = msg.getContent();
             if (msg.getCharacterId() != null && !msg.getCharacterId().equals(character.getId())) {
-                String charName = getCharacterName(msg.getCharacterId());
+                String charName = getCharacterName(msg.getCharacterId(), nameMap);
                 content = formatOtherCharacterHistoryLine(charName, content);
             }
             dto.setContent(content);
@@ -267,7 +278,7 @@ public class GroupChatService {
 
         try {
             ChatResult result = aiChatService.chatBlocking(userId, aiReq);
-            String cleanedContent = sanitizeGroupReply(result.getContent(), character.getName(), members);
+            String cleanedContent = sanitizeGroupReply(result.getContent(), character.getName(), members, nameMap);
             if (cleanedContent == null || cleanedContent.isBlank()) {
                 return false;
             }
@@ -329,6 +340,8 @@ public class GroupChatService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "群聊没有成员");
         }
 
+        Map<Long, String> memberNameMap = loadCharacterNameMap(members);
+
         long userSeq = getNextSeq(conversationId);
 
         Message userMsg = new Message();
@@ -337,13 +350,13 @@ public class GroupChatService {
         userMsg.setRole("USER");
         UserInputSanitizer.SanitizedUserText sanitized = UserInputSanitizer.sanitizeChatMessage(
                 request.getContent() != null ? request.getContent() : "");
-        String normalizedUserContent = normalizeImplicitMentions(sanitized.storedText(), members);
+        String normalizedUserContent = normalizeImplicitMentions(sanitized.storedText(), members, memberNameMap);
         request.setContent(normalizedUserContent);
         request.setModelContentForAi(UserInputSanitizer.wrapStoredTextForModel(normalizedUserContent));
         userMsg.setContent(normalizedUserContent);
         messageMapper.insert(userMsg);
         final Long currentUserMsgId = userMsg.getId();
-        Set<Long> userMentionedIds = extractMentionedCharacterIds(normalizedUserContent, members);
+        Set<Long> userMentionedIds = extractMentionedCharacterIds(normalizedUserContent, members, memberNameMap);
 
         // Set a new turn ID to interrupt any in-progress character replies
         String turnId = UUID.randomUUID().toString();
@@ -388,7 +401,7 @@ public class GroupChatService {
                 List<CompletableFuture<CharacterReply>> pending = new ArrayList<>(futures);
                 int repliedCount = 0;
                 while (!pending.isEmpty()) {
-                    CompletableFuture.anyOf(pending.toArray(new CompletableFuture[0])).join();
+                    CompletableFuture.anyOf(pending.toArray(EMPTY_CF_ARRAY)).join();
                     for (int i = pending.size() - 1; i >= 0; i--) {
                         CompletableFuture<CharacterReply> f = pending.get(i);
                         if (!f.isDone()) {
@@ -490,7 +503,7 @@ public class GroupChatService {
                     content = UserInputSanitizer.wrapStoredTextForModel(content);
                 }
                 if (msg.getCharacterId() != null && !msg.getCharacterId().equals(character.getId())) {
-                    String charName = getCharacterName(msg.getCharacterId());
+                    String charName = getCharacterName(msg.getCharacterId(), nameMap);
                     content = formatOtherCharacterHistoryLine(charName, content);
                 }
                 dto.setContent(content);
@@ -499,7 +512,7 @@ public class GroupChatService {
             aiReq.setMessages(allMsgs);
 
             ChatResult result = aiChatService.chatBlocking(userId, aiReq);
-            String cleanedContent = sanitizeGroupReply(result.getContent(), character.getName(), members);
+            String cleanedContent = sanitizeGroupReply(result.getContent(), character.getName(), members, nameMap);
             return new CharacterReply(character.getId(), character.getName(), cleanedContent, result.getTotalTokens());
         } catch (Exception e) {
             log.error("Group chat error for character {}: {}", member.getCharacterId(), e.getMessage());
@@ -520,20 +533,30 @@ public class GroupChatService {
             return;
         }
 
-        for (int i = 0; i < pieces.size(); i++) {
-            String piece = pieces.get(i);
+        Map<Long, String> nameMap = loadCharacterNameMap(members);
+        List<String> ready = new ArrayList<>();
+        for (String piece : pieces) {
             if (piece == null || piece.isBlank()) {
                 continue;
             }
-            String cleaned = sanitizeGroupReply(piece, reply.characterName(), members);
+            String cleaned = sanitizeGroupReply(piece, reply.characterName(), members, nameMap);
+            cleaned = filterInnerThoughtsForCharacter(character, cleaned);
             if (cleaned == null || cleaned.isBlank()) {
                 continue;
             }
-            cleaned = ensureProactiveMentionPrefix(cleaned, preferredMentionTarget, members);
+            cleaned = ensureProactiveMentionPrefix(cleaned, preferredMentionTarget, members, nameMap);
+            ready.add(cleaned);
+        }
+        if (ready.isEmpty()) {
+            return;
+        }
 
-            long charSeq = getNextSeq(conversationId);
+        long lastSeq = reserveSeqBlock(conversationId, ready.size());
+        long firstSeq = lastSeq - ready.size() + 1;
+        for (int i = 0; i < ready.size(); i++) {
+            String cleaned = ready.get(i);
             Message charMsg = new Message();
-            charMsg.setSeq(charSeq);
+            charMsg.setSeq(firstSeq + i);
             charMsg.setConversationId(conversationId);
             charMsg.setRole("ASSISTANT");
             charMsg.setCharacterId(reply.characterId());
@@ -551,7 +574,7 @@ public class GroupChatService {
 
             notifyGroupUnread(userId, conversationId, reply.characterId(), reply.characterName(), cleaned);
 
-            if (i < pieces.size() - 1 && bubbleGapMs > 0) {
+            if (i < ready.size() - 1 && bubbleGapMs > 0) {
                 try {
                     Thread.sleep(bubbleGapMs);
                 } catch (InterruptedException e) {
@@ -562,14 +585,15 @@ public class GroupChatService {
         }
     }
 
-    private String pickProactiveMentionTarget(Character speaker, List<GroupMember> members) {
+    private String pickProactiveMentionTarget(Character speaker, List<GroupMember> members,
+                                              Map<Long, String> nameMap) {
         List<String> targets = new ArrayList<>();
         targets.add("你");
         for (GroupMember member : members) {
             if (member.getCharacterId().equals(speaker.getId())) {
                 continue;
             }
-            String name = getCharacterName(member.getCharacterId());
+            String name = getCharacterName(member.getCharacterId(), nameMap);
             if (name != null && !name.isBlank()) {
                 targets.add(name);
             }
@@ -579,11 +603,12 @@ public class GroupChatService {
 
     private String ensureProactiveMentionPrefix(String content,
                                                   String preferredTarget,
-                                                  List<GroupMember> members) {
+                                                  List<GroupMember> members,
+                                                  Map<Long, String> nameMap) {
         if (content == null || content.isBlank()) {
             return content;
         }
-        if (containsAnyMention(content, members)) {
+        if (containsAnyMention(content, members, nameMap)) {
             return content;
         }
         String target = (preferredTarget == null || preferredTarget.isBlank()) ? "你" : preferredTarget;
@@ -607,21 +632,31 @@ public class GroupChatService {
             return;
         }
 
-        for (int i = 0; i < pieces.size(); i++) {
-            String piece = pieces.get(i);
+        Map<Long, String> nameMap = loadCharacterNameMap(members);
+        List<String> ready = new ArrayList<>();
+        for (String piece : pieces) {
             if (piece == null || piece.isBlank()) {
                 continue;
             }
-            String cleaned = sanitizeGroupReply(piece, reply.characterName(), members);
+            String cleaned = sanitizeGroupReply(piece, reply.characterName(), members, nameMap);
+            cleaned = filterInnerThoughtsForCharacter(character, cleaned);
             if (cleaned == null || cleaned.isBlank()) {
                 continue;
             }
             cleaned = enhanceMentionsForAssistantReply(
-                    cleaned, reply.characterName(), members, userId, request, historySnapshot);
+                    cleaned, reply.characterName(), members, nameMap, userId, request, historySnapshot);
+            ready.add(cleaned);
+        }
+        if (ready.isEmpty()) {
+            return;
+        }
 
-            long charSeq = getNextSeq(conversationId);
+        long lastSeq = reserveSeqBlock(conversationId, ready.size());
+        long firstSeq = lastSeq - ready.size() + 1;
+        for (int i = 0; i < ready.size(); i++) {
+            String cleaned = ready.get(i);
             Message charMsg = new Message();
-            charMsg.setSeq(charSeq);
+            charMsg.setSeq(firstSeq + i);
             charMsg.setConversationId(conversationId);
             charMsg.setRole("ASSISTANT");
             charMsg.setCharacterId(reply.characterId());
@@ -639,7 +674,7 @@ public class GroupChatService {
 
             notifyGroupUnread(userId, conversationId, reply.characterId(), reply.characterName(), cleaned);
 
-            if (i < pieces.size() - 1 && bubbleGapMs > 0) {
+            if (i < ready.size() - 1 && bubbleGapMs > 0) {
                 try {
                     Thread.sleep(bubbleGapMs);
                 } catch (InterruptedException e) {
@@ -713,12 +748,6 @@ public class GroupChatService {
         return nameMap.getOrDefault(characterId, "未知角色");
     }
 
-    // Legacy single-ID lookup — only for code paths that don't have a name map
-    private String getCharacterName(Long characterId) {
-        Character c = characterMapper.selectById(characterId);
-        return c != null ? c.getName() : "未知角色";
-    }
-
     private Map<Long, String> buildMemberNameMap(List<GroupMember> members, Map<Long, String> nameMap) {
         Map<Long, String> result = new HashMap<>();
         for (GroupMember member : members) {
@@ -727,13 +756,14 @@ public class GroupChatService {
         return result;
     }
 
-    private Set<Long> extractMentionedCharacterIds(String content, List<GroupMember> members) {
+    private Set<Long> extractMentionedCharacterIds(String content, List<GroupMember> members,
+                                                    Map<Long, String> nameMap) {
         Set<Long> mentioned = new LinkedHashSet<>();
         if (content == null || content.isBlank()) {
             return mentioned;
         }
         for (GroupMember member : members) {
-            String name = getCharacterName(member.getCharacterId());
+            String name = getCharacterName(member.getCharacterId(), nameMap);
             if (name != null && !name.isBlank() && content.contains("@" + name)) {
                 mentioned.add(member.getCharacterId());
             }
@@ -741,14 +771,15 @@ public class GroupChatService {
         return mentioned;
     }
 
-    private String normalizeImplicitMentions(String content, List<GroupMember> members) {
+    private String normalizeImplicitMentions(String content, List<GroupMember> members,
+                                              Map<Long, String> nameMap) {
         if (content == null || content.isBlank() || members == null || members.isEmpty()) {
             return content;
         }
         String normalized = content;
         List<String> autoMentions = new ArrayList<>();
         for (GroupMember member : members) {
-            String name = getCharacterName(member.getCharacterId());
+            String name = getCharacterName(member.getCharacterId(), nameMap);
             if (name == null || name.isBlank() || normalized.contains("@" + name)) {
                 continue;
             }
@@ -763,13 +794,23 @@ public class GroupChatService {
     }
 
     private boolean containsImplicitMention(String content, String name) {
-        String escapedName = Pattern.quote(name);
-        String triggerWords = "(觉得呢|怎么看|你呢|怎么看呢|什么看法|说说看|回答下|回复下)";
-        String punctuation = "[，。！？!?,\\s]*";
-
-        return Pattern.compile(escapedName + punctuation + triggerWords).matcher(content).find()
-                || Pattern.compile("(问问|请问|问下|让)" + punctuation + escapedName).matcher(content).find()
-                || Pattern.compile(escapedName + punctuation + "(吧|呀|吗)[？?]?$").matcher(content).find();
+        if (name == null || name.isBlank()) {
+            return false;
+        }
+        Pattern[] patterns = implicitMentionPatterns.computeIfAbsent(name, n -> {
+            String escaped = Pattern.quote(n);
+            return new Pattern[]{
+                    Pattern.compile(escaped + IMPLICIT_PUNCTUATION + IMPLICIT_TRIGGER_WORDS),
+                    Pattern.compile(IMPLICIT_ASK_PREFIX + IMPLICIT_PUNCTUATION + escaped),
+                    Pattern.compile(escaped + IMPLICIT_PUNCTUATION + IMPLICIT_SENTENCE_END + "$")
+            };
+        });
+        for (Pattern pattern : patterns) {
+            if (pattern.matcher(content).find()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String buildMentionContext(Character current,
@@ -810,17 +851,18 @@ public class GroupChatService {
     private String enhanceMentionsForAssistantReply(String content,
                                                     String speakerName,
                                                     List<GroupMember> members,
+                                                    Map<Long, String> nameMap,
                                                     Long userId,
                                                     SendMessageRequest request,
                                                     List<Message> historySnapshot) {
         if (content == null || content.isBlank()) {
             return content;
         }
-        if (containsAnyMention(content, members)) {
+        if (containsAnyMention(content, members, nameMap)) {
             return content;
         }
 
-        MentionDecision ruleDecision = decideMentionByRules(content, speakerName, members);
+        MentionDecision ruleDecision = decideMentionByRules(content, speakerName, members, nameMap);
         if (ruleDecision != null && ruleDecision.confidence() >= mentionJudgeThreshold) {
             return "@" + ruleDecision.target() + " " + content;
         }
@@ -830,23 +872,24 @@ public class GroupChatService {
         }
 
         MentionDecision llmDecision = decideMentionByJudgeModel(
-                content, speakerName, members, userId, request, historySnapshot);
+                content, speakerName, members, nameMap, userId, request, historySnapshot);
         if (llmDecision == null || !llmDecision.shouldMention()) {
             return content;
         }
         if (llmDecision.confidence() < mentionJudgeThreshold) {
             return content;
         }
-        if (!isValidMentionTarget(llmDecision.target(), speakerName, members)) {
+        if (!isValidMentionTarget(llmDecision.target(), speakerName, members, nameMap)) {
             return content;
         }
         return "@" + llmDecision.target() + " " + content;
     }
 
-    private MentionDecision decideMentionByRules(String content, String speakerName, List<GroupMember> members) {
+    private MentionDecision decideMentionByRules(String content, String speakerName, List<GroupMember> members,
+                                                  Map<Long, String> nameMap) {
         String normalized = content.toLowerCase(Locale.ROOT);
         for (GroupMember member : members) {
-            String name = getCharacterName(member.getCharacterId());
+            String name = getCharacterName(member.getCharacterId(), nameMap);
             if (name == null || name.isBlank() || name.equals(speakerName)) {
                 continue;
             }
@@ -871,16 +914,17 @@ public class GroupChatService {
     private MentionDecision decideMentionByJudgeModel(String content,
                                                       String speakerName,
                                                       List<GroupMember> members,
+                                                      Map<Long, String> nameMap,
                                                       Long userId,
                                                       SendMessageRequest request,
                                                       List<Message> historySnapshot) {
         try {
-            List<String> candidates = buildMentionCandidates(speakerName, members);
+            List<String> candidates = buildMentionCandidates(speakerName, members, nameMap);
             if (candidates.isEmpty()) {
                 return null;
             }
 
-            String ctx = buildJudgeContext(historySnapshot, mentionJudgeContextMessages);
+            String ctx = buildJudgeContext(historySnapshot, mentionJudgeContextMessages, nameMap);
             String systemPrompt = """
                     你是“群聊@提及裁决器”。只做一件事：判断当前消息是否应该添加一个@对象。
                     规则：
@@ -922,10 +966,11 @@ public class GroupChatService {
         }
     }
 
-    private List<String> buildMentionCandidates(String speakerName, List<GroupMember> members) {
+    private List<String> buildMentionCandidates(String speakerName, List<GroupMember> members,
+                                                Map<Long, String> nameMap) {
         List<String> candidates = new ArrayList<>();
         for (GroupMember member : members) {
-            String name = getCharacterName(member.getCharacterId());
+            String name = getCharacterName(member.getCharacterId(), nameMap);
             if (name == null || name.isBlank() || name.equals(speakerName)) {
                 continue;
             }
@@ -935,7 +980,7 @@ public class GroupChatService {
         return candidates;
     }
 
-    private String buildJudgeContext(List<Message> historySnapshot, int maxMessages) {
+    private String buildJudgeContext(List<Message> historySnapshot, int maxMessages, Map<Long, String> nameMap) {
         if (historySnapshot == null || historySnapshot.isEmpty()) {
             return "(空)";
         }
@@ -944,7 +989,9 @@ public class GroupChatService {
         List<String> lines = new ArrayList<>();
         for (int i = start; i < historySnapshot.size(); i++) {
             Message msg = historySnapshot.get(i);
-            String role = "USER".equalsIgnoreCase(msg.getRole()) ? "用户" : getCharacterName(msg.getCharacterId());
+            String role = "USER".equalsIgnoreCase(msg.getRole())
+                    ? "用户"
+                    : getCharacterName(msg.getCharacterId(), nameMap);
             String content = msg.getContent() == null ? "" : msg.getContent().trim();
             if (content.length() > 120) {
                 content = content.substring(0, 120) + "...";
@@ -954,12 +1001,12 @@ public class GroupChatService {
         return String.join("\n", lines);
     }
 
-    private boolean containsAnyMention(String content, List<GroupMember> members) {
+    private boolean containsAnyMention(String content, List<GroupMember> members, Map<Long, String> nameMap) {
         if (content.contains("@你")) {
             return true;
         }
         for (GroupMember member : members) {
-            String name = getCharacterName(member.getCharacterId());
+            String name = getCharacterName(member.getCharacterId(), nameMap);
             if (name != null && !name.isBlank() && content.contains("@" + name)) {
                 return true;
             }
@@ -979,7 +1026,8 @@ public class GroupChatService {
                 || lower.contains("说说看");
     }
 
-    private boolean isValidMentionTarget(String target, String speakerName, List<GroupMember> members) {
+    private boolean isValidMentionTarget(String target, String speakerName, List<GroupMember> members,
+                                         Map<Long, String> nameMap) {
         if (target == null || target.isBlank()) {
             return false;
         }
@@ -990,7 +1038,7 @@ public class GroupChatService {
             return false;
         }
         for (GroupMember member : members) {
-            String name = getCharacterName(member.getCharacterId());
+            String name = getCharacterName(member.getCharacterId(), nameMap);
             if (target.equals(name)) {
                 return true;
             }
@@ -1023,19 +1071,29 @@ public class GroupChatService {
 
     private static final String GROUP_HISTORY_TAG = "群聊-";
 
+    private static final Pattern PARAGRAPH_SPLIT = Pattern.compile("\\n\\s*\\n+");
+
     private String formatOtherCharacterHistoryLine(String charName, String content) {
         String safeName = charName == null || charName.isBlank() ? "其他角色" : charName.trim();
         String safeContent = content == null ? "" : content;
         return "「" + GROUP_HISTORY_TAG + safeName + "」: " + safeContent;
     }
 
-    private String sanitizeGroupReply(String raw, String speakerName, List<GroupMember> members) {
+    private String filterInnerThoughtsForCharacter(Character character, String text) {
+        if (text == null || text.isBlank()) {
+            return text;
+        }
+        return InnerThoughtFilter.stripIfDisabled(text, CharacterPreferenceResolver.showInnerThoughts(character));
+    }
+
+    private String sanitizeGroupReply(String raw, String speakerName, List<GroupMember> members,
+                                       Map<Long, String> nameMap) {
         if (raw == null || raw.isBlank()) {
             return raw;
         }
 
         String normalized = raw.replace("\r\n", "\n").trim();
-        String[] paragraphs = normalized.split("\\n\\s*\\n+");
+        String[] paragraphs = PARAGRAPH_SPLIT.split(normalized);
         List<String> cleanedParagraphs = new ArrayList<>();
         for (String paragraph : paragraphs) {
             String[] lines = paragraph.split("\\n");
@@ -1045,7 +1103,7 @@ public class GroupChatService {
                 if (t.isEmpty()) {
                     continue;
                 }
-                if (lineAttributedToOtherSpeaker(t, speakerName, members)) {
+                if (lineAttributedToOtherSpeaker(t, speakerName, members, nameMap)) {
                     continue;
                 }
                 String stripped = stripLeadingSpeakerLabel(t, speakerName);
@@ -1063,7 +1121,8 @@ public class GroupChatService {
         return String.join("\n\n", cleanedParagraphs);
     }
 
-    private boolean lineAttributedToOtherSpeaker(String line, String speakerName, List<GroupMember> members) {
+    private boolean lineAttributedToOtherSpeaker(String line, String speakerName, List<GroupMember> members,
+                                                  Map<Long, String> nameMap) {
         String t = line.trim();
         String groupSpeaker = extractGroupHistorySpeaker(t);
         if (groupSpeaker != null) {
@@ -1077,7 +1136,7 @@ public class GroupChatService {
             return false;
         }
         for (GroupMember member : members) {
-            String name = getCharacterName(member.getCharacterId());
+            String name = getCharacterName(member.getCharacterId(), nameMap);
             if (name == null || name.isBlank() || name.equals(speakerName)) {
                 continue;
             }
@@ -1184,7 +1243,13 @@ public class GroupChatService {
     }
 
     private long getNextSeq(Long conversationId) {
-        return redisTemplate.opsForValue().increment(SEQ_KEY_PREFIX + conversationId);
+        return reserveSeqBlock(conversationId, 1);
+    }
+
+    private long reserveSeqBlock(Long conversationId, int count) {
+        int safeCount = Math.max(1, count);
+        Long lastSeq = redisTemplate.opsForValue().increment(SEQ_KEY_PREFIX + conversationId, safeCount);
+        return lastSeq != null ? lastSeq : safeCount;
     }
 
     private Conversation findOwned(Long userId, Long conversationId) {

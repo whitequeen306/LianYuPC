@@ -191,6 +191,7 @@ export default {
     lastLineEyebrow: '最近の一言',
     continueChat: '会話を続ける',
     chatDetail: 'チャット詳細',
+    settings: '設定',
     deleteConfirm: 'キャラ「{name}」を削除しますか？元に戻せません。',
     dialogCreate: 'キャラ作成',
     unread: '未読あり'
@@ -204,6 +205,27 @@ export default {
     realCityPlaceholder: '例：東京、大阪、名古屋',
     realCityHint: '現地時間と天気の計算に使用します。',
     fictionalNote: 'キャラ名と設定から原作の架空都市を自動推定します。手入力は不要です。'
+  },
+  characterSettings: {
+    pageTitle: '{name} · 設定',
+    pageDesc: 'このキャラとの付き合い方を調整します（性格設定は変更しません）。',
+    location: '所在都市',
+    realCity: 'あなたの所在都市',
+    realCityHint: '変更後、最近チャットしたキャラが引っ越しを気遣うことがあります。',
+    realCityTooLong: '都市名は50文字以内にしてください',
+    fictionalCityLocked: 'このキャラは架空都市を使用しているため、現実の都市は変更できません。',
+    chatBackground: 'チャット背景',
+    useGlobalBackground: '全体背景を使う',
+    behavior: '付き合い方',
+    proactiveEnabled: '能動メッセージを許可',
+    showInnerThoughts: '括弧の心理描写を表示',
+    blocked: 'キャラをブロック',
+    nightRest: '夜間休憩',
+    nightRestEnabled: '23:00–08:00 は能動メッセージなし',
+    dndStart: '開始時刻',
+    dndEnd: '終了時刻',
+    save: '設定を保存',
+    saved: '設定を保存しました'
   },
   chat: {
     placeholder: 'メッセージを入力...',

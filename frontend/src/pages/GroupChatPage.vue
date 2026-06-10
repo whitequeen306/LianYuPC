@@ -303,6 +303,7 @@ import { humanizeError } from '@/utils/errorMessage'
 import { dateLocaleForUi } from '@/utils/dateLocale'
 import { resolveGroupDisplayTitle } from '@/utils/groupTitle'
 import { useChatScroll, sleep, MIN_REPLY_DISPLAY_MS } from '@/composables/useChatScroll'
+import { stripInnerThoughts, resolveShowInnerThoughts } from '@/utils/innerThoughtFilter'
 
 const TIME_GAP_MS = 5 * 60 * 1000
 const MAX_GROUP_MEMBERS = 4
@@ -366,9 +367,18 @@ function groupTitleLabel(title) {
 const displayGroupTitle = computed(() => groupTitleLabel(activeGroup.value?.title))
 
 const groupMessageTimeline = computed(() => {
+  const settingsByCharId = {}
+  for (const member of groupMembers.value) {
+    settingsByCharId[member.id] = member.settings || {}
+  }
   const items = []
   let prevMs = null
   for (const msg of groupMessages.value) {
+    let content = msg.content
+    if (!isUserMessage(msg)) {
+      content = stripInnerThoughts(content, resolveShowInnerThoughts(settingsByCharId[msg.characterId] || {}))
+      if (!content) continue
+    }
     const ms = parseMessageTime(msg)
     if (prevMs != null && ms - prevMs > TIME_GAP_MS) {
       items.push({
@@ -377,7 +387,7 @@ const groupMessageTimeline = computed(() => {
         label: formatTimeDivider(ms)
       })
     }
-    items.push({ type: 'message', ...msg })
+    items.push({ type: 'message', ...msg, content })
     prevMs = ms
   }
   return items

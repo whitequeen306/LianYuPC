@@ -64,11 +64,14 @@ class ConversationRelationshipFlowTest {
         RelationshipStateService relationshipStateService = mock(RelationshipStateService.class);
         com.lianyu.service.tools.TimeTool timeTool = mock(com.lianyu.service.tools.TimeTool.class);
 
+        com.lianyu.dao.mapper.UserMapper userMapper = mock(com.lianyu.dao.mapper.UserMapper.class);
+
         ConversationService conversationService = new ConversationService(
                 conversationMapper,
                 messageMapper,
                 groupMemberMapper,
                 characterMapper,
+                userMapper,
                 aiChatService,
                 promptBuilder,
                 memoryRetriever,

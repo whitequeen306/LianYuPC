@@ -6,6 +6,7 @@ import com.lianyu.common.util.UserInputSanitizer;
 import com.lianyu.dao.entity.Character;
 import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
+import com.lianyu.service.character.CharacterPreferenceResolver;
 import com.lianyu.service.character.CharacterStateService;
 import com.lianyu.service.rules.PromptRuleContext;
 import com.lianyu.service.rules.PromptRuleEngine;
@@ -65,9 +66,10 @@ public class CharacterPromptBuilder {
         }
 
         CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
+        boolean showInnerThoughts = CharacterPreferenceResolver.showInnerThoughts(character);
         String replyRules = promptRuleEngine.render(
                 PromptRuleSlot.REPLY_BEHAVIOR,
-                PromptRuleContext.forReply(outputLanguage, persona, behavior)
+                PromptRuleContext.forReply(outputLanguage, persona, behavior, showInnerThoughts)
         );
         String outputRules = promptRuleEngine.render(
                 PromptRuleSlot.OUTPUT_LANGUAGE,
@@ -101,6 +103,7 @@ public class CharacterPromptBuilder {
                                                String otherCharactersLine,
                                                String mentionCtx,
                                                String outputLanguage) {
+        boolean showInnerThoughts = CharacterPreferenceResolver.showInnerThoughts(character);
         String groupRules = promptRuleEngine.render(
                 PromptRuleSlot.GROUP_CHAT,
                 PromptRuleContext.forGroupChat(
@@ -108,7 +111,8 @@ public class CharacterPromptBuilder {
                         character != null ? character.getName() : "",
                         maxPieces,
                         otherCharactersLine,
-                        mentionCtx
+                        mentionCtx,
+                        showInnerThoughts
                 )
         );
         if (groupRules.isBlank()) {

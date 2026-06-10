@@ -78,6 +78,7 @@
 
         <div class="card-footer" @click.stop>
           <el-button text :icon="ChatDotRound" size="small" @click="startChat(char)">对话</el-button>
+          <el-button text :icon="Setting" size="small" @click="openCharacterSettings(char)">{{ t('characters.settings') }}</el-button>
           <el-button text :icon="Delete" size="small" class="btn-delete" @click="confirmDelete(char)">
             删除
           </el-button>
@@ -273,7 +274,7 @@ import { listNotifications } from '@/api/notification'
 import { useConversationUnread } from '@/composables/useConversationUnread'
 import { useResponsiveDialogWidth } from '@/composables/useResponsiveDialogWidth'
 import { useNotificationsStore } from '@/stores/notifications'
-import { Plus, Delete, User, Loading, ChatDotRound, UploadFilled } from '@element-plus/icons-vue'
+import { Plus, Delete, User, Loading, ChatDotRound, UploadFilled, Setting } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { resolveMediaUrl } from '@/utils/media'
 import { fixUtf8Mojibake } from '@/utils/textEncoding'
@@ -595,6 +596,11 @@ function getCharMetaFields(char) {
   if (s.gender) fields.push({ key: 'gender', label: fixUtf8Mojibake(s.gender) })
   if (s.speakingStyle) fields.push({ key: 'speakingStyle', label: fixUtf8Mojibake(s.speakingStyle) })
   return fields
+}
+
+function openCharacterSettings(char) {
+  if (!char?.id) return
+  router.push(`/app/characters/${char.id}/detail`)
 }
 
 async function startChat(char) {

@@ -28,10 +28,31 @@
             :status-text="emotionState.statusText"
           />
         </div>
+        <button
+          v-if="activeCharacter?.id"
+          type="button"
+          class="gal-header__settings"
+          :title="t('characters.settings')"
+          @click="openCharacterSettings"
+        >
+          <el-icon :size="18"><Setting /></el-icon>
+        </button>
       </header>
 
+      <div v-if="isCompact && activeCharacter?.id" class="gal-compact-toolbar">
+        <button
+          type="button"
+          class="gal-compact-toolbar__settings"
+          :title="t('characters.settings')"
+          @click="openCharacterSettings"
+        >
+          <el-icon :size="16"><Setting /></el-icon>
+          <span>{{ t('characters.settings') }}</span>
+        </button>
+      </div>
+
       <div v-if="isBlocked" class="blocked-banner">
-        当前角色已被拉黑，无法继续发送消息。请前往聊天详情调整设置。
+        当前角色已被拉黑，无法继续发送消息。请前往角色设置调整。
       </div>
 
       <div class="gal-log" ref="msgListRef">
@@ -200,7 +221,7 @@ import { useCharactersStore } from '@/stores/characters'
 import { humanizeError } from '@/utils/errorMessage'
 import { getConversation, getMessages, sendMessageStream, uploadChatImage } from '@/api/conversation'
 import { fetchModels } from '@/api/ai'
-import { ArrowLeft, ArrowDown, ChatDotRound, Promotion, Picture, Close, User, UserFilled } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowDown, ChatDotRound, Promotion, Picture, Close, User, UserFilled, Setting } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { resolveMediaUrl } from '@/utils/media'
 import { PLATFORM_PROVIDER, PLATFORM_MODEL, PLATFORM_PROVIDER_LABEL } from '@/constants/ai'
@@ -212,6 +233,7 @@ import { splitAssistantReply, resolveMaxRepliesPerTurn } from '@/utils/assistant
 import { getElectronAPI } from '@/utils/electron'
 import { useChatScroll, sleep, MIN_REPLY_DISPLAY_MS } from '@/composables/useChatScroll'
 import { dateLocaleForUi } from '@/utils/dateLocale'
+import { stripInnerThoughts, resolveShowInnerThoughts } from '@/utils/innerThoughtFilter'
 
 const TIME_GAP_MS = 5 * 60 * 1000
 
@@ -308,6 +330,7 @@ const isPlatformSelected = computed(() => currentProvider.value === PLATFORM_PRO
 const isCompact = computed(() => route.meta.compact === true)
 const activeSettings = computed(() => activeCharacter.value?.settings || {})
 const isBlocked = computed(() => activeSettings.value.blocked === true)
+const showInnerThoughts = computed(() => resolveShowInnerThoughts(activeSettings.value))
 
 const headerTitle = computed(() => {
   const name = activeCharacter.value?.name
@@ -324,7 +347,10 @@ const messageTimeline = computed(() => {
   const items = []
   let prevMs = null
   for (const msg of messages.value) {
-    if (msg.role === 'assistant' && !msg.content) continue
+    const displayContent = msg.role === 'assistant'
+      ? stripInnerThoughts(msg.content, showInnerThoughts.value)
+      : msg.content
+    if (msg.role === 'assistant' && !displayContent) continue
     const ms = parseMessageTime(msg)
     if (prevMs != null && ms - prevMs > TIME_GAP_MS) {
       items.push({
@@ -333,7 +359,12 @@ const messageTimeline = computed(() => {
         label: formatTimeDivider(ms)
       })
     }
-    items.push({ type: 'message', ...msg, _key: msg.id || msg._tempId })
+    items.push({
+      type: 'message',
+      ...msg,
+      content: displayContent,
+      _key: msg.id || msg._tempId
+    })
     prevMs = ms
   }
   return items
@@ -833,14 +864,22 @@ function syncStreamingAssistantBubbles(fullContent, streamGroupId, createdAt) {
     messages.value = rest
     return
   }
-  const streamMsgs = pieces.map((content, i) => ({
-    _tempId: `${streamGroupId}-${i}`,
-    _streamGroupId: streamGroupId,
-    role: 'assistant',
-    content,
-    createdAt
-  }))
+  const streamMsgs = pieces
+    .map((content, i) => ({
+      _tempId: `${streamGroupId}-${i}`,
+      _streamGroupId: streamGroupId,
+      role: 'assistant',
+      content: stripInnerThoughts(content, showInnerThoughts.value),
+      createdAt
+    }))
+    .filter(m => m.content)
   messages.value = [...rest, ...streamMsgs]
+}
+
+function openCharacterSettings() {
+  const charId = activeCharacter.value?.id
+  if (!charId) return
+  router.push(`/app/characters/${charId}/detail`)
 }
 
 function normalizeMessageRole(msg) {
@@ -966,9 +1005,24 @@ function formatTime(ts) {
 
 .gal-header__meta {
   min-width: 0;
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.gal-header__settings {
+  width: 36px;
+  height: 36px;
+  border-radius: $radius-full;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: $color-text-primary;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+  cursor: pointer;
 }
 
 .gal-header__name {
@@ -1010,7 +1064,9 @@ function formatTime(ts) {
   display: flex;
   flex-direction: column;
   gap: $space-4;
-  mask-image: linear-gradient(180deg, transparent 0%, #000 8%, #000 92%, transparent 100%);
+  /* 仅顶部淡入；底部不做 mask，避免滚到最新消息时被渐变遮暗 */
+  mask-image: linear-gradient(180deg, transparent 0%, #000 8%, #000 100%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 8%, #000 100%);
 }
 
 .msg-time-divider {
@@ -1299,13 +1355,47 @@ function formatTime(ts) {
   }
 }
 
+.gal-compact-toolbar {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 10px 0;
+}
+
+.gal-compact-toolbar__settings {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: $radius-full;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.35);
+  color: $color-text-muted;
+  font-size: 12px;
+  cursor: pointer;
+}
+
 .gal-chat--compact {
   .gal-scene {
     min-height: 100%;
   }
 
   .gal-log {
-    padding: 8px 10px 4px;
+    padding: 8px 10px 12px;
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+
+  .gal-bg-vignette {
+    background:
+      radial-gradient(ellipse 90% 70% at 50% 22%, transparent 0%, rgba(8, 8, 14, 0.25) 55%, rgba(8, 8, 14, 0.5) 100%),
+      linear-gradient(180deg, rgba(8, 8, 14, 0.1) 0%, rgba(8, 8, 14, 0.35) 100%);
+  }
+
+  .gal-bg-floor {
+    height: 28%;
+    background: linear-gradient(180deg, transparent, rgba(8, 8, 14, 0.45));
   }
 
   .gal-input {

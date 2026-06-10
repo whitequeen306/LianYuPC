@@ -27,6 +27,7 @@ import com.lianyu.dao.mapper.MomentsPostMapper;
 import com.lianyu.service.dto.CharacterResponse;
 import com.lianyu.service.dto.CreateCharacterRequest;
 import com.lianyu.service.dto.UpdateCharacterRequest;
+import com.lianyu.service.conversation.CityChangeFollowUpScheduler;
 import com.lianyu.service.memory.MemoryCacheService;
 import com.lianyu.service.memory.MemoryWriter;
 import com.lianyu.service.storage.FileStorageService;
@@ -40,6 +41,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Slf4j
 @Service
@@ -64,6 +67,7 @@ public class CharacterService {
     private final StringRedisTemplate redisTemplate;
     private final FileStorageService fileStorageService;
     private final CharacterCitySettingsService characterCitySettingsService;
+    private final CityChangeFollowUpScheduler cityChangeFollowUpScheduler;
 
     @Value("${lianyu.character.max-per-user:80}")
     private int maxCharactersPerUser;
@@ -76,6 +80,7 @@ public class CharacterService {
             settings = new LinkedHashMap<>();
         }
         characterCitySettingsService.applyCityMode(userId, request.getName(), request.getPromptTemplate(), settings);
+        CharacterPreferenceResolver.applyCreationDefaults(settings);
 
         Character entity = new Character();
         entity.setOwnerUserId(userId);
@@ -104,6 +109,10 @@ public class CharacterService {
     @Transactional
     public CharacterResponse update(Long userId, Long characterId, UpdateCharacterRequest request) {
         Character entity = findOwned(userId, characterId);
+        Map<String, Object> previousSettings = entity.getSettings();
+        String previousCity = CharacterCitySettingsService.resolveRealCity(previousSettings);
+        boolean realCityMode = CharacterCitySettingsService.MODE_REAL.equals(
+                CharacterCitySettingsService.resolveCityMode(previousSettings));
 
         if (request.getName() != null) {
             entity.setName(request.getName());
@@ -112,16 +121,35 @@ public class CharacterService {
             entity.setAvatarUrl(request.getAvatarUrl());
         }
         if (request.getSettings() != null) {
-            entity.setSettings(CharacterSettingsUtils.normalizeSettings(
-                    mergeSettings(entity.getSettings(), request.getSettings())));
+            Map<String, Object> merged = mergeSettings(entity.getSettings(), request.getSettings());
+            characterCitySettingsService.applySettingsCityUpdate(merged, request.getSettings());
+            entity.setSettings(CharacterSettingsUtils.normalizeSettings(merged));
         }
         if (request.getPromptTemplate() != null) {
             entity.setPromptTemplate(request.getPromptTemplate());
         }
         characterMapper.updateById(entity);
 
+        String newCity = CharacterCitySettingsService.resolveRealCity(entity.getSettings());
+        if (realCityMode && CharacterCitySettingsService.isRealCityChanged(previousCity, newCity)) {
+            scheduleCityChangeFollowUp(userId, previousCity, newCity);
+        }
+
         log.info("Character updated: id={}, name={}", characterId, entity.getName());
         return toResponse(entity);
+    }
+
+    private void scheduleCityChangeFollowUp(Long userId, String previousCity, String newCity) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    cityChangeFollowUpScheduler.schedule(userId, previousCity, newCity);
+                }
+            });
+        } else {
+            cityChangeFollowUpScheduler.schedule(userId, previousCity, newCity);
+        }
     }
 
     @Transactional

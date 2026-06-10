@@ -5,6 +5,7 @@ import com.lianyu.common.base.ErrorCode;
 import com.lianyu.common.exception.BusinessException;
 import com.lianyu.service.ai.AiChatService;
 import java.util.Map;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,9 @@ public class CharacterCitySettingsService {
 
     public static final String MODE_REAL = "real";
     public static final String MODE_FICTIONAL = "fictional";
+    public static final int MAX_REAL_CITY_CHARS = 50;
+
+    private static final Pattern CONTROL_CHARS = Pattern.compile("[\\p{Cntrl}&&[^\r\n\t]]");
 
     private final AiChatService aiChatService;
 
@@ -74,6 +78,52 @@ public class CharacterCitySettingsService {
         settings.put("city", userCity.trim());
         settings.remove("fictional_city");
         settings.put("city_mode", MODE_REAL);
+    }
+
+    public static String resolveRealCity(Map<String, Object> settings) {
+        if (settings == null) {
+            return "";
+        }
+        Object city = settings.get("city");
+        return city instanceof String s ? s.trim() : "";
+    }
+
+    public static String normalizeRealCity(Object raw) {
+        if (!(raw instanceof String s)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "请填写你的所在城市");
+        }
+        String cleaned = CONTROL_CHARS.matcher(s).replaceAll("").trim();
+        if (cleaned.isBlank()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "请填写你的所在城市");
+        }
+        if (cleaned.length() > MAX_REAL_CITY_CHARS) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "城市名称过长");
+        }
+        return cleaned;
+    }
+
+    public static boolean isRealCityChanged(String previous, String current) {
+        if (StrUtil.isBlank(previous) || StrUtil.isBlank(current)) {
+            return false;
+        }
+        return !previous.trim().equalsIgnoreCase(current.trim());
+    }
+
+    /**
+     * 设置页更新：仅现实城市模式可改 city；虚构模式拒绝写入。
+     */
+    public void applySettingsCityUpdate(Map<String, Object> mergedSettings, Map<String, Object> patch) {
+        if (mergedSettings == null || patch == null || !patch.containsKey("city")) {
+            return;
+        }
+        String mode = resolveCityMode(mergedSettings);
+        if (MODE_FICTIONAL.equals(mode)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "虚构城市角色无法修改现实城市");
+        }
+        String city = normalizeRealCity(patch.get("city"));
+        mergedSettings.put("city", city);
+        mergedSettings.put("city_mode", MODE_REAL);
+        mergedSettings.remove("fictional_city");
     }
 
     public static String resolveCityMode(Map<String, Object> settings) {

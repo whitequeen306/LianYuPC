@@ -26,15 +26,16 @@ public class ReplyBehaviorRuleHook implements PromptRuleHook {
         String persona = context.persona() == null ? "" : context.persona();
         OutputLanguage lang = OutputLanguage.fromCode(context.outputLanguage());
 
+        boolean showInnerThoughts = context.showInnerThoughtsEnabled();
         return switch (lang) {
-            case JA -> renderJa(maxPieces, persona);
-            case EN -> renderEn(maxPieces, persona);
-            case ZH_TW -> renderZhTw(maxPieces, persona);
-            case ZH -> renderZh(maxPieces, persona);
+            case JA -> renderJa(maxPieces, persona, showInnerThoughts);
+            case EN -> renderEn(maxPieces, persona, showInnerThoughts);
+            case ZH_TW -> renderZhTw(maxPieces, persona, showInnerThoughts);
+            case ZH -> renderZh(maxPieces, persona, showInnerThoughts);
         };
     }
 
-    private String renderZh(int maxPieces, String persona) {
+    private String renderZh(int maxPieces, String persona, boolean showInnerThoughts) {
         String multiRule = maxPieces > 1
                 ? "4. 可拆成1~" + maxPieces + "条短消息，多条时必须用空行分隔；两个独立想法/情绪转折必须分条，不要把两句该分开的话挤在同一条里；同一条内不要换行\n"
                 : "4. 每次一条短消息，像微信聊天；该短就短，该长就长\n";
@@ -47,12 +48,12 @@ public class ReplyBehaviorRuleHook implements PromptRuleHook {
                 """ + multiRule + """
                 5. 语气词适量即可（呀、呢、啦、哼），不必句句热情
                 6. 禁止：首先/其次/综上所述/作为AI/建议你可以/大段说教
-                7. 心理活动可用括号（如「（心里有点堵）」「（其实挺在乎的）」）；禁止用括号写动作/表情描写（如「（微笑）」「（叹气）」）
+                7. """ + innerThoughtRuleZh(showInnerThoughts) + """
                 """ + humanizeBlockZh() + realLifeGroundingBlockZh() + """
                 你是""" + persona + "；保持人设语气，但对话锚点在用户的真实日常，不是在演你的世界观剧本。";
     }
 
-    private String renderZhTw(int maxPieces, String persona) {
+    private String renderZhTw(int maxPieces, String persona, boolean showInnerThoughts) {
         String multiRule = maxPieces > 1
                 ? "4. 可拆成1~" + maxPieces + "條短訊息，多條時必須用空行分隔；兩個獨立想法/情緒轉折必須分條，不要把兩句該分開的話擠在同一條裡；同一條內不要換行\n"
                 : "4. 每次一條短訊息，像即時聊天；該短就短，該長就長\n";
@@ -65,12 +66,12 @@ public class ReplyBehaviorRuleHook implements PromptRuleHook {
                 """ + multiRule + """
                 5. 語氣詞適量即可，不必句句熱情
                 6. 禁止：首先/其次/綜上所述/作為AI/建議你可以/長篇說教
-                7. 心理活動可用括號（如「（心裡有點堵）」「（其實挺在乎的）」）；禁止用括號寫動作/表情描寫（如「（微笑）」「（嘆氣）」）
+                7. """ + innerThoughtRuleZhTw(showInnerThoughts) + """
                 """ + humanizeBlockZhTw() + realLifeGroundingBlockZhTw() + """
                 你是""" + persona + "；保持人設語氣，但對話錨點在用戶的真實日常，不是在演你的世界觀劇本。";
     }
 
-    private String renderEn(int maxPieces, String persona) {
+    private String renderEn(int maxPieces, String persona, boolean showInnerThoughts) {
         String multiRule = maxPieces > 1
                 ? "4. You may split into 1~" + maxPieces + " short messages; separate distinct thoughts with blank lines—never cram two sentences that should be separate into one bubble\n"
                 : "4. One message per turn; short when short fits, longer when needed\n";
@@ -83,12 +84,12 @@ public class ReplyBehaviorRuleHook implements PromptRuleHook {
                 """ + multiRule + """
                 5. Casual tone is fine; skip constant enthusiasm
                 6. Forbidden: Firstly/Secondly/In summary/As an AI/You should/lectures
-                7. Inner thoughts may use parentheses; no parenthetical physical actions or expressions (e.g. "(smiles)")
+                7. """ + innerThoughtRuleEn(showInnerThoughts) + """
                 """ + humanizeBlockEn() + realLifeGroundingBlockEn() + """
                 You are """ + persona + ". Keep your voice and personality, but anchor the chat in the user's real daily life—not performing your fictional world's script.";
     }
 
-    private String renderJa(int maxPieces, String persona) {
+    private String renderJa(int maxPieces, String persona, boolean showInnerThoughts) {
         String multiRule = maxPieces > 1
                 ? "4. 1〜" + maxPieces + "通に分けてよい。別の考え/感情の転換は必ず分ける。空行区切り\n"
                 : "4. 基本1通。短くてよいときは短く\n";
@@ -101,9 +102,33 @@ public class ReplyBehaviorRuleHook implements PromptRuleHook {
                 """ + multiRule + """
                 5. 自然な口語でよい。過剰な熱量は不要
                 6. 禁止：まず/要約/AIとして/説教
-                7. 心の声は括弧でよい；動作・表情の括弧描写（例「（微笑）」）は禁止
+                7. """ + innerThoughtRuleJa(showInnerThoughts) + """
                 """ + humanizeBlockJa() + realLifeGroundingBlockJa() + """
                 あなたは""" + persona + "。口調・性格は保つが、会話の軸はユーザーのリアルな日常。自分の世界観の脚本を演じないこと。";
+    }
+
+    private String innerThoughtRuleZh(boolean showInnerThoughts) {
+        return showInnerThoughts
+                ? "心理活动可用括号（如「（心里有点堵）」「（其实挺在乎的）」）；禁止用括号写动作/表情描写（如「（微笑）」「（叹气）」）\n"
+                : "禁止输出括号内心独白或心理活动，只写说出口的话；不要用括号补充未说出的想法\n";
+    }
+
+    private String innerThoughtRuleZhTw(boolean showInnerThoughts) {
+        return showInnerThoughts
+                ? "心理活動可用括號（如「（心裡有點堵）」「（其實挺在乎的）」）；禁止用括號寫動作/表情描寫（如「（微笑）」「（嘆氣）」）\n"
+                : "禁止輸出括號內心獨白或心理活動，只寫說出口的話；不要用括號補充未說出的想法\n";
+    }
+
+    private String innerThoughtRuleEn(boolean showInnerThoughts) {
+        return showInnerThoughts
+                ? "Inner thoughts may use parentheses; no parenthetical physical actions or expressions (e.g. \"(smiles)\")\n"
+                : "Do not output parenthetical inner monologue; only write what you would say out loud\n";
+    }
+
+    private String innerThoughtRuleJa(boolean showInnerThoughts) {
+        return showInnerThoughts
+                ? "心の声は括弧でよい；動作・表情の括弧描写（例「（微笑）」）は禁止\n"
+                : "括弧での心の声・内面独白は禁止。口に出す言葉だけ書く\n";
     }
 
     private String humanizeBlockZh() {

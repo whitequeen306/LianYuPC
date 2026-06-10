@@ -10,16 +10,22 @@ import com.lianyu.dao.entity.Character;
 import com.lianyu.dao.entity.Conversation;
 import com.lianyu.dao.entity.GroupMember;
 import com.lianyu.dao.entity.Message;
+import com.lianyu.dao.entity.User;
 import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.GroupMemberMapper;
 import com.lianyu.dao.mapper.MessageMapper;
+import com.lianyu.dao.mapper.UserMapper;
 import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.AssistantReplySplitter;
 import com.lianyu.service.ai.CharacterPromptBuilder;
 import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
+import com.lianyu.service.ai.InnerThoughtFilter;
+import com.lianyu.service.character.CharacterCitySettingsService;
+import com.lianyu.service.character.CharacterPreferenceResolver;
 import com.lianyu.service.character.CharacterStateService;
+import com.lianyu.service.character.UserAddressingResolver;
 import com.lianyu.service.dto.*;
 import com.lianyu.service.memory.MemoryRetriever;
 import com.lianyu.service.memory.MemoryWriter;
@@ -31,9 +37,11 @@ import com.lianyu.service.tools.ChatToolContext;
 import com.lianyu.service.tools.TimeTool;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Pattern;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -61,6 +69,7 @@ public class ConversationService {
     private final MessageMapper messageMapper;
     private final GroupMemberMapper groupMemberMapper;
     private final CharacterMapper characterMapper;
+    private final UserMapper userMapper;
     private final AiChatService aiChatService;
     private final CharacterPromptBuilder promptBuilder;
     private final MemoryRetriever memoryRetriever;
@@ -466,6 +475,111 @@ public class ConversationService {
         log.info("Cold open follow-up: convId={}, pieces={}", conversationId, replies.size());
     }
 
+    /**
+     * 用户修改现实城市后，由最近有消息的单聊角色主动关心是否搬家。
+     */
+    @Transactional
+    public void sendCityChangeFollowUp(Long userId, String previousCity, String newCity) {
+        Optional<Conversation> recentOpt = findMostRecentSingleConversation(userId);
+        if (recentOpt.isEmpty()) {
+            log.debug("City change follow-up skipped: no single conversation, userId={}", userId);
+            return;
+        }
+        Conversation conversation = recentOpt.get();
+        Long conversationId = conversation.getId();
+        Character character = characterMapper.selectById(conversation.getCharacterId());
+        if (character == null) {
+            return;
+        }
+        CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
+        if (!behavior.proactiveEnabled()) {
+            log.debug("City change follow-up skipped: proactive disabled, convId={}", conversationId);
+            return;
+        }
+        try {
+            ensureCharacterAvailableForProactive(character);
+        } catch (BusinessException e) {
+            log.debug("City change follow-up skipped: convId={}, reason={}", conversationId, e.getMessage());
+            return;
+        }
+
+        String memoryContext = memoryRetriever.retrieveProfileContext(character.getId(), userId);
+        String relationshipContext = relationshipStateService.buildPromptContext(userId, character.getId());
+        String mergedMemory = memoryContext == null ? relationshipContext
+                : memoryContext + "\n\n" + relationshipContext;
+        String addressing = resolveUserAddressing(userId, memoryContext);
+
+        String systemPrompt = proactiveSystemPrompt(userId, character, mergedMemory, null);
+        systemPrompt = appendCityChangeContext(systemPrompt, previousCity, newCity);
+
+        List<Message> history = getRecentMessages(conversationId, contextWindow);
+        AiChatRequest aiRequest = new AiChatRequest();
+        ChatToolContext.bindTo(aiRequest, character);
+        aiRequest.setProvider(AiConstants.PLATFORM_PROVIDER);
+        List<MessageDto> allMessages = new ArrayList<>();
+        allMessages.add(buildSystemMessage(systemPrompt));
+        for (Message msg : history) {
+            MessageDto dto = new MessageDto();
+            dto.setRole(msg.getRole().toLowerCase());
+            dto.setContent(msg.getContent());
+            allMessages.add(dto);
+        }
+        allMessages.add(buildUserMessage(String.format("""
+                系统检测到用户刚刚把自己的现实所在城市从「%s」改成了「%s」。
+                请你主动发一条关心用户的消息，核心要问用户是不是搬家/换城市了、发生什么事了。
+                必须用称呼「%s」；必须明确提到从「%s」到「%s」的变化。
+                参考句式（可略作口语化，但不要改城市名、不要否认搬迁）：%s，我看你从%s来到了%s，是发生了什么事情吗？
+                只发 1 条，不要太长；不要重复历史原话。
+                """, previousCity, newCity, addressing, previousCity, newCity,
+                addressing, previousCity, newCity)));
+        aiRequest.setMessages(allMessages);
+
+        ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
+        List<MessageResponse> replies = saveAssistantRepliesLimited(
+                conversationId, character, chatResult.getContent(), chatResult.getTotalTokens(), 1);
+        if (!replies.isEmpty()) {
+            memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
+            notificationService.notifyProactiveMessage(
+                    userId,
+                    conversationId,
+                    character.getId(),
+                    character.getName(),
+                    replies.get(0).getContent()
+            );
+        }
+        log.info("City change follow-up: convId={}, {} -> {}", conversationId, previousCity, newCity);
+    }
+
+    private Optional<Conversation> findMostRecentSingleConversation(Long userId) {
+        List<Conversation> singles = conversationMapper.selectList(new LambdaQueryWrapper<Conversation>()
+                .eq(Conversation::getUserId, userId)
+                .eq(Conversation::getMode, "SINGLE")
+                .isNotNull(Conversation::getCharacterId));
+        if (singles.isEmpty()) {
+            return Optional.empty();
+        }
+        List<Long> convIds = singles.stream().map(Conversation::getId).toList();
+        List<Message> latestMessages = messageMapper.selectLatestByConversationIds(convIds);
+        if (latestMessages.isEmpty()) {
+            return Optional.empty();
+        }
+        Message newest = latestMessages.stream()
+                .max(Comparator.comparing(Message::getCreatedAt))
+                .orElse(null);
+        if (newest == null) {
+            return Optional.empty();
+        }
+        return singles.stream()
+                .filter(c -> c.getId().equals(newest.getConversationId()))
+                .findFirst();
+    }
+
+    private String resolveUserAddressing(Long userId, String memoryContext) {
+        User user = userMapper.selectById(userId);
+        String nickname = user != null ? user.getNickname() : null;
+        return UserAddressingResolver.resolve(memoryContext, nickname);
+    }
+
     public MessagePageResponse getMessages(Long userId, Long conversationId, Long beforeSeq, int limit) {
         findOwned(userId, conversationId);
         int safeLimit = Math.min(200, Math.max(1, limit));
@@ -515,7 +629,13 @@ public class ConversationService {
     }
 
     private long getNextSeq(Long conversationId) {
-        return redisTemplate.opsForValue().increment(SEQ_KEY_PREFIX + conversationId);
+        return reserveSeqBlock(conversationId, 1);
+    }
+
+    private long reserveSeqBlock(Long conversationId, int count) {
+        int safeCount = Math.max(1, count);
+        Long lastSeq = redisTemplate.opsForValue().increment(SEQ_KEY_PREFIX + conversationId, safeCount);
+        return lastSeq != null ? lastSeq : safeCount;
     }
 
     private Map<Long, String> buildLastMessageSnippetMap(List<Long> conversationIds) {
@@ -564,7 +684,7 @@ public class ConversationService {
         if (isBlocked(character)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "该角色已被拉黑");
         }
-        if (isDoNotDisturbActive(character)) {
+        if (CharacterPreferenceResolver.isDoNotDisturbActive(character)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "该角色当前处于免打扰时段");
         }
     }
@@ -573,51 +693,6 @@ public class ConversationService {
         Map<String, Object> settings = character.getSettings();
         Object raw = settings == null ? null : settings.get("blocked");
         return raw instanceof Boolean b ? b : raw instanceof String s && Boolean.parseBoolean(s);
-    }
-
-    private boolean isDoNotDisturbActive(Character character) {
-        Map<String, Object> settings = character.getSettings();
-        if (settings == null) {
-            return false;
-        }
-        if (!booleanSetting(settings, "doNotDisturbEnabled", false)) {
-            return false;
-        }
-        int start = intSetting(settings, "dndStartMinutes", 23 * 60);
-        int end = intSetting(settings, "dndEndMinutes", 8 * 60);
-        int now = LocalTime.now().getHour() * 60 + LocalTime.now().getMinute();
-        if (start == end) {
-            return true;
-        }
-        if (start < end) {
-            return now >= start && now < end;
-        }
-        return now >= start || now < end;
-    }
-
-    private boolean booleanSetting(Map<String, Object> settings, String key, boolean fallback) {
-        Object raw = settings.get(key);
-        if (raw instanceof Boolean b) {
-            return b;
-        }
-        if (raw instanceof String s) {
-            return Boolean.parseBoolean(s);
-        }
-        return fallback;
-    }
-
-    private int intSetting(Map<String, Object> settings, String key, int fallback) {
-        Object raw = settings.get(key);
-        if (raw instanceof Number n) {
-            return n.intValue();
-        }
-        if (raw instanceof String s) {
-            try {
-                return Integer.parseInt(s.trim());
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return fallback;
     }
 
     private MessageDto buildSystemMessage(String content) {
@@ -769,17 +844,27 @@ public class ConversationService {
         }
         List<MessageResponse> saved = new ArrayList<>();
         Long characterId = character != null ? character.getId() : null;
-        for (int i = 0; i < pieces.size(); i++) {
-            String cleaned = sanitizeAssistantText(pieces.get(i));
-            if (cleaned.isBlank()) {
-                continue;
+        boolean showInnerThoughts = CharacterPreferenceResolver.showInnerThoughts(character);
+        List<String> cleanedPieces = new ArrayList<>();
+        for (String piece : pieces) {
+            String cleaned = sanitizeAssistantText(piece);
+            cleaned = InnerThoughtFilter.stripIfDisabled(cleaned, showInnerThoughts);
+            if (!cleaned.isBlank()) {
+                cleanedPieces.add(cleaned);
             }
+        }
+        if (cleanedPieces.isEmpty()) {
+            return List.of();
+        }
+        long lastSeq = reserveSeqBlock(conversationId, cleanedPieces.size());
+        long firstSeq = lastSeq - cleanedPieces.size() + 1;
+        for (int i = 0; i < cleanedPieces.size(); i++) {
             Message assistantMsg = new Message();
-            assistantMsg.setSeq(getNextSeq(conversationId));
+            assistantMsg.setSeq(firstSeq + i);
             assistantMsg.setConversationId(conversationId);
             assistantMsg.setRole("ASSISTANT");
             assistantMsg.setCharacterId(characterId);
-            assistantMsg.setContent(cleaned);
+            assistantMsg.setContent(cleanedPieces.get(i));
             assistantMsg.setTokens(i == 0 ? tokens : null);
             messageMapper.insert(assistantMsg);
             saved.add(toMessageResponse(assistantMsg));
@@ -787,19 +872,22 @@ public class ConversationService {
         return saved;
     }
 
+    private static final Pattern MULTI_SPACE = Pattern.compile("\\s{2,}");
+
     private String sanitizeAssistantText(String text) {
         if (text == null || text.isBlank()) {
             return "";
         }
-        return text.replaceAll("\\s{2,}", " ").trim();
+        return MULTI_SPACE.matcher(text).replaceAll(" ").trim();
     }
 
     private String buildSystemPromptForUser(Long userId, Character character, String memoryContext, String userInput) {
         String lang = outputLanguageService.resolveForRequest(userId, userInput);
         String base = promptBuilder.buildSystemPrompt(character, memoryContext, lang, true);
         base = appendCurrentTimeContext(base);
+        base = appendCurrentRealCityContext(base, character);
         base = appendGoodnightContextIfApplicable(base, userInput, lang);
-        return enforceNaturalChatStyle(base, lang);
+        return enforceNaturalChatStyle(base, lang, character);
     }
 
     /** 每次用户发消息都注入真实时间，避免隔夜续聊时模型仍以为在昨晚。 */
@@ -812,6 +900,37 @@ public class ConversationService {
                 """ + timeFact + """
                 
                 注意：上方对话记录中的消息可能发生在更早的时刻（例如昨晚）。判断「现在」是白天还是夜晚、今天星期几、是否跨天等，必须以本条中的当前真实时间为准，不要根据旧对话的语气或内容臆测当前时刻。""";
+    }
+
+    /** 现实城市模式：注入权威城市，避免历史对话中的旧城市误导模型。 */
+    private String appendCurrentRealCityContext(String basePrompt, Character character) {
+        Map<String, Object> settings = character != null ? character.getSettings() : null;
+        if (!CharacterCitySettingsService.MODE_REAL.equals(CharacterCitySettingsService.resolveCityMode(settings))) {
+            return basePrompt;
+        }
+        String city = CharacterCitySettingsService.resolveRealCity(settings);
+        if (city.isBlank()) {
+            return basePrompt;
+        }
+        return basePrompt + """
+
+
+                === 用户当前所在现实城市（权威） ===
+                """ + city + """
+
+                注意：对话历史中若提到用户还在其他城市、或基于旧城市的天气/当地情况，一律视为过时信息。
+                涉及用户所在地、搬迁、当地天气与时区等，必须以本条中的当前城市为准，不要沿用历史里的旧城市。""";
+    }
+
+    private String appendCityChangeContext(String basePrompt, String previousCity, String newCity) {
+        return basePrompt + """
+
+
+                === 用户城市变更（最高优先级，权威事实） ===
+                """ + "用户当前现实所在城市：" + newCity + "\n"
+                + "（刚才从 " + previousCity + " 变更而来。）\n\n"
+                + "对话历史里若仍写用户还在 " + previousCity + " 或基于旧城市的天气/地点，一律视为过时信息，必须以本条为准。\n"
+                + "你本次主动开口就是为了关心用户这次换城市，不要假装用户还在旧城市。";
     }
 
     /** 单聊主动开口（含破冰/跟进）：在 system 中预置已查询的真实时间与天气。 */
@@ -873,9 +992,10 @@ public class ConversationService {
         return GOODNIGHT_KEYWORDS.matcher(text.toLowerCase()).find();
     }
 
-    private String enforceNaturalChatStyle(String basePrompt, String languageCode) {
+    private String enforceNaturalChatStyle(String basePrompt, String languageCode, Character character) {
         String prompt = basePrompt == null ? "" : basePrompt;
-        return prompt + outputLanguageService.buildNaturalStyleBlock(languageCode);
+        boolean showInnerThoughts = CharacterPreferenceResolver.showInnerThoughts(character);
+        return prompt + outputLanguageService.buildNaturalStyleBlock(languageCode, showInnerThoughts);
     }
 
     private ConversationResponse toResponse(Conversation conv, Character character) {
