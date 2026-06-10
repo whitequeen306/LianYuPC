@@ -38,22 +38,6 @@ export function apiBasePath() {
   return `${apiOrigin()}/api`
 }
 
-/** Service Worker 脚本地址（Electron file:// 下须相对路径） */
-export function resolveServiceWorkerUrl() {
-  const base = import.meta.env.BASE_URL || '/'
-  const normalized = base.endsWith('/') ? base : `${base}/`
-  return `${normalized}sw.js`
-}
-
-/** 浏览器端是否可走标准 Web Push（Electron file:// 不支持） */
-export function canUseWebPush() {
-  return !isElectronRuntime()
-    && typeof window !== 'undefined'
-    && window.isSecureContext
-    && 'serviceWorker' in navigator
-    && 'PushManager' in window
-}
-
 /** WebSocket STOMP 地址 */
 export function buildWsUrl() {
   if (isElectronRuntime()) {

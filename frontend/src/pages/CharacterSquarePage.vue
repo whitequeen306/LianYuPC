@@ -226,10 +226,13 @@ import CharacterCityModeForm from '@/components/CharacterCityModeForm.vue'
 import SquareCommentInput from '@/components/SquareCommentInput.vue'
 import SquareDanmakuLayer from '@/components/SquareDanmakuLayer.vue'
 import { fetchSquareComments } from '@/api/characterSquare'
+import { useUserStore } from '@/stores/user'
+import { normalizeSquareComments } from '@/utils/squareComment'
 
 const { t } = useI18n()
 const router = useRouter()
 const squareStore = useCharacterSquareStore()
+const userStore = useUserStore()
 
 const PAGE_SIZE = 12
 const CATALOG_SIZE = 100
@@ -330,7 +333,7 @@ async function loadCommentsForTemplates(templateIds = []) {
     ids.map(async (templateId) => {
       try {
         const list = await fetchSquareComments(templateId)
-        return [templateId, Array.isArray(list) ? list : []]
+        return [templateId, normalizeSquareComments(list, userStore.userId)]
       } catch {
         return [templateId, []]
       }
@@ -349,7 +352,7 @@ async function reloadComments(templateId) {
     const list = await fetchSquareComments(templateId)
     commentsByTemplateId.value = {
       ...commentsByTemplateId.value,
-      [templateId]: Array.isArray(list) ? list : [],
+      [templateId]: normalizeSquareComments(list, userStore.userId),
     }
   } catch {
     /* interceptor */

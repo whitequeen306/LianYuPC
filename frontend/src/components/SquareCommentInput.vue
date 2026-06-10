@@ -47,7 +47,10 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+import { storeToRefs } from 'pinia'
 import { deleteSquareComment, postSquareComment } from '@/api/characterSquare'
+import { useUserStore } from '@/stores/user'
+import { isSquareCommentMine } from '@/utils/squareComment'
 
 const props = defineProps({
   templateId: {
@@ -63,13 +66,14 @@ const props = defineProps({
 const emit = defineEmits(['updated'])
 
 const { t } = useI18n()
+const { userId } = storeToRefs(useUserStore())
 
 const editing = ref(false)
 const draft = ref('')
 const submitting = ref(false)
 const deleting = ref(false)
 
-const mineComment = computed(() => props.comments.find(item => item.isMine) || null)
+const mineComment = computed(() => props.comments.find(item => isSquareCommentMine(item, userId.value)) || null)
 
 watch(
   () => props.comments,

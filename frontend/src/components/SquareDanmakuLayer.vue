@@ -4,7 +4,9 @@
 
 <script setup>
 import { ref, toRef } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useSquareDanmaku } from '@/composables/useSquareDanmaku'
+import { useUserStore } from '@/stores/user'
 
 const props = defineProps({
   comments: {
@@ -15,8 +17,9 @@ const props = defineProps({
 
 const layerRef = ref(null)
 const commentsRef = toRef(props, 'comments')
+const { userId } = storeToRefs(useUserStore())
 
-useSquareDanmaku(layerRef, commentsRef)
+useSquareDanmaku(layerRef, commentsRef, userId)
 </script>
 
 <style lang="scss" scoped>
@@ -30,8 +33,10 @@ useSquareDanmaku(layerRef, commentsRef)
   pointer-events: none;
   z-index: 3;
 }
+</style>
 
-:deep(.danmaku-item) {
+<style lang="scss">
+.danmaku-item {
   position: absolute;
   top: 0;
   left: 0;
@@ -50,10 +55,10 @@ useSquareDanmaku(layerRef, commentsRef)
   will-change: transform;
 }
 
-:deep(.danmaku-item--mine) {
-  color: #1a1a24;
+.danmaku-item--mine {
+  color: #1a1a24 !important;
   font-weight: $font-weight-bold;
-  background: linear-gradient(135deg, #ffd866 0%, #f5b042 100%);
+  background: linear-gradient(135deg, #ffd866 0%, #f5b042 100%) !important;
   box-shadow: 0 0 12px rgba(245, 176, 66, 0.45), 0 1px 4px rgba(0, 0, 0, 0.25);
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
 }

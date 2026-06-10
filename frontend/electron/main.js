@@ -445,7 +445,8 @@ function setLauncherMousePassthrough(ignore) {
 function resetLauncherInteraction() {
   launcherIsDragging = false
   const pickerActive = pickerWindow && !pickerWindow.isDestroyed() && pickerWindow.isVisible()
-  setLauncherMousePassthrough(pickerActive)
+  // 默认穿透鼠标事件，仅在 picker 打开或拖拽中才拦截
+  setLauncherMousePassthrough(!pickerActive)
   if (launcherWindow && !launcherWindow.isDestroyed() && !launcherWindow.webContents.isDestroyed()) {
     launcherWindow.webContents.send('desktop:launcher-interaction-reset')
   }
@@ -455,10 +456,17 @@ function expandLauncherForToast() {
   // 固定窗口尺寸，toast 在预留区域显示，避免 resize 导致窗口位置上漂
 }
 
-function shouldPulseLauncherForMessage() {
+function isMainWindowInBackground() {
   if (!mainWindow || mainWindow.isDestroyed()) return true
-  if (!mainWindow.isVisible()) return true
+  if (!mainWindow.isVisible() || mainWindow.isMinimized()) return true
   return !mainWindow.isFocused()
+}
+
+function isDesktopPetActivelyVisible() {
+  const settings = readDesktopSettings()
+  if (!isDesktopPetEnabled(settings)) return false
+  if (!launcherWindow || launcherWindow.isDestroyed()) return false
+  return launcherWindow.isVisible()
 }
 
 function showLauncherMessageNotification(payload = {}) {
@@ -479,16 +487,19 @@ function showLauncherMessageNotification(payload = {}) {
   notification.show()
 }
 
-function notifyLauncherWindows(payload) {
-  if (!shouldPulseLauncherForMessage()) return
-  expandLauncherForToast()
-  showLauncherMessageNotification(payload)
-  if (launcherWindow && !launcherWindow.isDestroyed() && launcherWindow.isVisible()) {
+/** 角色主动消息：后台 + 桌宠不可见 → Windows 系统通知；桌宠可见 → 仅桌宠提示 */
+function handleProactiveMessageNotification(payload = {}) {
+  if (!isMainWindowInBackground()) return
+
+  if (isDesktopPetActivelyVisible()) {
     launcherWindow.webContents.send('desktop:launcher-new-message', payload)
+    if (pickerWindow && !pickerWindow.isDestroyed() && pickerWindow.isVisible()) {
+      pickerWindow.webContents.send('desktop:launcher-new-message', payload)
+    }
+    return
   }
-  if (pickerWindow && !pickerWindow.isDestroyed() && pickerWindow.isVisible()) {
-    pickerWindow.webContents.send('desktop:launcher-new-message', payload)
-  }
+
+  showLauncherMessageNotification(payload)
 }
 
 function hideLauncherWindow() {
@@ -800,12 +811,12 @@ function createPickerWindow() {
   })
 
   win.on('hide', () => {
-    setLauncherMousePassthrough(false)
+    setLauncherMousePassthrough(true)
   })
 
   win.on('closed', () => {
     pickerWindow = null
-    setLauncherMousePassthrough(false)
+    setLauncherMousePassthrough(true)
   })
 
   loadRoute(win, '#/launcher/pick')
@@ -939,8 +950,8 @@ function registerIpcHandlers() {
     closeFocusedQuickChat()
   })
 
-  ipcMain.handle('desktop:notify-launcher-new-message', (_event, payload) => {
-    notifyLauncherWindows(payload || {})
+  ipcMain.handle('desktop:notify-proactive-message', (_event, payload) => {
+    handleProactiveMessageNotification(payload || {})
     return { ok: true }
   })
 
@@ -1068,6 +1079,7 @@ function registerIpcHandlers() {
     if (!launcherIsDragging) {
       clampLauncherToWorkArea()
       repositionPickerNearLauncher()
+      resetLauncherInteraction()
     }
   })
 
@@ -1075,6 +1087,7 @@ function registerIpcHandlers() {
     launcherIsDragging = false
     clampLauncherToWorkArea()
     repositionPickerNearLauncher()
+    resetLauncherInteraction()
   })
 }
 

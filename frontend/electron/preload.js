@@ -28,7 +28,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setLauncherDragging: (dragging) => ipcRenderer.invoke('desktop:set-launcher-dragging', dragging),
   clampLauncherPosition: () => ipcRenderer.invoke('desktop:clamp-launcher-position'),
   setLauncherMousePassthrough: (ignore) => ipcRenderer.invoke('desktop:set-launcher-mouse-passthrough', ignore),
-  notifyLauncherNewMessage: (payload) => ipcRenderer.invoke('desktop:notify-launcher-new-message', payload),
+  notifyProactiveMessage: (payload) => ipcRenderer.invoke('desktop:notify-proactive-message', payload),
   getCaptionBarHeight: () => ipcRenderer.invoke('desktop:get-caption-height'),
   getCaptionMetrics: () => ipcRenderer.invoke('desktop:get-caption-metrics'),
   onCaptionMetrics: (callback) => {

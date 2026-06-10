@@ -12,7 +12,7 @@
           <ThemeColorPicker @open="dismissThemeHint" />
         </div>
         <div class="notify-entry">
-          <el-popover placement="bottom-end" :width="320" trigger="click" @show="dismissPushHint">
+          <el-popover placement="bottom-end" :width="320" trigger="click">
             <template #reference>
               <button class="header-btn" :title="t('header.notifications')">
                 <el-badge :value="notificationsStore.unreadCount" :hidden="!notificationsStore.unreadCount" :max="99">
@@ -39,22 +39,23 @@
               <div v-if="notificationsStore.latest.length === 0" class="notify-empty">{{ t('header.noNotifications') }}</div>
             </div>
             <div class="notify-actions">
+              <p v-if="notificationsStore.browserNotifyPermission !== 'granted'" class="notify-hint">
+                {{ t('header.systemNotifyHint') }}
+              </p>
               <el-button
                 size="small"
+                type="primary"
                 :disabled="notificationsStore.browserNotifyPermission === 'granted'"
                 @click="notificationsStore.requestBrowserNotificationPermission()"
               >
                 {{ notificationsStore.browserNotifyPermission === 'granted' ? t('header.browserNotifyOn') : t('header.enableBrowserNotify') }}
-              </el-button>
-              <el-button size="small" type="primary" @click="togglePush">
-                {{ notificationsStore.pushEnabled ? t('header.pushOff') : t('header.pushOn') }}
               </el-button>
             </div>
           </div>
           </el-popover>
         </div>
 
-        <div v-if="showThemeHint || showPushHint" class="header-hints-stack">
+        <div v-if="showThemeHint" class="header-hints-stack">
           <transition name="theme-hint-fade">
             <OnboardingHintBubble
               v-if="showThemeHint"
@@ -64,17 +65,6 @@
               @dismiss="dismissThemeHint"
             >
               {{ t('onboarding.themeHint') }}
-            </OnboardingHintBubble>
-          </transition>
-          <transition name="notify-hint-fade">
-            <OnboardingHintBubble
-              v-if="showPushHint"
-              placement="header-item"
-              arrow="right"
-              :close-label="t('common.cancel')"
-              @dismiss="dismissPushHint"
-            >
-              {{ t('header.pushHint') }}
             </OnboardingHintBubble>
           </transition>
         </div>
@@ -122,39 +112,10 @@ const userStore = useUserStore()
 const notificationsStore = useNotificationsStore()
 const { t } = useI18n()
 const { visible: showThemeHint, dismiss: dismissThemeHint } = useOnboardingHint('theme-color')
-const { visible: showPushHint, dismiss: dismissPushHint } = useOnboardingHint('push')
 const { navigateToNotification } = useNotificationNavigation()
 
 async function handleNotificationClick(notification) {
   await navigateToNotification(notification)
-}
-
-function pushMessageKey(result) {
-  if (result?.ok) {
-    return result.mode === 'desktop' ? 'header.pushEnabledDesktop' : 'header.pushEnabledSuccess'
-  }
-  const map = {
-    permission_denied: 'header.pushPermissionDenied',
-    unsupported: 'header.pushUnsupported',
-    no_public_key: 'header.pushNoPublicKey',
-    subscribe_failed: 'header.pushSubscribeFailed',
-  }
-  return map[result?.reason] || 'header.pushSubscribeFailed'
-}
-
-async function togglePush() {
-  if (notificationsStore.pushEnabled) {
-    await notificationsStore.disablePush()
-    ElMessage.success(t('header.pushDisabledSuccess'))
-    return
-  }
-  const result = await notificationsStore.enablePush()
-  if (result?.ok) {
-    dismissPushHint()
-    ElMessage.success(t(pushMessageKey(result)))
-    return
-  }
-  ElMessage.warning(t(pushMessageKey(result)))
 }
 
 async function handleUserMenu(command) {
@@ -412,11 +373,19 @@ async function handleUserMenu(command) {
     font-size: $font-size-sm;
   }
 
+  .notify-hint {
+    margin: 0 0 $space-2;
+    font-size: $font-size-xs;
+    line-height: 1.45;
+    color: $color-text-muted;
+  }
+
   .notify-actions {
     margin-top: $space-3;
     display: flex;
+    flex-direction: column;
+    align-items: stretch;
     gap: $space-2;
-    justify-content: flex-end;
   }
 }
 </style>
