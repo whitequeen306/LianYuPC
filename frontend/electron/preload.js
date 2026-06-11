@@ -55,4 +55,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAuthSession: () => ipcRenderer.invoke('auth:get-session'),
   setAuthSession: (session) => ipcRenderer.invoke('auth:set-session', session),
   clearAuthSession: () => ipcRenderer.invoke('auth:clear-session'),
+  startDesktopObserver: (config) => ipcRenderer.invoke('desktop:start-observer', config),
+  stopDesktopObserver: () => ipcRenderer.invoke('desktop:stop-observer'),
+  onLauncherGreeting: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on('desktop:launcher-greeting', handler)
+    return () => ipcRenderer.removeListener('desktop:launcher-greeting', handler)
+  },
 })

@@ -10,6 +10,7 @@ import {
   session,
   net,
   Notification,
+  powerMonitor,
 } from 'electron'
 import path from 'path'
 import fs from 'fs'
@@ -28,6 +29,11 @@ import {
   writeAuthSession,
   clearAuthSession,
 } from './authSessionStore.js'
+import {
+  startDesktopObserver,
+  stopDesktopObserver,
+  onWindowChanged,
+} from './desktopObserver.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const isDev = !!process.env.VITE_DEV_SERVER_URL
@@ -441,15 +447,11 @@ function setLauncherMousePassthrough(ignore) {
   }
 }
 
-function restoreLauncherPassthrough() {
-  const pickerActive = pickerWindow && !pickerWindow.isDestroyed() && pickerWindow.isVisible()
-  setLauncherMousePassthrough(!pickerActive)
-}
-
-/** 显示/拖拽结束后重置穿透与拖拽状态。若角色选择器正打开则保持穿透，避免拦截其点击。 */
+/** 显示/拖拽结束后重置穿透与拖拽状态。仅角色选择器打开时穿透，其余时候拦截鼠标保证桌宠可交互。 */
 function resetLauncherInteraction() {
   launcherIsDragging = false
-  restoreLauncherPassthrough()
+  const pickerActive = pickerWindow && !pickerWindow.isDestroyed() && pickerWindow.isVisible()
+  setLauncherMousePassthrough(pickerActive)
   if (launcherWindow && !launcherWindow.isDestroyed() && !launcherWindow.webContents.isDestroyed()) {
     launcherWindow.webContents.send('desktop:launcher-interaction-reset')
   }
@@ -814,12 +816,12 @@ function createPickerWindow() {
   })
 
   win.on('hide', () => {
-    setLauncherMousePassthrough(true)
+    setLauncherMousePassthrough(false)
   })
 
   win.on('closed', () => {
     pickerWindow = null
-    setLauncherMousePassthrough(true)
+    setLauncherMousePassthrough(false)
   })
 
   loadRoute(win, '#/launcher/pick')
@@ -852,6 +854,7 @@ function openCharacterPicker(options = {}) {
 function toggleCharacterPicker(options = {}) {
   if (pickerWindow && !pickerWindow.isDestroyed() && pickerWindow.isVisible()) {
     pickerWindow.hide()
+    setLauncherMousePassthrough(false)
     return
   }
   openCharacterPicker(options)
@@ -860,6 +863,7 @@ function toggleCharacterPicker(options = {}) {
 function closeCharacterPicker() {
   if (pickerWindow && !pickerWindow.isDestroyed()) {
     pickerWindow.hide()
+    setLauncherMousePassthrough(false)
   }
 }
 
@@ -1021,6 +1025,29 @@ function registerIpcHandlers() {
     pendingHideAfterHint = false
   })
 
+  ipcMain.handle('desktop:start-observer', (_event, { apiOrigin, persona, petId }) => {
+    startDesktopObserver({
+      apiOrigin,
+      persona,
+      petId,
+      onGreeting: (greeting) => {
+        if (launcherWindow && !launcherWindow.isDestroyed()) {
+          launcherWindow.webContents.send('desktop:launcher-greeting', { text: greeting })
+        }
+      },
+    })
+    return { ok: true }
+  })
+
+  ipcMain.handle('desktop:stop-observer', () => {
+    stopDesktopObserver()
+    return { ok: true }
+  })
+
+  ipcMain.handle('desktop:notify-window-changed', () => {
+    onWindowChanged()
+  })
+
   ipcMain.handle('desktop:save-launcher-position', (_event, { x, y }) => {
     if (Number.isFinite(x) && Number.isFinite(y)) {
       writeLauncherPosition(x, y)
@@ -1066,8 +1093,7 @@ function registerIpcHandlers() {
     writeLauncherPosition(bounds.x, bounds.y)
     clampLauncherToWorkArea()
     repositionPickerNearLauncher()
-    // 仅恢复穿透，不广播 interaction-reset，避免与 pointerup 清理竞态导致无法二次拖拽
-    restoreLauncherPassthrough()
+    resetLauncherInteraction()
   })
 
   ipcMain.handle('desktop:set-launcher-screen-position', (_event, { x, y }) => {
@@ -1104,6 +1130,13 @@ app.whenReady().then(() => {
   registerIpcHandlers()
   createMainWindow()
   ensureTray()
+
+  // 电源事件：唤醒后通知窗口切换检测
+  if (powerMonitor) {
+    powerMonitor.on('resume', () => onWindowChanged())
+    powerMonitor.on('unlock-screen', () => onWindowChanged())
+  }
+
   // 桌宠仅在用户登录 + 主窗口最小化/关闭后才出现，不在启动时预创建
 
     if (isDebug) {
