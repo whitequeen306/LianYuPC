@@ -14,6 +14,9 @@ import com.lianyu.service.dto.GenerateCharacterRequest;
 import com.lianyu.service.dto.MessageDto;
 import com.lianyu.service.dto.ModelEntryDto;
 import com.lianyu.service.dto.VaultEntryResponse;
+import com.lianyu.service.rules.PromptRuleEngine;
+import com.lianyu.service.rules.PromptRuleSlot;
+import com.lianyu.service.rules.PromptRuleContext;
 import com.lianyu.service.storage.FileStorageService;
 import com.lianyu.service.tools.ChatToolContext;
 import com.lianyu.service.tools.ToolManager;
@@ -72,6 +75,7 @@ public class AiChatService {
     private final TimeLimiter timeLimiter;
     private final CircuitBreaker circuitBreaker;
     private final ScheduledExecutorService scheduler;
+    private final PromptRuleEngine promptRuleEngine;
 
     @Value("${spring.ai.openai.chat.options.model:}")
     private String defaultModel;
@@ -111,7 +115,8 @@ public class AiChatService {
                          BulkheadRegistry bulkheadRegistry,
                          TimeLimiterRegistry timeLimiterRegistry,
                          CircuitBreakerRegistry circuitBreakerRegistry,
-                         ScheduledExecutorService scheduler) {
+                         ScheduledExecutorService scheduler,
+                         PromptRuleEngine promptRuleEngine) {
         this.vaultService = vaultService;
         this.fileStorageService = fileStorageService;
         this.toolManager = toolManager;
@@ -121,6 +126,7 @@ public class AiChatService {
         this.timeLimiter = timeLimiterRegistry.timeLimiter(RESILIENCE_NAME);
         this.circuitBreaker = circuitBreakerRegistry.circuitBreaker(RESILIENCE_NAME);
         this.scheduler = scheduler;
+        this.promptRuleEngine = promptRuleEngine;
     }
 
     public SseEmitter chatStream(Long userId, AiChatRequest request) {
@@ -303,6 +309,14 @@ public class AiChatService {
                   "promptTemplate": "150~260字的中文角色设定，包含性格、语气、边界和互动方式，适合直接放入系统Prompt"
                 }
                 """;
+
+        // 注入角色生成质量标准规则（来自 CharacterGenerationRuleHook）
+        String genRules = promptRuleEngine.render(
+                PromptRuleSlot.CHARACTER_GENERATION,
+                new PromptRuleContext(null, null, null, null, null, null, null, null));
+        if (!genRules.isBlank()) {
+            sysPrompt += "\n\n" + genRules;
+        }
         String safeDescription = UserInputSanitizer.sanitizeGenerationDescription(description);
         String userPrompt = "角色描述：" + safeDescription;
 

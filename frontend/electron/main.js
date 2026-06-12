@@ -1089,11 +1089,17 @@ function registerIpcHandlers() {
       return
     }
     launcherIsDragging = false
-    const bounds = launcherWindow.getBounds()
-    writeLauncherPosition(bounds.x, bounds.y)
+    // 不在此时写位置：clampLauncherToWorkArea 会写入正确值；
+    // 且 Windows 上 setPosition 可能异步，getBounds 可能返回旧值。
     clampLauncherToWorkArea()
     repositionPickerNearLauncher()
     resetLauncherInteraction()
+    // 兜底：延迟再 clamp + 存一次，防 setPosition 异步导致漏 clamp
+    setTimeout(() => {
+      if (launcherWindow && !launcherWindow.isDestroyed() && !launcherIsDragging) {
+        clampLauncherToWorkArea()
+      }
+    }, 200)
   })
 
   ipcMain.handle('desktop:set-launcher-screen-position', (_event, { x, y }) => {
