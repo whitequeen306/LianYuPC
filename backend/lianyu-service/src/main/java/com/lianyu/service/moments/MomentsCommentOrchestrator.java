@@ -238,10 +238,6 @@ public class MomentsCommentOrchestrator {
             if (post == null) {
                 return false;
             }
-            if (hasPeerCommentFromOtherCharacter(post)) {
-                return true;
-            }
-
             String idem = "peer:" + post.getId() + ":" + peerCharacterId;
             if (existsIdempotency(idem)) {
                 return true;
@@ -249,6 +245,11 @@ public class MomentsCommentOrchestrator {
 
             Character peer = characterMapper.selectById(peerCharacterId);
             if (peer == null || isBlocked(peer) || CharacterPreferenceResolver.isDoNotDisturbActive(peer)) {
+                return false;
+            }
+            if (!isUserPost(post) && Objects.equals(post.getCharacterId(), peerCharacterId)) {
+                log.warn("Moments peer comment skipped (post author cannot comment on own post): postId={}, characterId={}",
+                        postId, peerCharacterId);
                 return false;
             }
 
@@ -286,6 +287,13 @@ public class MomentsCommentOrchestrator {
                     instruction
             );
             if (content == null) {
+                return false;
+            }
+            if (!userPost && postAuthor != null
+                    && Objects.equals(peer.getId(), postAuthor.getId())
+                    && looksLikeThirdPersonAddress(postAuthor.getName(), content)) {
+                log.warn("Moments peer comment rejected (self third-person): postId={}, character={}",
+                        post.getId(), peer.getName());
                 return false;
             }
 
@@ -431,7 +439,7 @@ public class MomentsCommentOrchestrator {
                 .eq(Character::getOwnerUserId, post.getUserId()));
         List<Character> available = all.stream()
                 .filter(c -> c.getId() != null)
-                .filter(c -> !isUserPost(post) || !c.getId().equals(authorId))
+                .filter(c -> authorId == null || !Objects.equals(c.getId(), authorId))
                 .filter(c -> !isBlocked(c) && !CharacterPreferenceResolver.isDoNotDisturbActive(c))
                 .collect(Collectors.toList());
         if (!available.isEmpty()) {
@@ -646,6 +654,37 @@ public class MomentsCommentOrchestrator {
             return "";
         }
         return s.length() <= max ? s : s.substring(0, max) + "…";
+    }
+
+    /**
+     * 评论内容像在称呼发帖者本名（第三人称），而评论者就是发帖者本人时视为串角色。
+     */
+    static boolean looksLikeThirdPersonAddress(String postAuthorName, String content) {
+        if (postAuthorName == null || postAuthorName.isBlank() || content == null || content.isBlank()) {
+            return false;
+        }
+        for (String token : nameAddressTokens(postAuthorName)) {
+            if (content.contains("，" + token)
+                    || content.contains(token + "，")
+                    || content.contains("啊" + token)
+                    || content.endsWith(token)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static List<String> nameAddressTokens(String fullName) {
+        String name = fullName.trim();
+        LinkedHashSet<String> tokens = new LinkedHashSet<>();
+        tokens.add(name);
+        if (name.length() >= 2) {
+            tokens.add(name.substring(name.length() - 2));
+        }
+        if (name.length() >= 3) {
+            tokens.add(name.substring(name.length() - 3));
+        }
+        return List.copyOf(tokens);
     }
 
     private boolean isBlocked(Character character) {
