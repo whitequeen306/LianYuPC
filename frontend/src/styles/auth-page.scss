@@ -339,6 +339,13 @@
   user-select: none;
 }
 
+.captcha-image {
+  height: 36px;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
 .captcha-refresh {
   width: 32px;
   height: 32px;

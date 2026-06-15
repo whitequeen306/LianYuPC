@@ -87,31 +87,48 @@ const PINNED_SPKI = 'EdDpp/Z9REuRjqZLzXXrOW8opTtR8Yph2YM0s+xuLss='
 /** 服务器证书 SHA-256 指纹（构建时注入），用于自签名证书固定二层兜底 */
 const EXPECTED_CERT_FINGERPRINT = (process.env.LIANYU_CERT_FINGERPRINT || '').trim()
 
+/** 企业环境若需兼容安全软件 HTTPS 扫描，构建时设 LIANYU_ALLOW_SYSTEM_CA=1（默认拒绝不匹配证书） */
+const ALLOW_SYSTEM_CA = process.env.LIANYU_ALLOW_SYSTEM_CA === '1'
+
+function isApiHostname(hostname) {
+  const apiOrigin = resolveApiOrigin()
+  try {
+    return hostname === new URL(apiOrigin).hostname
+  } catch {
+    return false
+  }
+}
+
+function certificateMatchesPin(cert) {
+  if (!cert) return false
+  try {
+    const spki = getSPKIHash(cert)
+    if (spki === PINNED_SPKI) return true
+  } catch {
+    // fall through to fingerprint check
+  }
+  if (!EXPECTED_CERT_FINGERPRINT) return false
+  const expectedFp = EXPECTED_CERT_FINGERPRINT.replace(/:/g, '').toLowerCase()
+  const actualFp = (cert.fingerprint || '').toLowerCase()
+  return actualFp.length > 0 && actualFp === expectedFp
+}
+
 function configureCertificatePinning() {
   const ses = session.defaultSession
 
-  // 方式一（主力）：接管 TLS 验证，对自签名证书做 SPKI 指纹比对
+  // 方式一（主力）：API 域名仅接受 SPKI 指纹匹配，不匹配则拒绝（-2）
   ses.setCertificateVerifyProc((request, callback) => {
     const { hostname, certificate } = request
 
-    // 只拦截自己服务器的 TLS 连接，其他域名走 Chromium 默认验证
-    const apiOrigin = resolveApiOrigin()
-    let apiHostname = ''
-    try {
-      apiHostname = new URL(apiOrigin).hostname
-    } catch {
-      // ignore
-    }
-    if (!apiHostname || hostname !== apiHostname) {
-      callback(-3) // 使用 Chromium 默认验证
+    if (!isApiHostname(hostname)) {
+      callback(-3) // 其他域名走 Chromium 默认验证
       return
     }
 
-    // 计算服务端证书的 SPKI SHA-256（与 PINNED_SPKI 比对）
     try {
       const spki = getSPKIHash(certificate)
       if (spki === PINNED_SPKI) {
-        callback(0) // 信任——与硬编码 SPKI 完全匹配
+        callback(0)
         return
       }
       log(`cert SPKI mismatch for ${hostname}: got ${spki}, expected ${PINNED_SPKI}`)
@@ -119,31 +136,41 @@ function configureCertificatePinning() {
       log(`cert SPKI compute failed for ${hostname}: ${e.message}`)
     }
 
-    // SPKI 不匹配 —— 不直接拒绝，交给 Chromium 默认验证链，
-    // 以便兼容安全软件 HTTPS 扫描（其根证书已在系统信任库中）。
-    callback(-3)
+    if (ALLOW_SYSTEM_CA) {
+      log(`cert SPKI mismatch for ${hostname}, falling back to system CA (LIANYU_ALLOW_SYSTEM_CA=1)`)
+      callback(-3)
+      return
+    }
+    log(`cert REJECTED for ${hostname}: SPKI pin mismatch`)
+    callback(-2)
   })
 
-  // 方式二（兜底）：certificate-error 事件再校验一次指纹（含诊断信息）
-  if (EXPECTED_CERT_FINGERPRINT) {
-    app.on('certificate-error', (event, _webContents, url, _error, cert, cb) => {
-      const actualFp = cert.fingerprint || ''
-      const expectedFp = EXPECTED_CERT_FINGERPRINT.replace(/:/g, '').toLowerCase()
-      const actualFpLower = actualFp.toLowerCase()
-      if (actualFpLower === expectedFp) {
-        log(`cert-error pin OK for ${url}`)
-        event.preventDefault()
-        cb(true)
-        return
-      }
-      // 诊断：输出 issuer / subject 以判断是否安全软件 HTTPS 扫描
-      log(`cert-error MISMATCH: expected=${expectedFp} actual=${actualFpLower}`)
-      log(`cert-error issuer=${cert.issuerName} subject=${cert.subjectName}`)
-      // 不阻断连接 —— 安全软件 HTTPS 扫描场景下证书由系统信任库验证
+  // 方式二（兜底）：certificate-error 仅 pin 匹配时放行
+  app.on('certificate-error', (event, _webContents, url, _error, cert, cb) => {
+    let hostname = ''
+    try {
+      hostname = new URL(url).hostname
+    } catch {
+      cb(false)
+      return
+    }
+    if (!isApiHostname(hostname)) {
+      return // 非 API 域名由 Chromium 默认处理
+    }
+    if (certificateMatchesPin(cert)) {
+      log(`cert-error pin OK for ${url}`)
       event.preventDefault()
       cb(true)
-    })
-  }
+      return
+    }
+    log(`cert-error REJECTED: url=${url} issuer=${cert.issuerName} subject=${cert.subjectName}`)
+    if (ALLOW_SYSTEM_CA) {
+      event.preventDefault()
+      cb(true)
+      return
+    }
+    cb(false)
+  })
 }
 
 /** 从 Electron Certificate 对象计算 SPKI SHA-256（Base64） */
@@ -181,9 +208,51 @@ function verifyAsarIntegrity() {
   }
 }
 
+function configureContentSecurityPolicy() {
+  const csp = [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: blob: https:",
+    "connect-src 'self' https: wss:",
+    "media-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ')
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [csp],
+      },
+    })
+  })
+}
+
+function isAllowedExternalUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl)
+    if (parsed.protocol !== 'https:') return false
+    return true
+  } catch {
+    return false
+  }
+}
+
+function assertTrustedSender(event) {
+  const url = event?.senderFrame?.url || event?.sender?.getURL?.() || ''
+  if (url.startsWith('file://') || url.startsWith('app://')) return
+  throw new Error('Untrusted IPC sender')
+}
+
 function configureSecurity() {
   verifyAsarIntegrity()
   configureCertificatePinning()
+  if (!isDev) {
+    configureContentSecurityPolicy()
+  }
 }
 
 /**
@@ -332,7 +401,11 @@ function attachWindowLogging(win, label) {
     log(`${label} did-finish-load url=${win.webContents.getURL()}`)
   })
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    if (isAllowedExternalUrl(url)) {
+      shell.openExternal(url)
+    } else {
+      log(`blocked external url: ${url}`)
+    }
     return { action: 'deny' }
   })
 }
@@ -1025,9 +1098,23 @@ function registerIpcHandlers() {
     pendingHideAfterHint = false
   })
 
-  ipcMain.handle('desktop:start-observer', (_event, { apiOrigin, persona, petId }) => {
+  ipcMain.handle('desktop:start-observer', (event, { persona, petId }) => {
+    try {
+      assertTrustedSender(event)
+    } catch {
+      return { ok: false, reason: 'untrusted_sender' }
+    }
+    const settings = readDesktopSettings()
+    if (!settings.allowScreenObserve) {
+      return { ok: false, reason: 'screen_observe_disabled' }
+    }
+    const session = readAuthSession()
+    if (!session?.token) {
+      return { ok: false, reason: 'not_logged_in' }
+    }
     startDesktopObserver({
-      apiOrigin,
+      apiOrigin: resolveApiOrigin(),
+      authToken: session.token,
       persona,
       petId,
       onGreeting: (greeting) => {

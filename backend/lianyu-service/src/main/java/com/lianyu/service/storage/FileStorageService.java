@@ -1,9 +1,11 @@
 package com.lianyu.service.storage;
 
+import com.lianyu.common.util.ImageUploadValidator;
 import io.minio.GetObjectArgs;
 import io.minio.GetObjectResponse;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.RemoveObjectArgs;
 import io.minio.StatObjectArgs;
 import io.minio.StatObjectResponse;
 import java.io.InputStream;
@@ -28,6 +30,8 @@ public class FileStorageService {
     private static final String AVATAR_PATH = "avatars/";
     private static final String CHAT_IMAGE_PATH = "chat-images/";
     private static final String SQUARE_AVATAR_PATH = "square-avatars/";
+    private static final long AVATAR_MAX_BYTES = ImageUploadValidator.MAX_BYTES;
+    private static final String AVATAR_CONTENT_TYPE = "image/png";
     private static final long CHAT_IMAGE_MAX_BYTES = 5L * 1024 * 1024;
     private static final Set<String> CHAT_IMAGE_TYPES = Set.of(
             "image/jpeg", "image/png", "image/webp", "image/gif"
@@ -37,22 +41,30 @@ public class FileStorageService {
     );
 
     public String uploadAvatar(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.BAD_REQUEST, "请选择图片文件");
+        }
         try {
-            String ext = getExtension(file.getOriginalFilename());
-            String objectName = AVATAR_PATH + UUID.randomUUID().toString().replace("-", "") + ext;
+            ImageUploadValidator.ValidatedImage validated = ImageUploadValidator.validateAndReencode(
+                    file.getInputStream(), file.getSize());
+            String objectName = AVATAR_PATH + UUID.randomUUID().toString().replace("-", "") + ".png";
+            byte[] pngBytes = validated.pngBytes();
 
             minioClient.putObject(
                     PutObjectArgs.builder()
                             .bucket(minioConfig.getBucket())
                             .object(objectName)
-                            .stream(file.getInputStream(), file.getSize(), -1)
-                            .contentType(file.getContentType())
+                            .stream(new java.io.ByteArrayInputStream(pngBytes), pngBytes.length, -1)
+                            .contentType(AVATAR_CONTENT_TYPE)
                             .build()
             );
 
             String publicUrl = toPublicUrl(objectName);
-            log.info("Avatar uploaded: {} -> {} ({} bytes)", objectName, publicUrl, file.getSize());
+            log.info("Avatar uploaded: {} -> {} ({} bytes)", objectName, publicUrl, pngBytes.length);
             return publicUrl;
+        } catch (com.lianyu.common.exception.BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Avatar upload failed", e);
             throw new com.lianyu.common.exception.BusinessException(
@@ -61,22 +73,30 @@ public class FileStorageService {
     }
 
     public String uploadChatBackground(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.BAD_REQUEST, "请选择图片文件");
+        }
         try {
-            String ext = getExtension(file.getOriginalFilename());
-            String objectName = AVATAR_PATH + "chatbg-" + UUID.randomUUID().toString().replace("-", "") + ext;
+            ImageUploadValidator.ValidatedImage validated = ImageUploadValidator.validateAndReencode(
+                    file.getInputStream(), file.getSize());
+            String objectName = AVATAR_PATH + "chatbg-" + UUID.randomUUID().toString().replace("-", "") + ".png";
+            byte[] pngBytes = validated.pngBytes();
 
             minioClient.putObject(
                     PutObjectArgs.builder()
                             .bucket(minioConfig.getBucket())
                             .object(objectName)
-                            .stream(file.getInputStream(), file.getSize(), -1)
-                            .contentType(file.getContentType())
+                            .stream(new java.io.ByteArrayInputStream(pngBytes), pngBytes.length, -1)
+                            .contentType(AVATAR_CONTENT_TYPE)
                             .build()
             );
 
             String publicUrl = toPublicUrl(objectName);
-            log.info("Chat background uploaded: {} -> {} ({} bytes)", objectName, publicUrl, file.getSize());
+            log.info("Chat background uploaded: {} -> {} ({} bytes)", objectName, publicUrl, pngBytes.length);
             return publicUrl;
+        } catch (com.lianyu.common.exception.BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Chat background upload failed", e);
             throw new com.lianyu.common.exception.BusinessException(
@@ -266,6 +286,54 @@ public class FileStorageService {
             }
         }
         return null;
+    }
+
+    public void deleteObjectQuietly(String objectKey) {
+        if (objectKey == null || objectKey.isBlank()) {
+            return;
+        }
+        try {
+            validateObjectKey(objectKey);
+            minioClient.removeObject(
+                    RemoveObjectArgs.builder()
+                            .bucket(minioConfig.getBucket())
+                            .object(objectKey)
+                            .build());
+            log.info("Object deleted: {}", objectKey);
+        } catch (Exception e) {
+            log.warn("Failed to delete object: {}", objectKey);
+        }
+    }
+
+    /** 公开文件的安全 Content-Type（拒绝 text/html 等危险类型） */
+    public String resolveSafePublicContentType(String objectKey, String storedContentType) {
+        if (objectKey == null) {
+            return "application/octet-stream";
+        }
+        String lowerKey = objectKey.toLowerCase();
+        if (lowerKey.startsWith(AVATAR_PATH) || lowerKey.startsWith(CHAT_IMAGE_PATH)
+                || lowerKey.startsWith(SQUARE_AVATAR_PATH)) {
+            if (storedContentType != null) {
+                String normalized = storedContentType.toLowerCase();
+                if (normalized.startsWith("image/")) {
+                    return normalized;
+                }
+            }
+            return guessContentTypeFromKey(objectKey);
+        }
+        return "application/octet-stream";
+    }
+
+    public boolean isDangerousPublicContentType(String contentType) {
+        if (contentType == null || contentType.isBlank()) {
+            return false;
+        }
+        String normalized = contentType.toLowerCase().trim();
+        return normalized.contains("text/html")
+                || normalized.contains("application/xhtml")
+                || normalized.contains("image/svg")
+                || normalized.startsWith("text/javascript")
+                || normalized.contains("application/javascript");
     }
 
     public static void validateObjectKey(String objectKey) {

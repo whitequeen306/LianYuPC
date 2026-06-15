@@ -117,6 +117,7 @@ public class CharacterService {
         if (request.getName() != null) {
             entity.setName(request.getName());
         }
+        String previousAvatarUrl = entity.getAvatarUrl();
         if (request.getAvatarUrl() != null) {
             entity.setAvatarUrl(request.getAvatarUrl());
         }
@@ -129,6 +130,10 @@ public class CharacterService {
             entity.setPromptTemplate(request.getPromptTemplate());
         }
         characterMapper.updateById(entity);
+
+        if (request.getAvatarUrl() != null) {
+            deleteStoredAvatarIfReplaced(previousAvatarUrl, entity.getAvatarUrl());
+        }
 
         String newCity = CharacterCitySettingsService.resolveRealCity(entity.getSettings());
         if (realCityMode && CharacterCitySettingsService.isRealCityChanged(previousCity, newCity)) {
@@ -155,6 +160,7 @@ public class CharacterService {
     @Transactional
     public void delete(Long userId, Long characterId) {
         Character entity = findOwned(userId, characterId);
+        String avatarKey = FileStorageService.extractObjectKey(entity.getAvatarUrl());
 
         List<Conversation> directConversations = conversationMapper.selectList(new LambdaQueryWrapper<Conversation>()
                 .eq(Conversation::getUserId, userId)
@@ -194,7 +200,19 @@ public class CharacterService {
                 .eq(Message::getCharacterId, characterId));
         characterMapper.deleteById(characterId);
 
+        if (avatarKey != null) {
+            fileStorageService.deleteObjectQuietly(avatarKey);
+        }
+
         log.info("Character deleted with related data: id={}, name={}", characterId, entity.getName());
+    }
+
+    private void deleteStoredAvatarIfReplaced(String previousUrl, String newUrl) {
+        String oldKey = FileStorageService.extractObjectKey(previousUrl);
+        String newKey = FileStorageService.extractObjectKey(newUrl);
+        if (oldKey != null && !oldKey.equals(newKey)) {
+            fileStorageService.deleteObjectQuietly(oldKey);
+        }
     }
 
     private void deleteMomentsForCharacter(Long userId, Long characterId) {

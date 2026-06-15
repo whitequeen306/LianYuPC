@@ -112,6 +112,7 @@ mybatis-plus:
 # Sa-Token 登录态（token 存 Redis database 1）
 sa-token:
   token-name: lianyu-token          # 前端请求头 / localStorage 使用的 token 名
+  is-read-cookie: false             # 禁止 Cookie 传 token，仅接受请求头
   timeout: 2592000                  # token 最长有效期（秒），默认 30 天
   active-timeout: -1                # -1 = 不因空闲冻结；配合本地 safeStorage 持久登录
   is-concurrent: true               # 允许多设备同时登录

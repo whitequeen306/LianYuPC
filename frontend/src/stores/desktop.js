@@ -8,6 +8,7 @@ const STORAGE_SHOW_LAUNCHER = 'lianyu-show-launcher'
 const STORAGE_SHOW_DESKTOP_PET = 'lianyu-show-desktop-pet'
 const STORAGE_LAUNCH_AT_LOGIN = 'lianyu-launch-at-login'
 const STORAGE_LAUNCHER_PET = 'lianyu-launcher-pet'
+const STORAGE_ALLOW_SCREEN_OBSERVE = 'lianyu-allow-screen-observe'
 
 function readBool(key, fallback) {
   const raw = localStorage.getItem(key)
@@ -23,6 +24,7 @@ export const useDesktopStore = defineStore('desktop', () => {
   )
   const showLauncherLogo = ref(readBool(STORAGE_SHOW_LAUNCHER, showDesktopPet.value))
   const launchAtLogin = ref(readBool(STORAGE_LAUNCH_AT_LOGIN, false))
+  const allowScreenObserve = ref(readBool(STORAGE_ALLOW_SCREEN_OBSERVE, false))
   const launcherPetId = ref(localStorage.getItem(STORAGE_LAUNCHER_PET) || DEFAULT_PET_ID)
   const windowKind = ref('main')
   const loaded = ref(false)
@@ -39,11 +41,13 @@ export const useDesktopStore = defineStore('desktop', () => {
       showDesktopPet.value = settings.showDesktopPet !== false
       showLauncherLogo.value = showDesktopPet.value
       launchAtLogin.value = settings.launchAtLogin === true
+      allowScreenObserve.value = settings.allowScreenObserve === true
       launcherPetId.value = settings.launcherPetId || DEFAULT_PET_ID
       localStorage.setItem(STORAGE_CLOSE_TO_TRAY, String(closeToTray.value))
       localStorage.setItem(STORAGE_SHOW_DESKTOP_PET, String(showDesktopPet.value))
       localStorage.setItem(STORAGE_SHOW_LAUNCHER, String(showDesktopPet.value))
       localStorage.setItem(STORAGE_LAUNCH_AT_LOGIN, String(launchAtLogin.value))
+      localStorage.setItem(STORAGE_ALLOW_SCREEN_OBSERVE, String(allowScreenObserve.value))
       localStorage.setItem(STORAGE_LAUNCHER_PET, launcherPetId.value)
     } finally {
       loaded.value = true
@@ -70,6 +74,10 @@ export const useDesktopStore = defineStore('desktop', () => {
       launchAtLogin.value = partial.launchAtLogin
       localStorage.setItem(STORAGE_LAUNCH_AT_LOGIN, String(partial.launchAtLogin))
     }
+    if (partial.allowScreenObserve != null) {
+      allowScreenObserve.value = partial.allowScreenObserve
+      localStorage.setItem(STORAGE_ALLOW_SCREEN_OBSERVE, String(partial.allowScreenObserve))
+    }
     if (partial.launcherPetId != null) {
       launcherPetId.value = partial.launcherPetId
       localStorage.setItem(STORAGE_LAUNCHER_PET, partial.launcherPetId)
@@ -90,6 +98,7 @@ export const useDesktopStore = defineStore('desktop', () => {
     closeToTray,
     showDesktopPet,
     showLauncherLogo,
+    allowScreenObserve,
     launchAtLogin,
     launcherPetId,
     windowKind,

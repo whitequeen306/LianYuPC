@@ -37,9 +37,10 @@ public class PublicFileController {
 
         try {
             StatObjectResponse stat = fileStorageService.statObject(objectKey);
-            String contentType = stat.contentType();
-            if (!StringUtils.hasText(contentType)) {
-                contentType = MediaType.APPLICATION_OCTET_STREAM_VALUE;
+            String contentType = fileStorageService.resolveSafePublicContentType(objectKey, stat.contentType());
+            if (fileStorageService.isDangerousPublicContentType(stat.contentType())) {
+                log.warn("Blocked dangerous public file content-type: key={}, type={}", objectKey, stat.contentType());
+                return ResponseEntity.notFound().build();
             }
 
             StreamingResponseBody body = outputStream -> {
@@ -53,6 +54,8 @@ public class PublicFileController {
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_TYPE, contentType)
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
+                    .header("X-Content-Type-Options", "nosniff")
                     .header(HttpHeaders.CACHE_CONTROL, "public, max-age=86400")
                     .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(stat.size()))
                     .body(body);

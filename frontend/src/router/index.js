@@ -139,7 +139,7 @@ const router = createRouter({
 
 // Auth guard
 router.beforeEach((to, from, next) => {
-  const token = syncToken() || localStorage.getItem('lianyu-token')
+  const token = syncToken()
 
   if (to.meta.guest) {
     // Already logged in users shouldn't see login/register

@@ -16,6 +16,7 @@ import com.lianyu.service.dto.UpdateProfileRequest;
 import com.lianyu.service.dto.UserProfile;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.time.Duration;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -47,7 +48,7 @@ public class AuthController {
         CaptchaService.CaptchaChallenge challenge = captchaService.generate();
         return Result.ok(Map.of(
                 "captchaId", challenge.id(),
-                "expression", challenge.expression()
+                "imageBase64", challenge.imageBase64()
         ));
     }
 
@@ -55,6 +56,11 @@ public class AuthController {
     @PostMapping("/register")
     public Result<LoginResponse> register(@Valid @RequestBody RegisterRequest request, HttpServletRequest httpRequest) {
         authRateLimiter.checkLoginOrRegister(resolveClientIp(httpRequest), request.getUsername());
+        String clientIp = resolveClientIp(httpRequest);
+        if (clientIp != null && !clientIp.isBlank()) {
+            authRateLimiter.checkRateLimit("rate:register:ip:", clientIp.trim(),
+                    3, Duration.ofDays(1), "该 IP 今日注册次数已达上限");
+        }
         verifyCaptcha(request.getCaptcha());
         return Result.ok(authService.register(request));
     }
@@ -92,6 +98,8 @@ public class AuthController {
     @PostMapping("/me/avatar")
     public Result<UserProfile> uploadAvatar(@RequestParam("file") MultipartFile file) {
         long userId = StpUtil.getLoginIdAsLong();
+        authRateLimiter.checkRateLimit("rate:upload:avatar:", String.valueOf(userId),
+                20, Duration.ofDays(1), "今日头像上传次数已达上限");
         return Result.ok(authService.uploadAvatar(userId, file));
     }
 

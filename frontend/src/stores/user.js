@@ -46,8 +46,8 @@ export function getLastUsername() {
 }
 
 export const useUserStore = defineStore('user', () => {
-  const token = ref(syncToken() || localStorage.getItem('lianyu-token') || '')
-  const tokenName = ref(localStorage.getItem('lianyu-token-name') || '')
+  const token = ref(syncToken() || '')
+  const tokenName = ref('lianyu-token')
   const userId = ref(null)
   const username = ref('')
   const nickname = ref('')
@@ -68,8 +68,8 @@ export const useUserStore = defineStore('user', () => {
     if (!cachedToken && !cachedProfile) return null
 
     return {
-      token: cachedToken || localStorage.getItem('lianyu-token') || '',
-      tokenName: localStorage.getItem('lianyu-token-name') || '',
+      token: cachedToken || '',
+      tokenName: 'lianyu-token',
       ...cachedProfile,
     }
   }
@@ -87,8 +87,6 @@ export const useUserStore = defineStore('user', () => {
     }
 
     if (payload.token) {
-      localStorage.setItem('lianyu-token', payload.token)
-      localStorage.setItem('lianyu-token-name', payload.tokenName)
       await storeToken(payload.token)
       writeProfileCache(payload)
       rememberUsername(payload.username)
@@ -162,8 +160,6 @@ export const useUserStore = defineStore('user', () => {
     username.value = ''
     nickname.value = ''
     avatarUrl.value = ''
-    localStorage.removeItem('lianyu-token')
-    localStorage.removeItem('lianyu-token-name')
     localStorage.removeItem(PROFILE_CACHE_KEY)
     clearTokenStorage()
 

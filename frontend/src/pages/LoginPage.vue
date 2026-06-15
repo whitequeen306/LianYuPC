@@ -65,7 +65,14 @@
           <div class="captcha-row form-reveal">
             <div class="captcha-card">
               <span class="captcha-label">验证码</span>
-              <span class="captcha-expr">{{ captchaExpression }}</span>
+              <img
+                v-if="captchaImageSrc"
+                :src="captchaImageSrc"
+                alt="验证码"
+                class="captcha-image"
+                @click="refreshCaptcha"
+              />
+              <span v-else class="captcha-expr">{{ captchaHint }}</span>
               <button
                 type="button"
                 class="captcha-refresh"
@@ -127,7 +134,8 @@ const loading = ref(false)
 useAuthPageGsap(pageRef)
 
 const captchaId = ref('')
-const captchaExpression = ref('加载中...')
+const captchaImageSrc = ref('')
+const captchaHint = ref('加载中...')
 
 const form = reactive({
   username: '',
@@ -149,9 +157,11 @@ async function refreshCaptcha() {
   try {
     const res = await getCaptcha()
     captchaId.value = res.captchaId
-    captchaExpression.value = res.expression
+    captchaImageSrc.value = res.imageBase64 ? `data:image/png;base64,${res.imageBase64}` : ''
+    captchaHint.value = captchaImageSrc.value ? '' : '获取失败，点击刷新'
   } catch {
-    captchaExpression.value = '获取失败，点击刷新'
+    captchaImageSrc.value = ''
+    captchaHint.value = '获取失败，点击刷新'
     ElMessage.error('无法连接服务器，请确认网络正常且后端已启动')
   }
 }

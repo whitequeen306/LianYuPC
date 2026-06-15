@@ -102,13 +102,11 @@ function applyPetId(petId) {
 
 function startObserver() {
   const api = getElectronAPI()
-  if (!api) return
+  if (!api?.startDesktopObserver) return
   const pet = getPetById(currentPetId.value)
   const persona = getPetPersona(pet)
-  const apiOrigin = import.meta.env.VITE_LIANYU_API_ORIGIN || 'https://154.219.111.30'
-  if (!apiOrigin || !persona) return
-  api.startDesktopObserver?.({
-    apiOrigin: apiOrigin.replace(/\/+$/, ''),
+  if (!persona) return
+  api.startDesktopObserver({
     persona,
     petId: currentPetId.value,
   })

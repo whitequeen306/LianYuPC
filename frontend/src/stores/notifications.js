@@ -150,7 +150,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
   }
 
   function connectWebSocket() {
-    const token = syncToken() || localStorage.getItem('lianyu-token')
+    const token = syncToken()
     if (!token) {
       wsStatus.value = 'disconnected'
       return

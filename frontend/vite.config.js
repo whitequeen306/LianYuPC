@@ -18,8 +18,9 @@ function loadEnvFile(filePath) {
   }
 }
 
-/** 仅 electron:dev / electron:build 时启用；普通 npm run dev 走浏览器，无需下载 Electron */
+/** 仓库根 .env（后端 + 前端共用）；Electron 打包再叠加 .env.production.cloud */
 const enableElectron = process.env.ELECTRON_DEV === '1' || process.env.ELECTRON_BUILD === '1'
+loadEnvFile(resolve(__dirname, '../.env'))
 if (enableElectron) {
   loadEnvFile(resolve(__dirname, '.env.production.cloud'))
 }

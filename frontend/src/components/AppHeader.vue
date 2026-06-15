@@ -11,6 +11,22 @@
         <div class="theme-entry">
           <ThemeColorPicker @open="dismissThemeHint" />
         </div>
+        <div v-if="showThemeHint" class="header-hints-stack">
+          <transition name="theme-hint-fade">
+            <OnboardingHintBubble
+              v-if="showThemeHint"
+              placement="header-item"
+              arrow="left"
+              :close-label="t('common.cancel')"
+              @dismiss="dismissThemeHint"
+            >
+              {{ t('onboarding.themeHint') }}
+            </OnboardingHintBubble>
+          </transition>
+        </div>
+      </div>
+
+      <div class="header-trailing">
         <div class="notify-entry">
           <el-popover placement="bottom-end" :width="320" trigger="click">
             <template #reference>
@@ -19,7 +35,7 @@
                   :value="notificationsStore.unreadCount"
                   :hidden="!notificationsStore.unreadCount"
                   :max="99"
-                  :offset="[-6, 4]"
+                  :offset="[4, 2]"
                 >
                   <el-icon :size="20"><Bell /></el-icon>
                 </el-badge>
@@ -60,22 +76,7 @@
           </el-popover>
         </div>
 
-        <div v-if="showThemeHint" class="header-hints-stack">
-          <transition name="theme-hint-fade">
-            <OnboardingHintBubble
-              v-if="showThemeHint"
-              placement="header-item"
-              arrow="left"
-              :close-label="t('common.cancel')"
-              @dismiss="dismissThemeHint"
-            >
-              {{ t('onboarding.themeHint') }}
-            </OnboardingHintBubble>
-          </transition>
-        </div>
-      </div>
-
-      <el-dropdown trigger="click" placement="bottom-end" @command="handleUserMenu">
+        <el-dropdown trigger="click" placement="bottom-end" @command="handleUserMenu">
         <button type="button" class="header-avatar" :title="userStore.displayName">
           <img v-if="userStore.avatarUrl" :src="resolveMediaUrl(userStore.avatarUrl)" alt="" />
           <el-icon v-else :size="18"><UserFilled /></el-icon>
@@ -92,7 +93,8 @@
             <el-dropdown-item divided command="logout" :icon="SwitchButton">{{ t('header.logout') }}</el-dropdown-item>
           </el-dropdown-menu>
         </template>
-      </el-dropdown>
+        </el-dropdown>
+      </div>
     </div>
   </header>
 </template>
@@ -226,6 +228,14 @@ async function handleUserMenu(command) {
   overflow: visible;
 }
 
+.header-trailing {
+  display: flex;
+  align-items: center;
+  gap: $space-5;
+  margin-left: $space-2;
+  flex-shrink: 0;
+}
+
 .theme-entry,
 .notify-entry {
   position: relative;
@@ -288,8 +298,6 @@ async function handleUserMenu(command) {
 }
 
 .header-btn--notify {
-  margin-right: $space-1;
-
   :deep(.el-badge__content) {
     border: none;
     min-width: 16px;
@@ -297,12 +305,10 @@ async function handleUserMenu(command) {
     padding: 0 4px;
     font-size: 10px;
     line-height: 16px;
-    transform: none;
   }
 }
 
 .header-avatar {
-  margin-left: $space-1;
   flex-shrink: 0;
   width: 38px;
   height: 38px;

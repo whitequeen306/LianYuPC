@@ -9,7 +9,9 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -43,9 +45,32 @@ public class GlobalExceptionHandler {
                                                         HttpServletRequest request,
                                                         HttpServletResponse response) {
         if (shouldSkipJsonErrorBody(request, response)) {
+            if (response != null && !response.isCommitted()) {
+                response.setStatus(401);
+            }
             return null;
         }
         return ResponseEntity.status(401).body(Result.fail(ErrorCode.UNAUTHORIZED));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Result<Void>> handleJsonParse(HttpMessageNotReadableException e,
+                                                         HttpServletRequest request,
+                                                         HttpServletResponse response) {
+        if (shouldSkipJsonErrorBody(request, response)) {
+            return null;
+        }
+        return ResponseEntity.badRequest().body(Result.fail(ErrorCode.BAD_REQUEST, "请求格式有误"));
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<Result<Void>> handleMissingParam(MissingServletRequestParameterException e,
+                                                            HttpServletRequest request,
+                                                            HttpServletResponse response) {
+        if (shouldSkipJsonErrorBody(request, response)) {
+            return null;
+        }
+        return ResponseEntity.badRequest().body(Result.fail(ErrorCode.BAD_REQUEST, "缺少必要参数"));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

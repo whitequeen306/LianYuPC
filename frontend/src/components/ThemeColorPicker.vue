@@ -12,7 +12,6 @@
           <span class="swatch-bg" :style="{ background: settingsStore.backgroundColor }" />
           <span class="swatch-accent" :style="{ background: settingsStore.accentColor }" />
         </span>
-        <el-icon class="theme-trigger__icon" :size="14"><Brush /></el-icon>
       </button>
     </template>
 
@@ -100,7 +99,6 @@
 
 <script setup>
 import { computed } from 'vue'
-import { Brush } from '@element-plus/icons-vue'
 import { useSettingsStore } from '@/stores/settings'
 import {
   THEME_PRESETS,
@@ -160,12 +158,13 @@ function onAccentChange(val) {
 
 .theme-trigger__preview {
   display: flex;
-  width: 22px;
-  height: 18px;
+  width: 24px;
+  height: 20px;
   border-radius: 5px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.22);
   pointer-events: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
 }
 
 .swatch-bg {
@@ -179,16 +178,6 @@ function onAccentChange(val) {
   flex-shrink: 0;
   pointer-events: none;
   box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.12);
-}
-
-.theme-trigger__icon {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  color: rgba(255, 255, 255, 0.92);
-  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.85)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
-  pointer-events: none;
 }
 
 .theme-panel-title {

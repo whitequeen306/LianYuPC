@@ -63,10 +63,10 @@ public class AuthServiceImpl implements AuthService {
         User user = userMapper.selectOne(new LambdaQueryWrapper<User>()
                 .eq(User::getUsername, request.getUsername()));
         if (user == null) {
-            throw new BusinessException(ErrorCode.ACCOUNT_NOT_REGISTERED);
+            throw new BusinessException(ErrorCode.WRONG_PASSWORD, "用户名或密码错误");
         }
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-            throw new BusinessException(ErrorCode.WRONG_PASSWORD);
+            throw new BusinessException(ErrorCode.WRONG_PASSWORD, "用户名或密码错误");
         }
 
         StpUtil.login(user.getId());
@@ -97,9 +97,19 @@ public class AuthServiceImpl implements AuthService {
     @Transactional
     public UserProfile uploadAvatar(Long userId, MultipartFile file) {
         User user = findUser(userId);
+        String previousAvatarUrl = user.getAvatarUrl();
         user.setAvatarUrl(fileStorageService.uploadAvatar(file));
         userMapper.updateById(user);
+        deleteStoredAvatarIfReplaced(previousAvatarUrl, user.getAvatarUrl());
         return toProfile(user);
+    }
+
+    private void deleteStoredAvatarIfReplaced(String previousUrl, String newUrl) {
+        String oldKey = FileStorageService.extractObjectKey(previousUrl);
+        String newKey = FileStorageService.extractObjectKey(newUrl);
+        if (oldKey != null && !oldKey.equals(newKey)) {
+            fileStorageService.deleteObjectQuietly(oldKey);
+        }
     }
 
     @Override

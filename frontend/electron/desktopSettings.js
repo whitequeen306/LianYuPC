@@ -12,6 +12,7 @@ const DEFAULTS = {
   closeToTray: true,
   showDesktopPet: true,
   showLauncherLogo: true,
+  allowScreenObserve: false,
   launchAtLogin: false,
   closeHintShown: false,
   launcherPetId: 'raiden',

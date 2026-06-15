@@ -12,6 +12,7 @@ let lastWindowTitle = ''
 let lastGreetingTitle = ''
 let lastGreetingTime = 0
 let lastApiOrigin = ''
+let lastAuthToken = ''
 let lastPersona = ''
 let lastPetId = ''
 let onGreeting = null
@@ -19,10 +20,11 @@ let isPaused = false
 let idleSince = 0
 let lastMousePos = { x: 0, y: 0 }
 
-export function startDesktopObserver({ apiOrigin, persona, petId, onGreeting: cb }) {
+export function startDesktopObserver({ apiOrigin, authToken, persona, petId, onGreeting: cb }) {
   stopDesktopObserver()
-  if (!apiOrigin || !persona || !onGreeting) return false
+  if (!apiOrigin || !authToken || !persona || !onGreeting) return false
   lastApiOrigin = apiOrigin
+  lastAuthToken = authToken
   lastPersona = persona
   lastPetId = petId
   onGreeting = cb
@@ -41,6 +43,7 @@ export function stopDesktopObserver() {
   observeTimer = null
   idleTimer = null
   onGreeting = null
+  lastAuthToken = ''
 }
 
 export function onWindowChanged() {
@@ -112,7 +115,10 @@ async function runObserve() {
     const req = net.request({
       method: 'POST',
       url: apiUrl,
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'lianyu-token': lastAuthToken,
+      },
     })
 
     const response = await new Promise((resolve, reject) => {

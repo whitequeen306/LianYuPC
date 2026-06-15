@@ -43,3 +43,6 @@ docker-compose.override.yml
 .codegraph/
 .superpowers/
 .worktrees/
+
+# Deployment artifacts (large binaries)
+.deploy-export/

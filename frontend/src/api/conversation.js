@@ -54,7 +54,7 @@ export function updateGroupTitle(id, title) {
 
 // Non-Axios SSE — fetch API handles streams better
 export function sendMessageStream(id, data) {
-  const token = syncToken() || localStorage.getItem('lianyu-token')
+  const token = syncToken()
   return fetch(`${apiBasePath()}/conversation/${id}/messages/stream`, {
     method: 'POST',
     headers: applyOutputLanguageHeaders({

@@ -33,8 +33,6 @@ http.interceptors.response.use(
       }
       if (body.code === 401) {
         clearTokenStorage()
-        localStorage.removeItem('lianyu-token')
-        localStorage.removeItem('lianyu-token-name')
         void import('@/stores/user').then(({ useUserStore }) => {
           void useUserStore().clearAuth({ keepUsername: true })
         })
@@ -55,8 +53,6 @@ http.interceptors.response.use(
   error => {
     if (error.response?.status === 401) {
       clearTokenStorage()
-      localStorage.removeItem('lianyu-token')
-      localStorage.removeItem('lianyu-token-name')
       void import('@/stores/user').then(({ useUserStore }) => {
         void useUserStore().clearAuth({ keepUsername: true })
       })

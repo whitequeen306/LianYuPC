@@ -27,6 +27,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 public class LianYuApplication {
 
     public static void main(String[] args) {
+        DotEnvBootstrap.load();
         SpringApplication.run(LianYuApplication.class, args);
     }
 }

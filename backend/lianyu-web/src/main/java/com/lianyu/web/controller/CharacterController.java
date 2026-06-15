@@ -3,6 +3,7 @@ package com.lianyu.web.controller;
 import cn.dev33.satoken.stp.StpUtil;
 import com.lianyu.common.base.Result;
 import com.lianyu.service.ai.AiChatService;
+import com.lianyu.service.auth.AuthRateLimiter;
 import com.lianyu.service.character.CharacterService;
 import com.lianyu.service.square.CharacterSquareService;
 import com.lianyu.service.square.SquareCommentService;
@@ -28,6 +29,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
 import java.util.LinkedHashMap;
+import java.time.Duration;
 
 @Tag(name = "Character", description = "角色管理")
 @RestController
@@ -41,6 +43,7 @@ public class CharacterController {
     private final SquareCommentService squareCommentService;
     private final FileStorageService fileStorageService;
     private final AiChatService aiChatService;
+    private final AuthRateLimiter authRateLimiter;
 
     @Operation(summary = "创建角色")
     @PostMapping
@@ -140,6 +143,8 @@ public class CharacterController {
     public Result<CharacterResponse> uploadAvatar(@PathVariable("id") Long id,
                                                    @RequestParam("file") MultipartFile file) {
         long userId = StpUtil.getLoginIdAsLong();
+        authRateLimiter.checkRateLimit("rate:upload:avatar:", String.valueOf(userId),
+                20, Duration.ofDays(1), "今日头像上传次数已达上限");
         String avatarUrl = fileStorageService.uploadAvatar(file);
         UpdateCharacterRequest updateReq = new UpdateCharacterRequest();
         updateReq.setAvatarUrl(avatarUrl);

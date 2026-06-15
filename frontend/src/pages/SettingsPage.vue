@@ -28,6 +28,18 @@
           </div>
           <el-switch v-model="desktopForm.showDesktopPet" @change="onDesktopChange" />
         </div>
+        <div v-if="desktopForm.showDesktopPet" class="desktop-settings__row">
+          <div>
+            <div class="desktop-settings__label">允许桌宠观察屏幕</div>
+            <div class="desktop-settings__hint">
+              开启后桌宠会定期截取屏幕与窗口标题，上传至服务器进行 AI 分析并主动问候。截图不会长期保存。
+            </div>
+          </div>
+          <el-switch
+            v-model="desktopForm.allowScreenObserve"
+            @change="onScreenObserveChange"
+          />
+        </div>
         <div class="desktop-settings__row">
           <div>
             <div class="desktop-settings__label">开机自动启动</div>
@@ -219,7 +231,7 @@ import { useI18n } from 'vue-i18n'
 import { useProvidersStore } from '@/stores/providers'
 import { useDesktopStore } from '@/stores/desktop'
 import { useSettingsStore } from '@/stores/settings'
-import { isElectronApp } from '@/utils/electron'
+import { getElectronAPI, isElectronApp } from '@/utils/electron'
 import { PET_CATALOG, getPetPreviewUrl } from '@/constants/petCatalog'
 
 const { t } = useI18n()
@@ -234,6 +246,7 @@ const petCatalog = PET_CATALOG.map(p => ({ ...p, previewUrl: getPetPreviewUrl(p)
 const desktopForm = reactive({
   closeToTray: true,
   showDesktopPet: true,
+  allowScreenObserve: false,
   launchAtLogin: false,
   launcherPetId: 'raiden',
 })
@@ -298,6 +311,7 @@ onMounted(async () => {
     await desktopStore.syncFromMain()
     desktopForm.closeToTray = desktopStore.closeToTray
     desktopForm.showDesktopPet = desktopStore.showDesktopPet
+    desktopForm.allowScreenObserve = desktopStore.allowScreenObserve
     desktopForm.launchAtLogin = desktopStore.launchAtLogin
     desktopForm.launcherPetId = desktopStore.launcherPetId
   }
@@ -318,13 +332,40 @@ async function selectPet(id) {
 }
 
 async function onDesktopChange() {
+  if (!desktopForm.showDesktopPet && desktopForm.allowScreenObserve) {
+    desktopForm.allowScreenObserve = false
+    getElectronAPI()?.stopDesktopObserver?.()
+  }
   await desktopStore.persist({
     closeToTray: desktopForm.closeToTray,
     showDesktopPet: desktopForm.showDesktopPet,
     showLauncherLogo: desktopForm.showDesktopPet,
+    allowScreenObserve: desktopForm.allowScreenObserve,
     launchAtLogin: desktopForm.launchAtLogin,
     launcherPetId: desktopForm.launcherPetId,
   })
+}
+
+async function onScreenObserveChange(enabled) {
+  if (!enabled) {
+    getElectronAPI()?.stopDesktopObserver?.()
+    await onDesktopChange()
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      '开启后，桌宠会定期截取整个屏幕和活动窗口标题，并上传到服务器进行 AI 识图分析，用于生成角色化问候语。截图仅用于实时分析，不会长期保存在服务器。\n\n你可以在设置中随时关闭此功能。',
+      '屏幕观察授权',
+      {
+        confirmButtonText: '我已了解，开启',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    await onDesktopChange()
+  } catch {
+    desktopForm.allowScreenObserve = false
+  }
 }
 
 function showAddDialog() {
