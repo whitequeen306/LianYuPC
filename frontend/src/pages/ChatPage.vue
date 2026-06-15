@@ -596,6 +596,7 @@ function mergePolledMessages(incoming) {
 
   let changed = false
   const byId = new Map(messages.value.filter(m => m.id).map(m => [m.id, m]))
+  const lastLocalSeq = messages.value.reduce((max, m) => Math.max(max, m.seq || 0), 0)
 
   for (const msg of incoming) {
     if (!msg.id) continue
@@ -607,33 +608,61 @@ function mergePolledMessages(incoming) {
       }
       continue
     }
-    const lastSeq = messages.value.reduce((max, m) => Math.max(max, m.seq || 0), 0)
-    if ((msg.seq ?? 0) >= lastSeq || messages.value.length === 0) {
+    if ((msg.seq ?? 0) >= lastLocalSeq || messages.value.length === 0) {
       messages.value.push(msg)
       byId.set(msg.id, msg)
       changed = true
     }
   }
 
-  const localPending = messages.value.filter(m => m._tempId && m._tempId.startsWith('u'))
-  const stillPending = localPending.filter(m =>
-    !incoming.some(s =>
-      s.role === 'user' && s.content === m.content
-      && Math.abs(new Date(s.createdAt).getTime() - new Date(m.createdAt).getTime()) < 5000
-    )
+  const incomingUsers = incoming.filter(m => m.role === 'user')
+  const incomingAssistants = incoming.filter(m => m.role === 'assistant')
+  const confirmedTempUsers = new Set()
+  const confirmedStreamAssistants = new Set()
+
+  for (const msg of messages.value) {
+    if (msg._tempId?.startsWith('u') && incomingUsers.some(serverMsg => isSameRecentUserMessage(msg, serverMsg))) {
+      confirmedTempUsers.add(msg._tempId)
+    } else if (msg._streamGroupId && incomingAssistants.some(serverMsg => isSameAssistantMessage(msg, serverMsg))) {
+      confirmedStreamAssistants.add(msg._streamGroupId)
+    }
+  }
+
+  const stillPending = messages.value.filter(m =>
+    m._tempId?.startsWith('u') && !confirmedTempUsers.has(m._tempId)
   )
-  if (stillPending.length) {
-    const merged = [...messages.value.filter(m => !(m._tempId && m._tempId.startsWith('u')))]
+  if (confirmedTempUsers.size || confirmedStreamAssistants.size || stillPending.length) {
+    const merged = messages.value.filter(m =>
+      !confirmedTempUsers.has(m._tempId)
+      && !(m._streamGroupId && confirmedStreamAssistants.has(m._streamGroupId))
+      && !m._tempId?.startsWith('u')
+    )
     const insertAfter = merged.findLastIndex(m => m.role === 'user')
     const pos = insertAfter >= 0 ? insertAfter + 1 : merged.length
     merged.splice(pos, 0, ...stillPending)
-    if (merged.length !== messages.value.length) {
+    if (merged.length !== messages.value.length || confirmedTempUsers.size || confirmedStreamAssistants.size) {
       messages.value = merged
       changed = true
     }
   }
 
   return changed
+}
+
+function isSameRecentUserMessage(localMsg, serverMsg) {
+  if (localMsg.content !== serverMsg.content || (localMsg.imageUrl || '') !== (serverMsg.imageUrl || '')) {
+    return false
+  }
+  const localMs = new Date(localMsg.createdAt).getTime()
+  const serverMs = new Date(serverMsg.createdAt).getTime()
+  if (Number.isNaN(localMs) || Number.isNaN(serverMs)) {
+    return true
+  }
+  return Math.abs(serverMs - localMs) < 30_000
+}
+
+function isSameAssistantMessage(localMsg, serverMsg) {
+  return localMsg.content === stripInnerThoughts(serverMsg.content, showInnerThoughts.value)
 }
 
 async function loadConversation(convId) {
