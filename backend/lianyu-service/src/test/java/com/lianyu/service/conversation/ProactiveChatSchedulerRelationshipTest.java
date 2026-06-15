@@ -32,6 +32,7 @@ class ProactiveChatSchedulerRelationshipTest {
         EngagementFrequencyScorer engagementScorer = Mockito.mock(EngagementFrequencyScorer.class);
         StringRedisTemplate redisTemplate = Mockito.mock(StringRedisTemplate.class);
         RelationshipStateService relationshipStateService = Mockito.mock(RelationshipStateService.class);
+        ProactiveUnrepliedThrottle proactiveUnrepliedThrottle = Mockito.mock(ProactiveUnrepliedThrottle.class);
 
         ProactiveChatScheduler scheduler = new ProactiveChatScheduler(
                 conversationMapper,
@@ -42,7 +43,8 @@ class ProactiveChatSchedulerRelationshipTest {
                 chatBehaviorResolver,
                 engagementScorer,
                 redisTemplate,
-                relationshipStateService);
+                relationshipStateService,
+                proactiveUnrepliedThrottle);
 
         Conversation conversation = new Conversation();
         conversation.setId(11L);
