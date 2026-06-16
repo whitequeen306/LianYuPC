@@ -58,6 +58,16 @@ public class OutputLanguageService {
     }
 
     /**
+     * 是否应对本条回复启用语言门控（仅拦截非期望语言，永不强制改成英文）。
+     */
+    public static boolean shouldEnforceLanguageGate(String expectedLangCode) {
+        if (expectedLangCode == null || expectedLangCode.isBlank()) {
+            return false;
+        }
+        return OutputLanguage.fromCode(expectedLangCode) != OutputLanguage.EN;
+    }
+
+    /**
      * 判断模型输出是否符合期望语言（仅分类，不修改文本）。
      */
     public boolean matchesExpected(String content, String expectedLangCode) {
@@ -68,6 +78,11 @@ public class OutputLanguageService {
             return true;
         }
         OutputLanguage expected = OutputLanguage.fromCode(expectedLangCode);
+        if (expected == OutputLanguage.ZH || expected == OutputLanguage.ZH_TW) {
+            if (countIdeographic(stripMarkupForDetection(content)) > 0) {
+                return true;
+            }
+        }
         OutputLanguage detected = detectFromText(content);
         return languageMatches(expected, detected);
     }
@@ -81,11 +96,12 @@ public class OutputLanguageService {
     }
 
     private static OutputLanguage detectFromText(String text) {
+        String sample = stripMarkupForDetection(text);
         int ja = 0;
         int en = 0;
         int zh = 0;
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
+        for (int i = 0; i < sample.length(); i++) {
+            char c = sample.charAt(i);
             if ((c >= 0x3040 && c <= 0x30FF) || (c >= 0x31F0 && c <= 0x31FF)) {
                 ja++;
             } else if (c < 128 && Character.isLetter(c)) {
@@ -111,6 +127,29 @@ public class OutputLanguageService {
             return OutputLanguage.EN;
         }
         return OutputLanguage.ZH;
+    }
+
+    private static String stripMarkupForDetection(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        String stripped = text.replaceAll("<[^>]*>", " ");
+        stripped = stripped.replaceAll("&[a-z]+;", " ");
+        stripped = stripped.replaceAll("&#\\d+;", " ");
+        return stripped.trim();
+    }
+
+    private static int countIdeographic(String text) {
+        if (text == null || text.isBlank()) {
+            return 0;
+        }
+        int count = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (Character.isIdeographic(text.charAt(i))) {
+                count++;
+            }
+        }
+        return count;
     }
 
     public String buildOutputLanguageBlock(String languageCode) {

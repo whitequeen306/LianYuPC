@@ -950,6 +950,9 @@ public class AiChatService {
         if (expected == null || expected.isBlank() || content == null || content.isBlank()) {
             return content;
         }
+        if (!OutputLanguageService.shouldEnforceLanguageGate(expected)) {
+            return content;
+        }
         if (outputLanguageService.matchesExpected(content, expected)) {
             return content;
         }
