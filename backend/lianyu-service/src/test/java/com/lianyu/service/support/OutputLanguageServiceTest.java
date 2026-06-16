@@ -57,6 +57,22 @@ class OutputLanguageServiceTest {
     }
 
     @Test
+    void resolveForRequest_detectsZhFromWrappedShortChinese() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(anyString())).thenReturn(null);
+
+        String wrapped = "<user_message trusted=\"false\">\n神了\n</user_message>";
+        assertEquals("zh", service.resolveForRequest(1L, wrapped));
+    }
+
+    @Test
+    void shouldEnforceLanguageGate_skipsEnglishExpected() {
+        assertFalse(OutputLanguageService.shouldEnforceLanguageGate("en"));
+        assertTrue(OutputLanguageService.shouldEnforceLanguageGate("zh"));
+        assertTrue(OutputLanguageService.shouldEnforceLanguageGate("ja"));
+    }
+
+    @Test
     void matchesExpected_acceptsChineseReplyWhenExpectingZh() {
         assertTrue(service.matchesExpected("今天天气真好，要不要一起出去走走？", "zh"));
     }

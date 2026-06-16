@@ -228,11 +228,11 @@ public class ConversationService {
                 userId,
                 character,
                 memoryContext + "\n\n" + relationshipContext,
-                turn.memoryQuery());
+                turn.rawLanguageSample());
 
         AiChatRequest aiRequest = buildChatRequest(
                 request, character, systemPrompt, history, turn.userMsg().getId(), turn.aiUserContent());
-        aiRequest.setExpectedLanguage(outputLanguageService.resolveForRequest(userId, turn.memoryQuery()));
+        aiRequest.setExpectedLanguage(outputLanguageService.resolveForRequest(userId, turn.rawLanguageSample()));
 
         ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
 
@@ -285,11 +285,11 @@ public class ConversationService {
                 userId,
                 character,
                 memoryContext + "\n\n" + relationshipContext,
-                turn.memoryQuery());
+                turn.rawLanguageSample());
 
         AiChatRequest aiRequest = buildChatRequest(
                 request, character, systemPrompt, history, turn.userMsg().getId(), turn.aiUserContent());
-        aiRequest.setExpectedLanguage(outputLanguageService.resolveForRequest(userId, turn.memoryQuery()));
+        aiRequest.setExpectedLanguage(outputLanguageService.resolveForRequest(userId, turn.rawLanguageSample()));
 
         final Character streamCharacter = character;
         return aiChatService.chatStream(userId, aiRequest, (fullContent, error) -> {
@@ -715,7 +715,7 @@ public class ConversationService {
         return dto;
     }
 
-    private record PreparedUserTurn(Message userMsg, String memoryQuery, String aiUserContent) {}
+    private record PreparedUserTurn(Message userMsg, String aiUserContent, String rawLanguageSample) {}
 
     private PreparedUserTurn prepareUserTurn(Long conversationId,
                                              Long characterId,
@@ -743,8 +743,8 @@ public class ConversationService {
             request.setModelContentForAi(aiUserContent);
         }
 
-        String memoryQuery = hasImage && text.isBlank() ? "用户发送了一张图片" : aiUserContent;
-        return new PreparedUserTurn(userMsg, memoryQuery, aiUserContent);
+        String rawLanguageSample = hasImage && text.isBlank() ? "用户发送了一张图片" : text;
+        return new PreparedUserTurn(userMsg, aiUserContent, rawLanguageSample);
     }
 
     private AiChatRequest buildChatRequest(SendMessageRequest request,
