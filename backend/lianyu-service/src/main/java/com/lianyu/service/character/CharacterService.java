@@ -28,6 +28,7 @@ import com.lianyu.service.dto.CharacterResponse;
 import com.lianyu.service.dto.CreateCharacterRequest;
 import com.lianyu.service.dto.UpdateCharacterRequest;
 import com.lianyu.service.conversation.CityChangeFollowUpScheduler;
+import com.lianyu.service.conversation.SessionSummaryService;
 import com.lianyu.service.memory.MemoryCacheService;
 import com.lianyu.service.memory.MemoryWriter;
 import com.lianyu.service.storage.FileStorageService;
@@ -68,6 +69,7 @@ public class CharacterService {
     private final FileStorageService fileStorageService;
     private final CharacterCitySettingsService characterCitySettingsService;
     private final CityChangeFollowUpScheduler cityChangeFollowUpScheduler;
+    private final SessionSummaryService sessionSummaryService;
 
     @Value("${lianyu.character.max-per-user:80}")
     private int maxCharactersPerUser;
@@ -255,6 +257,7 @@ public class CharacterService {
                     MESSAGE_SEQ_KEY_PREFIX + conversationId,
                     GROUP_TURN_KEY_PREFIX + conversationId
             ));
+            sessionSummaryService.invalidate(conversationId);
         }
     }
 

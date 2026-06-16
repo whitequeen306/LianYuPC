@@ -29,6 +29,10 @@ backend/*/target/
 .DS_Store
 Thumbs.db
 
+# Pet voice enrollment samples (keep clip + registry only)
+backend/lianyu-service/src/main/resources/pet-voice-samples/*.wav
+!backend/lianyu-service/src/main/resources/pet-voice-samples/*-clip.wav
+
 # Node / Frontend
 frontend/node_modules/
 frontend/dist/

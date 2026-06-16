@@ -178,7 +178,7 @@ lianyu:
       # 平台聊天 key 仅走 MySQL api_key_vault DEFAULT 池（10 槽位 + Redis 轮询），勿在 .env 配置单 key
       api-keys: ""
     # 拼进 Prompt 的最近历史消息条数
-    context-window: 20
+    context-window: 32
     # 记忆向量维度（与 Milvus collection、embedding 一致）
     embedding-dim: 1024
     embedding:
@@ -191,11 +191,29 @@ lianyu:
       describe-max-tokens: 420
       api-key: ${DASHSCOPE_API_KEY:}
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    tts:
+      enabled: ${LIANYU_PET_TTS_ENABLED:true}
+      api-key: ${DASHSCOPE_API_KEY:}
+      language-type: Chinese
+      connect-timeout-ms: 8000
+      socket-timeout-ms: 30000
     reranker:
       model: gte-rerank-v2
       # 未单独配置时与 embedding 共用同一 DashScope Key
       api-key: ${RERANKER_API_KEY:${EMBEDDING_API_KEY:}}
       url: https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank
+  session:
+    summary:
+      enabled: true
+      raw-window: 32
+      slide-batch-min: 6
+      model: deepseek-v4-flash
+      redis-ttl-hours: 72
+      target-chars: 600
+      soft-max-chars: 900
+      hard-max-chars: 1200
+      structured: true
+      stale-minutes: 30
 
   mq:
     memory:

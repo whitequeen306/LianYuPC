@@ -74,35 +74,38 @@
           <div
             v-else
             class="gal-log__item"
-            :class="item.role === 'user' ? 'gal-log__item--user' : 'gal-log__item--hero'"
+            :class="[
+              item.role === 'user' ? 'gal-log__item--user' : 'gal-log__item--hero',
+              { 'is-group-start': item._firstOfGroup }
+            ]"
           >
-          <div
-            v-if="item.role !== 'user'"
-            class="gal-log__avatar gal-log__avatar--hero"
-            aria-hidden="true"
-          >
-            <img
-              v-if="characterAvatarUrl"
-              :src="resolveMediaUrl(characterAvatarUrl)"
-              :alt="activeCharacter?.name"
-            />
-            <el-icon v-else :size="18"><User /></el-icon>
-          </div>
+          <template v-if="item.role !== 'user'">
+            <div
+              v-if="item._firstOfGroup"
+              class="gal-log__avatar gal-log__avatar--hero"
+              aria-hidden="true"
+            >
+              <img
+                v-if="characterAvatarUrl"
+                :src="resolveMediaUrl(characterAvatarUrl)"
+                :alt="activeCharacter?.name"
+              />
+              <el-icon v-else :size="18"><User /></el-icon>
+            </div>
+            <div v-else class="gal-log__avatar-spacer" aria-hidden="true" />
+          </template>
 
-          <div v-if="item.role === 'user'" class="gal-user-choice">
-            <div v-if="item.imageUrl" class="gal-user-choice__image">
+          <div v-if="item.role === 'user'" class="gal-bubble gal-bubble--user">
+            <div v-if="item.imageUrl" class="gal-bubble__image">
               <img :src="resolveMediaUrl(item.imageUrl)" alt="" />
             </div>
-            <p v-if="item.content" class="gal-user-choice__text">{{ item.content }}</p>
-            <span class="gal-user-choice__time">{{ formatTime(item.createdAt) }}</span>
+            <p v-if="item.content" class="gal-bubble__text">{{ item.content }}</p>
+            <span v-if="item._lastOfGroup" class="gal-bubble__time">{{ formatTime(item.createdAt) }}</span>
           </div>
 
-          <div v-else class="gal-dialogue">
-            <div class="gal-dialogue__nameplate">
-              <span class="gal-dialogue__name">{{ activeCharacter?.name }}</span>
-              <span v-if="!item._streamGroupId" class="gal-dialogue__time">{{ formatTime(item.createdAt) }}</span>
-            </div>
-            <div v-if="item.imageUrl" class="gal-dialogue__image">
+          <div v-else class="gal-bubble gal-bubble--hero">
+            <span v-if="item._firstOfGroup" class="gal-bubble__name">{{ activeCharacter?.name }}</span>
+            <div v-if="item.imageUrl" class="gal-bubble__image">
               <img :src="resolveMediaUrl(item.imageUrl)" alt="" />
             </div>
             <AssistantMessageContent
@@ -111,22 +114,29 @@
               :show-inner-thoughts="showInnerThoughts"
               variant="chat"
               tag="p"
-              extra-class="gal-dialogue__text"
+              extra-class="gal-bubble__text"
             />
+            <span
+              v-if="item._lastOfGroup && !item._streamGroupId"
+              class="gal-bubble__time"
+            >{{ formatTime(item.createdAt) }}</span>
           </div>
 
-          <div
-            v-if="item.role === 'user'"
-            class="gal-log__avatar gal-log__avatar--user"
-            aria-hidden="true"
-          >
-            <img
-              v-if="userStore.avatarUrl"
-              :src="resolveMediaUrl(userStore.avatarUrl)"
-              alt=""
-            />
-            <el-icon v-else :size="18"><UserFilled /></el-icon>
-          </div>
+          <template v-if="item.role === 'user'">
+            <div
+              v-if="item._firstOfGroup"
+              class="gal-log__avatar gal-log__avatar--user"
+              aria-hidden="true"
+            >
+              <img
+                v-if="userStore.avatarUrl"
+                :src="resolveMediaUrl(userStore.avatarUrl)"
+                alt=""
+              />
+              <el-icon v-else :size="18"><UserFilled /></el-icon>
+            </div>
+            <div v-else class="gal-log__avatar-spacer" aria-hidden="true" />
+          </template>
           </div>
         </template>
         <div ref="scrollAnchor" />
@@ -393,6 +403,15 @@ const messageTimeline = computed(() => {
       _key: msg.id || msg._tempId
     })
     prevMs = ms
+  }
+  // 标记连续同发言人分组：组首显示头像/名字，组末显示时间，组内消息收紧间距
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i]
+    if (it.type !== 'message') continue
+    const prev = items[i - 1]
+    const next = items[i + 1]
+    it._firstOfGroup = !(prev && prev.type === 'message' && prev.role === it.role)
+    it._lastOfGroup = !(next && next.type === 'message' && next.role === it.role)
   }
   return items
 })
@@ -1183,7 +1202,7 @@ function formatTime(ts) {
   padding: $space-2 $space-4 $space-4;
   display: flex;
   flex-direction: column;
-  gap: $space-4;
+  gap: $space-1;
   /* 仅顶部淡入；底部不做 mask，避免滚到最新消息时被渐变遮暗 */
   mask-image: linear-gradient(180deg, transparent 0%, #000 8%, #000 100%);
   -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 8%, #000 100%);
@@ -1249,14 +1268,26 @@ function formatTime(ts) {
   align-items: flex-end;
   gap: $space-3;
   width: 100%;
+
+  /* 换发言人/跨时间分段时，组首拉开间距；组内连发收紧 */
+  &.is-group-start:not(:first-child) {
+    margin-top: $space-4;
+  }
 }
 
 .gal-log__item--user {
   flex-direction: row;
+  justify-content: flex-end;
 }
 
 .gal-log__item--hero {
   flex-direction: row;
+  justify-content: flex-start;
+}
+
+.gal-log__avatar-spacer {
+  width: 40px;
+  flex-shrink: 0;
 }
 
 .gal-log__avatar {
@@ -1284,102 +1315,86 @@ function formatTime(ts) {
   }
 }
 
-.gal-user-choice {
-  flex: 1;
+.gal-bubble {
+  position: relative;
+  max-width: min(78%, 560px);
   min-width: 0;
-  padding: $space-3 $space-5;
-  border-radius: $radius-lg;
-  background: linear-gradient(
-    180deg,
-    rgba($color-pink-rgb, 0.14) 0%,
-    rgba($color-pink-rgb, 0.08) 100%
-  );
-  border: 1px solid rgba($color-pink-rgb, 0.24);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  width: fit-content;
+  padding: $space-3 $space-4;
+  border-radius: $radius-md;
+  animation: galLineIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
 
-  &__text {
+  &__text,
+  :deep(.gal-bubble__text) {
     margin: 0;
     font-size: $font-size-base;
-    line-height: $line-height-relaxed;
-    color: $color-text-primary;
+    line-height: $line-height-normal;
     white-space: pre-wrap;
     word-break: break-word;
-  }
-
-  &__image img {
-    display: block;
-    max-width: min(100%, 220px);
-    max-height: 220px;
-    border-radius: $radius-md;
-    margin-bottom: $space-3;
-  }
-
-  &__time {
-    display: block;
-    margin-top: $space-2;
-    font-size: 10px;
-    color: rgba(255, 255, 255, 0.45);
-    text-align: right;
-  }
-}
-
-.gal-dialogue {
-  flex: 1;
-  min-width: 0;
-  padding: $space-4 $space-5 $space-5;
-  border-radius: $radius-lg;
-  background: linear-gradient(
-    180deg,
-    rgba(12, 12, 20, 0.72) 0%,
-    rgba(12, 12, 20, 0.88) 100%
-  );
-  border: 1px solid rgba($color-pink-rgb, 0.22);
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(12px);
-  animation: galLineIn 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
-
-  &__nameplate {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: $space-3;
-    margin-bottom: $space-3;
-    padding-bottom: $space-2;
-    border-bottom: 1px solid rgba($color-pink-rgb, 0.15);
   }
 
   &__name {
-    font-size: $font-size-sm;
+    display: block;
+    margin-bottom: 4px;
+    font-size: $font-size-xs;
     font-weight: $font-weight-semibold;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.04em;
     color: $color-pink-light;
-  }
-
-  &__time {
-    font-size: 10px;
-    color: rgba(255, 255, 255, 0.38);
-  }
-
-  &__text,
-  :deep(.gal-dialogue__text) {
-    margin: 0;
-    font-size: $font-size-base;
-    line-height: $line-height-relaxed;
-    color: rgba(255, 255, 255, 0.92);
-    white-space: pre-wrap;
-    word-break: break-word;
   }
 
   &__image img {
     display: block;
-    max-width: 100%;
-    max-height: 220px;
-    border-radius: $radius-md;
-    margin-bottom: $space-3;
+    max-width: min(100%, 240px);
+    max-height: 240px;
+    border-radius: $radius-sm;
+    margin-bottom: $space-2;
     object-fit: cover;
+  }
+
+  &__time {
+    display: block;
+    margin-top: 4px;
+    font-size: 10px;
+    line-height: 1;
+  }
+}
+
+.gal-bubble--hero {
+  background: rgba(16, 16, 24, 0.64);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom-left-radius: $radius-sm;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(10px);
+
+  .gal-bubble__text,
+  :deep(.gal-bubble__text) {
+    color: rgba(255, 255, 255, 0.92);
+  }
+
+  .gal-bubble__time {
+    color: rgba(255, 255, 255, 0.38);
+    text-align: left;
+  }
+}
+
+.gal-bubble--user {
+  background: linear-gradient(
+    135deg,
+    rgba($color-pink-rgb, 0.32) 0%,
+    rgba($color-pink-rgb, 0.2) 100%
+  );
+  border: 1px solid rgba($color-pink-rgb, 0.34);
+  border-bottom-right-radius: $radius-sm;
+  box-shadow: 0 2px 12px rgba($color-pink-rgb, 0.16);
+  backdrop-filter: blur(10px);
+
+  .gal-bubble__text {
+    color: $color-text-primary;
+  }
+
+  .gal-bubble__time {
+    color: rgba(255, 255, 255, 0.5);
+    text-align: right;
   }
 }
 
@@ -1484,7 +1499,7 @@ function formatTime(ts) {
     transition: none !important;
   }
 
-  .gal-dialogue {
+  .gal-bubble {
     animation: none;
   }
 }
@@ -1536,9 +1551,8 @@ function formatTime(ts) {
     padding: 8px 10px 10px;
   }
 
-  .gal-user-choice,
-  .gal-dialogue {
-    max-width: 100%;
+  .gal-bubble {
+    max-width: 88%;
   }
 }
 </style>

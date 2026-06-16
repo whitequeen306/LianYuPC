@@ -1143,9 +1143,9 @@ function registerIpcHandlers() {
       authToken: session.token,
       persona,
       petId,
-      onGreeting: (greeting) => {
+      onGreeting: (payload) => {
         if (launcherWindow && !launcherWindow.isDestroyed()) {
-          launcherWindow.webContents.send('desktop:launcher-greeting', { text: greeting })
+          launcherWindow.webContents.send('desktop:launcher-greeting', payload)
         }
       },
     })

@@ -3,6 +3,7 @@ package com.lianyu.web.controller;
 import cn.dev33.satoken.stp.StpUtil;
 import com.lianyu.common.base.Result;
 import com.lianyu.service.ai.AiChatService;
+import com.lianyu.service.ai.DashScopeTtsService;
 import com.lianyu.service.auth.AuthRateLimiter;
 import com.lianyu.service.dto.ObserveDesktopRequest;
 import io.swagger.v3.oas.annotations.Operation;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Slf4j
@@ -28,10 +30,14 @@ public class ObserveController {
     private static final int OBSERVE_PER_IP_PER_HOUR = 30;
 
     private final AiChatService aiChatService;
+    private final DashScopeTtsService dashScopeTtsService;
     private final AuthRateLimiter authRateLimiter;
 
-    public ObserveController(AiChatService aiChatService, AuthRateLimiter authRateLimiter) {
+    public ObserveController(AiChatService aiChatService,
+                             DashScopeTtsService dashScopeTtsService,
+                             AuthRateLimiter authRateLimiter) {
         this.aiChatService = aiChatService;
+        this.dashScopeTtsService = dashScopeTtsService;
         this.authRateLimiter = authRateLimiter;
     }
 
@@ -55,7 +61,16 @@ public class ObserveController {
             if (greeting == null || greeting.isBlank()) {
                 return Result.fail(400, "未能生成问候语");
             }
-            return Result.ok(Map.of("greeting", greeting));
+            Map<String, String> payload = new LinkedHashMap<>();
+            payload.put("greeting", greeting);
+
+            DashScopeTtsService.SynthesizedAudio audio =
+                    dashScopeTtsService.synthesizeForPet(request.getPetId(), greeting);
+            if (audio != null) {
+                payload.put("audioBase64", audio.base64());
+                payload.put("audioMimeType", audio.mimeType());
+            }
+            return Result.ok(payload);
         } catch (com.lianyu.common.exception.BusinessException e) {
             throw e;
         } catch (Exception e) {

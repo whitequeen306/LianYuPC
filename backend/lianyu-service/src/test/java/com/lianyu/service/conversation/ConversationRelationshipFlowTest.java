@@ -64,6 +64,7 @@ class ConversationRelationshipFlowTest {
         RelationshipStateService relationshipStateService = mock(RelationshipStateService.class);
         ProactiveUnrepliedThrottle proactiveUnrepliedThrottle = mock(ProactiveUnrepliedThrottle.class);
         com.lianyu.service.tools.TimeTool timeTool = mock(com.lianyu.service.tools.TimeTool.class);
+        SessionSummaryService sessionSummaryService = mock(SessionSummaryService.class);
 
         com.lianyu.dao.mapper.UserMapper userMapper = mock(com.lianyu.dao.mapper.UserMapper.class);
 
@@ -87,7 +88,8 @@ class ConversationRelationshipFlowTest {
                 proactiveRealWorldContext,
                 relationshipStateService,
                 proactiveUnrepliedThrottle,
-                timeTool);
+                timeTool,
+                sessionSummaryService);
 
         Field contextWindow = ConversationService.class.getDeclaredField("contextWindow");
         contextWindow.setAccessible(true);
@@ -110,7 +112,7 @@ class ConversationRelationshipFlowTest {
         when(chatBehaviorResolver.resolve(character)).thenReturn(behavior);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.increment("msg_seq:11")).thenReturn(1L, 2L);
-        when(memoryRetriever.retrieveProfileContext(5L, 3L)).thenReturn("[profile]\n喜欢夜跑");
+        when(memoryRetriever.retrieveProfileContext(eq(5L), eq(3L), any())).thenReturn("[profile]\n喜欢夜跑");
         when(relationshipStateService.buildPromptContext(3L, 5L))
                 .thenReturn("关系阶段: familiar\n近期关系事件:\n- 用户解释了迟到原因");
         when(outputLanguageService.resolveForRequest(eq(3L), any())).thenReturn("zh-CN");

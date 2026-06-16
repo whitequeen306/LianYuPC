@@ -16,4 +16,7 @@ public class ObserveDesktopRequest {
 
     @Size(max = 4000, message = "人设内容过长")
     private String persona;
+
+    @Size(max = 64, message = "桌宠 ID 过长")
+    private String petId;
 }

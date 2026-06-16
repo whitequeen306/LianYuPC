@@ -110,6 +110,7 @@ async function runObserve() {
       imageBase64: screenshot,
       windowTitle,
       persona: lastPersona,
+      petId: lastPetId,
     })
 
     const req = net.request({
@@ -147,7 +148,11 @@ async function runObserve() {
       lastGreetingTitle = key
       lastGreetingTime = Date.now()
       lastWindowTitle = windowTitle
-      onGreeting(greeting)
+      onGreeting({
+        text: greeting,
+        audioBase64: response?.data?.audioBase64 || '',
+        audioMimeType: response?.data?.audioMimeType || 'audio/wav',
+      })
     }
   } catch (e) {
     // 静默失败，下一次再试

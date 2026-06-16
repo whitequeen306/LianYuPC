@@ -14,6 +14,7 @@ export const PET_CATALOG = [
     sprite: 'pet/raiden_spritesheet.webp',
     preview: 'pet/raiden_idle0.png',
     persona: '你是雷电将军，稻妻的永恒统治者，威严凛然，对武艺和甜品都有独到的执着。说话简洁有力，偶尔流露出对凡间事物的好奇。',
+    voiceSource: 'vc',
   },
   {
     id: 'ayaka',
@@ -24,6 +25,7 @@ export const PET_CATALOG = [
     sprite: 'pet/ayaka_spritesheet.webp',
     preview: 'pet/ayaka_idle0.png',
     persona: '你是神里绫华，稻妻社奉行的大小姐，优雅端庄，待人亲切温柔，内心渴望普通人的生活。说话温婉有礼，偶尔展露天真的笑容。',
+    voiceSource: 'vc',
   },
   {
     id: 'furina',
@@ -44,6 +46,7 @@ export const PET_CATALOG = [
     sprite: 'pet/ganyu_spritesheet.webp',
     preview: 'pet/ganyu_idle0.png',
     persona: '你是甘雨，璃月七星的秘書，半仙之身，性格温柔又容易犯困。说话轻柔体贴，偶尔会自责工作没做完，语气软萌但做事靠谱。',
+    voiceSource: 'vc',
   },
   {
     id: 'hu-tao',
@@ -64,6 +67,7 @@ export const PET_CATALOG = [
     sprite: 'pet/klee_spritesheet.webp',
     preview: 'pet/klee_idle0.png',
     persona: '你是可莉，蒙德的火花骑士，天真烂漫，精力旺盛，最喜欢炸鱼和研究炸弹。说话奶声奶气，语气像小朋友，充满好奇心。',
+    voiceSource: 'vc',
   },
   {
     id: 'yoimiya',

@@ -58,6 +58,7 @@ let idleFloatTween = null
 let dragRafId = null
 let pendingDx = 0
 let pendingDy = 0
+let greetingAudio = null
 
 const { playAnim, playAnimOnce, returnToIdle, setSpriteImage } = usePetSpriteAnimator(petRef)
 
@@ -234,10 +235,36 @@ function showNewMessageHint(payload = {}) {
   toastTimer = setTimeout(() => { toastText.value = '' }, 4200)
 }
 
+function stopGreetingAudio() {
+  if (!greetingAudio) return
+  try {
+    greetingAudio.pause()
+    greetingAudio.currentTime = 0
+  } catch {
+    // ignore
+  }
+  greetingAudio = null
+}
+
+function playGreetingAudio(payload = {}) {
+  const base64 = payload.audioBase64
+  if (!base64) return
+  const mime = payload.audioMimeType || 'audio/wav'
+  stopGreetingAudio()
+  try {
+    greetingAudio = new Audio(`data:${mime};base64,${base64}`)
+    greetingAudio.volume = 0.92
+    void greetingAudio.play()
+  } catch {
+    greetingAudio = null
+  }
+}
+
 function showGreeting(payload = {}) {
   const text = payload.text || ''
   if (!text) return
   greetingText.value = text
+  playGreetingAudio(payload)
   // greeting 动画: wave 挥手 → 短暂停顿 → jump 弹跳
   playAnimOnce('wave', () => {
     setTimeout(() => { playAnimOnce('jump') }, 300)
@@ -249,6 +276,7 @@ function showGreeting(payload = {}) {
 function dismissGreeting() {
   greetingText.value = ''
   clearTimeout(greetingTimer)
+  stopGreetingAudio()
 }
 
 onMounted(async () => {
@@ -276,6 +304,7 @@ onUnmounted(() => {
   clearTimeout(clickTimer)
   clearTimeout(toastTimer)
   clearTimeout(greetingTimer)
+  stopGreetingAudio()
   if (dragRafId != null) { cancelAnimationFrame(dragRafId); dragRafId = null }
   getElectronAPI()?.stopDesktopObserver?.()
   unsubscribeLauncherMessage?.()

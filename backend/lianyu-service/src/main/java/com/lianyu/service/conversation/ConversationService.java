@@ -85,6 +85,7 @@ public class ConversationService {
     private final RelationshipStateService relationshipStateService;
     private final ProactiveUnrepliedThrottle proactiveUnrepliedThrottle;
     private final TimeTool timeTool;
+    private final SessionSummaryService sessionSummaryService;
 
     @Lazy
     @Autowired
@@ -195,6 +196,7 @@ public class ConversationService {
                 SEQ_KEY_PREFIX + conversationId,
                 GROUP_TURN_KEY_PREFIX + conversationId
         ));
+        sessionSummaryService.invalidate(conversationId);
         log.info("Conversation deleted: id={}, mode={}", conversationId, conversation.getMode());
     }
 
@@ -221,13 +223,12 @@ public class ConversationService {
         // 更新角色情绪
         characterStateService.afterUserMessage(character.getId(), userId, turn.aiUserContent());
 
-        String memoryContext = memoryRetriever.retrieveProfileContext(
-                character.getId(), userId, turn.aiUserContent());
-        String relationshipContext = relationshipStateService.buildPromptContext(userId, character.getId());
+        String memoryContext = buildProfileContextForChat(
+                userId, conversationId, character.getId(), turn.aiUserContent());
         String systemPrompt = buildSystemPromptForUser(
                 userId,
                 character,
-                memoryContext + "\n\n" + relationshipContext,
+                memoryContext,
                 turn.rawLanguageSample());
 
         AiChatRequest aiRequest = buildChatRequest(
@@ -241,6 +242,7 @@ public class ConversationService {
         relationshipStateService.recordAssistantTurn(userId, character.getId(), conversationId, replies);
 
         memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
+        sessionSummaryService.maybeMergeAsync(conversationId);
         if (!replies.isEmpty()) {
             notificationService.notifyAssistantMessage(
                     userId,
@@ -278,13 +280,12 @@ public class ConversationService {
         // 更新角色情绪
         characterStateService.afterUserMessage(character.getId(), userId, turn.aiUserContent());
 
-        String memoryContext = memoryRetriever.retrieveProfileContext(
-                character.getId(), userId, turn.aiUserContent());
-        String relationshipContext = relationshipStateService.buildPromptContext(userId, character.getId());
+        String memoryContext = buildProfileContextForChat(
+                userId, conversationId, character.getId(), turn.aiUserContent());
         String systemPrompt = buildSystemPromptForUser(
                 userId,
                 character,
-                memoryContext + "\n\n" + relationshipContext,
+                memoryContext,
                 turn.rawLanguageSample());
 
         AiChatRequest aiRequest = buildChatRequest(
@@ -300,6 +301,7 @@ public class ConversationService {
                 log.info("Assistant message saved: convId={}, pieces={}, size={} chars",
                         conversationId, replies.size(), fullContent.length());
                 memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
+                sessionSummaryService.maybeMergeAsync(conversationId);
                 if (!replies.isEmpty()) {
                     notificationService.notifyAssistantMessage(
                             userId,
@@ -885,6 +887,27 @@ public class ConversationService {
             return "";
         }
         return MULTI_SPACE.matcher(text).replaceAll(" ").trim();
+    }
+
+    private String buildProfileContextForChat(
+            Long userId, Long conversationId, Long characterId, String userInput) {
+        String memoryContext = memoryRetriever.retrieveProfileContext(characterId, userId, userInput);
+        String relationshipContext = relationshipStateService.buildPromptContext(userId, characterId);
+        StringBuilder combined = new StringBuilder();
+        if (memoryContext != null && !memoryContext.isBlank()) {
+            combined.append(memoryContext);
+        }
+        if (relationshipContext != null && !relationshipContext.isBlank()) {
+            if (!combined.isEmpty()) {
+                combined.append("\n\n");
+            }
+            combined.append(relationshipContext);
+        }
+        String sessionBlock = sessionSummaryService.formatForPrompt(conversationId);
+        if (sessionBlock != null && !sessionBlock.isBlank()) {
+            combined.append(sessionBlock);
+        }
+        return combined.toString();
     }
 
     private String buildSystemPromptForUser(Long userId, Character character, String memoryContext, String userInput) {
