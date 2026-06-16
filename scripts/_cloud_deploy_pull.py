@@ -67,6 +67,11 @@ def main() -> None:
             time.sleep(15)
     else:
         raise SystemExit(56)
+    run(
+        client,
+        "docker exec lianyu-redis redis-cli --scan --pattern 'lianyu:user:output_lang:*' "
+        "| xargs -r docker exec -i lianyu-redis redis-cli del",
+    )
     run(client, "docker ps --format 'table {{.Names}}\\t{{.Status}}' | head -8")
 
     client.close()
