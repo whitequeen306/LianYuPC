@@ -7,5 +7,15 @@ INNER JOIN conversation c2
  AND c2.mode = 'SINGLE'
  AND c1.id > c2.id;
 
-CREATE UNIQUE INDEX IF NOT EXISTS uk_conversation_user_character_mode
-    ON conversation (user_id, character_id, mode);
+SET @conv_uk := (
+    SELECT COUNT(1) FROM information_schema.statistics
+    WHERE table_schema = DATABASE()
+      AND table_name = 'conversation'
+      AND index_name = 'uk_conversation_user_character_mode'
+);
+SET @sql_conv_uk := IF(@conv_uk = 0,
+    'CREATE UNIQUE INDEX uk_conversation_user_character_mode ON conversation (user_id, character_id, mode)',
+    'SELECT 1');
+PREPARE stmt_conv_uk FROM @sql_conv_uk;
+EXECUTE stmt_conv_uk;
+DEALLOCATE PREPARE stmt_conv_uk;
