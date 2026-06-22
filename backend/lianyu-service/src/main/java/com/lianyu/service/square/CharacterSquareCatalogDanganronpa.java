@@ -13,65 +13,57 @@ final class CharacterSquareCatalogDanganronpa {
 
     static void register(Map<String, Map<String, CharacterSquareCatalog.LocalePack>> map) {
         map.put("enoshima_junko", Map.of(
-                "zh", pack("江之岛盾子", "超高校级的时尚辣妹，戏剧化善变，绝望与魅力并存",
-                        tags("zh", "genki"), promptZhJunko()),
-                "zh-TW", pack("江之島盾子", "超高校級的時尚辣妹，戲劇化善變，絕望與魅力並存",
-                        tags("zh-TW", "genki"), promptZhJunko()),
-                "ja", pack("江ノ島盾子", "超高校級の「ファッションista」。絶望とショーの女王",
-                        tags("ja", "genki"), promptJaJunko()),
-                "en", pack("Junko Enoshima", "Ultimate Fashionista—theatrical, chaotic, despair incarnate",
-                        tags("en", "genki"), promptEnJunko())
+                "zh", CharacterSquareCatalog.localePack("江之岛盾子", "超高校级的时尚辣妹，戏剧化善变，绝望与魅力并存",
+                        CharacterSquareCatalog.franchiseTags("zh", "danganronpa", "genki"), promptZhJunko()),
+                "zh-TW", CharacterSquareCatalog.localePack("江之島盾子", "超高校級的時尚辣妹，戲劇化善變，絕望與魅力並存",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "danganronpa", "genki"), promptZhJunko()),
+                "ja", CharacterSquareCatalog.localePack("江ノ島盾子", "超高校級の「ファッションista」。絶望とショーの女王",
+                        CharacterSquareCatalog.franchiseTags("ja", "danganronpa", "genki"), promptJaJunko()),
+                "en", CharacterSquareCatalog.localePack("Junko Enoshima", "Ultimate Fashionista—theatrical, chaotic, despair incarnate",
+                        CharacterSquareCatalog.franchiseTags("en", "danganronpa", "genki"), promptEnJunko())
         ));
         map.put("kirigiri_kyoko", Map.of(
-                "zh", pack("雾切响子", "超高校级的侦探，冷静寡言，以推理守护真相",
-                        tags("zh", "onesan"), promptZhKyoko()),
-                "zh-TW", pack("霧切響子", "超高校級的偵探，冷靜寡言，以推理守護真相",
-                        tags("zh-TW", "onesan"), promptZhKyoko()),
-                "ja", pack("霧切響子", "超高校級の「探偵」。寡黙で論理的",
-                        tags("ja", "onesan"), promptJaKyoko()),
-                "en", pack("Kyoko Kirigiri", "Ultimate Detective—cool, sparse words, truth first",
-                        tags("en", "onesan"), promptEnKyoko())
+                "zh", CharacterSquareCatalog.localePack("雾切响子", "超高校级的侦探，冷静寡言，以推理守护真相",
+                        CharacterSquareCatalog.franchiseTags("zh", "danganronpa", "onesan"), promptZhKyoko()),
+                "zh-TW", CharacterSquareCatalog.localePack("霧切響子", "超高校級的偵探，冷靜寡言，以推理守護真相",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "danganronpa", "onesan"), promptZhKyoko()),
+                "ja", CharacterSquareCatalog.localePack("霧切響子", "超高校級の「探偵」。寡黙で論理的",
+                        CharacterSquareCatalog.franchiseTags("ja", "danganronpa", "onesan"), promptJaKyoko()),
+                "en", CharacterSquareCatalog.localePack("Kyoko Kirigiri", "Ultimate Detective—cool, sparse words, truth first",
+                        CharacterSquareCatalog.franchiseTags("en", "danganronpa", "onesan"), promptEnKyoko())
         ));
         map.put("nanami_chiaki", Map.of(
-                "zh", pack("七海千秋", "超高校级的游戏玩家，慵懒温柔，默默陪伴同伴",
-                        tags("zh", "gentle"), promptZhChiaki()),
-                "zh-TW", pack("七海千秋", "超高校級的遊戲玩家，慵懶溫柔，默默陪伴同伴",
-                        tags("zh-TW", "gentle"), promptZhChiaki()),
-                "ja", pack("七海千秋", "超高校級の「ゲーマー」。のんびり優しい",
-                        tags("ja", "gentle"), promptJaChiaki()),
-                "en", pack("Chiaki Nanami", "Ultimate Gamer—sleepy tone, gentle loyalty to friends",
-                        tags("en", "gentle"), promptEnChiaki())
+                "zh", CharacterSquareCatalog.localePack("七海千秋", "超高校级的游戏玩家，慵懒温柔，默默陪伴同伴",
+                        CharacterSquareCatalog.franchiseTags("zh", "danganronpa", "gentle"), promptZhChiaki()),
+                "zh-TW", CharacterSquareCatalog.localePack("七海千秋", "超高校級的遊戲玩家，慵懶溫柔，默默陪伴同伴",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "danganronpa", "gentle"), promptZhChiaki()),
+                "ja", CharacterSquareCatalog.localePack("七海千秋", "超高校級の「ゲーマー」。のんびり優しい",
+                        CharacterSquareCatalog.franchiseTags("ja", "danganronpa", "gentle"), promptJaChiaki()),
+                "en", CharacterSquareCatalog.localePack("Chiaki Nanami", "Ultimate Gamer—sleepy tone, gentle loyalty to friends",
+                        CharacterSquareCatalog.franchiseTags("en", "danganronpa", "gentle"), promptEnChiaki())
         ));
         map.put("fukawa_toko", Map.of(
-                "zh", pack("腐川冬子", "超高校级的文学少女，自卑口吃，另一面危险而执着",
-                        tags("zh", "yandere"), promptZhFukawa()),
-                "zh-TW", pack("腐川冬子", "超高校級的文學少女，自卑口吃，另一面危險而執著",
-                        tags("zh-TW", "yandere"), promptZhFukawa()),
-                "ja", pack("腐川冬子", "超高校級の「文学少女」。内気と別人格の危うさ",
-                        tags("ja", "yandere"), promptJaFukawa()),
-                "en", pack("Toko Fukawa", "Ultimate Writing Prodigy—timid stutter, dangerous other self",
-                        tags("en", "yandere"), promptEnFukawa())
+                "zh", CharacterSquareCatalog.localePack("腐川冬子", "超高校级的文学少女，自卑口吃，另一面危险而执着",
+                        CharacterSquareCatalog.franchiseTags("zh", "danganronpa", "yandere"), promptZhFukawa()),
+                "zh-TW", CharacterSquareCatalog.localePack("腐川冬子", "超高校級的文學少女，自卑口吃，另一面危險而執著",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "danganronpa", "yandere"), promptZhFukawa()),
+                "ja", CharacterSquareCatalog.localePack("腐川冬子", "超高校級の「文学少女」。内気と別人格の危うさ",
+                        CharacterSquareCatalog.franchiseTags("ja", "danganronpa", "yandere"), promptJaFukawa()),
+                "en", CharacterSquareCatalog.localePack("Toko Fukawa", "Ultimate Writing Prodigy—timid stutter, dangerous other self",
+                        CharacterSquareCatalog.franchiseTags("en", "danganronpa", "yandere"), promptEnFukawa())
         ));
         map.put("asahina_aoi", Map.of(
-                "zh", pack("朝比奈葵", "超高校级的游泳选手，身材傲人却爱哭爱笑，温暖直率",
-                        tags("zh", "genki"), promptZhAsahina()),
-                "zh-TW", pack("朝比奈葵", "超高校級的游泳選手，身材傲人卻愛哭愛笑，溫暖直率",
-                        tags("zh-TW", "genki"), promptZhAsahina()),
-                "ja", pack("朝比奈葵", "超高校級の「泳ぎ手」。感情豊かで素直",
-                        tags("ja", "genki"), promptJaAsahina()),
-                "en", pack("Aoi Asahina", "Ultimate Swimmer—emotional, warm, earnest with friends",
-                        tags("en", "genki"), promptEnAsahina())
+                "zh", CharacterSquareCatalog.localePack("朝比奈葵", "超高校级的游泳选手，身材傲人却爱哭爱笑，温暖直率",
+                        CharacterSquareCatalog.franchiseTags("zh", "danganronpa", "genki"), promptZhAsahina()),
+                "zh-TW", CharacterSquareCatalog.localePack("朝比奈葵", "超高校級的游泳選手，身材傲人卻愛哭愛笑，溫暖直率",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "danganronpa", "genki"), promptZhAsahina()),
+                "ja", CharacterSquareCatalog.localePack("朝比奈葵", "超高校級の「泳ぎ手」。感情豊かで素直",
+                        CharacterSquareCatalog.franchiseTags("ja", "danganronpa", "genki"), promptJaAsahina()),
+                "en", CharacterSquareCatalog.localePack("Aoi Asahina", "Ultimate Swimmer—emotional, warm, earnest with friends",
+                        CharacterSquareCatalog.franchiseTags("en", "danganronpa", "genki"), promptEnAsahina())
         ));
     }
 
-    private static List<CharacterSquareCatalog.Tag> tags(String lang, String personalityKey) {
-        return CharacterSquareTags.workAndPersonality(lang, "danganronpa", personalityKey);
-    }
-
-    private static CharacterSquareCatalog.LocalePack pack(
-            String name, String summary, List<CharacterSquareCatalog.Tag> tags, String prompt) {
-        return new CharacterSquareCatalog.LocalePack(name, summary, tags, prompt);
-    }
 
     private static String promptZhJunko() {
         return """

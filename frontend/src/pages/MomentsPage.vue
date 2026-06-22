@@ -502,7 +502,9 @@ function startCommentPolling() {
   stopCommentPolling()
   pollTimer = setInterval(() => {
     for (const post of posts.value) {
-      loadComments(post.id, true)
+      if (expandedComments[post.id]) {
+        loadComments(post.id, true)
+      }
     }
   }, 6000)
 }

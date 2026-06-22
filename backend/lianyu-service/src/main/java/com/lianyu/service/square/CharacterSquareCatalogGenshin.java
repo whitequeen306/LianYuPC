@@ -13,125 +13,117 @@ final class CharacterSquareCatalogGenshin {
 
     static void register(Map<String, Map<String, CharacterSquareCatalog.LocalePack>> map) {
         map.put("nahida", Map.of(
-                "zh", pack("纳西妲", "须弥小吉祥草王，智慧而温柔，称旅行者",
-                        tags("zh", "gentle"), promptZhNahida()),
-                "zh-TW", pack("納西妲", "須彌小吉祥草王，智慧而溫柔，稱旅行者",
-                        tags("zh-TW", "gentle"), promptZhNahida()),
-                "ja", pack("ナヒーダ", "スメールの草神。知恵深く優しい",
-                        tags("ja", "gentle"), promptJaNahida()),
-                "en", pack("Nahida", "Dendro Archon of Sumeru—wise, gentle; calls you Traveler",
-                        tags("en", "gentle"), promptEnNahida())
+                "zh", CharacterSquareCatalog.localePack("纳西妲", "须弥小吉祥草王，智慧而温柔，称旅行者",
+                        CharacterSquareCatalog.franchiseTags("zh", "genshin", "gentle"), promptZhNahida()),
+                "zh-TW", CharacterSquareCatalog.localePack("納西妲", "須彌小吉祥草王，智慧而溫柔，稱旅行者",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "genshin", "gentle"), promptZhNahida()),
+                "ja", CharacterSquareCatalog.localePack("ナヒーダ", "スメールの草神。知恵深く優しい",
+                        CharacterSquareCatalog.franchiseTags("ja", "genshin", "gentle"), promptJaNahida()),
+                "en", CharacterSquareCatalog.localePack("Nahida", "Dendro Archon of Sumeru—wise, gentle; calls you Traveler",
+                        CharacterSquareCatalog.franchiseTags("en", "genshin", "gentle"), promptEnNahida())
         ));
         map.put("kokomi", Map.of(
-                "zh", pack("珊瑚宫心海", "海祇岛现人神巫女，谋略沉稳，称旅行者",
-                        tags("zh", "onesan"), promptZhKokomi()),
-                "zh-TW", pack("珊瑚宮心海", "海祇島現人神巫女，謀略沉穩，稱旅行者",
-                        tags("zh-TW", "onesan"), promptZhKokomi()),
-                "ja", pack("珊瑚宮心海", "海祇島の巫女。冷静で思慮深い",
-                        tags("ja", "onesan"), promptJaKokomi()),
-                "en", pack("Sangonomiya Kokomi", "Priestess of Watatsumi—calm strategist; calls you Traveler",
-                        tags("en", "onesan"), promptEnKokomi())
+                "zh", CharacterSquareCatalog.localePack("珊瑚宫心海", "海祇岛现人神巫女，谋略沉稳，称旅行者",
+                        CharacterSquareCatalog.franchiseTags("zh", "genshin", "onesan"), promptZhKokomi()),
+                "zh-TW", CharacterSquareCatalog.localePack("珊瑚宮心海", "海祇島現人神巫女，謀略沉穩，稱旅行者",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "genshin", "onesan"), promptZhKokomi()),
+                "ja", CharacterSquareCatalog.localePack("珊瑚宮心海", "海祇島の巫女。冷静で思慮深い",
+                        CharacterSquareCatalog.franchiseTags("ja", "genshin", "onesan"), promptJaKokomi()),
+                "en", CharacterSquareCatalog.localePack("Sangonomiya Kokomi", "Priestess of Watatsumi—calm strategist; calls you Traveler",
+                        CharacterSquareCatalog.franchiseTags("en", "genshin", "onesan"), promptEnKokomi())
         ));
         map.put("furina", Map.of(
-                "zh", pack("芙宁娜", "枫丹前水神，戏剧感与少女气并存，称旅行者",
-                        tags("zh", "genki"), promptZhFurina()),
-                "zh-TW", pack("芙寧娜", "楓丹前水神，戲劇感與少女氣並存，稱旅行者",
-                        tags("zh-TW", "genki"), promptZhFurina()),
-                "ja", pack("フリーナ", "フォンテーヌの元水神。演劇的で繊細",
-                        tags("ja", "genki"), promptJaFurina()),
-                "en", pack("Furina", "Former Hydro Archon of Fontaine—dramatic yet fragile; Traveler",
-                        tags("en", "genki"), promptEnFurina())
+                "zh", CharacterSquareCatalog.localePack("芙宁娜", "枫丹前水神，戏剧感与少女气并存，称旅行者",
+                        CharacterSquareCatalog.franchiseTags("zh", "genshin", "genki"), promptZhFurina()),
+                "zh-TW", CharacterSquareCatalog.localePack("芙寧娜", "楓丹前水神，戲劇感與少女氣並存，稱旅行者",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "genshin", "genki"), promptZhFurina()),
+                "ja", CharacterSquareCatalog.localePack("フリーナ", "フォンテーヌの元水神。演劇的で繊細",
+                        CharacterSquareCatalog.franchiseTags("ja", "genshin", "genki"), promptJaFurina()),
+                "en", CharacterSquareCatalog.localePack("Furina", "Former Hydro Archon of Fontaine—dramatic yet fragile; Traveler",
+                        CharacterSquareCatalog.franchiseTags("en", "genshin", "genki"), promptEnFurina())
         ));
         map.put("shenhe", Map.of(
-                "zh", pack("申鹤", "璃月仙人弟子，清冷寡言，称旅行者",
-                        tags("zh", "onesan"), promptZhShenhe()),
-                "zh-TW", pack("申鶴", "璃月仙人弟子，清冷寡言，稱旅行者",
-                        tags("zh-TW", "onesan"), promptZhShenhe()),
-                "ja", pack("申鶴", "璃月の仙家弟子。寡黙で凛とした",
-                        tags("ja", "onesan"), promptJaShenhe()),
-                "en", pack("Shenhe", "Adeptus disciple from Liyue—reserved, sparse words; Traveler",
-                        tags("en", "onesan"), promptEnShenhe())
+                "zh", CharacterSquareCatalog.localePack("申鹤", "璃月仙人弟子，清冷寡言，称旅行者",
+                        CharacterSquareCatalog.franchiseTags("zh", "genshin", "onesan"), promptZhShenhe()),
+                "zh-TW", CharacterSquareCatalog.localePack("申鶴", "璃月仙人弟子，清冷寡言，稱旅行者",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "genshin", "onesan"), promptZhShenhe()),
+                "ja", CharacterSquareCatalog.localePack("申鶴", "璃月の仙家弟子。寡黙で凛とした",
+                        CharacterSquareCatalog.franchiseTags("ja", "genshin", "onesan"), promptJaShenhe()),
+                "en", CharacterSquareCatalog.localePack("Shenhe", "Adeptus disciple from Liyue—reserved, sparse words; Traveler",
+                        CharacterSquareCatalog.franchiseTags("en", "genshin", "onesan"), promptEnShenhe())
         ));
         map.put("hu_tao", Map.of(
-                "zh", pack("胡桃", "往生堂堂主，活泼跳脱，称旅行者",
-                        tags("zh", "genki"), promptZhHuTao()),
-                "zh-TW", pack("胡桃", "往生堂堂主，活潑跳脫，稱旅行者",
-                        tags("zh-TW", "genki"), promptZhHuTao()),
-                "ja", pack("胡桃", "往生堂の堂主。陽気で奇抜",
-                        tags("ja", "genki"), promptJaHuTao()),
-                "en", pack("Hu Tao", "Wangsheng Funeral Parlor director—cheerful, quirky; Traveler",
-                        tags("en", "genki"), promptEnHuTao())
+                "zh", CharacterSquareCatalog.localePack("胡桃", "往生堂堂主，活泼跳脱，称旅行者",
+                        CharacterSquareCatalog.franchiseTags("zh", "genshin", "genki"), promptZhHuTao()),
+                "zh-TW", CharacterSquareCatalog.localePack("胡桃", "往生堂堂主，活潑跳脫，稱旅行者",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "genshin", "genki"), promptZhHuTao()),
+                "ja", CharacterSquareCatalog.localePack("胡桃", "往生堂の堂主。陽気で奇抜",
+                        CharacterSquareCatalog.franchiseTags("ja", "genshin", "genki"), promptJaHuTao()),
+                "en", CharacterSquareCatalog.localePack("Hu Tao", "Wangsheng Funeral Parlor director—cheerful, quirky; Traveler",
+                        CharacterSquareCatalog.franchiseTags("en", "genshin", "genki"), promptEnHuTao())
         ));
         map.put("yae_miko", Map.of(
-                "zh", pack("八重神子", "鸣神大社宫司，狡黠从容，称旅行者",
-                        tags("zh", "onesan"), promptZhYaeMiko()),
-                "zh-TW", pack("八重神子", "鳴神大社宮司，狡黠從容，稱旅行者",
-                        tags("zh-TW", "onesan"), promptZhYaeMiko()),
-                "ja", pack("八重神子", "鳴神大社の宮司。茶目で余裕",
-                        tags("ja", "onesan"), promptJaYaeMiko()),
-                "en", pack("Yae Miko", "Guuji of the Grand Narukami Shrine—teasing, poised; Traveler",
-                        tags("en", "onesan"), promptEnYaeMiko())
+                "zh", CharacterSquareCatalog.localePack("八重神子", "鸣神大社宫司，狡黠从容，称旅行者",
+                        CharacterSquareCatalog.franchiseTags("zh", "genshin", "onesan"), promptZhYaeMiko()),
+                "zh-TW", CharacterSquareCatalog.localePack("八重神子", "鳴神大社宮司，狡黠從容，稱旅行者",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "genshin", "onesan"), promptZhYaeMiko()),
+                "ja", CharacterSquareCatalog.localePack("八重神子", "鳴神大社の宮司。茶目で余裕",
+                        CharacterSquareCatalog.franchiseTags("ja", "genshin", "onesan"), promptJaYaeMiko()),
+                "en", CharacterSquareCatalog.localePack("Yae Miko", "Guuji of the Grand Narukami Shrine—teasing, poised; Traveler",
+                        CharacterSquareCatalog.franchiseTags("en", "genshin", "onesan"), promptEnYaeMiko())
         ));
         map.put("nilou", Map.of(
-                "zh", pack("妮露", "祖拜尔剧场舞者，温柔真挚，称旅行者",
-                        tags("zh", "gentle"), promptZhNilou()),
-                "zh-TW", pack("妮露", "祖拜爾劇場舞者，溫柔真摯，稱旅行者",
-                        tags("zh-TW", "gentle"), promptZhNilou()),
-                "ja", pack("ニィロウ", "ズバイルシアターの舞者。温かく素直",
-                        tags("ja", "gentle"), promptJaNilou()),
-                "en", pack("Nilou", "Dancer of Zubayr Theater—warm, sincere; calls you Traveler",
-                        tags("en", "gentle"), promptEnNilou())
+                "zh", CharacterSquareCatalog.localePack("妮露", "祖拜尔剧场舞者，温柔真挚，称旅行者",
+                        CharacterSquareCatalog.franchiseTags("zh", "genshin", "gentle"), promptZhNilou()),
+                "zh-TW", CharacterSquareCatalog.localePack("妮露", "祖拜爾劇場舞者，溫柔真摯，稱旅行者",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "genshin", "gentle"), promptZhNilou()),
+                "ja", CharacterSquareCatalog.localePack("ニィロウ", "ズバイルシアターの舞者。温かく素直",
+                        CharacterSquareCatalog.franchiseTags("ja", "genshin", "gentle"), promptJaNilou()),
+                "en", CharacterSquareCatalog.localePack("Nilou", "Dancer of Zubayr Theater—warm, sincere; calls you Traveler",
+                        CharacterSquareCatalog.franchiseTags("en", "genshin", "gentle"), promptEnNilou())
         ));
         map.put("klee", Map.of(
-                "zh", pack("可莉", "西风骑士火花骑士，天真热情，称旅行者",
-                        tags("zh", "genki"), promptZhKlee()),
-                "zh-TW", pack("可莉", "西風騎士火花騎士，天真熱情，稱旅行者",
-                        tags("zh-TW", "genki"), promptZhKlee()),
-                "ja", pack("クレー", "西風騎士団・火花騎士。元気で無邪気",
-                        tags("ja", "genki"), promptJaKlee()),
-                "en", pack("Klee", "Spark Knight of Mondstadt—innocent, energetic; Traveler",
-                        tags("en", "genki"), promptEnKlee())
+                "zh", CharacterSquareCatalog.localePack("可莉", "西风骑士火花骑士，天真热情，称旅行者",
+                        CharacterSquareCatalog.franchiseTags("zh", "genshin", "genki"), promptZhKlee()),
+                "zh-TW", CharacterSquareCatalog.localePack("可莉", "西風騎士火花騎士，天真熱情，稱旅行者",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "genshin", "genki"), promptZhKlee()),
+                "ja", CharacterSquareCatalog.localePack("クレー", "西風騎士団・火花騎士。元気で無邪気",
+                        CharacterSquareCatalog.franchiseTags("ja", "genshin", "genki"), promptJaKlee()),
+                "en", CharacterSquareCatalog.localePack("Klee", "Spark Knight of Mondstadt—innocent, energetic; Traveler",
+                        CharacterSquareCatalog.franchiseTags("en", "genshin", "genki"), promptEnKlee())
         ));
         map.put("raiden", Map.of(
-                "zh", pack("雷电将军", "稻妻雷神，威严克制，称旅行者",
-                        tags("zh", "onesan"), promptZhRaiden()),
-                "zh-TW", pack("雷電將軍", "稻妻雷神，威嚴克制，稱旅行者",
-                        tags("zh-TW", "onesan"), promptZhRaiden()),
-                "ja", pack("雷電将軍", "稲妻の雷神。威厳と静謐",
-                        tags("ja", "onesan"), promptJaRaiden()),
-                "en", pack("Raiden Shogun", "Electro Archon of Inazuma—solemn, measured; Traveler",
-                        tags("en", "onesan"), promptEnRaiden())
+                "zh", CharacterSquareCatalog.localePack("雷电将军", "稻妻雷神，威严克制，称旅行者",
+                        CharacterSquareCatalog.franchiseTags("zh", "genshin", "onesan"), promptZhRaiden()),
+                "zh-TW", CharacterSquareCatalog.localePack("雷電將軍", "稻妻雷神，威嚴克制，稱旅行者",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "genshin", "onesan"), promptZhRaiden()),
+                "ja", CharacterSquareCatalog.localePack("雷電将軍", "稲妻の雷神。威厳と静謐",
+                        CharacterSquareCatalog.franchiseTags("ja", "genshin", "onesan"), promptJaRaiden()),
+                "en", CharacterSquareCatalog.localePack("Raiden Shogun", "Electro Archon of Inazuma—solemn, measured; Traveler",
+                        CharacterSquareCatalog.franchiseTags("en", "genshin", "onesan"), promptEnRaiden())
         ));
         map.put("mavuika", Map.of(
-                "zh", pack("玛薇卡", "纳塔火神，领袖气场，为纳塔而战，称旅行者",
-                        tags("zh", "onesan"), promptZhMavuika()),
-                "zh-TW", pack("瑪薇卡", "納塔火神，領袖氣場，為納塔而戰，稱旅行者",
-                        tags("zh-TW", "onesan"), promptZhMavuika()),
-                "ja", pack("マーヴィカ", "ナタの炎神。情熱と覚悟で民を導く",
-                        tags("ja", "onesan"), promptJaMavuika()),
-                "en", pack("Mavuika", "Pyro Archon of Natlan—fiery leader who fights for her people; Traveler",
-                        tags("en", "onesan"), promptEnMavuika())
+                "zh", CharacterSquareCatalog.localePack("玛薇卡", "纳塔火神，领袖气场，为纳塔而战，称旅行者",
+                        CharacterSquareCatalog.franchiseTags("zh", "genshin", "onesan"), promptZhMavuika()),
+                "zh-TW", CharacterSquareCatalog.localePack("瑪薇卡", "納塔火神，領袖氣場，為納塔而戰，稱旅行者",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "genshin", "onesan"), promptZhMavuika()),
+                "ja", CharacterSquareCatalog.localePack("マーヴィカ", "ナタの炎神。情熱と覚悟で民を導く",
+                        CharacterSquareCatalog.franchiseTags("ja", "genshin", "onesan"), promptJaMavuika()),
+                "en", CharacterSquareCatalog.localePack("Mavuika", "Pyro Archon of Natlan—fiery leader who fights for her people; Traveler",
+                        CharacterSquareCatalog.franchiseTags("en", "genshin", "onesan"), promptEnMavuika())
         ));
         map.put("zhongli", Map.of(
-                "zh", pack("钟离", "璃月往生堂客卿，从容博学，契约与历史挂在嘴边",
-                        tags("zh", "onesan"), promptZhZhongli()),
-                "zh-TW", pack("鍾離", "璃月往生堂客卿，從容博學，契約與歷史掛在嘴邊",
-                        tags("zh-TW", "onesan"), promptZhZhongli()),
-                "ja", pack("鍾離", "璃月・往生堂の客卿。落ち着いた博識の長者",
-                        tags("ja", "onesan"), promptJaZhongli()),
-                "en", pack("Zhongli", "Wangsheng Funeral Parlor consultant—calm, erudite keeper of contracts",
-                        tags("en", "onesan"), promptEnZhongli())
+                "zh", CharacterSquareCatalog.localePack("钟离", "璃月往生堂客卿，从容博学，契约与历史挂在嘴边",
+                        CharacterSquareCatalog.franchiseTags("zh", "genshin", "onesan"), promptZhZhongli()),
+                "zh-TW", CharacterSquareCatalog.localePack("鍾離", "璃月往生堂客卿，從容博學，契約與歷史掛在嘴邊",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "genshin", "onesan"), promptZhZhongli()),
+                "ja", CharacterSquareCatalog.localePack("鍾離", "璃月・往生堂の客卿。落ち着いた博識の長者",
+                        CharacterSquareCatalog.franchiseTags("ja", "genshin", "onesan"), promptJaZhongli()),
+                "en", CharacterSquareCatalog.localePack("Zhongli", "Wangsheng Funeral Parlor consultant—calm, erudite keeper of contracts",
+                        CharacterSquareCatalog.franchiseTags("en", "genshin", "onesan"), promptEnZhongli())
         ));
     }
 
-    private static List<CharacterSquareCatalog.Tag> tags(String lang, String personalityKey) {
-        return CharacterSquareTags.workAndPersonality(lang, "genshin", personalityKey);
-    }
-
-    private static CharacterSquareCatalog.LocalePack pack(
-            String name, String summary, List<CharacterSquareCatalog.Tag> tags, String prompt) {
-        return new CharacterSquareCatalog.LocalePack(name, summary, tags, prompt);
-    }
 
     private static String promptZhNahida() {
         return """

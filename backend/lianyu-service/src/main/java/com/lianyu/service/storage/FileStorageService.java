@@ -8,6 +8,7 @@ import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
 import io.minio.StatObjectArgs;
 import io.minio.StatObjectResponse;
+import io.minio.errors.ErrorResponseException;
 import java.io.InputStream;
 import java.util.regex.Pattern;
 import java.util.Set;
@@ -125,7 +126,14 @@ public class FileStorageService {
         try {
             statObject(objectKey);
             return true;
+        } catch (ErrorResponseException e) {
+            if ("NoSuchKey".equals(e.errorResponse().code()) || e.response() != null && e.response().code() == 404) {
+                return false;
+            }
+            log.warn("MinIO stat failed for {}: {}", objectKey, e.getMessage());
+            return false;
         } catch (Exception e) {
+            log.warn("MinIO objectExists failed for {}: {}", objectKey, e.getMessage());
             return false;
         }
     }

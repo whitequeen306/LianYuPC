@@ -13,95 +13,87 @@ final class CharacterSquareCatalogBlueArchive {
 
     static void register(Map<String, Map<String, CharacterSquareCatalog.LocalePack>> map) {
         map.put("aru", Map.of(
-                "zh", pack("陆八魔阿露", "格黑娜「便利屋68」社长，嘴硬逞强常翻车，称老师",
-                        tags("zh", "tsundere"), promptZhAru()),
-                "zh-TW", pack("陸八魔阿露", "格黑娜「便利屋68」社長，嘴硬逞強常翻車，稱老師",
-                        tags("zh-TW", "tsundere"), promptZhAru()),
-                "ja", pack("陸八魔アル", "ゲヘナ・便利屋68の社長。強がりでドジっ子",
-                        tags("ja", "tsundere"), promptJaAru()),
-                "en", pack("Aru Rikuhachima", "Gehenna Problem Solver 68 boss—brash bluffing, panic-prone; Sensei",
-                        tags("en", "tsundere"), promptEnAru())
+                "zh", CharacterSquareCatalog.localePack("陆八魔阿露", "格黑娜「便利屋68」社长，嘴硬逞强常翻车，称老师",
+                        CharacterSquareCatalog.franchiseTags("zh", "bluearchive", "tsundere"), promptZhAru()),
+                "zh-TW", CharacterSquareCatalog.localePack("陸八魔阿露", "格黑娜「便利屋68」社長，嘴硬逞強常翻車，稱老師",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "bluearchive", "tsundere"), promptZhAru()),
+                "ja", CharacterSquareCatalog.localePack("陸八魔アル", "ゲヘナ・便利屋68の社長。強がりでドジっ子",
+                        CharacterSquareCatalog.franchiseTags("ja", "bluearchive", "tsundere"), promptJaAru()),
+                "en", CharacterSquareCatalog.localePack("Aru Rikuhachima", "Gehenna Problem Solver 68 boss—brash bluffing, panic-prone; Sensei",
+                        CharacterSquareCatalog.franchiseTags("en", "bluearchive", "tsundere"), promptEnAru())
         ));
         map.put("hoshino", Map.of(
-                "zh", pack("小鸟游星野", "阿拜多斯会长，慵懒可靠的大姐姐，爱午睡与甜食，称老师",
-                        tags("zh", "onesan"), promptZhHoshino()),
-                "zh-TW", pack("小鳥遊星野", "阿拜多斯會長，慵懶可靠的大姐姐，愛午睡與甜食，稱老師",
-                        tags("zh-TW", "onesan"), promptZhHoshino()),
-                "ja", pack("小鳥遊ホシノ", "アビドス・生徒会長。のんびり頼れるお姉さん",
-                        tags("ja", "onesan"), promptJaHoshino()),
-                "en", pack("Hoshino Takanashi", "Abydos president—lazy, dependable onesan aura; calls you Sensei",
-                        tags("en", "onesan"), promptEnHoshino())
+                "zh", CharacterSquareCatalog.localePack("小鸟游星野", "阿拜多斯会长，慵懒可靠的大姐姐，爱午睡与甜食，称老师",
+                        CharacterSquareCatalog.franchiseTags("zh", "bluearchive", "onesan"), promptZhHoshino()),
+                "zh-TW", CharacterSquareCatalog.localePack("小鳥遊星野", "阿拜多斯會長，慵懶可靠的大姐姐，愛午睡與甜食，稱老師",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "bluearchive", "onesan"), promptZhHoshino()),
+                "ja", CharacterSquareCatalog.localePack("小鳥遊ホシノ", "アビドス・生徒会長。のんびり頼れるお姉さん",
+                        CharacterSquareCatalog.franchiseTags("ja", "bluearchive", "onesan"), promptJaHoshino()),
+                "en", CharacterSquareCatalog.localePack("Hoshino Takanashi", "Abydos president—lazy, dependable onesan aura; calls you Sensei",
+                        CharacterSquareCatalog.franchiseTags("en", "bluearchive", "onesan"), promptEnHoshino())
         ));
         map.put("hina", Map.of(
-                "zh", pack("空崎日奈", "格黑娜风纪委员长，严谨寡言，工作狂，称老师",
-                        tags("zh", "onesan"), promptZhHina()),
-                "zh-TW", pack("空崎日奈", "格黑娜風紀委員長，嚴謹寡言，工作狂，稱老師",
-                        tags("zh-TW", "onesan"), promptZhHina()),
-                "ja", pack("空崎ヒナ", "ゲヘナ・風紀委員長。厳格で寡黙、仕事熱心",
-                        tags("ja", "onesan"), promptJaHina()),
-                "en", pack("Hina Sorasaki", "Gehenna Disciplinary Chair—strict, terse workaholic; Sensei",
-                        tags("en", "onesan"), promptEnHina())
+                "zh", CharacterSquareCatalog.localePack("空崎日奈", "格黑娜风纪委员长，严谨寡言，工作狂，称老师",
+                        CharacterSquareCatalog.franchiseTags("zh", "bluearchive", "onesan"), promptZhHina()),
+                "zh-TW", CharacterSquareCatalog.localePack("空崎日奈", "格黑娜風紀委員長，嚴謹寡言，工作狂，稱老師",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "bluearchive", "onesan"), promptZhHina()),
+                "ja", CharacterSquareCatalog.localePack("空崎ヒナ", "ゲヘナ・風紀委員長。厳格で寡黙、仕事熱心",
+                        CharacterSquareCatalog.franchiseTags("ja", "bluearchive", "onesan"), promptJaHina()),
+                "en", CharacterSquareCatalog.localePack("Hina Sorasaki", "Gehenna Disciplinary Chair—strict, terse workaholic; Sensei",
+                        CharacterSquareCatalog.franchiseTags("en", "bluearchive", "onesan"), promptEnHina())
         ));
         map.put("shiroko", Map.of(
-                "zh", pack("砂狼白子", "阿拜多斯对策委员会，寡言冷静，爱骑行，称老师",
-                        tags("zh", "gentle"), promptZhShiroko()),
-                "zh-TW", pack("砂狼白子", "阿拜多斯對策委員會，寡言冷靜，愛騎行，稱老師",
-                        tags("zh-TW", "gentle"), promptZhShiroko()),
-                "ja", pack("砂狼シロコ", "アビドス・対策委員会。寡黙で冷静、自転車好き",
-                        tags("ja", "gentle"), promptJaShiroko()),
-                "en", pack("Shiroko Sunaookami", "Abydos committee—quiet, calm, loyal through action; Sensei",
-                        tags("en", "gentle"), promptEnShiroko())
+                "zh", CharacterSquareCatalog.localePack("砂狼白子", "阿拜多斯对策委员会，寡言冷静，爱骑行，称老师",
+                        CharacterSquareCatalog.franchiseTags("zh", "bluearchive", "gentle"), promptZhShiroko()),
+                "zh-TW", CharacterSquareCatalog.localePack("砂狼白子", "阿拜多斯對策委員會，寡言冷靜，愛騎行，稱老師",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "bluearchive", "gentle"), promptZhShiroko()),
+                "ja", CharacterSquareCatalog.localePack("砂狼シロコ", "アビドス・対策委員会。寡黙で冷静、自転車好き",
+                        CharacterSquareCatalog.franchiseTags("ja", "bluearchive", "gentle"), promptJaShiroko()),
+                "en", CharacterSquareCatalog.localePack("Shiroko Sunaookami", "Abydos committee—quiet, calm, loyal through action; Sensei",
+                        CharacterSquareCatalog.franchiseTags("en", "bluearchive", "gentle"), promptEnShiroko())
         ));
         map.put("hikari", Map.of(
-                "zh", pack("橘光", "格黑娜「美食研究会」成员，与橘望搭档，元气爱闹，称老师",
-                        tags("zh", "genki"), promptZhHikari()),
-                "zh-TW", pack("橘光", "格黑娜「美食研究會」成員，與橘望搭檔，元氣愛鬧，稱老師",
-                        tags("zh-TW", "genki"), promptZhHikari()),
-                "ja", pack("橘ヒカリ", "ゲヘナ・グルメ研究会。ノゾミと双子のように連携",
-                        tags("ja", "genki"), promptJaHikari()),
-                "en", pack("Hikari Tachibana", "Gehenna Gourmet Research—energetic twin with Nozomi; Sensei",
-                        tags("en", "genki"), promptEnHikari())
+                "zh", CharacterSquareCatalog.localePack("橘光", "格黑娜「美食研究会」成员，与橘望搭档，元气爱闹，称老师",
+                        CharacterSquareCatalog.franchiseTags("zh", "bluearchive", "genki"), promptZhHikari()),
+                "zh-TW", CharacterSquareCatalog.localePack("橘光", "格黑娜「美食研究會」成員，與橘望搭檔，元氣愛鬧，稱老師",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "bluearchive", "genki"), promptZhHikari()),
+                "ja", CharacterSquareCatalog.localePack("橘ヒカリ", "ゲヘナ・グルメ研究会。ノゾミと双子のように連携",
+                        CharacterSquareCatalog.franchiseTags("ja", "bluearchive", "genki"), promptJaHikari()),
+                "en", CharacterSquareCatalog.localePack("Hikari Tachibana", "Gehenna Gourmet Research—energetic twin with Nozomi; Sensei",
+                        CharacterSquareCatalog.franchiseTags("en", "bluearchive", "genki"), promptEnHikari())
         ));
         map.put("nozomi", Map.of(
-                "zh", pack("橘望", "格黑娜「美食研究会」成员，与橘光搭档，活泼爱恶作剧，称老师",
-                        tags("zh", "genki"), promptZhNozomi()),
-                "zh-TW", pack("橘望", "格黑娜「美食研究會」成員，與橘光搭檔，活潑愛惡作劇，稱老師",
-                        tags("zh-TW", "genki"), promptZhNozomi()),
-                "ja", pack("橘ノゾミ", "ゲヘナ・グルメ研究会。ヒカリと息ぴったり",
-                        tags("ja", "genki"), promptJaNozomi()),
-                "en", pack("Nozomi Tachibana", "Gehenna Gourmet Research—cheerful prankster with Hikari; Sensei",
-                        tags("en", "genki"), promptEnNozomi())
+                "zh", CharacterSquareCatalog.localePack("橘望", "格黑娜「美食研究会」成员，与橘光搭档，活泼爱恶作剧，称老师",
+                        CharacterSquareCatalog.franchiseTags("zh", "bluearchive", "genki"), promptZhNozomi()),
+                "zh-TW", CharacterSquareCatalog.localePack("橘望", "格黑娜「美食研究會」成員，與橘光搭檔，活潑愛惡作劇，稱老師",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "bluearchive", "genki"), promptZhNozomi()),
+                "ja", CharacterSquareCatalog.localePack("橘ノゾミ", "ゲヘナ・グルメ研究会。ヒカリと息ぴったり",
+                        CharacterSquareCatalog.franchiseTags("ja", "bluearchive", "genki"), promptJaNozomi()),
+                "en", CharacterSquareCatalog.localePack("Nozomi Tachibana", "Gehenna Gourmet Research—cheerful prankster with Hikari; Sensei",
+                        CharacterSquareCatalog.franchiseTags("en", "bluearchive", "genki"), promptEnNozomi())
         ));
         map.put("mari", Map.of(
-                "zh", pack("伊落玛丽", "三一学园「救护骑士团」，温柔虔诚，称老师",
-                        tags("zh", "gentle"), promptZhMari()),
-                "zh-TW", pack("伊落瑪麗", "三一學園「救護騎士團」，溫柔虔誠，稱老師",
-                        tags("zh-TW", "gentle"), promptZhMari()),
-                "ja", pack("伊落マリー", "トリニティ・救護騎士団。優しく敬虔",
-                        tags("ja", "gentle"), promptJaMari()),
-                "en", pack("Mari Iochi", "Trinity Remedial Knights—gentle, devout; Sensei",
-                        tags("en", "gentle"), promptEnMari())
+                "zh", CharacterSquareCatalog.localePack("伊落玛丽", "三一学园「救护骑士团」，温柔虔诚，称老师",
+                        CharacterSquareCatalog.franchiseTags("zh", "bluearchive", "gentle"), promptZhMari()),
+                "zh-TW", CharacterSquareCatalog.localePack("伊落瑪麗", "三一學園「救護騎士團」，溫柔虔誠，稱老師",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "bluearchive", "gentle"), promptZhMari()),
+                "ja", CharacterSquareCatalog.localePack("伊落マリー", "トリニティ・救護騎士団。優しく敬虔",
+                        CharacterSquareCatalog.franchiseTags("ja", "bluearchive", "gentle"), promptJaMari()),
+                "en", CharacterSquareCatalog.localePack("Mari Iochi", "Trinity Remedial Knights—gentle, devout; Sensei",
+                        CharacterSquareCatalog.franchiseTags("en", "bluearchive", "gentle"), promptEnMari())
         ));
         map.put("mutsuki", Map.of(
-                "zh", pack("浅黄睦月", "格黑娜「便利屋68」成员，爱恶作剧与爆炸物，称老师",
-                        tags("zh", "genki"), promptZhMutsuki()),
-                "zh-TW", pack("淺黃睦月", "格黑娜「便利屋68」成員，愛惡作劇與爆炸物，稱老師",
-                        tags("zh-TW", "genki"), promptZhMutsuki()),
-                "ja", pack("浅黄ムツキ", "ゲヘナ・便利屋68。いたずら好き",
-                        tags("ja", "genki"), promptJaMutsuki()),
-                "en", pack("Mutsuki Asagi", "Gehenna Problem Solver 68—mischievous, explosive flair; Sensei",
-                        tags("en", "genki"), promptEnMutsuki())
+                "zh", CharacterSquareCatalog.localePack("浅黄睦月", "格黑娜「便利屋68」成员，爱恶作剧与爆炸物，称老师",
+                        CharacterSquareCatalog.franchiseTags("zh", "bluearchive", "genki"), promptZhMutsuki()),
+                "zh-TW", CharacterSquareCatalog.localePack("淺黃睦月", "格黑娜「便利屋68」成員，愛惡作劇與爆炸物，稱老師",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "bluearchive", "genki"), promptZhMutsuki()),
+                "ja", CharacterSquareCatalog.localePack("浅黄ムツキ", "ゲヘナ・便利屋68。いたずら好き",
+                        CharacterSquareCatalog.franchiseTags("ja", "bluearchive", "genki"), promptJaMutsuki()),
+                "en", CharacterSquareCatalog.localePack("Mutsuki Asagi", "Gehenna Problem Solver 68—mischievous, explosive flair; Sensei",
+                        CharacterSquareCatalog.franchiseTags("en", "bluearchive", "genki"), promptEnMutsuki())
         ));
     }
 
-    private static List<CharacterSquareCatalog.Tag> tags(String lang, String personalityKey) {
-        return CharacterSquareTags.workAndPersonality(lang, "bluearchive", personalityKey);
-    }
-
-    private static CharacterSquareCatalog.LocalePack pack(
-            String name, String summary, List<CharacterSquareCatalog.Tag> tags, String prompt) {
-        return new CharacterSquareCatalog.LocalePack(name, summary, tags, prompt);
-    }
 
     private static String promptZhAru() {
         return """

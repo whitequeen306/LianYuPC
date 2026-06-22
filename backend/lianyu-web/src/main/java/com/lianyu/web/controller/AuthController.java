@@ -23,6 +23,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.lianyu.web.util.ClientIpResolver;
+
 import java.util.Map;
 
 /**
@@ -41,6 +43,7 @@ public class AuthController {
     private final AuthService authService;
     private final CaptchaService captchaService;
     private final AuthRateLimiter authRateLimiter;
+    private final ClientIpResolver clientIpResolver;
 
     @Operation(summary = "获取验证码")
     @GetMapping("/captcha")
@@ -48,16 +51,15 @@ public class AuthController {
         CaptchaService.CaptchaChallenge challenge = captchaService.generate();
         return Result.ok(Map.of(
                 "captchaId", challenge.id(),
-                "imageBase64", challenge.imageBase64(),
-                "expression", challenge.expression()
+                "imageBase64", challenge.imageBase64()
         ));
     }
 
     @Operation(summary = "注册")
     @PostMapping("/register")
     public Result<LoginResponse> register(@Valid @RequestBody RegisterRequest request, HttpServletRequest httpRequest) {
-        authRateLimiter.checkLoginOrRegister(resolveClientIp(httpRequest), request.getUsername());
-        String clientIp = resolveClientIp(httpRequest);
+        authRateLimiter.checkLoginOrRegister(clientIpResolver.resolve(httpRequest), request.getUsername());
+        String clientIp = clientIpResolver.resolve(httpRequest);
         if (clientIp != null && !clientIp.isBlank()) {
             authRateLimiter.checkRateLimit("rate:register:ip:", clientIp.trim(),
                     3, Duration.ofDays(1), "该 IP 今日注册次数已达上限");
@@ -69,7 +71,7 @@ public class AuthController {
     @Operation(summary = "登录")
     @PostMapping("/login")
     public Result<LoginResponse> login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
-        authRateLimiter.checkLoginOrRegister(resolveClientIp(httpRequest), request.getUsername());
+        authRateLimiter.checkLoginOrRegister(clientIpResolver.resolve(httpRequest), request.getUsername());
         verifyCaptcha(request.getCaptcha());
         return Result.ok(authService.login(request));
     }
@@ -123,15 +125,4 @@ public class AuthController {
         }
     }
 
-    private static String resolveClientIp(HttpServletRequest request) {
-        if (request == null) {
-            return null;
-        }
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            int comma = forwarded.indexOf(',');
-            return (comma > 0 ? forwarded.substring(0, comma) : forwarded).trim();
-        }
-        return request.getRemoteAddr();
-    }
 }

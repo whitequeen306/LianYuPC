@@ -13,85 +13,77 @@ final class CharacterSquareCatalogReZero {
 
     static void register(Map<String, Map<String, CharacterSquareCatalog.LocalePack>> map) {
         map.put("emilia", Map.of(
-                "zh", pack("爱蜜莉雅", "半精灵银发少女，温柔善良，罗兹瓦尔宅邸的候选王",
-                        tags("zh", "gentle"), promptZhEmilia()),
-                "zh-TW", pack("愛蜜莉雅", "半精靈銀髮少女，溫柔善良，羅茲瓦爾宅邸的候選王",
-                        tags("zh-TW", "gentle"), promptZhEmilia()),
-                "ja", pack("エミリア", "銀髪の半エルフ。優しく真っ直ぐな候補者",
-                        tags("ja", "gentle"), promptJaEmilia()),
-                "en", pack("Emilia", "Silver-haired half-elf—kind, earnest candidate of the mansion",
-                        tags("en", "gentle"), promptEnEmilia())
+                "zh", CharacterSquareCatalog.localePack("爱蜜莉雅", "半精灵银发少女，温柔善良，罗兹瓦尔宅邸的候选王",
+                        CharacterSquareCatalog.franchiseTags("zh", "rezero", "gentle"), promptZhEmilia()),
+                "zh-TW", CharacterSquareCatalog.localePack("愛蜜莉雅", "半精靈銀髮少女，溫柔善良，羅茲瓦爾宅邸的候選王",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "rezero", "gentle"), promptZhEmilia()),
+                "ja", CharacterSquareCatalog.localePack("エミリア", "銀髪の半エルフ。優しく真っ直ぐな候補者",
+                        CharacterSquareCatalog.franchiseTags("ja", "rezero", "gentle"), promptJaEmilia()),
+                "en", CharacterSquareCatalog.localePack("Emilia", "Silver-haired half-elf—kind, earnest candidate of the mansion",
+                        CharacterSquareCatalog.franchiseTags("en", "rezero", "gentle"), promptEnEmilia())
         ));
         map.put("rem", Map.of(
-                "zh", pack("蕾姆", "罗兹瓦尔宅邸女仆，温柔忠诚，对认定之人全力以赴",
-                        tags("zh", "gentle"), promptZhRem()),
-                "zh-TW", pack("蕾姆", "羅茲瓦爾宅邸女僕，溫柔忠誠，對認定之人全力以赴",
-                        tags("zh-TW", "gentle"), promptZhRem()),
-                "ja", pack("レム", "ロズワール邸のメイド。献身的で優しい",
-                        tags("ja", "gentle"), promptJaRem()),
-                "en", pack("Rem", "Maid of Roswaal Mansion—devoted, gentle to those she trusts",
-                        tags("en", "gentle"), promptEnRem())
+                "zh", CharacterSquareCatalog.localePack("蕾姆", "罗兹瓦尔宅邸女仆，温柔忠诚，对认定之人全力以赴",
+                        CharacterSquareCatalog.franchiseTags("zh", "rezero", "gentle"), promptZhRem()),
+                "zh-TW", CharacterSquareCatalog.localePack("蕾姆", "羅茲瓦爾宅邸女僕，溫柔忠誠，對認定之人全力以赴",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "rezero", "gentle"), promptZhRem()),
+                "ja", CharacterSquareCatalog.localePack("レム", "ロズワール邸のメイド。献身的で優しい",
+                        CharacterSquareCatalog.franchiseTags("ja", "rezero", "gentle"), promptJaRem()),
+                "en", CharacterSquareCatalog.localePack("Rem", "Maid of Roswaal Mansion—devoted, gentle to those she trusts",
+                        CharacterSquareCatalog.franchiseTags("en", "rezero", "gentle"), promptEnRem())
         ));
         map.put("beatrice", Map.of(
-                "zh", pack("碧翠丝", "禁书库守护者，自称贝蒂，经典傲娇幼女",
-                        tags("zh", "tsundere"), promptZhBeatrice()),
-                "zh-TW", pack("碧翠絲", "禁書庫守護者，自稱貝蒂，經典傲嬌幼女",
-                        tags("zh-TW", "tsundere"), promptZhBeatrice()),
-                "ja", pack("ベアトリス", "禁書庫の番人。ツンデレで「ベアトリスはベアトリスよ」",
-                        tags("ja", "tsundere"), promptJaBeatrice()),
-                "en", pack("Beatrice", "Guardian of the forbidden library—proud, tsundere loli",
-                        tags("en", "tsundere"), promptEnBeatrice())
+                "zh", CharacterSquareCatalog.localePack("碧翠丝", "禁书库守护者，自称贝蒂，经典傲娇幼女",
+                        CharacterSquareCatalog.franchiseTags("zh", "rezero", "tsundere"), promptZhBeatrice()),
+                "zh-TW", CharacterSquareCatalog.localePack("碧翠絲", "禁書庫守護者，自稱貝蒂，經典傲嬌幼女",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "rezero", "tsundere"), promptZhBeatrice()),
+                "ja", CharacterSquareCatalog.localePack("ベアトリス", "禁書庫の番人。ツンデレで「ベアトリスはベアトリスよ」",
+                        CharacterSquareCatalog.franchiseTags("ja", "rezero", "tsundere"), promptJaBeatrice()),
+                "en", CharacterSquareCatalog.localePack("Beatrice", "Guardian of the forbidden library—proud, tsundere loli",
+                        CharacterSquareCatalog.franchiseTags("en", "rezero", "tsundere"), promptEnBeatrice())
         ));
         map.put("ram", Map.of(
-                "zh", pack("拉姆", "罗兹瓦尔宅邸女仆姐姐，毒舌傲娇，护妹心切",
-                        tags("zh", "tsundere"), promptZhRam()),
-                "zh-TW", pack("拉姆", "羅茲瓦爾宅邸女僕姐姐，毒舌傲嬌，護妹心切",
-                        tags("zh-TW", "tsundere"), promptZhRam()),
-                "ja", pack("ラム", "ロズワール邸の姉メイド。毒舌ツンデレ、妹思い",
-                        tags("ja", "tsundere"), promptJaRam()),
-                "en", pack("Ram", "Older maid twin—sharp-tongued tsundere, fiercely protective of Rem",
-                        tags("en", "tsundere"), promptEnRam())
+                "zh", CharacterSquareCatalog.localePack("拉姆", "罗兹瓦尔宅邸女仆姐姐，毒舌傲娇，护妹心切",
+                        CharacterSquareCatalog.franchiseTags("zh", "rezero", "tsundere"), promptZhRam()),
+                "zh-TW", CharacterSquareCatalog.localePack("拉姆", "羅茲瓦爾宅邸女僕姐姐，毒舌傲嬌，護妹心切",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "rezero", "tsundere"), promptZhRam()),
+                "ja", CharacterSquareCatalog.localePack("ラム", "ロズワール邸の姉メイド。毒舌ツンデレ、妹思い",
+                        CharacterSquareCatalog.franchiseTags("ja", "rezero", "tsundere"), promptJaRam()),
+                "en", CharacterSquareCatalog.localePack("Ram", "Older maid twin—sharp-tongued tsundere, fiercely protective of Rem",
+                        CharacterSquareCatalog.franchiseTags("en", "rezero", "tsundere"), promptEnRam())
         ));
         map.put("minerva", Map.of(
-                "zh", pack("密涅瓦", "愤怒大魔女，外柔内烈，以治愈与拳守护伤者",
-                        tags("zh", "onesan"), promptZhMinerva()),
-                "zh-TW", pack("密涅瓦", "憤怒大魔女，外柔內烈，以治癒與拳守護傷者",
-                        tags("zh-TW", "onesan"), promptZhMinerva()),
-                "ja", pack("ミネルヴァ", "憤怒の大魔女。治癒への想いを拳で示す",
-                        tags("ja", "onesan"), promptJaMinerva()),
-                "en", pack("Minerva", "Witch of Wrath—fierce healer, punch-first passion, not bubbly genki",
-                        tags("en", "onesan"), promptEnMinerva())
+                "zh", CharacterSquareCatalog.localePack("密涅瓦", "愤怒大魔女，外柔内烈，以治愈与拳守护伤者",
+                        CharacterSquareCatalog.franchiseTags("zh", "rezero", "onesan"), promptZhMinerva()),
+                "zh-TW", CharacterSquareCatalog.localePack("密涅瓦", "憤怒大魔女，外柔內烈，以治癒與拳守護傷者",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "rezero", "onesan"), promptZhMinerva()),
+                "ja", CharacterSquareCatalog.localePack("ミネルヴァ", "憤怒の大魔女。治癒への想いを拳で示す",
+                        CharacterSquareCatalog.franchiseTags("ja", "rezero", "onesan"), promptJaMinerva()),
+                "en", CharacterSquareCatalog.localePack("Minerva", "Witch of Wrath—fierce healer, punch-first passion, not bubbly genki",
+                        CharacterSquareCatalog.franchiseTags("en", "rezero", "onesan"), promptEnMinerva())
         ));
         map.put("echidna", Map.of(
-                "zh", pack("艾姬多娜", "强欲魔女，求知欲与茶会，知性而疏离",
-                        tags("zh", "onesan"), promptZhEchidna()),
-                "zh-TW", pack("艾姬多娜", "強欲魔女，求知慾與茶會，知性而疏離",
-                        tags("zh-TW", "onesan"), promptZhEchidna()),
-                "ja", pack("エキドナ", "強欲の大魔女。知的好奇心と茶会の主",
-                        tags("ja", "onesan"), promptJaEchidna()),
-                "en", pack("Echidna", "Witch of Greed—curious, elegant host of the tea party",
-                        tags("en", "onesan"), promptEnEchidna())
+                "zh", CharacterSquareCatalog.localePack("艾姬多娜", "强欲魔女，求知欲与茶会，知性而疏离",
+                        CharacterSquareCatalog.franchiseTags("zh", "rezero", "onesan"), promptZhEchidna()),
+                "zh-TW", CharacterSquareCatalog.localePack("艾姬多娜", "強欲魔女，求知慾與茶會，知性而疏離",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "rezero", "onesan"), promptZhEchidna()),
+                "ja", CharacterSquareCatalog.localePack("エキドナ", "強欲の大魔女。知的好奇心と茶会の主",
+                        CharacterSquareCatalog.franchiseTags("ja", "rezero", "onesan"), promptJaEchidna()),
+                "en", CharacterSquareCatalog.localePack("Echidna", "Witch of Greed—curious, elegant host of the tea party",
+                        CharacterSquareCatalog.franchiseTags("en", "rezero", "onesan"), promptEnEchidna())
         ));
         map.put("petra", Map.of(
-                "zh", pack("佩特拉", "阿拉姆村活泼女仆，崇拜英雄，元气认真",
-                        tags("zh", "genki"), promptZhPetra()),
-                "zh-TW", pack("佩特拉", "阿拉姆村活潑女僕，崇拜英雄，元氣認真",
-                        tags("zh-TW", "genki"), promptZhPetra()),
-                "ja", pack("ペトラ", "アーラム村の元気メイド。英雄を慕う",
-                        tags("ja", "genki"), promptJaPetra()),
-                "en", pack("Petra", "Energetic maid from Arlam—admires heroes, earnest and bright",
-                        tags("en", "genki"), promptEnPetra())
+                "zh", CharacterSquareCatalog.localePack("佩特拉", "阿拉姆村活泼女仆，崇拜英雄，元气认真",
+                        CharacterSquareCatalog.franchiseTags("zh", "rezero", "genki"), promptZhPetra()),
+                "zh-TW", CharacterSquareCatalog.localePack("佩特拉", "阿拉姆村活潑女僕，崇拜英雄，元氣認真",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "rezero", "genki"), promptZhPetra()),
+                "ja", CharacterSquareCatalog.localePack("ペトラ", "アーラム村の元気メイド。英雄を慕う",
+                        CharacterSquareCatalog.franchiseTags("ja", "rezero", "genki"), promptJaPetra()),
+                "en", CharacterSquareCatalog.localePack("Petra", "Energetic maid from Arlam—admires heroes, earnest and bright",
+                        CharacterSquareCatalog.franchiseTags("en", "rezero", "genki"), promptEnPetra())
         ));
     }
 
-    private static List<CharacterSquareCatalog.Tag> tags(String lang, String personalityKey) {
-        return CharacterSquareTags.workAndPersonality(lang, "rezero", personalityKey);
-    }
-
-    private static CharacterSquareCatalog.LocalePack pack(
-            String name, String summary, List<CharacterSquareCatalog.Tag> tags, String prompt) {
-        return new CharacterSquareCatalog.LocalePack(name, summary, tags, prompt);
-    }
 
     private static String promptZhEmilia() {
         return """

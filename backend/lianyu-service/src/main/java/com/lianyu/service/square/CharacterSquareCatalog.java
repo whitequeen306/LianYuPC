@@ -148,64 +148,39 @@ public final class CharacterSquareCatalog {
         return Map.copyOf(map);
     }
 
+    private static final List<String> SLUGS_BY_SORT_ORDER = List.of(
+            "ganyu", "kurumi", "zero_two", "yuno", "mika", "megumi", "mahiru",
+            "kotori", "tohka", "origami", "yoshino", "mukuro", "izayoi", "nia", "mayuri", "mio",
+            "linzihan", "white_queen", "nahida", "kokomi", "furina", "shenhe", "hu_tao", "yae_miko",
+            "nilou", "klee", "raiden", "mavuika", "aru", "hoshino", "hina", "shiroko", "hikari",
+            "nozomi", "mari", "mutsuki", "emilia", "rem", "beatrice", "ram", "minerva", "echidna",
+            "petra", "yu_nianan", "zhongli", "enoshima_junko", "kirigiri_kyoko", "nanami_chiaki",
+            "fukawa_toko", "asahina_aoi"
+    );
+
     public static String slugForSortOrder(int sortOrder) {
-        return switch (sortOrder) {
-            case 10 -> "ganyu";
-            case 20 -> "kurumi";
-            case 30 -> "zero_two";
-            case 40 -> "yuno";
-            case 50 -> "mika";
-            case 60 -> "megumi";
-            case 70 -> "mahiru";
-            case 80 -> "kotori";
-            case 90 -> "tohka";
-            case 100 -> "origami";
-            case 110 -> "yoshino";
-            case 120 -> "mukuro";
-            case 130 -> "izayoi";
-            case 140 -> "nia";
-            case 150 -> "mayuri";
-            case 160 -> "mio";
-            case 170 -> "linzihan";
-            case 180 -> "white_queen";
-            case 190 -> "nahida";
-            case 200 -> "kokomi";
-            case 210 -> "furina";
-            case 220 -> "shenhe";
-            case 230 -> "hu_tao";
-            case 240 -> "yae_miko";
-            case 250 -> "nilou";
-            case 260 -> "klee";
-            case 270 -> "raiden";
-            case 280 -> "mavuika";
-            case 290 -> "aru";
-            case 300 -> "hoshino";
-            case 310 -> "hina";
-            case 320 -> "shiroko";
-            case 330 -> "hikari";
-            case 340 -> "nozomi";
-            case 350 -> "mari";
-            case 360 -> "mutsuki";
-            case 370 -> "emilia";
-            case 380 -> "rem";
-            case 390 -> "beatrice";
-            case 400 -> "ram";
-            case 410 -> "minerva";
-            case 420 -> "echidna";
-            case 430 -> "petra";
-            case 440 -> "yu_nianan";
-            case 450 -> "zhongli";
-            case 460 -> "enoshima_junko";
-            case 470 -> "kirigiri_kyoko";
-            case 480 -> "nanami_chiaki";
-            case 490 -> "fukawa_toko";
-            case 500 -> "asahina_aoi";
-            default -> null;
-        };
+        if (sortOrder <= 0 || sortOrder % 10 != 0) {
+            return null;
+        }
+        int index = sortOrder / 10 - 1;
+        if (index < 0 || index >= SLUGS_BY_SORT_ORDER.size()) {
+            return null;
+        }
+        return SLUGS_BY_SORT_ORDER.get(index);
     }
 
     public static boolean isKnownSlug(String slug) {
         return slug != null && BY_SLUG.containsKey(slug);
+    }
+
+    /** Shared helper for franchise catalog modules (CL-064). */
+    public static LocalePack localePack(String name, String summary, List<Tag> tags, String prompt) {
+        return new LocalePack(name, summary, tags, prompt);
+    }
+
+    /** Shared tag builder for franchise catalog modules (CL-064). */
+    public static List<Tag> franchiseTags(String lang, String franchiseKey, String personalityKey) {
+        return CharacterSquareTags.workAndPersonality(lang, franchiseKey, personalityKey);
     }
 
     private static String promptZhGanyu() {

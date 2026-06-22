@@ -46,8 +46,8 @@ export function useConversationUnread() {
     try {
       const list = await listNotifications({ unreadOnly: true, limit: 200 }, { silent: true })
       ingestUnreadNotifications(list || [])
-    } catch {
-      // ignore
+    } catch (e) {
+      console.warn('[unread] refreshUnreadFromApi failed', e)
     }
   }
 

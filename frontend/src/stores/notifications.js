@@ -23,6 +23,7 @@ function shouldShowInAppPopup(type) {
 export const useNotificationsStore = defineStore('notifications', () => {
   const unreadCount = ref(0)
   const latest = ref([])
+  const lastSyncError = ref(null)
   const wsStatus = ref('disconnected')
   const browserNotifyPermission = ref(typeof Notification === 'undefined' ? 'unsupported' : Notification.permission)
 
@@ -43,7 +44,9 @@ export const useNotificationsStore = defineStore('notifications', () => {
     groupTopicSubscription = stompClient.subscribe(`/topic/group/${pendingGroupId}`, (message) => {
       try {
         groupMessageHandler(JSON.parse(message.body))
-      } catch {}
+      } catch (e) {
+        console.warn('[notifications] groupMessage parse', e)
+      }
     })
   }
 
@@ -107,14 +110,22 @@ export const useNotificationsStore = defineStore('notifications', () => {
     try {
       const res = await getUnreadCount({ silent: true })
       unreadCount.value = Number(res?.unreadCount || 0)
-    } catch {}
+      lastSyncError.value = null
+    } catch (e) {
+      lastSyncError.value = e
+      console.warn('[notifications] refreshUnreadCount', e)
+    }
   }
 
   async function refreshLatest() {
     try {
       const list = await listNotifications({ limit: 20 }, { silent: true })
       latest.value = Array.isArray(list) ? list : []
-    } catch {}
+      lastSyncError.value = null
+    } catch (e) {
+      lastSyncError.value = e
+      console.warn('[notifications] refreshLatest', e)
+    }
   }
 
   async function markAllRead() {
@@ -122,7 +133,11 @@ export const useNotificationsStore = defineStore('notifications', () => {
       await markNotificationsRead({ all: true })
       unreadCount.value = 0
       latest.value = latest.value.map(n => ({ ...n, read: true }))
-    } catch {}
+      lastSyncError.value = null
+    } catch (e) {
+      lastSyncError.value = e
+      console.warn('[notifications] markAllRead', e)
+    }
   }
 
   async function markConversationRead(conversationId) {
@@ -133,7 +148,11 @@ export const useNotificationsStore = defineStore('notifications', () => {
         n.conversationId === conversationId ? { ...n, read: true } : n
       )
       await refreshUnreadCount()
-    } catch {}
+      lastSyncError.value = null
+    } catch (e) {
+      lastSyncError.value = e
+      console.warn('[notifications] markConversationRead', e)
+    }
   }
 
   async function markNotificationsByIds(ids) {
@@ -146,7 +165,11 @@ export const useNotificationsStore = defineStore('notifications', () => {
         idSet.has(n.id) ? { ...n, read: true } : n
       )
       await refreshUnreadCount()
-    } catch {}
+      lastSyncError.value = null
+    } catch (e) {
+      lastSyncError.value = e
+      console.warn('[notifications] markNotificationsByIds', e)
+    }
   }
 
   function connectWebSocket() {
@@ -177,13 +200,19 @@ export const useNotificationsStore = defineStore('notifications', () => {
           try {
             const data = JSON.parse(message.body)
             onIncomingNotification(data)
-          } catch {}
+          } catch (e) {
+            console.warn('[notifications] parse /user/queue/notifications',
+              message.body?.slice?.(0, 120), e)
+          }
         })
         stompClient.subscribe('/user/queue/notification-unread', message => {
           try {
             const data = JSON.parse(message.body)
             unreadCount.value = Number(data?.unreadCount || unreadCount.value)
-          } catch {}
+          } catch (e) {
+            console.warn('[notifications] parse /user/queue/notification-unread',
+              message.body?.slice?.(0, 120), e)
+          }
         })
         resubscribeGroupChat()
       },
@@ -297,6 +326,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
   return {
     unreadCount,
     latest,
+    lastSyncError,
     wsStatus,
     browserNotifyPermission,
     init,

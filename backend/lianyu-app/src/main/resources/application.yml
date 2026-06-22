@@ -143,6 +143,9 @@ milvus:
 lianyu:
   api-docs:
     enabled: ${LIANYU_API_DOCS_ENABLED:true}
+  security:
+    # 经 api-gateway/nginx 反代时保持 true；直连后端且无可信代理时设为 false 防 X-Forwarded-For 伪造
+    trust-forwarded-for: ${LIANYU_TRUST_FORWARDED_FOR:true}
   auth:
     rate-limit:
       per-ip-per-minute: 30

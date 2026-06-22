@@ -9,9 +9,12 @@ import com.lianyu.dao.mapper.MessageMapper;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -19,6 +22,8 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -28,6 +33,7 @@ public class MemoryWriter {
 
     private static final String EXCHANGE = "lianyu.exchange";
     private static final String ROUTING_KEY = "memory.summary";
+    private static final String ENQUEUE_DEBOUNCE_PREFIX = "memory:summary:debounce:";
 
     private final MessageMapper messageMapper;
     private final MemoryMetaMapper memoryMetaMapper;
@@ -36,8 +42,15 @@ public class MemoryWriter {
     private final MemoryExtractionService memoryExtractionService;
     private final MemoryVectorStore memoryVectorStore;
     private final MemoryMilvusSyncService memoryMilvusSyncService;
+    private final StringRedisTemplate redisTemplate;
 
     public void enqueueSummary(Long conversationId, Long characterId, Long userId) {
+        String debounceKey = ENQUEUE_DEBOUNCE_PREFIX + conversationId + ":" + characterId;
+        Boolean first = redisTemplate.opsForValue().setIfAbsent(debounceKey, "1", Duration.ofSeconds(30));
+        if (Boolean.FALSE.equals(first)) {
+            log.debug("Memory summary debounced: conversationId={}, characterId={}", conversationId, characterId);
+            return;
+        }
         MemorySummaryTask task = new MemorySummaryTask(conversationId, characterId, userId);
         rabbitTemplate.convertAndSend(EXCHANGE, ROUTING_KEY, task);
         log.info("Memory summary enqueued: conversationId={}, characterId={}", conversationId, characterId);
@@ -55,7 +68,7 @@ public class MemoryWriter {
                 return;
             }
 
-            java.util.Collections.reverse(recentMsgs);
+            Collections.reverse(recentMsgs);
             List<ExtractedMemory> extracted = memoryExtractionService.extract(recentMsgs, task);
             if (extracted.isEmpty()) {
                 log.debug("Skip memory write: no extracted memories, convId={}", task.conversationId());
@@ -80,7 +93,8 @@ public class MemoryWriter {
                     case UPDATED -> updated++;
                     case SKIPPED -> skipped++;
                 }
-                Long memoryId = findMemoryIdByHash(task.userId(), task.characterId(), memory.summary());
+                String sourceHash = resolveSourceHash(task.userId(), task.characterId(), sourceIds, memory.summary());
+                Long memoryId = findMemoryIdBySourceHash(sourceHash);
                 if (memoryId != null) {
                     MemoryMeta saved = memoryMetaMapper.selectById(memoryId);
                     if (saved != null && (saved.getMilvusVecId() == null || saved.getMilvusVecId().isBlank())) {
@@ -109,8 +123,8 @@ public class MemoryWriter {
                                                  String summary,
                                                  MemoryType memoryType,
                                                  double importance) {
-        String sourceHash = computeMemoryHash(task.userId(), task.characterId(), summary);
-        MemoryMeta existing = findExistingMemory(task.userId(), task.characterId(), sourceHash);
+        String sourceHash = resolveSourceHash(task.userId(), task.characterId(), sourceIds, summary);
+        MemoryMeta existing = findExistingMemory(sourceHash, task.userId(), task.characterId(), summary);
         BigDecimal importanceValue = toImportance(importance);
 
         if (existing == null) {
@@ -122,13 +136,24 @@ public class MemoryWriter {
             meta.setImportance(importanceValue);
             meta.setSourceMsgIds(sourceIds);
             meta.setSourceHash(sourceHash);
-            memoryMetaMapper.insert(meta);
+            try {
+                memoryMetaMapper.insert(meta);
+            } catch (DuplicateKeyException e) {
+                MemoryMeta raced = findExistingMemory(sourceHash, task.userId(), task.characterId(), summary);
+                if (raced != null) {
+                    return MemoryUpsertResult.SKIPPED;
+                }
+                throw e;
+            }
 
             String vecId = memoryVectorStore.insert(
                     task.characterId(), task.userId(), meta.getId(), summary, memoryType);
             if (vecId != null) {
                 meta.setMilvusVecId(vecId);
                 memoryMetaMapper.updateById(meta);
+            } else {
+                log.warn("Milvus insert returned null: memoryId={}, convCharacter={}/{}",
+                        meta.getId(), task.characterId(), task.userId());
             }
             return MemoryUpsertResult.CREATED;
         }
@@ -158,28 +183,61 @@ public class MemoryWriter {
         }
         String vecId = memoryVectorStore.insert(
                 task.characterId(), task.userId(), existing.getId(), summary, memoryType);
-        existing.setMilvusVecId(vecId);
-        memoryMetaMapper.updateById(existing);
+        if (vecId != null) {
+            existing.setMilvusVecId(vecId);
+            memoryMetaMapper.updateById(existing);
+        } else {
+            log.warn("Milvus insert returned null on update: memoryId={}", existing.getId());
+        }
         return MemoryUpsertResult.UPDATED;
     }
 
-    private Long findMemoryIdByHash(Long userId, Long characterId, String summary) {
-        MemoryMeta meta = findExistingMemory(userId, characterId, computeMemoryHash(userId, characterId, summary));
-        return meta != null ? meta.getId() : null;
-    }
-
-    private MemoryMeta findExistingMemory(Long userId, Long characterId, String sourceHash) {
-        return memoryMetaMapper.selectOne(
+    private Long findMemoryIdBySourceHash(String sourceHash) {
+        MemoryMeta meta = memoryMetaMapper.selectOne(
                 new LambdaQueryWrapper<MemoryMeta>()
                         .eq(MemoryMeta::getSourceHash, sourceHash)
                         .last("LIMIT 1"));
+        return meta != null ? meta.getId() : null;
     }
 
-    private String computeMemoryHash(Long userId, Long characterId, String summary) {
+    private MemoryMeta findExistingMemory(String sourceHash, Long userId, Long characterId, String summary) {
+        MemoryMeta byHash = memoryMetaMapper.selectOne(
+                new LambdaQueryWrapper<MemoryMeta>()
+                        .eq(MemoryMeta::getSourceHash, sourceHash)
+                        .last("LIMIT 1"));
+        if (byHash != null) {
+            return byHash;
+        }
+        String legacyHash = computeLegacyMemoryHash(userId, characterId, summary);
+        return memoryMetaMapper.selectOne(
+                new LambdaQueryWrapper<MemoryMeta>()
+                        .eq(MemoryMeta::getSourceHash, legacyHash)
+                        .last("LIMIT 1"));
+    }
+
+    /** Preferred: SHA-256(sorted source_msg_ids)) per schema; falls back to legacy text hash when IDs empty. */
+    private String resolveSourceHash(Long userId, Long characterId, List<Long> sourceIds, String summary) {
+        if (sourceIds != null && !sourceIds.isEmpty()) {
+            return computeSourceIdsHash(sourceIds);
+        }
+        return computeLegacyMemoryHash(userId, characterId, summary);
+    }
+
+    private String computeSourceIdsHash(List<Long> sourceIds) {
+        List<Long> sorted = new ArrayList<>(sourceIds);
+        Collections.sort(sorted);
+        String joined = sorted.stream().map(String::valueOf).reduce((a, b) -> a + "," + b).orElse("");
+        return sha256Hex(joined);
+    }
+
+    private String computeLegacyMemoryHash(Long userId, Long characterId, String summary) {
+        return sha256Hex("u:" + userId + "|c:" + characterId + "|text:" + summary);
+    }
+
+    private String sha256Hex(String input) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
-            md.update(("u:" + userId + "|c:" + characterId + "|text:" + summary)
-                    .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            md.update(input.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(md.digest());
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException(e);

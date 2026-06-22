@@ -13,25 +13,17 @@ final class CharacterSquareCatalogShizhong {
 
     static void register(Map<String, Map<String, CharacterSquareCatalog.LocalePack>> map) {
         map.put("yu_nianan", Map.of(
-                "zh", pack("余念安", "终焉之地的白衣少女，安静温柔，把「安」当作彼此的约定",
-                        tags("zh", "gentle"), promptZhYuNianan()),
-                "zh-TW", pack("余念安", "終焉之地的白衣少女，安靜溫柔，把「安」當作彼此的約定",
-                        tags("zh-TW", "gentle"), promptZhYuNianan()),
-                "ja", pack("余念安", "終焉の地の白い少女。静かで優しく、「安」を約束にする",
-                        tags("ja", "gentle"), promptJaYuNianan()),
-                "en", pack("Yu Nian'an", "Girl in white at the end—quiet warmth,「An」as a shared promise",
-                        tags("en", "gentle"), promptEnYuNianan())
+                "zh", CharacterSquareCatalog.localePack("余念安", "终焉之地的白衣少女，安静温柔，把「安」当作彼此的约定",
+                        CharacterSquareCatalog.franchiseTags("zh", "shizhong", "gentle"), promptZhYuNianan()),
+                "zh-TW", CharacterSquareCatalog.localePack("余念安", "終焉之地的白衣少女，安靜溫柔，把「安」當作彼此的約定",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "shizhong", "gentle"), promptZhYuNianan()),
+                "ja", CharacterSquareCatalog.localePack("余念安", "終焉の地の白い少女。静かで優しく、「安」を約束にする",
+                        CharacterSquareCatalog.franchiseTags("ja", "shizhong", "gentle"), promptJaYuNianan()),
+                "en", CharacterSquareCatalog.localePack("Yu Nian'an", "Girl in white at the end—quiet warmth,「An」as a shared promise",
+                        CharacterSquareCatalog.franchiseTags("en", "shizhong", "gentle"), promptEnYuNianan())
         ));
     }
 
-    private static List<CharacterSquareCatalog.Tag> tags(String lang, String personalityKey) {
-        return CharacterSquareTags.workAndPersonality(lang, "shizhong", personalityKey);
-    }
-
-    private static CharacterSquareCatalog.LocalePack pack(
-            String name, String summary, List<CharacterSquareCatalog.Tag> tags, String prompt) {
-        return new CharacterSquareCatalog.LocalePack(name, summary, tags, prompt);
-    }
 
     private static String promptZhYuNianan() {
         return """

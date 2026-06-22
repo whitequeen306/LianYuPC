@@ -371,6 +371,7 @@ public class GroupChatService {
                 .build());
 
         CompletableFuture.runAsync(() -> {
+            boolean anyReplyDelivered = false;
             for (int round = 1; round <= maxAutoRounds; round++) {
                 if (!turnId.equals(redisTemplate.opsForValue().get(turnKey))) {
                     log.info("Group chat turn interrupted: conversationId={}, round={}", conversationId, round);
@@ -392,6 +393,7 @@ public class GroupChatService {
                         roundMembers = members;
                     }
                 }
+                // Product note (CL-019): replies persist in LLM completion order, not roster sort_order.
                 List<CompletableFuture<CharacterReply>> futures = new ArrayList<>();
                 for (GroupMember member : roundMembers) {
                     futures.add(CompletableFuture.supplyAsync(
@@ -426,7 +428,8 @@ public class GroupChatService {
                                     .build());
                             return;
                         }
-                        persistAndBroadcastReplies(conversationId, reply, members, userId, request, historySnapshot);
+                        persistAndBroadcastReplies(conversationId, reply, members, userId, request, historySnapshot,
+                                turnId, turnKey);
                         repliedCount++;
                     }
                 }
@@ -434,9 +437,18 @@ public class GroupChatService {
                 if (repliedCount == 0) {
                     break;
                 }
+                anyReplyDelivered = true;
             }
 
             if (turnId.equals(redisTemplate.opsForValue().get(turnKey))) {
+                if (!anyReplyDelivered) {
+                    sendToGroup(conversationId, GroupMessageResponse.builder()
+                            .type("TURN_ERROR")
+                            .conversationId(conversationId)
+                            .content("角色回复失败，请稍后再试")
+                            .build());
+                    return;
+                }
                 sendToGroup(conversationId, GroupMessageResponse.builder()
                         .type("TURN_COMPLETE")
                         .conversationId(conversationId)
@@ -626,7 +638,9 @@ public class GroupChatService {
                                             List<GroupMember> members,
                                             Long userId,
                                             SendMessageRequest request,
-                                            List<Message> historySnapshot) {
+                                            List<Message> historySnapshot,
+                                            String turnId,
+                                            String turnKey) {
         Character character = characterMapper.selectById(reply.characterId());
         CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
         List<String> pieces = replySplitter.split(reply.content(), behavior.maxRepliesPerTurn());
@@ -656,6 +670,9 @@ public class GroupChatService {
         long lastSeq = reserveSeqBlock(conversationId, ready.size());
         long firstSeq = lastSeq - ready.size() + 1;
         for (int i = 0; i < ready.size(); i++) {
+            if (!turnId.equals(redisTemplate.opsForValue().get(turnKey))) {
+                return;
+            }
             String cleaned = ready.get(i);
             Message charMsg = new Message();
             charMsg.setSeq(firstSeq + i);
@@ -677,6 +694,9 @@ public class GroupChatService {
             notifyGroupUnread(userId, conversationId, reply.characterId(), reply.characterName(), cleaned);
 
             if (i < ready.size() - 1 && bubbleGapMs > 0) {
+                if (!turnId.equals(redisTemplate.opsForValue().get(turnKey))) {
+                    return;
+                }
                 try {
                     Thread.sleep(bubbleGapMs);
                 } catch (InterruptedException e) {
@@ -1251,7 +1271,10 @@ public class GroupChatService {
     private long reserveSeqBlock(Long conversationId, int count) {
         int safeCount = Math.max(1, count);
         Long lastSeq = redisTemplate.opsForValue().increment(SEQ_KEY_PREFIX + conversationId, safeCount);
-        return lastSeq != null ? lastSeq : safeCount;
+        if (lastSeq == null) {
+            throw new IllegalStateException("Failed to reserve message seq for conversation " + conversationId);
+        }
+        return lastSeq;
     }
 
     private Conversation findOwned(Long userId, Long conversationId) {

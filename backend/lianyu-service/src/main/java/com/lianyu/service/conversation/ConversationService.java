@@ -47,6 +47,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
@@ -64,6 +65,7 @@ public class ConversationService {
 
     private static final String SEQ_KEY_PREFIX = "msg_seq:";
     private static final String GROUP_TURN_KEY_PREFIX = "group_chat:turn:";
+    private static final String COLD_OPEN_LOCK_PREFIX = "coldopen:lock:";
 
     private final ConversationMapper conversationMapper;
     private final MessageMapper messageMapper;
@@ -122,7 +124,24 @@ public class ConversationService {
         conversation.setCharacterId(request.getCharacterId());
         conversation.setMode(mode);
         conversation.setTitle(character.getName());
-        conversationMapper.insert(conversation);
+        try {
+            conversationMapper.insert(conversation);
+        } catch (DuplicateKeyException e) {
+            if ("SINGLE".equals(mode)) {
+                Conversation existing = conversationMapper.selectOne(new LambdaQueryWrapper<Conversation>()
+                        .eq(Conversation::getUserId, userId)
+                        .eq(Conversation::getMode, "SINGLE")
+                        .eq(Conversation::getCharacterId, request.getCharacterId())
+                        .orderByDesc(Conversation::getCreatedAt)
+                        .last("LIMIT 1"));
+                if (existing != null) {
+                    log.info("Reuse existing single conversation after conflict: id={}, characterId={}, userId={}",
+                            existing.getId(), request.getCharacterId(), userId);
+                    return toResponse(existing, character);
+                }
+            }
+            throw e;
+        }
 
         log.info("Conversation created: id={}, characterId={}, userId={}", conversation.getId(), request.getCharacterId(), userId);
         if ("SINGLE".equalsIgnoreCase(mode)) {
@@ -144,7 +163,8 @@ public class ConversationService {
     public List<ConversationResponse> list(Long userId) {
         List<Conversation> conversations = conversationMapper.selectList(new LambdaQueryWrapper<Conversation>()
                 .eq(Conversation::getUserId, userId)
-                .orderByDesc(Conversation::getCreatedAt));
+                .orderByDesc(Conversation::getCreatedAt)
+                .last("LIMIT 200"));
 
         if (conversations.isEmpty()) {
             return List.of();
@@ -294,6 +314,11 @@ public class ConversationService {
 
         final Character streamCharacter = character;
         return aiChatService.chatStream(userId, aiRequest, (fullContent, error) -> {
+            if (error != null) {
+                log.warn("Assistant stream failed, skip persist: convId={}, reason={}",
+                        conversationId, error.getMessage());
+                return;
+            }
             if (fullContent != null && !fullContent.isBlank()) {
                 List<MessageResponse> replies = saveAssistantReplies(
                         conversationId, streamCharacter, fullContent, null);
@@ -381,42 +406,55 @@ public class ConversationService {
             log.debug("Cold open skipped (character unavailable): convId={}, reason={}", conversationId, e.getMessage());
             return;
         }
-        Message tail = findLastMessage(conversationId);
-        if (tail != null) {
+        String lockKey = COLD_OPEN_LOCK_PREFIX + conversationId;
+        Boolean acquired = redisTemplate.opsForValue().setIfAbsent(lockKey, "1",
+                java.time.Duration.ofMinutes(2));
+        if (Boolean.FALSE.equals(acquired)) {
+            log.debug("Cold open skipped (lock held): convId={}", conversationId);
             return;
         }
+        try {
+            Message tail = findLastMessage(conversationId);
+            if (tail != null) {
+                return;
+            }
 
-        CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
-        int maxPieces = behavior.maxRepliesPerTurn();
-        String memoryContext = memoryRetriever.retrieveProfileContext(character.getId(), userId);
-        String systemPrompt = proactiveSystemPrompt(userId, character, memoryContext, null);
+            CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
+            int maxPieces = behavior.maxRepliesPerTurn();
+            String memoryContext = memoryRetriever.retrieveProfileContext(character.getId(), userId);
+            String systemPrompt = proactiveSystemPrompt(userId, character, memoryContext, null);
 
-        AiChatRequest aiRequest = new AiChatRequest();
-        ChatToolContext.bindTo(aiRequest, character);
-        aiRequest.setProvider(AiConstants.PLATFORM_PROVIDER);
-        List<MessageDto> allMessages = new ArrayList<>();
-        allMessages.add(buildSystemMessage(systemPrompt));
-        allMessages.add(buildUserMessage(String.format("""
-                        这是你和该用户在本会话里的第一次开口（会话中还没有任何历史消息）。
-                        请你主动先发 1～%d 条很短的破冰话，符合你的口吻与设定，自然一点，避免机械客服腔。
-                        若多条请用空行分隔；不要堆砌长段落。
-                        """, maxPieces)));
-        aiRequest.setMessages(allMessages);
+            AiChatRequest aiRequest = new AiChatRequest();
+            ChatToolContext.bindTo(aiRequest, character);
+            aiRequest.setProvider(AiConstants.PLATFORM_PROVIDER);
+            List<MessageDto> allMessages = new ArrayList<>();
+            allMessages.add(buildSystemMessage(systemPrompt));
+            allMessages.add(buildUserMessage(String.format("""
+                            这是你和该用户在本会话里的第一次开口（会话中还没有任何历史消息）。
+                            请你主动先发 1～%d 条很短的破冰话，符合你的口吻与设定，自然一点，避免机械客服腔。
+                            若多条请用空行分隔；不要堆砌长段落。
+                            """, maxPieces)));
+            aiRequest.setMessages(allMessages);
 
-        ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
-        List<MessageResponse> replies = saveAssistantRepliesLimited(
-                conversationId, character, chatResult.getContent(), chatResult.getTotalTokens(), maxPieces);
-        if (!replies.isEmpty()) {
-            memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
-            notificationService.notifyProactiveMessage(
-                    userId,
-                    conversationId,
-                    character.getId(),
-                    character.getName(),
-                    replies.get(0).getContent()
-            );
+            ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
+            if (findLastMessage(conversationId) != null) {
+                return;
+            }
+            List<MessageResponse> replies = saveAssistantRepliesLimited(
+                    conversationId, character, chatResult.getContent(), chatResult.getTotalTokens(), maxPieces);
+            if (!replies.isEmpty()) {
+                memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
+                notificationService.notifyProactiveMessage(
+                        userId,
+                        conversationId,
+                        character.getId(),
+                        character.getName(),
+                        replies.get(0).getContent());
+                log.info("Cold open first line: convId={}, pieces={}", conversationId, replies.size());
+            }
+        } finally {
+            redisTemplate.delete(lockKey);
         }
-        log.info("Cold open first line: convId={}, pieces={}", conversationId, replies.size());
     }
 
     /**

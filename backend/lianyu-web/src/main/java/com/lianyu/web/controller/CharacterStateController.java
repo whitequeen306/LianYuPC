@@ -14,6 +14,7 @@ import com.lianyu.service.storage.FileStorageService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -24,6 +25,7 @@ import java.util.Map;
 @Tag(name = "CharacterState", description = "角色情绪与日记")
 @RestController
 @RequestMapping("/api/character-state")
+@Slf4j
 @RequiredArgsConstructor
 public class CharacterStateController {
 
@@ -166,7 +168,9 @@ public class CharacterStateController {
     private RelationshipInnerSpace safeInnerSpace(Long userId, Long characterId) {
         try {
             return relationshipStateService.buildInnerSpace(userId, characterId);
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException e) {
+            log.warn("Inner space build failed: userId={}, characterId={}, reason={}",
+                    userId, characterId, e.getMessage());
             return RelationshipInnerSpace.defaultSpace();
         }
     }

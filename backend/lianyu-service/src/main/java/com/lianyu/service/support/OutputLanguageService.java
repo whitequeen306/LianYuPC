@@ -152,24 +152,6 @@ public class OutputLanguageService {
         return count;
     }
 
-    public String buildOutputLanguageBlock(String languageCode) {
-        OutputLanguage lang = OutputLanguage.fromCode(languageCode);
-        return switch (lang) {
-            case JA -> """
-                    【返答言語】
-                    ユーザーへの返答は必ず日本語で行うこと。他言語は使わない。""";
-            case EN -> """
-                    【Reply language】
-                    You must reply to the user in English only. Do not use other languages.""";
-            case ZH_TW -> """
-                    【回覆語言】
-                    你必須使用繁體中文回覆用戶，不要使用其他語言。""";
-            default -> """
-                    【回复语言】
-                    你必须使用简体中文回复用户，不要使用其他语言。""";
-        };
-    }
-
     public String buildNaturalStyleBlock(String languageCode) {
         return buildNaturalStyleBlock(languageCode, true);
     }

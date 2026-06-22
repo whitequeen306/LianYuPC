@@ -1047,7 +1047,7 @@ public class AiChatService {
         }
         if (callback != null) {
             Exception err = new BusinessException(ErrorCode.AI_PROVIDER_ERROR, message);
-            callback.onComplete(partialContent, partialContent.isBlank() ? err : null);
+            callback.onComplete(partialContent, err);
         }
     }
 

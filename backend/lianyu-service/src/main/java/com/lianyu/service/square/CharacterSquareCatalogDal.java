@@ -13,125 +13,117 @@ final class CharacterSquareCatalogDal {
 
     static void register(Map<String, Map<String, CharacterSquareCatalog.LocalePack>> map) {
         map.put("kotori", Map.of(
-                "zh", pack("五河琴里", "Ratatoskr 司令官，白缎带嘴硬护短，黑缎带情绪外露",
-                        tags("zh", "tsundere"), promptZhKotori()),
-                "zh-TW", pack("五河琴里", "Ratatoskr 司令官，白緞帶嘴硬護短，黑緞帶情緒外露",
-                        tags("zh-TW", "tsundere"), promptZhKotori()),
-                "ja", pack("五河琴里", "ラタトスク司令。白黒リボンで性格が切り替わる妹",
-                        tags("ja", "tsundere"), promptJaKotori()),
-                "en", pack("Kotori Itsuka", "Ratatoskr commander—white/black ribbon twin modes",
-                        tags("en", "tsundere"), promptEnKotori())
+                "zh", CharacterSquareCatalog.localePack("五河琴里", "Ratatoskr 司令官，白缎带嘴硬护短，黑缎带情绪外露",
+                        CharacterSquareCatalog.franchiseTags("zh", "dal", "tsundere"), promptZhKotori()),
+                "zh-TW", CharacterSquareCatalog.localePack("五河琴里", "Ratatoskr 司令官，白緞帶嘴硬護短，黑緞帶情緒外露",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "dal", "tsundere"), promptZhKotori()),
+                "ja", CharacterSquareCatalog.localePack("五河琴里", "ラタトスク司令。白黒リボンで性格が切り替わる妹",
+                        CharacterSquareCatalog.franchiseTags("ja", "dal", "tsundere"), promptJaKotori()),
+                "en", CharacterSquareCatalog.localePack("Kotori Itsuka", "Ratatoskr commander—white/black ribbon twin modes",
+                        CharacterSquareCatalog.franchiseTags("en", "dal", "tsundere"), promptEnKotori())
         ));
         map.put("tohka", Map.of(
-                "zh", pack("夜刀神十香", "公主精灵，纯真直率，最爱黄豆粉面包",
-                        tags("zh", "genki"), promptZhTohka()),
-                "zh-TW", pack("夜刀神十香", "公主精靈，純真直率，最愛黃豆粉麵包",
-                        tags("zh-TW", "genki"), promptZhTohka()),
-                "ja", pack("夜刀神十香", "プリンセス精霊。素直で食欲旺盛",
-                        tags("ja", "genki"), promptJaTohka()),
-                "en", pack("Tohka Yatogami", "Princess Spirit—honest, hungry, wholehearted",
-                        tags("en", "genki"), promptEnTohka())
+                "zh", CharacterSquareCatalog.localePack("夜刀神十香", "公主精灵，纯真直率，最爱黄豆粉面包",
+                        CharacterSquareCatalog.franchiseTags("zh", "dal", "genki"), promptZhTohka()),
+                "zh-TW", CharacterSquareCatalog.localePack("夜刀神十香", "公主精靈，純真直率，最愛黃豆粉麵包",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "dal", "genki"), promptZhTohka()),
+                "ja", CharacterSquareCatalog.localePack("夜刀神十香", "プリンセス精霊。素直で食欲旺盛",
+                        CharacterSquareCatalog.franchiseTags("ja", "dal", "genki"), promptJaTohka()),
+                "en", CharacterSquareCatalog.localePack("Tohka Yatogami", "Princess Spirit—honest, hungry, wholehearted",
+                        CharacterSquareCatalog.franchiseTags("en", "dal", "genki"), promptEnTohka())
         ));
         map.put("origami", Map.of(
-                "zh", pack("鸢一折纸", "AST 精灵杀手，三无冷淡，对士道沉默而专一",
-                        tags("zh", "gentle"), promptZhOrigami()),
-                "zh-TW", pack("鳶一折紙", "AST 精靈殺手，三無冷淡，對士道沉默而專一",
-                        tags("zh-TW", "gentle"), promptZhOrigami()),
-                "ja", pack("鳶一折紙", "AST のエンチャント・ソード。無表情だが士道に一途",
-                        tags("ja", "gentle"), promptJaOrigami()),
-                "en", pack("Origami Tobiichi", "AST wizard—cool genius, fiercely devoted to Shido",
-                        tags("en", "gentle"), promptEnOrigami())
+                "zh", CharacterSquareCatalog.localePack("鸢一折纸", "AST 精灵杀手，三无冷淡，对士道沉默而专一",
+                        CharacterSquareCatalog.franchiseTags("zh", "dal", "gentle"), promptZhOrigami()),
+                "zh-TW", CharacterSquareCatalog.localePack("鳶一折紙", "AST 精靈殺手，三無冷淡，對士道沉默而專一",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "dal", "gentle"), promptZhOrigami()),
+                "ja", CharacterSquareCatalog.localePack("鳶一折紙", "AST のエンチャント・ソード。無表情だが士道に一途",
+                        CharacterSquareCatalog.franchiseTags("ja", "dal", "gentle"), promptJaOrigami()),
+                "en", CharacterSquareCatalog.localePack("Origami Tobiichi", "AST wizard—cool genius, fiercely devoted to Shido",
+                        CharacterSquareCatalog.franchiseTags("en", "dal", "gentle"), promptEnOrigami())
         ));
         map.put("yoshino", Map.of(
-                "zh", pack("四系乃", "冰雪精灵，害羞安静、渴望被温柔对待，与玩偶「四糸奈」",
-                        tags("zh", "gentle"), promptZhYoshino()),
-                "zh-TW", pack("四系乃", "冰雪精靈，害羞安靜、渴望被溫柔對待，與玩偶「四糸奈」",
-                        tags("zh-TW", "gentle"), promptZhYoshino()),
-                "ja", pack("四糸乃", "氷結精霊。内気で人形「よしのん」と一緒",
-                        tags("ja", "gentle"), promptJaYoshino()),
-                "en", pack("Yoshino", "Hermit Spirit—shy girl with puppet Yoshinon",
-                        tags("en", "gentle"), promptEnYoshino())
+                "zh", CharacterSquareCatalog.localePack("四系乃", "冰雪精灵，害羞安静、渴望被温柔对待，与玩偶「四糸奈」",
+                        CharacterSquareCatalog.franchiseTags("zh", "dal", "gentle"), promptZhYoshino()),
+                "zh-TW", CharacterSquareCatalog.localePack("四系乃", "冰雪精靈，害羞安靜、渴望被溫柔對待，與玩偶「四糸奈」",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "dal", "gentle"), promptZhYoshino()),
+                "ja", CharacterSquareCatalog.localePack("四糸乃", "氷結精霊。内気で人形「よしのん」と一緒",
+                        CharacterSquareCatalog.franchiseTags("ja", "dal", "gentle"), promptJaYoshino()),
+                "en", CharacterSquareCatalog.localePack("Yoshino", "Hermit Spirit—shy girl with puppet Yoshinon",
+                        CharacterSquareCatalog.franchiseTags("en", "dal", "gentle"), promptEnYoshino())
         ));
         map.put("mukuro", Map.of(
-                "zh", pack("星宫六喰", "封缄精灵，称士道为兄长大人，寡言深情",
-                        tags("zh", "gentle"), promptZhMukuro()),
-                "zh-TW", pack("星宮六喰", "封緘精靈，稱士道為兄長大人，寡言深情",
-                        tags("zh-TW", "gentle"), promptZhMukuro()),
-                "ja", pack("星宮六喰", "封緘の精霊。兄様（士道）への想いを胸に秘める",
-                        tags("ja", "gentle"), promptJaMukuro()),
-                "en", pack("Mukuro Hoshimiya", "Sealing Spirit—calls Shido「elder brother」, quiet devotion",
-                        tags("en", "gentle"), promptEnMukuro())
+                "zh", CharacterSquareCatalog.localePack("星宫六喰", "封缄精灵，称士道为兄长大人，寡言深情",
+                        CharacterSquareCatalog.franchiseTags("zh", "dal", "gentle"), promptZhMukuro()),
+                "zh-TW", CharacterSquareCatalog.localePack("星宮六喰", "封緘精靈，稱士道為兄長大人，寡言深情",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "dal", "gentle"), promptZhMukuro()),
+                "ja", CharacterSquareCatalog.localePack("星宮六喰", "封緘の精霊。兄様（士道）への想いを胸に秘める",
+                        CharacterSquareCatalog.franchiseTags("ja", "dal", "gentle"), promptJaMukuro()),
+                "en", CharacterSquareCatalog.localePack("Mukuro Hoshimiya", "Sealing Spirit—calls Shido「elder brother」, quiet devotion",
+                        CharacterSquareCatalog.franchiseTags("en", "dal", "gentle"), promptEnMukuro())
         ));
         map.put("izayoi", Map.of(
-                "zh", pack("诱宵美九", "歌姬精灵 Diva，华丽自信，嗓音即力量",
-                        tags("zh", "onesan"), promptZhIzayoi()),
-                "zh-TW", pack("誘宵美九", "歌姬精靈 Diva，華麗自信，嗓音即力量",
-                        tags("zh-TW", "onesan"), promptZhIzayoi()),
-                "ja", pack("誘宵美九", "歌姫精霊ディーヴァ。歌声が力",
-                        tags("ja", "onesan"), promptJaIzayoi()),
-                "en", pack("Miku Izayoi", "Diva Spirit—idol charisma, voice is power",
-                        tags("en", "onesan"), promptEnIzayoi())
+                "zh", CharacterSquareCatalog.localePack("诱宵美九", "歌姬精灵 Diva，华丽自信，嗓音即力量",
+                        CharacterSquareCatalog.franchiseTags("zh", "dal", "onesan"), promptZhIzayoi()),
+                "zh-TW", CharacterSquareCatalog.localePack("誘宵美九", "歌姬精靈 Diva，華麗自信，嗓音即力量",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "dal", "onesan"), promptZhIzayoi()),
+                "ja", CharacterSquareCatalog.localePack("誘宵美九", "歌姫精霊ディーヴァ。歌声が力",
+                        CharacterSquareCatalog.franchiseTags("ja", "dal", "onesan"), promptJaIzayoi()),
+                "en", CharacterSquareCatalog.localePack("Miku Izayoi", "Diva Spirit—idol charisma, voice is power",
+                        CharacterSquareCatalog.franchiseTags("en", "dal", "onesan"), promptEnIzayoi())
         ));
         map.put("nia", Map.of(
-                "zh", pack("本条二亚", "漫画家精灵 Sister，嘴硬心软宅女「婆」",
-                        tags("zh", "tsundere"), promptZhNia()),
-                "zh-TW", pack("本條二亞", "漫畫家精靈 Sister，嘴硬心軟宅女「婆」",
-                        tags("zh-TW", "tsundere"), promptZhNia()),
-                "ja", pack("本条二亞", "漫画家精霊。オタク口調でツンデレの「婆」",
-                        tags("ja", "tsundere"), promptJaNia()),
-                "en", pack("Nia Honjou", "Sister Spirit—otaku tsundere manga artist",
-                        tags("en", "tsundere"), promptEnNia())
+                "zh", CharacterSquareCatalog.localePack("本条二亚", "漫画家精灵 Sister，嘴硬心软宅女「婆」",
+                        CharacterSquareCatalog.franchiseTags("zh", "dal", "tsundere"), promptZhNia()),
+                "zh-TW", CharacterSquareCatalog.localePack("本條二亞", "漫畫家精靈 Sister，嘴硬心軟宅女「婆」",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "dal", "tsundere"), promptZhNia()),
+                "ja", CharacterSquareCatalog.localePack("本条二亞", "漫画家精霊。オタク口調でツンデレの「婆」",
+                        CharacterSquareCatalog.franchiseTags("ja", "dal", "tsundere"), promptJaNia()),
+                "en", CharacterSquareCatalog.localePack("Nia Honjou", "Sister Spirit—otaku tsundere manga artist",
+                        CharacterSquareCatalog.franchiseTags("en", "dal", "tsundere"), promptEnNia())
         ));
         map.put("mayuri", Map.of(
-                "zh", pack("万由里", "光之精灵，温柔幻想，只想守护士道的日常",
-                        tags("zh", "gentle"), promptZhMayuri()),
-                "zh-TW", pack("萬由里", "光之精靈，溫柔幻想，只想守護士道的日常",
-                        tags("zh-TW", "gentle"), promptZhMayuri()),
-                "ja", pack("万由里", "光の精霊。士道の日常を守りたい儚い優しさ",
-                        tags("ja", "gentle"), promptJaMayuri()),
-                "en", pack("Mayuri", "Spirit of Light—gentle wish to protect Shido's everyday life",
-                        tags("en", "gentle"), promptEnMayuri())
+                "zh", CharacterSquareCatalog.localePack("万由里", "光之精灵，温柔幻想，只想守护士道的日常",
+                        CharacterSquareCatalog.franchiseTags("zh", "dal", "gentle"), promptZhMayuri()),
+                "zh-TW", CharacterSquareCatalog.localePack("萬由里", "光之精靈，溫柔幻想，只想守護士道的日常",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "dal", "gentle"), promptZhMayuri()),
+                "ja", CharacterSquareCatalog.localePack("万由里", "光の精霊。士道の日常を守りたい儚い優しさ",
+                        CharacterSquareCatalog.franchiseTags("ja", "dal", "gentle"), promptJaMayuri()),
+                "en", CharacterSquareCatalog.localePack("Mayuri", "Spirit of Light—gentle wish to protect Shido's everyday life",
+                        CharacterSquareCatalog.franchiseTags("en", "dal", "gentle"), promptEnMayuri())
         ));
         map.put("mio", Map.of(
-                "zh", pack("崇宫澪", "始源精灵，温柔如母，称士道为「亲爱的」",
-                        tags("zh", "onesan"), promptZhMio()),
-                "zh-TW", pack("崇宮澪", "始源精靈，溫柔如母，稱士道為「親愛的」",
-                        tags("zh-TW", "onesan"), promptZhMio()),
-                "ja", pack("崇宮澪", "始源の精霊。慈愛に満ちた母のような優しさ",
-                        tags("ja", "onesan"), promptJaMio()),
-                "en", pack("Mio Takamiya", "Origin Spirit—motherly grace, calls Shido「dearest」",
-                        tags("en", "onesan"), promptEnMio())
+                "zh", CharacterSquareCatalog.localePack("崇宫澪", "始源精灵，温柔如母，称士道为「亲爱的」",
+                        CharacterSquareCatalog.franchiseTags("zh", "dal", "onesan"), promptZhMio()),
+                "zh-TW", CharacterSquareCatalog.localePack("崇宮澪", "始源精靈，溫柔如母，稱士道為「親愛的」",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "dal", "onesan"), promptZhMio()),
+                "ja", CharacterSquareCatalog.localePack("崇宮澪", "始源の精霊。慈愛に満ちた母のような優しさ",
+                        CharacterSquareCatalog.franchiseTags("ja", "dal", "onesan"), promptJaMio()),
+                "en", CharacterSquareCatalog.localePack("Mio Takamiya", "Origin Spirit—motherly grace, calls Shido「dearest」",
+                        CharacterSquareCatalog.franchiseTags("en", "dal", "onesan"), promptEnMio())
         ));
         map.put("white_queen", Map.of(
-                "zh", pack("白之女王", "外传第三领域支配者，雪白军装，对狂三危险执念，狂狂帝支配空间",
-                        tags("zh", "yandere"), promptZhWhiteQueen()),
-                "zh-TW", pack("白之女王", "外傳第三領域支配者，雪白軍裝，對狂三危險執念，狂狂帝支配空間",
-                        tags("zh-TW", "yandere"), promptZhWhiteQueen()),
-                "ja", pack("白の女王", "『デート・ア・バレット』第三領域の支配者、軍服と異色瞳",
-                        tags("ja", "yandere"), promptJaWhiteQueen()),
-                "en", pack("White Queen", "Ruler of the 3rd region in Date A Bullet—Lucifuge, white regalia",
-                        tags("en", "yandere"), promptEnWhiteQueen())
+                "zh", CharacterSquareCatalog.localePack("白之女王", "外传第三领域支配者，雪白军装，对狂三危险执念，狂狂帝支配空间",
+                        CharacterSquareCatalog.franchiseTags("zh", "dal", "yandere"), promptZhWhiteQueen()),
+                "zh-TW", CharacterSquareCatalog.localePack("白之女王", "外傳第三領域支配者，雪白軍裝，對狂三危險執念，狂狂帝支配空間",
+                        CharacterSquareCatalog.franchiseTags("zh-TW", "dal", "yandere"), promptZhWhiteQueen()),
+                "ja", CharacterSquareCatalog.localePack("白の女王", "『デート・ア・バレット』第三領域の支配者、軍服と異色瞳",
+                        CharacterSquareCatalog.franchiseTags("ja", "dal", "yandere"), promptJaWhiteQueen()),
+                "en", CharacterSquareCatalog.localePack("White Queen", "Ruler of the 3rd region in Date A Bullet—Lucifuge, white regalia",
+                        CharacterSquareCatalog.franchiseTags("en", "dal", "yandere"), promptEnWhiteQueen())
         ));
         map.put("linzihan", Map.of(
-                "zh", pack("林梓涵", "独立开发者，抖音博主「我想天天开心」的AI分身",
+                "zh", CharacterSquareCatalog.localePack("林梓涵", "独立开发者，抖音博主「我想天天开心」的AI分身",
                         CharacterSquareTags.ocOnly("zh"), promptZhLinZihan()),
-                "zh-TW", pack("林梓涵", "獨立開發者，抖音博主「我想天天開心」的AI分身",
+                "zh-TW", CharacterSquareCatalog.localePack("林梓涵", "獨立開發者，抖音博主「我想天天開心」的AI分身",
                         CharacterSquareTags.ocOnly("zh-TW"), promptZhLinZihan()),
-                "ja", pack("リン・ジーハン", "インディー開発者。テクノロジーブロガーのAIアバター",
+                "ja", CharacterSquareCatalog.localePack("リン・ジーハン", "インディー開発者。テクノロジーブロガーのAIアバター",
                         CharacterSquareTags.ocOnly("ja"), promptJaLinZihan()),
-                "en", pack("Lin Zihan", "Indie developer, AI avatar of tech blogger",
+                "en", CharacterSquareCatalog.localePack("Lin Zihan", "Indie developer, AI avatar of tech blogger",
                         CharacterSquareTags.ocOnly("en"), promptEnLinZihan())
         ));
     }
 
-    private static List<CharacterSquareCatalog.Tag> tags(String lang, String personalityKey) {
-        return CharacterSquareTags.workAndPersonality(lang, "dal", personalityKey);
-    }
-
-    private static CharacterSquareCatalog.LocalePack pack(
-            String name, String summary, List<CharacterSquareCatalog.Tag> tags, String prompt) {
-        return new CharacterSquareCatalog.LocalePack(name, summary, tags, prompt);
-    }
 
     private static String promptZhKotori() {
         return """

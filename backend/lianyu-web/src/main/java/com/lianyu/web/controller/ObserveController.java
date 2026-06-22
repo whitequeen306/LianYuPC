@@ -17,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.lianyu.web.util.ClientIpResolver;
+
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -32,13 +34,16 @@ public class ObserveController {
     private final AiChatService aiChatService;
     private final DashScopeTtsService dashScopeTtsService;
     private final AuthRateLimiter authRateLimiter;
+    private final ClientIpResolver clientIpResolver;
 
     public ObserveController(AiChatService aiChatService,
                              DashScopeTtsService dashScopeTtsService,
-                             AuthRateLimiter authRateLimiter) {
+                             AuthRateLimiter authRateLimiter,
+                             ClientIpResolver clientIpResolver) {
         this.aiChatService = aiChatService;
         this.dashScopeTtsService = dashScopeTtsService;
         this.authRateLimiter = authRateLimiter;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @PostMapping("/observe")
@@ -49,7 +54,7 @@ public class ObserveController {
         long userId = StpUtil.getLoginIdAsLong();
         authRateLimiter.checkRateLimit("rate:observe:user:", String.valueOf(userId),
                 OBSERVE_PER_USER_PER_HOUR, Duration.ofHours(1), "屏幕观察过于频繁，请稍后再试");
-        String clientIp = resolveClientIp(httpRequest);
+        String clientIp = clientIpResolver.resolve(httpRequest);
         if (clientIp != null && !clientIp.isBlank()) {
             authRateLimiter.checkRateLimit("rate:observe:ip:", clientIp.trim(),
                     OBSERVE_PER_IP_PER_HOUR, Duration.ofHours(1), "请求过于频繁，请稍后再试");
@@ -77,17 +82,5 @@ public class ObserveController {
             log.error("Desktop observe failed", e);
             return Result.fail(500, "桌面感知服务繁忙，请稍后再试");
         }
-    }
-
-    private static String resolveClientIp(HttpServletRequest request) {
-        if (request == null) {
-            return null;
-        }
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            int comma = forwarded.indexOf(',');
-            return (comma >= 0 ? forwarded.substring(0, comma) : forwarded).trim();
-        }
-        return request.getRemoteAddr();
     }
 }

@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -153,8 +154,38 @@ public class RelationshipStateService {
         created.setSecurityScore(40);
         created.setAnticipationScore(25);
         created.setPhase(RelationshipPhase.TESTING.name());
-        relationshipStateMapper.insert(created);
-        return created;
+        try {
+            relationshipStateMapper.insert(created);
+            return created;
+        } catch (DuplicateKeyException e) {
+            RelationshipState existingAfterRace = waitForExistingState(userId, characterId);
+            if (existingAfterRace != null) {
+                return existingAfterRace;
+            }
+            throw new IllegalStateException("Failed to create or find relationship state", e);
+        }
+    }
+
+    private RelationshipState waitForExistingState(Long userId, Long characterId) {
+        for (int attempt = 0; attempt < 5; attempt++) {
+            RelationshipState state = relationshipStateMapper.selectOne(new LambdaQueryWrapper<RelationshipState>()
+                    .eq(RelationshipState::getUserId, userId)
+                    .eq(RelationshipState::getCharacterId, characterId)
+                    .last("LIMIT 1"));
+            if (state != null) {
+                return state;
+            }
+            try {
+                Thread.sleep(20L * (attempt + 1));
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        return relationshipStateMapper.selectOne(new LambdaQueryWrapper<RelationshipState>()
+                .eq(RelationshipState::getUserId, userId)
+                .eq(RelationshipState::getCharacterId, characterId)
+                .last("LIMIT 1"));
     }
 
     private RelationshipSnapshot toSnapshot(RelationshipState state) {

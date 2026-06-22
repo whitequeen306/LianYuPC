@@ -295,6 +295,8 @@ let restoringProviderPref = false
 
 const availableModels = ref([])
 let conversationPollTimer = null
+let pollFailureCount = 0
+const POLL_FAILURE_WARN_THRESHOLD = 3
 
 /** 按角色隔离的 API Provider 选择记忆 */
 const PER_CHAR_PROVIDER_KEY = 'lianyu-char-provider'
@@ -806,6 +808,7 @@ async function pollCurrentConversationMessages(force) {
   }
   try {
     const page = await getMessages(convId, { limit: MESSAGE_PAGE_SIZE }, { silent: true })
+    pollFailureCount = 0
     const incoming = (page?.records || []).map(normalizeMessageRole)
     let changed = false
     if (force && messages.value.length === 0 && incoming.length > 0) {
@@ -824,8 +827,13 @@ async function pollCurrentConversationMessages(force) {
       await nextTick()
       scrollToBottom()
     }
-  } catch {
-    // ignore polling errors
+  } catch (e) {
+    pollFailureCount += 1
+    console.warn('[poll] conv', convId, e)
+    if (pollFailureCount >= POLL_FAILURE_WARN_THRESHOLD) {
+      ElMessage.warning('网络波动，消息可能延迟')
+      pollFailureCount = 0
+    }
   }
 }
 
@@ -912,6 +920,8 @@ async function handleSend() {
     messages.value = messages.value.filter(
       m => m._tempId !== userMsg._tempId && m._streamGroupId !== streamGroupId
     )
+    skipBounceOnce = true
+    await pollCurrentConversationMessages(true)
   } finally {
     waitingReply.value = false
     await nextTick()

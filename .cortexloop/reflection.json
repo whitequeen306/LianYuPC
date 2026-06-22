@@ -1,0 +1,41 @@
+{
+  "runTimestamp": "2026-06-22T10:35:00.000Z",
+  "mode": "direct",
+  "entries": [
+    {
+      "category": "correctness",
+      "language": "java",
+      "problemPattern": "Async stream callback saves partial success when error is null or omitted on failure path",
+      "fixMethod": "Fail-closed callback: if error != null return immediately before any persist; error emitter must always pass non-null error to callback even when partial content exists",
+      "example": "ConversationService.java:316"
+    },
+    {
+      "category": "errorHandling",
+      "language": "any",
+      "problemPattern": "Empty catch blocks swallow network/store/sync failures with no observability",
+      "fixMethod": "Log at warn with operation context; expose lastSyncError ref or bounded user toast after N consecutive failures; keep last-known-good UI state",
+      "example": "frontend/src/stores/notifications.js:106"
+    },
+    {
+      "category": "simplicity",
+      "language": "java",
+      "problemPattern": "Global substring replace during refactor corrupts method definitions sharing the same identifier",
+      "fixMethod": "Extract shared helper on parent class first; replace call sites only; delete local private copies; run compile plus domain smoke test that exercises every registered entry",
+      "example": "CharacterSquareCatalogBlueArchive.java:97"
+    },
+    {
+      "category": "correctness",
+      "language": "java",
+      "problemPattern": "Check-then-insert race creates duplicate rows under concurrent requests",
+      "fixMethod": "Add unique constraint where appropriate; wrap insert in try/catch DuplicateKeyException; re-select with brief retry (getOrCreate pattern)",
+      "example": "RelationshipStateService.java:140"
+    },
+    {
+      "category": "performance",
+      "language": "java",
+      "problemPattern": "N+1 database queries when enriching list items with related entity names",
+      "fixMethod": "Collect foreign keys from result set, batch load with IN/batchIds, build id→entity map, enrich in memory",
+      "example": "MemoryController.java:62"
+    }
+  ]
+}

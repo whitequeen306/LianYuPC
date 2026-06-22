@@ -155,7 +155,7 @@ async function runObserve() {
       })
     }
   } catch (e) {
-    // 静默失败，下一次再试
+    console.warn('[desktopObserver] observe failed:', e?.message || e)
   }
 
   scheduleNext()

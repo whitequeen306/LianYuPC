@@ -59,8 +59,17 @@ public class MemoryController {
         q.last("LIMIT " + safeSize + " OFFSET " + offset);
 
         List<MemoryMeta> metas = memoryMetaMapper.selectList(q);
+        Set<Long> characterIds = metas.stream()
+                .map(MemoryMeta::getCharacterId)
+                .filter(id -> id != null && id > 0)
+                .collect(Collectors.toSet());
+        Map<Long, Character> characterMap = characterIds.isEmpty()
+                ? Map.of()
+                : characterMapper.selectBatchIds(characterIds).stream()
+                        .collect(Collectors.toMap(Character::getId, c -> c, (a, b) -> a));
+
         var result = metas.stream().map(m -> {
-            Character character = characterMapper.selectById(m.getCharacterId());
+            Character character = characterMap.get(m.getCharacterId());
             Map<String, Object> m1 = new LinkedHashMap<>();
             m1.put("id", m.getId());
             m1.put("characterId", m.getCharacterId());

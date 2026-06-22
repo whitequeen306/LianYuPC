@@ -496,14 +496,36 @@ async function appendCharacterMessage(body) {
   scrollGroupBottom()
 }
 
+function appendUserMessageFromWs(body) {
+  const content = typeof body.content === 'string' ? body.content.trim() : ''
+  if (!content) return
+  const recentUser = groupMessages.value.slice(-5).some(m =>
+    m.role === 'user' && m.content === content
+  )
+  if (recentUser) return
+  groupMessages.value.push({
+    _key: 'g' + (++msgCounter),
+    role: 'user',
+    content,
+    _time: new Date().toISOString()
+  })
+  void nextTick().then(() => scrollGroupBottom())
+}
+
 function handleGroupEvent(body) {
   const type = body.type
 
   if (type === 'CHARACTER_MESSAGE') {
     void appendCharacterMessage(body)
+  } else if (type === 'USER_MESSAGE') {
+    appendUserMessageFromWs(body)
   } else if (type === 'TURN_INTERRUPTED' || type === 'TURN_COMPLETE') {
     streamingChar.value = null
     speakingCharId.value = null
+  } else if (type === 'TURN_ERROR') {
+    streamingChar.value = null
+    speakingCharId.value = null
+    ElMessage.error(humanizeError(body.content, t('group.replyFailed')))
   } else if (type === 'ERROR') {
     streamingChar.value = null
     speakingCharId.value = null
@@ -678,12 +700,9 @@ async function openGroup(group, memberIds) {
     groupMembersCache.value = { ...groupMembersCache.value, [group.id]: groupMembers.value }
     const seenChars = new Map(groupMembers.value.map(m => [m.id, m]))
     await loadRecentGroupMessages(group.id, seenChars)
-  } catch {
-    groupMembers.value = await loadGroupMembers(group.id, memberIds)
-    groupMembersCache.value = { ...groupMembersCache.value, [group.id]: groupMembers.value }
-    groupMessages.value = []
-    oldestLoadedSeq.value = null
-    hasMoreOlder.value = false
+  } catch (e) {
+    console.warn('[group] openGroup load failed', e)
+    ElMessage.error('群聊消息加载失败，请稍后重试')
   }
   connectWebSocket(group.id)
   await nextTick()
