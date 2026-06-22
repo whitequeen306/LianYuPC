@@ -81,6 +81,29 @@ lianyu-app → lianyu-web → lianyu-service → lianyu-ai / lianyu-dao / lianyu
 - Docker Compose 编排全部中间件
 - `.env.example` 入仓，`.env` 入 `.gitignore`
 
+## 部署与发布（前后端分离，务必遵守）
+
+**前端在本地打包，不在服务器上构建或部署；后端在服务器上跑 Docker，不涉及前端打包。**
+
+| 端 | 运行位置 | 发布方式 | 不要做什么 |
+|---|---|---|---|
+| **前端（Electron 桌面客户端）** | 用户本机 | 本地 `frontend/` 下 `npm run electron:release`（或 `electron:build`），产出 `frontend/release/v{version}/LianYu Setup {version}.exe` | 不要在云端执行 `vite build` / `electron-builder`；不要把 `frontend/dist`、`release` 部署到服务器 |
+| **后端 + API 网关** | 云服务器 `/opt/lianyu` | `git pull origin main` 后 `docker compose up -d --build backend api-gateway`（见 `scripts/_cloud_deploy_pull.py`） | 不要指望「部署后端」顺带更新客户端 UI；前端改动必须重新打 Electron 安装包 |
+
+补充约定：
+
+- 云端 Compose 仅跑 **backend、api-gateway** 与中间件（MySQL / Redis / MinIO / Milvus / RabbitMQ）；**无 frontend 容器**（`web-gateway` 仅 `dev-proxy` profile 本地联调用）。
+- 客户端通过 `frontend/.env.production.cloud` 中的 `VITE_LIANYU_API_ORIGIN` 指向云端 API；API 地址变更改 env 并重打 Electron，不是改服务器前端静态资源。
+- 仅后端修复（如 MinIO 资源、接口逻辑）部署后，**已安装的 Electron 客户端无需重装**即可生效；**仅前端 Vue 改动**（页面、样式、加载策略等）必须 **重新打 Electron 包** 用户才会看到。
+- Agent 排查「线上缺图 / 接口慢」时，先区分是 **服务端（MinIO/DB/API）** 还是 **客户端（未打包的前端改动）** 问题，避免在服务器上找不存在的前端构建产物。
+
+### Git 与云端同步
+
+- **前后端源码均 push 到 GitHub**（`frontend/` 与 `backend/` 同在 monorepo）；本地改动完成并验证后，先提交再推送，不要只改本地不打远程。
+- **云服务器不承载 Git 开发**，只在 `/opt/lianyu` **`git pull origin main`** 拉取已合并的 `main` 分支，再 `docker compose up -d --build backend api-gateway`（自动化见 `scripts/_cloud_deploy_pull.py`）。
+- 常规流程：`develop` 开发 → 合并进 `main` → `git push origin main` → 服务器 pull + 重建后端容器；**前端 Electron 安装包在本地打完，不上传服务器**（安装包可另存 release 目录或 GitHub Releases，按需）。
+- Agent 执行发布时：**先 push GitHub，再服务器 pull**；不要 SCP 源码或 jar 覆盖 `/opt/lianyu`，不要跳过 Git 直接在服务器改代码。
+
 ## 工作约定
 
 - 所有文件操作在 `C:\Users\hp\Desktop\LianYu-PC\` 下进行

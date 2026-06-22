@@ -75,7 +75,15 @@
         <span v-if="isMostLiked(item.id)" class="most-liked-badge">{{ t('characterSquare.mostLiked') }}</span>
         <span class="template-card__shine" aria-hidden="true" />
         <div class="card-media">
-          <img v-if="item.avatarUrl" :src="resolveMediaUrl(item.avatarUrl)" class="avatar-img" :alt="item.name" />
+          <img
+            v-if="item.avatarUrl && !brokenAvatars[item.id]"
+            :src="resolveMediaUrl(item.avatarUrl)"
+            class="avatar-img"
+            :alt="item.name"
+            loading="lazy"
+            decoding="async"
+            @error="markAvatarBroken(item.id)"
+          />
           <div v-else class="avatar-placeholder">
             <el-icon :size="28"><User /></el-icon>
           </div>
@@ -165,7 +173,15 @@
     >
       <div v-if="previewItem" class="preview-body">
         <div class="preview-hero">
-          <img v-if="previewItem.avatarUrl" :src="resolveMediaUrl(previewItem.avatarUrl)" class="preview-avatar" :alt="previewItem.name" />
+          <img
+            v-if="previewItem.avatarUrl && !brokenAvatars[previewItem.id]"
+            :src="resolveMediaUrl(previewItem.avatarUrl)"
+            class="preview-avatar"
+            :alt="previewItem.name"
+            loading="lazy"
+            decoding="async"
+            @error="markAvatarBroken(previewItem.id)"
+          />
           <div v-else class="preview-avatar placeholder">
             <el-icon :size="36"><User /></el-icon>
           </div>
@@ -213,7 +229,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -251,6 +267,9 @@ const addDialogVisible = ref(false)
 const addCityMode = ref('real')
 const addCity = ref('')
 const commentsByTemplateId = ref({})
+const brokenAvatars = ref({})
+let commentLoadTimer = null
+let commentLoadSeq = 0
 
 const filteredCatalog = computed(() => {
   let list = catalog.value
@@ -300,8 +319,32 @@ watch(searchQuery, () => {
 })
 
 watch(templates, (list) => {
-  loadCommentsForTemplates(list.map(item => item.id))
+  scheduleCommentsForTemplates(list.map(item => item.id))
 }, { immediate: false })
+
+onUnmounted(() => {
+  if (commentLoadTimer) {
+    clearTimeout(commentLoadTimer)
+    commentLoadTimer = null
+  }
+})
+
+function markAvatarBroken(templateId) {
+  if (!templateId) return
+  brokenAvatars.value = { ...brokenAvatars.value, [templateId]: true }
+}
+
+/** 翻页后先让浏览器拉头像，再异步加载弹幕评论，避免同域并发挤占连接。 */
+function scheduleCommentsForTemplates(templateIds = []) {
+  if (commentLoadTimer) {
+    clearTimeout(commentLoadTimer)
+  }
+  const seq = ++commentLoadSeq
+  commentLoadTimer = setTimeout(() => {
+    if (seq !== commentLoadSeq) return
+    void loadCommentsForTemplates(templateIds)
+  }, 450)
+}
 
 onMounted(() => loadCatalog())
 
