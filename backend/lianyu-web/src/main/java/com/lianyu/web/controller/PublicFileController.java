@@ -56,7 +56,7 @@ public class PublicFileController {
                     .header(HttpHeaders.CONTENT_TYPE, contentType)
                     .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
                     .header("X-Content-Type-Options", "nosniff")
-                    .header(HttpHeaders.CACHE_CONTROL, "public, max-age=86400")
+                    .header(HttpHeaders.CACHE_CONTROL, cacheControlFor(objectKey))
                     .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(stat.size()))
                     .body(body);
         } catch (Exception e) {
@@ -72,5 +72,12 @@ public class PublicFileController {
             return null;
         }
         return requestUri.substring(idx + prefix.length());
+    }
+
+    private static String cacheControlFor(String objectKey) {
+        if (objectKey != null && objectKey.startsWith("square-avatars-thumb/")) {
+            return "public, max-age=31536000, immutable";
+        }
+        return "public, max-age=86400";
     }
 }

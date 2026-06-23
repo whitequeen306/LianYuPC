@@ -250,6 +250,7 @@ public class CharacterSquareService {
             boolean liked) {
         String slug = normalizeSlug(template);
         CharacterSquareCatalog.LocalePack pack = CharacterSquareCatalog.resolve(slug, uiLang);
+        String avatarUrl = fileStorageService.resolvePublicUrl(template.getAvatarUrl());
         String thumbUrl = fileStorageService.resolveSquareAvatarThumbPublicUrl(template.getAvatarUrl());
         if (pack == null) {
             return CharacterSquareTemplateCardResponse.builder()
@@ -258,6 +259,7 @@ public class CharacterSquareService {
                     .name(template.getName())
                     .summary(template.getSummary())
                     .avatarThumbUrl(thumbUrl)
+                    .avatarUrl(avatarUrl)
                     .tags(parseTagLabels(template.getTagsJson()))
                     .added(added != null)
                     .addedCharacterId(added != null ? added.getId() : null)
@@ -274,6 +276,7 @@ public class CharacterSquareService {
                 .name(pack.name())
                 .summary(pack.summary())
                 .avatarThumbUrl(thumbUrl)
+                .avatarUrl(avatarUrl)
                 .tags(tagLabels)
                 .added(added != null)
                 .addedCharacterId(added != null ? added.getId() : null)
