@@ -64,4 +64,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('desktop:launcher-greeting', handler)
     return () => ipcRenderer.removeListener('desktop:launcher-greeting', handler)
   },
+  onRestartObserver: (callback) => {
+    const handler = () => callback()
+    ipcRenderer.on('desktop:restart-observer', handler)
+    return () => ipcRenderer.removeListener('desktop:restart-observer', handler)
+  },
 })

@@ -229,7 +229,7 @@ export default {
     thinking: 'Thinking...',
     loadMore: 'Load earlier messages',
     noMessages: 'No messages yet — say hello',
-    typing: '{name} is typing...'
+    typing: '{name} is replying...'
   },
   group: {
     title: 'Group chat',

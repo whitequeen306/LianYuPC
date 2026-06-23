@@ -11,6 +11,7 @@ import { prepareAuthRoute, bootstrapAuth } from './auth/bootstrap'
 import './styles/theme.scss'
 import './styles/global.scss'
 import './styles/app-shell.scss'
+import directivesPlugin from './directives'
 
 const isElectronRuntime = typeof window !== 'undefined' && (
   window.electronAPI?.isElectron === true
@@ -36,6 +37,7 @@ app.use(pinia)
 app.use(i18n)
 app.use(router)
 app.use(ElementPlus, { size: 'default' })
+app.use(directivesPlugin)
 
 import { useSettingsStore } from '@/stores/settings'
 const settingsStore = useSettingsStore(pinia)

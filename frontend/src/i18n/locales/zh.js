@@ -230,7 +230,7 @@ export default {
     thinking: '思考中...',
     loadMore: '加载更早消息',
     noMessages: '还没有消息，打个招呼吧',
-    typing: '{name}正在输入中...',
+    typing: '{name}正在回复中...',
     scrollToBottom: '回到底部',
   },
   group: {

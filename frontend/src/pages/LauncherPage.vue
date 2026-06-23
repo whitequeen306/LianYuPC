@@ -53,6 +53,7 @@ let unsubscribeLauncherMessage = null
 let unsubscribePetChanged = null
 let unsubscribeInteractionReset = null
 let unsubscribeGreeting = null
+let unsubscribeRestartObserver = null
 let gsapCtx = null
 let idleFloatTween = null
 let dragRafId = null
@@ -108,9 +109,13 @@ function startObserver() {
   const pet = getPetById(currentPetId.value)
   const persona = getPetPersona(pet)
   if (!persona) return
-  api.startDesktopObserver({
+  void api.startDesktopObserver({
     persona,
     petId: currentPetId.value,
+  }).then((res) => {
+    if (res && !res.ok) {
+      console.warn('[launcher] screen observe not started:', res.reason)
+    }
   })
 }
 
@@ -299,6 +304,7 @@ onMounted(async () => {
   unsubscribePetChanged = getElectronAPI()?.onLauncherPetChanged?.(applyPetId)
   unsubscribeInteractionReset = getElectronAPI()?.onLauncherInteractionReset?.(resetInteractionState)
   unsubscribeGreeting = getElectronAPI()?.onLauncherGreeting?.(showGreeting)
+  unsubscribeRestartObserver = getElectronAPI()?.onRestartObserver?.(startObserver)
 })
 
 onUnmounted(() => {
@@ -312,6 +318,7 @@ onUnmounted(() => {
   unsubscribePetChanged?.()
   unsubscribeInteractionReset?.()
   unsubscribeGreeting?.()
+  unsubscribeRestartObserver?.()
   gsapCtx?.revert()
 })
 </script>

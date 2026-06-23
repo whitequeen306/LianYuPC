@@ -5,7 +5,7 @@
         <h1 class="page-title">我的羁绊</h1>
         <p class="page-desc">点开头像继续对话，或创建属于你的角色</p>
       </div>
-      <el-button type="primary" class="btn-cta" :icon="Plus" @click="showCreateDialog">
+      <el-button v-bubble-btn type="primary" class="btn-cta" :icon="Plus" @click="showCreateDialog">
         创建角色
       </el-button>
     </header>
@@ -21,7 +21,7 @@
       </div>
       <h3>还没有角色</h3>
       <p>创建你的第一个 AI 角色，赋予它独特的性格和说话风格</p>
-      <el-button type="primary" class="btn-cta btn-cta-lg" :icon="Plus" @click="showCreateDialog">
+      <el-button v-bubble-btn type="primary" class="btn-cta btn-cta-lg" :icon="Plus" @click="showCreateDialog">
         创建角色
       </el-button>
     </div>
@@ -32,6 +32,7 @@
           <div
             v-for="(char, idx) in characters"
             :key="char.id"
+            v-tilt
             class="character-card glass stagger-item"
             :class="{
               'has-unread': unreadCountForCharacter(char.id) > 0,
@@ -88,7 +89,7 @@
       </div>
 
       <aside class="characters-spotlight" aria-live="polite">
-        <div v-if="spotlightCharacter" class="character-spotlight glass">
+        <div v-if="spotlightCharacter" v-tilt class="character-spotlight glass">
           <div class="character-spotlight__glow" aria-hidden="true" />
           <div class="character-spotlight__portrait">
             <img
@@ -112,7 +113,7 @@
               <span class="character-spotlight__inner-label">内心空间</span>
               <p>{{ innerSpaceBodyForCharacter(spotlightCharacter.id) }}</p>
             </div>
-            <el-button type="primary" class="character-spotlight__cta" @click="startChat(spotlightCharacter)">
+            <el-button v-bubble-btn type="primary" class="character-spotlight__cta" @click="startChat(spotlightCharacter)">
               {{ t('characters.continueChat') }}
             </el-button>
           </div>
@@ -682,19 +683,14 @@ async function startChat(char) {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(180deg, rgba($color-pink-rgb, 0.12), rgba(10, 10, 16, 0.92));
+    background: var(--ly-feed-panel-fallback-bg);
     color: $color-pink-primary;
   }
 
   &__vignette {
     position: absolute;
     inset: 0;
-    background: linear-gradient(
-      180deg,
-      transparent 38%,
-      rgba(8, 8, 14, 0.55) 72%,
-      rgba(8, 8, 14, 0.96) 100%
-    );
+    background: var(--ly-feed-panel-vignette);
     pointer-events: none;
   }
 
@@ -726,14 +722,14 @@ async function startChat(char) {
     padding: $space-4 $space-4 $space-4 $space-5;
     border-left: 2px solid rgba($color-pink-rgb, 0.42);
     border-radius: 0 $radius-md $radius-md 0;
-    background: rgba(8, 8, 14, 0.42);
+    background: var(--ly-feed-quote-bg);
     backdrop-filter: blur(8px);
 
     p {
       margin: 0;
       font-size: $font-size-sm;
       line-height: $line-height-relaxed;
-      color: rgba(255, 255, 255, 0.9);
+      color: var(--ly-feed-quote-text);
       font-style: italic;
       display: -webkit-box;
       -webkit-line-clamp: 6;
@@ -754,7 +750,7 @@ async function startChat(char) {
 
     p {
       margin: 0;
-      color: rgba(255, 255, 255, 0.88);
+      color: $color-text-secondary;
       font-size: $font-size-sm;
       line-height: $line-height-relaxed;
       display: -webkit-box;

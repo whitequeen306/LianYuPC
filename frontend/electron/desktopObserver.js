@@ -22,7 +22,7 @@ let lastMousePos = { x: 0, y: 0 }
 
 export function startDesktopObserver({ apiOrigin, authToken, persona, petId, onGreeting: cb }) {
   stopDesktopObserver()
-  if (!apiOrigin || !authToken || !persona || !onGreeting) return false
+  if (!apiOrigin || !authToken || !persona || !cb) return false
   lastApiOrigin = apiOrigin
   lastAuthToken = authToken
   lastPersona = persona
@@ -139,8 +139,15 @@ async function runObserve() {
       req.end(body)
     })
 
-    // 5. 解析结果
-    const greeting = (response && response.data && response.data.greeting)
+    // 5. 解析结果（Result 成功码 200）
+    if (!response || response.code !== 200 || !response.data) {
+      if (response?.message) {
+        console.warn('[desktopObserver] observe rejected:', response.message)
+      }
+      scheduleNext()
+      return
+    }
+    const greeting = response.data.greeting
       ? String(response.data.greeting).trim().slice(0, MAX_GREETING_LENGTH)
       : null
 

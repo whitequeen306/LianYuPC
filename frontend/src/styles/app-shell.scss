@@ -485,7 +485,7 @@
   .feed-card__body {
     font-size: $font-size-base;
     line-height: 1.75;
-    color: rgba(255, 255, 255, 0.9);
+    color: var(--ly-feed-hero-body-text);
     margin-top: $space-2;
   }
 
@@ -845,19 +845,14 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(180deg, rgba($color-pink-rgb, 0.12), rgba(10, 10, 16, 0.9));
+    background: var(--ly-feed-panel-fallback-bg);
     color: $color-pink-primary;
   }
 
   &__vignette {
     position: absolute;
     inset: 0;
-    background: linear-gradient(
-      180deg,
-      transparent 35%,
-      rgba(8, 8, 14, 0.55) 72%,
-      rgba(8, 8, 14, 0.95) 100%
-    );
+    background: var(--ly-feed-panel-vignette);
     pointer-events: none;
   }
 
@@ -894,14 +889,14 @@
     padding: $space-4 $space-4 $space-4 $space-5;
     border-left: 2px solid rgba($color-pink-rgb, 0.45);
     border-radius: 0 $radius-md $radius-md 0;
-    background: rgba(8, 8, 14, 0.45);
+    background: var(--ly-feed-quote-bg);
     backdrop-filter: blur(8px);
 
     p {
       margin: 0;
       font-size: $font-size-sm;
       line-height: $line-height-relaxed;
-      color: rgba(255, 255, 255, 0.88);
+      color: var(--ly-feed-quote-text);
       font-style: italic;
       display: -webkit-box;
       -webkit-line-clamp: 4;

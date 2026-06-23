@@ -385,6 +385,12 @@ public class ConversationService {
         if (!replies.isEmpty()) {
             proactiveUnrepliedThrottle.recordProactiveSent(conversationId);
             memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
+            notificationService.notifyProactiveMessage(
+                    userId,
+                    conversationId,
+                    character.getId(),
+                    character.getName(),
+                    replies.get(0).getContent());
         }
         return replies;
     }

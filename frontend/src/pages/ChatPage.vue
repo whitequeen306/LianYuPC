@@ -20,7 +20,7 @@
           <el-icon :size="18"><ArrowLeft /></el-icon>
         </button>
         <div class="gal-header__meta">
-          <h2 class="gal-header__name" :class="{ 'is-typing': awaitingOpening }">{{ headerTitle }}</h2>
+          <h2 class="gal-header__name" :class="{ 'is-typing': showHeaderTyping }">{{ headerTitle }}</h2>
           <EmotionBadge
             v-if="emotionState"
             :current-emotion="emotionState.currentEmotion"
@@ -28,28 +28,7 @@
             :status-text="emotionState.statusText"
           />
         </div>
-        <button
-          v-if="activeCharacter?.id"
-          type="button"
-          class="gal-header__settings"
-          :title="t('characters.settings')"
-          @click="openCharacterSettings"
-        >
-          <el-icon :size="18"><Setting /></el-icon>
-        </button>
       </header>
-
-      <div v-if="isCompact && activeCharacter?.id" class="gal-compact-toolbar">
-        <button
-          type="button"
-          class="gal-compact-toolbar__settings"
-          :title="t('characters.settings')"
-          @click="openCharacterSettings"
-        >
-          <el-icon :size="16"><Setting /></el-icon>
-          <span>{{ t('characters.settings') }}</span>
-        </button>
-      </div>
 
       <div v-if="isBlocked" class="blocked-banner">
         当前角色已被拉黑，无法继续发送消息。请前往角色设置调整。
@@ -240,7 +219,7 @@ import { useCharactersStore } from '@/stores/characters'
 import { humanizeError } from '@/utils/errorMessage'
 import { getConversation, getMessages, sendMessageStream, uploadChatImage } from '@/api/conversation'
 import { fetchModels } from '@/api/ai'
-import { ArrowLeft, ArrowDown, ChatDotRound, Promotion, Picture, Close, User, UserFilled, Setting } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowDown, ChatDotRound, Promotion, Picture, Close, User, UserFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { resolveMediaUrl } from '@/utils/media'
 import { PLATFORM_PROVIDER, PLATFORM_MODEL, PLATFORM_PROVIDER_LABEL } from '@/constants/ai'
@@ -371,10 +350,12 @@ const activeSettings = computed(() => activeCharacter.value?.settings || {})
 const isBlocked = computed(() => activeSettings.value.blocked === true)
 const showInnerThoughts = computed(() => resolveShowInnerThoughts(activeSettings.value))
 
+const showHeaderTyping = computed(() => awaitingOpening.value || waitingReply.value)
+
 const headerTitle = computed(() => {
   const name = activeCharacter.value?.name
   if (!name) return ''
-  if (awaitingOpening.value) {
+  if (showHeaderTyping.value) {
     return t('chat.typing', { name })
   }
   return name
@@ -1029,12 +1010,6 @@ function syncStreamingAssistantBubbles(fullContent, streamGroupId, createdAt) {
   messages.value = [...rest, ...streamMsgs]
 }
 
-function openCharacterSettings() {
-  const charId = activeCharacter.value?.id
-  if (!charId) return
-  router.push(`/app/characters/${charId}/detail`)
-}
-
 function normalizeMessageRole(msg) {
   if (!msg) return msg
   const role = String(msg.role || '').toLowerCase()
@@ -1075,7 +1050,7 @@ function formatTime(ts) {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background: #0a0a12;
+  background: var(--ly-chat-scene-bg);
 }
 
 .gal-bg-wrap {
@@ -1106,16 +1081,14 @@ function formatTime(ts) {
       radial-gradient(ellipse 85% 55% at 50% 18%, var(--gal-accent-soft, rgba($color-pink-rgb, 0.14)), transparent 62%),
       radial-gradient(ellipse 50% 35% at 82% 72%, rgba($color-pink-rgb, 0.07), transparent 58%),
       radial-gradient(ellipse 40% 30% at 12% 65%, rgba(120, 140, 200, 0.06), transparent 55%),
-      linear-gradient(180deg, #14141f 0%, #0a0a12 52%, #07070e 100%);
+      var(--ly-chat-ambient-base);
   }
 }
 
 .gal-bg-vignette {
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(ellipse 90% 70% at 50% 22%, transparent 0%, rgba(8, 8, 14, 0.35) 55%, rgba(8, 8, 14, 0.82) 100%),
-    linear-gradient(180deg, rgba(8, 8, 14, 0.15) 0%, rgba(8, 8, 14, 0.55) 52%, rgba(8, 8, 14, 0.92) 100%);
+  background: var(--ly-chat-vignette);
 }
 
 .gal-bg-floor {
@@ -1124,7 +1097,7 @@ function formatTime(ts) {
   right: 0;
   bottom: 0;
   height: 42%;
-  background: linear-gradient(180deg, transparent, rgba(8, 8, 14, 0.75));
+  background: var(--ly-chat-floor);
 }
 
 .gal-header {
@@ -1136,7 +1109,7 @@ function formatTime(ts) {
   align-items: center;
   gap: $space-3;
   padding: calc(#{$space-3} + env(safe-area-inset-top, 0px)) $space-4 $space-3;
-  background: linear-gradient(180deg, rgba(8, 8, 14, 0.72), transparent);
+  background: var(--ly-chat-header-bg);
 }
 
 .gal-header__back {
@@ -1147,8 +1120,8 @@ function formatTime(ts) {
   align-items: center;
   justify-content: center;
   color: $color-text-primary;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--ly-chat-header-control-bg);
+  border: 1px solid var(--ly-chat-header-control-border);
   flex-shrink: 0;
 }
 
@@ -1160,20 +1133,6 @@ function formatTime(ts) {
   gap: 4px;
 }
 
-.gal-header__settings {
-  width: 36px;
-  height: 36px;
-  border-radius: $radius-full;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: $color-text-primary;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  flex-shrink: 0;
-  cursor: pointer;
-}
-
 .gal-header__name {
   margin: 0;
   font-size: $font-size-lg;
@@ -1182,7 +1141,7 @@ function formatTime(ts) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.45);
+  text-shadow: none;
 
   &.is-typing {
     font-size: $font-size-sm;
@@ -1256,9 +1215,9 @@ function formatTime(ts) {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(0, 0, 0, 0.45);
-  color: #fff;
+  border: 1px solid var(--ly-chat-scroll-border);
+  background: var(--ly-chat-scroll-bg);
+  color: var(--ly-chat-scroll-color);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1370,40 +1329,36 @@ function formatTime(ts) {
 }
 
 .gal-bubble--hero {
-  background: rgba(16, 16, 24, 0.64);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: var(--ly-chat-hero-bubble-bg);
+  border: 1px solid var(--ly-chat-hero-bubble-border);
   border-bottom-left-radius: $radius-sm;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.26);
+  box-shadow: var(--ly-chat-hero-bubble-shadow);
   backdrop-filter: blur(10px);
 
   .gal-bubble__text,
   :deep(.gal-bubble__text) {
-    color: rgba(255, 255, 255, 0.92);
+    color: var(--ly-chat-hero-bubble-text);
   }
 
   .gal-bubble__time {
-    color: rgba(255, 255, 255, 0.38);
+    color: var(--ly-chat-hero-bubble-time);
     text-align: left;
   }
 }
 
 .gal-bubble--user {
-  background: linear-gradient(
-    135deg,
-    rgba($color-pink-rgb, 0.32) 0%,
-    rgba($color-pink-rgb, 0.2) 100%
-  );
-  border: 1px solid rgba($color-pink-rgb, 0.34);
+  background: var(--ly-chat-user-bubble-bg);
+  border: 1px solid var(--ly-chat-user-bubble-border);
   border-bottom-right-radius: $radius-sm;
   box-shadow: 0 2px 12px rgba($color-pink-rgb, 0.16);
   backdrop-filter: blur(10px);
 
   .gal-bubble__text {
-    color: $color-text-primary;
+    color: var(--ly-chat-user-bubble-text);
   }
 
   .gal-bubble__time {
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--ly-chat-user-bubble-time);
     text-align: right;
   }
 }
@@ -1424,8 +1379,8 @@ function formatTime(ts) {
   z-index: 3;
   flex-shrink: 0;
   padding: $space-3 $space-4 calc(#{$space-3} + env(safe-area-inset-bottom, 0px));
-  border-top: 1px solid rgba($color-pink-rgb, 0.12);
-  background: rgba(10, 10, 16, 0.82) !important;
+  border-top: 1px solid var(--ly-chat-input-border);
+  background: var(--ly-chat-input-bg) !important;
 }
 
 .input-row {
@@ -1514,27 +1469,6 @@ function formatTime(ts) {
   }
 }
 
-.gal-compact-toolbar {
-  position: relative;
-  z-index: 3;
-  display: flex;
-  justify-content: flex-end;
-  padding: 6px 10px 0;
-}
-
-.gal-compact-toolbar__settings {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border-radius: $radius-full;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.35);
-  color: $color-text-muted;
-  font-size: 12px;
-  cursor: pointer;
-}
-
 .gal-chat--compact {
   .gal-scene {
     min-height: 100%;
@@ -1547,14 +1481,12 @@ function formatTime(ts) {
   }
 
   .gal-bg-vignette {
-    background:
-      radial-gradient(ellipse 90% 70% at 50% 22%, transparent 0%, rgba(8, 8, 14, 0.25) 55%, rgba(8, 8, 14, 0.5) 100%),
-      linear-gradient(180deg, rgba(8, 8, 14, 0.1) 0%, rgba(8, 8, 14, 0.35) 100%);
+    background: var(--ly-chat-vignette-compact);
   }
 
   .gal-bg-floor {
     height: 28%;
-    background: linear-gradient(180deg, transparent, rgba(8, 8, 14, 0.45));
+    background: var(--ly-chat-floor-compact);
   }
 
   .gal-input {

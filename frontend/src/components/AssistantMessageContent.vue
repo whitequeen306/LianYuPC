@@ -65,11 +65,11 @@ const rootClass = computed(() => [
   }
 
   &--chat &__speech {
-    color: rgba(255, 255, 255, 0.94);
+    color: var(--ly-assistant-msg-speech);
   }
 
   &--chat &__inner {
-    color: rgba(255, 255, 255, 0.52);
+    color: var(--ly-assistant-msg-inner);
   }
 
   &--group &__speech {

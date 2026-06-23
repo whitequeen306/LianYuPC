@@ -223,7 +223,8 @@ export default {
     send: '送信',
     thinking: '考え中...',
     loadMore: 'さらに読み込む',
-    noMessages: 'まだメッセージがありません。挨拶してみましょう'
+    noMessages: 'まだメッセージがありません。挨拶してみましょう',
+    typing: '{name}が返信中...',
   },
   group: {
     title: 'グループチャット',
