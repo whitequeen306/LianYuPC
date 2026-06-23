@@ -39,6 +39,7 @@ import {
   stopDesktopObserver,
   onWindowChanged,
 } from './desktopObserver.js'
+import { prepareGreetingPayload } from './greetingAudio.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const isDev = !!process.env.VITE_DEV_SERVER_URL
@@ -241,7 +242,7 @@ function configureContentSecurityPolicy() {
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob: https:",
     "connect-src 'self' https: wss:",
-    "media-src 'self'",
+    "media-src 'self' data: blob: file:",
     "object-src 'none'",
     "base-uri 'self'",
     "frame-ancestors 'none'",
@@ -637,6 +638,7 @@ function showLauncherWindow(options = {}) {
     if (!force && isMainWindowOccupyingDesktop()) return
     if (!win || win.isDestroyed()) return
     resetLauncherInteraction()
+    win.webContents.setAudioMuted(false)
     win.show()
     win.moveTop()
   }
@@ -1206,12 +1208,15 @@ function registerIpcHandlers() {
       persona,
       petId: resolvedPetId,
       onGreeting: (payload) => {
-        const audioLen = payload?.audioBase64 ? payload.audioBase64.length : 0
-        if (isDebug) {
-          console.log('[desktopObserver] greeting audioBase64 len=', audioLen)
+        const forward = prepareGreetingPayload(payload)
+        if (payload?.audioBase64 && !forward.audioUrl) {
+          console.warn('[desktopObserver] failed to materialize greeting audio file')
+        } else if (forward.audioUrl) {
+          console.log('[desktopObserver] greeting audio ready:', forward.audioUrl.slice(0, 80))
         }
         if (launcherWindow && !launcherWindow.isDestroyed()) {
-          launcherWindow.webContents.send('desktop:launcher-greeting', payload)
+          launcherWindow.webContents.setAudioMuted(false)
+          launcherWindow.webContents.send('desktop:launcher-greeting', forward)
         }
       },
     })

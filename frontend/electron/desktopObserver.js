@@ -156,8 +156,11 @@ async function runObserve() {
       lastGreetingTime = Date.now()
       lastWindowTitle = windowTitle
       const audioBase64 = response.data.audioBase64 || ''
+      const audioLen = audioBase64.length
       if (!audioBase64) {
-        console.warn('[desktopObserver] observe ok but no audioBase64 (check petId/TTS on server)')
+        console.warn('[desktopObserver] observe ok but no audioBase64 in API response')
+      } else {
+        console.log('[desktopObserver] observe audioBase64 bytes≈', Math.round(audioLen * 0.75))
       }
       onGreeting({
         text: greeting,

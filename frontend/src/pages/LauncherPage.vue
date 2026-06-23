@@ -256,16 +256,22 @@ function stopGreetingAudio() {
 }
 
 function playGreetingAudio(payload = {}) {
-  const base64 = payload.audioBase64
-  if (!base64) {
-    console.warn('[launcher] greeting has no audioBase64 (TTS skipped or not supported pet)')
+  const mime = payload.audioMimeType || 'audio/wav'
+  const src = payload.audioUrl
+    || (payload.audioBase64 ? `data:${mime};base64,${payload.audioBase64}` : '')
+  if (!src) {
+    console.warn('[launcher] greeting has no audioUrl/audioBase64')
     return false
   }
-  const mime = payload.audioMimeType || 'audio/wav'
   stopGreetingAudio()
   try {
-    greetingAudio = new Audio(`data:${mime};base64,${base64}`)
+    greetingAudio = new Audio(src)
     greetingAudio.volume = 0.92
+    greetingAudio.onerror = () => {
+      const code = greetingAudio?.error?.code
+      console.warn('[launcher] greeting audio element error, code=', code, 'src=', src.slice(0, 80))
+      pendingGreetingAudioPayload = payload
+    }
     const playPromise = greetingAudio.play()
     if (playPromise && typeof playPromise.then === 'function') {
       playPromise.then(() => {
