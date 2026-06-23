@@ -40,7 +40,7 @@
           </button>
         </div>
 
-        <div v-if="!filterCharId" class="feed-compose-card glass stagger-item">
+        <div v-if="!filterCharId" v-tilt class="feed-compose-card glass stagger-item">
           <div class="feed-compose-card__head">
             <div class="feed-card__avatar feed-compose-card__avatar">
               <img
@@ -64,6 +64,7 @@
           />
           <div class="feed-compose-card__actions">
             <el-button
+              v-bubble-btn
               type="primary"
               :loading="userPostSending"
               :disabled="!userPostDraft.trim()"
@@ -95,6 +96,7 @@
 
             <article
               v-else
+              v-tilt
               class="feed-card glass stagger-item"
               :class="[
                 postTypeClass(item.post.postType),

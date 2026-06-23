@@ -1169,6 +1169,9 @@ function registerIpcHandlers() {
       clampLauncherToWorkArea()
       launcherWindow.webContents.send('desktop:launcher-pet-changed', partial.launcherPetId)
     }
+    if (partial?.allowScreenObserve === true && launcherWindow && !launcherWindow.isDestroyed()) {
+      launcherWindow.webContents.send('desktop:restart-observer')
+    }
     if (tray) {
       tray.setContextMenu(buildTrayMenu())
     }
@@ -1194,7 +1197,7 @@ function registerIpcHandlers() {
     if (!session?.token) {
       return { ok: false, reason: 'not_logged_in' }
     }
-    startDesktopObserver({
+    const started = startDesktopObserver({
       apiOrigin: resolveApiOrigin(),
       authToken: session.token,
       persona,
@@ -1205,7 +1208,7 @@ function registerIpcHandlers() {
         }
       },
     })
-    return { ok: true }
+    return started ? { ok: true } : { ok: false, reason: 'start_failed' }
   })
 
   ipcMain.handle('desktop:stop-observer', () => {

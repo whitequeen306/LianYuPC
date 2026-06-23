@@ -874,6 +874,7 @@ function isUserMessage(msg) {
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    background: $color-bg-primary;
   }
 }
 
@@ -1157,9 +1158,9 @@ function isUserMessage(msg) {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(0, 0, 0, 0.45);
-  color: #fff;
+  border: 1px solid var(--ly-chat-scroll-border);
+  background: var(--ly-chat-scroll-bg);
+  color: var(--ly-chat-scroll-color);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1224,15 +1225,17 @@ function isUserMessage(msg) {
   border-radius: $radius-lg;
 
   &.bubble-user {
-    background: $color-pink-primary;
-    color: $color-text-inverse;
+    background: var(--ly-chat-user-bubble-bg, $color-pink-primary);
+    color: var(--ly-chat-user-bubble-text, $color-text-inverse);
+    border: 1px solid var(--ly-chat-user-bubble-border, transparent);
     border-bottom-right-radius: $radius-sm;
   }
 
   &.bubble-assistant {
-    background: rgba($color-bg-surface, 0.9);
-    border: 1px solid rgba($color-pink-rgb, 0.12);
+    background: var(--ly-chat-assistant-bubble-bg, rgba($color-bg-surface, 0.9));
+    border: 1px solid var(--ly-chat-assistant-bubble-border, rgba($color-pink-rgb, 0.12));
     border-bottom-left-radius: $radius-sm;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
   }
 }
 
@@ -1260,7 +1263,7 @@ function isUserMessage(msg) {
 }
 
 .bubble-user .gm-time {
-  color: rgba($color-text-inverse, 0.75);
+  color: var(--ly-chat-user-bubble-time, rgba($color-text-inverse, 0.75));
   opacity: 1;
 }
 
@@ -1278,11 +1281,11 @@ function isUserMessage(msg) {
   word-break: break-word;
 
   .bubble-user & {
-    color: $color-text-inverse;
+    color: var(--ly-chat-user-bubble-text, $color-text-inverse);
   }
 
   .bubble-assistant & {
-    color: $color-text-primary;
+    color: var(--ly-chat-assistant-bubble-text, $color-text-primary);
   }
 }
 
@@ -1303,8 +1306,8 @@ function isUserMessage(msg) {
   position: relative;
   overflow: visible;
   padding: $space-3 $space-5;
-  border-top: 1px solid rgba($color-pink-rgb, 0.06);
-  background: rgba($color-bg-secondary, 0.96);
+  border-top: 1px solid var(--ly-chat-input-border, rgba($color-pink-rgb, 0.06));
+  background: var(--ly-chat-input-bg, rgba($color-bg-secondary, 0.96));
 
   .ws-status-hint {
     display: block;

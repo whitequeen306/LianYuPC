@@ -40,18 +40,26 @@
       </div>
 
       <div class="dock-wheel__bar">
-        <router-link
-          v-for="item in primaryLeft"
-          :key="item.path"
-          :to="item.path"
-          class="dock-primary"
-          :class="{ active: isActive(item.path) }"
+        <div
+          ref="leftGroupRef"
+          class="dock-primary-group"
+          @mouseleave="onGroupLeave('left')"
         >
-          <span class="dock-primary__icon">
-            <el-icon :size="24"><component :is="item.icon" /></el-icon>
-          </span>
-          <span class="dock-primary__label">{{ item.label }}</span>
-        </router-link>
+          <div ref="leftPillRef" class="dock-slider-pill" aria-hidden="true" />
+          <router-link
+            v-for="item in primaryLeft"
+            :key="item.path"
+            :to="item.path"
+            class="dock-primary"
+            :class="{ active: isActive(item.path) }"
+            @mouseenter="onPrimaryHover('left', $event.currentTarget)"
+          >
+            <span class="dock-primary__icon">
+              <el-icon :size="24"><component :is="item.icon" /></el-icon>
+            </span>
+            <span class="dock-primary__label">{{ item.label }}</span>
+          </router-link>
+        </div>
 
         <button
           type="button"
@@ -70,31 +78,39 @@
         </button>
 
         <div
-          v-for="item in primaryRight"
-          :key="item.path"
-          class="dock-primary-wrap"
+          ref="rightGroupRef"
+          class="dock-primary-group"
+          @mouseleave="onGroupLeave('right')"
         >
-          <transition name="dock-hint-fade">
-            <OnboardingHintBubble
-              v-if="item.path === '/app/character-square' && showSquareHint && isHomeRoute"
-              placement="dock-top"
-              :close-label="t('common.cancel')"
-              @dismiss="dismissSquareHint"
-            >
-              {{ t('onboarding.squareHint') }}
-            </OnboardingHintBubble>
-          </transition>
-          <router-link
-            :to="item.path"
-            class="dock-primary"
-            :class="{ active: isActive(item.path) }"
-            @click="onPrimaryNavClick(item.path)"
+          <div ref="rightPillRef" class="dock-slider-pill" aria-hidden="true" />
+          <div
+            v-for="item in primaryRight"
+            :key="item.path"
+            class="dock-primary-wrap"
           >
-            <span class="dock-primary__icon">
-              <el-icon :size="24"><component :is="item.icon" /></el-icon>
-            </span>
-            <span class="dock-primary__label">{{ item.label }}</span>
-          </router-link>
+            <transition name="dock-hint-fade">
+              <OnboardingHintBubble
+                v-if="item.path === '/app/character-square' && showSquareHint && isHomeRoute"
+                placement="dock-top"
+                :close-label="t('common.cancel')"
+                @dismiss="dismissSquareHint"
+              >
+                {{ t('onboarding.squareHint') }}
+              </OnboardingHintBubble>
+            </transition>
+            <router-link
+              :to="item.path"
+              class="dock-primary"
+              :class="{ active: isActive(item.path) }"
+              @mouseenter="onPrimaryHover('right', $event.currentTarget)"
+              @click="onPrimaryNavClick(item.path)"
+            >
+              <span class="dock-primary__icon">
+                <el-icon :size="24"><component :is="item.icon" /></el-icon>
+              </span>
+              <span class="dock-primary__label">{{ item.label }}</span>
+            </router-link>
+          </div>
         </div>
       </div>
     </div>
@@ -102,9 +118,10 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { gsap } from 'gsap'
 import { Compass, HomeFilled, ChatLineRound, Grid, PictureRounded, ChatDotRound, Notebook, Collection, UserFilled, Setting } from '@element-plus/icons-vue'
 import OnboardingHintBubble from '@/components/OnboardingHintBubble.vue'
 import { useOnboardingHint } from '@/composables/useOnboardingHint'
@@ -120,8 +137,16 @@ const isOpen = ref(false)
 const hoverCapable = ref(true)
 const dockVisible = ref(true)
 
+const leftGroupRef = ref(null)
+const rightGroupRef = ref(null)
+const leftPillRef = ref(null)
+const rightPillRef = ref(null)
+const hoverSide = ref(null)
+
 let closeTimer = null
 let dockHideTimer = null
+let leftPillTween = null
+let rightPillTween = null
 
 const primaryLeft = computed(() => [
   { path: '/app', label: t('nav.home'), icon: HomeFilled },
@@ -231,17 +256,78 @@ function onPrimaryNavClick(path) {
   }
 }
 
-watch(() => route.path, close)
+function findActiveLink(groupEl) {
+  if (!groupEl) return null
+  return groupEl.querySelector('.dock-primary.active') || groupEl.querySelector('.dock-primary')
+}
+
+function movePill(side, targetEl, immediate = false) {
+  const groupEl = side === 'left' ? leftGroupRef.value : rightGroupRef.value
+  const pillEl = side === 'left' ? leftPillRef.value : rightPillRef.value
+  if (!groupEl || !pillEl || !targetEl) return
+
+  const groupRect = groupEl.getBoundingClientRect()
+  const itemRect = targetEl.getBoundingClientRect()
+  const x = itemRect.left - groupRect.left
+  const y = itemRect.top - groupRect.top
+
+  if (side === 'left') leftPillTween?.kill()
+  else rightPillTween?.kill()
+
+  const tween = gsap.to(pillEl, {
+    x,
+    y,
+    width: itemRect.width,
+    height: itemRect.height,
+    opacity: 1,
+    duration: immediate ? 0 : 0.42,
+    ease: 'power3.out',
+    overwrite: true,
+  })
+
+  if (side === 'left') leftPillTween = tween
+  else rightPillTween = tween
+}
+
+function syncActivePills(immediate = false) {
+  if (hoverSide.value) return
+  nextTick(() => {
+    movePill('left', findActiveLink(leftGroupRef.value), immediate)
+    movePill('right', findActiveLink(rightGroupRef.value), immediate)
+  })
+}
+
+function onPrimaryHover(side, el) {
+  hoverSide.value = side
+  movePill(side, el)
+}
+
+function onGroupLeave(side) {
+  if (hoverSide.value === side) {
+    hoverSide.value = null
+    syncActivePills()
+  }
+}
+
+watch(() => route.path, () => {
+  close()
+  syncActivePills()
+})
 
 onMounted(() => {
   hoverCapable.value = window.matchMedia('(hover: hover) and (pointer: fine)').matches
   window.addEventListener('mousemove', onGlobalMouseMove, { passive: true })
+  syncActivePills(true)
+  window.addEventListener('resize', syncActivePills, { passive: true })
 })
 
 onBeforeUnmount(() => {
   clearTimeout(closeTimer)
   clearTimeout(dockHideTimer)
   window.removeEventListener('mousemove', onGlobalMouseMove)
+  window.removeEventListener('resize', syncActivePills)
+  leftPillTween?.kill()
+  rightPillTween?.kill()
 })
 </script>
 
@@ -400,6 +486,30 @@ onBeforeUnmount(() => {
   min-width: min(380px, calc(100vw - #{$space-6}));
 }
 
+.dock-primary-group {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.dock-slider-pill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  border-radius: $radius-pill;
+  background: rgba($color-pink-rgb, 0.12);
+  box-shadow: inset 0 0 0 1px rgba($color-pink-rgb, 0.14);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+  will-change: transform, width, height;
+}
+
 .dock-primary-wrap {
   position: relative;
   flex: 1;
@@ -412,6 +522,8 @@ onBeforeUnmount(() => {
 }
 
 .dock-primary {
+  position: relative;
+  z-index: 1;
   width: 100%;
   min-width: 0;
   max-width: 72px;
@@ -423,16 +535,15 @@ onBeforeUnmount(() => {
   border-radius: $radius-pill;
   text-decoration: none;
   color: $color-text-muted;
-  transition: color $transition-fast, background $transition-fast, transform $transition-fast;
+  transition: color $transition-fast, transform $transition-fast;
+  background: transparent;
 
   &:hover {
     color: $color-text-secondary;
-    background: rgba($color-pink-rgb, 0.06);
   }
 
   &.active {
     color: $color-pink-primary;
-    background: rgba($color-pink-rgb, 0.12);
 
     .dock-primary__icon {
       transform: translateY(-1px);

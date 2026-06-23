@@ -20,6 +20,47 @@
   --ly-text-secondary: #b8a0a8;
   --ly-text-muted: #8a727c;
   --ly-text-inverse: #2d1f24;
+
+  /* Chat (单聊 / 群聊气泡与场景) */
+  --ly-chat-scene-bg: #0a0a12;
+  --ly-chat-ambient-base: linear-gradient(180deg, #14141f 0%, #0a0a12 52%, #07070e 100%);
+  --ly-chat-vignette: radial-gradient(ellipse 90% 70% at 50% 22%, transparent 0%, rgba(8, 8, 14, 0.35) 55%, rgba(8, 8, 14, 0.82) 100%),
+    linear-gradient(180deg, rgba(8, 8, 14, 0.15) 0%, rgba(8, 8, 14, 0.55) 52%, rgba(8, 8, 14, 0.92) 100%);
+  --ly-chat-vignette-compact: radial-gradient(ellipse 90% 70% at 50% 22%, transparent 0%, rgba(8, 8, 14, 0.25) 55%, rgba(8, 8, 14, 0.5) 100%),
+    linear-gradient(180deg, rgba(8, 8, 14, 0.1) 0%, rgba(8, 8, 14, 0.35) 100%);
+  --ly-chat-floor: linear-gradient(180deg, transparent, rgba(8, 8, 14, 0.75));
+  --ly-chat-floor-compact: linear-gradient(180deg, transparent, rgba(8, 8, 14, 0.45));
+  --ly-chat-header-bg: linear-gradient(180deg, rgba(8, 8, 14, 0.72), transparent);
+  --ly-chat-header-control-bg: rgba(255, 255, 255, 0.08);
+  --ly-chat-header-control-border: rgba(255, 255, 255, 0.08);
+  --ly-chat-hero-bubble-bg: rgba(16, 16, 24, 0.72);
+  --ly-chat-hero-bubble-border: rgba(255, 255, 255, 0.1);
+  --ly-chat-hero-bubble-shadow: 0 2px 12px rgba(0, 0, 0, 0.26);
+  --ly-chat-hero-bubble-text: rgba(255, 255, 255, 0.94);
+  --ly-chat-hero-bubble-time: rgba(255, 255, 255, 0.42);
+  --ly-chat-user-bubble-bg: linear-gradient(135deg, rgba(var(--ly-accent-rgb), 0.32) 0%, rgba(var(--ly-accent-rgb), 0.2) 100%);
+  --ly-chat-user-bubble-border: rgba(var(--ly-accent-rgb), 0.34);
+  --ly-chat-user-bubble-text: var(--ly-text-primary);
+  --ly-chat-user-bubble-time: rgba(255, 255, 255, 0.52);
+  --ly-chat-input-bg: rgba(10, 10, 16, 0.82);
+  --ly-chat-input-border: rgba(var(--ly-accent-rgb), 0.12);
+  --ly-chat-scroll-bg: rgba(0, 0, 0, 0.45);
+  --ly-chat-scroll-border: rgba(255, 255, 255, 0.2);
+  --ly-chat-scroll-color: #ffffff;
+  --ly-chat-toolbar-bg: rgba(0, 0, 0, 0.35);
+  --ly-chat-toolbar-border: rgba(255, 255, 255, 0.1);
+  --ly-chat-assistant-bubble-bg: rgba(var(--ly-bg-surface-rgb), 0.92);
+  --ly-chat-assistant-bubble-border: rgba(var(--ly-accent-rgb), 0.14);
+  --ly-chat-assistant-bubble-text: var(--ly-text-primary);
+
+  /* Feed / Moments / atmosphere spotlight */
+  --ly-feed-hero-body-text: var(--ly-text-primary);
+  --ly-feed-quote-bg: rgba(8, 8, 14, 0.45);
+  --ly-feed-quote-text: rgba(255, 255, 255, 0.88);
+  --ly-feed-panel-vignette: linear-gradient(180deg, transparent 35%, rgba(8, 8, 14, 0.55) 72%, rgba(8, 8, 14, 0.95) 100%);
+  --ly-feed-panel-fallback-bg: linear-gradient(180deg, rgba(var(--ly-accent-rgb), 0.12), rgba(10, 10, 16, 0.9));
+  --ly-assistant-msg-speech: rgba(255, 255, 255, 0.94);
+  --ly-assistant-msg-inner: rgba(255, 255, 255, 0.52);
 }
 
 html:not(.dark),
@@ -39,6 +80,45 @@ html.light {
   --ly-text-secondary: #4a4a52;
   --ly-text-muted: #8a8a96;
   --ly-text-inverse: #ffffff;
+
+  --ly-chat-scene-bg: #f4f4f7;
+  --ly-chat-ambient-base: linear-gradient(180deg, #eceef2 0%, #f6f6f9 52%, #ffffff 100%);
+  --ly-chat-vignette: radial-gradient(ellipse 90% 70% at 50% 22%, transparent 0%, rgba(255, 255, 255, 0.35) 55%, rgba(240, 240, 244, 0.88) 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(236, 236, 242, 0.55) 52%, rgba(228, 228, 234, 0.92) 100%);
+  --ly-chat-vignette-compact: radial-gradient(ellipse 90% 70% at 50% 22%, transparent 0%, rgba(255, 255, 255, 0.2) 55%, rgba(240, 240, 244, 0.45) 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(236, 236, 242, 0.32) 100%);
+  --ly-chat-floor: linear-gradient(180deg, transparent, rgba(228, 228, 234, 0.75));
+  --ly-chat-floor-compact: linear-gradient(180deg, transparent, rgba(228, 228, 234, 0.45));
+  --ly-chat-header-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.88), transparent);
+  --ly-chat-header-control-bg: rgba(0, 0, 0, 0.04);
+  --ly-chat-header-control-border: rgba(0, 0, 0, 0.08);
+  --ly-chat-hero-bubble-bg: rgba(255, 255, 255, 0.92);
+  --ly-chat-hero-bubble-border: rgba(0, 0, 0, 0.08);
+  --ly-chat-hero-bubble-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+  --ly-chat-hero-bubble-text: var(--ly-text-primary);
+  --ly-chat-hero-bubble-time: var(--ly-text-muted);
+  --ly-chat-user-bubble-bg: linear-gradient(135deg, rgba(var(--ly-accent-rgb), 0.88) 0%, rgba(var(--ly-accent-rgb), 0.72) 100%);
+  --ly-chat-user-bubble-border: rgba(var(--ly-accent-rgb), 0.35);
+  --ly-chat-user-bubble-text: var(--ly-text-inverse);
+  --ly-chat-user-bubble-time: rgba(255, 255, 255, 0.82);
+  --ly-chat-input-bg: rgba(255, 255, 255, 0.94);
+  --ly-chat-input-border: rgba(var(--ly-accent-rgb), 0.16);
+  --ly-chat-scroll-bg: rgba(255, 255, 255, 0.94);
+  --ly-chat-scroll-border: rgba(0, 0, 0, 0.1);
+  --ly-chat-scroll-color: var(--ly-text-primary);
+  --ly-chat-toolbar-bg: rgba(255, 255, 255, 0.88);
+  --ly-chat-toolbar-border: rgba(0, 0, 0, 0.08);
+  --ly-chat-assistant-bubble-bg: rgba(255, 255, 255, 0.96);
+  --ly-chat-assistant-bubble-border: rgba(var(--ly-accent-rgb), 0.18);
+  --ly-chat-assistant-bubble-text: var(--ly-text-primary);
+
+  --ly-feed-hero-body-text: var(--ly-text-primary);
+  --ly-feed-quote-bg: rgba(255, 255, 255, 0.82);
+  --ly-feed-quote-text: var(--ly-text-primary);
+  --ly-feed-panel-vignette: linear-gradient(180deg, transparent 35%, rgba(255, 255, 255, 0.42) 72%, rgba(240, 240, 244, 0.92) 100%);
+  --ly-feed-panel-fallback-bg: linear-gradient(180deg, rgba(var(--ly-accent-rgb), 0.12), rgba(236, 236, 242, 0.95));
+  --ly-assistant-msg-speech: var(--ly-text-primary);
+  --ly-assistant-msg-inner: var(--ly-text-muted);
 
   --el-bg-color: var(--ly-bg-primary);
   --el-bg-color-page: var(--ly-bg-deepest);

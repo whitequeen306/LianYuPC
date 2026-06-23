@@ -24,6 +24,7 @@
             <article
               v-for="item in feedPreview"
               :key="item.key"
+              v-tilt
               class="feed-preview-card glass"
               @click="openFeedItem(item)"
             >
@@ -85,10 +86,10 @@
             <h2>{{ t('home.welcomeTitle') }}</h2>
             <p>{{ t('home.welcomeDesc') }}</p>
             <div class="story-actions">
-              <el-button type="primary" class="btn-cta" @click="$router.push('/app/characters')">
+              <el-button v-bubble-btn type="primary" class="btn-cta" @click="$router.push('/app/characters')">
                 {{ t('home.goCharacters') }}
               </el-button>
-              <el-button class="btn-ghost" @click="$router.push('/app/character-square')">
+              <el-button v-bubble-btn class="btn-ghost" @click="$router.push('/app/character-square')">
                 {{ t('home.exploreSquare') }}
               </el-button>
             </div>
@@ -100,19 +101,19 @@
             <h2 class="companion-section__title">{{ t('home.discoverSection') }}</h2>
           </div>
           <div class="discover-grid">
-            <router-link to="/app/diary" class="discover-tile glass">
+            <router-link v-tilt to="/app/diary" class="discover-tile glass">
               <el-icon :size="22"><Notebook /></el-icon>
               <span>{{ t('nav.diary') }}</span>
             </router-link>
-            <router-link to="/app/moments" class="discover-tile glass">
+            <router-link v-tilt to="/app/moments" class="discover-tile glass">
               <el-icon :size="22"><PictureRounded /></el-icon>
               <span>{{ t('nav.moments') }}</span>
             </router-link>
-            <router-link to="/app/group-chat" class="discover-tile glass">
+            <router-link v-tilt to="/app/group-chat" class="discover-tile glass">
               <el-icon :size="22"><ChatDotRound /></el-icon>
               <span>{{ t('nav.groupChat') }}</span>
             </router-link>
-            <router-link to="/app/memory" class="discover-tile glass">
+            <router-link v-tilt to="/app/memory" class="discover-tile glass">
               <el-icon :size="22"><Collection /></el-icon>
               <span>{{ t('nav.memory') }}</span>
             </router-link>

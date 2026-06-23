@@ -263,7 +263,8 @@ export default {
     send: '傳送',
     thinking: '思考中...',
     loadMore: '載入更早訊息',
-    noMessages: '還沒有訊息，打個招呼吧'
+    noMessages: '還沒有訊息，打個招呼吧',
+    typing: '{name}正在回覆中...',
   },
   group: {
     title: '群聊',

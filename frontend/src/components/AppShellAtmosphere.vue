@@ -1,18 +1,81 @@
 <template>
-  <div v-if="isDark" class="app-atmosphere" aria-hidden="true">
+  <div
+    ref="rootRef"
+    class="app-atmosphere"
+    :class="{ 'app-atmosphere--light': !isDark }"
+    aria-hidden="true"
+  >
     <div class="app-atmosphere__mesh" />
-    <div class="app-atmosphere__orb app-atmosphere__orb--a" />
-    <div class="app-atmosphere__orb app-atmosphere__orb--b" />
+    <div ref="orbARef" class="app-atmosphere__orb app-atmosphere__orb--a" />
+    <div ref="orbBRef" class="app-atmosphere__orb app-atmosphere__orb--b" />
     <div class="app-atmosphere__grain" />
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { gsap } from 'gsap'
 import { useSettingsStore } from '@/stores/settings'
 
 const settingsStore = useSettingsStore()
 const isDark = computed(() => settingsStore.theme === 'dark')
+
+const rootRef = ref(null)
+const orbARef = ref(null)
+const orbBRef = ref(null)
+
+const pointer = { x: 0, y: 0 }
+const current = { ax: 0, ay: 0, bx: 0, by: 0 }
+let tickerFn = null
+let reducedMotion = false
+
+function onMouseMove(e) {
+  const cx = window.innerWidth / 2
+  const cy = window.innerHeight / 2
+  pointer.x = (e.clientX - cx) / cx
+  pointer.y = (e.clientY - cy) / cy
+}
+
+function startTicker() {
+  if (tickerFn) return
+  tickerFn = () => {
+    const targetAx = pointer.x * 28
+    const targetAy = pointer.y * 22
+    const targetBx = pointer.x * -18
+    const targetBy = pointer.y * -14
+
+    current.ax += (targetAx - current.ax) * 0.03
+    current.ay += (targetAy - current.ay) * 0.03
+    current.bx += (targetBx - current.bx) * 0.015
+    current.by += (targetBy - current.by) * 0.015
+
+    if (orbARef.value) {
+      gsap.set(orbARef.value, { x: current.ax, y: current.ay })
+    }
+    if (orbBRef.value) {
+      gsap.set(orbBRef.value, { x: current.bx, y: current.by })
+    }
+  }
+  gsap.ticker.add(tickerFn)
+}
+
+function stopTicker() {
+  if (!tickerFn) return
+  gsap.ticker.remove(tickerFn)
+  tickerFn = null
+}
+
+onMounted(() => {
+  reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (reducedMotion) return
+  window.addEventListener('mousemove', onMouseMove, { passive: true })
+  startTicker()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('mousemove', onMouseMove)
+  stopTicker()
+})
 </script>
 
 <style lang="scss" scoped>
@@ -22,6 +85,10 @@ const isDark = computed(() => settingsStore.theme === 'dark')
   pointer-events: none;
   z-index: 0;
   overflow: hidden;
+}
+
+.app-atmosphere--light {
+  opacity: 0.25;
 }
 
 .app-atmosphere__mesh {
@@ -39,6 +106,7 @@ const isDark = computed(() => settingsStore.theme === 'dark')
   filter: blur(60px);
   opacity: 0.55;
   animation: appOrbDrift 18s ease-in-out infinite;
+  will-change: transform;
 
   &--a {
     width: 280px;
