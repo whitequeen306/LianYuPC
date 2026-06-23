@@ -155,10 +155,14 @@ async function runObserve() {
       lastGreetingTitle = key
       lastGreetingTime = Date.now()
       lastWindowTitle = windowTitle
+      const audioBase64 = response.data.audioBase64 || ''
+      if (!audioBase64) {
+        console.warn('[desktopObserver] observe ok but no audioBase64 (check petId/TTS on server)')
+      }
       onGreeting({
         text: greeting,
-        audioBase64: response?.data?.audioBase64 || '',
-        audioMimeType: response?.data?.audioMimeType || 'audio/wav',
+        audioBase64,
+        audioMimeType: response.data.audioMimeType || 'audio/wav',
       })
     }
   } catch (e) {

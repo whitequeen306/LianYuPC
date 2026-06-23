@@ -75,6 +75,8 @@ public class ObserveController {
                 payload.put("audioBase64", audio.base64());
                 payload.put("audioMimeType", audio.mimeType());
             }
+            log.info("Desktop observe done: userId={}, petId={}, greetingLen={}, ttsIncluded={}",
+                    userId, request.getPetId(), greeting.length(), audio != null);
             return Result.ok(payload);
         } catch (com.lianyu.common.exception.BusinessException e) {
             throw e;

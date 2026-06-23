@@ -53,11 +53,16 @@ public class DashScopeTtsService {
     public record SynthesizedAudio(String mimeType, String base64) {}
 
     public SynthesizedAudio synthesizeForPet(String petId, String text) {
-        if (!enabled || text == null || text.isBlank()) {
+        if (!enabled) {
+            log.info("Pet TTS skipped: disabled");
+            return null;
+        }
+        if (text == null || text.isBlank()) {
             return null;
         }
         String voice = petVoiceRegistry.resolveVoiceId(petId);
         if (voice == null) {
+            log.info("Pet TTS skipped: no voice mapping for petId={}", petId);
             return null;
         }
         String key = resolveApiKey();
@@ -72,8 +77,10 @@ public class DashScopeTtsService {
             }
             byte[] bytes = downloadAudio(audioUrl);
             if (bytes == null || bytes.length == 0) {
+                log.warn("Pet TTS audio download empty for petId={}", petId);
                 return null;
             }
+            log.info("Pet TTS ok: petId={}, bytes={}", petId, bytes.length);
             return new SynthesizedAudio(guessMimeType(audioUrl, bytes), Base64.getEncoder().encodeToString(bytes));
         } catch (Exception e) {
             log.warn("Pet TTS synthesis failed for pet {}: {}", petId, e.getMessage());
@@ -136,6 +143,7 @@ public class DashScopeTtsService {
             try (CloseableHttpResponse response = client.execute(get)) {
                 int status = response.getStatusLine().getStatusCode();
                 if (status < 200 || status >= 300) {
+                    log.warn("Pet TTS audio download HTTP {} for url={}", status, audioUrl);
                     return null;
                 }
                 try (InputStream in = response.getEntity().getContent()) {

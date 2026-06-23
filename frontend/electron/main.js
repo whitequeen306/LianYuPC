@@ -76,6 +76,8 @@ const SHARED_WEB_PREFS = {
 const LAUNCHER_WEB_PREFS = {
   ...SHARED_WEB_PREFS,
   sandbox: false,
+  /** 识图问候 TTS 在无人点击桌宠时也需自动播放 */
+  autoplayPolicy: 'no-user-gesture-required',
 }
 
 const DEFAULT_API_ORIGIN = 'http://localhost:8080'
@@ -1197,12 +1199,17 @@ function registerIpcHandlers() {
     if (!session?.token) {
       return { ok: false, reason: 'not_logged_in' }
     }
+    const resolvedPetId = petId || settings.launcherPetId || 'raiden'
     const started = startDesktopObserver({
       apiOrigin: resolveApiOrigin(),
       authToken: session.token,
       persona,
-      petId,
+      petId: resolvedPetId,
       onGreeting: (payload) => {
+        const audioLen = payload?.audioBase64 ? payload.audioBase64.length : 0
+        if (isDebug) {
+          console.log('[desktopObserver] greeting audioBase64 len=', audioLen)
+        }
         if (launcherWindow && !launcherWindow.isDestroyed()) {
           launcherWindow.webContents.send('desktop:launcher-greeting', payload)
         }
@@ -1294,6 +1301,8 @@ function registerIpcHandlers() {
     resetLauncherInteraction()
   })
 }
+
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
 app.whenReady().then(() => {
   log('app ready')

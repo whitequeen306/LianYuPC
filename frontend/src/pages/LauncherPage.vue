@@ -60,6 +60,8 @@ let dragRafId = null
 let pendingDx = 0
 let pendingDy = 0
 let greetingAudio = null
+/** 自动播放被拦截时，等用户点击桌宠再播 */
+let pendingGreetingAudioPayload = null
 
 const { playAnim, playAnimOnce, returnToIdle, setSpriteImage, setIdleFrame } = usePetSpriteAnimator(petRef)
 
@@ -159,6 +161,7 @@ function releasePointerCapture(state) {
 
 function onPointerDown(e) {
   if (e.button !== 0) return
+  flushPendingGreetingAudio()
   getElectronAPI()?.setLauncherMousePassthrough?.(false)
   hitboxRef.value?.setPointerCapture?.(e.pointerId)
   pointerState.value = {
@@ -254,16 +257,40 @@ function stopGreetingAudio() {
 
 function playGreetingAudio(payload = {}) {
   const base64 = payload.audioBase64
-  if (!base64) return
+  if (!base64) {
+    console.warn('[launcher] greeting has no audioBase64 (TTS skipped or not supported pet)')
+    return false
+  }
   const mime = payload.audioMimeType || 'audio/wav'
   stopGreetingAudio()
   try {
     greetingAudio = new Audio(`data:${mime};base64,${base64}`)
     greetingAudio.volume = 0.92
-    void greetingAudio.play()
-  } catch {
+    const playPromise = greetingAudio.play()
+    if (playPromise && typeof playPromise.then === 'function') {
+      playPromise.then(() => {
+        pendingGreetingAudioPayload = null
+      }).catch((err) => {
+        console.warn('[launcher] greeting audio autoplay blocked:', err?.message || err)
+        pendingGreetingAudioPayload = payload
+      })
+    } else {
+      pendingGreetingAudioPayload = null
+    }
+    return true
+  } catch (err) {
+    console.warn('[launcher] greeting audio failed:', err?.message || err)
+    pendingGreetingAudioPayload = payload
     greetingAudio = null
+    return false
   }
+}
+
+function flushPendingGreetingAudio() {
+  if (!pendingGreetingAudioPayload) return
+  const payload = pendingGreetingAudioPayload
+  pendingGreetingAudioPayload = null
+  playGreetingAudio(payload)
 }
 
 function showGreeting(payload = {}) {
