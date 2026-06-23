@@ -87,14 +87,14 @@
         <span class="template-card__shine" aria-hidden="true" />
         <div class="card-media">
           <img
-            v-if="avatarSrc(item) && !brokenAvatars[item.id]"
+            v-if="avatarSrc(item) && !isAvatarBroken(item.id)"
             :src="resolveMediaUrl(avatarSrc(item))"
             class="avatar-img"
             :alt="item.name"
             :loading="idx < 8 ? 'eager' : 'lazy'"
             :fetchpriority="idx < 8 ? 'high' : 'auto'"
             decoding="async"
-            @error="markAvatarBroken(item.id)"
+            @error="onAvatarError(item)"
           />
           <div v-else class="avatar-placeholder">
             <el-icon :size="28"><User /></el-icon>
@@ -186,7 +186,7 @@
       <div v-if="previewItem" class="preview-body">
         <div class="preview-hero">
           <img
-            v-if="previewItem.avatarUrl && !brokenAvatars[previewItem.id]"
+            v-if="previewItem.avatarUrl && !isAvatarBroken(previewItem.id)"
             :src="resolveMediaUrl(previewItem.avatarUrl)"
             class="preview-avatar"
             :alt="previewItem.name"
@@ -285,14 +285,25 @@ const addDialogVisible = ref(false)
 const addCityMode = ref('real')
 const addCity = ref('')
 const commentsByTemplateId = ref({})
-const brokenAvatars = ref({})
+const avatarLoadTier = ref({})
 let commentLoadTimer = null
 let commentLoadSeq = 0
 let searchDebounceTimer = null
 let catalogRequestSeq = 0
 
 function avatarSrc(item) {
-  return item?.avatarThumbUrl || item?.avatarUrl || ''
+  if (!item) return ''
+  if (avatarLoadTier.value[item.id] === 'orig') {
+    return item.avatarUrl || item.avatarThumbUrl || ''
+  }
+  if (avatarLoadTier.value[item.id] === 'broken') {
+    return ''
+  }
+  return item.avatarThumbUrl || item.avatarUrl || ''
+}
+
+function isAvatarBroken(templateId) {
+  return avatarLoadTier.value[templateId] === 'broken'
 }
 
 function isMostLiked(templateId) {
@@ -329,7 +340,18 @@ onUnmounted(() => {
 
 function markAvatarBroken(templateId) {
   if (!templateId) return
-  brokenAvatars.value = { ...brokenAvatars.value, [templateId]: true }
+  avatarLoadTier.value = { ...avatarLoadTier.value, [templateId]: 'broken' }
+}
+
+function onAvatarError(item) {
+  if (!item?.id) return
+  const thumb = item.avatarThumbUrl || ''
+  const orig = item.avatarUrl || ''
+  if (avatarLoadTier.value[item.id] !== 'orig' && orig && orig !== thumb) {
+    avatarLoadTier.value = { ...avatarLoadTier.value, [item.id]: 'orig' }
+    return
+  }
+  markAvatarBroken(item.id)
 }
 
 function prefetchThumbUrls(items = []) {

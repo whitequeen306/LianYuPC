@@ -14,6 +14,8 @@ public class CharacterSquareTemplateCardResponse {
     private String summary;
     /** 296×296 缩略图，列表首屏使用 */
     private String avatarThumbUrl;
+    /** 原图，缩略图不可用时回退 */
+    private String avatarUrl;
     private List<String> tags;
     private boolean added;
     private Long addedCharacterId;
