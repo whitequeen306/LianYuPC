@@ -11,6 +11,7 @@ import {
   net,
   Notification,
   powerMonitor,
+  dialog,
 } from 'electron'
 import path from 'path'
 import fs from 'fs'
@@ -209,27 +210,37 @@ function getSPKIHash(certificate) {
     throw new Error('SPKI not available')
 }
 
-/** 验证 app.asar 完整性（构建时 after-pack.mjs 注入哈希），防篡改源码注入 */
+/** 构建时 after-pack.mjs 注入；占位符须保留在产物中供 sed 替换 */
+globalThis.__LIANYU_ASAR_HASH = '__ASAR_HASH__'
+
+/** @type {Set<number>} */
+const trustedWebContentsIds = new Set()
 function verifyAsarIntegrity() {
-  if (isDev) return
-  try {
-    const hexPath = path.join(process.resourcesPath, 'dist', 'asar-integrity.hex')
-    if (!fs.existsSync(hexPath)) {
-      log('asar integrity hash not found, skipping verification')
-      return
-    }
-    const expected = fs.readFileSync(hexPath, 'utf8').trim()
-    if (!expected || expected.length !== 64) {
-      log('asar integrity hash invalid, skipping verification')
-      return
-    }
-    // app.setAsarIntegrity 是 Electron 内置的 ASAR 完整性校验 API
-    ;(app.setAsarIntegrity ?? app.setAppAsarIntegrity)?.(expected)
-    log('asar integrity verification enabled')
-  } catch (err) {
-    log(`asar integrity verification failed: ${err.message}`)
-    // 不阻止启动——完整性校验失败由 Electron 内部处理（弹窗或退出）
+  if (!app.isPackaged) return
+  const asarPath = path.join(process.resourcesPath, 'app.asar')
+  const hexPath = path.join(process.resourcesPath, 'asar-integrity.hex')
+  const hash = crypto.createHash('sha256').update(fs.readFileSync(asarPath)).digest('hex')
+
+  let expected = ''
+  if (fs.existsSync(hexPath)) {
+    expected = fs.readFileSync(hexPath, 'utf8').trim()
   }
+  const embedded = String(globalThis.__LIANYU_ASAR_HASH || '').trim()
+  if ((!expected || expected.length !== 64) && embedded !== '__ASAR_HASH__' && embedded.length === 64) {
+    expected = embedded
+  }
+  if (!expected || expected.length !== 64) {
+    log('asar integrity hash not found, skipping verification')
+    return
+  }
+
+  if (hash !== expected) {
+    dialog.showErrorBox('LianYu', '客户端文件被篡改，请重新安装。')
+    app.exit(1)
+  }
+
+  ;(app.setAsarIntegrity ?? app.setAppAsarIntegrity)?.(expected)
+  log('asar integrity verification enabled')
 }
 
 function configureContentSecurityPolicy() {
@@ -267,10 +278,50 @@ function isAllowedExternalUrl(rawUrl) {
   }
 }
 
+function registerTrustedWebContents(win) {
+  trustedWebContentsIds.add(win.webContents.id)
+  win.on('closed', () => {
+    trustedWebContentsIds.delete(win.webContents.id)
+  })
+}
+
 function assertTrustedSender(event) {
-  const url = event?.senderFrame?.url || event?.sender?.getURL?.() || ''
-  if (url.startsWith('file://') || url.startsWith('app://')) return
-  throw new Error('Untrusted IPC sender')
+  if (!trustedWebContentsIds.has(event.sender.id)) {
+    throw new Error('Untrusted IPC sender')
+  }
+  const url = event.senderFrame?.url || event.sender.getURL?.() || ''
+  if (!url.startsWith('file://') && !url.startsWith('app://')) {
+    throw new Error('Untrusted IPC sender URL')
+  }
+}
+
+function guardTrusted(event) {
+  try {
+    assertTrustedSender(event)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function lockDownDevTools(win) {
+  if (isDebug) return
+  win.webContents.on('before-input-event', (event, input) => {
+    const k = input.key?.toLowerCase()
+    if (input.key === 'F12') {
+      event.preventDefault()
+      return
+    }
+    if ((input.control || input.meta) && input.shift && (k === 'i' || k === 'j' || k === 'c')) {
+      event.preventDefault()
+    }
+    if ((input.control || input.meta) && k === 'u') {
+      event.preventDefault()
+    }
+  })
+  win.webContents.on('devtools-opened', () => {
+    win.webContents.closeDevTools()
+  })
 }
 
 function configureSecurity() {
@@ -385,10 +436,7 @@ function log(message) {
 }
 
 function resolveDistRoot() {
-  if (isDev) {
-    return path.join(__dirname, '../dist')
-  }
-  return path.join(process.resourcesPath, 'dist')
+  return path.join(__dirname, '../dist')
 }
 
 function resolveDistPath(...segments) {
@@ -420,6 +468,8 @@ function loadRoute(win, hashRoute) {
 }
 
 function attachWindowLogging(win, label) {
+  registerTrustedWebContents(win)
+  lockDownDevTools(win)
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     log(`${label} did-fail-load code=${errorCode} desc=${errorDescription} url=${validatedURL}`)
   })
@@ -1083,12 +1133,16 @@ function registerIpcHandlers() {
     return win?.lianyuKind || 'unknown'
   })
 
-  ipcMain.handle('desktop:open-main', (_event, hash) => {
+  ipcMain.handle('desktop:open-main', (event, hash) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     showMainWindow(hash || '#/app')
+    return { ok: true }
   })
 
-  ipcMain.handle('desktop:open-quick-chat', (_event, conversationId) => {
+  ipcMain.handle('desktop:open-quick-chat', (event, conversationId) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     openQuickChatWindow(conversationId)
+    return { ok: true }
   })
 
   ipcMain.handle('desktop:toggle-picker', () => {
@@ -1103,7 +1157,8 @@ function registerIpcHandlers() {
     closeFocusedQuickChat()
   })
 
-  ipcMain.handle('desktop:notify-proactive-message', (_event, payload) => {
+  ipcMain.handle('desktop:notify-proactive-message', (event, payload) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     handleProactiveMessageNotification(payload || {})
     return { ok: true }
   })
@@ -1115,18 +1170,21 @@ function registerIpcHandlers() {
     return resolveCaptionMetrics(win)
   })
 
-  ipcMain.handle('desktop:set-title-bar-appearance', (_event, payload = {}) => {
+  ipcMain.handle('desktop:set-title-bar-appearance', (event, payload = {}) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     const presetKey = resolveTitleBarPresetKey(payload)
     applyTitleBarOverlayToAllWindows(presetKey)
     return { ok: true, preset: presetKey }
   })
 
-  ipcMain.handle('desktop:save-appearance', (_event, mode) => {
+  ipcMain.handle('desktop:save-appearance', (event, mode) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     const normalized = writeAppearance(mode)
     return { ok: true, mode: normalized }
   })
 
-  ipcMain.handle('desktop:set-login-state', (_event, loggedIn) => {
+  ipcMain.handle('desktop:set-login-state', (event, loggedIn) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     launcherLoggedIn = !!loggedIn
     if (launcherLoggedIn) {
       prewarmLauncherWindow()
@@ -1134,34 +1192,50 @@ function registerIpcHandlers() {
       hideLauncherWindow()
       closeCharacterPicker()
     }
+    return { ok: true }
   })
 
-  ipcMain.handle('desktop:hide-launcher', () => {
+  ipcMain.handle('desktop:hide-launcher', (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     hideLauncherWindow()
+    return { ok: true }
   })
 
-  ipcMain.handle('desktop:show-launcher', () => {
+  ipcMain.handle('desktop:show-launcher', (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     showLauncherWindow()
+    return { ok: true }
   })
 
-  ipcMain.handle('desktop:quit', () => {
+  ipcMain.handle('desktop:quit', (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     quitApplication()
+    return { ok: true }
   })
 
   ipcMain.handle('desktop:set-launcher-mouse-passthrough', (_event, ignore) => {
     setLauncherMousePassthrough(!!ignore)
   })
 
-  ipcMain.handle('auth:get-session', () => readAuthSession())
-  ipcMain.handle('auth:set-session', (_event, session) => writeAuthSession(session))
-  ipcMain.handle('auth:clear-session', () => {
+  ipcMain.handle('auth:get-session', (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    return readAuthSession()
+  })
+  ipcMain.handle('auth:set-session', (event, session) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    writeAuthSession(session)
+    return { ok: true }
+  })
+  ipcMain.handle('auth:clear-session', (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     clearAuthSession()
     return { ok: true }
   })
 
   ipcMain.handle('desktop:get-settings', () => readDesktopSettings())
 
-  ipcMain.handle('desktop:set-settings', (_event, partial) => {
+  ipcMain.handle('desktop:set-settings', (event, partial) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     const next = writeDesktopSettings(partial || {})
     if (!isDesktopPetEnabled(next) && launcherWindow && !launcherWindow.isDestroyed()) {
       launcherWindow.close()
@@ -1188,11 +1262,7 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('desktop:start-observer', (event, { persona, petId }) => {
-    try {
-      assertTrustedSender(event)
-    } catch {
-      return { ok: false, reason: 'untrusted_sender' }
-    }
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     const settings = readDesktopSettings()
     if (!settings.allowScreenObserve) {
       return { ok: false, reason: 'screen_observe_disabled' }
@@ -1232,24 +1302,29 @@ function registerIpcHandlers() {
     onWindowChanged()
   })
 
-  ipcMain.handle('desktop:save-launcher-position', (_event, { x, y }) => {
+  ipcMain.handle('desktop:save-launcher-position', (event, { x, y }) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     if (Number.isFinite(x) && Number.isFinite(y)) {
       writeLauncherPosition(x, y)
     }
+    return { ok: true }
   })
 
-  ipcMain.handle('desktop:move-launcher-by-delta', (_event, { dx, dy }) => {
-    if (!launcherWindow || launcherWindow.isDestroyed()) return
-    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return
+  ipcMain.handle('desktop:move-launcher-by-delta', (event, { dx, dy }) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    if (!launcherWindow || launcherWindow.isDestroyed()) return { ok: false }
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return { ok: false }
     const bounds = launcherWindow.getBounds()
     launcherWindow.setPosition(Math.round(bounds.x + dx), Math.round(bounds.y + dy))
     const next = launcherWindow.getBounds()
     writeLauncherPosition(next.x, next.y)
     repositionPickerNearLauncher()
+    return { ok: true }
   })
 
   // 同步 IPC：拖动时逐帧位移，避免 invoke 排队导致窗口跟不上鼠标（尤其向右拖）
-  ipcMain.on('desktop:launcher-drag-start', () => {
+  ipcMain.on('desktop:launcher-drag-start', (event) => {
+    if (!guardTrusted(event)) return
     launcherIsDragging = true
     if (launcherWindow && !launcherWindow.isDestroyed()) {
       launcherWindow.setBackgroundColor('#00000000')
@@ -1257,7 +1332,8 @@ function registerIpcHandlers() {
     setLauncherMousePassthrough(false)
   })
 
-  ipcMain.on('desktop:launcher-drag-move', (_event, { dx, dy }) => {
+  ipcMain.on('desktop:launcher-drag-move', (event, { dx, dy }) => {
+    if (!guardTrusted(event)) return
     if (!launcherWindow || launcherWindow.isDestroyed()) return
     if (!Number.isFinite(dx) || !Number.isFinite(dy)) return
     if (dx === 0 && dy === 0) return
@@ -1267,7 +1343,8 @@ function registerIpcHandlers() {
     repositionPickerNearLauncher()
   })
 
-  ipcMain.on('desktop:launcher-drag-end', () => {
+  ipcMain.on('desktop:launcher-drag-end', (event) => {
+    if (!guardTrusted(event)) return
     if (!launcherWindow || launcherWindow.isDestroyed()) {
       launcherIsDragging = false
       return
@@ -1282,28 +1359,34 @@ function registerIpcHandlers() {
     }, 250)
   })
 
-  ipcMain.handle('desktop:set-launcher-screen-position', (_event, { x, y }) => {
-    if (!launcherWindow || launcherWindow.isDestroyed()) return
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return
+  ipcMain.handle('desktop:set-launcher-screen-position', (event, { x, y }) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    if (!launcherWindow || launcherWindow.isDestroyed()) return { ok: false }
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return { ok: false }
     launcherIsDragging = true
     launcherWindow.setPosition(Math.round(x), Math.round(y))
     writeLauncherPosition(Math.round(x), Math.round(y))
+    return { ok: true }
   })
 
-  ipcMain.handle('desktop:set-launcher-dragging', (_event, dragging) => {
+  ipcMain.handle('desktop:set-launcher-dragging', (event, dragging) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     launcherIsDragging = !!dragging
     if (!launcherIsDragging) {
       clampLauncherToWorkArea()
       repositionPickerNearLauncher()
       resetLauncherInteraction()
     }
+    return { ok: true }
   })
 
-  ipcMain.handle('desktop:clamp-launcher-position', () => {
+  ipcMain.handle('desktop:clamp-launcher-position', (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     launcherIsDragging = false
     clampLauncherToWorkArea()
     repositionPickerNearLauncher()
     resetLauncherInteraction()
+    return { ok: true }
   })
 }
 

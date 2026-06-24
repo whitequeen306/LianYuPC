@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import electron from 'vite-plugin-electron/simple'
+import obfuscator from 'vite-plugin-javascript-obfuscator'
 import fs from 'fs'
 import { resolve } from 'path'
 
@@ -98,6 +99,29 @@ export default defineConfig({
           }),
         ]
       : []),
+    process.env.ELECTRON_BUILD === '1' &&
+      obfuscator({
+        include: ['**/dist/assets/*.js'],
+        exclude: ['**/dist-electron/**', 'node_modules/**'],
+        apply: 'build',
+        options: {
+          compact: true,
+          controlFlowFlattening: true,
+          controlFlowFlatteningThreshold: 0.5,
+          deadCodeInjection: false,
+          stringArray: true,
+          stringArrayThreshold: 0.7,
+          stringArrayRotate: true,
+          stringArrayShuffle: true,
+          stringArrayEncoding: ['base64'],
+          rotateStringArray: true,
+          identifierNamesGenerator: 'mangled-shuffled',
+          selfDefending: true,
+          transformObjectKeys: false,
+          unicodeEscapeSequence: false,
+          disableConsoleOutput: false,
+        },
+      }),
   ],
   resolve: {
     alias: {

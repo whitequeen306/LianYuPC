@@ -2,11 +2,43 @@ import { execSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import JavaScriptObfuscator from 'javascript-obfuscator'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 process.chdir(root)
 process.env.CSC_IDENTITY_AUTO_DISCOVERY = 'false'
 process.env.ELECTRON_BUILD = '1'
+
+const OBFUSCATOR_OPTIONS = {
+  compact: true,
+  controlFlowFlattening: true,
+  controlFlowFlatteningThreshold: 0.5,
+  deadCodeInjection: false,
+  stringArray: true,
+  stringArrayThreshold: 0.7,
+  stringArrayRotate: true,
+  stringArrayShuffle: true,
+  stringArrayEncoding: ['base64'],
+  rotateStringArray: true,
+  identifierNamesGenerator: 'mangled-shuffled',
+  selfDefending: true,
+  transformObjectKeys: false,
+  unicodeEscapeSequence: false,
+  disableConsoleOutput: false,
+}
+
+function obfuscateRendererBundle() {
+  const assetsDir = path.join(root, 'dist', 'assets')
+  if (!fs.existsSync(assetsDir)) return
+  for (const name of fs.readdirSync(assetsDir)) {
+    if (!name.endsWith('.js')) continue
+    const filePath = path.join(assetsDir, name)
+    const source = fs.readFileSync(filePath, 'utf8')
+    const obfuscated = JavaScriptObfuscator.obfuscate(source, OBFUSCATOR_OPTIONS).getObfuscatedCode()
+    fs.writeFileSync(filePath, obfuscated, 'utf8')
+    console.log(`Obfuscated renderer bundle: ${name}`)
+  }
+}
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return
@@ -33,6 +65,7 @@ fs.mkdirSync(path.join(root, outDir), { recursive: true })
 
 execSync('python scripts/regenerate-icon.py', { stdio: 'inherit' })
 execSync('npx vite build', { stdio: 'inherit', env: process.env })
+obfuscateRendererBundle()
 
 const outputArg = `--config.directories.output=${outDir.replace(/\\/g, '/')}`
 execSync(`npx electron-builder --win ${outputArg}`, {
