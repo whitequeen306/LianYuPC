@@ -88,8 +88,9 @@ export default defineConfig({
                 build: process.env.ELECTRON_BUILD === '1'
                   ? {
                       rollupOptions: {
+                        // active-win 含 native addon + node-pre-gyp，打进 bundle 会误 import mock-aws-s3 等 devDeps
+                        external: ['electron', 'active-win'],
                         output: {
-                          // package.json type=module → main 必须是 ESM；.cjs + import 会在启动时崩溃
                           entryFileNames: 'main.js',
                           inlineDynamicImports: true,
                         },
