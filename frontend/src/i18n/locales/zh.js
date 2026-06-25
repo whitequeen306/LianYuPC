@@ -332,7 +332,7 @@ export default {
   },
   settings: {
     title: '设置中心',
-    desc: '管理你的 AI Provider 配置和 API Key',
+    desc: '桌面桌宠、快捷入口与 AI 接口配置',
     aiSection: 'AI 接口配置',
     aiDesc: '可选：填写自己的接口地址、API Key 与模型；不配置则使用平台默认 DeepSeek',
     addConfig: '添加配置',

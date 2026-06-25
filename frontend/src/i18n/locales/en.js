@@ -330,7 +330,7 @@ export default {
   },
   settings: {
     title: 'Settings',
-    desc: 'Manage AI provider configs and API keys',
+    desc: 'Desktop pet, quick entry, and AI provider configs',
     aiSection: 'AI provider',
     aiDesc: 'Optional: your API URL, key, and model. Platform default is used if empty.',
     addConfig: 'Add config',

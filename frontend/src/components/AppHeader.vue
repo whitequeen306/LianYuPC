@@ -8,6 +8,8 @@
       <span class="header-wordmark">LianYu</span>
     </router-link>
 
+    <div class="header-drag-region" aria-hidden="true" />
+
     <div class="header-actions">
       <LanguagePicker />
       <div class="header-guide-cluster">
@@ -103,7 +105,7 @@
           <el-dropdown-menu>
             <el-dropdown-item command="profile" :icon="User">{{ t('header.profile') }}</el-dropdown-item>
             <el-dropdown-item command="password" :icon="Lock">{{ t('header.changePassword') }}</el-dropdown-item>
-            <el-dropdown-item command="settings" :icon="Setting">{{ t('header.apiSettings') }}</el-dropdown-item>
+            <el-dropdown-item command="settings" :icon="Setting">{{ t('nav.settings') }}</el-dropdown-item>
             <el-dropdown-item divided command="logout" :icon="SwitchButton">{{ t('header.logout') }}</el-dropdown-item>
           </el-dropdown-menu>
         </template>
@@ -191,7 +193,21 @@ async function handleUserMenu(command) {
   overflow: visible;
 }
 
-.header-brand,
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  text-decoration: none;
+  -webkit-app-region: drag;
+}
+
+.header-drag-region {
+  flex: 1;
+  min-width: 24px;
+  align-self: stretch;
+  -webkit-app-region: drag;
+}
+
 .header-actions,
 .header-btn,
 .header-avatar,
@@ -201,13 +217,6 @@ async function handleUserMenu(command) {
 :deep(.el-badge),
 :deep(button) {
   -webkit-app-region: no-drag;
-}
-
-.header-brand {
-  display: flex;
-  align-items: center;
-  gap: $space-2;
-  text-decoration: none;
 }
 
 .header-logo {
