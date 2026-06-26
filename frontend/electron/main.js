@@ -658,43 +658,27 @@ function applyLauncherMouseMode() {
     launcherWindow.setIgnoreMouseEvents(true, { forward: true })
     return
   }
-  if (launcherPickerOpen || launcherIsDragging) {
-    launcherWindow.setIgnoreMouseEvents(false)
-    return
-  }
-  launcherWindow.setIgnoreMouseEvents(true, { forward: true })
-}
-
-/** Win32/Electron 42：从全窗捕获切回 forward 穿透后需延迟重刷，否则 hitbox 失灵 */
-function reapplyLauncherPassthroughSoon() {
-  if (!launcherWindow || launcherWindow.isDestroyed()) return
-  if (launcherPickerOpen || launcherIsDragging) return
-  for (const delay of [0, 80, 200]) {
-    setTimeout(() => {
-      if (!launcherWindow || launcherWindow.isDestroyed() || !launcherWindow.isVisible()) return
-      if (launcherPickerOpen || launcherIsDragging) return
-      launcherWindow.setIgnoreMouseEvents(true, { forward: true })
-    }, delay)
-  }
+  // 桌宠可见时始终由窗口接收鼠标；可点区域由 CSS pointer-events 限定（与 v0.2.112 前一致）
+  launcherWindow.setIgnoreMouseEvents(false)
 }
 
 function setLauncherMousePassthrough(ignore) {
   if (!launcherWindow || launcherWindow.isDestroyed()) return
-  if (!ignore) {
-    launcherWindow.setIgnoreMouseEvents(false)
+  if (!launcherWindow.isVisible()) {
+    launcherWindow.setIgnoreMouseEvents(true, { forward: true })
     return
   }
-  applyLauncherMouseMode()
-  if (launcherWindow.isVisible() && !launcherPickerOpen && !launcherIsDragging) {
-    reapplyLauncherPassthroughSoon()
+  if (ignore) {
+    launcherWindow.setIgnoreMouseEvents(true, { forward: true })
+  } else {
+    launcherWindow.setIgnoreMouseEvents(false)
   }
 }
 
-/** 显示/拖拽结束后重置穿透：角色列表打开时整窗接收点击，否则仅桌宠 hitbox 可点 */
+/** 显示/拖拽结束后重置穿透：角色列表打开时整窗接收点击 */
 function resetLauncherInteraction() {
   launcherIsDragging = false
   applyLauncherMouseMode()
-  reapplyLauncherPassthroughSoon()
   if (launcherWindow && !launcherWindow.isDestroyed() && !launcherWindow.webContents.isDestroyed()) {
     launcherWindow.webContents.send('desktop:launcher-interaction-reset')
   }
@@ -1844,9 +1828,58 @@ function registerIpcHandlers() {
   })
 }
 
+async function runLauncherSmokeTest() {
+  try {
+    configureSecurity()
+    registerIpcHandlers()
+    launcherLoggedIn = true
+    writeDesktopSettings({ showDesktopPet: true, showLauncherLogo: true })
+    const win = createLauncherWindow()
+    if (!win) throw new Error('launcher window missing')
+    await new Promise((resolve) => {
+      if (win.webContents.isLoading()) {
+        win.webContents.once('did-finish-load', resolve)
+      } else {
+        resolve()
+      }
+    })
+    win.show()
+    resetLauncherInteraction()
+    await new Promise((r) => setTimeout(r, 400))
+    const probe = await win.webContents.executeJavaScript(
+      `(() => ({
+        hasApi: typeof window.electronAPI !== 'undefined',
+        isElectron: window.electronAPI?.isElectron === true,
+        hasToggle: typeof window.electronAPI?.toggleCharacterPicker === 'function',
+        hasHitbox: !!document.querySelector('.pet-hitbox'),
+      }))()`,
+      true,
+    )
+    if (!probe?.hasApi || !probe?.isElectron || !probe?.hasToggle || !probe?.hasHitbox) {
+      throw new Error(`probe failed: ${JSON.stringify(probe)}`)
+    }
+    const toggleResult = await win.webContents.executeJavaScript(
+      'window.electronAPI.toggleCharacterPicker()',
+      true,
+    )
+    if (!toggleResult || toggleResult.ok !== true) {
+      throw new Error(`toggleCharacterPicker failed: ${JSON.stringify(toggleResult)}`)
+    }
+    console.log('LAUNCHER_SMOKE_OK')
+    app.exit(0)
+  } catch (err) {
+    console.error('LAUNCHER_SMOKE_FAIL', err?.message || err)
+    app.exit(1)
+  }
+}
+
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
 app.whenReady().then(() => {
+  if (process.env.LIANYU_LAUNCHER_SMOKE === '1') {
+    log('launcher smoke test starting')
+    return runLauncherSmokeTest()
+  }
   log('app ready')
   configureSecurity()
   configureAntiDebug()

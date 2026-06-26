@@ -230,6 +230,9 @@ packRuntimeSecrets({
 obfuscateRendererBundles()
 applyBytecodePackaging()
 
+console.log('\n--- Launcher smoke test (pre-pack) ---')
+execSync('node scripts/smoke-launcher.mjs', { stdio: 'inherit', cwd: root })
+
 killLianYuProcesses()
 removePartialReleaseArtifacts()
 
