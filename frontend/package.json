@@ -90,7 +90,7 @@
       "shortcutName": "LianYu",
       "uninstallDisplayName": "LianYu",
       "deleteAppDataOnUninstall": false,
-      "runAfterFinish": false
+      "runAfterFinish": true
     }
   }
 }

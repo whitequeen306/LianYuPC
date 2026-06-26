@@ -652,21 +652,49 @@ const PICKER_PANEL_HEIGHT = 320
 const PICKER_PANEL_WIDTH = 320
 const PICKER_PET_GAP = 8
 
-function setLauncherMousePassthrough(ignore) {
+function applyLauncherMouseMode() {
   if (!launcherWindow || launcherWindow.isDestroyed()) return
   if (!launcherWindow.isVisible()) {
     launcherWindow.setIgnoreMouseEvents(true, { forward: true })
     return
   }
-  // 桌宠可见时始终由窗口接收鼠标；交互区域由 CSS pointer-events 限定。
-  // passthrough+forward 在 Windows/Electron 42 上从 false 切回 true 后 hitbox 会失灵。
-  launcherWindow.setIgnoreMouseEvents(false)
+  if (launcherPickerOpen || launcherIsDragging) {
+    launcherWindow.setIgnoreMouseEvents(false)
+    return
+  }
+  launcherWindow.setIgnoreMouseEvents(true, { forward: true })
+}
+
+/** Win32/Electron 42：从全窗捕获切回 forward 穿透后需延迟重刷，否则 hitbox 失灵 */
+function reapplyLauncherPassthroughSoon() {
+  if (!launcherWindow || launcherWindow.isDestroyed()) return
+  if (launcherPickerOpen || launcherIsDragging) return
+  for (const delay of [0, 80, 200]) {
+    setTimeout(() => {
+      if (!launcherWindow || launcherWindow.isDestroyed() || !launcherWindow.isVisible()) return
+      if (launcherPickerOpen || launcherIsDragging) return
+      launcherWindow.setIgnoreMouseEvents(true, { forward: true })
+    }, delay)
+  }
+}
+
+function setLauncherMousePassthrough(ignore) {
+  if (!launcherWindow || launcherWindow.isDestroyed()) return
+  if (!ignore) {
+    launcherWindow.setIgnoreMouseEvents(false)
+    return
+  }
+  applyLauncherMouseMode()
+  if (launcherWindow.isVisible() && !launcherPickerOpen && !launcherIsDragging) {
+    reapplyLauncherPassthroughSoon()
+  }
 }
 
 /** 显示/拖拽结束后重置穿透：角色列表打开时整窗接收点击，否则仅桌宠 hitbox 可点 */
 function resetLauncherInteraction() {
   launcherIsDragging = false
-  setLauncherMousePassthrough(false)
+  applyLauncherMouseMode()
+  reapplyLauncherPassthroughSoon()
   if (launcherWindow && !launcherWindow.isDestroyed() && !launcherWindow.webContents.isDestroyed()) {
     launcherWindow.webContents.send('desktop:launcher-interaction-reset')
   }
@@ -874,10 +902,10 @@ async function showLauncherWindowAsync(options = {}) {
   const reveal = () => {
     if (!force && isMainWindowOccupyingDesktop()) return
     if (!win || win.isDestroyed()) return
-    resetLauncherInteraction()
     win.webContents.setAudioMuted(false)
     win.show()
     win.moveTop()
+    resetLauncherInteraction()
     win.webContents.send('desktop:launcher-shown')
     log('showLauncherWindow: launcher shown')
   }
@@ -1255,7 +1283,7 @@ function openCharacterPicker() {
   }
 
   launcherPickerOpen = true
-  setLauncherMousePassthrough(false)
+  applyLauncherMouseMode()
   expandLauncherForPicker()
 
   if (!launcherWindow.isVisible()) {
@@ -1759,7 +1787,7 @@ function registerIpcHandlers() {
     if (launcherWindow && !launcherWindow.isDestroyed()) {
       launcherWindow.setBackgroundColor('#00000000')
     }
-    setLauncherMousePassthrough(false)
+    applyLauncherMouseMode()
   })
 
   ipcMain.on('desktop:launcher-drag-move', (event, { dx, dy }) => {

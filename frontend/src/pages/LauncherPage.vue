@@ -238,7 +238,6 @@ function onPointerUp(e) {
       playAnimOnce('wave')
       getElectronAPI()?.toggleCharacterPicker?.()
     }, 240)
-    try { getElectronAPI()?.clampLauncherPosition?.() } catch { /* ignore */ }
   } else if (wasMoved) {
     playAnimOnce('running', () => returnToIdle())
     try { getElectronAPI()?.endLauncherDrag?.() } catch { /* ignore */ }
