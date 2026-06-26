@@ -25,24 +25,28 @@
     </div>
 
     <div v-else ref="msgListRef" class="quick-chat__log">
-      <div
-        v-for="msg in displayMessages"
-        :key="msg._key"
-        class="quick-chat__row"
-        :class="msg.role === 'user' ? 'quick-chat__row--user' : 'quick-chat__row--hero'"
-      >
-        <div class="quick-chat__bubble">
-          <AssistantMessageContent
-            v-if="msg.role === 'assistant' && msg.content"
-            :content="msg.content"
-            :show-inner-thoughts="showInnerThoughts"
-            variant="chat"
-            tag="p"
-            extra-class="quick-chat__text"
-          />
-          <p v-else-if="msg.content" class="quick-chat__text">{{ msg.content }}</p>
+      <template v-for="item in messageTimeline" :key="item._key">
+        <div v-if="item.type === 'time'" class="quick-chat__time-divider">
+          <span>{{ item.label }}</span>
         </div>
-      </div>
+        <div
+          v-else
+          class="quick-chat__row"
+          :class="item.role === 'user' ? 'quick-chat__row--user' : 'quick-chat__row--hero'"
+        >
+          <div class="quick-chat__bubble">
+            <AssistantMessageContent
+              v-if="item.role === 'assistant' && item.content"
+              :content="item.content"
+              :show-inner-thoughts="showInnerThoughts"
+              variant="chat"
+              tag="p"
+              extra-class="quick-chat__text"
+            />
+            <p v-else-if="item.content" class="quick-chat__text">{{ item.content }}</p>
+          </div>
+        </div>
+      </template>
       <div ref="scrollAnchor" class="quick-chat__anchor" />
     </div>
 
@@ -71,6 +75,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { User, Loading, Promotion } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useCharactersStore } from '@/stores/characters'
@@ -83,8 +88,12 @@ import { getElectronAPI } from '@/utils/electron'
 import { useChatScroll, sleep, MIN_REPLY_DISPLAY_MS } from '@/composables/useChatScroll'
 import AssistantMessageContent from '@/components/AssistantMessageContent.vue'
 import { stripInnerThoughts, resolveShowInnerThoughts } from '@/utils/innerThoughtFilter'
+import { formatSmartTime } from '@/utils/feedTime'
+
+const TIME_GAP_MS = 5 * 60 * 1000
 
 const route = useRoute()
+const { t, locale } = useI18n()
 const charactersStore = useCharactersStore()
 const notificationsStore = useNotificationsStore()
 
@@ -113,22 +122,44 @@ const headerLabel = computed(() => {
   return characterName.value
 })
 
-const displayMessages = computed(() =>
-  messages.value
-    .map((msg) => {
-      const role = String(msg.role || '').toLowerCase() === 'user' ? 'user' : 'assistant'
-      const visibleContent = role === 'assistant'
-        ? stripInnerThoughts(msg.content, showInnerThoughts.value)
-        : msg.content
-      if (!visibleContent?.trim()) return null
-      return {
-        role,
-        content: msg.content,
-        _key: msg.id || msg._tempId || `${role}-${msg.createdAt}`,
-      }
+function parseMessageTime(msg) {
+  const ts = msg?.createdAt || msg?._time
+  if (!ts) return Date.now()
+  const ms = new Date(ts).getTime()
+  return Number.isNaN(ms) ? Date.now() : ms
+}
+
+function formatTimeDivider(ms) {
+  return formatSmartTime(ms, { t, locale: locale.value })
+}
+
+const messageTimeline = computed(() => {
+  const items = []
+  let prevMs = null
+  for (const msg of messages.value) {
+    const role = String(msg.role || '').toLowerCase() === 'user' ? 'user' : 'assistant'
+    const visibleContent = role === 'assistant'
+      ? stripInnerThoughts(msg.content, showInnerThoughts.value)
+      : msg.content
+    if (!visibleContent?.trim()) continue
+    const ms = parseMessageTime(msg)
+    if (prevMs != null && ms - prevMs > TIME_GAP_MS) {
+      items.push({
+        type: 'time',
+        _key: `time-${ms}`,
+        label: formatTimeDivider(ms),
+      })
+    }
+    items.push({
+      type: 'message',
+      role,
+      content: msg.content,
+      _key: msg.id || msg._tempId || `${role}-${ms}`,
     })
-    .filter(Boolean),
-)
+    prevMs = ms
+  }
+  return items
+})
 
 let pollTimer = null
 
@@ -413,6 +444,23 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.quick-chat__time-divider {
+  align-self: center;
+  text-align: center;
+  margin: 2px 0 4px;
+  flex-shrink: 0;
+
+  span {
+    display: inline-block;
+    font-size: 11px;
+    color: var(--ly-text-muted, #8a727c);
+    padding: 3px 12px;
+    border-radius: 999px;
+    background: rgba(30, 39, 50, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
 }
 
 .quick-chat__row {

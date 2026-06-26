@@ -356,7 +356,10 @@ onMounted(async () => {
   }
   unsubscribeLauncherMessage = getElectronAPI()?.onLauncherNewMessage?.(showNewMessageHint)
   unsubscribePetChanged = getElectronAPI()?.onLauncherPetChanged?.(applyPetId)
-  unsubscribeInteractionReset = getElectronAPI()?.onLauncherInteractionReset?.(resetInteractionState)
+  unsubscribeInteractionReset = getElectronAPI()?.onLauncherInteractionReset?.(() => {
+    resetInteractionState()
+    returnToIdle()
+  })
   unsubscribeGreeting = getElectronAPI()?.onLauncherGreeting?.(showGreeting)
   unsubscribeRestartObserver = getElectronAPI()?.onRestartObserver?.(startObserver)
   unsubscribeLauncherShown = getElectronAPI()?.onLauncherShown?.(async () => {
@@ -374,7 +377,12 @@ onMounted(async () => {
     pickerOpen.value = false
   })
   unsubscribePickerToggle = getElectronAPI()?.onPickerToggle?.((payload) => {
-    pickerOpen.value = payload?.open === true
+    const open = payload?.open === true
+    pickerOpen.value = open
+    if (!open) {
+      resetInteractionState()
+      returnToIdle()
+    }
   })
 })
 

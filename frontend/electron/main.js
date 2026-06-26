@@ -587,8 +587,8 @@ function resetLauncherCompactSize() {
 function clampLauncherToWorkArea() {
   if (!launcherWindow || launcherWindow.isDestroyed() || launcherIsDragging) return
   const bounds = launcherWindow.getBounds()
-  const winWidth = LAUNCHER_WINDOW.width
-  const winHeight = LAUNCHER_WINDOW.height
+  const winWidth = bounds.width
+  const winHeight = bounds.height
   const centerX = bounds.x + winWidth / 2
   const centerY = bounds.y + winHeight / 2
   const display = screen.getDisplayNearestPoint({ x: centerX, y: centerY })
@@ -1282,7 +1282,7 @@ function closeCharacterPicker() {
   if (launcherWindow && !launcherWindow.isDestroyed()) {
     launcherWindow.webContents.send('desktop:picker-toggle', { open: false })
     shrinkLauncherAfterPicker()
-    setLauncherMousePassthrough(true)
+    resetLauncherInteraction()
   }
 
   if (pickerWindow && !pickerWindow.isDestroyed()) {
@@ -1381,6 +1381,7 @@ function openQuickChatWindow(conversationId) {
   win.on('closed', () => {
     clearTimeout(forceTimer)
     quickChatWindows.delete(id)
+    resetLauncherInteraction()
   })
 
   loadRoute(win, `#/quick/chat/${id}`)
