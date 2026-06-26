@@ -44,6 +44,7 @@ import {
 import { prepareGreetingPayload } from './greetingAudio.js'
 import { performApiRequest } from './apiProxy.js'
 import { loadRuntimeSecrets, getRuntimeSecrets } from './runtimeSecrets.js'
+import { RENDERER_AUTH_TOKEN_SCRIPT } from './rendererTokenScript.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const nodeRequire = createRequire(import.meta.url)
@@ -790,6 +791,48 @@ async function pullRendererDesktopState(win = mainWindow) {
   }
 }
 
+async function pullRendererAuthToken(win) {
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return null
+  try {
+    const token = await win.webContents.executeJavaScript(RENDERER_AUTH_TOKEN_SCRIPT, true)
+    if (typeof token === 'string' && token.trim()) return token.trim()
+    return null
+  } catch (e) {
+    log(`pullRendererAuthToken failed: ${e.message}`)
+    return null
+  }
+}
+
+async function ensureAuthSessionFromRenderer(win = mainWindow) {
+  if (readAuthSession()?.token) return true
+  const sources = []
+  if (win && !win.isDestroyed()) sources.push(win)
+  if (mainWindow && !mainWindow.isDestroyed() && win !== mainWindow) sources.push(mainWindow)
+  if (launcherWindow && !launcherWindow.isDestroyed() && win !== launcherWindow) sources.push(launcherWindow)
+  for (const source of sources) {
+    const token = await pullRendererAuthToken(source)
+    if (token) {
+      writeAuthSession({
+        token,
+        tokenName: 'lianyu-token',
+        savedAt: Date.now(),
+      })
+      launcherLoggedIn = true
+      return true
+    }
+  }
+  return false
+}
+
+async function reconcileScreenObserveSetting(win = mainWindow) {
+  const state = await pullRendererDesktopState(win)
+  if (!state) return readDesktopSettings()
+  if (state.allowScreenObserve === true) {
+    return writeDesktopSettings({ allowScreenObserve: true })
+  }
+  return readDesktopSettings()
+}
+
 async function syncLauncherPetId(petId, { notifyLauncher = true } = {}) {
   if (!petId) return
   const next = writeDesktopSettings({ launcherPetId: petId })
@@ -828,17 +871,19 @@ async function syncChromeFromRenderer(win = mainWindow) {
   if (state.allowScreenObserve === true) {
     writeDesktopSettings({ allowScreenObserve: true })
   }
+  await ensureAuthSessionFromRenderer(win)
 }
 
 async function resolveDesktopAuthToken() {
   refreshLauncherLoginState()
   let session = readAuthSession()
   if (session?.token) return session.token
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    await syncChromeFromRenderer(mainWindow)
-    session = readAuthSession()
-    if (session?.token) return session.token
-  }
+  await ensureAuthSessionFromRenderer(mainWindow)
+  session = readAuthSession()
+  if (session?.token) return session.token
+  await ensureAuthSessionFromRenderer(launcherWindow)
+  session = readAuthSession()
+  if (session?.token) return session.token
   return null
 }
 
@@ -883,9 +928,14 @@ async function showLauncherWindowAsync(options = {}) {
   } else {
     clampLauncherToWorkArea()
   }
-  const reveal = () => {
+  const reveal = async () => {
     if (!force && isMainWindowOccupyingDesktop()) return
     if (!win || win.isDestroyed()) return
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      await syncChromeFromRenderer(mainWindow)
+      await reconcileScreenObserveSetting(mainWindow)
+      await ensureAuthSessionFromRenderer(mainWindow)
+    }
     win.webContents.setAudioMuted(false)
     win.show()
     win.moveTop()
@@ -894,9 +944,9 @@ async function showLauncherWindowAsync(options = {}) {
     log('showLauncherWindow: launcher shown')
   }
   if (win.webContents.isLoading()) {
-    win.webContents.once('ready-to-show', reveal)
+    win.webContents.once('ready-to-show', () => { void reveal() })
   } else {
-    reveal()
+    void reveal()
   }
 }
 
@@ -1457,7 +1507,16 @@ function registerIpcHandlers() {
   ipcMain.on('desktop:sync-chrome', (event) => {
     if (!trustedWebContentsIds.has(event.sender.id)) return
     const win = BrowserWindow.fromWebContents(event.sender)
-    if (win) void syncChromeFromRenderer(win)
+    if (!win) return
+    void (async () => {
+      if (win.lianyuKind === 'launcher' && mainWindow && !mainWindow.isDestroyed()) {
+        await syncChromeFromRenderer(mainWindow)
+        await reconcileScreenObserveSetting(mainWindow)
+        await ensureAuthSessionFromRenderer(mainWindow)
+      } else {
+        await syncChromeFromRenderer(win)
+      }
+    })()
   })
 
   ipcMain.handle('desktop:get-window-kind', (event) => {
@@ -1701,6 +1760,9 @@ function registerIpcHandlers() {
     if (!isDesktopPetActivelyVisible()) {
       return { ok: false, reason: 'launcher_not_visible' }
     }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      await reconcileScreenObserveSetting(mainWindow)
+    }
     const settings = readDesktopSettings()
     if (!settings.allowScreenObserve) {
       return { ok: false, reason: 'screen_observe_disabled' }
@@ -1833,7 +1895,8 @@ async function runLauncherSmokeTest() {
     configureSecurity()
     registerIpcHandlers()
     launcherLoggedIn = true
-    writeDesktopSettings({ showDesktopPet: true, showLauncherLogo: true })
+    writeDesktopSettings({ showDesktopPet: true, showLauncherLogo: true, allowScreenObserve: true })
+    writeAuthSession({ token: 'launcher-smoke-token', tokenName: 'lianyu-token', savedAt: Date.now() })
     const win = createLauncherWindow()
     if (!win) throw new Error('launcher window missing')
     await new Promise((resolve) => {
@@ -1865,7 +1928,18 @@ async function runLauncherSmokeTest() {
     if (!toggleResult || toggleResult.ok !== true) {
       throw new Error(`toggleCharacterPicker failed: ${JSON.stringify(toggleResult)}`)
     }
+    const observerStart = await win.webContents.executeJavaScript(
+      `window.electronAPI.startDesktopObserver({
+        persona: '你是雷电将军，说话简洁有力。',
+        petId: 'raiden',
+      })`,
+      true,
+    )
+    if (!observerStart || observerStart.ok !== true) {
+      throw new Error(`startDesktopObserver failed: ${JSON.stringify(observerStart)}`)
+    }
     console.log('LAUNCHER_SMOKE_OK')
+    stopDesktopObserver()
     app.exit(0)
   } catch (err) {
     console.error('LAUNCHER_SMOKE_FAIL', err?.message || err)

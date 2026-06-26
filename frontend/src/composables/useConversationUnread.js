@@ -1,5 +1,9 @@
 import { ref, computed } from 'vue'
 import { listNotifications } from '@/api/notification'
+import {
+  CHAR_CARD_UNREAD_TYPES,
+  GROUP_CARD_UNREAD_TYPES,
+} from '@/constants/notificationTypes'
 
 const conversationModeById = ref({})
 const unreadByCharacterId = ref({})
@@ -27,13 +31,18 @@ export function useConversationUnread() {
 
     for (const n of unreadList || []) {
       if (n?.read) continue
+      const type = n.type || ''
       const convId = n.conversationId
       if (convId == null) continue
 
       const mode = modes[convId]
       if (mode === 'GROUP') {
-        groupMap[convId] = (groupMap[convId] || 0) + 1
-      } else if (n.characterId != null) {
+        if (GROUP_CARD_UNREAD_TYPES.has(type)) {
+          groupMap[convId] = (groupMap[convId] || 0) + 1
+        }
+        continue
+      }
+      if (CHAR_CARD_UNREAD_TYPES.has(type) && n.characterId != null) {
         charMap[n.characterId] = (charMap[n.characterId] || 0) + 1
       }
     }

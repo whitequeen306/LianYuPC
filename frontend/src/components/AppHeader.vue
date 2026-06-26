@@ -48,8 +48,8 @@
             <template #reference>
               <button class="header-btn header-btn--notify" :title="t('header.notifications')">
                 <el-badge
-                  :value="notificationsStore.unreadCount"
-                  :hidden="!notificationsStore.unreadCount"
+                  :value="notificationsStore.bellUnreadCount"
+                  :hidden="!notificationsStore.bellUnreadCount"
                   :max="99"
                   :offset="[4, 2]"
                 >

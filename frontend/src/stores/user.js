@@ -145,7 +145,12 @@ export const useUserStore = defineStore('user', () => {
         await clearAuth({ keepUsername: true })
         return false
       }
-      // 网络/服务暂不可用：保留本地 token，允许直接进入主界面
+      // 网络/服务暂不可用：保留本地 token，并同步到主进程供桌宠 observe 使用
+      try {
+        await persistSession()
+      } catch {
+        // ignore — 主进程 token 缺失时 observe 会再尝试从 localStorage 恢复
+      }
     }
 
     getElectronAPI()?.setLoginState?.(true)

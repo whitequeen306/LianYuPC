@@ -356,11 +356,6 @@ onMounted(async () => {
 })
 
 watch(
-  () => notificationsStore.unreadCount,
-  () => { refreshUnreadFromApi() }
-)
-
-watch(
   () => notificationsStore.latest,
   async () => {
     await refreshUnreadFromApi()

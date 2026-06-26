@@ -300,9 +300,9 @@ public class MomentsService {
         String memoryContext = memoryRetriever.retrieveProfileContext(character.getId(), userId);
         String systemPrompt = buildSystemPrompt(userId, character, memoryContext, null);
         String content = callMomentModel(userId, character, systemPrompt, List.of(), """
-                请以该角色身份发一条「朋友圈」式短动态（第一人称）。
-                主题：今日心情、生活碎片或随口一想，与「用户」无直接对话也行。
-                要求：20~120字；不要话题标签；不要解释自己是AI；不要写「朋友圈」三字；一条即可，不要换行分段。
+                请以该角色身份发一条像真人随手发的社交动态（第一人称）。
+                主题：日常生活里的具体小事——通勤、吃饭、天气、逛街、追剧、晒太阳、加班、堵车、偶遇等；写看得见摸得着的生活细节，语气像真的在记录今天，不要架空剧情或堆砌世界观设定。
+                要求：20~120字；口语自然；不要话题标签；不要解释自己是AI；不要写「朋友圈」三字；一条即可，不要换行分段。
                 """);
         if (content == null) {
             return null;
@@ -319,9 +319,9 @@ public class MomentsService {
         String systemPrompt = buildSystemPrompt(userId, character, memoryContext, null);
         List<MessageDto> histDtos = history.stream().map(this::toMessageDto).toList();
         String content = callMomentModel(userId, character, systemPrompt, histDtos, """
-                请以该角色身份发一条「朋友圈」式短动态（第一人称）。
-                主题：基于最近和用户的聊天，写一点感想或余韵；可自然引用对话里的关键词，但不要照搬原句。
-                要求：20~120字；不要话题标签；不要解释自己是AI；一条即可。
+                请以该角色身份发一条像真人随手发的社交动态（第一人称）。
+                主题：结合最近和用户的聊天余韵，落到日常生活里的具体场景或心情（吃饭、出行、工作间隙、睡前等），可自然引用对话关键词，但不要照搬原句；不要写成对用户喊话。
+                要求：20~120字；口语自然；不要话题标签；不要解释自己是AI；一条即可。
                 """);
         if (content == null) {
             return null;

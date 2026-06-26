@@ -4,7 +4,6 @@ import { Client } from '@stomp/stompjs'
 import { ElNotification } from 'element-plus'
 import { syncToken } from '@/utils/secureToken'
 import {
-  getUnreadCount,
   listNotifications,
   markNotificationsRead,
 } from '@/api/notification'
@@ -12,6 +11,7 @@ import { buildWsUrl, isElectronRuntime } from '@/utils/runtime'
 import { activeChatConversationId, requestActiveChatRefresh } from '@/composables/useActiveChatContext'
 import { getElectronAPI } from '@/utils/electron'
 import { navigateToNotification } from '@/composables/useNotificationNavigation'
+import { BELL_UNREAD_TYPES, countUnreadByTypes } from '@/constants/notificationTypes'
 
 /** 仅这些类型弹出站内通知；群聊发言与普通回复不弹窗 */
 const IN_APP_POPUP_TYPES = new Set(['PROACTIVE_MESSAGE', 'MOMENT_NEW', 'MOMENT_COMMENT', 'DIARY_NEW'])
@@ -21,7 +21,8 @@ function shouldShowInAppPopup(type) {
 }
 
 export const useNotificationsStore = defineStore('notifications', () => {
-  const unreadCount = ref(0)
+  /** 顶栏铃铛：动态 / 日记未读，不含单聊主动消息 */
+  const bellUnreadCount = ref(0)
   const latest = ref([])
   const lastSyncError = ref(null)
   const wsStatus = ref('disconnected')
@@ -106,15 +107,19 @@ export const useNotificationsStore = defineStore('notifications', () => {
     wsStatus.value = 'disconnected'
   }
 
-  async function refreshUnreadCount() {
+  async function refreshBellUnreadCount() {
     try {
-      const res = await getUnreadCount({ silent: true })
-      unreadCount.value = Number(res?.unreadCount || 0)
+      const list = await listNotifications({ unreadOnly: true, limit: 200 }, { silent: true })
+      bellUnreadCount.value = countUnreadByTypes(list, BELL_UNREAD_TYPES)
       lastSyncError.value = null
     } catch (e) {
       lastSyncError.value = e
-      console.warn('[notifications] refreshUnreadCount', e)
+      console.warn('[notifications] refreshBellUnreadCount', e)
     }
+  }
+
+  async function refreshUnreadCount() {
+    await refreshBellUnreadCount()
   }
 
   async function refreshLatest() {
@@ -131,7 +136,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
   async function markAllRead() {
     try {
       await markNotificationsRead({ all: true })
-      unreadCount.value = 0
+      bellUnreadCount.value = 0
       latest.value = latest.value.map(n => ({ ...n, read: true }))
       lastSyncError.value = null
     } catch (e) {
@@ -207,8 +212,8 @@ export const useNotificationsStore = defineStore('notifications', () => {
         })
         stompClient.subscribe('/user/queue/notification-unread', message => {
           try {
-            const data = JSON.parse(message.body)
-            unreadCount.value = Number(data?.unreadCount || unreadCount.value)
+            JSON.parse(message.body)
+            void refreshBellUnreadCount()
           } catch (e) {
             console.warn('[notifications] parse /user/queue/notification-unread',
               message.body?.slice?.(0, 120), e)
@@ -246,8 +251,8 @@ export const useNotificationsStore = defineStore('notifications', () => {
     }
 
     latest.value = [data, ...latest.value].slice(0, 50)
-    if (!data.read) {
-      unreadCount.value += 1
+    if (!data.read && BELL_UNREAD_TYPES.has(data.type || '')) {
+      bellUnreadCount.value += 1
     }
     if (!shouldShowInAppPopup(data.type)) {
       return
@@ -324,7 +329,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
   }
 
   return {
-    unreadCount,
+    bellUnreadCount,
     latest,
     lastSyncError,
     wsStatus,

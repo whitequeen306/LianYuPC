@@ -445,7 +445,7 @@ onUnmounted(() => {
 })
 
 watch(
-  () => [notificationsStore.unreadCount, notificationsStore.latest?.length ?? 0],
+  () => notificationsStore.latest?.length ?? 0,
   () => {
     refreshUnreadFromApi()
   }
