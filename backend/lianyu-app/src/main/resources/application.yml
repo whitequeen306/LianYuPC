@@ -64,6 +64,8 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+    # V30 is an empty gap placeholder; prod DBs may have V31+ before V30 exists in repo.
+    out-of-order: true
 
   ai:
     openai:
