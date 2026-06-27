@@ -41,6 +41,9 @@ frontend/release/
 
 # Docker
 docker-compose.override.yml
+certs/*.crt
+certs/*.key
+
 
 # Local tooling / chat history (may contain secrets)
 .specstory/

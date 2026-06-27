@@ -53,6 +53,11 @@ export function resolveMediaUrl(url) {
         break
       }
       if (!mapped && !url.startsWith('http://') && !url.startsWith('https://')) {
+        for (const prefix of OBJECT_KEY_PREFIXES) {
+          if (url.startsWith(prefix)) {
+            return `${getApiOrigin()}/api/public/files/${url}`
+          }
+        }
         return resolveStaticAsset(url)
       }
     }

@@ -2,7 +2,9 @@ package com.lianyu.service.square;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.lianyu.dao.entity.Character;
 import com.lianyu.dao.entity.CharacterSquareTemplate;
+import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.CharacterSquareTemplateMapper;
 import com.lianyu.service.storage.FileStorageService;
 import java.io.InputStream;
@@ -28,6 +30,7 @@ public class CharacterSquareAvatarSync implements ApplicationRunner {
 
     private final FileStorageService fileStorageService;
     private final CharacterSquareTemplateMapper templateMapper;
+    private final CharacterMapper characterMapper;
 
     @Override
     public void run(ApplicationArguments args) {
@@ -62,6 +65,7 @@ public class CharacterSquareAvatarSync implements ApplicationRunner {
         }
         log.info("Character square avatar sync finished: uploaded={}, skipped={}", uploaded, skipped);
         backfillMissingThumbs();
+        backfillCharacterAvatarsFromTemplates();
     }
 
     private void backfillMissingThumbs() {
@@ -80,6 +84,42 @@ public class CharacterSquareAvatarSync implements ApplicationRunner {
         }
         if (generated > 0) {
             log.info("Square avatar thumb backfill generated={}", generated);
+        }
+    }
+
+    /**
+     * 广场模板头像更新后，同步已添加角色的 avatar_url（仅广场来源且未用自定义 avatars/ 上传）。
+     */
+    private void backfillCharacterAvatarsFromTemplates() {
+        List<Character> rows = characterMapper.selectList(new LambdaQueryWrapper<Character>()
+                .isNotNull(Character::getSourceTemplateId));
+        if (rows.isEmpty()) {
+            return;
+        }
+        int updated = 0;
+        for (Character row : rows) {
+            CharacterSquareTemplate template = templateMapper.selectById(row.getSourceTemplateId());
+            if (template == null || template.getAvatarUrl() == null || template.getAvatarUrl().isBlank()) {
+                continue;
+            }
+            String templateAvatar = template.getAvatarUrl().trim();
+            String current = row.getAvatarUrl();
+            if (current != null && current.startsWith("avatars/")) {
+                continue;
+            }
+            if (current != null && current.equals(templateAvatar)) {
+                continue;
+            }
+            if (current != null && !current.isBlank() && !current.startsWith("square-avatars/")) {
+                continue;
+            }
+            characterMapper.update(null, new LambdaUpdateWrapper<Character>()
+                    .eq(Character::getId, row.getId())
+                    .set(Character::getAvatarUrl, templateAvatar));
+            updated++;
+        }
+        if (updated > 0) {
+            log.info("Character avatar backfill from square templates: updated={}", updated);
         }
     }
 

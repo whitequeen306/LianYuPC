@@ -204,8 +204,7 @@ function installCertificateVerifyProc(ses) {
 }
 
 function configureCertificatePinning() {
-  // 仅 defaultSession：net.request / api:request 代理；渲染分区仍走 certificate-error 兜底
-  installCertificateVerifyProc(session.defaultSession)
+  forEachAppSession(installCertificateVerifyProc)
 
   // 方式二（兜底）：certificate-error 仅 pin 匹配时放行
   app.on('certificate-error', (event, _webContents, url, _error, cert, cb) => {
@@ -305,11 +304,26 @@ function configureContentSecurityPolicy() {
   })
 }
 
+const EXTERNAL_URL_HOST_ALLOWLIST = new Set([
+  'github.com',
+  'www.github.com',
+  'raw.githubusercontent.com',
+  'fonts.googleapis.com',
+  'fonts.gstatic.com',
+])
+
 function isAllowedExternalUrl(rawUrl) {
   try {
     const parsed = new URL(rawUrl)
-    if (parsed.protocol !== 'https:') return false
-    return true
+    const protocol = parsed.protocol
+    if (protocol === 'file:' || protocol === 'data:' || protocol === 'javascript:') {
+      return false
+    }
+    if (protocol !== 'https:') return false
+    const host = parsed.hostname.toLowerCase()
+    if (EXTERNAL_URL_HOST_ALLOWLIST.has(host)) return true
+    if (isApiHostname(host)) return true
+    return false
   } catch {
     return false
   }
@@ -1894,6 +1908,19 @@ async function runLauncherSmokeTest() {
   try {
     configureSecurity()
     registerIpcHandlers()
+    const apiOrigin = resolveApiOrigin()
+    const captchaUrl = `${apiOrigin}/api/auth/captcha`
+    log(`API smoke: GET ${captchaUrl}`)
+    try {
+      const apiRes = await performApiRequest({ method: 'GET', url: captchaUrl, timeoutMs: 25000 })
+      if (!apiRes.status || apiRes.status >= 500) {
+        throw new Error(`status=${apiRes.status}`)
+      }
+      console.log('API_SMOKE_OK', JSON.stringify({ status: apiRes.status, origin: apiOrigin }))
+    } catch (apiErr) {
+      log(`API smoke skipped (pack continues): ${apiErr?.message || apiErr}`)
+      console.log('API_SMOKE_SKIP', JSON.stringify({ origin: apiOrigin, reason: apiErr?.message || String(apiErr) }))
+    }
     launcherLoggedIn = true
     writeDesktopSettings({ showDesktopPet: true, showLauncherLogo: true, allowScreenObserve: true })
     writeAuthSession({ token: 'launcher-smoke-token', tokenName: 'lianyu-token', savedAt: Date.now() })

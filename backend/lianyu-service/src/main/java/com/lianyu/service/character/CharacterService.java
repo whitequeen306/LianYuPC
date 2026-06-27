@@ -14,7 +14,8 @@ import com.lianyu.dao.entity.Message;
 import com.lianyu.dao.entity.MomentsComment;
 import com.lianyu.dao.entity.MomentsInteractionState;
 import com.lianyu.dao.entity.MomentsPost;
-import com.lianyu.dao.mapper.CharacterDiaryMapper;
+import com.lianyu.dao.entity.CharacterSquareTemplate;
+import com.lianyu.dao.mapper.CharacterSquareTemplateMapper;
 import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.CharacterStateMapper;
 import com.lianyu.dao.mapper.ConversationMapper;
@@ -54,6 +55,7 @@ public class CharacterService {
     private static final String GROUP_TURN_KEY_PREFIX = "group_chat:turn:";
 
     private final CharacterMapper characterMapper;
+    private final CharacterSquareTemplateMapper squareTemplateMapper;
     private final ConversationMapper conversationMapper;
     private final MessageMapper messageMapper;
     private final MemoryMetaMapper memoryMetaMapper;
@@ -296,15 +298,27 @@ public class CharacterService {
     }
 
     private CharacterResponse toResponse(Character entity) {
+        String storedAvatar = entity.getAvatarUrl();
+        if (isBlank(storedAvatar) && entity.getSourceTemplateId() != null) {
+            CharacterSquareTemplate template = squareTemplateMapper.selectById(entity.getSourceTemplateId());
+            if (template != null && !isBlank(template.getAvatarUrl())) {
+                storedAvatar = template.getAvatarUrl();
+            }
+        }
         return CharacterResponse.builder()
                 .id(entity.getId())
                 .ownerUserId(entity.getOwnerUserId())
                 .name(entity.getName())
-                .avatarUrl(fileStorageService.resolvePublicUrl(entity.getAvatarUrl()))
+                .avatarUrl(fileStorageService.resolvePublicUrl(storedAvatar))
+                .avatarThumbUrl(fileStorageService.resolveSquareAvatarThumbPublicUrl(storedAvatar))
                 .settings(CharacterSettingsUtils.normalizeSettings(entity.getSettings()))
                 .promptTemplate(entity.getPromptTemplate())
                 .createdAt(entity.getCreatedAt())
                 .updatedAt(entity.getUpdatedAt())
                 .build();
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

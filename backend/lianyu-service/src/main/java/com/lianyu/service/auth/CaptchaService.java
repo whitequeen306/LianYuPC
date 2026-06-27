@@ -73,7 +73,7 @@ public class CaptchaService {
         String expression = a + " " + operator + " " + b + " = ?";
         String imageBase64 = renderExpressionImage(expression);
         log.debug("Captcha generated: id={}", id);
-        return new CaptchaChallenge(id, expression, imageBase64);
+        return new CaptchaChallenge(id, imageBase64);
     }
 
     public boolean verify(String captchaId, int userAnswer) {
@@ -133,5 +133,5 @@ public class CaptchaService {
         }
     }
 
-    public record CaptchaChallenge(String id, String expression, String imageBase64) {}
+    public record CaptchaChallenge(String id, String imageBase64) {}
 }

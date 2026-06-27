@@ -113,6 +113,9 @@ public class GlobalExceptionHandler {
             return true;
         }
         String path = request != null ? request.getRequestURI() : "";
+        if (path == null) {
+            path = "";
+        }
         return path.contains("stream");
     }
 }

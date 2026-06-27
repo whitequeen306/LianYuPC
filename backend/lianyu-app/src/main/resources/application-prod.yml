@@ -12,6 +12,9 @@ lianyu:
   api-docs:
     enabled: false
 
-# WebSocket 仅允许云端域名连接（防 CSWSH）
+# WebSocket 仅允许 CORS 白名单来源连接（防 CSWSH）
 ws:
-  allowed-origin-patterns: https://154.219.111.30
+  allowed-origin-patterns: ${CORS_ALLOWED_ORIGINS:https://localhost}
+
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,https://localhost}

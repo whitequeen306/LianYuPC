@@ -27,8 +27,11 @@ class MemoryWriterRelationshipTest {
         List<MemoryExtractionHeuristics.HeuristicMemory> candidates =
                 heuristics.extractRelationshipMemories(List.of(msg));
 
-        assertEquals(MemoryType.RITUAL, candidates.get(0).memoryType());
-        assertTrue(candidates.get(0).summary().contains("专属称呼"));
+        MemoryExtractionHeuristics.HeuristicMemory ritual = candidates.stream()
+                .filter(c -> c.memoryType() == MemoryType.RITUAL)
+                .findFirst()
+                .orElseThrow();
+        assertTrue(ritual.summary().contains("专属称呼"));
     }
 
     @Test

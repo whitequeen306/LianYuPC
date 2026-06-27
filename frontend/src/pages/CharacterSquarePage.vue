@@ -247,6 +247,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ChatDotRound, Search, Shop, Star, StarFilled, User } from '@element-plus/icons-vue'
 import { useCharacterSquareStore } from '@/stores/characterSquare'
+import { useCharactersStore } from '@/stores/characters'
 import { createConversation } from '@/api/conversation'
 import { getSavedUserCity, saveUserCity } from '@/utils/userCity'
 import { resolveMediaUrl } from '@/utils/media'
@@ -508,6 +509,9 @@ async function handleAdd(item) {
   addingId.value = item.id
   try {
     const created = await squareStore.addTemplate(item.id, cityPayload)
+    if (created) {
+      useCharactersStore().upsertLocal(created)
+    }
     squareStore.markAddedInCache(item.id, created?.id)
     markAddedLocal(item.id, created?.id)
     item.added = true

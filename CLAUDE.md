@@ -23,7 +23,7 @@ PC 端桌面/Web 复刻版，独立于安卓端项目。
 | DB | MySQL 8.4 + Flyway 10.20.1 (schema 迁移) |
 | 缓存/会话 | Redis 7 + Lettuce + commons-pool2 2.12 |
 | 消息队列 | RabbitMQ + Spring AMQP |
-| 向量库 | Milvus 2.4.x Standalone (SDK 2.4.5) |
+| 向量库 | Milvus 2.4.x Standalone（Docker 镜像 `v2.4.15`，SDK 2.4.5） |
 | 对象存储 | MinIO (SDK 8.5.13) |
 | 鉴权 | Sa-Token 1.39.0 (Redis 持久化) |
 | 密码哈希 | BCrypt (spring-security-crypto 6.3.4, cost=10) |

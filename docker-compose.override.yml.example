@@ -1,0 +1,19 @@
+# Optional local overrides (copy to docker-compose.override.yml — gitignored)
+#
+# Usage:
+#   cp docker-compose.override.yml.example docker-compose.override.yml
+#
+# Examples below are commented; uncomment what you need.
+
+name: lianyu-pc
+
+# services:
+#   backend:
+#     ports:
+#       - "8080:8080"   # expose backend on all interfaces for LAN testing
+#     volumes:
+#       - ./backend:/workspace/backend:ro
+#
+#   api-gateway:
+#     ports:
+#       - "8443:443"

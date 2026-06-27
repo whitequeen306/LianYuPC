@@ -13,6 +13,21 @@ const electronBin =
     ? path.join(root, 'node_modules', 'electron', 'dist', 'electron.exe')
     : path.join(root, 'node_modules', 'electron', 'dist', 'electron')
 
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return {}
+  const out = {}
+  for (const line of fs.readFileSync(filePath, 'utf8').split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eq = trimmed.indexOf('=')
+    if (eq <= 0) continue
+    out[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim()
+  }
+  return out
+}
+
+const cloudEnv = loadEnvFile(path.join(root, '.env.production.cloud'))
+
 const mainEntry = path.join(root, 'dist-electron', 'main.js')
 const distIndex = path.join(root, 'dist', 'index.html')
 
@@ -32,7 +47,12 @@ if (!fs.existsSync(electronBin)) {
 console.log('smoke-launcher: starting Electron launcher smoke test...')
 const result = spawnSync(electronBin, [mainEntry], {
   cwd: path.join(root, 'dist-electron'),
-  env: { ...process.env, LIANYU_LAUNCHER_SMOKE: '1' },
+  env: {
+    ...process.env,
+    LIANYU_LAUNCHER_SMOKE: '1',
+    LIANYU_API_ORIGIN: cloudEnv.VITE_LIANYU_API_ORIGIN || process.env.LIANYU_API_ORIGIN || '',
+    LIANYU_CERT_FINGERPRINT: cloudEnv.VITE_LIANYU_CERT_FINGERPRINT || process.env.LIANYU_CERT_FINGERPRINT || '',
+  },
   encoding: 'utf8',
   timeout: 120000,
 })

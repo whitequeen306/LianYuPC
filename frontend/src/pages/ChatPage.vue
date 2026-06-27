@@ -68,6 +68,9 @@
                 v-if="characterAvatarUrl"
                 :src="resolveMediaUrl(characterAvatarUrl)"
                 :alt="activeCharacter?.name"
+                loading="lazy"
+                decoding="async"
+                @error="onActiveCharacterAvatarError"
               />
               <el-icon v-else :size="18"><User /></el-icon>
             </div>
@@ -222,6 +225,7 @@ import { fetchModels } from '@/api/ai'
 import { ArrowLeft, ArrowDown, ChatDotRound, Promotion, Picture, Close, User, UserFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { resolveMediaUrl } from '@/utils/media'
+import { nextCharacterAvatarTier, pickCharacterAvatarRaw } from '@/utils/characterAvatar'
 import { PLATFORM_PROVIDER, PLATFORM_MODEL, PLATFORM_PROVIDER_LABEL } from '@/constants/ai'
 import { normalizeHex } from '@/utils/themeColor'
 import EmotionBadge from '@/components/EmotionBadge.vue'
@@ -251,6 +255,7 @@ const charactersStore = useCharactersStore()
 const messages = ref([])
 const currentConvId = ref(null)
 const activeCharacter = ref(null)
+const activeCharacterAvatarTier = ref('thumb')
 const emotionState = ref(null)
 const msgListRef = ref(null)
 const scrollAnchor = ref(null)
@@ -365,7 +370,15 @@ const headerTitle = computed(() => {
   return name
 })
 
-const characterAvatarUrl = computed(() => activeCharacter.value?.avatarUrl || '')
+const characterAvatarUrl = computed(() =>
+  pickCharacterAvatarRaw(activeCharacter.value, activeCharacterAvatarTier.value),
+)
+
+function onActiveCharacterAvatarError() {
+  const char = activeCharacter.value
+  if (!char) return
+  activeCharacterAvatarTier.value = nextCharacterAvatarTier(char, activeCharacterAvatarTier.value)
+}
 
 function expandAssistantForDisplay(msg) {
   if (msg._streamGroupId) {
@@ -782,6 +795,10 @@ async function resolveActiveCharacter(charId, conv) {
     }
   }
   activeCharacter.value = char
+  activeCharacterAvatarTier.value = 'thumb'
+  if (char) {
+    charactersStore.upsertLocal(char)
+  }
   const backgroundKey = char?.settings?.chatBackgroundKey
   if (char?.id && backgroundKey) {
     settingsStore.setChatBackground(char.id, backgroundKey)

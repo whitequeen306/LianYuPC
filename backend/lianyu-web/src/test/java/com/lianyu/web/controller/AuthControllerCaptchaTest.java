@@ -22,7 +22,7 @@ class AuthControllerCaptchaTest {
         ClientIpResolver clientIpResolver = mock(ClientIpResolver.class);
 
         when(captchaService.generate()).thenReturn(
-                new CaptchaService.CaptchaChallenge("id1", "1 + 2 = ?", "base64png"));
+                new CaptchaService.CaptchaChallenge("id1", "base64png"));
 
         AuthController controller = new AuthController(authService, captchaService, rateLimiter, clientIpResolver);
         Map<String, String> data = controller.captcha().getData();

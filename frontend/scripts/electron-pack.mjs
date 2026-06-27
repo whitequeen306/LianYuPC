@@ -38,11 +38,18 @@ const RENDERER_OBFUSCATOR = {
   simplify: false,
 }
 
+/** ? bundle ??????? Electron ??? API ????????????? */
+const OBFUSCATION_SKIP_PATTERN = /^index-/i
+
 function obfuscateRendererBundles() {
   const assetsDir = path.join(root, 'dist', 'assets')
   if (!fs.existsSync(assetsDir)) return
   for (const name of fs.readdirSync(assetsDir)) {
     if (!name.endsWith('.js')) continue
+    if (OBFUSCATION_SKIP_PATTERN.test(name)) {
+      console.log(`Skipped obfuscation (runtime): ${name}`)
+      continue
+    }
     const filePath = path.join(assetsDir, name)
     const source = fs.readFileSync(filePath, 'utf8')
     const obfuscated = JavaScriptObfuscator.obfuscate(source, RENDERER_OBFUSCATOR).getObfuscatedCode()
@@ -242,5 +249,5 @@ execSync(`npx electron-builder --win ${outputArg}`, {
   env: process.env,
 })
 
-console.log(`\n安装包已生成: ${outDir}/LianYu Setup ${pkg.version}.exe`)
+console.log(`\n??????: ${outDir}/LianYu Setup ${pkg.version}.exe`)
 console.log(`API Origin (packed in runtime-secrets.bin): ${packApiOrigin}`)

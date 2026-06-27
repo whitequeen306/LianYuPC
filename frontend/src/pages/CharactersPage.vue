@@ -48,7 +48,15 @@
             @focusout="onCardFocusOut(char.id, $event)"
           >
         <div class="card-media">
-          <img v-if="char.avatarUrl" :src="resolveMediaUrl(char.avatarUrl)" class="avatar-img" />
+          <img
+            v-if="characterAvatarSrc(char)"
+            :src="resolveMediaUrl(characterAvatarSrc(char))"
+            class="avatar-img"
+            :alt="char.name"
+            loading="lazy"
+            decoding="async"
+            @error="onCharacterAvatarError(char)"
+          />
           <div v-else class="avatar-placeholder">
             <el-icon :size="28"><User /></el-icon>
           </div>
@@ -93,10 +101,13 @@
           <div class="character-spotlight__glow" aria-hidden="true" />
           <div class="character-spotlight__portrait">
             <img
-              v-if="spotlightCharacter.avatarUrl"
-              :src="resolveMediaUrl(spotlightCharacter.avatarUrl)"
+              v-if="characterAvatarSrc(spotlightCharacter)"
+              :src="resolveMediaUrl(characterAvatarSrc(spotlightCharacter))"
               :alt="spotlightCharacter.name"
               class="character-spotlight__img"
+              loading="lazy"
+              decoding="async"
+              @error="onCharacterAvatarError(spotlightCharacter)"
             />
             <div v-else class="character-spotlight__fallback">
               <el-icon :size="48"><User /></el-icon>
@@ -278,6 +289,7 @@ import { useNotificationsStore } from '@/stores/notifications'
 import { Plus, Delete, User, Loading, ChatDotRound, UploadFilled, Setting } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { resolveMediaUrl } from '@/utils/media'
+import { nextCharacterAvatarTier, pickCharacterAvatarRaw } from '@/utils/characterAvatar'
 import { fixUtf8Mojibake } from '@/utils/textEncoding'
 import { listCharacterStates } from '@/api/characterState'
 import { getSavedUserCity, saveUserCity } from '@/utils/userCity'
@@ -307,6 +319,7 @@ const {
 const singleConvByCharacterId = ref({})
 const emotionByCharacterId = ref({})
 const hoveredCharacterId = ref(null)
+const characterAvatarTier = ref({})
 const DEFAULT_INNER_SPACE_HEADLINE = '她还在慢慢熟悉与你相处的节奏。'
 const DEFAULT_INNER_SPACE_BODY = '她对这段关系还保持着温柔的试探，正在从每一次对话里确认与你靠近的方式。'
 const dialogVisible = ref(false)
@@ -430,6 +443,19 @@ async function fetchCharacters() {
 function lastMessageForCharacter(characterId) {
   const preview = singleConvByCharacterId.value[characterId]?.lastMessage?.trim()
   return preview || t('characters.noMessagesYet')
+}
+
+function characterAvatarSrc(character) {
+  if (!character?.id) return ''
+  const tier = characterAvatarTier.value[character.id] || 'thumb'
+  return pickCharacterAvatarRaw(character, tier)
+}
+
+function onCharacterAvatarError(character) {
+  if (!character?.id) return
+  const current = characterAvatarTier.value[character.id] || 'thumb'
+  const next = nextCharacterAvatarTier(character, current)
+  characterAvatarTier.value = { ...characterAvatarTier.value, [character.id]: next }
 }
 
 function lastCharacterLineForCharacter(characterId) {
