@@ -45,6 +45,7 @@ class ConversationServicePromptTest {
                 null,
                 null,
                 null,
+                null,
                 outputLanguageService,
                 null,
                 null,

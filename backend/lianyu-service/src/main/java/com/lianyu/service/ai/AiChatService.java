@@ -214,6 +214,13 @@ public class AiChatService {
     @FunctionalInterface
     public interface StreamCallback {
         void onComplete(String fullContent, Throwable error);
+
+        /**
+         * 在发送 [DONE] 之前调用，可向客户端推送规范化后的分片（pieces）等。
+         */
+        default void beforeStreamComplete(SseEmitter emitter, String fullContent) throws IOException {
+            // no-op
+        }
     }
 
     public ChatResult chatBlocking(Long userId, AiChatRequest request) {
@@ -1020,6 +1027,9 @@ public class AiChatService {
 
     private void finishSseSuccess(SseEmitter emitter, String fullContent, StreamCallback callback) {
         try {
+            if (callback != null) {
+                callback.beforeStreamComplete(emitter, fullContent);
+            }
             emitter.send(SseEmitter.event().data("[DONE]"));
             emitter.complete();
         } catch (IOException e) {

@@ -18,7 +18,8 @@ import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.GroupMemberMapper;
 import com.lianyu.dao.mapper.MessageMapper;
 import com.lianyu.service.ai.AiChatService;
-import com.lianyu.service.ai.AssistantReplySplitter;
+import com.lianyu.service.ai.AssistantReplyService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lianyu.service.ai.CharacterPromptBuilder;
 import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
@@ -56,7 +57,8 @@ class ConversationRelationshipFlowTest {
         ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
         FileStorageService fileStorageService = mock(FileStorageService.class);
         CharacterChatBehaviorResolver chatBehaviorResolver = mock(CharacterChatBehaviorResolver.class);
-        AssistantReplySplitter replySplitter = mock(AssistantReplySplitter.class);
+        AssistantReplyService assistantReplyService = mock(AssistantReplyService.class);
+        ObjectMapper objectMapper = new ObjectMapper();
         NotificationService notificationService = mock(NotificationService.class);
         OutputLanguageService outputLanguageService = mock(OutputLanguageService.class);
         CharacterStateService characterStateService = mock(CharacterStateService.class);
@@ -81,7 +83,8 @@ class ConversationRelationshipFlowTest {
                 redisTemplate,
                 fileStorageService,
                 chatBehaviorResolver,
-                replySplitter,
+                assistantReplyService,
+                objectMapper,
                 notificationService,
                 outputLanguageService,
                 characterStateService,
@@ -123,7 +126,9 @@ class ConversationRelationshipFlowTest {
         when(messageMapper.selectList(any())).thenReturn(List.of());
         when(aiChatService.chatBlocking(eq(3L), any()))
                 .thenReturn(ChatResult.builder().content("没关系，我还在。 ").totalTokens(12).build());
-        when(replySplitter.split("没关系，我还在。 ", 1)).thenReturn(List.of("没关系，我还在。"));
+        when(assistantReplyService.process("没关系，我还在。 ", 1))
+                .thenReturn(new AssistantReplyService.ProcessedReply(
+                        "没关系，我还在。", List.of("没关系，我还在。")));
 
         doAnswer(invocation -> {
             Message msg = invocation.getArgument(0);

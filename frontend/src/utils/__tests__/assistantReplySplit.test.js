@@ -56,7 +56,24 @@ describe('splitAssistantReplyForDisplay', () => {
       '）好的，我等一下倒没关系。'
     ].join('\n')
     expect(splitAssistantReplyForDisplay(text)).toEqual([
-      '（她靠近你，轻轻握住你的手\n\n）好的，我等一下倒没关系。'
+      '（她靠近你，轻轻握住你的手 ）好的，我等一下倒没关系。'
     ])
+  })
+
+  it('keeps unclosed parenthesis block in one bubble when split across lines', () => {
+    const text = [
+      '（被他轻轻摸头的瞬间，我愣了一下，目光跟着他往背后瞟了一眼',
+      '我假装没看到，收回视线抿了抿嘴',
+      '）嗯——我猜你今天迟到的理由是蛋糕？'
+    ].join('\n')
+    const pieces = splitAssistantReplyForDisplay(text)
+    expect(pieces).toHaveLength(1)
+    expect(pieces[0]).toContain('（被他轻轻摸头')
+    expect(pieces[0]).toContain('）嗯——')
+  })
+
+  it('does not split on sentence punctuation inside parentheses', () => {
+    const text = '（被他轻轻摸头的瞬间，我愣了一下。logo落进眼里。）我假装没看到。'
+    expect(splitAssistantReplyForDisplay(text)).toEqual([text])
   })
 })

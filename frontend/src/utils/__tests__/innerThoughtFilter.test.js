@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   findParenthesisRanges,
   hasInnerThoughtMarkers,
+  normalizeAssistantContent,
   parseInnerThoughtSegments,
   stripInnerThoughts,
 } from '../innerThoughtFilter'
@@ -29,6 +30,19 @@ describe('parseInnerThoughtSegments', () => {
       { type: 'inner', text: '（她靠近你，轻轻握住你的手\n\n）' },
       { type: 'speech', text: '好的，我等一下。' },
     ])
+  })
+
+  it('styles unclosed parenthesis to end of bubble as inner thought', () => {
+    expect(parseInnerThoughtSegments('（被他轻轻摸头的瞬间，我愣了一下')).toEqual([
+      { type: 'inner', text: '（被他轻轻摸头的瞬间，我愣了一下' },
+    ])
+  })
+})
+
+describe('normalizeAssistantContent', () => {
+  it('flattens and closes inner thought parentheses', () => {
+    const raw = '（愣了一下\n\n目光瞟了一眼'
+    expect(normalizeAssistantContent(raw)).toBe('（愣了一下 目光瞟了一眼）')
   })
 })
 

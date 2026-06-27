@@ -1,7 +1,12 @@
 /**
  * 与后端 {@code AssistantReplySplitter} 一致：按换行拆成多条气泡。
  */
-import { isInsideParentheses } from '@/utils/innerThoughtFilter'
+import {
+  isInsideParentheses,
+  normalizeAssistantContent,
+  rebalanceSplitPieces,
+  stripLeadingOrphanCloses
+} from '@/utils/innerThoughtFilter'
 
 const SENTENCE_SPLIT_MIN_CHARS = 40
 const CJK_SENTENCE_BOUNDARY = /(?<=[。！？!?])(?=[^。！？!?\s])/u
@@ -13,6 +18,31 @@ function splitWithPattern(text, pattern) {
 }
 
 function splitBySentenceBoundary(text) {
+  const pieces = []
+  let start = 0
+  let i = 0
+  while (i < text.length) {
+    const ch = text[i]
+    let splitAt = -1
+    if (/[。！？!?]/.test(ch) && i + 1 < text.length && !/\s/.test(text[i + 1])) {
+      if (!isInsideParentheses(text, i + 1)) splitAt = i + 1
+    } else if (/[.!?]/.test(ch)) {
+      let j = i + 1
+      while (j < text.length && /\s/.test(text[j])) j += 1
+      if (j > i + 1 && !isInsideParentheses(text, i + 1)) splitAt = j
+    }
+    if (splitAt > start) {
+      const part = text.slice(start, splitAt).trim()
+      if (part) pieces.push(part)
+      start = splitAt
+      i = splitAt
+      continue
+    }
+    i += 1
+  }
+  const tail = text.slice(start).trim()
+  if (tail) pieces.push(tail)
+  if (pieces.length > 1) return pieces
   const cjk = splitWithPattern(text, CJK_SENTENCE_BOUNDARY)
   if (cjk.length > 1) return cjk
   const en = splitWithPattern(text, EN_SENTENCE_BOUNDARY)
@@ -45,7 +75,7 @@ function collectReplyPieces(fullContent) {
   if (!fullContent || !String(fullContent).trim()) {
     return []
   }
-  const normalized = String(fullContent).replace(/\r\n/g, '\n').trim()
+  const normalized = normalizeAssistantContent(fullContent)
   let pieces = splitLinesOutsideParentheses(normalized)
   if (pieces.length === 0) {
     pieces = [normalized]
@@ -57,7 +87,7 @@ function collectReplyPieces(fullContent) {
       pieces = sentencePieces
     }
   }
-  return pieces
+  return rebalanceSplitPieces(pieces.map(p => stripLeadingOrphanCloses(p)))
 }
 
 function capReplyPieces(pieces, limit) {
@@ -71,12 +101,16 @@ function capReplyPieces(pieces, limit) {
 }
 
 export function splitAssistantReply(fullContent, maxRepliesPerTurn = 3) {
-  return capReplyPieces(collectReplyPieces(fullContent), maxRepliesPerTurn)
+  return processAssistantReply(fullContent, maxRepliesPerTurn)
 }
 
-/** 展示层：按换行/句号拆成多条气泡，避免单条 DB 消息因 pre-wrap 露出多行 */
+/** 展示层：后端已按条落库时不再二次切分；仅用于流式兜底 */
 export function splitAssistantReplyForDisplay(fullContent) {
   return capReplyPieces(collectReplyPieces(fullContent), 5)
+}
+
+export function processAssistantReply(fullContent, maxRepliesPerTurn = 3) {
+  return capReplyPieces(collectReplyPieces(fullContent), maxRepliesPerTurn)
 }
 
 /** 与后端 {@code CharacterChatBehaviorResolver.StyleProfile} 默认条数一致 */

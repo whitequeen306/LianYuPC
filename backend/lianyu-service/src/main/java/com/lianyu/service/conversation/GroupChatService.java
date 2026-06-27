@@ -17,6 +17,7 @@ import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.GroupMemberMapper;
 import com.lianyu.dao.mapper.MessageMapper;
 import com.lianyu.service.ai.AiChatService;
+import com.lianyu.service.ai.AssistantReplyService;
 import com.lianyu.service.ai.AssistantReplySplitter;
 import com.lianyu.service.ai.CharacterPromptBuilder;
 import com.lianyu.service.ai.InnerThoughtFilter;
@@ -70,6 +71,7 @@ public class GroupChatService {
     private final StringRedisTemplate redisTemplate;
     private final FileStorageService fileStorageService;
     private final CharacterChatBehaviorResolver chatBehaviorResolver;
+    private final AssistantReplyService assistantReplyService;
     private final AssistantReplySplitter replySplitter;
     private final NotificationService notificationService;
     private final ObjectMapper objectMapper;
@@ -542,7 +544,8 @@ public class GroupChatService {
                                               SendMessageRequest request) {
         Character character = characterMapper.selectById(reply.characterId());
         CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
-        List<String> pieces = replySplitter.split(reply.content(), behavior.maxRepliesPerTurn());
+        List<String> pieces = assistantReplyService.process(
+                reply.content(), behavior.maxRepliesPerTurn()).pieces();
         if (pieces.isEmpty()) {
             return;
         }
@@ -643,7 +646,8 @@ public class GroupChatService {
                                             String turnKey) {
         Character character = characterMapper.selectById(reply.characterId());
         CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
-        List<String> pieces = replySplitter.split(reply.content(), behavior.maxRepliesPerTurn());
+        List<String> pieces = assistantReplyService.process(
+                reply.content(), behavior.maxRepliesPerTurn()).pieces();
         if (pieces.isEmpty()) {
             return;
         }

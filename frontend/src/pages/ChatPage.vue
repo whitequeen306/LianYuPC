@@ -233,7 +233,6 @@ import { getCharacterState } from '@/api/characterState'
 import { setActiveChatConversationId, setActiveChatRefreshHandler } from '@/composables/useActiveChatContext'
 import {
   splitAssistantReply,
-  splitAssistantReplyForDisplay,
   resolveMaxRepliesPerTurn
 } from '@/utils/assistantReplySplit'
 import { getElectronAPI } from '@/utils/electron'
@@ -381,31 +380,13 @@ function onActiveCharacterAvatarError() {
 }
 
 function expandAssistantForDisplay(msg) {
-  if (msg._streamGroupId) {
-    const displayContent = stripInnerThoughts(msg.content, showInnerThoughts.value)
-    if (!displayContent) return []
-    return [{
-      ...msg,
-      content: displayContent,
-      _key: msg._tempId || String(msg.id)
-    }]
-  }
   const displayContent = stripInnerThoughts(msg.content, showInnerThoughts.value)
   if (!displayContent) return []
-  const pieces = splitAssistantReplyForDisplay(displayContent)
-  if (pieces.length <= 1) {
-    return [{
-      ...msg,
-      content: displayContent,
-      _key: msg.id || msg._tempId
-    }]
-  }
-  return pieces.map((content, i) => ({
+  return [{
     ...msg,
-    content,
-    _showTime: i === pieces.length - 1,
-    _key: `${msg.id || msg._tempId}-d${i}`
-  }))
+    content: displayContent,
+    _key: msg._streamGroupId ? (msg._tempId || String(msg.id)) : (msg.id || msg._tempId)
+  }]
 }
 
 const messageTimeline = computed(() => {
@@ -965,14 +946,14 @@ async function handleSend() {
       throw new Error(errMsg)
     }
 
-    const fullContent = await drainAssistantStream(response)
+    const { fullContent, pieces } = await drainAssistantStream(response)
     const elapsed = Date.now() - sendStartedAt
     if (elapsed < MIN_REPLY_DISPLAY_MS) {
       await sleep(MIN_REPLY_DISPLAY_MS - elapsed)
     }
 
     if (currentConvId.value === sendConvId && fullContent?.trim()) {
-      syncStreamingAssistantBubbles(fullContent, streamGroupId, streamCreatedAt)
+      syncStreamingAssistantBubbles(fullContent, streamGroupId, streamCreatedAt, pieces)
       sortMessagesInTimelineOrder()
       await nextTick()
       scrollToBottom()
@@ -1004,6 +985,7 @@ async function drainAssistantStream(response) {
   const decoder = new TextDecoder()
   let buffer = ''
   let fullContent = ''
+  let serverPieces = null
 
   while (true) {
     const { done, value } = await reader.read()
@@ -1028,13 +1010,16 @@ async function drainAssistantStream(response) {
         if (payload.replace) {
           fullContent = payload.replace
         }
+        if (Array.isArray(payload.pieces) && payload.pieces.length) {
+          serverPieces = payload.pieces.map(p => String(p ?? '').trim()).filter(Boolean)
+        }
       } catch (e) {
         if (e instanceof SyntaxError) continue
         throw e
       }
     }
   }
-  return fullContent
+  return { fullContent, pieces: serverPieces }
 }
 
 function triggerImageSelect() {
@@ -1074,23 +1059,25 @@ async function handleImageSelect(event) {
   }
 }
 
-function syncStreamingAssistantBubbles(fullContent, streamGroupId, createdAt) {
+function syncStreamingAssistantBubbles(fullContent, streamGroupId, createdAt, serverPieces = null) {
   const maxReplies = resolveMaxRepliesPerTurn(activeCharacter.value)
-  const pieces = splitAssistantReply(fullContent, maxReplies)
+  const pieces = (serverPieces?.length
+    ? serverPieces
+    : splitAssistantReply(fullContent, maxReplies))
+    .map(p => stripInnerThoughts(p, showInnerThoughts.value))
+    .filter(Boolean)
   const rest = messages.value.filter(m => m._streamGroupId !== streamGroupId)
   if (pieces.length === 0) {
     messages.value = rest
     return
   }
-  const streamMsgs = pieces
-    .map((content, i) => ({
-      _tempId: `${streamGroupId}-${i}`,
-      _streamGroupId: streamGroupId,
-      role: 'assistant',
-      content: stripInnerThoughts(content, showInnerThoughts.value),
-      createdAt
-    }))
-    .filter(m => m.content)
+  const streamMsgs = pieces.map((content, i) => ({
+    _tempId: `${streamGroupId}-${i}`,
+    _streamGroupId: streamGroupId,
+    role: 'assistant',
+    content,
+    createdAt
+  }))
   messages.value = [...rest, ...streamMsgs]
   sortMessagesInTimelineOrder()
 }

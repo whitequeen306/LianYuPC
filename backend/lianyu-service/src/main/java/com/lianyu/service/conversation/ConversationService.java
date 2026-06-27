@@ -17,7 +17,7 @@ import com.lianyu.dao.mapper.GroupMemberMapper;
 import com.lianyu.dao.mapper.MessageMapper;
 import com.lianyu.dao.mapper.UserMapper;
 import com.lianyu.service.ai.AiChatService;
-import com.lianyu.service.ai.AssistantReplySplitter;
+import com.lianyu.service.ai.AssistantReplyService;
 import com.lianyu.service.ai.CharacterPromptBuilder;
 import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
@@ -36,10 +36,13 @@ import com.lianyu.service.storage.FileStorageService;
 import com.lianyu.service.support.OutputLanguageService;
 import com.lianyu.service.tools.ChatToolContext;
 import com.lianyu.service.tools.TimeTool;
+import java.io.IOException;
 import java.time.LocalTime;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -80,7 +83,8 @@ public class ConversationService {
     private final StringRedisTemplate redisTemplate;
     private final FileStorageService fileStorageService;
     private final CharacterChatBehaviorResolver chatBehaviorResolver;
-    private final AssistantReplySplitter replySplitter;
+    private final AssistantReplyService assistantReplyService;
+    private final ObjectMapper objectMapper;
     private final NotificationService notificationService;
     private final OutputLanguageService outputLanguageService;
     private final CharacterStateService characterStateService;
@@ -315,29 +319,52 @@ public class ConversationService {
         aiRequest.setExpectedLanguage(outputLanguageService.resolveForRequest(userId, turn.rawLanguageSample()));
 
         final Character streamCharacter = character;
-        return aiChatService.chatStream(userId, aiRequest, (fullContent, error) -> {
-            if (error != null) {
-                log.warn("Assistant stream failed, skip persist: convId={}, reason={}",
-                        conversationId, error.getMessage());
-                return;
+        final CharacterChatBehavior streamBehavior = chatBehaviorResolver.resolve(character);
+        return aiChatService.chatStream(userId, aiRequest, new AiChatService.StreamCallback() {
+            @Override
+            public void beforeStreamComplete(SseEmitter emitter, String fullContent) throws IOException {
+                if (fullContent == null || fullContent.isBlank()) {
+                    return;
+                }
+                AssistantReplyService.ProcessedReply processed = assistantReplyService.process(
+                        fullContent, streamBehavior.maxRepliesPerTurn());
+                Map<String, Object> payload = new LinkedHashMap<>();
+                if (!processed.normalized().equals(fullContent)) {
+                    payload.put("replace", processed.normalized());
+                }
+                if (!processed.pieces().isEmpty()) {
+                    payload.put("pieces", processed.pieces());
+                }
+                if (!payload.isEmpty()) {
+                    emitter.send(SseEmitter.event().data(objectMapper.writeValueAsString(payload)));
+                }
             }
-            if (fullContent != null && !fullContent.isBlank()) {
-                List<MessageResponse> replies = saveAssistantReplies(
-                        conversationId, streamCharacter, fullContent, null);
-                relationshipStateService.recordAssistantTurn(userId, character.getId(), conversationId, replies);
-                log.info("Assistant message saved: convId={}, pieces={}, size={} chars",
-                        conversationId, replies.size(), fullContent.length());
-                memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
-                sessionSummaryService.maybeMergeAsync(conversationId);
-                if (!replies.isEmpty()) {
-                    notificationService.notifyAssistantMessage(
-                            userId,
-                            conversationId,
-                            character.getId(),
-                            character.getName(),
-                            replies.get(0).getContent(),
-                            "MESSAGE"
-                    );
+
+            @Override
+            public void onComplete(String fullContent, Throwable error) {
+                if (error != null) {
+                    log.warn("Assistant stream failed, skip persist: convId={}, reason={}",
+                            conversationId, error.getMessage());
+                    return;
+                }
+                if (fullContent != null && !fullContent.isBlank()) {
+                    List<MessageResponse> replies = saveAssistantReplies(
+                            conversationId, streamCharacter, fullContent, null);
+                    relationshipStateService.recordAssistantTurn(userId, character.getId(), conversationId, replies);
+                    log.info("Assistant message saved: convId={}, pieces={}, size={} chars",
+                            conversationId, replies.size(), fullContent.length());
+                    memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
+                    sessionSummaryService.maybeMergeAsync(conversationId);
+                    if (!replies.isEmpty()) {
+                        notificationService.notifyAssistantMessage(
+                                userId,
+                                conversationId,
+                                character.getId(),
+                                character.getName(),
+                                replies.get(0).getContent(),
+                                "MESSAGE"
+                        );
+                    }
                 }
             }
         });
@@ -892,7 +919,8 @@ public class ConversationService {
                                                               int maxPiecesForSplit) {
         CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
         int capped = Math.max(1, Math.min(Math.max(1, maxPiecesForSplit), behavior.maxRepliesPerTurn()));
-        List<String> pieces = replySplitter.split(fullContent, capped);
+        AssistantReplyService.ProcessedReply processed = assistantReplyService.process(fullContent, capped);
+        List<String> pieces = processed.pieces();
         if (pieces.isEmpty()) {
             return List.of();
         }

@@ -18,7 +18,7 @@ import com.lianyu.dao.mapper.GroupMemberMapper;
 import com.lianyu.dao.mapper.MessageMapper;
 import com.lianyu.dao.mapper.UserMapper;
 import com.lianyu.service.ai.AiChatService;
-import com.lianyu.service.ai.AssistantReplySplitter;
+import com.lianyu.service.ai.AssistantReplyService;
 import com.lianyu.service.ai.CharacterPromptBuilder;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
 import com.lianyu.service.character.CharacterRecentActivityService;
@@ -30,6 +30,7 @@ import com.lianyu.service.notification.NotificationService;
 import com.lianyu.service.relationship.RelationshipStateService;
 import com.lianyu.service.storage.FileStorageService;
 import com.lianyu.service.support.OutputLanguageService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -58,7 +59,8 @@ class ConversationServiceStreamErrorTest {
     @Mock private ValueOperations<String, String> valueOperations;
     @Mock private FileStorageService fileStorageService;
     @Mock private CharacterChatBehaviorResolver chatBehaviorResolver;
-    @Mock private AssistantReplySplitter replySplitter;
+    @Mock private AssistantReplyService assistantReplyService;
+    @Mock private ObjectMapper objectMapper;
     @Mock private NotificationService notificationService;
     @Mock private OutputLanguageService outputLanguageService;
     @Mock private CharacterStateService characterStateService;
@@ -86,7 +88,8 @@ class ConversationServiceStreamErrorTest {
                 redisTemplate,
                 fileStorageService,
                 chatBehaviorResolver,
-                replySplitter,
+                assistantReplyService,
+                objectMapper,
                 notificationService,
                 outputLanguageService,
                 characterStateService,
