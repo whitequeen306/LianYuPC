@@ -99,4 +99,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('desktop:launcher-hidden', handler)
     return () => ipcRenderer.removeListener('desktop:launcher-hidden', handler)
   },
+  notifyQuickChatReady: () => ipcRenderer.send('desktop:quick-chat-ready'),
 })

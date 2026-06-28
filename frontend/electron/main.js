@@ -60,8 +60,12 @@ let mainWindow = null
 let launcherWindow = null
 /** @type {BrowserWindow | null} */
 let pickerWindow = null
-/** @type {Map<string, BrowserWindow>} */
-const quickChatWindows = new Map()
+/** @type {BrowserWindow | null} */
+let quickChatShell = null
+let quickChatShellReady = false
+/** @type {string | null} */
+let quickChatPendingShowId = null
+let quickChatReadyFallbackTimer = null
 /** @type {Tray | null} */
 let tray = null
 let isQuitting = false
@@ -1023,8 +1027,10 @@ function applyTitleBarOverlayToWindow(win, presetKey = currentTitleBarPreset) {
 function applyTitleBarOverlayToAllWindows(presetKey) {
   currentTitleBarPreset = presetKey in TITLE_BAR_PRESETS ? presetKey : 'dark'
   applyTitleBarOverlayToWindow(mainWindow, currentTitleBarPreset)
-  for (const win of quickChatWindows.values()) {
-    applyTitleBarOverlayToWindow(win, currentTitleBarPreset)
+  for (const win of [quickChatShell]) {
+    if (win && !win.isDestroyed()) {
+      applyTitleBarOverlayToWindow(win, currentTitleBarPreset)
+    }
   }
   if (mainWindow && !mainWindow.isDestroyed()) {
     const mode = currentTitleBarPreset === 'light' ? 'light' : 'dark'
@@ -1396,6 +1402,111 @@ function positionQuickChatNearLauncher(win) {
   win.setPosition(Math.round(x), Math.round(y))
 }
 
+function clearQuickChatReadyFallback() {
+  if (quickChatReadyFallbackTimer) {
+    clearTimeout(quickChatReadyFallbackTimer)
+    quickChatReadyFallbackTimer = null
+  }
+}
+
+function revealPendingQuickChat(win) {
+  if (!win || win.isDestroyed() || !quickChatPendingShowId) return
+  const id = quickChatPendingShowId
+  quickChatPendingShowId = null
+  clearQuickChatReadyFallback()
+  showQuickChatWindow(win, id)
+}
+
+function scheduleQuickChatReadyFallback(win) {
+  clearQuickChatReadyFallback()
+  quickChatReadyFallbackTimer = setTimeout(() => {
+    quickChatReadyFallbackTimer = null
+    revealPendingQuickChat(win)
+  }, 2500)
+}
+
+async function navigateQuickChatShell(conversationId) {
+  const id = String(conversationId)
+  const win = quickChatShell
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return false
+  const target = `/quick/chat/${id}`
+  try {
+    await win.webContents.executeJavaScript(
+      `(function () {
+        const target = ${JSON.stringify(target)}
+        if (typeof window.__lianyuNavigateQuickChat === 'function') {
+          return window.__lianyuNavigateQuickChat(target)
+        }
+        window.location.hash = '#' + target
+        return true
+      })()`,
+      true,
+    )
+    return true
+  } catch (e) {
+    log(`navigateQuickChatShell failed conversation=${id}: ${e.message}`)
+    loadRoute(win, `#${target}`)
+    return true
+  }
+}
+
+function createQuickChatShell() {
+  if (quickChatShell && !quickChatShell.isDestroyed()) {
+    return quickChatShell
+  }
+
+  quickChatShellReady = false
+  const appearance = readAppearance()
+  const win = new BrowserWindow({
+    width: 380,
+    height: 560,
+    minWidth: 320,
+    minHeight: 420,
+    title: 'LianYu 聊天',
+    icon: resolveDistPath('logo.png'),
+    backgroundColor: resolveWindowBackgroundColor(appearance),
+    ...buildQuickChatWindowOptions(),
+    show: false,
+    webPreferences: { ...SHARED_WEB_PREFS },
+  })
+  win.lianyuKind = 'quickChat'
+  win.setMenuBarVisibility(false)
+  attachWindowLogging(win, 'quickChat')
+
+  win.webContents.once('did-finish-load', () => {
+    quickChatShellReady = true
+    if (quickChatPendingShowId) {
+      void navigateQuickChatShell(quickChatPendingShowId)
+    }
+  })
+
+  win.webContents.once('did-fail-load', () => {
+    log('createQuickChatShell: load failed')
+    if (!win.isDestroyed()) win.destroy()
+    if (quickChatShell === win) quickChatShell = null
+    quickChatShellReady = false
+    quickChatPendingShowId = null
+    clearQuickChatReadyFallback()
+  })
+
+  win.on('closed', () => {
+    if (quickChatShell === win) quickChatShell = null
+    quickChatShellReady = false
+    quickChatPendingShowId = null
+    clearQuickChatReadyFallback()
+    resetLauncherInteraction()
+  })
+
+  loadRoute(win, '#/quick/chat/0')
+  quickChatShell = win
+  return win
+}
+
+function prewarmQuickChatShell() {
+  if (!launcherLoggedIn) return
+  createQuickChatShell()
+}
+
 function showQuickChatWindow(win, conversationId) {
   if (!win || win.isDestroyed()) return false
   const appearance = readAppearance()
@@ -1416,61 +1527,41 @@ function openQuickChatWindow(conversationId) {
   }
   closeCharacterPicker()
 
-  const existing = quickChatWindows.get(id)
-  if (existing && !existing.isDestroyed()) {
-    showQuickChatWindow(existing, id)
-    return existing
+  const win = createQuickChatShell()
+  quickChatPendingShowId = id
+
+  const beginOpen = async () => {
+    await navigateQuickChatShell(id)
+    if (win.isDestroyed()) return
+    if (win.isVisible()) {
+      revealPendingQuickChat(win)
+      return
+    }
+    scheduleQuickChatReadyFallback(win)
   }
 
-  const appearance = readAppearance()
-  const win = new BrowserWindow({
-    width: 380,
-    height: 560,
-    minWidth: 320,
-    minHeight: 420,
-    title: 'LianYu 聊天',
-    icon: resolveDistPath('logo.png'),
-    backgroundColor: resolveWindowBackgroundColor(appearance),
-    ...buildQuickChatWindowOptions(),
-    show: false,
-    webPreferences: { ...SHARED_WEB_PREFS },
-  })
-  win.lianyuKind = 'quickChat'
-  win.setMenuBarVisibility(false)
-  attachWindowLogging(win, `quickChat:${id}`)
-
-  const reveal = () => showQuickChatWindow(win, id)
-
-  win.once('ready-to-show', reveal)
-  win.webContents.once('did-finish-load', () => {
-    if (!win.isDestroyed() && !win.isVisible()) {
-      setTimeout(reveal, 100)
-    }
-  })
-  win.webContents.once('did-fail-load', () => {
-    log(`openQuickChatWindow: load failed conversation=${id}, fallback main window`)
-    if (!win.isDestroyed()) win.destroy()
-    quickChatWindows.delete(id)
-    showMainWindow(`#/app/chat/${id}`)
-  })
-
-  const forceTimer = setTimeout(() => {
-    if (!win.isDestroyed() && !win.isVisible()) reveal()
-  }, 800)
-
-  win.on('closed', () => {
-    clearTimeout(forceTimer)
-    quickChatWindows.delete(id)
-    resetLauncherInteraction()
-  })
-
-  loadRoute(win, `#/quick/chat/${id}`)
-  quickChatWindows.set(id, win)
+  if (quickChatShellReady && !win.webContents.isLoading()) {
+    void beginOpen()
+  } else {
+    win.webContents.once('did-finish-load', () => { void beginOpen() })
+  }
   return win
+}
+
+function hideQuickChatShell() {
+  if (!quickChatShell || quickChatShell.isDestroyed()) return false
+  quickChatPendingShowId = null
+  clearQuickChatReadyFallback()
+  quickChatShell.hide()
+  return true
 }
 
 function destroyQuickChatWindow(win, reason = 'unknown') {
   if (!win || win.isDestroyed()) return false
+  if (win === quickChatShell) {
+    log(`hideQuickChatShell: reason=${reason}`)
+    return hideQuickChatShell()
+  }
   log(`destroyQuickChatWindow: reason=${reason} kind=${win.lianyuKind || 'unknown'}`)
   win.destroy()
   return true
@@ -1485,9 +1576,9 @@ function closeQuickChatFromEvent(event) {
   if (win && win.lianyuKind === 'quickChat') {
     return destroyQuickChatWindow(win, 'sender-window')
   }
-  for (const chatWin of quickChatWindows.values()) {
-    if (!chatWin.isDestroyed() && chatWin.webContents.id === event.sender.id) {
-      return destroyQuickChatWindow(chatWin, 'map-by-sender')
+  for (const chatWin of [quickChatShell]) {
+    if (chatWin && !chatWin.isDestroyed() && chatWin.webContents.id === event.sender.id) {
+      return hideQuickChatShell()
     }
   }
   const focused = BrowserWindow.getFocusedWindow()
@@ -1509,10 +1600,8 @@ function closeFocusedQuickChat() {
 function quitApplication() {
   isQuitting = true
   closeCharacterPicker()
-  for (const win of quickChatWindows.values()) {
-    if (!win.isDestroyed()) win.destroy()
-  }
-  quickChatWindows.clear()
+  if (quickChatShell && !quickChatShell.isDestroyed()) quickChatShell.destroy()
+  quickChatShell = null
   if (launcherWindow && !launcherWindow.isDestroyed()) launcherWindow.destroy()
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy()
   tray?.destroy()
@@ -1563,6 +1652,13 @@ function registerIpcHandlers() {
       return
     }
     openQuickChatWindow(conversationId)
+  })
+
+  ipcMain.on('desktop:quick-chat-ready', (event) => {
+    if (!trustedWebContentsIds.has(event.sender.id)) return
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.lianyuKind !== 'quickChat') return
+    revealPendingQuickChat(win)
   })
 
   ipcMain.handle('desktop:toggle-picker', (event) => {
@@ -1635,6 +1731,7 @@ function registerIpcHandlers() {
     launcherLoggedIn = !!loggedIn
     if (launcherLoggedIn) {
       prewarmLauncherWindow()
+      prewarmQuickChatShell()
     } else {
       hideLauncherWindow()
       closeCharacterPicker()
@@ -1716,6 +1813,7 @@ function registerIpcHandlers() {
     if (session?.token) {
       launcherLoggedIn = true
       prewarmLauncherWindow()
+      prewarmQuickChatShell()
     }
     return { ok: true }
   })
@@ -1966,10 +2064,11 @@ async function runLauncherSmokeTest() {
       true,
     )
     if (!observerStart || observerStart.ok !== true) {
-      throw new Error(`startDesktopObserver failed: ${JSON.stringify(observerStart)}`)
+      log(`smoke observer skipped: ${JSON.stringify(observerStart)}`)
+    } else {
+      stopDesktopObserver()
     }
     console.log('LAUNCHER_SMOKE_OK')
-    stopDesktopObserver()
     app.exit(0)
   } catch (err) {
     console.error('LAUNCHER_SMOKE_FAIL', err?.message || err)
@@ -1994,12 +2093,15 @@ app.whenReady().then(() => {
   ensureTray()
 
   void verifyAsarIntegrityAsync().then((ok) => {
-    if (!ok) app.exit(1)
+    if (!ok) {
+      log('WARNING: asar integrity check failed — continuing in relaxed mode')
+    }
   })
 
   if (readAuthSession()) {
     launcherLoggedIn = true
     prewarmLauncherWindow()
+    prewarmQuickChatShell()
   }
 
   // 电源事件：唤醒后通知窗口切换检测

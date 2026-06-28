@@ -4,8 +4,6 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildSync } from 'esbuild'
-import JavaScriptObfuscator from 'javascript-obfuscator'
-import { compileBytecode, writeMainStub, writePreloadStub } from './compile-bytecode.mjs'
 import { packRuntimeSecrets } from './pack-runtime-secrets.mjs'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -13,48 +11,13 @@ process.chdir(root)
 process.env.CSC_IDENTITY_AUTO_DISCOVERY = 'false'
 process.env.ELECTRON_BUILD = '1'
 
-const RENDERER_OBFUSCATOR = {
-  compact: true,
-  controlFlowFlattening: true,
-  controlFlowFlatteningThreshold: 0.75,
-  deadCodeInjection: true,
-  deadCodeInjectionThreshold: 0.1,
-  splitStrings: true,
-  splitStringsChunkLength: 5,
-  stringArray: true,
-  stringArrayThreshold: 0.75,
-  stringArrayRotate: true,
-  stringArrayShuffle: true,
-  stringArrayEncoding: ['rc4'],
-  rotateStringArray: true,
-  identifierNamesGenerator: 'mangled-shuffled',
-  selfDefending: true,
-  numbersToExpressions: true,
-  transformObjectKeys: false,
-  reservedNames: ['electronAPI', 'toJSON'],
-  reservedStrings: ['electronAPI', 'isElectron', 'toJSON', 'AxiosHeaders'],
-  unicodeEscapeSequence: false,
-  disableConsoleOutput: false,
-  simplify: false,
-}
-
-/** ? bundle ??????? Electron ??? API ????????????? */
-const OBFUSCATION_SKIP_PATTERN = /^index-/i
+/** 渲染进程混淆会显著拖慢启动与二次窗口加载，默认关闭以优先体验 */
+const ENABLE_RENDERER_OBFUSCATION = false
 
 function obfuscateRendererBundles() {
-  const assetsDir = path.join(root, 'dist', 'assets')
-  if (!fs.existsSync(assetsDir)) return
-  for (const name of fs.readdirSync(assetsDir)) {
-    if (!name.endsWith('.js')) continue
-    if (OBFUSCATION_SKIP_PATTERN.test(name)) {
-      console.log(`Skipped obfuscation (runtime): ${name}`)
-      continue
-    }
-    const filePath = path.join(assetsDir, name)
-    const source = fs.readFileSync(filePath, 'utf8')
-    const obfuscated = JavaScriptObfuscator.obfuscate(source, RENDERER_OBFUSCATOR).getObfuscatedCode()
-    fs.writeFileSync(filePath, obfuscated, 'utf8')
-    console.log(`Obfuscated (renderer): ${path.relative(root, filePath)}`)
+  if (!ENABLE_RENDERER_OBFUSCATION) {
+    console.log('Skipped renderer obfuscation (disabled for performance)')
+    return
   }
 }
 
@@ -77,9 +40,8 @@ function cleanDistElectronShipSet() {
   if (!fs.existsSync(electronDir)) return
   const keep = new Set([
     'main.js',
+    'main-bundle.cjs',
     'preload.cjs',
-    'main.jsc',
-    'preload.jsc',
     'client-build.json',
     'runtime-secrets.bin',
   ])
@@ -143,23 +105,33 @@ function buildMainCjsBundle() {
   console.log(`Bundled main (CJS for bytecode): ${path.relative(root, outfile)}`)
 }
 
-function applyBytecodePackaging() {
+/** 主进程直接 ship CJS bundle，跳过 bytenode 以缩短冷启动 */
+function applyPlainMainPackaging() {
   const electronDir = path.join(root, 'dist-electron')
   const mainSrc = path.join(electronDir, 'main-src.cjs')
   const preloadSrc = path.join(electronDir, 'preload-src.cjs')
-  const mainJsc = path.join(electronDir, 'main.jsc')
-  const preloadJsc = path.join(electronDir, 'preload.jsc')
+  const mainBundle = path.join(electronDir, 'main-bundle.cjs')
+  const preloadDest = path.join(electronDir, 'preload.cjs')
+  const mainStub = path.join(electronDir, 'main.js')
 
-  compileBytecode(root, [
-    { src: mainSrc, out: mainJsc },
-    { src: preloadSrc, out: preloadJsc },
-  ])
+  if (!fs.existsSync(mainSrc) || !fs.existsSync(preloadSrc)) {
+    throw new Error('Missing dist-electron main/preload bundle for packaging')
+  }
 
+  fs.copyFileSync(mainSrc, mainBundle)
   fs.unlinkSync(mainSrc)
+  fs.copyFileSync(preloadSrc, preloadDest)
   fs.unlinkSync(preloadSrc)
 
-  writeMainStub(path.join(electronDir, 'main.js'))
-  writePreloadStub(path.join(electronDir, 'preload.cjs'))
+  fs.writeFileSync(
+    mainStub,
+    `import { createRequire } from 'module'
+const require = createRequire(import.meta.url)
+require('./main-bundle.cjs')
+`,
+    'utf8',
+  )
+  console.log('Plain main bundle shipped (bytenode skipped)')
   cleanDistElectronShipSet()
 }
 
@@ -235,7 +207,7 @@ packRuntimeSecrets({
 })
 
 obfuscateRendererBundles()
-applyBytecodePackaging()
+applyPlainMainPackaging()
 
 console.log('\n--- Launcher smoke test (pre-pack) ---')
 execSync('node scripts/smoke-launcher.mjs', { stdio: 'inherit', cwd: root })

@@ -78,8 +78,6 @@ export default defineConfig({
 
       output: {
 
-        inlineDynamicImports: isElectronPack,
-
         compact: true,
 
         generatedCode: { preset: 'es2015' },

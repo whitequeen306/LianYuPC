@@ -223,6 +223,7 @@ async function loadConversation(convId) {
     loading.value = false
     await nextTick()
     scrollToBottom({ force: true })
+    getElectronAPI()?.notifyQuickChatReady?.()
   }
 }
 

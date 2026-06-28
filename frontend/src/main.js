@@ -69,6 +69,9 @@ function isDesktopAuxSurface() {
   } else {
     await prepareAuthRoute(pinia)
   }
+  if (isQuickChatSurface()) {
+    window.__lianyuNavigateQuickChat = (target) => router.push(target)
+  }
   app.mount('#app')
   if (!isDesktopAuxSurface()) {
     await bootstrapAuth(pinia)
