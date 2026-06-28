@@ -72,7 +72,7 @@ export default defineConfig({
 
     sourcemap: isElectronPack ? false : undefined,
 
-    minify: isElectronPack ? false : 'esbuild',
+    minify: 'esbuild',
 
     rollupOptions: {
 

@@ -51,9 +51,6 @@ const nodeRequire = createRequire(import.meta.url)
 /** 主进程在 app.asar 内时，默认 fs 无法读取 asar 本体，需用 original-fs */
 const rawFs = nodeRequire('original-fs')
 
-function readRawFile(filePath) {
-  return rawFs.readFileSync(filePath)
-}
 const isDev = !!process.env.VITE_DEV_SERVER_URL
 const isDebug = process.env.LIANYU_DEBUG === '1' || process.argv.includes('--lianyu-debug')
 
@@ -246,35 +243,44 @@ function getSPKIHash(certificate) {
     throw new Error('SPKI not available')
 }
 
-function verifyAsarIntegrity() {
-  if (!app.isPackaged) return
-  try {
-    const asarPath = path.join(process.resourcesPath, 'app.asar')
-    const hexPath = path.join(process.resourcesPath, 'asar-integrity.hex')
-    const hash = crypto.createHash('sha256').update(readRawFile(asarPath)).digest('hex')
+function readExpectedAsarIntegrityHash() {
+  const hexPath = path.join(process.resourcesPath, 'asar-integrity.hex')
+  if (!fs.existsSync(hexPath)) return ''
+  const expected = fs.readFileSync(hexPath, 'utf8').trim()
+  return expected.length === 64 ? expected : ''
+}
 
-    let expected = ''
-    if (fs.existsSync(hexPath)) {
-      expected = fs.readFileSync(hexPath, 'utf8').trim()
-    }
-    if (!expected || expected.length !== 64) {
-      log('asar integrity hash not found')
-      dialog.showErrorBox('LianYu', '客户端完整性校验文件缺失，请重新安装。')
-      app.exit(1)
-      return
-    }
-
-    if (hash !== expected) {
-      dialog.showErrorBox('LianYu', '客户端文件被篡改，请重新安装。')
-      app.exit(1)
-    }
-
-    log('asar integrity verification OK')
-  } catch (err) {
-    log(`asar integrity verification failed: ${err.message}`)
-    dialog.showErrorBox('LianYu', '客户端完整性校验失败，请重新安装。')
-    app.exit(1)
+/** 流式哈希 app.asar，避免同步 readFileSync 整包阻塞主进程 */
+function verifyAsarIntegrityAsync() {
+  if (!app.isPackaged) return Promise.resolve(true)
+  const asarPath = path.join(process.resourcesPath, 'app.asar')
+  const expected = readExpectedAsarIntegrityHash()
+  if (!expected) {
+    log('asar integrity hash not found')
+    dialog.showErrorBox('LianYu', '客户端完整性校验文件缺失，请重新安装。')
+    return Promise.resolve(false)
   }
+
+  return new Promise((resolve) => {
+    const hash = crypto.createHash('sha256')
+    const stream = rawFs.createReadStream(asarPath)
+    stream.on('data', (chunk) => hash.update(chunk))
+    stream.on('end', () => {
+      const digest = hash.digest('hex')
+      if (digest !== expected) {
+        dialog.showErrorBox('LianYu', '客户端文件被篡改，请重新安装。')
+        resolve(false)
+        return
+      }
+      log('asar integrity verification OK')
+      resolve(true)
+    })
+    stream.on('error', (err) => {
+      log(`asar integrity verification failed: ${err.message}`)
+      dialog.showErrorBox('LianYu', '客户端完整性校验失败，请重新安装。')
+      resolve(false)
+    })
+  })
 }
 
 function configureContentSecurityPolicy() {
@@ -386,7 +392,6 @@ function lockDownDevTools(win) {
 }
 
 function configureSecurity() {
-  verifyAsarIntegrity()
   configureCertificatePinning()
   if (!isDev) {
     configureContentSecurityPolicy()
@@ -918,7 +923,7 @@ async function showLauncherWindowAsync(options = {}) {
       writeDesktopSettings({ showDesktopPet: true, showLauncherLogo: true })
     }
     if (state?.launcherPetId) {
-      await syncLauncherPetId(state.launcherPetId)
+      void syncLauncherPetId(state.launcherPetId)
     }
   }
   if (!launcherLoggedIn) {
@@ -942,20 +947,18 @@ async function showLauncherWindowAsync(options = {}) {
   } else {
     clampLauncherToWorkArea()
   }
-  const reveal = async () => {
+  const reveal = () => {
     if (!force && isMainWindowOccupyingDesktop()) return
     if (!win || win.isDestroyed()) return
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      await syncChromeFromRenderer(mainWindow)
-      await reconcileScreenObserveSetting(mainWindow)
-      await ensureAuthSessionFromRenderer(mainWindow)
-    }
     win.webContents.setAudioMuted(false)
     win.show()
     win.moveTop()
     resetLauncherInteraction()
     win.webContents.send('desktop:launcher-shown')
     log('showLauncherWindow: launcher shown')
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      void syncChromeFromRenderer(mainWindow)
+    }
   }
   if (win.webContents.isLoading()) {
     win.webContents.once('ready-to-show', () => { void reveal() })
@@ -1989,6 +1992,10 @@ app.whenReady().then(() => {
   registerIpcHandlers()
   createMainWindow()
   ensureTray()
+
+  void verifyAsarIntegrityAsync().then((ok) => {
+    if (!ok) app.exit(1)
+  })
 
   if (readAuthSession()) {
     launcherLoggedIn = true
