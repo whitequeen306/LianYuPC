@@ -99,10 +99,11 @@ lianyu-app → lianyu-web → lianyu-service → lianyu-ai / lianyu-dao / lianyu
 
 ### Git 与云端同步
 
+- **主分支为 `main`**：本地开发、提交、推送均直接在 `main` 上进行（`git push origin main`），不经过 `develop` 分支。
 - **前后端源码均 push 到 GitHub**（`frontend/` 与 `backend/` 同在 monorepo）；本地改动完成并验证后，先提交再推送，不要只改本地不打远程。
-- **云服务器不承载 Git 开发**，只在 `/opt/lianyu` **`git pull origin main`** 拉取已合并的 `main` 分支，再 `docker compose up -d --build backend api-gateway`（自动化见 `scripts/_cloud_deploy_pull.py`）。
-- 常规流程：`develop` 开发 → 合并进 `main` → `git push origin main` → 服务器 pull + 重建后端容器；**前端 Electron 安装包在本地打完，不上传服务器**（安装包可另存 release 目录或 GitHub Releases，按需）。
-- Agent 执行发布时：**先 push GitHub，再服务器 pull**；不要 SCP 源码或 jar 覆盖 `/opt/lianyu`，不要跳过 Git 直接在服务器改代码。
+- **云服务器不承载 Git 开发**，只在 `/opt/lianyu` **`git pull origin main`** 拉取 `main` 分支，再 `docker compose up -d --build backend api-gateway`（自动化见 `scripts/_cloud_deploy_pull.py`）。
+- 常规流程：本地改完 → `git commit` → `git push origin main` → 服务器 pull + 重建后端容器；**前端 Electron 安装包在本地打完，不上传服务器**（安装包可另存 release 目录或 GitHub Releases，按需）。
+- Agent 执行发布时：**在 `main` 上提交并 push**，再服务器 pull；不要 SCP 源码或 jar 覆盖 `/opt/lianyu`，不要跳过 Git 直接在服务器改代码。
 
 ## 工作约定
 
