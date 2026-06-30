@@ -8,6 +8,7 @@ import router from './router'
 import { i18n } from './i18n'
 import { initAntiDebug } from './utils/antiDebug'
 import { initElectronRuntimeConfig } from '@/utils/runtime'
+import { readToken } from './utils/secureToken'
 import { prepareAuthRoute, bootstrapAuth } from './auth/bootstrap'
 import { bootstrapLauncherSession } from './auth/launcherBootstrap'
 import './styles/theme.scss'
@@ -63,19 +64,22 @@ function isDesktopAuxSurface() {
 }
 
 ;(async () => {
-  await initElectronRuntimeConfig()
-  if (isDesktopAuxSurface()) {
-    await bootstrapLauncherSession(pinia)
-  } else {
+  void initElectronRuntimeConfig()
+  const aux = isDesktopAuxSurface()
+  if (!aux) {
+    await readToken()
     await prepareAuthRoute(pinia)
   }
   if (isQuickChatSurface()) {
     window.__lianyuNavigateQuickChat = (target) => router.push(target)
   }
   app.mount('#app')
-  if (!isDesktopAuxSurface()) {
-    await bootstrapAuth(pinia)
-  } else if (isQuickChatSurface()) {
+  if (aux) {
+    void bootstrapLauncherSession(pinia)
+  } else {
+    void bootstrapAuth(pinia)
+  }
+  if (aux && isQuickChatSurface()) {
     const { useUserStore } = await import('@/stores/user')
     void useUserStore(pinia).fetchProfile({ skipGlobalError: true }).catch(() => {})
   }

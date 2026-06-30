@@ -992,7 +992,9 @@ async function showLauncherWindowAsync(options = {}) {
   }
 
   if (win.webContents.isLoading()) {
-    win.webContents.once('ready-to-show', reveal)
+    win.webContents.once('did-finish-load', () => {
+      setTimeout(reveal, 0)
+    })
   } else {
     reveal()
   }
@@ -1141,6 +1143,7 @@ function applyMainWindowCaption(win) {
 
 function hideMainToTray() {
   if (!mainWindow || mainWindow.isDestroyed()) return
+  prewarmLauncherWindow()
   mainWindow.hide()
   ensureTray()
   showLauncherWindow({ center: true, force: true })
@@ -1166,13 +1169,20 @@ function createMainWindow() {
   attachWindowLogging(win, 'main')
   attachCaptionMetricsChannel(win)
 
-  win.once('ready-to-show', () => {
+  let mainShown = false
+  const revealMainWindow = () => {
+    if (mainShown || win.isDestroyed()) return
+    mainShown = true
     applyMainWindowCaption(win)
     applyTitleBarOverlayToWindow(win, currentTitleBarPreset)
     pushCaptionMetrics(win)
     win.show()
     void syncChromeFromRenderer(win)
-  })
+  }
+
+  // HTML 加载完即显示背景，不等 Vue ready-to-show（避免长时间白屏/无窗）
+  win.webContents.once('did-finish-load', revealMainWindow)
+  win.once('ready-to-show', revealMainWindow)
 
   win.on('minimize', () => {
     showLauncherWindow({ center: true, force: true })
@@ -1285,6 +1295,26 @@ function ensureLauncherWindow() {
 function prewarmLauncherWindow() {
   if (!isDesktopPetEnabled(readDesktopSettings())) return
   createLauncherWindow()
+}
+
+/** 主窗口首屏完成后再预热桌宠/快捷聊，避免与主窗口争用 CPU/磁盘 */
+function scheduleAuxWindowPrewarm() {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const run = () => {
+    setTimeout(() => {
+      if (isDesktopPetEnabled(readDesktopSettings())) {
+        prewarmLauncherWindow()
+      }
+    }, 6000)
+    if (launcherLoggedIn) {
+      setTimeout(() => prewarmQuickChatShell(), 12000)
+    }
+  }
+  if (mainWindow.webContents.isLoading()) {
+    mainWindow.webContents.once('did-finish-load', run)
+  } else {
+    run()
+  }
 }
 
 function expandLauncherForPicker() {
@@ -1757,8 +1787,8 @@ function registerIpcHandlers() {
     if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     launcherLoggedIn = !!loggedIn
     if (launcherLoggedIn) {
-      prewarmLauncherWindow()
-      prewarmQuickChatShell()
+      setTimeout(() => prewarmLauncherWindow(), 4000)
+      setTimeout(() => prewarmQuickChatShell(), 10000)
     } else {
       hideLauncherWindow()
       closeCharacterPicker()
@@ -1839,8 +1869,8 @@ function registerIpcHandlers() {
     }
     if (session?.token) {
       launcherLoggedIn = true
-      prewarmLauncherWindow()
-      prewarmQuickChatShell()
+      setTimeout(() => prewarmLauncherWindow(), 4000)
+      setTimeout(() => prewarmQuickChatShell(), 10000)
     }
     return { ok: true }
   })
@@ -2141,11 +2171,10 @@ app.whenReady().then(() => {
     })
   }, 45_000)
 
-  prewarmLauncherWindow()
   if (readAuthSession()) {
     launcherLoggedIn = true
-    prewarmQuickChatShell()
   }
+  scheduleAuxWindowPrewarm()
 
   // 电源事件：唤醒后通知窗口切换检测
   if (powerMonitor) {
