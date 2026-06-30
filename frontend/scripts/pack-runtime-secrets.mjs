@@ -1,20 +1,21 @@
-import crypto from 'node:crypto'
-import fs from 'node:fs'
-import path from 'node:path'
+import fs from 'fs'
+import path from 'path'
+import { encodeSecretsV2 } from '../electron/runtimeSecretsCrypto.js'
 
-/** Must match frontend/electron/runtimeSecrets.js */
-const RUNTIME_SECRETS_PEPPER = 'LianYu-RtSec-v1-8F3C2A1B'
 const PINNED_SPKI = 'EdDpp/Z9REuRjqZLzXXrOW8opTtR8Yph2YM0s+xuLss='
 
-function deriveKey(version, buildId) {
-  return crypto
-    .createHash('sha256')
-    .update(`${version}:${buildId}:${RUNTIME_SECRETS_PEPPER}`)
-    .digest()
+function resolvePackPepper(explicit) {
+  const fromArg = String(explicit || '').trim()
+  if (fromArg) return fromArg
+  const fromEnv = String(process.env.LIANYU_RUNTIME_SECRETS_PEPPER || '').trim()
+  if (fromEnv) return fromEnv
+  throw new Error(
+    'packRuntimeSecrets: set LIANYU_RUNTIME_SECRETS_PEPPER in repo .env or environment before electron:release',
+  )
 }
 
 /**
- * @param {{ version: string, buildId: string, apiOrigin: string, certFingerprint: string, outPath: string }} opts
+ * @param {{ version: string, buildId: string, apiOrigin: string, certFingerprint: string, pepper?: string, outPath: string }} opts
  */
 export function packRuntimeSecrets(opts) {
   const apiOrigin = String(opts.apiOrigin || '').trim().replace(/\/$/, '')
@@ -23,25 +24,21 @@ export function packRuntimeSecrets(opts) {
     throw new Error('packRuntimeSecrets: apiOrigin is required')
   }
 
-  const payload = JSON.stringify({
+  const pepper = resolvePackPepper(opts.pepper)
+  const payload = {
     apiOrigin,
     certFingerprint,
     pinnedSpki: PINNED_SPKI,
-  })
-  const nonce = crypto.randomBytes(16)
-  const data = Buffer.from(payload, 'utf8')
-  const key = deriveKey(opts.version, opts.buildId)
-  const xored = Buffer.alloc(data.length)
-  for (let i = 0; i < data.length; i++) {
-    xored[i] = data[i] ^ key[i % key.length] ^ nonce[i % nonce.length]
   }
 
-  const header = Buffer.alloc(19)
-  header[0] = 1
-  nonce.copy(header, 1)
-  header.writeUInt16BE(data.length, 17)
+  const encoded = encodeSecretsV2({
+    version: opts.version,
+    buildId: opts.buildId,
+    pepper,
+    payload,
+  })
 
   fs.mkdirSync(path.dirname(opts.outPath), { recursive: true })
-  fs.writeFileSync(opts.outPath, Buffer.concat([header, xored]))
-  console.log(`Runtime secrets packed: ${path.basename(opts.outPath)}`)
+  fs.writeFileSync(opts.outPath, encoded)
+  console.log(`Runtime secrets packed (v2 AES-GCM): ${path.basename(opts.outPath)}`)
 }

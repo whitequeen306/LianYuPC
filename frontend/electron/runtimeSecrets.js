@@ -1,45 +1,32 @@
 import fs from 'fs'
-import crypto from 'crypto'
 import path from 'path'
-
-/** Must match frontend/scripts/pack-runtime-secrets.mjs */
-export const RUNTIME_SECRETS_PEPPER = 'LianYu-RtSec-v1-8F3C2A1B'
+import { decodeRuntimeSecretsBuffer } from './runtimeSecretsCrypto.js'
 
 const DEFAULT_API_ORIGIN = 'http://localhost:8080'
-const SECRETS_FILENAME = 'runtime-secrets.bin'
+export const SECRETS_FILENAME = 'rtcfg.dat'
 
 /** @type {{ apiOrigin: string, certFingerprint: string, pinnedSpki: string } | null} */
 let cachedSecrets = null
 
-function deriveKey(version, buildId) {
-  return crypto
-    .createHash('sha256')
-    .update(`${version}:${buildId}:${RUNTIME_SECRETS_PEPPER}`)
-    .digest()
-}
-
-export function decodeRuntimeSecretsBuffer(buf, version, buildId) {
-  if (!buf || buf.length < 19) return null
-  const versionByte = buf[0]
-  if (versionByte !== 1) return null
-  const nonce = buf.subarray(1, 17)
-  const len = buf.readUInt16BE(17)
-  if (19 + len > buf.length) return null
-  const xored = buf.subarray(19, 19 + len)
-  const key = deriveKey(version, buildId)
-  const plain = Buffer.alloc(len)
-  for (let i = 0; i < len; i++) {
-    plain[i] = xored[i] ^ key[i % key.length] ^ nonce[i % nonce.length]
+function readLegacyMeta(secretsDir, metaPath) {
+  if (metaPath && fs.existsSync(metaPath)) {
+    try {
+      return JSON.parse(fs.readFileSync(metaPath, 'utf8'))
+    } catch {
+      return null
+    }
   }
+  const fallback = path.join(secretsDir, 'client-build.json')
+  if (!fs.existsSync(fallback)) return null
   try {
-    return JSON.parse(plain.toString('utf8'))
+    return JSON.parse(fs.readFileSync(fallback, 'utf8'))
   } catch {
     return null
   }
 }
 
 /**
- * @param {{ secretsDir: string, metaPath: string, isPackaged: boolean, isDev: boolean }} opts
+ * @param {{ secretsDir: string, metaPath?: string, isPackaged: boolean, isDev: boolean }} opts
  */
 export function loadRuntimeSecrets(opts) {
   if (cachedSecrets) return cachedSecrets
@@ -66,12 +53,21 @@ export function loadRuntimeSecrets(opts) {
     return cachedSecrets
   }
 
-  const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'))
   const binPath = path.join(secretsDir, SECRETS_FILENAME)
-  const buf = fs.readFileSync(binPath)
-  const decoded = decodeRuntimeSecretsBuffer(buf, meta.version, meta.buildId)
+  const legacyPath = path.join(secretsDir, 'runtime-secrets.bin')
+  const buf = fs.existsSync(binPath)
+    ? fs.readFileSync(binPath)
+    : fs.existsSync(legacyPath)
+      ? fs.readFileSync(legacyPath)
+      : null
+  if (!buf) {
+    throw new Error(`${SECRETS_FILENAME} missing`)
+  }
+
+  const legacyMeta = buf[0] === 1 ? readLegacyMeta(secretsDir, metaPath) : null
+  const decoded = decodeRuntimeSecretsBuffer(buf, legacyMeta)
   if (!decoded?.apiOrigin) {
-    throw new Error('runtime-secrets.bin decode failed')
+    throw new Error(`${SECRETS_FILENAME} decode failed`)
   }
   cachedSecrets = {
     apiOrigin: String(decoded.apiOrigin).trim().replace(/\/$/, ''),
