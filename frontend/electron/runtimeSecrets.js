@@ -71,7 +71,8 @@ export function loadRuntimeSecrets(opts) {
   const buf = fs.readFileSync(binPath)
   const decoded = decodeRuntimeSecretsBuffer(buf, meta.version, meta.buildId)
   if (!decoded?.apiOrigin) {
-    throw new Error('runtime-secrets.bin decode failed')
+    console.error('[runtimeSecrets] runtime-secrets.bin decode failed')
+    return null
   }
   cachedSecrets = {
     apiOrigin: String(decoded.apiOrigin).trim().replace(/\/$/, ''),

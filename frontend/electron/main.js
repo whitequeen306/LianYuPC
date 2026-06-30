@@ -100,12 +100,21 @@ const LAUNCHER_WEB_PREFS = {
 
 const DEFAULT_API_ORIGIN = 'http://localhost:8080'
 
-loadRuntimeSecrets({
-  secretsDir: __dirname,
-  metaPath: path.join(__dirname, 'client-build.json'),
-  isPackaged: app.isPackaged,
-  isDev,
-})
+try {
+  loadRuntimeSecrets({
+    secretsDir: __dirname,
+    metaPath: path.join(__dirname, 'client-build.json'),
+    isPackaged: app.isPackaged,
+    isDev,
+  })
+} catch (err) {
+  console.error(`[main] loadRuntimeSecrets failed: ${err?.message || err}`)
+}
+
+function runtimeSecretsConfigured() {
+  if (isDev || !app.isPackaged) return true
+  return !!getRuntimeSecrets()?.apiOrigin
+}
 
 function resolveApiOrigin() {
   const secrets = getRuntimeSecrets()
@@ -914,32 +923,47 @@ function showLauncherWindow(options = {}) {
   void showLauncherWindowAsync(options)
 }
 
-async function showLauncherWindowAsync(options = {}) {
-  const { center = false, force = false } = options
+function isLauncherLoginReady() {
   refreshLauncherLoginState()
-  if (!launcherLoggedIn && mainWindow && !mainWindow.isDestroyed()) {
-    const state = await pullRendererDesktopState(mainWindow)
-    if (state?.loggedIn) {
+  if (launcherLoggedIn || !!readAuthSession()?.token) return true
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoading()) {
+    const url = mainWindow.webContents.getURL() || ''
+    if (url.includes('#/app') || url.includes('#/launcher') || url.includes('#/quick/')) {
       launcherLoggedIn = true
-      log('showLauncherWindow: recovered login state from renderer storage')
-    }
-    if (state?.showDesktopPet === true) {
-      writeDesktopSettings({ showDesktopPet: true, showLauncherLogo: true })
-    }
-    if (state?.launcherPetId) {
-      void syncLauncherPetId(state.launcherPetId)
+      return true
     }
   }
-  if (!launcherLoggedIn) {
+  return false
+}
+
+function applyLauncherStateFromRenderer(state) {
+  if (!state) return
+  if (state.loggedIn) {
+    launcherLoggedIn = true
+  }
+  if (state.showDesktopPet === true) {
+    writeDesktopSettings({ showDesktopPet: true, showLauncherLogo: true })
+  }
+  if (state.launcherPetId) {
+    void syncLauncherPetId(state.launcherPetId)
+  }
+}
+
+async function showLauncherWindowAsync(options = {}) {
+  const { center = false, force = false } = options
+  if (!isLauncherLoginReady()) {
     log('showLauncherWindow: aborted — not logged in')
     return
   }
+  launcherLoggedIn = true
+
   const settings = readDesktopSettings()
   if (!isDesktopPetEnabled(settings)) {
     log('showLauncherWindow: aborted — desktop pet disabled in settings')
     return
   }
   if (!force && isMainWindowOccupyingDesktop()) return
+
   const win = ensureLauncherWindow()
   if (!win) {
     log('showLauncherWindow: aborted — launcher window unavailable')
@@ -951,6 +975,7 @@ async function showLauncherWindowAsync(options = {}) {
   } else {
     clampLauncherToWorkArea()
   }
+
   const reveal = () => {
     if (!force && isMainWindowOccupyingDesktop()) return
     if (!win || win.isDestroyed()) return
@@ -961,13 +986,15 @@ async function showLauncherWindowAsync(options = {}) {
     win.webContents.send('desktop:launcher-shown')
     log('showLauncherWindow: launcher shown')
     if (mainWindow && !mainWindow.isDestroyed()) {
+      void pullRendererDesktopState(mainWindow).then(applyLauncherStateFromRenderer)
       void syncChromeFromRenderer(mainWindow)
     }
   }
+
   if (win.webContents.isLoading()) {
-    win.webContents.once('ready-to-show', () => { void reveal() })
+    win.webContents.once('ready-to-show', reveal)
   } else {
-    void reveal()
+    reveal()
   }
 }
 
@@ -1143,8 +1170,8 @@ function createMainWindow() {
     applyMainWindowCaption(win)
     applyTitleBarOverlayToWindow(win, currentTitleBarPreset)
     pushCaptionMetrics(win)
-    void syncChromeFromRenderer(win)
     win.show()
+    void syncChromeFromRenderer(win)
   })
 
   win.on('minimize', () => {
@@ -1254,7 +1281,7 @@ function ensureLauncherWindow() {
   return createLauncherWindow()
 }
 
-/** 启动时预创建桌宠窗口（不显示），后续最小化/关闭时瞬间展示，消除冷创建延迟 */
+/** 启动时预创建桌宠窗口（不显示），关闭/最小化主窗口时无需冷启动 */
 function prewarmLauncherWindow() {
   if (!isDesktopPetEnabled(readDesktopSettings())) return
   createLauncherWindow()
@@ -2078,12 +2105,25 @@ async function runLauncherSmokeTest() {
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
+process.on('uncaughtException', (err) => {
+  log(`uncaughtException: ${err?.stack || err?.message || err}`)
+})
+process.on('unhandledRejection', (reason) => {
+  log(`unhandledRejection: ${reason?.stack || reason?.message || reason}`)
+})
+
 app.whenReady().then(() => {
   if (process.env.LIANYU_LAUNCHER_SMOKE === '1') {
     log('launcher smoke test starting')
     return runLauncherSmokeTest()
   }
   log('app ready')
+  if (!runtimeSecretsConfigured()) {
+    dialog.showErrorBox(
+      'LianYu',
+      '客户端配置读取失败，请卸载后重新安装最新版本。若仍失败请联系支持。',
+    )
+  }
   configureSecurity()
   configureAntiDebug()
   patchDesktopRequestOrigin()
@@ -2092,15 +2132,18 @@ app.whenReady().then(() => {
   createMainWindow()
   ensureTray()
 
-  void verifyAsarIntegrityAsync().then((ok) => {
-    if (!ok) {
-      log('WARNING: asar integrity check failed — continuing in relaxed mode')
-    }
-  })
+  // 延迟 asar 校验，避免与首屏加载争用磁盘 IO
+  setTimeout(() => {
+    void verifyAsarIntegrityAsync().then((ok) => {
+      if (!ok) {
+        log('WARNING: asar integrity check failed — continuing in relaxed mode')
+      }
+    })
+  }, 45_000)
 
+  prewarmLauncherWindow()
   if (readAuthSession()) {
     launcherLoggedIn = true
-    prewarmLauncherWindow()
     prewarmQuickChatShell()
   }
 

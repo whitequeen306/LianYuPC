@@ -7,6 +7,9 @@ import rcedit from 'rcedit'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 
+/** asarmor 会拖慢 asar 读取，默认关闭以优先启动/桌宠速度 */
+const ENABLE_ASARMOR = process.env.LIANYU_ENABLE_ASARMOR === '1'
+
 function sleepSync(ms) {
   const end = Date.now() + ms
   while (Date.now() < end) { /* spin */ }
@@ -76,7 +79,11 @@ export default async function afterPack(context) {
   if (context.electronPlatformName !== 'win32') return
 
   const asarPath = path.join(context.appOutDir, 'resources', 'app.asar')
-  await patchAsarArchive(asarPath)
+  if (ENABLE_ASARMOR) {
+    await patchAsarArchive(asarPath)
+  } else {
+    console.log('Skipped asarmor patch (set LIANYU_ENABLE_ASARMOR=1 to enable)')
+  }
 
   const exeName = `${context.packager.appInfo.productFilename}.exe`
   const exePath = path.join(context.appOutDir, exeName)

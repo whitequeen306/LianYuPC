@@ -82,6 +82,14 @@ export default defineConfig({
 
         generatedCode: { preset: 'es2015' },
 
+        manualChunks(id) {
+          if (id.includes('node_modules/element-plus')) return 'element-plus'
+          if (id.includes('node_modules/@element-plus')) return 'element-plus'
+          if (id.includes('node_modules/vue') || id.includes('node_modules/@vue')) return 'vue-vendor'
+          if (id.includes('node_modules/pinia') || id.includes('node_modules/vue-router')) return 'vue-vendor'
+          if (id.includes('node_modules/axios') || id.includes('node_modules/@stomp')) return 'network'
+        },
+
       },
 
     },
