@@ -1,6 +1,6 @@
-import { createApp } from 'vue'
+import { createApp, h } from 'vue'
 import { createPinia } from 'pinia'
-import { createRouter, createWebHashHistory } from 'vue-router'
+import { createRouter, createWebHashHistory, RouterView } from 'vue-router'
 import QuickChatLayout from '@/layouts/QuickChatLayout.vue'
 import QuickChatPage from '@/pages/QuickChatPage.vue'
 import { i18n } from '@/i18n'
@@ -8,7 +8,6 @@ import { initElectronRuntimeConfig } from '@/utils/runtime'
 import { readToken } from '@/utils/secureToken'
 import { bootstrapLauncherSession } from '@/auth/launcherBootstrap'
 import { useSettingsStore } from '@/stores/settings'
-import { getElectronAPI } from '@/utils/electron'
 import '@/styles/theme.scss'
 
 document.documentElement.classList.add('is-electron')
@@ -32,7 +31,8 @@ const router = createRouter({
 })
 
 const pinia = createPinia()
-const app = createApp({ template: '<router-view />' })
+// runtime-only Vue 不支持字符串 template，须用 render + RouterView
+const app = createApp({ render: () => h(RouterView) })
 
 app.config.errorHandler = (err, _instance, info) => {
   console.error('[quick-chat]', `${info}: ${err?.stack || err}`)
@@ -46,10 +46,7 @@ const settingsStore = useSettingsStore(pinia)
 settingsStore.initLanguage()
 settingsStore.initAppearance()
 
-;(async () => {
-  void initElectronRuntimeConfig()
-  await readToken()
-  app.mount('#app')
-  window.__lianyuNavigateQuickChat = (target) => router.push(target)
-  void bootstrapLauncherSession(pinia)
-})()
+void initElectronRuntimeConfig()
+app.mount('#app')
+window.__lianyuNavigateQuickChat = (target) => router.push(target)
+void readToken().then(() => bootstrapLauncherSession(pinia))
