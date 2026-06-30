@@ -101,6 +101,13 @@ export function shouldUseMainProcessAdapter(config) {
   if (typeof FormData !== 'undefined' && data instanceof FormData) return false
   // 桌宠 / picker / 快捷聊天：与加固前一致走渲染进程直连，避免 api:request IPC 卡住
   if (typeof window !== 'undefined') {
+    if (window.__lianyuAuxSurface === 'launcher' || window.__lianyuAuxSurface === 'quick') {
+      return false
+    }
+    const path = String(window.location.pathname || '')
+    if (/launcher\.html$/i.test(path) || /quick\.html$/i.test(path)) {
+      return false
+    }
     const hash = (window.location.hash.replace(/^#/, '') || '/').split('?')[0]
     if (hash === '/launcher' || hash.startsWith('/launcher/') || hash.startsWith('/quick/')) {
       return false

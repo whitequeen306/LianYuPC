@@ -7,16 +7,16 @@
 
     <div v-if="!userStore.isLoggedIn" class="launcher-pick__empty">
       <p>请先登录后再快速开聊</p>
-      <el-button type="primary" size="small" @click="openLogin">去登录</el-button>
+      <button type="button" class="launcher-pick__btn" @click="openLogin">去登录</button>
     </div>
 
     <div v-else-if="loading" class="launcher-pick__loading">
-      <el-icon class="is-loading" :size="20"><Loading /></el-icon>
+      <span class="launcher-pick__spinner" aria-hidden="true" />
     </div>
 
     <div v-else-if="!characters.length" class="launcher-pick__empty">
       <p>还没有角色，去广场添加吧</p>
-      <el-button type="primary" size="small" @click="openMain">打开主窗口</el-button>
+      <button type="button" class="launcher-pick__btn" @click="openMain">打开主窗口</button>
     </div>
 
     <ul v-else class="launcher-pick__list">
@@ -29,29 +29,28 @@
         >
           <span class="launcher-pick__avatar">
             <img v-if="char.avatarUrl" :src="resolveMediaUrl(char.avatarUrl)" :alt="char.name" />
-            <el-icon v-else :size="16"><User /></el-icon>
+            <span v-else class="launcher-pick__avatar-fallback" aria-hidden="true">?</span>
           </span>
           <span class="launcher-pick__name">{{ char.name }}</span>
           <span
             v-if="unreadCountForCharacter(char.id) > 0"
             class="launcher-pick__badge"
           >{{ formatBadgeCount(unreadCountForCharacter(char.id)) }}</span>
-          <el-icon v-if="openingId === char.id" class="is-loading launcher-pick__loading-icon" :size="14"><Loading /></el-icon>
+          <span v-if="openingId === char.id" class="launcher-pick__spinner launcher-pick__spinner--inline" aria-hidden="true" />
         </button>
       </li>
     </ul>
+    <p v-if="toastText" class="launcher-pick__toast" role="status">{{ toastText }}</p>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { User, Loading } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { readToken, syncSetTokenCache } from '@/utils/secureToken'
 import { useUserStore } from '@/stores/user'
 import { useCharactersStore } from '@/stores/characters'
 import { useConversationsStore } from '@/stores/conversations'
-import { useNotificationsStore } from '@/stores/notifications'
 import { createConversation } from '@/api/conversation'
 import { listNotifications } from '@/api/notification'
 import { useConversationUnread } from '@/composables/useConversationUnread'
@@ -63,7 +62,6 @@ const { t } = useI18n()
 const userStore = useUserStore()
 const charactersStore = useCharactersStore()
 const conversationsStore = useConversationsStore()
-const notificationsStore = useNotificationsStore()
 const {
   ingestConversations,
   ingestUnreadNotifications,
@@ -75,34 +73,54 @@ const {
 const loading = ref(true)
 const characters = ref([])
 const openingId = ref(null)
+const toastText = ref('')
+let toastTimer = null
 let unsubscribeLauncherMessage = null
+
+function showToast(text, ms = 2600) {
+  toastText.value = text
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => { toastText.value = '' }, ms)
+}
 
 async function refreshPickerData() {
   openingId.value = null
-  if (!userStore.isLoggedIn) {
-    await userStore.restoreSession()
+
+  if (!userStore.token) {
+    const token = await readToken()
+    if (token) {
+      userStore.token = token
+      syncSetTokenCache(token)
+    }
   }
+
   if (!userStore.isLoggedIn) {
     loading.value = false
     characters.value = []
     return
   }
-  loading.value = true
+
+  if (charactersStore.list.length > 0) {
+    characters.value = charactersStore.list
+    loading.value = false
+  } else {
+    loading.value = true
+  }
+
   try {
     if (!userStore.userId) {
-      await userStore.fetchProfile({ skipGlobalError: true })
+      void userStore.fetchProfile({ skipGlobalError: true })
     }
-    void notificationsStore.init()
     const [charList, convList, unreadList] = await Promise.all([
-      charactersStore.fetchList({ force: true }),
-      conversationsStore.fetchList({ force: true, silent: true }).catch(() => []),
-      listNotifications({ unreadOnly: true, limit: 200 }, { silent: true }).catch(() => [])
+      charactersStore.fetchList(),
+      conversationsStore.fetchList({ silent: true }).catch(() => []),
+      listNotifications({ unreadOnly: true, limit: 200 }, { silent: true }).catch(() => []),
     ])
     characters.value = charList || []
     ingestConversations(convList || [])
     ingestUnreadNotifications(unreadList || [])
   } catch {
-    characters.value = []
+    if (!characters.value.length) characters.value = []
   } finally {
     loading.value = false
   }
@@ -110,7 +128,7 @@ async function refreshPickerData() {
 
 function showNewMessageHint(payload = {}) {
   const name = payload.characterName || t('launcher.defaultCharacterName')
-  ElMessage.info(t('launcher.newMessageHint', { name }))
+  showToast(t('launcher.newMessageHint', { name }))
   void refreshUnreadFromApi()
 }
 
@@ -155,7 +173,7 @@ async function startChat(char) {
     closePicker()
     getElectronAPI()?.openQuickChat?.(convId)
   } catch (err) {
-    ElMessage.error(humanizeError(err, '无法开始聊天，请稍后再试'))
+    showToast(humanizeError(err, '无法开始聊天，请稍后再试'))
   } finally {
     openingId.value = null
   }
@@ -167,6 +185,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  clearTimeout(toastTimer)
   unsubscribeLauncherMessage?.()
 })
 </script>
@@ -180,6 +199,7 @@ onUnmounted(() => {
   flex: 0 0 320px;
   display: flex;
   flex-direction: column;
+  position: relative;
   border-radius: 16px 16px 0 0;
   background: rgba(14, 14, 22, 0.96);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -311,5 +331,55 @@ onUnmounted(() => {
 
 .launcher-pick__loading-icon {
   flex-shrink: 0;
+}
+
+.launcher-pick__btn {
+  border: none;
+  border-radius: 10px;
+  padding: 8px 14px;
+  background: #f4a6b5;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.launcher-pick__spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(244, 166, 181, 0.2);
+  border-top-color: #f4a6b5;
+  border-radius: 50%;
+  animation: launcher-pick-spin 0.8s linear infinite;
+}
+
+.launcher-pick__spinner--inline {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.launcher-pick__avatar-fallback {
+  font-size: 12px;
+  color: #a1a1aa;
+}
+
+.launcher-pick__toast {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(20, 20, 28, 0.92);
+  color: #f5f5f7;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+@keyframes launcher-pick-spin {
+  to { transform: rotate(360deg); }
 }
 </style>

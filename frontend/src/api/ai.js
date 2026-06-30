@@ -1,4 +1,4 @@
-import http from './index'
+import http from './httpCore'
 
 export function fetchModels(provider) {
   return http.get('/ai/models', { params: { provider }, skipGlobalError: true })

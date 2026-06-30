@@ -541,12 +541,31 @@ function normalizeHashRoute(route) {
 
 function loadRoute(win, hashRoute) {
   const hash = normalizeHashRoute(hashRoute)
+  const hashBody = hash.startsWith('#') ? hash.slice(1) : hash
+  const routePath = (hashBody.split('?')[0] || '/')
+
   if (isDev) {
     const base = process.env.VITE_DEV_SERVER_URL.replace(/\/$/, '')
-    return win.loadURL(`${base.replace(/\/$/, '')}${hash}`)
+    if (routePath === '/launcher' || routePath.startsWith('/launcher/')) {
+      return win.loadURL(`${base}/launcher.html`)
+    }
+    if (routePath.startsWith('/quick/')) {
+      return win.loadURL(`${base}/quick.html#${hashBody}`)
+    }
+    return win.loadURL(`${base}${hash}`)
   }
-  const indexPath = resolveDistPath('index.html')
-  const hashBody = hash.startsWith('#') ? hash.slice(1) : hash
+
+  let htmlFile = 'index.html'
+  if (routePath === '/launcher' || routePath.startsWith('/launcher/')) {
+    htmlFile = 'launcher.html'
+  } else if (routePath.startsWith('/quick/')) {
+    htmlFile = 'quick.html'
+  }
+
+  const indexPath = resolveDistPath(htmlFile)
+  if (htmlFile === 'launcher.html') {
+    return win.loadFile(indexPath)
+  }
   return win.loadFile(indexPath, { hash: hashBody })
 }
 
@@ -1479,7 +1498,7 @@ function scheduleQuickChatReadyFallback(win) {
   quickChatReadyFallbackTimer = setTimeout(() => {
     quickChatReadyFallbackTimer = null
     revealPendingQuickChat(win)
-  }, 2500)
+  }, 1200)
 }
 
 async function navigateQuickChatShell(conversationId) {
@@ -1588,12 +1607,13 @@ function openQuickChatWindow(conversationId) {
   quickChatPendingShowId = id
 
   const beginOpen = async () => {
-    await navigateQuickChatShell(id)
     if (win.isDestroyed()) return
-    if (win.isVisible()) {
-      revealPendingQuickChat(win)
-      return
+    positionQuickChatNearLauncher(win)
+    if (!win.isVisible()) {
+      win.show()
+      win.moveTop()
     }
+    await navigateQuickChatShell(id)
     scheduleQuickChatReadyFallback(win)
   }
 

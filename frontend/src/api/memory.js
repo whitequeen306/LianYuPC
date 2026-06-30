@@ -1,4 +1,4 @@
-import http from './index'
+import http from './httpCore'
 
 export function listMemories(characterId) {
   return http.get('/memory', { params: characterId ? { characterId } : {} })

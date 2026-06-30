@@ -1,4 +1,4 @@
-import http from './index'
+import http from './httpCore'
 import { applyOutputLanguageHeaders } from '@/utils/outputLanguageHeader'
 import { apiBasePath } from '@/utils/runtime'
 import { syncToken } from '@/utils/secureToken'

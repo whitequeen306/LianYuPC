@@ -1,4 +1,4 @@
-import http from './index'
+import http from './httpCore'
 
 export function getUnreadCount(options = {}) {
   return http.get('/notifications/unread-count', {

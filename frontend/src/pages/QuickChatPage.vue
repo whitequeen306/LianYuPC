@@ -4,7 +4,7 @@
       <div class="quick-chat__meta">
         <span class="quick-chat__avatar">
           <img v-if="characterAvatar" :src="characterAvatar" :alt="characterName" />
-          <el-icon v-else :size="16"><User /></el-icon>
+          <span v-else class="quick-chat__avatar-fallback" aria-hidden="true">?</span>
         </span>
         <span class="quick-chat__name">{{ headerLabel }}</span>
       </div>
@@ -21,7 +21,7 @@
     </header>
 
     <div v-if="loading" class="quick-chat__state">
-      <el-icon class="is-loading" :size="22"><Loading /></el-icon>
+      <span class="quick-chat__spinner" aria-hidden="true" />
     </div>
 
     <div v-else ref="msgListRef" class="quick-chat__log">
@@ -51,24 +51,25 @@
     </div>
 
     <footer class="quick-chat__foot">
-      <el-input
+      <textarea
         ref="inputRef"
         v-model="inputText"
-        type="textarea"
-        :rows="2"
-        resize="none"
+        class="quick-chat__input"
+        rows="2"
         placeholder="输入消息…"
         :disabled="waitingReply || loading"
         @keydown.enter.exact.prevent="handleSend"
       />
-      <el-button
-        type="primary"
-        :icon="Promotion"
-        :loading="waitingReply"
-        :disabled="!inputText.trim() || loading"
+      <button
+        type="button"
+        class="quick-chat__send"
+        :disabled="!inputText.trim() || waitingReply || loading"
         @click="handleSend"
-      />
+      >
+        {{ waitingReply ? '…' : '发送' }}
+      </button>
     </footer>
+    <p v-if="errorText" class="quick-chat__error" role="alert">{{ errorText }}</p>
   </div>
 </template>
 
@@ -76,8 +77,6 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { User, Loading, Promotion } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
 import { useCharactersStore } from '@/stores/characters'
 import { useNotificationsStore } from '@/stores/notifications'
 import { getConversation, getMessages, sendMessageStream } from '@/api/conversation'
@@ -106,6 +105,14 @@ const currentConvId = ref(null)
 const msgListRef = ref(null)
 const scrollAnchor = ref(null)
 const inputRef = ref(null)
+const errorText = ref('')
+let errorTimer = null
+
+function showError(message) {
+  errorText.value = message
+  clearTimeout(errorTimer)
+  errorTimer = setTimeout(() => { errorText.value = '' }, 3200)
+}
 
 const { scrollToBottom } = useChatScroll(msgListRef, scrollAnchor)
 
@@ -218,7 +225,7 @@ async function loadConversation(convId) {
   } catch (err) {
     messages.value = []
     activeCharacter.value = null
-    ElMessage.error(humanizeError(err, '无法加载会话'))
+    showError(humanizeError(err, '无法加载会话'))
   } finally {
     loading.value = false
     await nextTick()
@@ -305,7 +312,7 @@ async function handleSend() {
     await loadMessages(convId)
   } catch (err) {
     messages.value = messages.value.filter((m) => m._tempId !== userMsg._tempId)
-    ElMessage.error(humanizeError(err, '消息发送失败，请稍后再试'))
+    showError(humanizeError(err, '消息发送失败，请稍后再试'))
   } finally {
     waitingReply.value = false
     await nextTick()
@@ -346,6 +353,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopPolling()
+  clearTimeout(errorTimer)
 })
 </script>
 
@@ -528,15 +536,65 @@ onUnmounted(() => {
   border-top: 1px solid var(--ly-border-subtle, rgba(255, 255, 255, 0.08));
   background: var(--ly-bg-secondary, #171e28);
   flex-shrink: 0;
+}
 
-  :deep(.el-textarea__inner) {
-    background: var(--ly-bg-surface, #1e2732);
-    color: var(--ly-text-primary, #f5f5f7);
-    box-shadow: none;
-  }
+.quick-chat__input {
+  flex: 1;
+  min-height: 52px;
+  resize: none;
+  border-radius: 12px;
+  border: 1px solid var(--ly-border-subtle, rgba(255, 255, 255, 0.08));
+  background: var(--ly-bg-surface, #1e2732);
+  color: var(--ly-text-primary, #f5f5f7);
+  padding: 10px 12px;
+  font: inherit;
+  line-height: 1.45;
 
-  .el-button {
-    flex-shrink: 0;
+  &:disabled {
+    opacity: 0.65;
   }
+}
+
+.quick-chat__send {
+  flex-shrink: 0;
+  min-width: 56px;
+  height: 40px;
+  border: none;
+  border-radius: 12px;
+  background: var(--ly-accent, #f4a6b5);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+}
+
+.quick-chat__spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(244, 166, 181, 0.2);
+  border-top-color: var(--ly-accent, #f4a6b5);
+  border-radius: 50%;
+  animation: quick-spin 0.8s linear infinite;
+}
+
+.quick-chat__avatar-fallback {
+  font-size: 12px;
+  color: var(--ly-text-muted, #8a727c);
+}
+
+.quick-chat__error {
+  margin: 0;
+  padding: 6px 12px 10px;
+  font-size: 12px;
+  color: #ffb4b4;
+  background: rgba(120, 24, 24, 0.35);
+}
+
+@keyframes quick-spin {
+  to { transform: rotate(360deg); }
 }
 </style>

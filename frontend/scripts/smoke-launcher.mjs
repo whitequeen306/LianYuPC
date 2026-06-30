@@ -30,13 +30,14 @@ const cloudEnv = loadEnvFile(path.join(root, '.env.production.cloud'))
 
 const mainEntry = path.join(root, 'dist-electron', 'main.js')
 const distIndex = path.join(root, 'dist', 'index.html')
+const distLauncher = path.join(root, 'dist', 'launcher.html')
 
 if (!fs.existsSync(mainEntry)) {
   console.error('smoke-launcher: missing dist-electron/main.js — run vite build first')
   process.exit(1)
 }
-if (!fs.existsSync(distIndex)) {
-  console.error('smoke-launcher: missing dist/index.html — run vite build first')
+if (!fs.existsSync(distIndex) || !fs.existsSync(distLauncher)) {
+  console.error('smoke-launcher: missing dist/index.html or dist/launcher.html — run vite build first')
   process.exit(1)
 }
 if (!fs.existsSync(electronBin)) {

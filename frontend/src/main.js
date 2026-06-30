@@ -9,6 +9,7 @@ import { i18n } from './i18n'
 import { initAntiDebug } from './utils/antiDebug'
 import { initElectronRuntimeConfig } from '@/utils/runtime'
 import { readToken } from './utils/secureToken'
+import { installMainHttpToasts } from '@/api/installMainHttpToasts'
 import { prepareAuthRoute, bootstrapAuth } from './auth/bootstrap'
 import { bootstrapLauncherSession } from './auth/launcherBootstrap'
 import './styles/theme.scss'
@@ -48,6 +49,7 @@ settingsStore.initLanguage()
 settingsStore.initAppearance()
 
 initAntiDebug()
+installMainHttpToasts()
 
 function isLauncherOnlySurface() {
   const hash = (window.location.hash.replace(/^#/, '') || '/').split('?')[0]
