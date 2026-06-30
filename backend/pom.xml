@@ -20,6 +20,7 @@
         <module>lianyu-ai</module>
         <module>lianyu-service</module>
         <module>lianyu-web</module>
+        <module>lianyu-qq-bridge</module>
         <module>lianyu-app</module>
     </modules>
 

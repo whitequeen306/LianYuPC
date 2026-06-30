@@ -15,6 +15,11 @@
         {{ greetingText }}
       </div>
     </transition>
+    <transition name="pet-observe-fade">
+      <div v-if="isObserving" class="pet-observe-badge" role="status" aria-label="正在观察屏幕">
+        ● 观察中
+      </div>
+    </transition>
     <div ref="wrapRef" class="pet-wrap">
       <canvas
         ref="petRef"
@@ -51,6 +56,7 @@ const hitboxRef = ref(null)
 const pointerState = ref(null)
 const toastText = ref('')
 const greetingText = ref('')
+const isObserving = ref(false)
 const pickerOpen = ref(false)
 const dragging = ref(false)
 const currentPetId = ref(DEFAULT_PET_ID)
@@ -62,6 +68,7 @@ let unsubscribePetChanged = null
 let unsubscribeInteractionReset = null
 let unsubscribeGreeting = null
 let unsubscribeRestartObserver = null
+let unsubscribeObserveCapturing = null
 let unsubscribeLauncherShown = null
 let unsubscribeLauncherHidden = null
 let unsubscribePickerToggle = null
@@ -363,6 +370,9 @@ onMounted(async () => {
   })
   unsubscribeGreeting = getElectronAPI()?.onLauncherGreeting?.(showGreeting)
   unsubscribeRestartObserver = getElectronAPI()?.onRestartObserver?.(startObserver)
+  unsubscribeObserveCapturing = getElectronAPI()?.onObserveCapturing?.((capturing) => {
+    isObserving.value = !!capturing
+  })
   unsubscribeLauncherShown = getElectronAPI()?.onLauncherShown?.(async () => {
     launcherActive = true
     const settings = await getElectronAPI()?.getDesktopSettings?.()
@@ -394,6 +404,7 @@ onUnmounted(() => {
   stopGreetingAudio()
   if (dragRafId != null) { cancelAnimationFrame(dragRafId); dragRafId = null }
   getElectronAPI()?.stopDesktopObserver?.()
+  unsubscribeObserveCapturing?.()
   unsubscribeLauncherMessage?.()
   unsubscribePetChanged?.()
   unsubscribeInteractionReset?.()
@@ -440,6 +451,28 @@ body:has(.pet-root),
   pointer-events: auto;
 }
 
+.pet-observe-badge {
+  margin-bottom: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(220, 38, 38, 0.92);
+  border: 1px solid rgba(255, 80, 80, 0.6);
+  box-shadow: 0 0 16px rgba(220, 38, 38, 0.5);
+  color: #fff; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.5px;
+  pointer-events: none;
+  animation: pet-observe-pulse 1.4s ease-in-out infinite;
+}
+.pet-observe-fade-enter-active, .pet-observe-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.pet-observe-fade-enter-from, .pet-observe-fade-leave-to {
+  opacity: 0;
+}
+@keyframes pet-observe-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
 .pet-toast {
   max-width: 100%; margin-bottom: 4px;
   padding: 5px 8px; border-radius: 10px;

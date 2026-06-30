@@ -34,7 +34,24 @@ export default {
     diary: '日記',
     memory: '記憶',
     profile: '個人資料',
-    settings: '設定'
+    settings: '設定',
+    about: '關於'
+  },
+  qqBridge: {
+    desc: '讓本地 NapCat 收到的 QQ 訊息轉發給雲端 AI，再把回覆發回 QQ',
+    notElectron: 'QQ 橋接僅在桌面用戶端可用。',
+    mode: { title: '託管模式', auto: '自動', manual: '手動', hint: '自動：應用下載並執行 NapCat，掃碼即用；手動：自行執行 NapCat 後填連線參數' },
+    consent: { title: 'QQ 自動託管授權', body: '開啟後，應用會從 NapCat 官方 GitHub 下載 NapCat 執行環境到本機並自動設定啟動，隨後彈出掃碼視窗登入 QQ。登入態保存在本地 NapCat，重啟無需重掃。', confirm: '我已了解，開啟', cancel: '取消' },
+    host: { title: 'NapCat 執行環境', start: '啟動託管', stop: '停止託管', cancel: '取消', login: '登入QQ', version: '版本', token: '令牌', selfId: '目前QQ', noSelfId: '未登入', repair: '修復執行環境', loginFailed: '開啟登入視窗失敗，請確認執行環境已就緒', startFailed: '啟動失敗，請檢查網路後重試', stopFailed: '停止失敗，請重試', reinstall: '升級執行環境', upgradeHint: '偵測到新版本 {latest}（目前 {installed}）', reinstallConfirm: '將停止目前執行環境、刪除舊版本並重新下載最新版，確認繼續？', reinstallOk: '已開始升級，請等待下載完成', reinstallFailed: '升級失敗，請重試或檢查網路' },
+    bridge: { title: '橋接狀態', start: '啟動橋接', stop: '停止橋接', selfId: '機器人QQ', startFailed: '啟動橋接失敗，請重試', startOk: '橋接已啟動', stopFailed: '停止橋接失敗，請重試' },
+    status: { title: '執行狀態' },
+    binding: { title: '訊息路由', character: 'AI 角色', characterPlaceholder: '選擇 AI 角色', characterEmpty: '暫無角色，請先在 LianYu App 內建立', characterHint: '選定角色後，橋接為每個 QQ 使用者自動匹配該角色的專屬會話（無需手填會話號）；清空上下文後會話失效時自動重建，不受影響。', conversationId: '雲端會話', conversationIdHint: '首次啟動橋接時會自動綁定最近的單聊會話（全自動）；如需改用其他 AI 角色，可在上方下拉中選擇。', convPlaceholder: '選擇雲端會話', convEmpty: '暫無雲端會話', convCreate: '立即建立預設會話', convCreateOk: '已建立並綁定預設會話', convCreateFail: '建立會話失敗，請稍後重試', noCharacter: '請先在 LianYu App 內建立角色', currentlyBound: '目前綁定', singleFallback: '單聊 #{id}', allowMode: '放行模式', allowModeAllowlist: '白名單（預設拒絕）', allowModeOpen: '開放（任何人）', openModeWarning: '開放模式：任何 QQ 使用者/群都可驅動宿主 AI，將消耗宿主配額且存在 prompt 注入風險，請謹慎。', emptyAllowlistWarning: '白名單為空：目前沒有 QQ 訊息會被轉發到 AI。在下方新增 QQ 號/群號以放行。', allowUsers: '私聊白名單（QQ號）', allowGroups: '群白名單（群號）', allowHint: '白名單模式下留空 = 不放行任何人；多個用英文逗號分隔', save: '儲存路由', saved: '路由已儲存', pickByCharacter: '按角色名取得會話', pickCharacterTitle: '選擇 AI 角色', pickCharacterHint: '尋找或新建該角色的單聊會話並綁定', pickConfirm: '取得並綁定', pickOk: '已綁定該角色的會話', pickFail: '取得會話失敗，請稍後重試' },
+    reply: { title: '回覆設定', segmentDelay: '分段傳送延遲', segmentDelayHint: 'AI 回覆拆成多條逐條傳送的條間間隔，0 為不延遲（毫秒）', fallback: '兜底回覆', fallbackHint: '雲端異常/逾時時代替 AI 回覆的內容，留空則不兜底', save: '儲存', saved: '已儲存', applyHint: '儲存後對下一條訊息生效（無需重啟橋接）' },
+    logs: { title: '橋接日誌', open: '查看日誌', refresh: '重新整理', empty: '暫無日誌', loadFail: '讀取日誌失敗', autoRecoverHint: '會話失效時自動重新解析並重試（已啟用）', all: '全部', success: '成功', fail: '失敗', autoRefresh: '自動刷新', count: '共 {n} 條' },
+    ws: { title: 'NapCat 連線（手動模式）', wsUrl: 'WebSocket 位址', accessToken: '存取權杖', hint: '僅手動模式需要填寫；自動託管時由執行環境自動寫入並連線', save: '儲存連線', saved: '連線已儲存' },
+    download: { label: '下載進度', title: '下載 NapCat 執行環境', hint: '下載中請勿關閉視窗，完成後將自動繼續', cancel: '取消下載', phase: { preparing: '準備中', downloading: '下載中', extracting: '解壓中', done: '完成' } },
+    state: { stopped: '已停止', 'resolving-release': '解析發行中', downloading: '下載中', extracting: '解壓中', 'writing-config': '寫入設定中', launching: '啟動中', running: '執行中', reconnecting: '重連中', restarting: '重啟中', error: '錯誤', connecting: '連線中', connected: '已連線', ready: '已就緒', disconnected: '已斷線' },
+    reason: { not_auto_mode: '請先在上方開啟自動託管', not_consented: '請先完成 QQ 託管授權', start_failed: '啟動失敗，請檢查網路後重試', reinstall_failed: '重裝失敗，請重試或檢查網路', not_running: '執行環境未就緒，請先啟動託管', no_conversation: '請先在下方「訊息路由」選擇會話', not_logged_in: '請先登入戀語帳號', disabled: '橋接已被停用', qqnt_not_found: '未偵測到 QQ 桌面版（QQNT），請先安裝後再啟用自動託管：https://im.qq.com/index/', exception: '操作異常，請重試', unknown: '操作失敗，請重試' }
   },
   moments: {
     title: '朋友圈',
@@ -335,6 +352,20 @@ export default {
     emptyTitle: '尚未設定自訂 AI 介面',
     emptyDesc: '不設定也可以直接聊天，系統會使用平台預設模型；如需使用自己的 Key，請在此新增',
     addFirst: '新增第一套設定'
+  },
+  about: {
+    title: '關於戀語',
+    desc: '多角色 AI 陪伴桌面應用',
+    viewDetail: '查看關於',
+    version: '版本',
+    environment: '執行環境',
+    envWeb: '網頁版',
+    envDesktop: '桌面版',
+    intro: '戀語（LianYu）是一款多角色 AI 陪伴應用，支援角色對話、朋友圈、日記、記憶與桌面桌寵。可在 Windows 桌面端使用，也能透過 QQ 橋接把訊息轉發給雲端 AI。',
+    techStack: '技術棧',
+    techStackDesc: '前端 Vue 3 + Element Plus + Electron；後端 Spring Boot + MyBatis-Plus + MySQL。',
+    copyright: '© 2026 戀語 LianYu',
+    backToSettings: '返回設定'
   },
   profile: {
     title: '個人資料',

@@ -1,136 +1,62 @@
 /**
- * Token 加密存储 — 防 localStorage 明文提取。
- * 使用 Web Crypto AES-GCM，密钥绑定当前应用实例（首次使用时随机生成）。
- * 提供 syncToken() 同步读取入口，供 EventSource / 路由守卫等无法 await 的场景。
+ * Token 内存态存储（#14：移除 localStorage 加密剧场）。
+ *
+ * 历史：曾用 AES-GCM 把 token 加密后存 localStorage，密钥（_lkt）也明文放 localStorage——
+ * 一旦渲染层被 XSS，攻击者直接读 localStorage 即可拿到 key+ciphertext 还原明文 token，
+ * “加密”只是表演，并未提升安全基线（密钥与密文同处一域）。
+ *
+ * 现状：token 仅驻留渲染进程内存（rawToken），不再落 localStorage。
+ *  - 登录后 stores/user setAuth 写内存 + 经 auth:set-session 同步主进程（safeStorage 落盘）。
+ *  - 重载后内存丢失，由 auth/bootstrap prepareAuthRoute / bootstrapLauncherSession 向主进程
+ *    auth:bootstrap-token 一次性取回明文注入内存（主进程 safeStorage 仍是唯一持久存储）。
+ *
+ * 为什么不彻底收归主进程、渲染层零接触 token？
+ *   STOMP over WebSocket 的鉴权（connectHeaders.token）在 WS 握手成功后的帧里发送，
+ *   主进程 webRequest 只能改 HTTP/Upgrade 头，无法注入 WS 帧内的 STOMP 头，
+ *   故 STOMP 鉴权仍需渲染层持有 token 明文。彻底收归需后端引入一次性 ticket 机制，属另一议题。
+ *   运行期内存暴露（XSS 可读 rawToken）为该方案已知残留面，已通过 #6 出口限流 + host 白名单、
+ *   #9 asar 完整性等多层收敛攻击面。
+ *
+ * 对外接口（syncSetTokenCache/storeToken/readToken/syncToken/clearTokenStorage）保持不变，
+ * 调用方（api 拦截器、STOMP、路由守卫、bootstrap）无需改动。
  */
 
-const KEY_STORE_KEY = '_lkt'
-const TOKEN_STORE_KEY = '_ltt'
-
-let cachedKey = null
-/** 解密后的原始 token，登录成功后写入 */
+/** 原始 token，仅驻留内存 */
 let rawToken = null
-/** 是否已尝试从 encrypted storage 恢复 */
-let restored = false
-
-function textToBytes(text) {
-  return new TextEncoder().encode(text)
-}
-
-function bytesToText(bytes) {
-  return new TextDecoder().decode(bytes)
-}
-
-function bytesToHex(bytes) {
-  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
-}
-
-function hexToBytes(hex) {
-  const bytes = new Uint8Array(hex.length / 2)
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16)
-  }
-  return bytes
-}
-
-async function getOrCreateKey() {
-  if (cachedKey) return cachedKey
-
-  const stored = localStorage.getItem(KEY_STORE_KEY)
-  if (stored) {
-    try {
-      const raw = hexToBytes(stored)
-      cachedKey = await crypto.subtle.importKey(
-        'raw', raw, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
-      )
-      return cachedKey
-    } catch {
-      // key corrupted, regenerate
-    }
-  }
-
-  const key = await crypto.subtle.generateKey(
-    { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']
-  )
-  const raw = await crypto.subtle.exportKey('raw', key)
-  localStorage.setItem(KEY_STORE_KEY, bytesToHex(new Uint8Array(raw)))
-  cachedKey = key
-  return key
-}
-
-async function decryptFromStorage() {
-  const combinedHex = localStorage.getItem(TOKEN_STORE_KEY)
-  if (!combinedHex) return null
-  const key = await getOrCreateKey()
-  const combined = hexToBytes(combinedHex)
-  if (combined.length < 13) return null
-  const iv = combined.slice(0, 12)
-  const encrypted = combined.slice(12)
-  const decrypted = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv }, key, encrypted
-  )
-  return bytesToText(new Uint8Array(decrypted))
-}
 
 /**
- * 登录成功后立即写入内存缓存，避免 persistSession 异步加密完成前 API 读不到 token
+ * 登录成功后立即写入内存缓存，避免 persistSession 异步完成前 API 读不到 token
  */
 export function syncSetTokenCache(value) {
   rawToken = value || null
-  restored = true
 }
 
 /**
- * 登录后调用：加密 token 写入 localStorage + 同步缓存
+ * 登录后调用：写入内存缓存（#14 后不再落 localStorage）
  */
 export async function storeToken(value) {
   syncSetTokenCache(value)
-  if (!value) {
-    localStorage.removeItem(TOKEN_STORE_KEY)
-    localStorage.removeItem(KEY_STORE_KEY)
-    cachedKey = null
-    return
-  }
-  const key = await getOrCreateKey()
-  const iv = crypto.getRandomValues(new Uint8Array(12))
-  const encrypted = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv }, key, textToBytes(value)
-  )
-  const combined = new Uint8Array(iv.length + encrypted.byteLength)
-  combined.set(iv, 0)
-  combined.set(new Uint8Array(encrypted), iv.length)
-  localStorage.setItem(TOKEN_STORE_KEY, bytesToHex(combined))
 }
 
 /**
- * 异步解密读取 token（启动恢复时用）
+ * 读取 token（启动恢复时用）。#14 后内存态重载即丢，实际恢复由 bootstrap.js
+ * 经主进程 auth:bootstrap-token 注入；此函数保留以兼容非 Electron / 兜底路径。
  */
 export async function readToken() {
-  if (restored) return rawToken
-  try {
-    rawToken = await decryptFromStorage()
-  } catch {
-    rawToken = null
-  }
-  restored = true
   return rawToken
 }
 
 /**
  * 同步读取已缓存的 token（供 EventSource / 路由守卫 / STOMP 使用）
- * 注意：首次调用前必须先 await readToken() 初始化缓存
+ * 注意：首次使用前必须先经 bootstrap 注入或 syncSetTokenCache 写入
  */
 export function syncToken() {
   return rawToken || null
 }
 
 /**
- * 清除所有加密存储（登出时调用）
+ * 清除内存 token（登出时调用）
  */
 export function clearTokenStorage() {
-  localStorage.removeItem(TOKEN_STORE_KEY)
-  localStorage.removeItem(KEY_STORE_KEY)
-  cachedKey = null
   rawToken = null
-  restored = true
 }

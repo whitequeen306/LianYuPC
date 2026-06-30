@@ -47,6 +47,13 @@
           </div>
           <el-switch v-model="desktopForm.launchAtLogin" @change="onDesktopChange" />
         </div>
+        <div class="desktop-settings__row">
+          <div>
+            <div class="desktop-settings__label">QQ 桥接</div>
+            <div class="desktop-settings__hint">让 QQ 消息转发给云端 AI 并自动回复</div>
+          </div>
+          <el-button text :icon="Promotion" @click="goQqBridge">前往配置</el-button>
+        </div>
         <div v-if="desktopForm.showDesktopPet" class="desktop-settings__pet-block">
           <div class="desktop-settings__label">桌宠角色</div>
           <div class="desktop-settings__hint">选择关闭主窗口后在桌面显示的角色形象</div>
@@ -159,6 +166,17 @@
       </div>
     </section>
 
+    <!-- 关于 -->
+    <section class="section stagger-item">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">{{ t('about.title') }}</h2>
+          <p class="section-desc">{{ t('about.desc') }}</p>
+        </div>
+        <el-button type="primary" class="btn-cta" :icon="Promotion" @click="goAbout">{{ t('about.viewDetail') }}</el-button>
+      </div>
+    </section>
+
     <!-- Add/Edit Dialog -->
     <el-dialog
       v-model="dialogVisible"
@@ -226,6 +244,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useResponsiveDialogWidth } from '@/composables/useResponsiveDialogWidth'
 import { useI18n } from 'vue-i18n'
 import { useProvidersStore } from '@/stores/providers'
@@ -235,12 +254,15 @@ import { getElectronAPI, isElectronApp } from '@/utils/electron'
 import { PET_CATALOG, getPetPreviewUrl } from '@/constants/petCatalog'
 
 const { t } = useI18n()
-import { Plus, Edit, Delete, RefreshRight, Loading, Connection } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, RefreshRight, Loading, Connection, Promotion } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const providersStore = useProvidersStore()
 const desktopStore = useDesktopStore()
 const settingsStore = useSettingsStore()
+const router = useRouter()
+const goQqBridge = () => router.push('/app/qq-bridge')
+const goAbout = () => router.push('/app/about')
 const isElectron = isElectronApp()
 const petCatalog = PET_CATALOG.map(p => ({ ...p, previewUrl: getPetPreviewUrl(p) }))
 const desktopForm = reactive({

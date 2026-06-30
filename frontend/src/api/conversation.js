@@ -21,6 +21,11 @@ export function deleteConversation(id) {
   return http.delete(`/conversation/${id}`)
 }
 
+// 清空会话消息但保留会话行（ID 不变）——供「清空聊天记录」调用，避免外部绑定（QQ 桥接）因 ID 变化而 404
+export function clearConversationMessages(id) {
+  return http.delete(`/conversation/${id}/messages`)
+}
+
 export function sendMessage(id, data) {
   return http.post(`/conversation/${id}/messages`, data)
 }
@@ -53,7 +58,7 @@ export function updateGroupTitle(id, title) {
 }
 
 // Non-Axios SSE — fetch API handles streams better
-export async function sendMessageStream(id, data) {
+export async function sendMessageStream(id, data, signal) {
   const token = syncToken()
   const bodyText = JSON.stringify(data)
   const headers = applyOutputLanguageHeaders({
@@ -63,6 +68,7 @@ export async function sendMessageStream(id, data) {
   return fetch(`${apiBasePath()}/conversation/${id}/messages/stream`, {
     method: 'POST',
     headers,
-    body: bodyText
+    body: bodyText,
+    signal
   })
 }

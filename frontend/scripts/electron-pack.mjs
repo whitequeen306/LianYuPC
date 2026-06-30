@@ -90,7 +90,7 @@ function buildMainCjsBundle() {
     bundle: true,
     platform: 'node',
     format: 'cjs',
-    external: ['electron', 'active-win', 'bytenode'],
+    external: ['electron', 'active-win', 'bytenode', 'ws', 'extract-zip'],
     packages: 'external',
     minify: true,
     sourcemap: false,
@@ -197,6 +197,7 @@ execSync('npx vite build', { stdio: 'inherit', env: viteEnv })
 
 buildMainCjsBundle()
 
+// runtime-secrets.bin 仅轻度混淆（obfuscation-only），非加密；不打包真敏感项（见 runtimeSecrets.js 文件头）。
 const buildId = writeClientBuildMeta(pkg.version)
 packRuntimeSecrets({
   version: pkg.version,

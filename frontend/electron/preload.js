@@ -64,6 +64,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAuthSession: () => ipcRenderer.invoke('auth:get-session'),
   setAuthSession: (session) => ipcRenderer.invoke('auth:set-session', session),
   clearAuthSession: () => ipcRenderer.invoke('auth:clear-session'),
+  bootstrapAuthToken: () => ipcRenderer.invoke('auth:bootstrap-token'),
   getRuntimeConfig: () => ipcRenderer.invoke('runtime:get-config'),
   apiRequest: (payload) => ipcRenderer.invoke('api:request', payload),
   isLauncherVisible: () => ipcRenderer.invoke('desktop:is-launcher-visible'),
@@ -78,6 +79,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = () => callback()
     ipcRenderer.on('desktop:restart-observer', handler)
     return () => ipcRenderer.removeListener('desktop:restart-observer', handler)
+  },
+  // #10：捕获期间主进程通知桌宠显示不可隐藏的捕获指示
+  onObserveCapturing: (callback) => {
+    const handler = (_event, capturing) => callback(capturing)
+    ipcRenderer.on('desktop:observe-capturing', handler)
+    return () => ipcRenderer.removeListener('desktop:observe-capturing', handler)
   },
   onLauncherShown: (callback) => {
     const handler = () => callback()
@@ -100,4 +107,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('desktop:launcher-hidden', handler)
   },
   notifyQuickChatReady: () => ipcRenderer.send('desktop:quick-chat-ready'),
+  getQqBridgeSettings: () => ipcRenderer.invoke('desktop:get-qq-bridge-settings'),
+  setQqBridgeSettings: (partial) => ipcRenderer.invoke('desktop:set-qq-bridge-settings', partial),
+  startQqBridge: (override) => ipcRenderer.invoke('desktop:start-qq-bridge', override),
+  stopQqBridge: () => ipcRenderer.invoke('desktop:stop-qq-bridge'),
+  getQqBridgeStatus: () => ipcRenderer.invoke('desktop:get-qq-bridge-status'),
+  resolveQqBridgeConversation: (characterId) => ipcRenderer.invoke('desktop:qq-bridge-resolve-conversation', characterId),
+  getQqBridgeLogs: () => ipcRenderer.invoke('desktop:qq-bridge-get-logs'),
+  onQqBridgeStatus: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on('desktop:qq-bridge-status', handler)
+    return () => ipcRenderer.removeListener('desktop:qq-bridge-status', handler)
+  },
+  startQqHost: (override) => ipcRenderer.invoke('desktop:start-qq-host', override),
+  stopQqHost: () => ipcRenderer.invoke('desktop:stop-qq-host'),
+  reinstallQqHost: () => ipcRenderer.invoke('desktop:reinstall-qq-host'),
+  getQqHostStatus: () => ipcRenderer.invoke('desktop:get-qq-host-status'),
+  onQqHostStatus: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on('desktop:qq-host-status', handler)
+    return () => ipcRenderer.removeListener('desktop:qq-host-status', handler)
+  },
+  onQqHostDownload: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on('desktop:qq-host-download', handler)
+    return () => ipcRenderer.removeListener('desktop:qq-host-download', handler)
+  },
+  openQqLoginWindow: () => ipcRenderer.invoke('desktop:open-qq-login-window'),
 })

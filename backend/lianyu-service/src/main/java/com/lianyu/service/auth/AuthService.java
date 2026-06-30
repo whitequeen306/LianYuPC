@@ -12,6 +12,7 @@ public interface AuthService {
     LoginResponse register(RegisterRequest request);
     LoginResponse login(LoginRequest request);
     void logout();
+    LoginResponse refresh(Long userId);
     UserProfile me(Long userId);
     UserProfile updateProfile(Long userId, UpdateProfileRequest request);
     UserProfile uploadAvatar(Long userId, MultipartFile file);

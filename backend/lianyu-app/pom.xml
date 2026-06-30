@@ -19,6 +19,12 @@
             <artifactId>lianyu-web</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- QQ (NapCat/OneBot 11) 桥，默认关闭，仅 lianyu.qq-bridge.enabled=true 时装配 -->
+        <dependency>
+            <groupId>com.lianyu</groupId>
+            <artifactId>lianyu-qq-bridge</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>

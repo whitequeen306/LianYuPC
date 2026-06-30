@@ -2,6 +2,7 @@ package com.lianyu.service.ai;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lianyu.ai.SsrfPinningClientFactory;
 import com.lianyu.common.base.ErrorCode;
 import com.lianyu.common.constant.AiConstants;
 import com.lianyu.common.exception.BusinessException;
@@ -34,6 +35,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.LinkedHashMap;
@@ -58,6 +60,7 @@ import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.util.MimeTypeUtils;
 import org.springframework.web.client.ResourceAccessException;
@@ -77,6 +80,7 @@ public class AiChatService {
     private final TimeLimiter timeLimiter;
     private final CircuitBreaker circuitBreaker;
     private final ScheduledExecutorService scheduler;
+    private final Executor aiStreamExecutor;
     private final PromptRuleEngine promptRuleEngine;
     private final OutputLanguageService outputLanguageService;
 
@@ -112,6 +116,18 @@ public class AiChatService {
     private static final String RESILIENCE_NAME = "ai-chat";
     private static final int LANGUAGE_GATE_MAX_RETRIES = 2;
 
+    /**
+     * SSE 流式单连接硬超时（issue #22）。原 5min（300_000L）与 nginx /api/ 300s 双重截断，
+     * 叠加语言门最多 2 次阻塞 chatModel.call 重生成易超时。提升至 30min 给「流式 + 纠错」留足预算；
+     * nginx 侧已为 ^/api/.*stream 配 86400s，故本值为实际生效上限，避免连接无限悬挂。
+     */
+    private static final long SSE_TIMEOUT_MS = 1_800_000L;
+
+    /** 原子比较删除 Redis 缓存锁的 Lua 脚本（issue #19：避免 GET-then-DELETE 误删他人锁） */
+    private static final DefaultRedisScript<Long> RELEASE_LOCK_SCRIPT = new DefaultRedisScript<>(
+            "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+            Long.class);
+
     public AiChatService(ApiKeyVaultService vaultService,
                          FileStorageService fileStorageService,
                          ToolManager toolManager,
@@ -121,6 +137,7 @@ public class AiChatService {
                          TimeLimiterRegistry timeLimiterRegistry,
                          CircuitBreakerRegistry circuitBreakerRegistry,
                          ScheduledExecutorService scheduler,
+                         Executor aiStreamExecutor,
                          PromptRuleEngine promptRuleEngine,
                          OutputLanguageService outputLanguageService) {
         this.vaultService = vaultService;
@@ -132,6 +149,7 @@ public class AiChatService {
         this.timeLimiter = timeLimiterRegistry.timeLimiter(RESILIENCE_NAME);
         this.circuitBreaker = circuitBreakerRegistry.circuitBreaker(RESILIENCE_NAME);
         this.scheduler = scheduler;
+        this.aiStreamExecutor = aiStreamExecutor;
         this.promptRuleEngine = promptRuleEngine;
         this.outputLanguageService = outputLanguageService;
     }
@@ -145,12 +163,23 @@ public class AiChatService {
             throw new BusinessException(ErrorCode.AI_RATE_LIMITED, "对话服务繁忙，请稍后再试");
         }
 
-        VaultEntryResponse vault = resolveVault(userId, request.getProvider());
-        String model = resolveModel(request, vault);
-        logChatVaultUsage(userId, request.getProvider(), vault, model, "stream");
-        ChatModel chatModel = buildChatModel(vault, model, vaultService.decryptKeyForChat(vault.getId()));
+        // 隔舱权限已在上面获取；同步 setup（resolveVault/buildChatModel 等）若抛异常必须释放，
+        // 否则 16 次失败即耗尽全局 AI 并发槽导致全线熔断（issue #4）。用 final 空白局部变量保证
+        // 赋值后可被下方异步 lambda 捕获，且 try/catch 覆盖所有同步抛出路径。
+        final VaultEntryResponse vault;
+        final String model;
+        final ChatModel chatModel;
+        try {
+            vault = resolveVault(userId, request.getProvider());
+            model = resolveModel(request, vault);
+            logChatVaultUsage(userId, request.getProvider(), vault, model, "stream");
+            chatModel = buildChatModel(vault, model, vaultService.decryptKeyForChat(vault.getId()));
+        } catch (RuntimeException e) {
+            bulkhead.releasePermission();
+            throw e;
+        }
 
-        SseEmitter emitter = new SseEmitter(300_000L);
+        SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
         StringBuilder contentBuffer = new StringBuilder();
 
         CompletableFuture.runAsync(() -> {
@@ -179,7 +208,8 @@ public class AiChatService {
                                             vault,
                                             model,
                                             chatModel,
-                                            finalContent);
+                                            finalContent,
+                                            () -> sendSseHeartbeat(emitter));
                                     if (corrected != null
                                             && !corrected.equals(finalContent)
                                             && !corrected.isBlank()) {
@@ -206,7 +236,7 @@ public class AiChatService {
             } finally {
                 bulkhead.releasePermission();
             }
-        });
+        }, aiStreamExecutor);
 
         return emitter;
     }
@@ -249,7 +279,8 @@ public class AiChatService {
                                                 vault,
                                                 model,
                                                 chatModel,
-                                                content);
+                                                content,
+                                                null);
 
                                         ChatResult.ChatResultBuilder builder = ChatResult.builder().content(content);
                                         if (response.getMetadata() != null && response.getMetadata().getUsage() != null) {
@@ -265,7 +296,7 @@ public class AiChatService {
                         } catch (Exception e) {
                             throw new RuntimeException(e);
                         }
-                    })
+                    }, aiStreamExecutor)
             ).toCompletableFuture().join();
         } catch (Exception e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
@@ -498,10 +529,16 @@ public class AiChatService {
     }
 
     private List<ModelEntryDto> fetchOpenAiCompatibleModels(VaultEntryResponse vault, String apiKey) {
-        String base = normalizeOpenAiBaseUrl(vault.getBaseUrl() != null ? vault.getBaseUrl() : platformBaseUrl);
+        String vaultBaseUrl = vault.getBaseUrl();
+        boolean userSupplied = vaultBaseUrl != null && !vaultBaseUrl.isBlank();
+        String base = normalizeOpenAiBaseUrl(userSupplied ? vaultBaseUrl : platformBaseUrl);
         String url = base + "/v1/models";
 
-        RestClient client = RestClient.create();
+        // 用户自填 base_url 固定已校验 IP 防 DNS 重绑定 SSRF；平台默认 URL 受信不固定（CDN 轮转）
+        RestClient client = userSupplied
+                ? SsrfPinningClientFactory.restClientBuilder(
+                        OutboundUrlValidator.validateAndResolve(vaultBaseUrl, false)).build()
+                : RestClient.create();
         String body = client.get()
                 .uri(url)
                 .header("Authorization", "Bearer " + apiKey)
@@ -526,9 +563,18 @@ public class AiChatService {
     }
 
     private List<ModelEntryDto> fetchOllamaModels(VaultEntryResponse vault) {
-        String baseUrl = vault.getBaseUrl() != null ? vault.getBaseUrl() : "http://localhost:11434";
+        String vaultBaseUrl = vault.getBaseUrl();
+        boolean useLocal = vaultBaseUrl == null || vaultBaseUrl.isBlank();
+        String baseUrl = useLocal ? "http://localhost:11434" : vaultBaseUrl;
 
-        OllamaApi ollamaApi = OllamaApi.builder().baseUrl(baseUrl).build();
+        OllamaApi.Builder builder = OllamaApi.builder().baseUrl(baseUrl);
+        if (!useLocal) {
+            // 用户配置的远程 ollama：固定已校验 IP，防 DNS 重绑定 SSRF
+            var endpoint = OutboundUrlValidator.validateAndResolve(vaultBaseUrl, true);
+            builder.restClientBuilder(SsrfPinningClientFactory.restClientBuilder(endpoint))
+                    .webClientBuilder(SsrfPinningClientFactory.webClientBuilder(endpoint));
+        }
+        OllamaApi ollamaApi = builder.build();
         var response = ollamaApi.listModels();
         return response.models().stream()
                 .map(m -> ModelEntryDto.builder().id(m.model()).name(m.model()).build())
@@ -754,10 +800,8 @@ public class AiChatService {
 
     private void releaseCacheLock(String lockKey, String lockValue) {
         try {
-            String current = redisTemplate.opsForValue().get(lockKey);
-            if (lockValue.equals(current)) {
-                redisTemplate.delete(lockKey);
-            }
+            // 原子比较删除：GET-then-DELETE 之间存在锁 TTL 到期被他人获取后误删他人锁的窗口（issue #19）
+            redisTemplate.execute(RELEASE_LOCK_SCRIPT, List.of(lockKey), lockValue);
         } catch (Exception e) {
             log.debug("release cache lock failed: {}", e.getMessage());
         }
@@ -947,12 +991,25 @@ public class AiChatService {
         emitter.send(SseEmitter.event().data(objectMapper.writeValueAsString(payload)));
     }
 
+    /**
+     * 发送 SSE 心跳注释行（issue #22）：语言门阻塞重生成期间保持连接活跃，
+     * 避免代理/客户端因长时间无数据判为空闲超时。注释行不会被 EventSource 解析为数据。
+     */
+    private void sendSseHeartbeat(SseEmitter emitter) {
+        try {
+            emitter.send(SseEmitter.event().comment("keep-alive"));
+        } catch (IOException e) {
+            log.debug("SSE heartbeat send failed: {}", e.getMessage());
+        }
+    }
+
     private String enforceExpectedLanguage(Long userId,
                                            AiChatRequest request,
                                            VaultEntryResponse vault,
                                            String model,
                                            ChatModel chatModel,
-                                           String content) {
+                                           String content,
+                                           Runnable onHeartbeat) {
         String expected = request.getExpectedLanguage();
         if (expected == null || expected.isBlank() || content == null || content.isBlank()) {
             return content;
@@ -968,6 +1025,10 @@ public class AiChatService {
         List<MessageDto> retryMessages = copyMessageDtos(request.getMessages());
         int retries = 0;
         while (retries < LANGUAGE_GATE_MAX_RETRIES) {
+            // 阻塞重生成前发心跳，避免纠错期间连接因无数据被代理/客户端判为空闲超时（issue #22）
+            if (onHeartbeat != null) {
+                onHeartbeat.run();
+            }
             log.info("Language gate retry {}: userId={}, expected={}", retries + 1, userId, expected);
             appendLanguageCorrectionMessages(retryMessages, current, expected);
             List<Message> messages = toSpringMessages(retryMessages);
@@ -1071,24 +1132,35 @@ public class AiChatService {
 
     private ChatModel buildChatModel(VaultEntryResponse vault, String model, String apiKey) {
         String baseUrl = vault.getBaseUrl();
-        if (!ApiKeyVaultService.isOllamaEndpoint(baseUrl)) {
-            String resolved = baseUrl != null && !baseUrl.isBlank() ? baseUrl : platformBaseUrl;
-            OutboundUrlValidator.validateAndNormalize(resolved, false);
-        }
         if (ApiKeyVaultService.isOllamaEndpoint(baseUrl)) {
+            // 用户配置的 Ollama 端点：本地放行不固定；远程固定已校验 IP，防 DNS 重绑定 SSRF
+            var endpoint = OutboundUrlValidator.validateAndResolve(baseUrl, true);
             OllamaApi ollamaApi = OllamaApi.builder()
-                    .baseUrl(baseUrl != null ? baseUrl : "http://localhost:11434")
+                    .baseUrl(baseUrl)
+                    .restClientBuilder(SsrfPinningClientFactory.restClientBuilder(endpoint))
+                    .webClientBuilder(SsrfPinningClientFactory.webClientBuilder(endpoint))
                     .build();
             return OllamaChatModel.builder()
                     .ollamaApi(ollamaApi)
                     .defaultOptions(OllamaOptions.builder().model(model).build())
                     .build();
         }
-        String resolvedUrl = normalizeOpenAiBaseUrl(baseUrl != null ? baseUrl : platformBaseUrl);
-        OpenAiApi openAiApi = OpenAiApi.builder()
+        boolean userSupplied = baseUrl != null && !baseUrl.isBlank();
+        String resolvedUrl = normalizeOpenAiBaseUrl(userSupplied ? baseUrl : platformBaseUrl);
+        OpenAiApi.Builder openAiBuilder = OpenAiApi.builder()
                 .baseUrl(resolvedUrl)
-                .apiKey(apiKey)
-                .build();
+                .apiKey(apiKey);
+        if (userSupplied) {
+            // 仅对用户配置的 base_url 固定 IP（平台默认 URL 受信，不固定以支持 CDN 轮转）
+            var endpoint = OutboundUrlValidator.validateAndResolve(baseUrl, false);
+            openAiBuilder
+                    .restClientBuilder(SsrfPinningClientFactory.restClientBuilder(endpoint))
+                    .webClientBuilder(SsrfPinningClientFactory.webClientBuilder(endpoint));
+        } else {
+            // 平台默认 URL 仅做内网封锁校验，不固定
+            OutboundUrlValidator.validateAndNormalize(platformBaseUrl, false);
+        }
+        OpenAiApi openAiApi = openAiBuilder.build();
         return OpenAiChatModel.builder()
                 .openAiApi(openAiApi)
                 .defaultOptions(OpenAiChatOptions.builder().model(model).build())

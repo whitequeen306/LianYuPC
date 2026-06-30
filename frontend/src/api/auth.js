@@ -22,6 +22,19 @@ export async function logout() {
   clearTokenStorage()
 }
 
+/**
+ * #15：滑动续签——刷新当前会话的绝对过期时间（后端 renewTimeout）。
+ * 标记 skipAuthRefresh 防止响应拦截器在刷新自身 401 时递归刷新；skipGlobalError 静默失败
+ * （由单飞逻辑统一处理，不在右下角弹错）。
+ */
+export async function refreshAuthToken() {
+  const result = await http.post('/auth/refresh', {}, { skipAuthRefresh: true, skipGlobalError: true })
+  if (result?.token) {
+    await storeToken(result.token)
+  }
+  return result
+}
+
 export function getProfile(config = {}) {
   return http.get('/auth/me', config)
 }

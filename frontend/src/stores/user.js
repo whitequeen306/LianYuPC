@@ -65,7 +65,25 @@ export const useUserStore = defineStore('user', () => {
     const electronAPI = getElectronAPI()
     if (electronAPI?.getAuthSession) {
       const session = normalizeAuthSession(await electronAPI.getAuthSession())
-      if (session?.token) return session
+      // #6：主进程不再回传明文 token（仅 hasToken + profile）。
+      // #14：渲染层直连（SSE/STOMP 等）所需 token 由 bootstrap 经 auth:bootstrap-token
+      //      注入 secureToken 内存态；此处 readToken() 读到的即该内存值（不再读 localStorage）。
+      if (session?.hasToken) {
+        const cachedToken = await readToken()
+        const cachedProfile = readProfileCache()
+        return {
+          token: cachedToken || '',
+          tokenName: session.tokenName || 'lianyu-token',
+          userId: session.userId ?? cachedProfile?.userId ?? null,
+          username: session.username || cachedProfile?.username || '',
+          nickname: session.nickname || cachedProfile?.nickname || '',
+          avatarUrl: session.avatarUrl || cachedProfile?.avatarUrl || '',
+        }
+      }
+      if (session?.username || session?.userId) {
+        rememberUsername(session.username)
+      }
+      return null
     }
 
     const cachedToken = await readToken()

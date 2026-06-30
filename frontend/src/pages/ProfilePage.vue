@@ -119,7 +119,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { UploadFilled, UserFilled } from '@element-plus/icons-vue'
@@ -199,8 +199,19 @@ onMounted(async () => {
   }
 })
 
+onUnmounted(revokeLocalPreview)
+
 function triggerUpload() {
   fileInput.value?.click()
+}
+
+/** 释放本地头像预览的 blob: 对象 URL（仅对本地预览生效，服务器 URL 不动）。
+ *  见 issue #17：createObjectURL 不 revoke 会持续占用 blob 引用直到页面卸载 */
+function revokeLocalPreview() {
+  if (localPreviewUrl.value.startsWith('blob:')) {
+    URL.revokeObjectURL(localPreviewUrl.value)
+    localPreviewUrl.value = ''
+  }
 }
 
 function applyAvatarFile(file) {
@@ -212,6 +223,7 @@ function applyAvatarFile(file) {
     ElMessage.warning('图片大小不能超过 8MB')
     return
   }
+  revokeLocalPreview()
   localPreviewUrl.value = URL.createObjectURL(file)
   uploadAvatar(file)
 }
@@ -220,7 +232,7 @@ async function uploadAvatar(file) {
   uploadingAvatar.value = true
   try {
     await userStore.uploadAvatar(file)
-    localPreviewUrl.value = ''
+    revokeLocalPreview()
     ElMessage.success('头像已更新')
   } finally {
     uploadingAvatar.value = false

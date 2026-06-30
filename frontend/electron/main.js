@@ -11,12 +11,10 @@ import {
   net,
   Notification,
   powerMonitor,
-  dialog,
 } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import crypto from 'crypto'
-import { createRequire } from 'module'
 import { fileURLToPath } from 'url'
 import {
   readDesktopSettings,
@@ -42,14 +40,27 @@ import {
   onWindowChanged,
 } from './desktopObserver.js'
 import { prepareGreetingPayload } from './greetingAudio.js'
-import { performApiRequest } from './apiProxy.js'
+import { performApiRequest, isAllowedEgressUrl, egressLimiter } from './apiProxy.js'
+import {
+  startQqBridge,
+  stopQqBridge,
+  getQqBridgeStatus,
+} from './qqBridge/qqBridge.js'
+import {
+  readQqBridgeSettings,
+  writeQqBridgeSettings,
+} from './qqBridge/qqBridgeSettings.js'
+import {
+  startNapCatHost,
+  stopNapCatHost,
+  getNapCatHostStatus,
+  isQqntReady,
+} from './napcatRuntime/napcatHost.js'
+import { wipeNapCatInstall } from './napcatRuntime/napcatRelease.js'
 import { loadRuntimeSecrets, getRuntimeSecrets } from './runtimeSecrets.js'
 import { RENDERER_AUTH_TOKEN_SCRIPT } from './rendererTokenScript.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const nodeRequire = createRequire(import.meta.url)
-/** 主进程在 app.asar 内时，默认 fs 无法读取 asar 本体，需用 original-fs */
-const rawFs = nodeRequire('original-fs')
 
 const isDev = !!process.env.VITE_DEV_SERVER_URL
 const isDebug = process.env.LIANYU_DEBUG === '1' || process.argv.includes('--lianyu-debug')
@@ -66,6 +77,8 @@ let quickChatShellReady = false
 /** @type {string | null} */
 let quickChatPendingShowId = null
 let quickChatReadyFallbackTimer = null
+/** NapCat WebUI 扫码登录窗（自管托管）单例 */
+let qqLoginWindow = null
 /** @type {Tray | null} */
 let tray = null
 let isQuitting = false
@@ -247,46 +260,6 @@ function getSPKIHash(certificate) {
     throw new Error('SPKI not available')
 }
 
-function readExpectedAsarIntegrityHash() {
-  const hexPath = path.join(process.resourcesPath, 'asar-integrity.hex')
-  if (!fs.existsSync(hexPath)) return ''
-  const expected = fs.readFileSync(hexPath, 'utf8').trim()
-  return expected.length === 64 ? expected : ''
-}
-
-/** 流式哈希 app.asar，避免同步 readFileSync 整包阻塞主进程 */
-function verifyAsarIntegrityAsync() {
-  if (!app.isPackaged) return Promise.resolve(true)
-  const asarPath = path.join(process.resourcesPath, 'app.asar')
-  const expected = readExpectedAsarIntegrityHash()
-  if (!expected) {
-    log('asar integrity hash not found')
-    dialog.showErrorBox('LianYu', '客户端完整性校验文件缺失，请重新安装。')
-    return Promise.resolve(false)
-  }
-
-  return new Promise((resolve) => {
-    const hash = crypto.createHash('sha256')
-    const stream = rawFs.createReadStream(asarPath)
-    stream.on('data', (chunk) => hash.update(chunk))
-    stream.on('end', () => {
-      const digest = hash.digest('hex')
-      if (digest !== expected) {
-        dialog.showErrorBox('LianYu', '客户端文件被篡改，请重新安装。')
-        resolve(false)
-        return
-      }
-      log('asar integrity verification OK')
-      resolve(true)
-    })
-    stream.on('error', (err) => {
-      log(`asar integrity verification failed: ${err.message}`)
-      dialog.showErrorBox('LianYu', '客户端完整性校验失败，请重新安装。')
-      resolve(false)
-    })
-  })
-}
-
 function configureContentSecurityPolicy() {
   const csp = [
     "default-src 'self'",
@@ -396,6 +369,9 @@ function lockDownDevTools(win) {
 }
 
 function configureSecurity() {
+  // 客户端完整性由 Electron asar-integrity fuse 守护（package.json electronFuses.enableEmbeddedAsarIntegrityValidation: true）：
+  // electron-builder 在打包阶段把 app.asar 头哈希嵌入二进制，Electron 在 main 运行前校验，
+  // 攻击者无法在不改二进制的前提下绕过；进程内自校验（读同目录 .hex）本身可被绕过，故移除。
   configureCertificatePinning()
   if (!isDev) {
     configureContentSecurityPolicy()
@@ -796,10 +772,11 @@ const RENDERER_DESKTOP_STATE_SCRIPT = `
     if (petRaw === 'false' || launcherRaw === 'false') showDesktopPet = false
     if (petRaw === 'true' || launcherRaw === 'true') showDesktopPet = true
     const launcherPetId = localStorage.getItem('lianyu-launcher-pet') || 'raiden'
-    const allowScreenObserve = localStorage.getItem('lianyu-allow-screen-observe') === 'true'
-    return { theme, loggedIn, showDesktopPet, launcherPetId, allowScreenObserve }
+    // #10：allowScreenObserve 不再从渲染层 localStorage 同步——XSS 写一条 localStorage 即可偷开屏幕上传。
+    // 该开关只经主进程 desktop:set-settings IPC、由用户手势（授权确认）设置，权威存于 desktop-settings.json。
+    return { theme, loggedIn, showDesktopPet, launcherPetId }
   } catch {
-    return { theme: 'dark', loggedIn: false, showDesktopPet: true, launcherPetId: 'raiden', allowScreenObserve: false }
+    return { theme: 'dark', loggedIn: false, showDesktopPet: true, launcherPetId: 'raiden' }
   }
 })()
 `
@@ -848,11 +825,9 @@ async function ensureAuthSessionFromRenderer(win = mainWindow) {
 }
 
 async function reconcileScreenObserveSetting(win = mainWindow) {
-  const state = await pullRendererDesktopState(win)
-  if (!state) return readDesktopSettings()
-  if (state.allowScreenObserve === true) {
-    return writeDesktopSettings({ allowScreenObserve: true })
-  }
+  // #10：不再从渲染层 state 同步 allowScreenObserve（XSS 可偷开屏幕上传）。
+  // 开关只经 desktop:set-settings IPC 由用户手势设置，权威存于 desktop-settings.json；此处仅返回主进程设置。
+  void win
   return readDesktopSettings()
 }
 
@@ -891,9 +866,7 @@ async function syncChromeFromRenderer(win = mainWindow) {
   if (state.launcherPetId) {
     await syncLauncherPetId(state.launcherPetId)
   }
-  if (state.allowScreenObserve === true) {
-    writeDesktopSettings({ allowScreenObserve: true })
-  }
+  // #10：allowScreenObserve 不再从渲染层 state 同步（防 XSS 偷开屏幕上传），只经主进程 IPC 由用户手势设置
   await ensureAuthSessionFromRenderer(win)
 }
 
@@ -1599,6 +1572,12 @@ function closeFocusedQuickChat() {
 
 function quitApplication() {
   isQuitting = true
+  stopQqBridge()
+  stopNapCatHost()
+  if (qqLoginWindow && !qqLoginWindow.isDestroyed()) {
+    qqLoginWindow.destroy()
+  }
+  qqLoginWindow = null
   closeCharacterPicker()
   if (quickChatShell && !quickChatShell.isDestroyed()) quickChatShell.destroy()
   quickChatShell = null
@@ -1607,6 +1586,309 @@ function quitApplication() {
   tray?.destroy()
   tray = null
   app.quit()
+}
+
+/** QQ 桥接状态推送到主窗口/启动器窗口，供渲染进程展示连接态/二维码（后续阶段） */
+function pushQqBridgeStatus(status) {
+  const payload = { ...status, ts: Date.now() }
+  for (const win of [mainWindow, launcherWindow]) {
+    if (win && !win.isDestroyed()) {
+      try {
+        win.webContents.send('desktop:qq-bridge-status', payload)
+      } catch {
+        /* 窗口可能已销毁 */
+      }
+    }
+  }
+}
+
+/** 启动时若已开启 QQ 桥接且已登录，自动拉起（默认自动；用户也可在设置中手动开关） */
+async function autoStartQqBridgeIfNeeded() {
+  try {
+    const settings = readQqBridgeSettings()
+    if (settings.hosting?.mode === 'auto') return // 自管模式下桥接由 napcatHost 在就绪后拉起
+    if (!settings.enabled || !settings.binding?.conversationId) return
+    const authToken = await resolveDesktopAuthToken()
+    if (!authToken) {
+      log('[qqBridge] auto-start skipped: not logged in yet')
+      return
+    }
+    startQqBridge({
+      apiOrigin: resolveApiOrigin(),
+      authToken,
+      settings,
+      onStatus: (status) => pushQqBridgeStatus(status),
+    })
+    log('[qqBridge] auto-started ->', settings.napcat?.wsUrl)
+  } catch (e) {
+    console.warn('[qqBridge] auto-start failed:', e?.message || e)
+  }
+}
+
+/** NapCat 自管托管状态推送到主窗口/启动器窗口，供渲染进程展示下载进度/连接态/扫码入口 */
+function pushQqHostStatus(status) {
+  const payload = { ...status, ts: Date.now() }
+  for (const win of [mainWindow, launcherWindow]) {
+    if (win && !win.isDestroyed()) {
+      try {
+        win.webContents.send('desktop:qq-host-status', payload)
+      } catch {
+        /* 窗口可能已销毁 */
+      }
+    }
+  }
+}
+
+/** 下载/解压进度推送（phase: downloading/extracting/done） */
+function pushQqHostDownload(progress) {
+  const payload = { ...progress, ts: Date.now() }
+  for (const win of [mainWindow, launcherWindow]) {
+    if (win && !win.isDestroyed()) {
+      try {
+        win.webContents.send('desktop:qq-host-download', payload)
+      } catch {
+        /* 窗口可能已销毁 */
+      }
+    }
+  }
+}
+
+/**
+ * 自动绑定桥接会话——全自动链路的最后一步：conversationId 为空时无需用户手动粘贴 UUID。
+ * 先复用最近的单聊会话（私聊机器人路由到 SINGLE 会话最贴切）；若无则用首个可用人设新建一个。
+ * 返回 { conversationId } 或 null（无可用会话/人设——用户须先在 App 内建一个人设）。
+ * 复用主进程 performApiRequest：走 net.request + 证书 pin + lianyu-token 注入 + SSRF 校验，
+ * 与渲染端 axios 同构地解包 Result<T> 信封（code===200 取 data）。
+ */
+async function ensureBridgeBinding({ apiOrigin, authToken, characterId }) {
+  const unwrap = (res, path) => {
+    if (!res || res.status < 200 || res.status >= 300) throw new Error(`api:${path} HTTP ${res?.status}`)
+    let body
+    try { body = JSON.parse(res.data || '{}') } catch { throw new Error(`api:${path} non-json`) }
+    if (typeof body.code === 'number') {
+      if (body.code !== 200) throw new Error(`api:${path} code ${body.code}`)
+      return body.data
+    }
+    return body
+  }
+  const apiGet = async (path) => {
+    const res = await performApiRequest({ method: 'GET', url: `${apiOrigin}${path}`, timeoutMs: 15000, apiOrigin, authToken })
+    return unwrap(res, path)
+  }
+  const apiPost = async (path, payload) => {
+    const res = await performApiRequest({
+      method: 'POST',
+      url: `${apiOrigin}${path}`,
+      headers: { 'Content-Type': 'application/json' },
+      body: payload,
+      timeoutMs: 30000,
+      apiOrigin,
+      authToken,
+    })
+    return unwrap(res, path)
+  }
+
+  // 1. 复用 SINGLE 会话：指定 characterId 时只认该角色的 SINGLE 会话；否则取首个 SINGLE（或首项）
+  try {
+    const list = await apiGet('/api/conversation')
+    if (Array.isArray(list) && list.length) {
+      const single = characterId
+        ? list.find((c) => c?.mode === 'SINGLE' && String(c?.characterId) === String(characterId))
+        : (list.find((c) => c?.mode === 'SINGLE') || list[0])
+      if (single?.id) {
+        log(`[ensureBridgeBinding] reuse conversation ${single.id}` + (characterId ? ` (character ${characterId})` : ''))
+        return {
+          conversationId: String(single.id),
+          characterId: characterId ? String(characterId) : (single.characterId ? String(single.characterId) : ''),
+        }
+      }
+    }
+  } catch (e) {
+    log(`[ensureBridgeBinding] list conversations failed: ${e?.message || e}`)
+  }
+
+  // 2. 无可复用会话 → 新建 SINGLE：指定 characterId 时用它（须在用户角色列表内），否则用首个可用角色
+  try {
+    const chars = await apiGet('/api/character')
+    const pick = characterId
+      ? (Array.isArray(chars) ? chars.find((c) => String(c?.id) === String(characterId)) : null)
+      : (Array.isArray(chars) && chars.length ? chars[0] : null)
+    if (!pick?.id) {
+      log(`[ensureBridgeBinding] no character available${characterId ? ` for id=${characterId}` : ''}; skip auto-bind`)
+      return null
+    }
+    const created = await apiPost('/api/conversation', { characterId: String(pick.id), mode: 'SINGLE' })
+    if (!created?.id) {
+      log('[ensureBridgeBinding] create conversation returned no id')
+      return null
+    }
+    log(`[ensureBridgeBinding] created conversation ${created.id} (character ${pick.id})`)
+    return { conversationId: String(created.id), characterId: String(pick.id) }
+  } catch (e) {
+    log(`[ensureBridgeBinding] auto-create conversation failed: ${e?.message || e}`)
+  }
+  return null
+}
+
+/**
+ * napcatHost 就绪后拉起 qqBridge 的闭包：在此懒解析 LianYu 登录态与 apiOrigin，
+ * 用 host 写入的 wsUrl/accessToken 覆盖设置后 startQqBridge。
+ * 桥接失败不致命——NapCat 进程仍在，用户可在设置页重试。
+ */
+function makeNapCatBridgeStarter() {
+  return async ({ wsUrl, accessToken }) => {
+    try {
+      const authToken = await resolveDesktopAuthToken()
+      if (!authToken) {
+        log('[napcatHost] bridge starter: 未登录，暂不拉起桥接')
+        return
+      }
+      let settings = readQqBridgeSettings()
+      // 已绑定角色 id 时跳过 ensureBridgeBinding：桥接按角色做 per-user 懒建会话
+      // （resolveConversationId 为每个 QQ 用户独立建该角色的 SINGLE 会话），无需共享会话号；
+      // 也不受清空上下文影响（会话被删后 404 自动 re-resolve）。仅当角色/会话号都没配时才兜底自动绑定。
+      if (!settings.binding?.conversationId && !settings.binding?.characterId) {
+        log('[napcatHost] bridge starter: 未配置 characterId/conversationId，自动绑定中…')
+        const result = await ensureBridgeBinding({ apiOrigin: resolveApiOrigin(), authToken, characterId: settings.binding?.characterId })
+        if (!result?.conversationId) {
+          log('[napcatHost] bridge starter: 自动绑定失败（无可用会话/人设），暂不拉起桥接')
+          return
+        }
+        const prevBinding = settings.binding || {}
+        const hasAllowEntries = (prevBinding.allowUsers || []).length > 0 || (prevBinding.allowGroups || []).length > 0
+        // 用户选择 open：自动绑定时默认开放（任何 QQ 用户/群均可驱动机器人，配额风险用户已知晓）。
+        // 但若用户已显式配置白名单条目，保留其原 allowMode，不擅自放宽。
+        writeQqBridgeSettings({
+          binding: {
+            ...prevBinding,
+            conversationId: result.conversationId,
+            ...(hasAllowEntries ? {} : { allowMode: 'open' }),
+          },
+        })
+        settings = readQqBridgeSettings()
+        log(`[napcatHost] bridge starter: 已自动绑定 conversationId=${result.conversationId}`)
+      }
+      startQqBridge({
+        apiOrigin: resolveApiOrigin(),
+        authToken,
+        settings: {
+          ...settings,
+          enabled: true,
+          napcat: { ...settings.napcat, wsUrl, accessToken },
+        },
+        onStatus: (status) => {
+          // 仅推送桥接状态；不再写回 hosting.qqUserId——该字段原意是 quick-login
+          // 参数，但 resolveLaunchTarget 未实际使用（死代码），残留旧号反而会让下次
+          // 启动误判已登录。停止托管时已统一清空 qqUserId + bot profile 登录态。
+          pushQqBridgeStatus(status)
+        },
+      })
+      log('[napcatHost] bridge auto-started ->', wsUrl)
+    } catch (e) {
+      console.warn('[napcatHost] bridge starter failed:', e?.message || e)
+    }
+  }
+}
+
+/** 启动时若开启自管托管且已同意，自动拉起 NapCat 运行时（登录态由 bridgeStarter 懒解析） */
+async function autoStartNapCatHostIfNeeded() {
+  try {
+    const settings = readQqBridgeSettings()
+    if (settings.hosting?.mode !== 'auto' || !settings.hosting?.consented) return
+    await startNapCatHost({
+      settings,
+      onStatus: (status) => pushQqHostStatus(status),
+      onDownload: (progress) => pushQqHostDownload(progress),
+      bridgeStarter: makeNapCatBridgeStarter(),
+    })
+    log('[napcatHost] auto-started')
+  } catch (e) {
+    console.warn('[napcatHost] auto-start failed:', e?.message || e)
+  }
+}
+
+/** 判定 URL 是否为本地 NapCat WebUI 同源（127.0.0.1/localhost + 指定端口） */
+function isLocalNapCatUrl(url, port) {
+  try {
+    const u = new URL(url)
+    return (u.hostname === '127.0.0.1' || u.hostname === 'localhost') && u.port === String(port)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 打开 NapCat WebUI 扫码登录窗：独立会话分区装
+ * http://127.0.0.1:<port>/webui?token=<token>。仅允许 127.0.0.1 同源导航/弹窗，
+ * 外部链接交系统浏览器、其余拒绝。单例复用，重开则聚焦并重载（令牌可能已变）。
+ * 同意门 + 运行态双校验：未同意或 host 未就绪则拒绝，避免空窗。
+ */
+function openQqLoginWindow() {
+  const settings = readQqBridgeSettings()
+  if (!settings.hosting?.consented) {
+    log('openQqLoginWindow: not consented')
+    return { ok: false, reason: 'not_consented' }
+  }
+  const status = getNapCatHostStatus()
+  const webui = status?.webui
+  const port = webui?.port || settings.hosting?.webuiPort || 6099
+  const token = webui?.token || settings.hosting?.webuiToken || ''
+  if (!token) {
+    log('openQqLoginWindow: no webui token (host not ready)')
+    return { ok: false, reason: 'not_running' }
+  }
+  const url = webui?.url || `http://127.0.0.1:${port}/webui?token=${token}`
+
+  if (qqLoginWindow && !qqLoginWindow.isDestroyed()) {
+    qqLoginWindow.show()
+    qqLoginWindow.focus()
+    try {
+      qqLoginWindow.loadURL(url)
+    } catch {
+      /* ignore */
+    }
+    return { ok: true, reused: true }
+  }
+
+  const win = new BrowserWindow({
+    width: 520,
+    height: 720,
+    minWidth: 360,
+    minHeight: 480,
+    title: 'QQ 登录 · NapCat',
+    icon: resolveDistPath('logo.png'),
+    backgroundColor: '#ffffff',
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      partition: 'persist:napcat-webui',
+    },
+  })
+  qqLoginWindow = win
+  win.setMenuBarVisibility(false)
+  win.once('ready-to-show', () => {
+    if (!win.isDestroyed()) win.show()
+  })
+  win.webContents.on('did-fail-load', (_e, errorCode, errorDesc) => {
+    log(`openQqLoginWindow: load failed ${errorCode} ${errorDesc}`)
+  })
+  // 仅允许 127.0.0.1 同源导航；阻止任何外部跳转/重定向
+  win.webContents.on('will-navigate', (e, navUrl) => {
+    if (!isLocalNapCatUrl(navUrl, port)) e.preventDefault()
+  })
+  win.webContents.setWindowOpenHandler(({ url: openUrl }) => {
+    if (isLocalNapCatUrl(openUrl, port)) return { action: 'allow' }
+    if (isAllowedExternalUrl(openUrl)) shell.openExternal(openUrl)
+    return { action: 'deny' }
+  })
+  win.on('closed', () => {
+    qqLoginWindow = null
+  })
+  win.loadURL(url)
+  return { ok: true }
 }
 
 function registerIpcHandlers() {
@@ -1779,14 +2061,31 @@ function registerIpcHandlers() {
     if (!guardTrusted(event)) {
       return { ok: false, status: 0, statusText: '', headers: {}, data: '' }
     }
+    const url = payload?.url || ''
+    const apiOrigin = resolveApiOrigin()
+    // #6：出口仅限 API origin（host:port 精确匹配），阻断 SSRF / CSP 绕过 / pin 绕过
+    if (!isAllowedEgressUrl(url, apiOrigin)) {
+      log(`api:request egress blocked url=${url} apiOrigin=${apiOrigin}`)
+      return { ok: false, status: 0, statusText: 'egress_blocked', headers: {}, data: '' }
+    }
+    // #6：出口限流（令牌桶），兜住 XSS 驱动的失控外联循环
+    if (!egressLimiter.tryAcquire()) {
+      log(`api:request rate-limited url=${url}`)
+      return { ok: false, status: 429, statusText: 'rate_limited', headers: {}, data: '' }
+    }
     try {
       const res = await performApiRequest({
         method: payload?.method || 'GET',
-        url: payload?.url || '',
+        url,
         headers: payload?.headers || {},
         body: payload?.body,
         timeoutMs: payload?.timeout || 60000,
+        apiOrigin,
+        authToken: readAuthSession()?.token || '',
       })
+      let host = ''
+      try { host = new URL(url).host } catch { /* ignore */ }
+      log(`api:request ${(payload?.method || 'GET').toUpperCase()} ${host} -> ${res.status} ${res.data?.length || 0}b`)
       return {
         ok: true,
         status: res.status,
@@ -1795,14 +2094,31 @@ function registerIpcHandlers() {
         data: res.data,
       }
     } catch (err) {
-      log(`api:request failed url=${payload?.url || ''} err=${err?.message || err}`)
+      if (err?.code === 'EGRESS_BLOCKED') {
+        log(`api:request egress blocked url=${url}`)
+        return { ok: false, status: 0, statusText: 'egress_blocked', headers: {}, data: '' }
+      }
+      log(`api:request failed url=${url} err=${err?.message || err}`)
       return { ok: false, status: 0, statusText: '', headers: {}, data: '' }
     }
   })
 
   ipcMain.handle('auth:get-session', (event) => {
     if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
-    return readAuthSession()
+    // #6：不回传明文 token——鉴权头由主进程在 api:request 内统一注入。
+    // #14：渲染层直连（SSE/STOMP 等）所需 token 由 auth:bootstrap-token 一次性注入内存态；
+    //      本接口持续不回明文，避免渲染层多处持有。STOMP WS 帧鉴权需明文，故无法彻底零接触（见 secureToken.js 注释）。
+    const session = readAuthSession()
+    if (!session) return { hasToken: false }
+    const safe = { ...session }
+    delete safe.token
+    return { ...safe, hasToken: !!session.token }
+  })
+  // #14：重载后渲染层内存 token 丢失，启动期一次性回传明文 token 供 secureToken 内存态恢复。
+  //      仅 guardTrusted 的渲染进程可调；STOMP WS 帧鉴权需明文，主进程 webRequest 无法注入 WS 帧，故保留此通道。
+  ipcMain.handle('auth:bootstrap-token', (event) => {
+    if (!guardTrusted(event)) return ''
+    return readAuthSession()?.token || ''
   })
   ipcMain.handle('auth:set-session', (event, session) => {
     if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
@@ -1906,6 +2222,17 @@ function registerIpcHandlers() {
           launcherWindow.webContents.send('desktop:launcher-greeting', forward)
         }
       },
+      // #10：抓取期间向桌宠发送不可隐藏的捕获指示
+      onCaptureStart: () => {
+        if (launcherWindow && !launcherWindow.isDestroyed()) {
+          launcherWindow.webContents.send('desktop:observe-capturing', true)
+        }
+      },
+      onCaptureEnd: () => {
+        if (launcherWindow && !launcherWindow.isDestroyed()) {
+          launcherWindow.webContents.send('desktop:observe-capturing', false)
+        }
+      },
     })
     return started ? { ok: true } : { ok: false, reason: 'start_failed' }
   })
@@ -1914,6 +2241,148 @@ function registerIpcHandlers() {
     if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     stopDesktopObserver()
     return { ok: true }
+  })
+
+  ipcMain.handle('desktop:get-qq-bridge-settings', (event) => {
+    if (!guardTrusted(event)) return null
+    return readQqBridgeSettings()
+  })
+
+  ipcMain.handle('desktop:set-qq-bridge-settings', (event, partial) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    const next = writeQqBridgeSettings(partial || {})
+    return { ok: true, settings: next }
+  })
+
+  ipcMain.handle('desktop:start-qq-bridge', async (event, override) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    const base = readQqBridgeSettings()
+    const settings = override && typeof override === 'object' ? { ...base, ...override } : base
+    if (!settings.enabled) return { ok: false, reason: 'disabled' }
+    if (!settings.binding?.conversationId && !settings.binding?.characterId) return { ok: false, reason: 'no_conversation' }
+    const authToken = await resolveDesktopAuthToken()
+    if (!authToken) {
+      log('start-qq-bridge: no auth token in main process')
+      return { ok: false, reason: 'not_logged_in' }
+    }
+    const started = startQqBridge({
+      apiOrigin: resolveApiOrigin(),
+      authToken,
+      settings,
+      onStatus: (status) => pushQqBridgeStatus(status),
+    })
+    return started ? { ok: true } : { ok: false, reason: 'start_failed' }
+  })
+
+  ipcMain.handle('desktop:stop-qq-bridge', (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    stopQqBridge()
+    return { ok: true }
+  })
+
+  ipcMain.handle('desktop:get-qq-bridge-status', (event) => {
+    if (!guardTrusted(event)) return { state: 'unknown', selfId: '' }
+    return getQqBridgeStatus()
+  })
+
+  // 按角色自动获取/绑定会话号：指定 characterId 时 find/create 该角色的 SINGLE 会话；
+  // 不指定则按 ensureBridgeBinding 默认（首个 SINGLE/首个角色）。结果写回 binding 并返回。
+  ipcMain.handle('desktop:qq-bridge-resolve-conversation', async (event, characterId) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    const authToken = await resolveDesktopAuthToken()
+    if (!authToken) return { ok: false, reason: 'not_logged_in' }
+    const result = await ensureBridgeBinding({
+      apiOrigin: resolveApiOrigin(),
+      authToken,
+      characterId: characterId || undefined,
+    })
+    if (!result?.conversationId) return { ok: false, reason: 'resolve_failed' }
+    const prev = readQqBridgeSettings()
+    writeQqBridgeSettings({
+      binding: {
+        ...(prev.binding || {}),
+        conversationId: result.conversationId,
+        ...(result.characterId ? { characterId: result.characterId } : {}),
+      },
+    })
+    log(`[resolve-conversation] bound conversation ${result.conversationId}` + (result.characterId ? ` (character ${result.characterId})` : ''))
+    return { ok: true, ...result }
+  })
+
+  // 查看桥接日志：读 startup.log，过滤只留桥接相关行（qqBridge/napcatHost/resolve-conversation/
+  // ensureBridgeBinding 标签），尾部返回 500 条。原尾 300 条被 setTitleBarOverlay/api:request
+  // 等非桥接噪声淹没（872 行中噪声占 800+），真正的桥接诊断日志被挤出窗口——故先过滤再截尾。
+  ipcMain.handle('desktop:qq-bridge-get-logs', (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    try {
+      let content = ''
+      try {
+        content = fs.readFileSync(logPath(), 'utf-8')
+      } catch (e) {
+        if (e.code !== 'ENOENT') throw e // 无日志文件：返回空，非错误
+      }
+      const all = content ? content.split(/\r?\n/).filter(Boolean) : []
+      const bridgeRe = /\] \[(qqBridge|napcatHost|resolve-conversation|ensureBridgeBinding)\]/
+      const lines = all.filter((l) => bridgeRe.test(l))
+      return { ok: true, lines: lines.slice(-500) }
+    } catch (e) {
+      return { ok: false, reason: 'read_failed', error: e?.message || String(e) }
+    }
+  })
+
+  ipcMain.handle('desktop:start-qq-host', async (event, override) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    if (override && typeof override === 'object' && override.hosting) {
+      writeQqBridgeSettings({ hosting: override.hosting })
+    }
+    const settings = readQqBridgeSettings()
+    if (settings.hosting?.mode !== 'auto') return { ok: false, reason: 'not_auto_mode' }
+    if (!settings.hosting?.consented) return { ok: false, reason: 'not_consented' }
+    // QQNT 预检：未装则直接返回 qqnt_not_found，不进 startNapCatHost——否则会先白下
+    // 28MB NapCat，再到 resolveLaunchTarget 抛「QQ install dir not found」被吞成
+    // 误导性的 start_failed「请检查网络」。预检让用户拿到「请先安装 QQNT」的明确引导。
+    if (!isQqntReady()) return { ok: false, reason: 'qqnt_not_found' }
+    const started = await startNapCatHost({
+      settings,
+      onStatus: (status) => pushQqHostStatus(status),
+      onDownload: (progress) => pushQqHostDownload(progress),
+      bridgeStarter: makeNapCatBridgeStarter(),
+    })
+    return started ? { ok: true } : { ok: false, reason: 'start_failed' }
+  })
+
+  ipcMain.handle('desktop:stop-qq-host', async (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    await stopNapCatHost()
+    return { ok: true }
+  })
+
+  ipcMain.handle('desktop:get-qq-host-status', (event) => {
+    if (!guardTrusted(event)) return { state: 'stopped' }
+    return getNapCatHostStatus()
+  })
+
+  // 升级/重装：停止 → 清空安装根与残件 → 用最新设置重新拉起（重下最新发行）
+  ipcMain.handle('desktop:reinstall-qq-host', async (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    // QQNT 预检：未装则不 stop/wipe（避免删掉已有 NapCat 却仍跑不起来），直接引导安装。
+    if (!isQqntReady()) return { ok: false, reason: 'qqnt_not_found' }
+    // 必须 await：stop 会中断进行中的下载并等待 .part 写流关闭，否则 wipe 撞未释放句柄
+    await stopNapCatHost()
+    wipeNapCatInstall()
+    const settings = readQqBridgeSettings()
+    const started = await startNapCatHost({
+      settings,
+      onStatus: (status) => pushQqHostStatus(status),
+      onDownload: (progress) => pushQqHostDownload(progress),
+      bridgeStarter: makeNapCatBridgeStarter(),
+    })
+    return started ? { ok: true } : { ok: false, reason: 'reinstall_failed' }
+  })
+
+  ipcMain.handle('desktop:open-qq-login-window', (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    return openQqLoginWindow()
   })
 
   ipcMain.handle('desktop:notify-window-changed', (event) => {
@@ -2036,16 +2505,22 @@ async function runLauncherSmokeTest() {
     })
     win.show()
     resetLauncherInteraction()
-    await new Promise((r) => setTimeout(r, 400))
-    const probe = await win.webContents.executeJavaScript(
-      `(() => ({
-        hasApi: typeof window.electronAPI !== 'undefined',
-        isElectron: window.electronAPI?.isElectron === true,
-        hasToggle: typeof window.electronAPI?.toggleCharacterPicker === 'function',
-        hasHitbox: !!document.querySelector('.pet-hitbox'),
-      }))()`,
-      true,
-    )
+    // 桌宠 UI 在 app.mount 后才渲染，而 mount 前要 await bootstrapLauncherSession
+    // （含 /api/auth/me）。后端不可达时该调用要等超时（8s）才失败，单次 400ms 探测
+    // 会误判 hasHitbox 缺失。改为轮询：每 300ms 探一次，最长 12s，覆盖超时 + 挂载延迟。
+    const probeScript = `(() => ({
+      hasApi: typeof window.electronAPI !== 'undefined',
+      isElectron: window.electronAPI?.isElectron === true,
+      hasToggle: typeof window.electronAPI?.toggleCharacterPicker === 'function',
+      hasHitbox: !!document.querySelector('.pet-hitbox'),
+    }))()`
+    let probe = null
+    const probeDeadline = Date.now() + 12000
+    while (Date.now() < probeDeadline) {
+      probe = await win.webContents.executeJavaScript(probeScript, true)
+      if (probe?.hasApi && probe?.isElectron && probe?.hasToggle && probe?.hasHitbox) break
+      await new Promise((r) => setTimeout(r, 300))
+    }
     if (!probe?.hasApi || !probe?.isElectron || !probe?.hasToggle || !probe?.hasHitbox) {
       throw new Error(`probe failed: ${JSON.stringify(probe)}`)
     }
@@ -2092,17 +2567,14 @@ app.whenReady().then(() => {
   createMainWindow()
   ensureTray()
 
-  void verifyAsarIntegrityAsync().then((ok) => {
-    if (!ok) {
-      log('WARNING: asar integrity check failed — continuing in relaxed mode')
-    }
-  })
-
   if (readAuthSession()) {
     launcherLoggedIn = true
     prewarmLauncherWindow()
     prewarmQuickChatShell()
   }
+
+  void autoStartQqBridgeIfNeeded()
+  void autoStartNapCatHostIfNeeded()
 
   // 电源事件：唤醒后通知窗口切换检测
   if (powerMonitor) {

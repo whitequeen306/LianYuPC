@@ -31,6 +31,9 @@ export const useNotificationsStore = defineStore('notifications', () => {
   let stompClient = null
   let inited = false
   let lastSoundAt = 0
+  /** 提示音 AudioContext 单例：复用而非每次新建（浏览器对 AudioContext 实例数有限制，常开不关会泄漏
+   *  导致后续播放静默失败）。见 issue #16；dispose() 时 close 释放，下次播放按需重建 */
+  let audioContext = null
   let pendingGroupId = null
   /** @type {((body: object) => void) | null} */
   let groupMessageHandler = null
@@ -104,6 +107,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
       stompClient.deactivate()
       stompClient = null
     }
+    closeAudioContext()
     wsStatus.value = 'disconnected'
   }
 
@@ -292,21 +296,48 @@ export const useNotificationsStore = defineStore('notifications', () => {
     })
   }
 
+  /** 懒建提示音 AudioContext 单例：浏览器对 AudioContext 实例数有限制（约 6 个），每次新建且不 close 会
+   *  泄漏，导致后续播放静默失败（issue #16）。单例化后全生命周期复用一个，dispose 时显式 close。 */
+  function getAudioContext() {
+    if (audioContext) return audioContext
+    const Ctor = window.AudioContext || window.webkitAudioContext
+    if (!Ctor) return null
+    try {
+      audioContext = new Ctor()
+    } catch {
+      audioContext = null
+    }
+    return audioContext
+  }
+
+  function closeAudioContext() {
+    if (!audioContext) return
+    try {
+      audioContext.close()
+    } catch {}
+    audioContext = null
+  }
+
   function playSound() {
     const now = Date.now()
     if (now - lastSoundAt < 3000) return
     lastSoundAt = now
     try {
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)()
-      const oscillator = audioContext.createOscillator()
-      const gainNode = audioContext.createGain()
+      const ctx = getAudioContext()
+      if (!ctx) return
+      // 浏览器可能在用户手势前挂起 AudioContext；尝试恢复（失败则本次静默跳过）
+      if (ctx.state === 'suspended') {
+        void ctx.resume().catch(() => {})
+      }
+      const oscillator = ctx.createOscillator()
+      const gainNode = ctx.createGain()
       oscillator.type = 'sine'
       oscillator.frequency.value = 880
       gainNode.gain.value = 0.03
       oscillator.connect(gainNode)
-      gainNode.connect(audioContext.destination)
+      gainNode.connect(ctx.destination)
       oscillator.start()
-      oscillator.stop(audioContext.currentTime + 0.08)
+      oscillator.stop(ctx.currentTime + 0.08)
     } catch {}
   }
 

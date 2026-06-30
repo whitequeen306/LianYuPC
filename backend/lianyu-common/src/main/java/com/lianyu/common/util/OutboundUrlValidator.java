@@ -6,6 +6,8 @@ import com.lianyu.common.exception.BusinessException;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
@@ -23,10 +25,12 @@ public final class OutboundUrlValidator {
     }
 
     /**
-     * 校验用户 Vault / 出站 HTTP 客户端可用的 Base URL。
-     * Ollama 本地端点单独放行（仅本机 11434）。
+     * 校验通过后固化解析结果：解析一次、固定使用，防 DNS 重绑定 SSRF。
+     * 返回的 {@link ValidatedEndpoint#pinnedIps()} 为本次解析到的安全 IP，
+     * 供出站 HTTP 客户端固定连接使用（保留原主机名的 SNI/Host/证书校验）。
+     * Ollama 本地端点（本机 11434）单独放行且不固定 IP（受信）。
      */
-    public static String validateAndNormalize(String baseUrl, boolean ollamaAllowed) {
+    public static ValidatedEndpoint validateAndResolve(String baseUrl, boolean ollamaAllowed) {
         if (baseUrl == null || baseUrl.isBlank()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Base URL 不能为空");
         }
@@ -51,9 +55,15 @@ public final class OutboundUrlValidator {
         if (lowerHost.endsWith(".local") || lowerHost.endsWith(".internal")) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Base URL 主机名不允许使用内网域名");
         }
-        if (ollamaAllowed && isOllamaLocalEndpoint(trimmed, lowerHost)) {
-            return trimmed;
+        int port = uri.getPort();
+        if (port == -1) {
+            port = "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
         }
+        if (ollamaAllowed && isOllamaLocalEndpoint(trimmed, lowerHost)) {
+            // 受信本地 ollama，不固定 IP
+            return new ValidatedEndpoint(trimmed, lowerHost, port, List.of());
+        }
+        List<InetAddress> resolved;
         try {
             InetAddress[] addresses = InetAddress.getAllByName(host);
             for (InetAddress address : addresses) {
@@ -62,10 +72,32 @@ public final class OutboundUrlValidator {
                             "Base URL 解析到内网或保留地址，不允许访问");
                 }
             }
+            resolved = List.copyOf(Arrays.asList(addresses));
         } catch (UnknownHostException e) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Base URL 主机名无法解析");
         }
-        return trimmed;
+        return new ValidatedEndpoint(trimmed, lowerHost, port, resolved);
+    }
+
+    /**
+     * 仅校验并归一化 Base URL（不返回解析结果）。
+     * 保留供 vault 保存时轻量校验；调用时若需固定 IP 请用 {@link #validateAndResolve}。
+     */
+    public static String validateAndNormalize(String baseUrl, boolean ollamaAllowed) {
+        return validateAndResolve(baseUrl, ollamaAllowed).url();
+    }
+
+    /**
+     * 已校验的出站端点：URL、主机名、端口、解析到的安全 IP（空表示受信本地端点不固定）。
+     */
+    public record ValidatedEndpoint(String url, String host, int port, List<InetAddress> pinnedIps) {
+        public ValidatedEndpoint {
+            pinnedIps = pinnedIps == null ? List.of() : List.copyOf(pinnedIps);
+        }
+
+        public boolean isPinningRequired() {
+            return !pinnedIps.isEmpty();
+        }
     }
 
     public static boolean isOllamaLocalEndpoint(String baseUrl, String lowerHost) {

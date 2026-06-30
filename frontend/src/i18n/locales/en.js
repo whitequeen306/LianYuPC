@@ -33,7 +33,25 @@ export default {
     diary: 'Diary',
     memory: 'Memory',
     profile: 'Profile',
-    settings: 'Settings'
+    settings: 'Settings',
+    qqBridge: 'QQ Bridge',
+    about: 'About'
+  },
+  qqBridge: {
+    desc: 'Forward QQ messages received by local NapCat to the cloud AI, and send replies back to QQ.',
+    notElectron: 'QQ bridge is only available in the desktop client.',
+    mode: { title: 'Hosting mode', auto: 'Auto', manual: 'Manual', hint: 'Auto: the app downloads and runs NapCat, scan to use; Manual: run NapCat yourself and fill in the connection params' },
+    consent: { title: 'QQ auto-hosting consent', body: 'Once enabled, the app will download the NapCat runtime from the official NapCat GitHub to your machine, configure and start it automatically, then pop up a scan window to log in to QQ. The login state is kept by the local NapCat; no re-scan is needed after restart.', confirm: 'I understand, enable', cancel: 'Cancel' },
+    host: { title: 'NapCat runtime', start: 'Start hosting', stop: 'Stop hosting', cancel: 'Cancel', login: 'Log in to QQ', version: 'Version', token: 'Token', selfId: 'Current QQ', noSelfId: 'Not logged in', repair: 'Repair runtime', loginFailed: 'Failed to open login window; make sure the runtime is ready', startFailed: 'Start failed; please check your network and retry', stopFailed: 'Stop failed; please retry', reinstall: 'Upgrade runtime', upgradeHint: 'New version {latest} available (current {installed})', reinstallConfirm: 'This will stop the runtime, remove the old version and re-download the latest. Continue?', reinstallOk: 'Upgrade started; please wait for the download to finish', reinstallFailed: 'Upgrade failed; please retry or check your network' },
+    bridge: { title: 'Bridge status', start: 'Start bridge', stop: 'Stop bridge', selfId: 'Bot QQ', startFailed: 'Failed to start bridge; please retry', startOk: 'Bridge started', stopFailed: 'Failed to stop bridge; please retry' },
+    status: { title: 'Runtime status' },
+    binding: { title: 'Message routing', character: 'AI persona', characterPlaceholder: 'Select an AI persona', characterEmpty: 'No personas yet — create one in the LianYu app first', characterHint: 'Once selected, the bridge auto-matches a dedicated conversation for this persona per QQ user (no conversation ID needed); if context is cleared and the conversation goes stale, it is rebuilt automatically.', conversationId: 'Cloud conversation', conversationIdHint: 'Auto-binds your most recent single conversation on first bridge start (fully automatic); pick a different AI persona from the dropdown above if needed.', convPlaceholder: 'Select a conversation', convEmpty: 'No conversations yet', convCreate: 'Create default conversation', convCreateOk: 'Default conversation created and bound', convCreateFail: 'Failed to create conversation, please retry', noCharacter: 'Create a character in the LianYu app first', currentlyBound: 'Currently bound', singleFallback: 'Single #{id}', allowMode: 'Access mode', allowModeAllowlist: 'Allowlist (default deny)', allowModeOpen: 'Open (anyone)', openModeWarning: 'Open mode: any QQ user/group can drive the host AI, consuming host quota and risking prompt injection. Use with caution.', emptyAllowlistWarning: 'Allowlist is empty: no QQ messages will be relayed to the AI. Add QQ IDs/group IDs below to allow them.', allowUsers: 'Private chat allowlist (QQ)', allowGroups: 'Group allowlist (group ID)', allowHint: 'In allowlist mode, empty = no one relayed; separate multiple with commas', save: 'Save routing', saved: 'Routing saved', pickByCharacter: 'Fetch by persona', pickCharacterTitle: 'Select AI persona', pickCharacterHint: 'Finds or creates a single conversation for this persona and binds it', pickConfirm: 'Fetch & bind', pickOk: 'Bound the persona conversation', pickFail: 'Failed to fetch conversation, please retry' },
+    reply: { title: 'Reply settings', segmentDelay: 'Segment send delay', segmentDelayHint: 'Delay between segments when the AI reply is split into multiple messages, 0 for no delay (ms)', fallback: 'Fallback reply', fallbackHint: 'Sent instead of the AI reply on cloud error/timeout; empty for no fallback', save: 'Save', saved: 'Saved', applyHint: 'Applies to the next message after saving (no restart needed)' },
+    logs: { title: 'Bridge logs', open: 'View logs', refresh: 'Refresh', empty: 'No logs yet', loadFail: 'Failed to read logs', autoRecoverHint: 'Auto-recovery enabled: re-resolves and retries on stale conversation', all: 'All', success: 'Success', fail: 'Failed', autoRefresh: 'Auto-refresh', count: '{n} entries' },
+    ws: { title: 'NapCat connection (manual)', wsUrl: 'WebSocket URL', accessToken: 'Access token', hint: 'Only needed in manual mode; auto-hosting fills and connects automatically', save: 'Save connection', saved: 'Connection saved' },
+    download: { label: 'Download progress', title: 'Downloading NapCat runtime', hint: 'Please keep this window open while downloading; it will continue automatically when done', cancel: 'Cancel download', phase: { preparing: 'Preparing', downloading: 'Downloading', extracting: 'Extracting', done: 'Done' } },
+    state: { stopped: 'Stopped', 'resolving-release': 'Resolving release', downloading: 'Downloading', extracting: 'Extracting', 'writing-config': 'Writing config', launching: 'Launching', running: 'Running', reconnecting: 'Reconnecting', restarting: 'Restarting', error: 'Error', connecting: 'Connecting', connected: 'Connected', ready: 'Ready', disconnected: 'Disconnected' },
+    reason: { not_auto_mode: 'Enable auto-hosting above first', not_consented: 'Complete QQ hosting consent first', start_failed: 'Start failed; please check your network and retry', reinstall_failed: 'Reinstall failed; please retry or check your network', not_running: 'Runtime not ready; please start hosting first', no_conversation: 'Please select a conversation in Message Routing below first', not_logged_in: 'Please log in to your LianYu account first', disabled: 'The bridge is disabled', qqnt_not_found: 'QQ desktop (QQNT) not detected. Please install it before enabling auto-hosting: https://im.qq.com/index/', exception: 'Operation error; please retry', unknown: 'Operation failed; please retry' }
   },
   header: {
     notifications: 'Notifications',
@@ -337,6 +355,20 @@ export default {
     emptyTitle: 'No custom AI config',
     emptyDesc: 'You can chat without this. Add your own key here if needed.',
     addFirst: 'Add your first config'
+  },
+  about: {
+    title: 'About LianYu',
+    desc: 'Multi-character AI companion desktop app',
+    viewDetail: 'View about',
+    version: 'Version',
+    environment: 'Environment',
+    envWeb: 'Web',
+    envDesktop: 'Desktop',
+    intro: 'LianYu is a multi-character AI companion app supporting character chat, moments, diary, memory, and a desktop pet. Runs on Windows desktop and can relay QQ messages to the cloud AI via the QQ bridge.',
+    techStack: 'Tech stack',
+    techStackDesc: 'Frontend: Vue 3 + Element Plus + Electron; Backend: Spring Boot + MyBatis-Plus + MySQL.',
+    copyright: '© 2026 LianYu',
+    backToSettings: 'Back to settings'
   },
   profile: {
     title: 'Profile',

@@ -226,6 +226,24 @@ public class ConversationService {
         log.info("Conversation deleted: id={}, mode={}", conversationId, conversation.getMode());
     }
 
+    /**
+     * 清空会话消息但保留会话行（保持会话 ID 稳定）。
+     * 删除该会话全部消息、失效会话摘要缓存、重置消息序号；会话行本身不动。
+     * 用于「清空聊天记录」：外部绑定（如 QQ 桥接按 conversationId 路由）不会因清空而 404。
+     */
+    @Transactional
+    public void clearMessages(Long userId, Long conversationId) {
+        Conversation conversation = findOwned(userId, conversationId);
+        messageMapper.delete(new LambdaQueryWrapper<Message>()
+                .eq(Message::getConversationId, conversationId));
+        redisTemplate.delete(SEQ_KEY_PREFIX + conversationId);
+        if ("GROUP".equalsIgnoreCase(conversation.getMode())) {
+            redisTemplate.delete(GROUP_TURN_KEY_PREFIX + conversationId);
+        }
+        sessionSummaryService.invalidate(conversationId);
+        log.info("Conversation messages cleared (row kept): id={}, mode={}", conversationId, conversation.getMode());
+    }
+
     public MessageResponse sendMessage(Long userId, Long conversationId, SendMessageRequest request) {
         Conversation conversation = findOwned(userId, conversationId);
         Character character = characterMapper.selectById(conversation.getCharacterId());

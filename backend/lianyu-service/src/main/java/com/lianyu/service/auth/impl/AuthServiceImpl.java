@@ -1,5 +1,6 @@
 package com.lianyu.service.auth.impl;
 
+import cn.dev33.satoken.SaManager;
 import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
@@ -77,6 +78,18 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public void logout() {
         StpUtil.logout();
+    }
+
+    @Override
+    public LoginResponse refresh(Long userId) {
+        User user = findUser(userId);
+        // 滑动续签：仅对仍有效的 token 续签绝对过期时间至配置值（默认 30 天）。
+        // 过期/无效 token 已由 SaInterceptor 先抛 NotLoginException(401)，不会走到这里。
+        long timeout = SaManager.getConfig().getTimeout();
+        if (timeout > 0) {
+            StpUtil.renewTimeout(timeout);
+        }
+        return toLoginResponse(user);
     }
 
     @Override

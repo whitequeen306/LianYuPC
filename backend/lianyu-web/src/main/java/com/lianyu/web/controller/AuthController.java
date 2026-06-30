@@ -83,6 +83,13 @@ public class AuthController {
         return Result.ok();
     }
 
+    @Operation(summary = "刷新会话（滑动续签）")
+    @PostMapping("/refresh")
+    public Result<LoginResponse> refresh() {
+        long userId = StpUtil.getLoginIdAsLong();
+        return Result.ok(authService.refresh(userId));
+    }
+
     @Operation(summary = "获取当前用户信息")
     @GetMapping("/me")
     public Result<UserProfile> me() {

@@ -17,6 +17,8 @@ const routes = [
   { path: '/memory', redirect: '/app/memory' },
   { path: '/profile', redirect: '/app/profile' },
   { path: '/settings', redirect: '/app/settings' },
+  { path: '/qq-bridge', redirect: '/app/qq-bridge' },
+  { path: '/about', redirect: '/app/about' },
   {
     path: '/login',
     name: 'Login',
@@ -124,6 +126,18 @@ const routes = [
         name: 'Settings',
         component: () => import('@/pages/SettingsPage.vue'),
         meta: { titleKey: 'routes.settings' }
+      },
+      {
+        path: 'qq-bridge',
+        name: 'QqBridge',
+        component: () => import('@/pages/QqBridgePage.vue'),
+        meta: { titleKey: 'routes.qqBridge' }
+      },
+      {
+        path: 'about',
+        name: 'About',
+        component: () => import('@/pages/AboutPage.vue'),
+        meta: { titleKey: 'routes.about' }
       }
     ]
   },

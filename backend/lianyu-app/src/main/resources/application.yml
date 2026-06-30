@@ -395,6 +395,45 @@ lianyu:
       timeout-seconds: 45
       prompt-max-chars: 240
 
+  # ─── QQ 桥接（NapCat 正向 WebSocket，单人模式）────────────────────────
+  # 总开关默认关闭。开启前请先阅读 docs/qq-bridge-zh.md
+  # enabled=true 时，本进程内启动 OneBot WS 客户端，把 QQ 私聊/群@消息
+  # 路由进 ConversationService.sendMessage（绕开 HTTP / Sa-Token / lianyu-token）。
+  # enabled=false 时，lianyu-qq-bridge 模块所有 Bean 均不装配，对主流程零影响。
+  qq-bridge:
+    enabled: ${LIANYU_QQ_BRIDGE_ENABLED:false}
+    napcat:
+      # NapCat 正向 WebSocket 服务端地址（在 NapCat 网络配置里建的 WebSocket Server）
+      ws-url: ${LIANYU_QQ_NAPCAT_WS_URL:ws://127.0.0.1:3001}
+      # NapCat WebSocket Server 的 access_token（与 NapCat 配置一致；未设则不携带）
+      access-token: ${LIANYU_QQ_NAPCAT_ACCESS_TOKEN:}
+      # 首次连接 / 断线重连时单次连接超时（秒）
+      connect-timeout-seconds: 10
+      # 心跳判活阈值：超过该秒数未收到任何帧即认定连接已死并触发重连
+      heartbeat-timeout-seconds: 90
+    binding:
+      # 【单人模式】绑定的 QQ 号：仅处理来自此 QQ 的私聊消息（其它私聊忽略）
+      qq-user-id: ${LIANYU_QQ_BINDING_QQ_USER_ID:}
+      # 映射到的 LianYu 用户 ID（须为已存在的真实用户；该用户的角色即对外服务的角色）
+      lianyu-user-id: ${LIANYU_QQ_BINDING_LIANYU_USER_ID:}
+      # 复用的会话 ID（单人模式固定一个会话；请填一个已存在的会话 ID）
+      conversation-id: ${LIANYU_QQ_BINDING_CONVERSATION_ID:}
+      # AI 提供方：固定 platform（复用运营方共享平台 key，QQ 用户无需个人 key）
+      provider: platform
+      # 指定模型（为空则走 provider 默认模型）
+      model: ${LIANYU_QQ_BINDING_MODEL:}
+      # 允许接管的群号列表（逗号分隔，如 111,222；留空 = 不处理任何群消息）
+      allow-groups: ${LIANYU_QQ_BINDING_ALLOW_GROUPS:}
+    reply:
+      # 是否把 AI 多段回复全部发回 QQ（false = 只发第一段）
+      send-all-pieces: true
+      # 多段回复之间的发送间隔（毫秒），模拟真人连发，避免刷屏
+      max-piece-gap-ms: 800
+      # 单段回复最大字符数（超出截断，避免超长消息被 QQ 拒收）
+      max-piece-chars: 2000
+      # AI 调用异常 / 无回复时的兜底文案
+      fallback-text: "（……她似乎走神了，稍后再试试）"
+
 management:
   endpoints:
     web:

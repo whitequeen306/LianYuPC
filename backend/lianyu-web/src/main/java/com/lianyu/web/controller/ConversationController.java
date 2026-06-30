@@ -62,6 +62,14 @@ public class ConversationController {
         return Result.ok();
     }
 
+    @Operation(summary = "清空会话消息（保留会话行，ID 不变）")
+    @DeleteMapping("/{id}/messages")
+    public Result<Void> clearMessages(@PathVariable("id") Long id) {
+        long userId = StpUtil.getLoginIdAsLong();
+        conversationService.clearMessages(userId, id);
+        return Result.ok();
+    }
+
     @Operation(summary = "上传聊天图片（单图）")
     @PostMapping("/chat-image")
     public Result<Map<String, String>> uploadChatImage(@RequestParam("file") MultipartFile file) {

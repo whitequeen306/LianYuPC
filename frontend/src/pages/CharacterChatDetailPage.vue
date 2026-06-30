@@ -159,7 +159,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Loading, User, WarningFilled } from '@element-plus/icons-vue'
 import { getCharacter, updateCharacter, uploadChatBackground } from '@/api/character'
-import { deleteConversation, listConversations } from '@/api/conversation'
+import { clearConversationMessages, listConversations } from '@/api/conversation'
 import { resolveMediaUrl } from '@/utils/media'
 import { normalizeHex } from '@/utils/themeColor'
 
@@ -312,7 +312,7 @@ async function handleClearConversation() {
       ElMessage.info('当前没有可清空的单聊记录')
       return
     }
-    await deleteConversation(target.id)
+    await clearConversationMessages(target.id)
     ElMessage.success('聊天记录已清空')
   } finally {
     clearing.value = false

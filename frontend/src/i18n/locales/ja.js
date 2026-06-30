@@ -33,7 +33,25 @@ export default {
     diary: '日記',
     memory: '記憶',
     profile: 'プロフィール',
-    settings: '設定'
+    settings: '設定',
+    qqBridge: 'QQ ブリッジ',
+    about: 'について'
+  },
+  qqBridge: {
+    desc: 'ローカル NapCat が受信した QQ メッセージをクラウド AI に転送し、返信を QQ に送り返します。',
+    notElectron: 'QQ ブリッジはデスクトップ版でのみ利用できます。',
+    mode: { title: 'ホスティングモード', auto: '自動', manual: '手動', hint: '自動：アプリが NapCat をダウンロード・起動し、スキャンするだけで利用可能；手動：NapCat を自分で起動し接続情報を入力' },
+    consent: { title: 'QQ 自動ホスティングの同意', body: '有効にすると、アプリは NapCat 公式 GitHub から NapCat ランタイムを本機にダウンロードし、自動で設定・起動した後、スキャンウィンドウを開いて QQ にログインします。ログイン状態はローカル NapCat に保持され、再起動時の再スキャンは不要です。', confirm: '了解して有効化', cancel: 'キャンセル' },
+    host: { title: 'NapCat ランタイム', start: 'ホスティング開始', stop: 'ホスティング停止', cancel: 'キャンセル', login: 'QQ ログイン', version: 'バージョン', token: 'トークン', selfId: '現在のQQ', noSelfId: '未ログイン', repair: 'ランタイム修復', loginFailed: 'ログインウィンドウを開けませんでした。ランタイムが準備完了か確認してください', startFailed: '起動失敗、ネットワークを確認して再試行してください', stopFailed: '停止失敗、再試行してください', reinstall: 'ランタイム更新', upgradeHint: '新バージョン {latest} があります（現在 {installed}）', reinstallConfirm: '現在のランタイムを停止し、旧バージョンを削除して最新版を再ダウンロードします。続行しますか？', reinstallOk: '更新を開始しました。ダウンロード完了までお待ちください', reinstallFailed: '更新に失敗しました。再試行するかネットワークを確認してください' },
+    bridge: { title: 'ブリッジ状態', start: 'ブリッジ開始', stop: 'ブリッジ停止', selfId: 'ボットQQ', startFailed: 'ブリッジ起動失敗、再試行してください', startOk: 'ブリッジを起動しました', stopFailed: 'ブリッジ停止失敗、再試行してください' },
+    status: { title: '実行状態' },
+    binding: { title: 'メッセージルーティング', character: 'AI キャラクター', characterPlaceholder: 'AI キャラクターを選択', characterEmpty: 'キャラクターがありません。先に LianYu アプリで作成してください', characterHint: '選択後、ブリッジは各 QQ ユーザーごとに該当キャラの専用会話を自動マッチング（会話 ID の手入力不要）。コンテキストを消去して会話が無効になっても自動再構築され、影響を受けません。', conversationId: 'クラウド会話', conversationIdHint: '初回ブリッジ起動時に最近の1対1会話を自動バインド（全自動）；別の AI を使うなら上のドロップダウンで選択。', convPlaceholder: '会話を選択', convEmpty: '会話がありません', convCreate: 'デフォルト会話を作成', convCreateOk: 'デフォルト会話を作成・バインドしました', convCreateFail: '会話の作成に失敗しました。再試行してください', noCharacter: '先に LianYu アプリでキャラクターを作成してください', currentlyBound: '現在のバインド', singleFallback: '1対1 #{id}', allowMode: 'アクセスモード', allowModeAllowlist: '許可リスト（デフォルト拒否）', allowModeOpen: 'オープン（誰でも）', openModeWarning: 'オープンモード：任意の QQ ユーザー/グループがホスト AI を駆動でき、ホスト枠を消費し prompt injection リスクがあります。慎重に。', emptyAllowlistWarning: '許可リストが空：QQ メッセージは AI に転送されません。下部に QQ 番号/グループ番号を追加してください。', allowUsers: '個チャット許可リスト（QQ番号）', allowGroups: 'グループ許可リスト（グループ番号）', allowHint: '許可リストモードでは空欄 = 転送なし；複数はカンマ区切り', save: 'ルーティング保存', saved: 'ルーティングを保存しました', pickByCharacter: 'キャラクター名で取得', pickCharacterTitle: 'AI キャラクターを選択', pickCharacterHint: '該当キャラの1対1会話を検索または新規作成してバインド', pickConfirm: '取得してバインド', pickOk: '該当キャラの会話をバインドしました', pickFail: '会話の取得に失敗しました。再試行してください' },
+    reply: { title: '返信設定', segmentDelay: '分割送信遅延', segmentDelayHint: 'AI 返信を複数メッセージに分割して送る際の送信間隔、0 で遅延なし（ミリ秒）', fallback: 'フォールバック返信', fallbackHint: 'クラウド異常・タイムアウト時に AI 返信の代わりに送る内容、空欄でフォールバックなし', save: '保存', saved: '保存しました', applyHint: '保存後、次のメッセージから反映（再起動不要）' },
+    logs: { title: 'ブリッジログ', open: 'ログを表示', refresh: '更新', empty: 'ログなし', loadFail: 'ログの読み取りに失敗', autoRecoverHint: '会話無効時に自動で再取得・再試行（有効）', all: 'すべて', success: '成功', fail: '失敗', autoRefresh: '自動更新', count: '{n} 件' },
+    ws: { title: 'NapCat 接続（手動モード）', wsUrl: 'WebSocket URL', accessToken: 'アクセストークン', hint: '手動モードのみ入力；自動ホスティングでは自動設定・接続されます', save: '接続保存', saved: '接続を保存しました' },
+    download: { label: 'ダウンロード進捗', title: 'NapCat ランタイムをダウンロード中', hint: 'ダウンロード中はウィンドウを閉じないでください。完了すると自動的に続行します', cancel: 'ダウンロードをキャンセル', phase: { preparing: '準備中', downloading: 'ダウンロード中', extracting: '解凍中', done: '完了' } },
+    state: { stopped: '停止', 'resolving-release': 'リリース解析中', downloading: 'ダウンロード中', extracting: '解凍中', 'writing-config': '設定書き込み中', launching: '起動中', running: '実行中', reconnecting: '再接続中', restarting: '再起動中', error: 'エラー', connecting: '接続中', connected: '接続済み', ready: '準備完了', disconnected: '切断済み' },
+    reason: { not_auto_mode: '先に自動ホスティングを有効にしてください', not_consented: '先に QQ ホスティングの同意を完了してください', start_failed: '起動失敗、ネットワークを確認して再試行してください', reinstall_failed: '再インストール失敗、再試行するかネットワークを確認してください', not_running: 'ランタイムが準備されていません、先にホスティングを開始してください', no_conversation: '下の「メッセージルーティング」で会話を選択してください', not_logged_in: '先に恋語アカウントにログインしてください', disabled: 'ブリッジは無効です', qqnt_not_found: 'QQ デスクトップ版（QQNT）が検出されません。自動ホスティング前にインストールしてください：https://im.qq.com/index/', exception: '操作エラー、再試行してください', unknown: '操作に失敗しました、再試行してください' }
   },
   header: {
     notifications: '通知',
@@ -332,6 +350,20 @@ export default {
     emptyTitle: 'カスタム AI 設定なし',
     emptyDesc: '未設定でもチャット可能。自分の Key を使う場合はここで追加',
     addFirst: '最初の設定を追加'
+  },
+  about: {
+    title: '恋語について',
+    desc: 'マルチキャラクター AI 伴侣デスクトップアプリ',
+    viewDetail: '詳細を見る',
+    version: 'バージョン',
+    environment: '実行環境',
+    envWeb: 'ウェブ版',
+    envDesktop: 'デスクトップ版',
+    intro: '恋語（LianYu）はマルチキャラクター AI 伴侣アプリです。キャラチャット・モーメンツ・日記・記憶・デスクトップペットをサポート。Windows デスクトップで利用可能、QQ ブリッジで QQ メッセージをクラウド AI に転送できます。',
+    techStack: '技術スタック',
+    techStackDesc: 'フロントエンド Vue 3 + Element Plus + Electron；バックエンド Spring Boot + MyBatis-Plus + MySQL。',
+    copyright: '© 2026 恋語 LianYu',
+    backToSettings: '設定に戻る'
   },
   profile: {
     title: 'プロフィール',

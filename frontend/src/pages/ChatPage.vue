@@ -351,6 +351,9 @@ const NORMAL_POLL_MS = 10000
 let assistantLineCount = 0
 let skipBounceOnce = false
 let bounceTween = null
+let streamController = null     // SSE 流 AbortController（issue #7）：卸载时 abort 中止拉流
+let isUnmounted = false         // 卸载标志：流 finally 守卫，避免对已卸载实例写状态
+const burstTimers = []          // scheduleOpeningPollBurst 的 setTimeout 句柄，卸载时清理
 
 const isPlatformSelected = computed(() => currentProvider.value === PLATFORM_PROVIDER)
 const isCompact = computed(() => route.meta.compact === true)
@@ -513,6 +516,10 @@ watch(() => route.params.id, async (id) => {
 })
 
 onUnmounted(() => {
+  isUnmounted = true
+  streamController?.abort()
+  burstTimers.forEach((id) => clearTimeout(id))
+  burstTimers.length = 0
   setActiveChatConversationId(null)
   setActiveChatRefreshHandler(null)
   stopConversationPolling()
@@ -799,9 +806,10 @@ function syncAwaitingOpening() {
 }
 
 function scheduleOpeningPollBurst() {
-  window.setTimeout(() => pollCurrentConversationMessages(true), 600)
-  window.setTimeout(() => pollCurrentConversationMessages(true), 1500)
-  window.setTimeout(() => pollCurrentConversationMessages(true), 3500)
+  burstTimers.push(window.setTimeout(() => pollCurrentConversationMessages(true), 600))
+  burstTimers.push(window.setTimeout(() => pollCurrentConversationMessages(true), 1500))
+  burstTimers.push(window.setTimeout(() => pollCurrentConversationMessages(true), 3500))
+  if (burstTimers.length > 12) burstTimers.splice(0, burstTimers.length - 12)
 }
 
 function startFastPolling() {
@@ -928,44 +936,87 @@ async function handleSend() {
   const streamCreatedAt = new Date(userCreatedMs + 1).toISOString()
   const sendStartedAt = Date.now()
   const sendConvId = currentConvId.value
-
+  let attempt = 0
+  let lastErr = null
+  let fullContent = ''
+  let ok = false
+  let postedOk = false
+  let pieces = null
   try {
-    const response = await sendMessageStream(sendConvId, {
-      provider: currentProvider.value,
-      model: currentProvider.value === PLATFORM_PROVIDER ? undefined : (currentModel.value || undefined),
-      content: text || undefined,
-      imageUrl: imageUrl || undefined
-    })
-
-    if (!response.ok) {
-      let errMsg = '消息发送失败，请稍后再试'
+    while (attempt < 2) {
+      attempt += 1
+      streamController = new AbortController()
+      const streamSignal = streamController.signal
+      let response = null
       try {
-        const errBody = await response.json()
-        errMsg = humanizeError(errBody.message || errBody.msg, errMsg)
-      } catch { /* ignore */ }
-      throw new Error(errMsg)
+        response = await sendMessageStream(sendConvId, {
+          provider: currentProvider.value,
+          model: currentProvider.value === PLATFORM_PROVIDER ? undefined : (currentModel.value || undefined),
+          content: text || undefined,
+          imageUrl: imageUrl || undefined
+        }, streamSignal)
+      } catch (fetchErr) {
+        if (fetchErr?.name === 'AbortError') return            // #7：取消静默退出
+        lastErr = fetchErr
+        if (attempt < 2) {                                     // #13：fetch 阶段网络错，退避重试一次
+          await new Promise(r => setTimeout(r, 800))
+          if (isUnmounted || currentConvId.value !== sendConvId) return
+          continue
+        }
+        break
+      }
+      if (!response.ok) {
+        let errMsg = '消息发送失败，请稍后再试'
+        try {
+          const errBody = await response.json()
+          errMsg = humanizeError(errBody.message || errBody.msg, errMsg)
+        } catch { /* ignore */ }
+        const serverErr = new Error(errMsg)
+        serverErr.isServerError = true
+        lastErr = serverErr
+        break                                                   // 服务端拒绝：不重试
+      }
+      postedOk = true
+      try {
+        ({ fullContent, pieces } = await drainAssistantStream(response, streamSignal))
+        ok = true
+        break
+      } catch (drainErr) {
+        if (drainErr?.name === 'AbortError') return            // #7：取消静默退出
+        lastErr = drainErr
+        break                                                   // 流中断（POST 已成功）：不重试，避免服务端重复
+      }
     }
 
-    const { fullContent, pieces } = await drainAssistantStream(response)
-    const elapsed = Date.now() - sendStartedAt
-    if (elapsed < MIN_REPLY_DISPLAY_MS) {
-      await sleep(MIN_REPLY_DISPLAY_MS - elapsed)
-    }
-
-    if (currentConvId.value === sendConvId && fullContent?.trim()) {
-      syncStreamingAssistantBubbles(fullContent, streamGroupId, streamCreatedAt, pieces)
-      sortMessagesInTimelineOrder()
-      await nextTick()
-      scrollToBottom()
+    if (ok) {
+      const elapsed = Date.now() - sendStartedAt
+      if (elapsed < MIN_REPLY_DISPLAY_MS) {
+        await sleep(MIN_REPLY_DISPLAY_MS - elapsed)
+      }
+      if (!isUnmounted && currentConvId.value === sendConvId && fullContent?.trim()) {
+        syncStreamingAssistantBubbles(fullContent, streamGroupId, streamCreatedAt, pieces)
+        sortMessagesInTimelineOrder()
+        await nextTick()
+        scrollToBottom()
+        skipBounceOnce = true
+      }
+    } else {
+      if (postedOk) {
+        // 流中断但消息已存服务端：保留用户气泡，finally 的 poll 会恢复服务端状态；不回填以免重发重复
+        ElMessage.error(humanizeError(lastErr, '回复中断，已为你保留该消息'))
+      } else {
+        // 消息未存服务端（网络/服务端拒绝）：回填输入、移除本地用户气泡，用户可重发（issue #13）
+        ElMessage.error(humanizeError(lastErr, '消息发送失败，请稍后再试'))
+        inputText.value = text
+        if (imageUrl) pendingImageUrl.value = imageUrl
+        messages.value = messages.value.filter(
+          m => m._tempId !== userMsg._tempId && m._streamGroupId !== streamGroupId
+        )
+      }
       skipBounceOnce = true
     }
-  } catch (err) {
-    ElMessage.error(humanizeError(err, '消息发送失败，请稍后再试'))
-    messages.value = messages.value.filter(
-      m => m._tempId !== userMsg._tempId && m._streamGroupId !== streamGroupId
-    )
-    skipBounceOnce = true
   } finally {
+    if (isUnmounted) return
     waitingReply.value = false
     if (currentConvId.value === sendConvId) {
       await pollCurrentConversationMessages(true)
@@ -977,7 +1028,7 @@ async function handleSend() {
   }
 }
 
-async function drainAssistantStream(response) {
+async function drainAssistantStream(response, signal) {
   const reader = response.body?.getReader()
   if (!reader) {
     throw new Error('无法读取回复流')
@@ -988,6 +1039,11 @@ async function drainAssistantStream(response) {
   let serverPieces = null
 
   while (true) {
+    if (signal?.aborted) {
+      const abortErr = new Error('stream aborted')
+      abortErr.name = 'AbortError'
+      throw abortErr
+    }
     const { done, value } = await reader.read()
     if (done) break
     buffer += decoder.decode(value, { stream: true })

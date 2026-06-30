@@ -5,6 +5,8 @@ import { net, desktopCapturer, screen } from 'electron'
 
 const OBSERVE_INTERVAL_MS = 15 * 60 * 1000 // 15 分钟
 const MIN_DELAY_AFTER_WAKE = 30_000 // 唤醒后延迟 30 秒
+// #10：alt-tab 触发捕获的独立冷却（远超原 5s/30s），避免每次窗口切换都上传整屏
+const MIN_WINDOW_SWITCH_GAP_MS = 10 * 60_000
 const MAX_GREETING_LENGTH = 160
 
 let observeTimer = null
@@ -16,11 +18,14 @@ let lastAuthToken = ''
 let lastPersona = ''
 let lastPetId = ''
 let onGreeting = null
+let onCaptureStart = null
+let onCaptureEnd = null
+let lastCaptureTime = 0
 let isPaused = false
 let idleSince = 0
 let lastMousePos = { x: 0, y: 0 }
 
-export function startDesktopObserver({ apiOrigin, authToken, persona, petId, onGreeting: cb }) {
+export function startDesktopObserver({ apiOrigin, authToken, persona, petId, onGreeting: cb, onCaptureStart: cs, onCaptureEnd: ce }) {
   stopDesktopObserver()
   if (!apiOrigin || !authToken || !persona || !cb) return false
   lastApiOrigin = apiOrigin
@@ -28,6 +33,9 @@ export function startDesktopObserver({ apiOrigin, authToken, persona, petId, onG
   lastPersona = persona
   lastPetId = petId
   onGreeting = cb
+  onCaptureStart = cs || null
+  onCaptureEnd = ce || null
+  lastCaptureTime = 0
   isPaused = false
   idleSince = Date.now()
   lastMousePos = screen.getCursorScreenPoint()
@@ -43,13 +51,20 @@ export function stopDesktopObserver() {
   observeTimer = null
   idleTimer = null
   onGreeting = null
+  onCaptureStart = null
+  onCaptureEnd = null
   lastAuthToken = ''
+}
+
+// #10：窗口切换捕获独立冷却判定（导出以供单元测试固定 10 分钟边界，行为不变）
+export function _isWithinWindowSwitchCooldown(lastCaptureMs, nowMs = Date.now()) {
+  return nowMs - lastCaptureMs < MIN_WINDOW_SWITCH_GAP_MS
 }
 
 export function onWindowChanged() {
   if (!onGreeting || isPaused) return
-  // 窗口切换额外触发，但需距上次问候 > 30 秒避免频繁
-  if (Date.now() - lastGreetingTime < 30_000) return
+  // #10：窗口切换捕获受独立冷却约束（与问候解耦），避免每次 alt-tab 都上传整屏截图
+  if (_isWithinWindowSwitchCooldown(lastCaptureTime)) return
   clearTimeout(observeTimer)
   scheduleNext(5_000)
 }
@@ -80,7 +95,7 @@ function startIdleDetection() {
   }, 30_000)
 }
 
-async function runObserve() {
+export async function runObserve() {
   if (!onGreeting || isPaused) {
     scheduleNext()
     return
@@ -90,12 +105,20 @@ async function runObserve() {
     // 1. 获取前台窗口标题
     const windowTitle = await getActiveWindowTitle()
 
-    // 2. 截屏
-    const screenshot = await captureScreen()
+    // 2. 截屏（#10：抓取期间向桌宠发出捕获指示）
+    onCaptureStart?.()
+    let screenshot
+    try {
+      screenshot = await captureScreen()
+    } finally {
+      onCaptureEnd?.()
+    }
     if (!screenshot) {
       scheduleNext()
       return
     }
+    // #10：记录实际抓取时刻，供窗口切换独立冷却判断
+    lastCaptureTime = Date.now()
 
     // 3. 去重：同一窗口 + 同一 pet 15 分钟内不重复
     const key = `${lastPetId}::${windowTitle}`

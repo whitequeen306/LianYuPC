@@ -162,7 +162,7 @@ export default defineConfig({
                   ? {
                       ssr: true,
                       rollupOptions: {
-                        external: ['electron', 'active-win', 'bytenode'],
+                        external: ['electron', 'active-win', 'bytenode', 'ws', 'extract-zip'],
                         output: {
                           format: 'cjs',
                           entryFileNames: 'main-src.cjs',

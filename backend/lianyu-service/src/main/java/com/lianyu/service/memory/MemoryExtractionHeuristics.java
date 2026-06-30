@@ -97,10 +97,7 @@ public class MemoryExtractionHeuristics {
                 ritualName = normalizeFactValue(ritualNameMatcher.group(1));
             }
             if (text.contains("只给你叫") || ritualName != null || text.contains("专属")) {
-                if (ritualName != null && !ritualName.isBlank() && isValidFactValue(text, ritualName)) {
-                    result.add(new HeuristicMemory(
-                            profilePrefix("姓名") + ritualName, MemoryType.FACT, msg.getId(), 0.8));
-                }
+                // 称呼值已由 extractProfileFacts 以「姓名」事实记录，关系路径只追加专属仪式锚点，避免重复
                 result.add(new HeuristicMemory("你们形成了专属称呼锚点", MemoryType.RITUAL, msg.getId(), 0.75));
             }
             if (text.contains("我今天很崩溃") || text.contains("我有点难受") || text.contains("我有点害怕")
