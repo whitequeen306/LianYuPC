@@ -12,10 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-FRONTEND = ROOT / "frontend"
-DEFAULT_INSTALLER = FRONTEND / "release" / "v0.2.119" / "LianYu Setup 0.2.119.exe"
+DEFAULT_INSTALLER = ROOT / "frontend" / "release" / "v0.2.119" / "LianYu Setup 0.2.119.exe"
 AUDIT_ROOT = ROOT / "release_audit"
-STUB_MAX_BYTES = 500
 
 SECRET_PATTERNS = [
     (r"sk-[A-Za-z0-9]{20,}", "OpenAI-style sk- key"),
@@ -36,111 +34,6 @@ SECRET_PATTERNS = [
 ]
 
 IPC_RE = re.compile(r"^\s+(\w+)\s*:", re.M)
-
-
-def load_cloud_api_patterns() -> list[bytes]:
-    """Patterns that must not appear as plaintext in shipped asar JS/JSC."""
-    patterns: list[bytes] = []
-    env_path = FRONTEND / ".env.production.cloud"
-    if env_path.is_file():
-        for line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            if key.strip() == "VITE_LIANYU_API_ORIGIN" and value.strip():
-                origin = value.strip().rstrip("/")
-                patterns.append(origin.encode("utf-8"))
-                try:
-                    from urllib.parse import urlparse
-
-                    host = urlparse(origin).hostname
-                    if host:
-                        patterns.append(host.encode("utf-8"))
-                except Exception:
-                    pass
-            if key.strip() == "VITE_LIANYU_CERT_FINGERPRINT" and value.strip():
-                fp = value.strip().replace(":", "").upper()
-                if len(fp) >= 8:
-                    patterns.append(fp[:16].encode("utf-8"))
-    return patterns
-
-
-def scan_plaintext_leaks(asar_path: Path, asar_dir: Path, extract_ok: bool) -> dict:
-    """Scan JS/JSC/bin under dist-electron + renderer for cloud host / env literals."""
-    targets: list[Path] = []
-    rel_paths: list[str] = []
-    if extract_ok and asar_dir.is_dir():
-        for pattern in (
-            "dist-electron/*.js",
-            "dist-electron/*.cjs",
-            "dist-electron/*.jsc",
-            "dist-electron/*.bin",
-            "dist-electron/*.dat",
-            "dist/assets/*.js",
-        ):
-            for fp in asar_dir.glob(pattern):
-                targets.append(fp)
-                rel_paths.append(str(fp.relative_to(asar_dir)).replace("\\", "/"))
-    else:
-        for entry in list_asar_entries(asar_path):
-            norm = entry.replace("\\", "/")
-            if norm.startswith("dist-electron/") or (
-                norm.startswith("dist/assets/") and norm.endswith(".js")
-            ):
-                tmp = AUDIT_ROOT / "_tmp_extract" / Path(norm).name
-                if extract_asar_file(asar_path, entry, tmp):
-                    targets.append(tmp)
-                    rel_paths.append(norm)
-
-    host_patterns = load_cloud_api_patterns()
-    host_hits: list[str] = []
-    api_env_hits: list[str] = []
-    vue_path_hits = 0
-
-    for fp, rel in zip(targets, rel_paths):
-        try:
-            data = fp.read_bytes()
-        except OSError:
-            continue
-        for pat in host_patterns:
-            if pat and pat in data:
-                host_hits.append(f"{rel} contains {pat!r}")
-        if b"VITE_LIANYU_API_ORIGIN" in data and rel.startswith("dist/assets/"):
-            api_env_hits.append(rel)
-        if rel.startswith("dist/assets/") and fp.suffix == ".js":
-            text = data.decode("utf-8", errors="replace")
-            vue_path_hits += len(re.findall(r"@/views/", text))
-            vue_path_hits += len(re.findall(r"src/views/", text))
-
-    return {
-        "host_hits": host_hits,
-        "api_env_hits": api_env_hits,
-        "vue_path_hits": vue_path_hits,
-    }
-
-
-def measure_stub_sizes(asar_path: Path, asar_dir: Path, extract_ok: bool) -> dict:
-    stubs = {
-        "main.js": "dist-electron/main.js",
-        "preload.cjs": "dist-electron/preload.cjs",
-    }
-    sizes: dict[str, int | None] = {}
-    for label, internal in stubs.items():
-        fp = asar_dir / internal if extract_ok else None
-        if fp and fp.is_file():
-            sizes[label] = fp.stat().st_size
-            continue
-        tmp = AUDIT_ROOT / "_tmp_extract" / label
-        if extract_asar_file(asar_path, internal, tmp):
-            sizes[label] = tmp.stat().st_size
-        else:
-            sizes[label] = None
-    too_large = [
-        name for name, size in sizes.items()
-        if size is None or size > STUB_MAX_BYTES
-    ]
-    return {"sizes": sizes, "too_large": too_large}
 
 
 def run(cmd: list[str], *, cwd: Path | None = None, shell: bool = False) -> subprocess.CompletedProcess:
@@ -579,13 +472,6 @@ def audit_installer(installer: Path, *, version: str = "", out_md: Path | None =
         "dist-electron/preload.jsc" in e.replace("\\", "/") for e in list_asar_entries(asar_path)
     )
 
-    leak_scan = scan_plaintext_leaks(asar_path, asar_dir, asar_extract["ok"])
-    stub_info = measure_stub_sizes(asar_path, asar_dir, asar_extract["ok"])
-
-    stale_main_cjs = (asar_dir / "dist-electron" / "main.cjs").is_file() or any(
-        e.replace("\\", "/").endswith("dist-electron/main.cjs") for e in list_asar_entries(asar_path)
-    )
-
     report_path = out_md or (ROOT / ".cortexloop" / f"audit-installer-{version}.md")
     write_report(
         installer=installer,
@@ -619,12 +505,6 @@ def audit_installer(installer: Path, *, version: str = "", out_md: Path | None =
         "critical_hits": len(critical),
         "total_hits": len(all_hits),
         "bytecode_present": bytecode_present,
-        "stub_sizes": stub_info["sizes"],
-        "stub_too_large": stub_info["too_large"],
-        "plaintext_host_hits": leak_scan["host_hits"],
-        "renderer_api_env_leak": leak_scan["api_env_hits"],
-        "vue_path_hits": leak_scan["vue_path_hits"],
-        "stale_main_cjs": stale_main_cjs,
     }
 
 

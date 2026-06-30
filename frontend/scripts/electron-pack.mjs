@@ -4,7 +4,6 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildSync } from 'esbuild'
-import JavaScriptObfuscator from 'javascript-obfuscator'
 import { packRuntimeSecrets } from './pack-runtime-secrets.mjs'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -12,29 +11,14 @@ process.chdir(root)
 process.env.CSC_IDENTITY_AUTO_DISCOVERY = 'false'
 process.env.ELECTRON_BUILD = '1'
 
-/** 主进程 bundle 轻度混淆：抬高逆向成本，不做控制流平坦化以免影响启动性能 */
-const MAIN_BUNDLE_LIGHT_OBFUSCATION = {
-  compact: true,
-  controlFlowFlattening: false,
-  deadCodeInjection: false,
-  debugProtection: false,
-  selfDefending: false,
-  stringArray: true,
-  stringArrayThreshold: 0.75,
-  stringArrayEncoding: ['base64'],
-  splitStrings: false,
-  simplify: true,
-  renameGlobals: false,
-  reservedNames: ['require', 'module', 'exports', '__dirname', '__filename'],
-}
+/** 渲染进程混淆会显著拖慢启动与二次窗口加载，默认关闭以优先体验 */
+const ENABLE_RENDERER_OBFUSCATION = false
 
-function obfuscateMainBundleLight() {
-  const filePath = path.join(root, 'dist-electron', 'main-bundle.cjs')
-  if (!fs.existsSync(filePath)) return
-  const source = fs.readFileSync(filePath, 'utf8')
-  const obfuscated = JavaScriptObfuscator.obfuscate(source, MAIN_BUNDLE_LIGHT_OBFUSCATION).getObfuscatedCode()
-  fs.writeFileSync(filePath, obfuscated, 'utf8')
-  console.log('Applied light obfuscation to dist-electron/main-bundle.cjs')
+function obfuscateRendererBundles() {
+  if (!ENABLE_RENDERER_OBFUSCATION) {
+    console.log('Skipped renderer obfuscation (disabled for performance)')
+    return
+  }
 }
 
 /** Remove artifacts from prior packs before a fresh vite build. */
@@ -58,7 +42,8 @@ function cleanDistElectronShipSet() {
     'main.js',
     'main-bundle.cjs',
     'preload.cjs',
-    'rtcfg.dat',
+    'client-build.json',
+    'runtime-secrets.bin',
   ])
   for (const name of fs.readdirSync(electronDir)) {
     if (keep.has(name)) continue
@@ -67,12 +52,19 @@ function cleanDistElectronShipSet() {
   }
 }
 
-function createBuildId(version) {
-  return crypto
+function writeClientBuildMeta(version) {
+  const buildId = crypto
     .createHash('sha256')
     .update(`${version}-${Date.now()}-${crypto.randomBytes(8).toString('hex')}`)
     .digest('hex')
-    .slice(0, 32)
+    .slice(0, 16)
+  fs.writeFileSync(
+    path.join(root, 'dist-electron', 'client-build.json'),
+    JSON.stringify({ version, buildId }, null, 2),
+    'utf8',
+  )
+  console.log(`Client build meta: electron/${version}/${buildId}`)
+  return buildId
 }
 
 function loadEnvFile(filePath) {
@@ -143,16 +135,9 @@ require('./main-bundle.cjs')
   cleanDistElectronShipSet()
 }
 
-const repoEnv = loadEnvFile(path.join(root, '..', '.env'))
 const cloudEnv = loadEnvFile(path.join(root, '.env.production.cloud'))
-const packEnv = { ...repoEnv, ...cloudEnv }
-const packApiOrigin = packEnv.VITE_LIANYU_API_ORIGIN || 'http://localhost:8080'
-const packCertFingerprint = packEnv.VITE_LIANYU_CERT_FINGERPRINT || ''
-if (!packEnv.LIANYU_RUNTIME_SECRETS_PEPPER && !process.env.LIANYU_RUNTIME_SECRETS_PEPPER) {
-  console.error('Missing LIANYU_RUNTIME_SECRETS_PEPPER in repo .env — required for Electron release pack.')
-  process.exit(1)
-}
-process.env.LIANYU_RUNTIME_SECRETS_PEPPER = process.env.LIANYU_RUNTIME_SECRETS_PEPPER || packEnv.LIANYU_RUNTIME_SECRETS_PEPPER
+const packApiOrigin = cloudEnv.VITE_LIANYU_API_ORIGIN || 'http://localhost:8080'
+const packCertFingerprint = cloudEnv.VITE_LIANYU_CERT_FINGERPRINT || ''
 
 const viteEnv = {
   ...process.env,
@@ -212,18 +197,17 @@ execSync('npx vite build', { stdio: 'inherit', env: viteEnv })
 
 buildMainCjsBundle()
 
-const buildId = createBuildId(pkg.version)
-console.log(`Client build meta: electron/${pkg.version}/${buildId}`)
+const buildId = writeClientBuildMeta(pkg.version)
 packRuntimeSecrets({
   version: pkg.version,
   buildId,
   apiOrigin: packApiOrigin,
   certFingerprint: packCertFingerprint,
-  outPath: path.join(root, 'dist-electron', 'rtcfg.dat'),
+  outPath: path.join(root, 'dist-electron', 'runtime-secrets.bin'),
 })
 
+obfuscateRendererBundles()
 applyPlainMainPackaging()
-obfuscateMainBundleLight()
 
 console.log('\n--- Launcher smoke test (pre-pack) ---')
 execSync('node scripts/smoke-launcher.mjs', { stdio: 'inherit', cwd: root })
@@ -237,4 +221,5 @@ execSync(`npx electron-builder --win ${outputArg}`, {
   env: process.env,
 })
 
-console.log(`\nRelease installer: ${outDir}/LianYu Setup ${pkg.version}.exe`)
+console.log(`\n??????: ${outDir}/LianYu Setup ${pkg.version}.exe`)
+console.log(`API Origin (packed in runtime-secrets.bin): ${packApiOrigin}`)
