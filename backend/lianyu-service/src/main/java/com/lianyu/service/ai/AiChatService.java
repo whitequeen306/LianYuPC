@@ -32,6 +32,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledExecutorService;
@@ -58,6 +59,7 @@ import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.util.MimeTypeUtils;
 import org.springframework.web.client.ResourceAccessException;
@@ -145,70 +147,78 @@ public class AiChatService {
             throw new BusinessException(ErrorCode.AI_RATE_LIMITED, "对话服务繁忙，请稍后再试");
         }
 
-        VaultEntryResponse vault = resolveVault(userId, request.getProvider());
-        String model = resolveModel(request, vault);
-        logChatVaultUsage(userId, request.getProvider(), vault, model, "stream");
-        ChatModel chatModel = buildChatModel(vault, model, vaultService.decryptKeyForChat(vault.getId()));
+        try {
+            VaultEntryResponse vault = resolveVault(userId, request.getProvider());
+            String model = resolveModel(request, vault);
+            logChatVaultUsage(userId, request.getProvider(), vault, model, "stream");
+            ChatModel chatModel = buildChatModel(vault, model, vaultService.decryptKeyForChat(vault.getId()));
 
-        SseEmitter emitter = new SseEmitter(300_000L);
-        StringBuilder contentBuffer = new StringBuilder();
+            SseEmitter emitter = new SseEmitter(300_000L);
+            StringBuilder contentBuffer = new StringBuilder();
 
-        CompletableFuture.runAsync(() -> {
-            try {
-                runWithChatToolScope(userId, request, () -> {
-                    List<Message> messages = toSpringMessages(request.getMessages());
-                    Prompt prompt = buildPrompt(request, vault, messages);
-                    chatModel.stream(prompt)
-                            .doOnNext(response -> {
-                                try {
-                                    String text = extractStreamDelta(response);
-                                    if (text != null && !text.isEmpty()) {
-                                        contentBuffer.append(text);
-                                        sendSseChunk(emitter, text);
+            CompletableFuture.runAsync(() -> {
+                try {
+                    runWithChatToolScope(userId, request, () -> {
+                        List<Message> messages = toSpringMessages(request.getMessages());
+                        Prompt prompt = buildPrompt(request, vault, messages);
+                        chatModel.stream(prompt)
+                                .doOnNext(response -> {
+                                    try {
+                                        String text = extractStreamDelta(response);
+                                        if (text != null && !text.isEmpty()) {
+                                            contentBuffer.append(text);
+                                            sendSseChunk(emitter, text);
+                                        }
+                                    } catch (IOException e) {
+                                        log.error("SSE send error", e);
                                     }
-                                } catch (IOException e) {
-                                    log.error("SSE send error", e);
-                                }
-                            })
-                            .doOnComplete(() -> {
-                                try {
-                                    String finalContent = contentBuffer.toString();
-                                    String corrected = enforceExpectedLanguage(
-                                            userId,
-                                            request,
-                                            vault,
-                                            model,
-                                            chatModel,
-                                            finalContent);
-                                    if (corrected != null
-                                            && !corrected.equals(finalContent)
-                                            && !corrected.isBlank()) {
-                                        sendSseReplace(emitter, corrected);
-                                        finishSseSuccess(emitter, corrected, callback);
-                                        return;
+                                })
+                                .doOnComplete(() -> {
+                                    try {
+                                        String finalContent = contentBuffer.toString();
+                                        String corrected = enforceExpectedLanguage(
+                                                userId,
+                                                request,
+                                                vault,
+                                                model,
+                                                chatModel,
+                                                finalContent);
+                                        if (corrected != null
+                                                && !corrected.equals(finalContent)
+                                                && !corrected.isBlank()) {
+                                            sendSseReplace(emitter, corrected);
+                                            finishSseSuccess(emitter, corrected, callback);
+                                            return;
+                                        }
+                                        finishSseSuccess(emitter, finalContent, callback);
+                                    } catch (Exception e) {
+                                        log.error("SSE language correction failed", e);
+                                        finishSseSuccess(emitter, contentBuffer.toString(), callback);
                                     }
-                                    finishSseSuccess(emitter, finalContent, callback);
-                                } catch (Exception e) {
-                                    log.error("SSE language correction failed", e);
-                                    finishSseSuccess(emitter, contentBuffer.toString(), callback);
-                                }
-                            })
-                            .onErrorResume(e -> {
-                                log.error("AI stream error", e);
-                                finishSseError(emitter, resolveStreamErrorMessage(e), contentBuffer.toString(), callback);
-                                return reactor.core.publisher.Mono.empty();
-                            })
-                            .blockLast();
-                });
-            } catch (Exception e) {
-                log.error("AI chat stream fatal error", e);
-                finishSseError(emitter, resolveStreamErrorMessage(e), contentBuffer.toString(), callback);
-            } finally {
-                bulkhead.releasePermission();
-            }
-        });
+                                })
+                                .onErrorResume(e -> {
+                                    log.error("AI stream error", e);
+                                    finishSseError(emitter, resolveStreamErrorMessage(e), contentBuffer.toString(), callback);
+                                    return reactor.core.publisher.Mono.empty();
+                                })
+                                .blockLast();
+                    });
+                } catch (Exception e) {
+                    log.error("AI chat stream fatal error", e);
+                    finishSseError(emitter, resolveStreamErrorMessage(e), contentBuffer.toString(), callback);
+                } finally {
+                    bulkhead.releasePermission();
+                }
+            }, scheduler);
 
-        return emitter;
+            return emitter;
+        } catch (RuntimeException e) {
+            bulkhead.releasePermission();
+            throw e;
+        } catch (Exception e) {
+            bulkhead.releasePermission();
+            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "消息发送失败，请稍后再试");
+        }
     }
 
     @FunctionalInterface
@@ -754,10 +764,12 @@ public class AiChatService {
 
     private void releaseCacheLock(String lockKey, String lockValue) {
         try {
-            String current = redisTemplate.opsForValue().get(lockKey);
-            if (lockValue.equals(current)) {
-                redisTemplate.delete(lockKey);
-            }
+            String script =
+                    "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
+            redisTemplate.execute(
+                    new DefaultRedisScript<>(script, Long.class),
+                    Collections.singletonList(lockKey),
+                    lockValue);
         } catch (Exception e) {
             log.debug("release cache lock failed: {}", e.getMessage());
         }
