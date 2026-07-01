@@ -1,3 +1,8 @@
+/**
+ * Runtime config blob — obfuscation-only, NOT confidentiality protection.
+ * XOR + build metadata hides API origin / cert hints from casual inspection only.
+ * Never store real secrets (API keys, tokens, passwords) in runtime-secrets.bin.
+ */
 import fs from 'fs'
 import crypto from 'crypto'
 import path from 'path'
