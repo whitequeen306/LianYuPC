@@ -4,14 +4,6 @@ export function fetchModels(provider) {
   return http.get('/ai/models', { params: { provider }, skipGlobalError: true })
 }
 
-export function chatStream(data) {
-  // Returns raw response for SSE
-  return http.post('/ai/chat/stream', data, {
-    responseType: 'stream',
-    timeout: 300000
-  })
-}
-
 export function chat(data) {
   return http.post('/ai/chat', data)
 }

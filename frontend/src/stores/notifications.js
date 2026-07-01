@@ -292,12 +292,27 @@ export const useNotificationsStore = defineStore('notifications', () => {
     })
   }
 
+  let sharedAudioContext = null
+
+  function getSharedAudioContext() {
+    const Ctx = window.AudioContext || window.webkitAudioContext
+    if (!Ctx) return null
+    if (!sharedAudioContext) {
+      sharedAudioContext = new Ctx()
+    }
+    if (sharedAudioContext.state === 'suspended') {
+      void sharedAudioContext.resume()
+    }
+    return sharedAudioContext
+  }
+
   function playSound() {
     const now = Date.now()
     if (now - lastSoundAt < 3000) return
     lastSoundAt = now
     try {
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)()
+      const audioContext = getSharedAudioContext()
+      if (!audioContext) return
       const oscillator = audioContext.createOscillator()
       const gainNode = audioContext.createGain()
       oscillator.type = 'sine'

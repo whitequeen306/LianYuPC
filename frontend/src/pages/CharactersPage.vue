@@ -489,7 +489,14 @@ function onCardFocusOut(characterId, event) {
   }
 }
 
+function revokeAvatarPreviewUrl(url) {
+  if (url && String(url).startsWith('blob:')) {
+    URL.revokeObjectURL(url)
+  }
+}
+
 function showCreateDialog() {
+  revokeAvatarPreviewUrl(form.avatarUrl)
   Object.assign(form, initialForm())
   settingsText.value = ''
   avatarFile.value = null
@@ -511,6 +518,7 @@ function applyAvatarFile(file) {
     ElMessage.warning('图片大小不能超过 8MB')
     return
   }
+  revokeAvatarPreviewUrl(form.avatarUrl)
   avatarFile.value = file
   form.avatarUrl = URL.createObjectURL(file)
 }

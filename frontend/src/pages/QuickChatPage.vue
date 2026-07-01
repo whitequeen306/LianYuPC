@@ -85,6 +85,8 @@ import { humanizeError } from '@/utils/errorMessage'
 import { resolveMediaUrl } from '@/utils/media'
 import { getElectronAPI } from '@/utils/electron'
 import { useChatScroll, sleep, MIN_REPLY_DISPLAY_MS } from '@/composables/useChatScroll'
+import { useStreamAbort, isNetworkError } from '@/composables/useStreamAbort'
+import { drainAssistantStream } from '@/utils/assistantStreamDrain'
 import AssistantMessageContent from '@/components/AssistantMessageContent.vue'
 import { stripInnerThoughts, resolveShowInnerThoughts } from '@/utils/innerThoughtFilter'
 import { formatSmartTime } from '@/utils/feedTime'
@@ -115,6 +117,7 @@ function showError(message) {
 }
 
 const { scrollToBottom } = useChatScroll(msgListRef, scrollAnchor)
+const { beginStream, isAbortError } = useStreamAbort()
 
 const characterName = computed(() => activeCharacter.value?.name || '聊天')
 const characterAvatar = computed(() => {
@@ -234,42 +237,12 @@ async function loadConversation(convId) {
   }
 }
 
-async function drainAssistantStream(response) {
-  const reader = response.body?.getReader()
-  if (!reader) throw new Error('无法读取回复流')
-  const decoder = new TextDecoder()
-  let buffer = ''
-  let fullContent = ''
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const parts = buffer.split('\n')
-    buffer = parts.pop() || ''
-    for (const line of parts) {
-      const trimmed = line.trim()
-      if (!trimmed.startsWith('data:')) continue
-      const data = trimmed.slice(5).trim()
-      if (!data || data === '[DONE]') continue
-      try {
-        const payload = JSON.parse(data)
-        if (payload.error) throw new Error(payload.error)
-        if (payload.content) fullContent += payload.content
-        if (payload.replace) fullContent = payload.replace
-      } catch (e) {
-        if (e instanceof SyntaxError) continue
-        throw e
-      }
-    }
-  }
-  return fullContent
-}
-
 async function handleSend() {
   const text = inputText.value.trim()
   const convId = currentConvId.value
   if (!text || !convId || waitingReply.value) return
 
+  const draftText = text
   const userMsg = {
     _tempId: `u-${Date.now()}`,
     role: 'user',
@@ -283,11 +256,14 @@ async function handleSend() {
   scrollToBottom({ force: true })
 
   const startedAt = Date.now()
-  try {
-    const response = await sendMessageStream(convId, {
-      provider: PLATFORM_PROVIDER,
-      content: text,
-    })
+  const signal = beginStream()
+  const streamPayload = {
+    provider: PLATFORM_PROVIDER,
+    content: draftText,
+  }
+
+  async function attemptStream() {
+    const response = await sendMessageStream(convId, streamPayload, { signal })
     if (!response.ok) {
       let errMsg = '消息发送失败'
       try {
@@ -296,7 +272,25 @@ async function handleSend() {
       } catch { /* ignore */ }
       throw new Error(errMsg)
     }
-    const fullContent = await drainAssistantStream(response)
+    const { fullContent } = await drainAssistantStream(response, { signal })
+    return fullContent
+  }
+
+  try {
+    let fullContent
+    try {
+      fullContent = await attemptStream()
+    } catch (err) {
+      if (isAbortError(err)) return
+      if (isNetworkError(err)) {
+        await sleep(800)
+        if (signal.aborted) return
+        fullContent = await attemptStream()
+      } else {
+        throw err
+      }
+    }
+
     const elapsed = Date.now() - startedAt
     if (elapsed < MIN_REPLY_DISPLAY_MS) {
       await sleep(MIN_REPLY_DISPLAY_MS - elapsed)
@@ -311,7 +305,8 @@ async function handleSend() {
     }
     await loadMessages(convId)
   } catch (err) {
-    messages.value = messages.value.filter((m) => m._tempId !== userMsg._tempId)
+    if (isAbortError(err)) return
+    inputText.value = draftText
     showError(humanizeError(err, '消息发送失败，请稍后再试'))
   } finally {
     waitingReply.value = false
