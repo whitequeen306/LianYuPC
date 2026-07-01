@@ -40,9 +40,11 @@ const usesAppHeader = computed(() => route.path.startsWith('/app'))
 const pageTransitionName = computed(() => (isElectron ? '' : 'page'))
 const pageTransitionMode = computed(() => (isElectron ? undefined : 'out-in'))
 const usesIntegratedCaption = computed(() => {
-  if (usesAppHeader.value) return true
   const name = route.name
-  return name === 'Landing' || name === 'Login' || name === 'Register'
+  if (name === 'Landing' || name === 'Login' || name === 'Register') return true
+  // immersive 单聊隐藏 AppHeader，由 gal-header 或 electron-caption-drag 接管
+  if (usesAppHeader.value && route.meta.immersive !== true) return true
+  return false
 })
 /** 主界面 / 落地页 / 登录注册由页面顶栏充当标题栏，不再单独顶出拖拽条 */
 const showElectronCaptionDrag = computed(() => (

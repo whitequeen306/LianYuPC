@@ -79,10 +79,11 @@ body.electron-app {
     box-sizing: border-box;
   }
 
-  /* 主界面 / 落地页 / 登录注册顶栏与标题栏同一行，不再额外顶出空白 */
+  /* 主界面 / 落地页 / 登录注册 / 单聊顶栏与标题栏同一行，不再额外顶出空白 */
   &:has(.app-header) #app,
   &:has(.landing-nav) #app,
-  &:has(.auth-page) #app {
+  &:has(.auth-page) #app,
+  &:has(.gal-header) #app {
     padding-top: 0;
   }
 
@@ -101,7 +102,8 @@ body.electron-app {
 
   &:has(.app-header)::before,
   &:has(.landing-nav)::before,
-  &:has(.auth-page)::before {
+  &:has(.auth-page)::before,
+  &:has(.gal-header)::before {
     display: none;
   }
 
@@ -168,6 +170,8 @@ body.electron-app {
   }
 
   .gal-header {
+    min-height: var(--electron-caption-height);
+    box-sizing: border-box;
     padding-right: calc(#{$space-2} + var(--electron-caption-controls-width));
     -webkit-app-region: no-drag;
     position: relative;
@@ -230,7 +234,8 @@ body.electron-app {
 
 body.electron-app:has(.app-header) .electron-caption-drag,
 body.electron-app:has(.landing-nav) .electron-caption-drag,
-body.electron-app:has(.auth-page) .electron-caption-drag {
+body.electron-app:has(.auth-page) .electron-caption-drag,
+body.electron-app:has(.gal-header) .electron-caption-drag {
   display: none;
 }
 
