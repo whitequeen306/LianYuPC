@@ -175,27 +175,26 @@ body.electron-app {
     padding-right: calc(#{$space-2} + var(--electron-caption-controls-width));
     -webkit-app-region: no-drag;
     position: relative;
+    z-index: 10001;
+  }
 
-    &::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      right: var(--electron-caption-controls-width);
-      -webkit-app-region: drag;
-      z-index: 0;
-    }
-
-    > * {
-      position: relative;
-      z-index: 1;
-      -webkit-app-region: no-drag;
-    }
+  .gal-header__drag-region {
+    flex: 1;
+    min-width: 32px;
+    align-self: stretch;
+    -webkit-app-region: drag;
   }
 
   .gal-header__back,
   .gal-header__meta,
   .gal-header__meta * {
     -webkit-app-region: no-drag;
+  }
+
+  /* immersive 单聊顶栏已占满标题栏行，勿再扣减布局高度 */
+  .app-layout--immersive {
+    min-height: 100vh;
+    height: 100vh;
   }
 
   /* ElMessage / ElNotification 需在标题栏下方 */

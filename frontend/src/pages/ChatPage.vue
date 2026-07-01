@@ -28,6 +28,7 @@
             :status-text="emotionState.statusText"
           />
         </div>
+        <div class="gal-header__drag-region" aria-hidden="true" />
       </header>
 
       <div v-if="isBlocked" class="blocked-banner">
@@ -1180,7 +1181,8 @@ function formatTime(ts) {
 
 .gal-header__meta {
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
+  max-width: min(100%, 420px);
   display: flex;
   flex-direction: column;
   gap: 4px;
