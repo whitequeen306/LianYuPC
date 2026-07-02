@@ -341,4 +341,62 @@ function onPointerLeave() {
     transform: scale(1.1);
   }
 }
+
+/* 浅色模式覆盖：深色默认不动，仅 html.light 下追加浅色取值 */
+html.light .cast-showcase {
+  .cast-card__inner {
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+  }
+
+  .cast-card.is-active .cast-card__inner {
+    box-shadow:
+      0 24px 50px rgba(0, 0, 0, 0.12),
+      0 0 0 1px rgba(244, 166, 181, 0.12);
+  }
+
+  .cast-card--kurumi .cast-card__inner {
+    background: linear-gradient(155deg, rgba(244, 166, 181, 0.15), rgba(255, 255, 255, 0.7));
+  }
+
+  .cast-card--yuno .cast-card__inner {
+    background: linear-gradient(155deg, rgba(228, 140, 156, 0.16), rgba(255, 255, 255, 0.7));
+  }
+
+  .cast-card--ganyu .cast-card__inner {
+    background: linear-gradient(155deg, rgba(120, 150, 210, 0.14), rgba(255, 255, 255, 0.7));
+  }
+
+  .cast-card--zero-two .cast-card__inner {
+    background: linear-gradient(155deg, rgba(244, 166, 181, 0.2), rgba(255, 255, 255, 0.7));
+  }
+
+  .cast-card--mahiru .cast-card__inner {
+    background: linear-gradient(155deg, rgba(120, 140, 180, 0.12), rgba(255, 255, 255, 0.7));
+  }
+
+  .cast-card--megumi .cast-card__inner {
+    background: linear-gradient(155deg, rgba(90, 90, 108, 0.1), rgba(255, 255, 255, 0.7));
+  }
+
+  .cast-card__name {
+    color: #4a4a52;
+  }
+
+  .cast-card__line {
+    color: #1a1a1e;
+  }
+
+  .cast-card__fallback {
+    color: #4a4a52;
+  }
+
+  .cast-card__frame::after {
+    background: linear-gradient(180deg, transparent 50%, rgba(20, 20, 30, 0.15) 100%);
+  }
+
+  .cast-showcase__hint {
+    color: #8a8a96;
+  }
+}
 </style>

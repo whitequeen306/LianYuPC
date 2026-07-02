@@ -170,7 +170,13 @@ export default defineConfig({
                         },
                       },
                     }
-                  : undefined,
+                  : {
+                      // dev 模式同样 external 掉 node 模块与 ws 的可选 native 依赖，
+                      // 否则 vite 会把 ws 打包并硬解析 bufferutil/utf-8-validate，导致启动崩。
+                      rollupOptions: {
+                        external: ['electron', 'active-win', 'bytenode', 'ws', 'extract-zip', 'bufferutil', 'utf-8-validate'],
+                      },
+                    },
 
               },
 

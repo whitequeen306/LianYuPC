@@ -11,11 +11,14 @@ import {
   net,
   Notification,
   powerMonitor,
+  dialog,
 } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import crypto from 'crypto'
+import { execFileSync } from 'child_process'
 import { fileURLToPath } from 'url'
+import * as logger from './logger.js'
 import {
   readDesktopSettings,
   writeDesktopSettings,
@@ -60,6 +63,10 @@ import { wipeNapCatInstall } from './napcatRuntime/napcatRelease.js'
 import { loadRuntimeSecrets, getRuntimeSecrets } from './runtimeSecrets.js'
 import { RENDERER_AUTH_TOKEN_SCRIPT } from './rendererTokenScript.js'
 
+// Windows toast 通知归属：AUMID 必须在 app ready / 任何窗口创建前设置，
+// 否则 new Notification() 弹的 toast 无归属（不认图标、不进操作中心）。
+app.setAppUserModelId('com.lianyu.pc')
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const isDev = !!process.env.VITE_DEV_SERVER_URL
@@ -79,6 +86,8 @@ let quickChatPendingShowId = null
 let quickChatReadyFallbackTimer = null
 /** NapCat WebUI 扫码登录窗（自管托管）单例 */
 let qqLoginWindow = null
+/** 图片查看器独立窗口（微信/QQ 风格）单例；主进程主动 loadURL(data:) + executeJavaScript 注入逻辑 */
+let imageViewerWindow = null
 /** @type {Tray | null} */
 let tray = null
 let isQuitting = false
@@ -293,6 +302,8 @@ const EXTERNAL_URL_HOST_ALLOWLIST = new Set([
   'raw.githubusercontent.com',
   'fonts.googleapis.com',
   'fonts.gstatic.com',
+  'ifdian.net',
+  'www.ifdian.net',
 ])
 
 function isAllowedExternalUrl(rawUrl) {
@@ -474,15 +485,12 @@ function logPath() {
   return path.join(app.getPath('userData'), 'startup.log')
 }
 
+/**
+ * 统一日志入口 —— 委托给 electron/logger.js（带级别、轮转、全局错误捕获）。
+ * 保留原 log(message) 签名以兼容 ~80 处现有调用点，内部转为 logger.info。
+ */
 function log(message) {
-  const line = `[${new Date().toISOString()}] ${message}\n`
-  console.log(message)
-  try {
-    fs.mkdirSync(path.dirname(logPath()), { recursive: true })
-    fs.appendFileSync(logPath(), line)
-  } catch {
-    // ignore
-  }
+  logger.info('main', message)
 }
 
 function resolveDistRoot() {
@@ -494,10 +502,13 @@ function resolveDistPath(...segments) {
 }
 
 function resolveTrayIcon() {
-  const ico = path.join(__dirname, '../build/icon.ico')
-  if (fs.existsSync(ico)) {
-    return ico
-  }
+  // 打包后 build/icon.ico 不在 asar 里；dist/icon.ico 才在（regenerate-icon.py 同步写
+  // 到 public/icon.ico，vite 拷进 dist/）。ICO 多尺寸 + 正确 alpha，避免托盘把 PNG 透明
+  // 当黑底渲染成"黑圆"。
+  const distIco = resolveDistPath('icon.ico')
+  if (fs.existsSync(distIco)) return distIco
+  const devIco = path.join(__dirname, '../build/icon.ico')
+  if (fs.existsSync(devIco)) return devIco
   return resolveDistPath('logo.png')
 }
 
@@ -728,6 +739,22 @@ function showLauncherMessageNotification(payload = {}) {
     showMainWindow(hash)
   })
   notification.show()
+}
+
+/**
+ * 注册 Windows toast AUMID 到当前用户注册表，使通知中心/弹窗能正确显示"恋语"名称与 exe 图标。
+ * 幂等：每次启动覆盖写一次，失败只 warn 不阻断。需在 app ready 后调用（要 exe 路径）。
+ */
+function ensureToastAppRegistration() {
+  const aumid = 'com.lianyu.pc'
+  try {
+    const exePath = app.getPath('exe')
+    const regBase = `HKCU\\Software\\Classes\\AppUserModelId\\${aumid}`
+    execFileSync('reg', ['add', regBase, '/v', 'DisplayName', '/t', 'REG_SZ', '/d', '恋语', '/f'], { windowsHide: true, stdio: 'ignore' })
+    execFileSync('reg', ['add', regBase, '/v', 'IconUri', '/t', 'REG_SZ', '/d', exePath, '/f'], { windowsHide: true, stdio: 'ignore' })
+  } catch (err) {
+    console.warn('ToastAUMID reg failed', err?.message || err)
+  }
 }
 
 /** 角色主动消息：后台 + 桌宠不可见 → Windows 系统通知；桌宠可见 → 仅桌宠提示 */
@@ -1016,8 +1043,10 @@ function applyTitleBarOverlayToAllWindows(presetKey) {
 }
 
 function resolveTitleBarPresetKey({ surface, theme }) {
+  // landing/auth 页面也需主题感知：浅色用 light preset（深色图标 + 浅色窗口背景），
+  // 否则标题栏 overlay 区显示深色窗口背景 → 顶部出现黑行。深色用 landing preset（浅色图标）。
   if (surface === 'landing' || surface === 'auth') {
-    return 'landing'
+    return theme === 'light' ? 'light' : 'landing'
   }
   return theme === 'light' ? 'light' : 'dark'
 }
@@ -1101,7 +1130,7 @@ function createMainWindow() {
     minWidth: 960,
     minHeight: 640,
     title: 'LianYu - 恋语',
-    icon: resolveDistPath('logo.png'),
+    icon: resolveDistPath('icon.ico'),
     backgroundColor: resolveWindowBackgroundColor(appearanceMode),
     ...buildCaptionWindowOptions(),
     show: false,
@@ -1436,7 +1465,7 @@ function createQuickChatShell() {
     minWidth: 320,
     minHeight: 420,
     title: 'LianYu 聊天',
-    icon: resolveDistPath('logo.png'),
+    icon: resolveDistPath('icon.ico'),
     backgroundColor: resolveWindowBackgroundColor(appearance),
     ...buildQuickChatWindowOptions(),
     show: false,
@@ -1856,7 +1885,7 @@ function openQqLoginWindow() {
     minWidth: 360,
     minHeight: 480,
     title: 'QQ 登录 · NapCat',
-    icon: resolveDistPath('logo.png'),
+    icon: resolveDistPath('icon.ico'),
     backgroundColor: '#ffffff',
     autoHideMenuBar: true,
     show: false,
@@ -1888,6 +1917,153 @@ function openQqLoginWindow() {
     qqLoginWindow = null
   })
   win.loadURL(url)
+  return { ok: true }
+}
+
+/**
+ * 独立图片查看器窗口（微信/QQ 风格）。
+ *
+ * 方案：主进程 new BrowserWindow → loadURL(data:text/html,...) 加载仅含结构 + 行内
+ * <style> 的骨架（CSP 的 script-src 无 'unsafe-inline'，行内 <script> 会被阻断，故骨架
+ * 不写脚本）；窗口 did-finish-load 后由主进程 webContents.executeJavaScript 注入全部
+ * 交互逻辑（特权注入，不受 CSP 约束）。这样无需新增打包文件，也彻底规避页面内
+ * z-index / pointer-events / transform 祖先上下文等干扰。
+ *
+ * 图片 URL 由渲染进程经 IPC 传入，须为绝对地址（resolveMediaUrl 已对 /api/ 路径补全
+ * apiOrigin）——data: 文档 origin 为 null，无法解析相对路径。
+ */
+function buildImageViewerHtml() {
+  return `<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src http: https: data: blob:; style-src 'unsafe-inline';">
+<style>
+  html,body{margin:0;height:100%;background:#0a0a0f;overflow:hidden;user-select:none;font-family:system-ui,Segoe UI,Microsoft YaHei,sans-serif}
+  #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;cursor:grab}
+  #stage.drag{cursor:grabbing}
+  #img{max-width:100vw;max-height:100vh;transform-origin:center center;will-change:transform;transition:opacity .12s}
+  .bar{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);display:flex;gap:8px;
+    background:rgba(28,28,38,.62);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.14)}
+  .btn{color:#fff;background:rgba(255,255,255,.08);border:none;width:38px;height:38px;border-radius:50%;
+    font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s}
+  .btn:hover{background:rgba(255,120,180,.38)}
+  .cnt{color:#fff;font-size:13px;display:flex;align-items:center;padding:0 6px;min-width:58px;justify-content:center}
+  .x{position:fixed;top:14px;right:14px}
+  .hint{position:fixed;top:14px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,.45);font-size:12px;pointer-events:none}
+</style>
+</head>
+<body>
+  <div id="stage"><img id="img" alt="" draggable="false"></div>
+  <div class="bar">
+    <button class="btn" data-act="prev" title="上一张">&#9664;</button>
+    <div class="cnt" id="cnt"></div>
+    <button class="btn" data-act="next" title="下一张">&#9654;</button>
+    <button class="btn" data-act="out" title="缩小">&minus;</button>
+    <button class="btn" data-act="in" title="放大">&plus;</button>
+    <button class="btn" data-act="rot" title="旋转">&#10227;</button>
+    <button class="btn" data-act="fit" title="还原">&#8961;</button>
+  </div>
+  <button class="btn x" data-act="close" title="关闭 (Esc)">&#10005;</button>
+  <div class="hint">滚轮缩放 · 拖拽平移 · Esc 关闭 · &larr; &rarr; 切换</div>
+</body>
+</html>`
+}
+
+function buildImageViewerScript(urls, initialIndex) {
+  return `(function(){
+var urls=${JSON.stringify(urls)};
+var idx=${JSON.stringify(initialIndex)}|0;
+if(!urls||!urls.length){window.close();return;}
+var img=document.getElementById('img'),cnt=document.getElementById('cnt'),stage=document.getElementById('stage');
+var scale=1,rot=0,tx=0,ty=0,drag=false,lx=0,ly=0;
+function apply(){img.style.transform='translate('+tx+'px,'+ty+'px) scale('+scale+') rotate('+rot+'deg)';}
+function render(){img.style.opacity='0';img.src=urls[idx];cnt.textContent=(idx+1)+' / '+urls.length;scale=1;rot=0;tx=0;ty=0;apply();}
+function go(d){idx=(idx+d+urls.length)%urls.length;render();}
+img.addEventListener('load',function(){img.style.opacity='1';void img.offsetHeight;});
+img.addEventListener('error',function(){cnt.textContent='加载失败 '+(idx+1)+'/'+urls.length;});
+document.addEventListener('click',function(e){
+  var t=e.target,act=t.getAttribute&&t.getAttribute('data-act');if(!act)return;
+  if(act==='prev')go(-1);else if(act==='next')go(1);
+  else if(act==='in'){scale=Math.min(8,scale*1.25);apply();}
+  else if(act==='out'){scale=Math.max(0.2,scale/1.25);apply();}
+  else if(act==='rot'){rot=(rot+90)%360;apply();}
+  else if(act==='fit'){scale=1;tx=0;ty=0;apply();}
+  else if(act==='close')window.close();
+});
+stage.addEventListener('wheel',function(e){e.preventDefault();if(e.deltaY<0)scale=Math.min(8,scale*1.15);else scale=Math.max(0.2,scale/1.15);apply();},{passive:false});
+stage.addEventListener('mousedown',function(e){if(e.button!==0)return;e.preventDefault();drag=true;lx=e.clientX;ly=e.clientY;stage.classList.add('drag');});
+window.addEventListener('mousemove',function(e){if(!drag)return;tx+=e.clientX-lx;ty+=e.clientY-ly;lx=e.clientX;ly=e.clientY;apply();});
+window.addEventListener('mouseup',function(){drag=false;stage.classList.remove('drag');});
+window.addEventListener('keydown',function(e){
+  if(e.key==='Escape')window.close();
+  else if(e.key==='ArrowLeft')go(-1);
+  else if(e.key==='ArrowRight')go(1);
+});
+render();
+})();`
+}
+
+function openImageViewer(payload) {
+  const urls = Array.isArray(payload?.urls) ? payload.urls.filter((u) => typeof u === 'string' && u) : []
+  if (urls.length === 0) return { ok: false, reason: 'no_urls' }
+  const initialIndex = Math.max(0, Math.min((payload?.initialIndex ?? 0) | 0, urls.length - 1))
+
+  // 复用已存在的查看器窗口：推送新数据并聚焦
+  if (imageViewerWindow && !imageViewerWindow.isDestroyed()) {
+    imageViewerWindow.show()
+    imageViewerWindow.focus()
+    try {
+      void imageViewerWindow.webContents.executeJavaScript(buildImageViewerScript(urls, initialIndex))
+    } catch (e) {
+      log('openImageViewer: reuse inject failed', e?.message || e)
+    }
+    return { ok: true, reused: true }
+  }
+
+  const win = new BrowserWindow({
+    width: 960,
+    height: 720,
+    minWidth: 360,
+    minHeight: 280,
+    title: '图片查看',
+    icon: resolveDistPath('icon.ico'),
+    backgroundColor: '#0a0a0f',
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+    },
+  })
+  imageViewerWindow = win
+  win.lianyuKind = 'imageViewer'
+  win.setMenuBarVisibility(false)
+
+  win.on('closed', () => {
+    imageViewerWindow = null
+  })
+
+  // 先 loadURL + 注入脚本 + 首帧 render，再 show——避免 ready-to-show 过早 show
+  // 空骨架后，Chromium 对未聚焦窗口延迟二次 paint（表现为黑屏，需点击才显示）。
+  win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(buildImageViewerHtml()))
+    .then(() => {
+      if (win.isDestroyed()) return
+      return win.webContents.executeJavaScript(buildImageViewerScript(urls, initialIndex))
+    })
+    .then(() => {
+      if (win.isDestroyed()) return
+      win.show()
+      win.webContents.invalidate()
+    })
+    .catch((e) => {
+      if (!win.isDestroyed()) {
+        log('openImageViewer: load/inject failed', e?.message || e)
+        win.show()
+      }
+    })
   return { ok: true }
 }
 
@@ -2309,24 +2485,73 @@ function registerIpcHandlers() {
     return { ok: true, ...result }
   })
 
-  // 查看桥接日志：读 startup.log，过滤只留桥接相关行（qqBridge/napcatHost/resolve-conversation/
-  // ensureBridgeBinding 标签），尾部返回 500 条。原尾 300 条被 setTitleBarOverlay/api:request
-  // 等非桥接噪声淹没（872 行中噪声占 800+），真正的桥接诊断日志被挤出窗口——故先过滤再截尾。
+  // 查看桥接日志：从全局日志（logs/app.log + 轮转 + 旧 startup.log）读取，
+  // 过滤只留桥接相关行（qqBridge/napcatHost/resolve-conversation/ensureBridgeBinding 标签），
+  // 尾部返回 500 条。
   ipcMain.handle('desktop:qq-bridge-get-logs', (event) => {
     if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     try {
-      let content = ''
-      try {
-        content = fs.readFileSync(logPath(), 'utf-8')
-      } catch (e) {
-        if (e.code !== 'ENOENT') throw e // 无日志文件：返回空，非错误
-      }
+      const content = logger.getLogContent(50000)
       const all = content ? content.split(/\r?\n/).filter(Boolean) : []
-      const bridgeRe = /\] \[(qqBridge|napcatHost|resolve-conversation|ensureBridgeBinding)\]/
+      const bridgeRe = /\[(qqBridge|napcatHost|resolve-conversation|ensureBridgeBinding)\]/
       const lines = all.filter((l) => bridgeRe.test(l))
       return { ok: true, lines: lines.slice(-500) }
     } catch (e) {
       return { ok: false, reason: 'read_failed', error: e?.message || String(e) }
+    }
+  })
+
+  // ---- 全局日志 IPC ----
+
+  // 渲染进程日志转发（fire-and-forget，不阻塞渲染）
+  ipcMain.on('desktop:renderer-log', (event, payload) => {
+    if (!guardTrusted(event)) return
+    if (!payload || typeof payload !== 'object') return
+    const { level, tag, msg } = payload
+    if (typeof level !== 'string' || typeof tag !== 'string' || typeof msg !== 'string') return
+    logger.log(level.toUpperCase() === 'DEBUG' ? 'DEBUG'
+      : level.toUpperCase() === 'WARN' ? 'WARN'
+      : level.toUpperCase() === 'ERROR' ? 'ERROR'
+      : 'INFO', `renderer:${tag}`, msg)
+  })
+
+  // 导出日志：弹出保存对话框，写入文件
+  ipcMain.handle('desktop:export-logs', async (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    try {
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+      const result = await dialog.showSaveDialog({
+        title: '导出诊断日志',
+        defaultPath: `lianyu-logs-${ts}.txt`,
+        filters: [{ name: '文本文件', extensions: ['txt'] }, { name: '所有文件', extensions: ['*'] }],
+      })
+      if (result.canceled || !result.filePath) return { ok: false, reason: 'cancelled' }
+      const ret = logger.exportLogs(result.filePath)
+      return ret
+    } catch (e) {
+      return { ok: false, reason: 'export_failed', error: e?.message || String(e) }
+    }
+  })
+
+  // 获取全局日志内容（供应用内查看）
+  ipcMain.handle('desktop:get-global-logs', (event, maxLines) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    try {
+      const content = logger.getLogContent(Number(maxLines) || 10000)
+      return { ok: true, content }
+    } catch (e) {
+      return { ok: false, reason: 'read_failed', error: e?.message || String(e) }
+    }
+  })
+
+  // 打开日志文件夹
+  ipcMain.handle('desktop:open-log-folder', (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    try {
+      shell.openPath(logger.getLogDirPath())
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, reason: 'open_failed', error: e?.message || String(e) }
     }
   })
 
@@ -2472,6 +2697,12 @@ function registerIpcHandlers() {
     resetLauncherInteraction()
     return { ok: true }
   })
+
+  // 图片查看器独立窗口（微信/QQ 风格）：payload = { urls: string[], initialIndex?: number }
+  ipcMain.handle('desktop:open-image-viewer', (event, payload) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    return openImageViewer(payload || {})
+  })
 }
 
 async function runLauncherSmokeTest() {
@@ -2554,11 +2785,13 @@ async function runLauncherSmokeTest() {
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
 app.whenReady().then(() => {
+  logger.initGlobalErrorHandlers()
   if (process.env.LIANYU_LAUNCHER_SMOKE === '1') {
     log('launcher smoke test starting')
     return runLauncherSmokeTest()
   }
   log('app ready')
+  ensureToastAppRegistration()
   configureSecurity()
   configureAntiDebug()
   patchDesktopRequestOrigin()

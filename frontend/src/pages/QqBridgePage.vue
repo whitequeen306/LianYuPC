@@ -1,5 +1,9 @@
 <template>
   <div class="qq-bridge-page stagger-container">
+    <button class="page-back" type="button" @click="goBack">
+      <el-icon><ArrowLeft /></el-icon>
+      <span>返回</span>
+    </button>
     <header class="page-header">
       <h1 class="page-title">{{ t('routes.qqBridge') }}</h1>
       <p class="page-desc">{{ t('qqBridge.desc') }}</p>
@@ -139,7 +143,8 @@
                 />
                 <template #empty>
                   <div class="conv-empty">
-                    <span>{{ t('qqBridge.binding.characterEmpty') }}</span>
+                    <span v-if="characterLoading">{{ t('common.loading') }}</span>
+                    <span v-else>{{ t('qqBridge.binding.characterEmpty') }}</span>
                   </div>
                 </template>
               </el-select>
@@ -188,15 +193,16 @@
         <div class="glass qq-card reply-form">
           <el-form label-position="top">
             <el-form-item :label="t('qqBridge.reply.segmentDelay')">
-              <div class="slider-row">
-                <el-slider
+              <div class="delay-row">
+                <el-input-number
                   v-model="replyForm.segmentDelayMs"
                   :min="0"
                   :max="2000"
                   :step="100"
-                  class="reply-slider"
+                  controls-position="right"
+                  class="delay-input"
                 />
-                <span class="slider-value">{{ replyForm.segmentDelayMs }} ms</span>
+                <span class="delay-unit">ms</span>
               </div>
               <p class="field-hint">{{ t('qqBridge.reply.segmentDelayHint') }}</p>
             </el-form-item>
@@ -326,14 +332,21 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { useQqBridgeStore } from '@/stores/qqBridge'
 import { isElectronApp } from '@/utils/electron'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowLeft } from '@element-plus/icons-vue'
 import { listCharacters } from '@/api/character'
 
 const { t } = useI18n()
+const router = useRouter()
 const store = useQqBridgeStore()
 const isElectron = isElectronApp()
+const goBack = () => {
+  if (window.history.length > 1) router.back()
+  else router.push('/app/settings')
+}
 
 const hostStatus = computed(() => store.hostStatus || { state: 'stopped' })
 const bridgeStatus = computed(() => store.bridgeStatus || { state: 'stopped' })
@@ -401,7 +414,9 @@ watch(
     bindingForm.allowGroups = joinList(s.binding?.allowGroups)
     if (s.napcat?.wsUrl) wsForm.wsUrl = s.napcat.wsUrl
     if (s.napcat?.accessToken != null) wsForm.accessToken = s.napcat.accessToken
-    replyForm.segmentDelayMs = Number(s.reply?.segmentDelayMs) || 500
+    // 允许 0（不延迟）：显式取非负有限数，否则回落 500（|| 会把 0 当假值）
+    const segDelayMs = Number(s.reply?.segmentDelayMs)
+    replyForm.segmentDelayMs = Number.isFinite(segDelayMs) && segDelayMs >= 0 ? segDelayMs : 500
     replyForm.fallbackText = s.reply?.fallbackText ?? ''
   },
   { immediate: true },
@@ -952,23 +967,19 @@ onUnmounted(() => {
   margin-top: $space-1;
 }
 
-// 回复设置：滑块 + 实时数值
-.slider-row {
+// 回复设置：延迟数值输入（弃用滑块——Electron 下 el-slider 拖拽不可靠，
+// 改 el-input-number 让用户直接填数值，+/- 步进 100ms，更稳更直观）
+.delay-row {
   display: flex;
   align-items: center;
-  gap: $space-4;
+  gap: $space-3;
 }
 
-.reply-slider {
-  flex: 1;
-  min-width: 0;
-  width: 100%;
+.delay-input {
+  width: 180px;
 }
 
-.slider-value {
-  flex-shrink: 0;
-  min-width: 64px;
-  text-align: right;
+.delay-unit {
   font-family: $font-mono;
   font-size: $font-size-sm;
   color: $color-text-secondary;

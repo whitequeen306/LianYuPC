@@ -109,6 +109,16 @@ describe('normalizeQqBridgeSettings', () => {
     // reconnectMaxMs 默认已下调到 6000（≥30000 会被迁移逻辑转回 6000，见 normalizeQqBridgeSettings）
     expect(s.napcat.reconnectMaxMs).toBe(6000)
   })
+
+  it('reply.segmentDelayMs 允许 0（不延迟），不再被 || 误回落 500', () => {
+    // 旧实现 Number(0) || 500 = 500，用户设 0 保存后变回 500 → "回复设置无法修改"
+    expect(normalizeQqBridgeSettings({ reply: { segmentDelayMs: 0 } }).reply.segmentDelayMs).toBe(0)
+    expect(normalizeQqBridgeSettings({ reply: { segmentDelayMs: 800 } }).reply.segmentDelayMs).toBe(800)
+    // 缺失/非有限数/负数回落默认 500
+    expect(normalizeQqBridgeSettings({ reply: { segmentDelayMs: undefined } }).reply.segmentDelayMs).toBe(500)
+    expect(normalizeQqBridgeSettings({ reply: { segmentDelayMs: 'abc' } }).reply.segmentDelayMs).toBe(500)
+    expect(normalizeQqBridgeSettings({ reply: { segmentDelayMs: -10 } }).reply.segmentDelayMs).toBe(500)
+  })
 })
 
 describe('writeQqBridgeSettings', () => {
@@ -138,6 +148,13 @@ describe('writeQqBridgeSettings', () => {
     expect(s.hosting.mode).toBe('manual')
     expect(s.hosting.wsPort).toBe(3001)
     expect(s.hosting.consented).toBe(false)
+  })
+
+  it('reply.segmentDelayMs=0 经 write→read 往返不丢失（issue：回复设置无法修改）', () => {
+    writeQqBridgeSettings({ reply: { segmentDelayMs: 0, fallbackText: '' } })
+    const s = readQqBridgeSettings()
+    expect(s.reply.segmentDelayMs).toBe(0)
+    expect(s.reply.fallbackText).toBe('')
   })
 })
 

@@ -31,6 +31,15 @@
         </nav>
 
         <div class="landing-nav__actions">
+          <button
+            type="button"
+            class="landing-nav__theme"
+            :title="isDark ? '切换浅色模式' : '切换深色模式'"
+            @click="toggleTheme"
+          >
+            <el-icon :size="16"><Sunny v-if="isDark" /><Moon v-else /></el-icon>
+            <span class="landing-nav__theme-label">{{ isDark ? '浅色' : '深色' }}</span>
+          </button>
           <button type="button" class="btn btn-ghost" @click="goLogin">登录</button>
           <button type="button" class="btn btn-solid" @click="goRegister">
             <span class="btn__shine" aria-hidden="true" />
@@ -209,7 +218,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import LandingCastShowcase from '@/components/landing/LandingCastShowcase.vue'
 import LandingHeroOrbit from '@/components/landing/LandingHeroOrbit.vue'
@@ -221,8 +230,13 @@ import {
 } from '@/data/landingRoles.js'
 import { useLandingScroll, useRevealOnScroll } from '@/composables/useLandingScroll.js'
 import { APP_LOGO } from '@/constants/brand.js'
+import { useSettingsStore } from '@/stores/settings'
+import { Sunny, Moon } from '@element-plus/icons-vue'
 
 const router = useRouter()
+const settingsStore = useSettingsStore()
+const isDark = computed(() => settingsStore.theme === 'dark')
+const toggleTheme = () => settingsStore.toggleAppearanceMode()
 const year = new Date().getFullYear()
 const hoveredFeature = ref(null)
 const landingRoles = reactive(cloneRolesForShowcase(LANDING_ROLES_ALL))
@@ -528,6 +542,37 @@ function goRegister() {
   display: flex;
   gap: clamp(6px, 1.5vw, 10px);
   flex-shrink: 0;
+  align-items: center;
+}
+
+.landing-nav__theme {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: $radius-pill;
+  border: 1px solid var(--landing-border);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition:
+    color 0.25s ease,
+    background 0.25s ease,
+    border-color 0.25s ease;
+
+  &:hover {
+    color: #fff;
+    background: var(--landing-rose-dim);
+    border-color: rgba(244, 166, 181, 0.3);
+  }
+}
+
+.landing-nav__theme-label {
+  @media (max-width: 600px) {
+    display: none;
+  }
 }
 
 /* Buttons */
@@ -1231,5 +1276,91 @@ function goRegister() {
   50% {
     transform: translateX(-50%) translateY(8px);
   }
+}
+
+/* ===== 浅色模式覆盖 =====
+   深色为默认（见上），此处仅追加 html.light 下的浅色取值，不改动深色任何声明。
+   色板：暖白底 #faf7f8 + 品牌粉强调 + 深色文字（#1a1a1e/#4a4a52/#8a8a96）。 */
+html.light .landing {
+  --landing-ink: #faf7f8;
+  --landing-border: rgba(0, 0, 0, 0.08);
+  --landing-glass: rgba(255, 255, 255, 0.72);
+  color: #1a1a1e;
+
+  .landing__mesh {
+    background:
+      radial-gradient(ellipse 80% 50% at 20% 10%, rgba(244, 166, 181, 0.18), transparent 55%),
+      radial-gradient(ellipse 60% 40% at 85% 70%, rgba(100, 90, 180, 0.10), transparent 50%),
+      linear-gradient(175deg, #faf7f8 0%, #f3eef0 40%, #efeaf2 100%);
+  }
+
+  .landing__grain { opacity: 0.12; }
+
+  .landing__orb--a { background: rgba(244, 166, 181, 0.12); }
+  .landing__orb--b { background: rgba(90, 80, 160, 0.10); }
+  .landing__orb--c { background: rgba(244, 166, 181, 0.08); }
+
+  /* Nav */
+  .landing-nav--scrolled {
+    background: rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(20px) saturate(1.2);
+  }
+  .landing-nav__sub { color: #8a8a96; }
+  .landing-nav__link {
+    color: #4a4a52;
+    &:hover, &.is-active { color: #1a1a1e; background: var(--landing-rose-dim); }
+  }
+  .landing-nav__theme {
+    color: #4a4a52;
+    &:hover { color: #1a1a1e; background: var(--landing-rose-dim); border-color: rgba(244, 166, 181, 0.3); }
+  }
+
+  /* Buttons */
+  .btn-ghost {
+    background: rgba(0, 0, 0, 0.04);
+    color: #1a1a1e;
+  }
+
+  /* Section text */
+  .section__kicker { color: rgba(244, 166, 181, 0.85); }
+  .section__title { color: #1a1a1e; }
+  .section__desc { color: #4a4a52; }
+
+  /* Hero */
+  .hero__eyebrow { color: #8a8a96; }
+  .hero__title {
+    color: #1a1a1e;
+    em { background: linear-gradient(120deg, #d48494 0%, #f4a6b5 55%, #c8a8d8 100%); -webkit-background-clip: text; background-clip: text; }
+  }
+  .hero__lead { color: #4a4a52; }
+  .hero__stat dd { color: #8a8a96; }
+  .hero__scroll { color: #8a8a96; }
+  .hero__stage::before { border-color: rgba(244, 166, 181, 0.22); }
+
+  /* Feature cards */
+  .feature-card__text { color: #4a4a52; }
+  .feature-card__tag { color: rgba(0, 0, 0, 0.28); }
+  .feature-card:hover { box-shadow: 0 24px 48px rgba(0, 0, 0, 0.12); }
+
+  /* Cast */
+  .cast-section__list li { color: #4a4a52; }
+
+  /* Flow */
+  .flow-step__num { color: rgba(244, 166, 181, 0.32); }
+  .flow-step__body p { color: #4a4a52; }
+
+  /* Thanks */
+  .thanks__frame { box-shadow: 0 40px 80px rgba(0, 0, 0, 0.12); }
+  .thanks__kicker { color: rgba(244, 166, 181, 0.75); }
+  .thanks__quote { color: #1a1a1e; }
+  .thanks__sign { color: #8a8a96; }
+  .thanks__chip { color: #4a4a52; }
+
+  /* CTA */
+  .cta__desc { color: #4a4a52; }
+
+  /* Footer */
+  .landing-footer__links button { color: #8a8a96; }
+  .landing-footer__copy { color: #a0a0aa; }
 }
 </style>

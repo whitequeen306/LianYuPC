@@ -134,4 +134,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('desktop:qq-host-download', handler)
   },
   openQqLoginWindow: () => ipcRenderer.invoke('desktop:open-qq-login-window'),
+  openImageViewer: (payload) => ipcRenderer.invoke('desktop:open-image-viewer', payload),
+  rendererLog: (level, tag, msg) => ipcRenderer.send('desktop:renderer-log', { level, tag, msg }),
+  exportLogs: () => ipcRenderer.invoke('desktop:export-logs'),
+  getGlobalLogs: (maxLines) => ipcRenderer.invoke('desktop:get-global-logs', maxLines),
+  openLogFolder: () => ipcRenderer.invoke('desktop:open-log-folder'),
 })

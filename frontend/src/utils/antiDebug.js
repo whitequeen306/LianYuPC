@@ -2,7 +2,8 @@
  * 渲染进程反调试 — 只在 Electron 生产环境下激活。
  * - debugger 语句检测循环：每 100ms 测量 debugger 语句自身耗时，被调试器暂停则强制退出
  * - 页面隐藏时跳过检测，避免无意义占用
- * - Console 清洗：生产环境抹掉 console.log/warn/error 痕迹
+ * - Console 清洗：生产环境抹掉 console.log/info/debug（防注入泄露），
+ *   但 console.error/warn 转发到全局日志（不再静默吞掉，便于排查线上问题）
  */
 
 let timer = null
@@ -47,13 +48,40 @@ function initDebuggerLoop() {
 }
 
 function initConsoleHardening() {
-  // 生产环境拆除 console（防止通过 console 注入或泄露信息）
+  // 生产环境：console.log/info/debug/trace 等替换为 noop（防注入泄露）；
+  // console.error/warn 转发到全局日志（via IPC），不再静默吞掉。
   const noop = () => {}
-  const methods = ['log', 'info', 'debug', 'warn', 'error', 'trace', 'dir', 'table', 'group', 'groupEnd', 'time', 'timeEnd', 'count', 'clear']
-  for (const m of methods) {
+  const silentMethods = ['log', 'info', 'debug', 'trace', 'dir', 'table', 'group', 'groupEnd', 'time', 'timeEnd', 'count', 'clear']
+  for (const m of silentMethods) {
     try {
       Object.defineProperty(window.console, m, {
         get() { return noop },
+        set() {},
+        configurable: false,
+        enumerable: true,
+      })
+    } catch {
+      // 可能已被冻结，忽略
+    }
+  }
+
+  // console.error/warn → 转发到主进程全局日志（try/catch 防 IPC 异常循环）
+  const errorProxy = (...args) => {
+    try {
+      const msg = args.map(a => a instanceof Error ? (a.stack || a.message) : String(a)).join(' ')
+      window.electronAPI?.rendererLog?.('ERROR', 'console', msg)
+    } catch { /* ignore */ }
+  }
+  const warnProxy = (...args) => {
+    try {
+      const msg = args.map(a => a instanceof Error ? (a.stack || a.message) : String(a)).join(' ')
+      window.electronAPI?.rendererLog?.('WARN', 'console', msg)
+    } catch { /* ignore */ }
+  }
+  for (const [m, fn] of [['error', errorProxy], ['warn', warnProxy]]) {
+    try {
+      Object.defineProperty(window.console, m, {
+        get() { return fn },
         set() {},
         configurable: false,
         enumerable: true,

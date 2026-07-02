@@ -27,6 +27,7 @@ import { downloadAndExtractNapCat } from './napcatDownloader.js'
 import { ensureNapCatConfig } from './napcatConfig.js'
 import { createNapCatProcess } from './napcatProcess.js'
 import { writeQqBridgeSettings } from '../qqBridge/qqBridgeSettings.js'
+import * as logger from '../logger.js'
 
 let proc = null
 let onStatus = null
@@ -165,10 +166,9 @@ async function doStart({ settings, onStatus: statusCb, onDownload: dlCb, bridgeS
       env,
       maxRestarts: 5,
       onLog: (line) => {
-        // 全量上抛子进程 stdout/stderr（含 NapCat 自身报错，如找不到 QQ.exe 的
-        // Error Code 2）。此前仅上抛含 [process] 的行，NapCat 真实输出被丢弃，
-        // 导致启动失败时应用日志只有 "crashed restart n/5" 看不到根因（盲区）。
-        console.log('[napcatHost]', line)
+        // 全量上抛子进程 stdout/stderr 到全局日志（含 NapCat 自身报错，如找不到 QQ.exe 的
+        // Error Code 2）。此前仅 console.log 不落盘，导致启动失败时日志看不到根因（盲区）。
+        logger.info('napcat', line)
       },
       onWebui: (info) => {
         webuiInfo = info

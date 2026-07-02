@@ -339,7 +339,7 @@ onBeforeUnmount(() => {
   transform: translateX(-50%);
   z-index: $z-header;
   pointer-events: none;
-  transition: opacity 0.35s ease, transform 0.35s ease;
+  transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1), transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   opacity: 1;
 
   &.is-hidden {
@@ -605,7 +605,7 @@ onBeforeUnmount(() => {
   border: 1px dashed rgba($color-pink-rgb, 0.25);
   opacity: 0;
   transform: scale(0.9);
-  transition: opacity 0.3s ease, transform 0.4s ease;
+  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: none;
 
 }
@@ -662,7 +662,7 @@ onBeforeUnmount(() => {
 
 .dock-hint-fade-enter-active,
 .dock-hint-fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .dock-hint-fade-enter-from,

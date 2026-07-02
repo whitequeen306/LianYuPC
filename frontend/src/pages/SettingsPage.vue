@@ -1,5 +1,9 @@
 <template>
   <div class="settings-page stagger-container">
+    <button class="page-back" type="button" @click="goBack">
+      <el-icon><ArrowLeft /></el-icon>
+      <span>返回</span>
+    </button>
     <header class="page-header">
       <h1 class="page-title">{{ t('settings.title') }}</h1>
       <p class="page-desc">{{ t('settings.desc') }}</p>
@@ -166,6 +170,32 @@
       </div>
     </section>
 
+    <!-- 诊断日志 -->
+    <section v-if="isElectron" class="section stagger-item">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">诊断日志</h2>
+          <p class="section-desc">记录应用运行时的全部错误、警告与生命周期事件，便于排查问题</p>
+        </div>
+      </div>
+      <div class="desktop-settings glass">
+        <div class="desktop-settings__row">
+          <div>
+            <div class="desktop-settings__label">导出日志</div>
+            <div class="desktop-settings__hint">将全部日志导出为文本文件（含主进程、渲染进程、NapCat 子进程）</div>
+          </div>
+          <el-button type="primary" :icon="Download" :loading="exportingLogs" @click="exportLogs">导出</el-button>
+        </div>
+        <div class="desktop-settings__row">
+          <div>
+            <div class="desktop-settings__label">打开日志文件夹</div>
+            <div class="desktop-settings__hint">在资源管理器中打开日志文件所在目录</div>
+          </div>
+          <el-button text :icon="FolderOpened" @click="openLogFolder">打开文件夹</el-button>
+        </div>
+      </div>
+    </section>
+
     <!-- 关于 -->
     <section class="section stagger-item">
       <div class="section-header">
@@ -254,7 +284,7 @@ import { getElectronAPI, isElectronApp } from '@/utils/electron'
 import { PET_CATALOG, getPetPreviewUrl } from '@/constants/petCatalog'
 
 const { t } = useI18n()
-import { Plus, Edit, Delete, RefreshRight, Loading, Connection, Promotion } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, RefreshRight, Loading, Connection, Promotion, ArrowLeft, Download, FolderOpened } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const providersStore = useProvidersStore()
@@ -263,7 +293,34 @@ const settingsStore = useSettingsStore()
 const router = useRouter()
 const goQqBridge = () => router.push('/app/qq-bridge')
 const goAbout = () => router.push('/app/about')
+const goBack = () => {
+  if (window.history.length > 1) router.back()
+  else router.push('/app')
+}
 const isElectron = isElectronApp()
+
+// ---- 诊断日志 ----
+const exportingLogs = ref(false)
+const exportLogs = async () => {
+  exportingLogs.value = true
+  try {
+    const ret = await getElectronAPI()?.exportLogs?.()
+    if (ret?.ok) {
+      ElMessage.success(`日志已导出（${(ret.bytes / 1024).toFixed(1)} KB）`)
+    } else if (ret?.reason === 'cancelled') {
+      // 用户取消，不提示
+    } else {
+      ElMessage.error(`导出失败：${ret?.error || ret?.reason || '未知错误'}`)
+    }
+  } catch (e) {
+    ElMessage.error(`导出失败：${e?.message || e}`)
+  } finally {
+    exportingLogs.value = false
+  }
+}
+const openLogFolder = () => {
+  getElectronAPI()?.openLogFolder?.()
+}
 const petCatalog = PET_CATALOG.map(p => ({ ...p, previewUrl: getPetPreviewUrl(p) }))
 const desktopForm = reactive({
   closeToTray: true,
@@ -476,6 +533,22 @@ async function handleFetchModels(provider) {
 <style lang="scss" scoped>
 .settings-page {
   max-width: $narrow-page-max;
+}
+
+.page-back {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-1;
+  margin-bottom: $space-4;
+  padding: $space-1 $space-3 $space-1 $space-2;
+  border: 1px solid rgba($color-pink-rgb, 0.12);
+  border-radius: $radius-pill;
+  background: rgba(var(--ly-bg-surface-rgb), 0.35);
+  color: $color-text-secondary;
+  font-size: $font-size-sm;
+  cursor: pointer;
+  transition: all $transition-fast;
+  &:hover { color: $color-pink-primary; border-color: rgba($color-pink-rgb, 0.35); }
 }
 
 .page-header {

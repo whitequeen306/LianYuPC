@@ -183,4 +183,14 @@ onUnmounted(() => {
     opacity: 0.45;
   }
 }
+
+/* 浅色模式覆盖：深色默认不动，仅 html.light 下追加浅色取值。
+   原 mix-blend-mode: screen 只在深色背景上提亮粒子，白底上无效；
+   浅色改用 multiply 使浅色粒子在白底上可见（multiply 与 white 背景 = 粒子原色）。
+   粒子白色高光核心在 multiply+白底下会隐没，仅保留彩色光晕，符合浅色氛围。
+   略降整体透明度避免在浅色背景上过于浓重；JS 调色板不动。 */
+html.light .landing-particles {
+  mix-blend-mode: multiply;
+  opacity: 0.7;
+}
 </style>

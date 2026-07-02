@@ -32,13 +32,15 @@ const route = useRoute()
 const elementLocaleMap = { zh: zhCn, ja, en }
 const elementLocale = computed(() => elementLocaleMap[settingsStore.uiLanguage] || zhCn)
 
-/** Electron file:// 下禁用路由过渡，避免 out-in 中间态黑屏 */
+/** 路由过渡：桌面端与 web 端统一启用 out-in 淡入淡出。
+ *  早期 Electron file:// 下曾因 out-in 中间态 #app 高度塌缩露黑底而禁用；
+ *  现已给 #app 补 min-height:100vh + 稳定背景兜底，中间态显示背景色而非黑屏。 */
 const isElectron = isElectronRuntime()
 const isLauncherSurface = computed(() => route.name === 'Launcher' || route.name === 'LauncherPick')
 const isQuickChatSurface = computed(() => route.path.startsWith('/quick'))
 const usesAppHeader = computed(() => route.path.startsWith('/app'))
-const pageTransitionName = computed(() => (isElectron ? '' : 'page'))
-const pageTransitionMode = computed(() => (isElectron ? undefined : 'out-in'))
+const pageTransitionName = computed(() => 'page')
+const pageTransitionMode = computed(() => 'out-in')
 const usesIntegratedCaption = computed(() => {
   if (usesAppHeader.value) return true
   const name = route.name

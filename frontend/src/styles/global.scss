@@ -70,6 +70,27 @@ h1, h2, h3, h4, h5, h6 { font-weight: $font-weight-semibold; line-height: $line-
   66% { opacity: 0.6; }
 }
 
+/* 共享：子页面顶部返回按钮（设置/QQ桥接/关于等 hideDock 页面用） */
+.page-back {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-1;
+  margin-bottom: $space-4;
+  padding: $space-1 $space-3 $space-1 $space-2;
+  border: 1px solid rgba($color-pink-rgb, 0.12);
+  border-radius: $radius-pill;
+  background: rgba(var(--ly-bg-surface-rgb), 0.35);
+  color: $color-text-secondary;
+  font-size: $font-size-sm;
+  cursor: pointer;
+  transition: all $transition-fast;
+
+  &:hover {
+    color: $color-pink-primary;
+    border-color: rgba($color-pink-rgb, 0.35);
+  }
+}
+
 body.electron-app {
   --electron-caption-height: #{$electron-caption-height};
   --electron-caption-controls-width: #{$electron-caption-controls-width};
@@ -131,6 +152,12 @@ body.electron-app {
       position: relative;
       z-index: 1;
     }
+  }
+
+  /* 浅色模式：landing-nav 顶栏跟随浅色（覆盖上方深色默认 rgba(6,8,15,0.72)） */
+  html.light & .landing-nav {
+    background: rgba(248, 246, 247, 0.82);
+    border-bottom-color: rgba(0, 0, 0, 0.08);
   }
 
   .landing-nav__brand,
@@ -312,20 +339,21 @@ html:not(.dark) {
 }
 
 // --- Page Transition ---
+// out-in 模式：leave 快速淡出让位，enter 柔和上浮进入，无黑屏（#app 满屏背景兜底）。
 .page-enter-active {
-  animation: pageEnter 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: pageEnter 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .page-leave-active {
-  animation: pageLeave 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: pageLeave 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @keyframes pageEnter {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
 @keyframes pageLeave {
   from { opacity: 1; }
-  to { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 0; }
 }
 
 // --- Staggered Reveal ---
@@ -641,6 +669,103 @@ html:not(.dark) .el-button--primary {
   color: $color-text-primary !important;
 }
 
+// 下拉弹出动画柔和化：EP 默认 el-zoom-in-top/left 的 from 态是 scaleY(0)/scale(.45)
+// （从边/角缩放弹出，机械感强——即"僵硬"）。改为淡入 + 轻微下落，过渡更自然。
+// 仅作用于 el-select 弹层，不影响 tooltip / date-picker 等其它 popper。
+.el-select__popper.el-popper {
+  &.el-zoom-in-top-enter-active,
+  &.el-zoom-in-top-leave-active,
+  &.el-zoom-in-bottom-enter-active,
+  &.el-zoom-in-bottom-leave-active,
+  &.el-zoom-in-left-enter-active,
+  &.el-zoom-in-left-leave-active {
+    transition: opacity 0.22s cubic-bezier(0.23, 1, 0.32, 1),
+      transform 0.22s cubic-bezier(0.23, 1, 0.32, 1);
+    transform: none;
+  }
+  &.el-zoom-in-top-enter-from,
+  &.el-zoom-in-top-leave-to,
+  &.el-zoom-in-bottom-enter-from,
+  &.el-zoom-in-bottom-leave-to,
+  &.el-zoom-in-left-enter-from,
+  &.el-zoom-in-left-leave-to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+// ===== EP 弹层 / 对话框 / 抽屉动画统一柔化 =====
+// EP 默认 dialog-fade（translateY(-10px) 硬弹）、drawer（生硬 slide）、popover（scaleY 从角缩放）
+// 机械感强。统一为 opacity + 轻微位移/scale + EaseOutQuint 缓动，与 select 弹层一致。
+
+// popover / tooltip（非 select 的 popper）
+.el-popper:not(.el-select__popper) {
+  &.el-zoom-in-top-enter-active,
+  &.el-zoom-in-top-leave-active,
+  &.el-zoom-in-bottom-enter-active,
+  &.el-zoom-in-bottom-leave-active,
+  &.el-zoom-in-left-enter-active,
+  &.el-zoom-in-left-leave-active,
+  &.el-zoom-in-right-enter-active,
+  &.el-zoom-in-right-leave-active {
+    transition: opacity 0.22s cubic-bezier(0.23, 1, 0.32, 1),
+      transform 0.22s cubic-bezier(0.23, 1, 0.32, 1);
+    transform: none;
+  }
+  &.el-zoom-in-top-enter-from,
+  &.el-zoom-in-top-leave-to,
+  &.el-zoom-in-bottom-enter-from,
+  &.el-zoom-in-bottom-leave-to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  &.el-zoom-in-left-enter-from,
+  &.el-zoom-in-left-leave-to,
+  &.el-zoom-in-right-enter-from,
+  &.el-zoom-in-right-leave-to {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+}
+
+// 对话框 / 消息框
+// EP 的 transition 包裹 el-overlay，dialog-fade-* 类挂在 overlay 上（非 .el-dialog 后代），
+// 故直接命中过渡类名，不嵌套在 .el-dialog 下（否则后代选择器永远匹配不到）。
+.dialog-fade-enter-active,
+.dialog-fade-leave-active {
+  transition: opacity 0.26s cubic-bezier(0.23, 1, 0.32, 1),
+    transform 0.26s cubic-bezier(0.23, 1, 0.32, 1);
+  transform: none;
+}
+.dialog-fade-enter-from,
+.dialog-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-12px) scale(0.98);
+}
+
+// 抽屉（同理，el-drawer-fade-* 挂在 overlay 上）
+.el-drawer-fade-enter-active,
+.el-drawer-fade-leave-active {
+  transition: opacity 0.26s cubic-bezier(0.23, 1, 0.32, 1);
+}
+.el-drawer-fade-enter-from,
+.el-drawer-fade-leave-to { opacity: 0; }
+
+// ===== 全局通用过渡类（供 v-if 同位替换 / 简单显隐包裹复用）=====
+.fade-enter-active, .fade-leave-active { transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
+.slide-enter-active, .slide-leave-active {
+  transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1), transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.slide-enter-from { opacity: 0; transform: translateY(10px); }
+.slide-leave-to { opacity: 0; transform: translateY(-10px); }
+
+.scale-enter-active, .scale-leave-active {
+  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.scale-enter-from, .scale-leave-to { opacity: 0; transform: scale(0.96); }
+
 // Table
 .el-table {
   --el-table-bg-color: transparent;
@@ -707,14 +832,73 @@ html:not(.dark) .el-button--primary {
   100% { transform: scale(1); }
 }
 
-/* Electron 桌面端：跳过 scroll reveal / 路由过渡，避免首屏内容不可见 */
+/* Electron 桌面端：仅跳过 scroll reveal 类（依赖 IntersectionObserver，
+   file:// 下首屏可能不触发导致内容不可见），路由过渡与列表 stagger 已恢复。 */
 html.is-electron .reveal,
-html.is-electron .stagger-item,
-html.is-electron .page-header,
-html.is-electron .page-enter-active,
-html.is-electron .page-leave-active {
+html.is-electron .page-header {
   opacity: 1 !important;
   transform: none !important;
   animation: none !important;
+}
+
+/* 图片预览器美化：覆盖 Element Plus el-image-viewer 默认皮肤为玻璃拟态。
+   全局生效（el-image-viewer teleport 到 body）；以 .el-image-viewer__wrapper 前缀
+   提高特异性确保覆盖 EP 默认样式；色调跟随品牌粉 $color-pink-rgb。 */
+.el-image-viewer__wrapper {
+  .el-image-viewer__mask {
+    opacity: 1;
+    background: rgba(16, 16, 24, 0.78);
+    backdrop-filter: blur(16px) saturate(1.15);
+    -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  }
+
+  .el-image-viewer__btn {
+    opacity: 1;
+    width: 46px;
+    height: 46px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.07);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    color: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+    transition: background 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .el-image-viewer__btn:hover {
+    background: rgba($color-pink-rgb, 0.18);
+    border-color: rgba($color-pink-rgb, 0.55);
+    color: #fff;
+    box-shadow: 0 6px 28px rgba($color-pink-rgb, 0.28);
+  }
+
+  .el-image-viewer__prev,
+  .el-image-viewer__next { font-size: 26px; }
+  .el-image-viewer__close { font-size: 22px; }
+
+  .el-image-viewer__actions {
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(22, 22, 30, 0.5);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 10px 36px rgba(0, 0, 0, 0.45);
+    padding: 8px 14px;
+  }
+  .el-image-viewer__actions__inner {
+    .el-icon { font-size: 22px; color: rgba(255, 255, 255, 0.85); transition: color 0.2s ease, transform 0.2s ease; }
+    button:hover .el-icon { color: #fff; transform: scale(1.12); }
+  }
+
+  .el-image-viewer__progress {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 14px;
+    letter-spacing: 0.04em;
+  }
+
+  .el-image-viewer__canvas img {
+    border-radius: 14px;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+  }
 }
 

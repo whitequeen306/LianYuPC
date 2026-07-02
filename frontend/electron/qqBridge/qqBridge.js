@@ -13,18 +13,17 @@
 import { createNapCatClient } from './napCatClient.js'
 import { extractMessageContent, resolveReplyTarget, resolveSender } from './messageExtractor.js'
 import { performApiRequest } from '../apiProxy.js'
-import { isAllowedByBinding, readQqBridgeSettings, writeQqBridgeSettings } from './qqBridgeSettings.js'
+import { isAllowedByBinding, readQqBridgeSettings, writeQqBridgeSettings, DEFAULTS } from './qqBridgeSettings.js'
 import { app } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
+import * as logger from '../logger.js'
 
-// 桥接诊断日志：写 userData/startup.log（与主进程 log() 同文件）。排查「发消息收到兜底
+// 桥接诊断日志：委托给全局 logger（带级别、轮转、全局错误捕获）。排查「发消息收到兜底
 // 文案」类问题——记录后端调用的耗时/状态码/异常，定位是 AI 生成超时(>120s)还是连接错误。
 // 只记耗时/状态/内容长度，不记 token 与正文，避免泄露。
 function log(...args) {
-  const line = `[${new Date().toISOString()}] [qqBridge] ${args.map(a => typeof a === 'string' ? a : (a?.message || JSON.stringify(a))).join(' ')}\n`
-  try { fs.appendFileSync(path.join(app?.getPath?.('userData') || '', 'startup.log'), line) } catch { /* ignore */ }
-  console.warn(line.trimEnd())
+  logger.info('qqBridge', ...args)
 }
 
 let client = null
@@ -41,16 +40,16 @@ const inflight = {}
 export function startQqBridge({ apiOrigin, authToken, settings, onStatus: cb } = {}) {
   stopQqBridge()
   if (!apiOrigin || !authToken || !settings) {
-    console.warn('[qqBridge] start aborted: missing apiOrigin/authToken/settings')
+    log('start aborted: missing apiOrigin/authToken/settings')
     return false
   }
   const wsUrl = settings.napcat?.wsUrl
   if (!wsUrl) {
-    console.warn('[qqBridge] start aborted: napcat.wsUrl not configured')
+    log('start aborted: napcat.wsUrl not configured')
     return false
   }
   if (!settings.binding?.conversationId && !settings.binding?.characterId) {
-    console.warn('[qqBridge] start aborted: binding.conversationId/characterId not configured')
+    log('start aborted: binding.conversationId/characterId not configured')
     return false
   }
   lastApiOrigin = apiOrigin
@@ -212,7 +211,9 @@ async function handleOneBotMessage(event) {
   if (!client) return
   const target = resolveReplyTarget(event)
   // 分段逐条发送：条间小幅延迟，避免 napcat/QQ 风控且更像真人连发
-  const delayMs = Math.max(0, Number(settings.reply?.segmentDelayMs) || 500)
+  // 允许 0（不延迟）：显式取非负有限数，|| 会把 0 当假值误用 500
+  const segDelayMs = Number(settings.reply?.segmentDelayMs)
+  const delayMs = Number.isFinite(segDelayMs) && segDelayMs >= 0 ? segDelayMs : DEFAULTS.reply.segmentDelayMs
   try {
     for (let i = 0; i < replySegments.length; i++) {
       if (!client) break

@@ -9,7 +9,7 @@ import { app } from 'electron'
 import path from 'path'
 import fs from 'fs'
 
-const DEFAULTS = {
+export const DEFAULTS = {
   enabled: false,
   napcat: {
     // NapCat 正向 WS 默认端口 3001；用户本地起 NapCat 后此处通常无需改动
@@ -115,8 +115,10 @@ export function normalizeQqBridgeSettings(settings) {
   hosting.wsPort = Number(hosting.wsPort) || DEFAULTS.hosting.wsPort
   hosting.consented = hosting.consented === true
 
-  // reply 字段规整：segmentDelayMs 数值化（分段逐条发送的条间延迟）
-  reply.segmentDelayMs = Number(reply.segmentDelayMs) || DEFAULTS.reply.segmentDelayMs
+  // reply 字段规整：segmentDelayMs 数值化（分段逐条发送的条间延迟）。
+  // 须允许 0（"不延迟"）：Number(x) || 默认 会把 0 当假值误回落，故显式取非负有限数。
+  const segDelayMs = Number(reply.segmentDelayMs)
+  reply.segmentDelayMs = Number.isFinite(segDelayMs) && segDelayMs >= 0 ? segDelayMs : DEFAULTS.reply.segmentDelayMs
 
   return {
     enabled: raw.enabled === true,

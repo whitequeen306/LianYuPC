@@ -5,7 +5,6 @@
       class="header-brand"
     >
       <img :src="APP_LOGO" alt="LianYu" class="header-logo" />
-      <span class="header-wordmark">LianYu</span>
     </router-link>
 
     <div class="header-drag-region" aria-hidden="true" />
@@ -290,7 +289,7 @@ async function handleUserMenu(command) {
 .theme-hint-fade-leave-active,
 .notify-hint-fade-enter-active,
 .notify-hint-fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .theme-hint-fade-enter-from,
@@ -303,7 +302,7 @@ async function handleUserMenu(command) {
 
 .push-hint-fade-enter-active,
 .push-hint-fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .push-hint-fade-enter-from,

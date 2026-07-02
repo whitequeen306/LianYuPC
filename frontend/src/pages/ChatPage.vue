@@ -79,16 +79,17 @@
 
           <div v-if="item.role === 'user'" class="gal-bubble gal-bubble--user">
             <div v-if="item.imageUrl" class="gal-bubble__image">
-              <img :src="resolveMediaUrl(item.imageUrl)" alt="" />
+              <img :src="resolveMediaUrl(item.imageUrl)" alt="" @click="openImagePreview(item.imageUrl)" />
             </div>
-            <p v-if="item.content" class="gal-bubble__text">{{ item.content }}</p>
+            <!-- 有图且 content 仅为"（用户发送了一张图片）"占位文案时不显示文字，避免图片下方重复出现该提示 -->
+            <p v-if="item.content && !(item.imageUrl && item.content === IMAGE_ONLY_PLACEHOLDER)" class="gal-bubble__text">{{ item.content }}</p>
             <span v-if="item._lastOfGroup" class="gal-bubble__time">{{ formatTime(item.createdAt) }}</span>
           </div>
 
           <div v-else class="gal-bubble gal-bubble--hero">
             <span v-if="item._firstOfGroup" class="gal-bubble__name">{{ activeCharacter?.name }}</span>
             <div v-if="item.imageUrl" class="gal-bubble__image">
-              <img :src="resolveMediaUrl(item.imageUrl)" alt="" />
+              <img :src="resolveMediaUrl(item.imageUrl)" alt="" @click="openImagePreview(item.imageUrl)" />
             </div>
             <AssistantMessageContent
               v-if="item.content"
@@ -204,6 +205,17 @@
       <p>请从角色页选择角色开始聊天</p>
       <el-button type="primary" class="btn-cta" @click="goBack">前往角色</el-button>
     </div>
+
+    <!-- 图片预览：点击消息图片放大查看，支持缩放/旋转/多图切换 -->
+    <el-image-viewer
+      v-if="imageViewerVisible"
+      :url-list="imageViewerUrlList"
+      :initial-index="imageViewerInitialIndex"
+      :z-index="10000"
+      teleported
+      hide-on-click-modal
+      @close="imageViewerVisible = false"
+    />
   </div>
 </template>
 
@@ -242,6 +254,8 @@ import AssistantMessageContent from '@/components/AssistantMessageContent.vue'
 import { stripInnerThoughts, resolveShowInnerThoughts } from '@/utils/innerThoughtFilter'
 
 const TIME_GAP_MS = 5 * 60 * 1000
+// 用户仅发图时填入 content 的占位文案；模板里据此隐藏重复文字（见 :85 与 :958 两处引用，改这里即同步）
+const IMAGE_ONLY_PLACEHOLDER = '（用户发送了一张图片）'
 
 const route = useRoute()
 const router = useRouter()
@@ -252,6 +266,31 @@ const settingsStore = useSettingsStore()
 
 const charactersStore = useCharactersStore()
 const messages = ref([])
+// 图片预览：点击消息图片可放大查看（缩放/旋转/多图切换），类似微信/QQ
+const imageViewerVisible = ref(false)
+const imageViewerUrlList = ref([])
+const imageViewerInitialIndex = ref(0)
+function openImagePreview(imageUrl) {
+  if (!imageUrl) return
+  const resolved = resolveMediaUrl(imageUrl)
+  const all = messages.value
+    .filter(m => m.imageUrl)
+    .map(m => resolveMediaUrl(m.imageUrl))
+  const urls = all.length ? all : [resolved]
+  const initialIndex = Math.max(0, all.indexOf(resolved))
+
+  // Electron 桌面端：弹独立窗口查看（微信/QQ 风格），彻底避开页面内
+  // z-index / pointer-events / transform 祖先上下文等干扰。
+  const ea = getElectronAPI()
+  if (ea && typeof ea.openImageViewer === 'function') {
+    ea.openImageViewer({ urls, initialIndex })
+    return
+  }
+  // Web 降级：仍用页面内 el-image-viewer
+  imageViewerUrlList.value = urls
+  imageViewerInitialIndex.value = initialIndex
+  imageViewerVisible.value = true
+}
 const currentConvId = ref(null)
 const activeCharacter = ref(null)
 const activeCharacterAvatarTier = ref('thumb')
@@ -918,7 +957,7 @@ async function handleSend() {
   const userMsg = {
     _tempId: 'u' + Date.now(),
     role: 'user',
-    content: text || (imageUrl ? '（用户发送了一张图片）' : ''),
+    content: text || (imageUrl ? IMAGE_ONLY_PLACEHOLDER : ''),
     imageUrl: imageUrl || undefined,
     createdAt: new Date().toISOString()
   }
@@ -1421,6 +1460,11 @@ function formatTime(ts) {
   border-radius: $radius-md;
   animation: galLineIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
 
+  &__image,
+  &__image img {
+    cursor: zoom-in;
+  }
+
   &__text,
   :deep(.gal-bubble__text) {
     margin: 0;
@@ -1494,7 +1538,7 @@ function formatTime(ts) {
 @keyframes galLineIn {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(16px);
   }
   to {
     opacity: 1;

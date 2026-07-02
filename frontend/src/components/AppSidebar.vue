@@ -4,9 +4,6 @@
       <div class="brand-icon">
         <img :src="APP_LOGO" alt="LianYu" class="brand-logo" />
       </div>
-      <transition name="fade">
-        <span v-show="!settingsStore.sidebarCollapsed" class="brand-text">LianYu</span>
-      </transition>
     </div>
 
     <nav class="sidebar-nav">

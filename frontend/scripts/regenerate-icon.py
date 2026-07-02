@@ -10,6 +10,13 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "build" / "logo-source.png"
 OUT_PNG = ROOT / "public" / "logo.png"
 OUT_ICO = ROOT / "build" / "icon.ico"
+# 同时往 public/ 放一份 icon.ico：vite 会把 public/ 全量拷进 dist/，于是打包后的
+# asar 里有 dist/icon.ico 可供运行时托盘/窗口图标取用（build/icon.ico 不会进 asar）。
+OUT_ICO_PUBLIC = ROOT / "public" / "icon.ico"
+
+# 品牌粉 #f4a6b5 —— 与前端 --ly-accent / $color-pink-primary 一致。
+# ICO 贴到不透明粉底：杜绝任务栏/托盘透明像素被当暗色合成成"黑球"。
+BRAND_PINK = (244, 166, 181, 255)
 
 ICO_SIZES = [(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (24, 24), (16, 16)]
 
@@ -128,13 +135,29 @@ def center_square(img: Image.Image) -> Image.Image:
 
 
 def build_icon(src: Path) -> Image.Image:
+    # 方形图标：不套 squircle 圆角，但源图是黑底，须去黑边（corner matte / dark halo /
+    # dark edge）否则四角与边缘是纯黑不透明像素——即"黑边"。去 matte 后那些区域变透明，
+    # 方形圆角处自然透出底层，无需 squircle mask。
     base = center_square(Image.open(src).convert("RGBA"))
     cleaned = remove_corner_matte(base)
     cleaned = remove_dark_halo(cleaned)
-    mask = squircle_mask(base.size[0])
-    masked = apply_mask(cleaned, mask)
-    masked = peel_dark_edge(masked)
-    return masked.filter(ImageFilter.UnsharpMask(radius=1.0, percent=120, threshold=3))
+    cleaned = peel_dark_edge(cleaned)
+    return cleaned.filter(ImageFilter.UnsharpMask(radius=1.0, percent=120, threshold=3))
+
+
+def build_icon_opaque(src: Path) -> Image.Image:
+    """ICO/exe 用：立绘合成到品牌粉底，再套 squircle 圆角遮罩。
+
+    透明立绘在 32px 任务栏/托盘下，透明四角被 Windows 当暗色合成 → 泥黑圆球，
+    故贴到不透明 #f4a6b5 粉底。但方形粉底四角在任务栏圆角遮罩下会残留"粉色方框"，
+    故再套 squircle mask 把四角变透明，与任务栏圆角对齐，形状干净、无边框残留。
+    in-app 的 logo.png 仍用 build_icon()（透明，侧栏已有粉色渐变框托底）。
+    """
+    cleaned = build_icon(src)
+    bg = Image.new("RGBA", cleaned.size, BRAND_PINK)
+    bg.paste(cleaned, (0, 0), cleaned)  # cleaned 的 alpha 当 mask
+    bg = apply_mask(bg, squircle_mask(bg.size[0]))  # 四角透明，去方形粉边
+    return bg
 
 
 def save_png(img: Image.Image, dest: Path) -> None:
@@ -163,16 +186,21 @@ def ensure_source() -> None:
 
 def main() -> None:
     ensure_source()
-    icon = build_icon(SOURCE)
-    save_png(icon, OUT_PNG)
-    save_ico(icon, OUT_ICO)
+    # in-app logo.png：透明立绘（侧栏/顶栏已有粉色托底，干净）
+    transparent = build_icon(SOURCE)
+    # ico（taskbar/tray/exe）：不透明粉底立绘，杜绝黑球
+    opaque = build_icon_opaque(SOURCE)
+    save_png(transparent, OUT_PNG)
+    save_ico(opaque, OUT_ICO)
+    save_ico(opaque, OUT_ICO_PUBLIC)
 
     from PIL import IcoImagePlugin
 
     entries = IcoImagePlugin.IcoImageFile(OUT_ICO).ico.entry
     dims = [e.dim for e in entries]
-    print(f"Wrote {OUT_PNG} ({icon.size[0]}px)")
-    print(f"Wrote {OUT_ICO} with sizes: {dims}")
+    print(f"Wrote {OUT_PNG} ({transparent.size[0]}px, transparent)")
+    print(f"Wrote {OUT_ICO} with sizes: {dims} (opaque pink bg)")
+    print(f"Wrote {OUT_ICO_PUBLIC} (opaque pink bg)")
 
 
 if __name__ == "__main__":

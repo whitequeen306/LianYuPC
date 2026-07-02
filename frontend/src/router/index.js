@@ -125,19 +125,19 @@ const routes = [
         path: 'settings',
         name: 'Settings',
         component: () => import('@/pages/SettingsPage.vue'),
-        meta: { titleKey: 'routes.settings' }
+        meta: { titleKey: 'routes.settings', hideDock: true }
       },
       {
         path: 'qq-bridge',
         name: 'QqBridge',
         component: () => import('@/pages/QqBridgePage.vue'),
-        meta: { titleKey: 'routes.qqBridge' }
+        meta: { titleKey: 'routes.qqBridge', hideDock: true }
       },
       {
         path: 'about',
         name: 'About',
         component: () => import('@/pages/AboutPage.vue'),
-        meta: { titleKey: 'routes.about' }
+        meta: { titleKey: 'routes.about', hideDock: true }
       }
     ]
   },

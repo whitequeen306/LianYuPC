@@ -1,13 +1,16 @@
 /**
  * NapCat 运行时——配置生成（B 方案自管托管）。
  *
- * 幂等写入两份配置，并把 token 定死为 lianyupc（用户指定）：
+ * 幂等写入配置，并把 token 定死为 lianyupc（用户指定）：
  * - config/onebot11.json：正向 WS 服务，127.0.0.1:3001 + token=lianyupc，enable=true
  *   （文件缺失则新建、已存在则强制覆盖 token；token 不回读旧随机值）
  * - config/onebot11_<uin>.json：per-account 配置（NapCat 首次登录某号时从模板复制生成，
  *   之后 WS 服务读的就是它）。扫描覆盖所有 onebot11_*.json 的 token=lianyupc，否则
  *   历史残留旧号 per-account 带旧随机 token 会让 bridge 用 lianyupc 连时鉴权失败
  * - config/webui.json  ：WebUI 127.0.0.1:6099 + token=lianyupc（文件层兜底）
+ * - config/napcat.json ：反检测（bypass）默认全开——hook/window/module/process/
+ *   container/js 全 true + o3HookMode=1。NapCat 下载后自动写入，用户无需手动到
+ *   WebUI 开启。已存在则仅覆盖 bypass 字段和 o3HookMode，其余配置保留。
  *
  * 注意：webui token 的真正强制点不在本文件，而在 spawn env 的 NAPCAT_WEBUI_SECRET_KEY
  * （见 napcatHost.resolveLaunchTarget）——NapCat 启动 init 检测到该 env 会主动
@@ -142,6 +145,51 @@ export function ensureNapCatConfig({
     }
   } catch {
     /* 目录读取失败不影响主流程 */
+  }
+
+  // ---- napcat.json：反检测（bypass）默认全开 ----
+  // NapCat 下载后反检测默认关闭（bypass.* 全 false），LianYu 自动改为全开 +
+  // o3HookMode=1，用户无需手动到 WebUI 开启。已存在则仅覆盖 bypass 字段和
+  // o3HookMode，其余配置（日志级别等）保留用户改动。
+  const napcatCfgPath = path.join(configDir, 'napcat.json')
+  const BYPASS_KEYS = ['hook', 'window', 'module', 'process', 'container', 'js']
+  const existingNapcat = readJsonIfExists(napcatCfgPath)
+  if (existingNapcat) {
+    let changed = false
+    if (!existingNapcat.bypass || typeof existingNapcat.bypass !== 'object') {
+      existingNapcat.bypass = {}
+      changed = true
+    }
+    for (const key of BYPASS_KEYS) {
+      if (existingNapcat.bypass[key] !== true) {
+        existingNapcat.bypass[key] = true
+        changed = true
+      }
+    }
+    if (existingNapcat.o3HookMode !== 1) {
+      existingNapcat.o3HookMode = 1
+      changed = true
+    }
+    if (changed) writeJsonSync(napcatCfgPath, existingNapcat)
+  } else {
+    writeJsonSync(napcatCfgPath, {
+      fileLog: false,
+      consoleLog: true,
+      fileLogLevel: 'debug',
+      consoleLogLevel: 'info',
+      packetBackend: 'auto',
+      packetServer: '',
+      o3HookMode: 1,
+      autoTimeSync: true,
+      bypass: {
+        hook: true,
+        window: true,
+        module: true,
+        process: true,
+        container: true,
+        js: true,
+      },
+    })
   }
 
   // ---- webui.json：WebUI 登录窗 ----

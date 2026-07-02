@@ -10,6 +10,7 @@ import { initAntiDebug } from './utils/antiDebug'
 import { initElectronRuntimeConfig } from '@/utils/runtime'
 import { prepareAuthRoute, bootstrapAuth } from './auth/bootstrap'
 import { bootstrapLauncherSession } from './auth/launcherBootstrap'
+import * as rendererLogger from './utils/logger'
 import './styles/theme.scss'
 import './styles/global.scss'
 import './styles/app-shell.scss'
@@ -23,14 +24,30 @@ if (isElectronRuntime) {
   document.documentElement.classList.add('is-electron')
 }
 
+// ---- 全局错误捕获（须在 initAntiDebug 之前注册） ----
+// window.onerror：捕获未处理的运行时错误（同步）
+window.addEventListener('error', (event) => {
+  const detail = event.error?.stack || event.message || String(event.error || event.message)
+  rendererLogger.error('window-error', `${event.filename || ''}:${event.lineno || 0}:${event.colno || 0}`, detail)
+})
+
+// unhandledrejection：捕获未处理的 Promise rejection
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event.reason
+  const detail = reason instanceof Error ? (reason.stack || reason.message) : String(reason)
+  rendererLogger.error('unhandled-rejection', detail)
+})
+
 const app = createApp(App)
 
 app.config.errorHandler = (err, instance, info) => {
   const detail = `${info}: ${err?.stack || err}`
-  console.error('[VUE-ERROR]', detail)
+  // 保留原有内存兜底
   if (typeof window !== 'undefined') {
     window.__vueErr = (window.__vueErr || []).concat(detail)
   }
+  // 落盘到全局日志
+  rendererLogger.error('vue-error', detail)
 }
 
 const pinia = createPinia()

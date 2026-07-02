@@ -131,3 +131,68 @@ describe('ensureNapCatConfig — token 定死 lianyupc', () => {
     expect(readJson('onebot11_3951775904.json').network.websocketServers[0].token).toBe('lianyupc')
   })
 })
+
+describe('ensureNapCatConfig — 反检测（bypass）默认全开', () => {
+  it('首启：napcat.json 不存在时新建，bypass 全 true + o3HookMode=1', () => {
+    ensureNapCatConfig()
+    const cfg = readJson('napcat.json')
+    expect(cfg.bypass).toEqual({
+      hook: true, window: true, module: true, process: true, container: true, js: true,
+    })
+    expect(cfg.o3HookMode).toBe(1)
+  })
+
+  it('残留 bypass 全 false + o3HookMode=0：强制覆盖为全 true + 1', () => {
+    fs.mkdirSync(configDir, { recursive: true })
+    fs.writeFileSync(
+      path.join(configDir, 'napcat.json'),
+      JSON.stringify({
+        fileLog: false, consoleLog: true, fileLogLevel: 'debug', consoleLogLevel: 'info',
+        packetBackend: 'auto', packetServer: '', o3HookMode: 0, autoTimeSync: true,
+        bypass: { hook: false, window: false, module: false, process: false, container: false, js: false },
+      }),
+    )
+
+    ensureNapCatConfig()
+
+    const cfg = readJson('napcat.json')
+    expect(cfg.bypass).toEqual({
+      hook: true, window: true, module: true, process: true, container: true, js: true,
+    })
+    expect(cfg.o3HookMode).toBe(1)
+    // 非 bypass 字段保留
+    expect(cfg.fileLog).toBe(false)
+    expect(cfg.consoleLogLevel).toBe('info')
+  })
+
+  it('已是全 true + o3HookMode=1：幂等，不变', () => {
+    fs.mkdirSync(configDir, { recursive: true })
+    const original = {
+      fileLog: true, consoleLog: false, fileLogLevel: 'info', consoleLogLevel: 'warn',
+      packetBackend: 'http', packetServer: '0.0.0.0:9999', o3HookMode: 1, autoTimeSync: false,
+      bypass: { hook: true, window: true, module: true, process: true, container: true, js: true },
+    }
+    fs.writeFileSync(path.join(configDir, 'napcat.json'), JSON.stringify(original))
+
+    ensureNapCatConfig()
+
+    const cfg = readJson('napcat.json')
+    expect(cfg).toEqual(original)
+  })
+
+  it('bypass 对象缺失：补全为全 true', () => {
+    fs.mkdirSync(configDir, { recursive: true })
+    fs.writeFileSync(
+      path.join(configDir, 'napcat.json'),
+      JSON.stringify({ fileLog: false, o3HookMode: 0 }),
+    )
+
+    ensureNapCatConfig()
+
+    const cfg = readJson('napcat.json')
+    expect(cfg.bypass).toEqual({
+      hook: true, window: true, module: true, process: true, container: true, js: true,
+    })
+    expect(cfg.o3HookMode).toBe(1)
+  })
+})

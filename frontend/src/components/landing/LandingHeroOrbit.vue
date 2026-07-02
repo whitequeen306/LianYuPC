@@ -333,4 +333,42 @@ function onImgError(role) {
     opacity: 1;
   }
 }
+
+/* 浅色模式覆盖：深色默认不动，仅 html.light 下追加浅色取值 */
+html.light .hero-orbit {
+  .hero-orbit__hub {
+    background: radial-gradient(
+      circle,
+      rgba(255, 255, 255, 0.72) 0%,
+      rgba(255, 255, 255, 0.5) 50%,
+      transparent 75%
+    );
+  }
+
+  .hero-orbit__hub-text {
+    color: #1a1a1e;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+  }
+
+  .hero-orbit__card {
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+  }
+
+  .hero-orbit__bubble {
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+    color: #1a1a1e;
+
+    &::after {
+      background: rgba(255, 255, 255, 0.9);
+    }
+  }
+
+  .hero-orbit__card-name {
+    color: #4a4a52;
+    background: rgba(255, 255, 255, 0.92);
+  }
+}
 </style>

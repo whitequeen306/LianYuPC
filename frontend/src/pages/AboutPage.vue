@@ -1,5 +1,9 @@
 <template>
   <div class="about-page stagger-container">
+    <button class="page-back" type="button" @click="goBack">
+      <el-icon><ArrowLeft /></el-icon>
+      <span>返回</span>
+    </button>
     <header class="page-header">
       <h1 class="page-title">{{ t('about.title') }}</h1>
       <p class="page-desc">{{ t('about.desc') }}</p>
@@ -9,7 +13,7 @@
     <section class="section stagger-item">
       <div class="glass about-card">
         <div class="about-brand">
-          <div class="about-logo">恋</div>
+          <img :src="APP_LOGO" alt="LianYu" class="about-logo" @click="handleLogoClick" />
           <div class="about-brand__text">
             <div class="about-brand__name">恋语 <span class="about-brand__en">LianYu</span></div>
           </div>
@@ -28,34 +32,22 @@
       </div>
     </section>
 
-    <!-- 技术栈 -->
-    <section class="section stagger-item">
-      <div class="section-header">
-        <div>
-          <h2 class="section-title">{{ t('about.techStack') }}</h2>
-        </div>
-      </div>
-      <div class="glass about-card">
-        <p class="about-intro">{{ t('about.techStackDesc') }}</p>
-      </div>
-    </section>
-
     <!-- 版权 -->
     <section class="section stagger-item">
       <div class="glass about-card about-footer">
         <span class="about-copyright">{{ t('about.copyright') }}</span>
-        <el-button type="primary" class="btn-cta" :icon="ArrowLeft" @click="goBack">{{ t('about.backToSettings') }}</el-button>
       </div>
     </section>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { isElectronApp } from '@/utils/electron'
 import { ArrowLeft } from '@element-plus/icons-vue'
+import { APP_LOGO } from '@/constants/brand'
 import pkg from '../../package.json'
 
 const { t } = useI18n()
@@ -64,6 +56,24 @@ const isElectron = isElectronApp()
 // 版本号取自 package.json，构建时注入；桌面版亦可由主进程覆盖但此处统一用前端版本
 const version = computed(() => pkg.version || '—')
 const goBack = () => router.push('/app/settings')
+
+// 彩蛋：连续点击恋语图标 10 次跳转爱发电赞助页。
+// 计数窗口 2s，中断则重置，避免误触。
+const SPONSOR_URL = 'https://ifdian.net/a/Lianyuchat'
+const logoClickCount = ref(0)
+let logoClickTimer = null
+function handleLogoClick() {
+  logoClickCount.value += 1
+  if (logoClickTimer) clearTimeout(logoClickTimer)
+  logoClickTimer = setTimeout(() => { logoClickCount.value = 0 }, 2000)
+  if (logoClickCount.value >= 10) {
+    logoClickCount.value = 0
+    if (logoClickTimer) { clearTimeout(logoClickTimer); logoClickTimer = null }
+    // Electron 下经 setWindowOpenHandler 走 shell.openExternal（需 host 在白名单）；
+    // Web 下浏览器原生 window.open 直接生效。
+    window.open(SPONSOR_URL, '_blank', 'noopener,noreferrer')
+  }
+}
 </script>
 
 <style lang="scss" scoped>
@@ -100,21 +110,20 @@ const goBack = () => router.push('/app/settings')
   gap: $space-4;
   margin-bottom: $space-5;
   padding-bottom: $space-5;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(128, 128, 140, 0.15);
 }
 
 .about-logo {
   width: 56px;
   height: 56px;
   border-radius: $radius-lg;
-  background: linear-gradient(135deg, rgba($color-pink-rgb, 0.85), rgba($color-pink-light, 0.7));
-  color: #fff;
-  font-size: 28px;
-  font-weight: $font-weight-bold;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  object-fit: contain;
   flex-shrink: 0;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  &:hover { transform: scale(1.06); }
+  &:active { transform: scale(0.96); }
 }
 
 .about-brand__name {
@@ -136,7 +145,7 @@ const goBack = () => router.push('/app/settings')
   gap: $space-3;
   margin-bottom: $space-5;
   padding-bottom: $space-5;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(128, 128, 140, 0.15);
 }
 
 .info-row {
