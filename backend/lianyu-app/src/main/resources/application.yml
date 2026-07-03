@@ -413,11 +413,11 @@ lianyu:
       heartbeat-timeout-seconds: 90
     binding:
       # 【单人模式】绑定的 QQ 号：仅处理来自此 QQ 的私聊消息（其它私聊忽略）
-      qq-user-id: ${LIANYU_QQ_BINDING_QQ_USER_ID:}
+      qq-user-id: ${LIANYU_QQ_BINDING_QQ_USER_ID:0}
       # 映射到的 LianYu 用户 ID（须为已存在的真实用户；该用户的角色即对外服务的角色）
-      lianyu-user-id: ${LIANYU_QQ_BINDING_LIANYU_USER_ID:}
+      lianyu-user-id: ${LIANYU_QQ_BINDING_LIANYU_USER_ID:0}
       # 复用的会话 ID（单人模式固定一个会话；请填一个已存在的会话 ID）
-      conversation-id: ${LIANYU_QQ_BINDING_CONVERSATION_ID:}
+      conversation-id: ${LIANYU_QQ_BINDING_CONVERSATION_ID:0}
       # AI 提供方：固定 platform（复用运营方共享平台 key，QQ 用户无需个人 key）
       provider: platform
       # 指定模型（为空则走 provider 默认模型）
