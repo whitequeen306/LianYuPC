@@ -45,7 +45,10 @@ export function humanizeError(error, fallback = '操作失败，请稍后再试'
     }
   }
 
-  if (/^401\b|unauthorized/i.test(raw) && /未登录|登录已过期|token/i.test(raw)) {
+  // 仅当消息不含 AI/模型/密钥等业务关键词时，才判定为应用自身的登录过期；
+  // 否则可能是 AI 接口返回的 401（API Key 无效），不应误判为登录过期
+  if (/^401\b|unauthorized/i.test(raw) && /未登录|登录已过期|token/i.test(raw)
+      && !/模型|密钥|接口|provider|api[ _-]?key/i.test(raw)) {
     return '登录已过期，请重新登录'
   }
 

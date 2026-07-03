@@ -320,7 +320,17 @@ public class AiChatService {
                     : fetchOpenAiCompatibleModels(transientVault, apiKey != null ? apiKey : "");
         } catch (Exception e) {
             if (e instanceof BusinessException be) throw be;
-            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "无法加载模型列表，请检查接口地址和密钥后重试");
+            log.warn("previewModels failed: baseUrl={}, error={}", baseUrl, e.getMessage(), e);
+            String em = e.getMessage();
+            String hint;
+            if (em != null && em.contains("401")) {
+                hint = "API Key 无效或已过期，请检查密钥是否正确";
+            } else if (em != null) {
+                hint = em;
+            } else {
+                hint = "请检查接口地址和密钥后重试";
+            }
+            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "无法加载模型列表：" + hint);
         }
     }
 
