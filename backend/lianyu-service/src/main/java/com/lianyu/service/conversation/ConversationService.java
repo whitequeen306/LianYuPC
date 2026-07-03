@@ -261,7 +261,13 @@ public class ConversationService {
                 request, character, systemPrompt, history, turn.userMsg().getId(), turn.aiUserContent());
         aiRequest.setExpectedLanguage(outputLanguageService.resolveForRequest(userId, turn.rawLanguageSample()));
 
-        ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
+        boolean hasImage = turn.userMsg().getImageUrl() != null && !turn.userMsg().getImageUrl().isBlank();
+        if (hasImage) {
+            aiRequest.setImageUrl(turn.userMsg().getImageUrl());
+        }
+        ChatResult chatResult = hasImage
+                ? aiChatService.chatImageBlocking(userId, aiRequest)
+                : aiChatService.chatBlocking(userId, aiRequest);
 
         List<MessageResponse> replies = saveAssistantReplies(
                 conversationId, character, chatResult.getContent(), chatResult.getTotalTokens());
@@ -318,9 +324,14 @@ public class ConversationService {
                 request, character, systemPrompt, history, turn.userMsg().getId(), turn.aiUserContent());
         aiRequest.setExpectedLanguage(outputLanguageService.resolveForRequest(userId, turn.rawLanguageSample()));
 
+        boolean hasImage = turn.userMsg().getImageUrl() != null && !turn.userMsg().getImageUrl().isBlank();
+        if (hasImage) {
+            aiRequest.setImageUrl(turn.userMsg().getImageUrl());
+        }
+
         final Character streamCharacter = character;
         final CharacterChatBehavior streamBehavior = chatBehaviorResolver.resolve(character);
-        return aiChatService.chatStream(userId, aiRequest, new AiChatService.StreamCallback() {
+        AiChatService.StreamCallback callback = new AiChatService.StreamCallback() {
             @Override
             public void beforeStreamComplete(SseEmitter emitter, String fullContent) throws IOException {
                 if (fullContent == null || fullContent.isBlank()) {
@@ -367,7 +378,10 @@ public class ConversationService {
                     }
                 }
             }
-        });
+        };
+        return hasImage
+                ? aiChatService.chatImageStream(userId, aiRequest, callback)
+                : aiChatService.chatStream(userId, aiRequest, callback);
     }
 
     @Transactional
@@ -811,12 +825,6 @@ public class ConversationService {
         userMsg.setImageUrl(imageUrl);
 
         String aiUserContent = request.getModelContentForAi();
-        if (hasImage) {
-            String description = aiChatService.describeImage(imageUrl);
-            String plainAi = buildAiUserContent(text, description);
-            aiUserContent = UserInputSanitizer.wrapStoredTextForModel(plainAi);
-            request.setModelContentForAi(aiUserContent);
-        }
 
         String rawLanguageSample = hasImage && text.isBlank() ? "用户发送了一张图片" : text;
         return new PreparedUserTurn(userMsg, aiUserContent, rawLanguageSample);
@@ -836,20 +844,6 @@ public class ConversationService {
         aiRequest.setMessages(buildChatMessageDtos(
                 systemPrompt, history, currentUserMsgId, currentAiUserContent));
         return aiRequest;
-    }
-
-    private String buildAiUserContent(String text, String imageDescription) {
-        StringBuilder sb = new StringBuilder();
-        if (text != null && !text.isBlank()) {
-            sb.append(text.trim());
-        }
-        if (imageDescription != null && !imageDescription.isBlank()) {
-            if (!sb.isEmpty()) {
-                sb.append("\n\n");
-            }
-            sb.append("[用户发送了一张图片，识图结果：").append(imageDescription.trim()).append(']');
-        }
-        return sb.toString();
     }
 
     private String normalizeImageUrl(String imageUrl) {

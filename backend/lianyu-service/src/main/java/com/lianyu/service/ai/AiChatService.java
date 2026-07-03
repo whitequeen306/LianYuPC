@@ -81,6 +81,7 @@ public class AiChatService {
     private final ScheduledExecutorService scheduler;
     private final PromptRuleEngine promptRuleEngine;
     private final OutputLanguageService outputLanguageService;
+    private final MultimodalOutputParser multimodalOutputParser;
 
     @Value("${spring.ai.openai.chat.options.model:}")
     private String defaultModel;
@@ -88,23 +89,23 @@ public class AiChatService {
     @Value("${spring.ai.openai.base-url:}")
     private String platformBaseUrl;
 
-    @Value("${lianyu.ai.vision.enabled:true}")
-    private boolean visionEnabled;
+    @Value("${lianyu.ai.multimodal.enabled:true}")
+    private boolean multimodalEnabled;
 
-    @Value("${lianyu.ai.vision.model:qwen3-vl-plus}")
-    private String visionModel;
+    @Value("${lianyu.ai.multimodal.base-url:https://clove.dpdns.org/v1}")
+    private String multimodalBaseUrl;
 
-    @Value("${lianyu.ai.vision.describe-max-tokens:420}")
-    private int visionDescribeMaxTokens;
+    @Value("${lianyu.ai.multimodal.api-key:}")
+    private String multimodalApiKey;
 
-    @Value("${lianyu.ai.vision.api-key:}")
-    private String visionApiKey;
+    @Value("${lianyu.ai.multimodal.model:qwen3.7-plus}")
+    private String multimodalModel;
 
-    @Value("${lianyu.ai.vision.base-url:https://dashscope.aliyuncs.com/compatible-mode/v1}")
-    private String visionBaseUrl;
+    @Value("${lianyu.ai.multimodal.max-tokens:800}")
+    private int multimodalMaxTokens;
 
-    @Value("${lianyu.ai.embedding.api-key:}")
-    private String embeddingApiKey;
+    @Value("${lianyu.ai.multimodal.describe-max-tokens:420}")
+    private int multimodalDescribeMaxTokens;
 
     private static final String CACHE_KEY_PREFIX = "provider_models:";
     private static final String CACHE_LOCK_SUFFIX = ":lock";
@@ -113,6 +114,30 @@ public class AiChatService {
     private static final Duration CACHE_LOCK_TTL = Duration.ofSeconds(10);
     private static final String RESILIENCE_NAME = "ai-chat";
     private static final int LANGUAGE_GATE_MAX_RETRIES = 2;
+
+    /**
+     * 多模态图片回复规范：模型须先输出 <json> 结构化分析（子意图/置信度/图片理解），
+     * 再以角色身份输出最终回复。禁止把图片理解直接念给用户。
+     */
+    private static final String MULTIMODAL_JSON_INSTRUCTION = """
+
+            【图片回复规范——必须严格遵守】
+            用户发了一张图片。你要先用 <json></json> 块输出结构化分析，再以你的角色身份输出最终回复。两步在同一次回复内完成，顺序为：先 <json> 块，随后另起一行写最终回复。
+
+            <json>{"sub_intent":"用户发图的目的","confidence":"high|medium|low","image_description":"结合上下文推断的要点"}</json>
+            （另起一行，以你的角色身份对用户说话）
+
+            字段要求：
+            - sub_intent：从以下选最接近的一个：分享日常 / 求识图认物 / 截图问问题 / 求情绪回应 / 炫耀 / 其他
+            - confidence：你能否看清这张图。high=清楚；low=看不清/模糊/无法辨认；medium=部分清楚
+            - image_description：结合对话上下文推断出的要点，不是逐字客观描述。例如用户说"看我今天吃的"就聚焦食物；不要机械罗列画面元素。
+
+            回复要求：
+            - <json> 块之后那段话才是给用户看的最终回复，必须以你的角色身份、性格、语气来说，结合上下文自然回应。
+            - 绝不允许把 image_description 直接念给用户当回复。
+            - 若 confidence 为 low，最终回复要明确告诉用户你看不清这张图，并请其重发或描述一下。
+            - 最终回复里不要再出现 JSON 或"以下是分析"之类的话。
+            """;
 
     public AiChatService(ApiKeyVaultService vaultService,
                          FileStorageService fileStorageService,
@@ -136,6 +161,7 @@ public class AiChatService {
         this.scheduler = scheduler;
         this.promptRuleEngine = promptRuleEngine;
         this.outputLanguageService = outputLanguageService;
+        this.multimodalOutputParser = new MultimodalOutputParser(objectMapper);
     }
 
     public SseEmitter chatStream(Long userId, AiChatRequest request) {
@@ -583,53 +609,14 @@ public class AiChatService {
     }
 
     /**
-     * Stage-1：仅用 VL 客观识图，短输出，不扮演角色。结果由主聊天模型消费。
-     * 若图中包含动漫/游戏/影视等知名角色，必须输出角色全名。
-     */
-    public String describeImage(String imageUrl) {
-        if (!visionEnabled) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "图片识别功能未启用");
-        }
-        VaultEntryResponse visionVault = buildVisionVault();
-        ChatModel chatModel = buildChatModel(visionVault, visionModel, visionVault.getApiKey());
-
-        MessageDto imageDto = new MessageDto();
-        imageDto.setRole("user");
-        imageDto.setContent(
-            "请客观简洁描述这张图片的可见内容（场景、动作、文字等）。"
-                + "如果图中包含动漫/游戏/影视等知名角色，必须在描述最前面用「角色：XXX」明确写出该角色的名字。"
-                + "如果是原创或无法识别的角色，直接描述画面即可，不要猜测名字。"
-        );
-        imageDto.setImageUrl(imageUrl);
-
-        List<Message> messages = List.of(
-                new SystemMessage("你是图片内容识别助手。只输出客观描述，不要扮演角色，不要闲聊，不要反问。"
-                        + "遇到动漫、游戏、影视等已知 IP 角色时，必须输出「角色：角色全名」作为首行。"),
-                buildVisionUserMessage(imageDto)
-        );
-        Prompt prompt = new Prompt(messages, OpenAiChatOptions.builder()
-                .model(visionModel)
-                .temperature(0.2)
-                .maxTokens(visionDescribeMaxTokens)
-                .build());
-        ChatResponse response = chatModel.call(prompt);
-        String content = extractStreamDelta(response);
-        if (content == null || content.isBlank()) {
-            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "图片识别失败，请换一张图片再试");
-        }
-        log.info("Image described via {} ({} chars)", visionModel, content.length());
-        return content.trim();
-    }
-
-    /**
      * 桌面感知：截图 VL 识图 → 角色语气生成主动问候。
      */
     public String observeDesktop(String imageBase64, String windowTitle, String persona) {
-        if (!visionEnabled) {
+        if (!multimodalEnabled) {
             return null;
         }
-        VaultEntryResponse visionVault = buildVisionVault();
-        ChatModel chatModel = buildChatModel(visionVault, visionModel, visionVault.getApiKey());
+        VaultEntryResponse visionVault = buildMultimodalVault();
+        ChatModel chatModel = buildChatModel(visionVault, multimodalModel, visionVault.getApiKey());
 
         byte[] imageBytes;
         try {
@@ -654,7 +641,7 @@ public class AiChatService {
                 new SystemMessage("你是屏幕内容识别助手。只输出客观描述，不扮演角色，不闲聊。"),
                 vlMessage);
         Prompt vlPromptObj = new Prompt(vlMessages, OpenAiChatOptions.builder()
-                .model(visionModel).temperature(0.2).maxTokens(visionDescribeMaxTokens).build());
+                .model(multimodalModel).temperature(0.2).maxTokens(multimodalDescribeMaxTokens).build());
         ChatResponse vlResponse = chatModel.call(vlPromptObj);
         String description = extractStreamDelta(vlResponse);
         if (description == null || description.isBlank()) {
@@ -674,7 +661,7 @@ public class AiChatService {
 
         List<Message> greetingMessages = List.of(new UserMessage(greetingPrompt));
         Prompt greetingPromptObj = new Prompt(greetingMessages, OpenAiChatOptions.builder()
-                .model(visionModel).temperature(0.9).maxTokens(120).build());
+                .model(multimodalModel).temperature(0.9).maxTokens(120).build());
         ChatResponse greetingResponse = chatModel.call(greetingPromptObj);
         String greeting = extractStreamDelta(greetingResponse);
         if (greeting == null || greeting.isBlank()) {
@@ -685,17 +672,128 @@ public class AiChatService {
         return greeting.trim();
     }
 
-    private VaultEntryResponse buildVisionVault() {
-        String apiKey = resolveVisionApiKey();
+    /** 多模态模型 Vault（自建中转 url/key，qwen3.7-plus），图片消息与桌宠屏幕观察共用。 */
+    private VaultEntryResponse buildMultimodalVault() {
+        String apiKey = multimodalApiKey;
         if (apiKey == null || apiKey.isBlank()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "图片识别服务未配置，暂无法识别图片");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "多模态识图服务未配置");
         }
         return VaultEntryResponse.builder()
                 .provider(AiConstants.PLATFORM_PROVIDER)
                 .apiKey(apiKey)
-                .baseUrl(visionBaseUrl)
-                .modelDefault(visionModel)
+                .baseUrl(multimodalBaseUrl)
+                .modelDefault(multimodalModel)
                 .build();
+    }
+
+    /**
+     * 图片消息专用多模态调用：携带完整角色上下文（system prompt 已由 ConversationService 用
+     * CharacterPromptBuilder 组装好人设/记忆/关系/情绪），图片以 inline base64 发送，
+     * 一次调用内先输出结构化 JSON 再输出角色回复（由 {@link MultimodalOutputParser} 解析）。
+     */
+    public ChatResult chatImageBlocking(Long userId, AiChatRequest request) {
+        try {
+            return bulkhead.executeCallable(() ->
+                    circuitBreaker.executeCallable(() -> doImageChat(userId, request)));
+        } catch (Exception e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            if (cause instanceof BusinessException be) {
+                throw be;
+            }
+            log.error("Multimodal chat error: userId={}", userId, cause);
+            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "消息发送失败，请稍后再试");
+        }
+    }
+
+    /**
+     * 图片消息流式入口：多模态调用本身是阻塞的（需先完整解析 JSON 再决定回复），
+     * 这里在调度线程内完成阻塞调用后，把回复以 SSE chunk 形式下发，复用 {@link StreamCallback}
+     * 保证后处理（pieces 拆分、落库、关系/情绪更新）与纯文本链路一致。
+     */
+    public SseEmitter chatImageStream(Long userId, AiChatRequest request, StreamCallback callback) {
+        if (!bulkhead.tryAcquirePermission()) {
+            throw new BusinessException(ErrorCode.AI_RATE_LIMITED, "对话服务繁忙，请稍后再试");
+        }
+        SseEmitter emitter = new SseEmitter(300_000L);
+        CompletableFuture.runAsync(() -> {
+            try {
+                ChatResult result = circuitBreaker.executeCallable(() -> doImageChat(userId, request));
+                String reply = result.getContent();
+                if (reply != null && !reply.isBlank()) {
+                    sendSseChunk(emitter, reply);
+                }
+                finishSseSuccess(emitter, reply, callback);
+            } catch (Exception e) {
+                log.error("Multimodal stream error: userId={}", userId, e);
+                finishSseError(emitter, resolveStreamErrorMessage(e), "", callback);
+            } finally {
+                bulkhead.releasePermission();
+            }
+        }, scheduler);
+        return emitter;
+    }
+
+    private ChatResult doImageChat(Long userId, AiChatRequest request) {
+        if (!multimodalEnabled) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "图片识别功能未启用");
+        }
+        VaultEntryResponse vault = buildMultimodalVault();
+        ChatModel chatModel = buildChatModel(vault, multimodalModel, vault.getApiKey());
+        List<Message> messages = buildMultimodalMessages(request.getMessages(), request.getImageUrl());
+        Prompt prompt = new Prompt(messages, OpenAiChatOptions.builder()
+                .model(multimodalModel)
+                .temperature(0.8)
+                .maxTokens(multimodalMaxTokens)
+                .build());
+        ChatResponse response = chatModel.call(prompt);
+        String raw = extractStreamDelta(response);
+        if (raw == null || raw.isBlank()) {
+            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "图片识别失败，请换一张图片再试");
+        }
+        MultimodalOutputParser.Result parsed = multimodalOutputParser.parse(raw);
+        String reply = (parsed.reply() == null || parsed.reply().isBlank()) ? raw : parsed.reply();
+        log.info("Multimodal chat: userId={}, subIntent={}, confidence={}, low={}",
+                userId, parsed.subIntent(), parsed.confidence(),
+                MultimodalOutputParser.isLowConfidence(parsed.confidence()));
+        ChatResult.ChatResultBuilder builder = ChatResult.builder().content(reply);
+        if (response.getMetadata() != null && response.getMetadata().getUsage() != null) {
+            var usage = response.getMetadata().getUsage();
+            builder.totalTokens(usage.getTotalTokens() != null ? usage.getTotalTokens().intValue() : null);
+        }
+        return builder.build();
+    }
+
+    /**
+     * 组装多模态 prompt：system(角色 prompt + 结构化JSON指令) + 历史(纯文本) + 末尾用户消息(图+文字)。
+     * 图片从 MinIO 读出转 inline base64（中转服务拉不到相对路径），复用 {@link #buildVisionUserMessage}。
+     */
+    private List<Message> buildMultimodalMessages(List<MessageDto> dtos, String imageUrl) {
+        if (dtos == null || dtos.isEmpty()) {
+            return List.of();
+        }
+        List<Message> messages = new ArrayList<>();
+        int start = 0;
+        if ("system".equalsIgnoreCase(dtos.get(0).getRole())) {
+            String sysContent = dtos.get(0).getContent();
+            messages.add(new SystemMessage(
+                    (sysContent != null ? sysContent : "") + "\n\n" + MULTIMODAL_JSON_INSTRUCTION));
+            start = 1;
+        }
+        if (start < dtos.size() - 1) {
+            messages.addAll(toSpringMessages(dtos.subList(start, dtos.size() - 1)));
+        }
+        if (start < dtos.size()) {
+            MessageDto last = dtos.get(dtos.size() - 1);
+            String text = (last.getContent() != null && !last.getContent().isBlank())
+                    ? last.getContent()
+                    : "请看看这张图片，并用你的性格自然回应。";
+            MessageDto imageDto = new MessageDto();
+            imageDto.setRole("user");
+            imageDto.setContent(text);
+            imageDto.setImageUrl(imageUrl);
+            messages.add(buildVisionUserMessage(imageDto));
+        }
+        return messages;
     }
 
     private boolean isPlatformProvider(String provider) {
@@ -706,16 +804,6 @@ public class AiChatService {
 
     private boolean isPlatformVault(VaultEntryResponse vault) {
         return vault != null && AiConstants.PLATFORM_PROVIDER.equalsIgnoreCase(vault.getProvider());
-    }
-
-    private String resolveVisionApiKey() {
-        if (visionApiKey != null && !visionApiKey.isBlank()) {
-            return visionApiKey.trim();
-        }
-        if (embeddingApiKey != null && !embeddingApiKey.isBlank()) {
-            return embeddingApiKey.trim();
-        }
-        return null;
     }
 
     private String resolveModel(AiChatRequest request, VaultEntryResponse vault) {

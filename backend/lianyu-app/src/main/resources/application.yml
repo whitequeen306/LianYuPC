@@ -190,12 +190,14 @@ lianyu:
       model: text-embedding-v3
       api-key: ${EMBEDDING_API_KEY:}
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
-    vision:
-      enabled: true
-      model: ${LIANYU_VISION_MODEL:qwen3-vl-plus}
+    # 多模态模型：图片消息(识图+角色回复一次完成) 与 桌宠屏幕观察 共用
+    multimodal:
+      enabled: ${LIANYU_MULTIMODAL_ENABLED:true}
+      base-url: ${MULTIMODAL_BASE_URL:https://clove.dpdns.org/v1}
+      api-key: ${MULTIMODAL_API_KEY:}
+      model: ${MULTIMODAL_MODEL:qwen3.7-plus}
+      max-tokens: 800
       describe-max-tokens: 420
-      api-key: ${DASHSCOPE_API_KEY:}
-      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
     tts:
       enabled: ${LIANYU_PET_TTS_ENABLED:true}
       api-key: ${DASHSCOPE_API_KEY:}
@@ -383,17 +385,6 @@ lianyu:
       reconcile-interval-ms: 300000
       reconcile-min-age-minutes: 4
       reconcile-batch-size: 20
-    image:
-      # 朋友圈自动配图（文案->提示词->文生图->MinIO）
-      enabled: true
-      trigger-probability: 0.5
-      # DashScope 文生图（兼容 OpenAI /images/generations）
-      model: qwen-image
-      base-url: ${LIANYU_MOMENTS_IMAGE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
-      api-key: ${LIANYU_MOMENTS_IMAGE_API_KEY:${DASHSCOPE_API_KEY:}}
-      image-size: 768x768
-      timeout-seconds: 45
-      prompt-max-chars: 240
 
 management:
   endpoints:
