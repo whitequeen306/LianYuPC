@@ -35,6 +35,7 @@ let onStatus = null
 // bindingCharacterId=绑定角色 id（懒建 QQ 会话复用，首次反查后缓存）；inflight=per-key 并发锁防重复建会话。
 let sessionMap = {}
 let bindingCharacterId = ''
+let bindingCharacterName = ''
 const inflight = {}
 
 export function startQqBridge({ apiOrigin, authToken, settings, onStatus: cb } = {}) {
@@ -94,13 +95,13 @@ export function getQqBridgeStatus() {
 }
 
 async function handleOneBotMessage(event) {
-  // 每条消息重读 reply 设置（segmentDelayMs/fallbackText）：UI 保存后立即对下条消息生效，
-  // 无需重启桥接。lastSettings 在启动时定格（binding/napcat 仍用启动快照），仅 reply 热更新。
-  const settings = lastSettings ? { ...lastSettings, reply: readQqBridgeSettings().reply } : lastSettings
+  // 每条消息重读完整设置（binding 白名单 + reply）：UI 保存后立即对下条消息生效，无需重启桥接。
+  // napcat（wsUrl/token）改动仍需重启桥接重连，不在热更新范围。
+  const settings = readQqBridgeSettings()
   if (!settings || !client) return
 
-  // 群聊一律丢弃：QQ 桥接仅支持单聊。群消息混入会致上下文串台/记忆错乱，故直接不接收。
-  if (event?.message_type === 'group') return
+  // 群聊：allowGroups 白名单内放行（免 @机器人也回复，让角色更活跃）；上下文用 binding 会话共享。
+  // 私聊：allowUsers 白名单内放行，per-user 隔离会话。
 
   // 放行判定：allowlist 模式默认拒绝（私聊须命中 allowUsers），open 模式不限制。
   // 见 isAllowedByBinding（issue #11：杜绝空表=静默全放行）
@@ -219,7 +220,9 @@ async function handleOneBotMessage(event) {
   try {
     for (let i = 0; i < replySegments.length; i++) {
       if (!client) break
-      const seg = replySegments[i]
+      const seg = bindingCharacterName
+        ? `${replySegments[i]}（本次回复由虚拟角色:${bindingCharacterName}回复）`
+        : replySegments[i]
       if (target.kind === 'group') {
         await client.sendGroupMsg(target.groupId, seg)
       } else {
@@ -254,6 +257,10 @@ async function handleOneBotMessage(event) {
  * per-key inflight 锁防同一用户并发首消息时重复建会话。群聊已在调用前丢弃，此处只处理私聊。
  */
 async function resolveConversationId(sender, { force = false } = {}) {
+  // 群聊：用 binding.conversationId（白名单内所有群员共享角色会话）
+  if (sender?.messageType === 'group') {
+    return readQqBridgeSettings().binding?.conversationId || ''
+  }
   const key = `private:${sender?.userId || 0}`
   if (!force && sessionMap[key]) return sessionMap[key]
   if (inflight[key]) return inflight[key]
@@ -305,8 +312,9 @@ async function resolveBindingCharacterId() {
     const cid = parsed?.data?.characterId || parsed?.data?.character?.id
     if (cid) {
       bindingCharacterId = String(cid)
+      bindingCharacterName = parsed?.data?.characterName || parsed?.data?.character?.name || ''
       persistBindingCharacterId()
-      log('resolved binding characterId', bindingCharacterId, 'from conversation', convId)
+      log('resolved binding characterId', bindingCharacterId, 'name=', bindingCharacterName, 'from conversation', convId)
     } else {
       log('resolveBindingCharacterId: no characterId in conversation', convId, 'response:', String(res.data || '').slice(0, 120))
     }
