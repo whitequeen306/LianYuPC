@@ -1,6 +1,6 @@
 {
   "name": "lianyu-pc",
-  "version": "0.2.243",
+  "version": "0.2.244",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.js",
@@ -85,8 +85,6 @@
       "include": "build/installer.nsh",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
-      "installerSidebar": "build/installer-sidebar.bmp",
-      "installerHeader": "build/installer-header.bmp",
       "language": "2052",
       "multiLanguageInstaller": true,
       "createDesktopShortcut": true,
