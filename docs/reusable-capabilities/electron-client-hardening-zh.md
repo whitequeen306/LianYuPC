@@ -1,20 +1,46 @@
 # Electron 桌面客户端安全能力手册（红/蓝队 · 可复用）
 
-> **文档类型：** 能力规范（Capability Spec），不是某次迭代的变更日志。  
-> **用法：** 给其它项目的智能体/工程师作**参考**——按能力模块选型、实现蓝队、用红队步骤验收。  
+> **文档类型：** 能力规范（Capability Spec）  
 > **边界：** 桌面客户端无法绝对防逆向；目标是**抬高攻击成本** + **服务端决定是否放行**。
 
 ---
 
-## 0. 给智能体怎么用
+## 何时使用 · 作用场景
+
+### 适合采用
+
+| 场景 | 说明 |
+|------|------|
+| **Electron 连接自有后端 API** | 客户端内嵌业务逻辑、Token、API 地址，存在被拆包分析的风险 |
+| **API 含付费或私有数据** | 对话、角色设定、用户数据等不能仅靠「隐藏前端」保护 |
+| **需要防脚本白嫖 API** | 攻击者用 curl/Postman + 窃取的 Token 批量调用 |
+| **发布安装包给不可信环境** | 用户本机可能被调试、改 asar、中间人抓包 |
+| **红/蓝队或发布前验收** | 需要可重复的「解包 → grep → 抓包 → 验签」检查单 |
+
+### 不必采用（或降低优先级）
+
+| 场景 | 说明 |
+|------|------|
+| 纯静态页、无登录、无敏感 API | C7/C8/C11 等可省略 |
+| 后端完全不能改 | 只能做 C1–C6、C9、C10 等客户端侧；**无法**靠客户端 alone 防 API 滥用 |
+| 内网工具、受众完全可信 | 混淆/ attestation 可按成本裁剪 |
+| Web 版为主、Electron 只是壳 | 重点在浏览器安全与 CSP，本手册部分模块不适用 |
+
+### 典型产品形态
+
+- 桌面 Chat / 助手客户端（含本地 Token、WebSocket）
+- 连接 SaaS 后端的 Electron 壳（API Key 或用户 Session）
+- 需区分「官方客户端」与「脚本调用」的商业产品
+
+---
+
+## 给智能体 / 工程师怎么用
 
 ```text
-读 docs/reusable-capabilities/electron-client-hardening-zh.md。
-按能力模块（§2）为目标 Electron 项目做蓝队适配：先摸清打包链与 API 注入点，再实现并跑 §3 红队验收。
-只复用机制与顺序，禁止照搬参考项目的 PEPPER、HTTP 头前缀、路径。
+确认属于「何时使用」中的目标场景。
+按 §2 能力模块选型 → 实现蓝队措施 → 用 §3 红队 playbook 验收。
+机制与顺序可复用；PEPPER、HTTP 头前缀、hostname 审计规则必须在目标项目中重新定义。
 ```
-
-**适配时必改：** 项目专属 `PEPPER`、HTTP 头前缀、pack 用 env 文件名、审计脚本里的 hostname 模式、`appId`。
 
 ---
 
@@ -199,7 +225,7 @@ key = SHA256("{version}:{buildId}:{PEPPER}")
 
 **红队**
 
-1. 注册/登录拿 `lianyu-token`（或项目 token 头）
+1. 注册/登录拿会话 Token（或项目约定的 Authorization 头）
 2. curl/Postman 调 `/api/chat`、`/api/character` 等
 3. 无 `X-*-Signature` 或乱填签名
 
@@ -323,56 +349,53 @@ key = SHA256("{version}:{buildId}:{PEPPER}")
 9. 未 attested 调角色详情 → 无完整 prompt（C11）
 ```
 
-可脚本化部分：解包、grep、stub 大小、hostname 扫描（参考 `_audit_installer_unpack.py`、`_verify_electron_release.py`，迁移时改 env 键名与 hostname 源）。
+可脚本化部分：解包、grep、stub 大小、生产 hostname 扫描（在目标项目中实现等价审计脚本，配置自己的 env 键名与 hostname 来源）。
 
 ---
 
-## 4. 蓝队打包流水线（单脚本串起 C1/C2/C3/C9）
+## 4. 蓝队打包流水线（串起 C1/C2/C3/C9）
 
-目标项目应有一个 **pack 入口**（参考：`frontend/scripts/electron-pack.mjs`）：
+目标项目应有一个 **pack 入口脚本**，建议顺序：
 
 ```text
-清理 stale
-→ 前端生产构建（不注入 API env）
-→ esbuild main → CJS
-→ 写 build 元数据（version + buildId）
-→ pack runtime-secrets.bin
+清理 stale 产物
+→ 前端生产构建（不向 renderer 注入 API 地址类 env）
+→ 打包 main/preload（bundle → 可选字节码 → stub）
+→ 写入 build 元数据（version + buildId）
+→ 打包 runtime secrets 二进制（API/证书等）
 → 强混淆 renderer 产物
-→ bytenode main/preload → stub
 → electron-builder
-→ after-pack：asarmor + integrity 哈希
+→ after-pack：asarmor patch + asar integrity 哈希
 ```
 
 **硬性约束：**
 
 - obfuscate **后再** bytenode → ❌  
-- asarmor **全量** encrypt + contextIsolation → ❌  
+- asarmor **全量** encrypt 且破坏 contextIsolation → ❌  
 - API 域名进 renderer bundle → ❌  
 
 ---
 
-## 5. 迁移到其它项目（能力裁剪）
+## 5. 能力裁剪（按项目选型）
 
 | 场景 | 建议能力集 |
 |------|------------|
 | 只有桌面客户端、后端不能改 | C1 C2 C3 C9 C10（+ C4 C5 C6 推荐） |
-| 要防脚本白嫖 API | 上述 + **C7 C8 C11** + 后端 Filter |
+| 要防脚本白嫖 API | 上述 + **C7 C8 C11** + 后端验签 Filter |
 | 还要防 WS / 扫站 | + C12 C14 |
 
-**从参考实现拷贝职责（路径按目标项目改）：**
+**实现职责对照（在目标项目中自行落位，无固定路径）：**
 
-| 职责 | 参考路径（LianYu） |
-|------|---------------------|
-| 打包总控 | `frontend/scripts/electron-pack.mjs` |
-| 字节码 | `frontend/scripts/compile-bytecode.mjs` |
-| Secrets 编解码 | `pack-runtime-secrets.mjs` / `electron/runtimeSecrets.js` |
-| 主进程安全 | `electron/main.js` |
-| Attestation | `electron/clientAttestation.js` + 后端 `ClientAttestationFilter` |
-| 凭据存储 | `authSessionStore.js`、`secureToken.js` |
-| 反调试 | `antiDebug.js` |
-| Renderer 配置 | `src/utils/runtime.js` |
-| after-pack | `scripts/after-pack.mjs` |
-| 红队审计 | `scripts/_audit_installer_unpack.py` |
+| 职责 | 说明 |
+|------|------|
+| 打包总控 | 串联构建、混淆、secrets、builder |
+| 主进程 secrets | 启动最早加载；renderer 经 IPC 获取配置 |
+| 字节码 / stub | main、preload 最小入口 + 编译产物 |
+| Client attestation | 主进程 HMAC 签名；后端 Filter 验签 |
+| 凭据存储 | Token 加密；设备密钥仅主进程 safeStorage |
+| 反调试 / DevTools | 生产禁调试；Fuses |
+| after-pack | asarmor、integrity 写入与启动校验 |
+| 红队审计 | 解包 + grep + 阈值检查的自动化脚本 |
 
 ---
 

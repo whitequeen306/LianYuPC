@@ -110,6 +110,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('desktop:launcher-hidden', handler)
     return () => ipcRenderer.removeListener('desktop:launcher-hidden', handler)
   },
+  onAuthSessionUpdated: (callback) => {
+    const handler = (_event, session) => callback(session)
+    ipcRenderer.on('desktop:auth-session-updated', handler)
+    return () => ipcRenderer.removeListener('desktop:auth-session-updated', handler)
+  },
   notifyQuickChatReady: () => ipcRenderer.send('desktop:quick-chat-ready'),
   getQqBridgeSettings: () => ipcRenderer.invoke('desktop:get-qq-bridge-settings'),
   setQqBridgeSettings: (partial) => ipcRenderer.invoke('desktop:set-qq-bridge-settings', partial),

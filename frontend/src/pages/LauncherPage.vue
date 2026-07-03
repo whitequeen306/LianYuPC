@@ -41,6 +41,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { getActivePinia } from 'pinia'
 import { useI18n } from 'vue-i18n'
 import { gsap } from 'gsap'
 import { getElectronAPI } from '@/utils/electron'
@@ -50,6 +51,7 @@ import { useCharactersStore } from '@/stores/characters'
 import { useConversationsStore } from '@/stores/conversations'
 import { DEFAULT_PET_ID, getPetById, getPetIdleUrl, getPetSpriteUrl, getPetPersona } from '@/constants/petCatalog'
 import { usePetSpriteAnimator } from '@/composables/usePetSpriteAnimator'
+import { refreshLauncherSession } from '@/auth/launcherBootstrap'
 
 const { t } = useI18n()
 const containerRef = ref(null)
@@ -87,8 +89,11 @@ let pendingGreetingAudioPayload = null
 
 const { playAnim, playAnimOnce, returnToIdle, setSpriteImage, setIdleFrame } = usePetSpriteAnimator(petRef)
 
-function prefetchPickerData() {
+async function prefetchPickerData() {
   const userStore = useUserStore()
+  if (!userStore.token) {
+    await refreshLauncherSession(getActivePinia())
+  }
   if (!userStore.isLoggedIn && !userStore.token) return
   const charactersStore = useCharactersStore()
   const conversationsStore = useConversationsStore()
@@ -102,16 +107,33 @@ function setIdleFloatPaused(paused) {
   else idleFloatTween.play()
 }
 
+function applyWrapTransform(x, y) {
+  if (!wrapRef.value) return
+  if (!x && !y) {
+    wrapRef.value.style.transform = ''
+    return
+  }
+  wrapRef.value.style.transform = `translate(${x}px, ${y}px)`
+}
+
 function flushDragDelta() {
   dragRafId = null
   if (pendingDx === 0 && pendingDy === 0) return
+  const dx = pendingDx
+  const dy = pendingDy
+  pendingDx = 0
+  pendingDy = 0
   try {
-    getElectronAPI()?.moveLauncherDrag?.(pendingDx, pendingDy)
+    getElectronAPI()?.moveLauncherDrag?.(dx, dy)
+    const state = pointerState.value
+    if (state) {
+      state.offsetX = (state.offsetX || 0) - dx
+      state.offsetY = (state.offsetY || 0) - dy
+      applyWrapTransform(state.offsetX, state.offsetY)
+    }
   } catch {
     // ignore IPC failures during rapid drag
   }
-  pendingDx = 0
-  pendingDy = 0
 }
 
 function scheduleDragFlush() {
@@ -157,7 +179,12 @@ function startObserver() {
 }
 
 function resetWrapTransform() {
-  if (wrapRef.value) gsap.set(wrapRef.value, { y: 0 })
+  const state = pointerState.value
+  if (state) {
+    state.offsetX = 0
+    state.offsetY = 0
+  }
+  applyWrapTransform(0, 0)
 }
 
 function resetInteractionState() {
@@ -203,6 +230,7 @@ function onPointerDown(e) {
     startX: e.screenX, startY: e.screenY,
     lastScreenX: e.screenX, lastScreenY: e.screenY,
     pointerId: e.pointerId, moved: false, runAnim: null,
+    offsetX: 0, offsetY: 0,
   }
   setIdleFloatPaused(true)
   resetWrapTransform()
@@ -234,7 +262,14 @@ function onPointerMove(e) {
       const runAnim = dx >= 0 ? 'run-right' : 'run-left'
       if (state.runAnim !== runAnim) { state.runAnim = runAnim; playAnim(runAnim, { loop: true }) }
     }
-    if (dx !== 0 || dy !== 0) { pendingDx += dx; pendingDy += dy; scheduleDragFlush() }
+    if (dx !== 0 || dy !== 0) {
+      pendingDx += dx
+      pendingDy += dy
+      state.offsetX = (state.offsetX || 0) + dx
+      state.offsetY = (state.offsetY || 0) + dy
+      applyWrapTransform(state.offsetX, state.offsetY)
+      scheduleDragFlush()
+    }
   }
 }
 
@@ -249,9 +284,12 @@ function onPointerUp(e) {
   dragging.value = false
   if (dragRafId != null) { cancelAnimationFrame(dragRafId); dragRafId = null }
   if (wasMoved && (pendingDx !== 0 || pendingDy !== 0)) {
-    try { getElectronAPI()?.moveLauncherDrag?.(pendingDx, pendingDy) } catch { /* ignore */ }
+    flushDragDelta()
+  } else {
+    pendingDx = 0
+    pendingDy = 0
   }
-  pendingDx = 0; pendingDy = 0
+  resetWrapTransform()
   if (state && !state.moved) {
     clickTimer = setTimeout(() => {
       clickTimer = null
@@ -370,7 +408,7 @@ onMounted(async () => {
   if (wrapRef.value) {
     gsapCtx = gsap.context(() => {
       idleFloatTween = gsap.to(wrapRef.value, {
-        y: -4, duration: 2.4, ease: 'sine.inOut', yoyo: true, repeat: -1, force3D: false,
+        y: -3, duration: 3.2, ease: 'sine.inOut', yoyo: true, repeat: -1, force3D: true,
       })
     }, containerRef.value)
   }
@@ -388,10 +426,10 @@ onMounted(async () => {
   unsubscribeLauncherShown = getElectronAPI()?.onLauncherShown?.(async () => {
     launcherActive = true
     const settings = await getElectronAPI()?.getDesktopSettings?.()
-    if (settings?.launcherPetId) {
-      applyPetId(settings.launcherPetId)
+    const nextPetId = settings?.launcherPetId
+    if (nextPetId && nextPetId !== currentPetId.value) {
+      applyPetId(nextPetId)
     }
-    getElectronAPI()?.requestChromeSync?.()
     prefetchPickerData()
     startObserver()
   })
@@ -516,6 +554,7 @@ body:has(.pet-root),
 .pet-wrap {
   position: relative; width: 192px; height: 208px;
   pointer-events: none;
+  will-change: transform;
 }
 
 .pet-canvas {

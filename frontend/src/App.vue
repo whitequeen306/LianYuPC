@@ -50,6 +50,7 @@ const usesIntegratedCaption = computed(() => {
   return false
 })
 /** 主界面 / 落地页 / 登录注册由页面顶栏充当标题栏，不再单独顶出拖拽条 */
+/** 主界面 / 落地页 / 登录注册由页面顶栏充当标题栏，不再单独顶出拖拽条 */
 const showElectronCaptionDrag = computed(() => (
   isElectron && !isLauncherSurface.value && !isQuickChatSurface.value && !usesIntegratedCaption.value
 ))

@@ -47,7 +47,8 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { readToken, syncSetTokenCache } from '@/utils/secureToken'
+import { refreshLauncherSession } from '@/auth/launcherBootstrap'
+import { getActivePinia } from 'pinia'
 import { useUserStore } from '@/stores/user'
 import { useCharactersStore } from '@/stores/characters'
 import { useConversationsStore } from '@/stores/conversations'
@@ -85,13 +86,9 @@ function showToast(text, ms = 2600) {
 
 async function refreshPickerData() {
   openingId.value = null
-
+  const userStore = useUserStore()
   if (!userStore.token) {
-    const token = await readToken()
-    if (token) {
-      userStore.token = token
-      syncSetTokenCache(token)
-    }
+    await refreshLauncherSession(getActivePinia())
   }
 
   if (!userStore.isLoggedIn) {

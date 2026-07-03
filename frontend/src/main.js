@@ -6,8 +6,8 @@ import 'element-plus/theme-chalk/dark/css-vars.css'
 import App from './App.vue'
 import router from './router'
 import { i18n } from './i18n'
-import { initAntiDebug } from './utils/antiDebug'
 import { initElectronRuntimeConfig } from '@/utils/runtime'
+import { dismissBootSplash, showBootSplashError } from '@/utils/bootSplash'
 import { readToken } from './utils/secureToken'
 import { installMainHttpToasts } from '@/api/installMainHttpToasts'
 import { prepareAuthRoute, bootstrapAuth } from './auth/bootstrap'
@@ -65,7 +65,6 @@ const settingsStore = useSettingsStore(pinia)
 settingsStore.initLanguage()
 settingsStore.initAppearance()
 
-initAntiDebug()
 installMainHttpToasts()
 
 function isLauncherOnlySurface() {
@@ -82,22 +81,40 @@ function isDesktopAuxSurface() {
   return isLauncherOnlySurface() || isQuickChatSurface()
 }
 
+router.onError((err) => {
+  const msg = err?.message || String(err)
+  showBootSplashError('界面加载失败，请重启应用或重新安装。')
+  if (typeof window !== 'undefined') {
+    window.__vueErr = (window.__vueErr || []).concat(`router: ${msg}`)
+  }
+})
+
 ;(async () => {
   void initElectronRuntimeConfig()
   const aux = isDesktopAuxSurface()
-  if (!aux) {
-    await readToken()
-    await prepareAuthRoute(pinia)
-  }
   if (isQuickChatSurface()) {
     window.__lianyuNavigateQuickChat = (target) => router.push(target)
   }
+
   app.mount('#app')
+
+  try {
+    await router.isReady()
+  } catch {
+    showBootSplashError('启动失败，请重新安装最新版本。')
+    return
+  } finally {
+    dismissBootSplash()
+  }
+
   if (aux) {
     void bootstrapLauncherSession(pinia)
   } else {
-    void bootstrapAuth(pinia)
+    void readToken()
+      .then(() => prepareAuthRoute(pinia))
+      .then(() => bootstrapAuth(pinia))
   }
+
   if (aux && isQuickChatSurface()) {
     const { useUserStore } = await import('@/stores/user')
     void useUserStore(pinia).fetchProfile({ skipGlobalError: true }).catch(() => {})

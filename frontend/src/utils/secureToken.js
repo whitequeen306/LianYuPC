@@ -38,11 +38,17 @@ export async function storeToken(value) {
   syncSetTokenCache(value)
 }
 
+/** 重置内存 token 缓存（桌宠/小窗与主窗登录状态不同步时用；#14 后无 localStorage 可重读，仅清空内存值） */
+export function resetTokenReadCache() {
+  rawToken = null
+}
+
 /**
  * 读取 token（启动恢复时用）。#14 后内存态重载即丢，实际恢复由 bootstrap.js
  * 经主进程 auth:bootstrap-token 注入；此函数保留以兼容非 Electron / 兜底路径。
+ * @param {{ force?: boolean }} [options] 预留兼容参数（#14 后 force 等价于先 resetTokenReadCache 清空内存）
  */
-export async function readToken() {
+export async function readToken(options = {}) {
   return rawToken
 }
 

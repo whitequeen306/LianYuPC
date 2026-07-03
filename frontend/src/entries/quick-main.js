@@ -6,7 +6,8 @@ import QuickChatPage from '@/pages/QuickChatPage.vue'
 import { i18n } from '@/i18n'
 import { initElectronRuntimeConfig } from '@/utils/runtime'
 import { readToken } from '@/utils/secureToken'
-import { bootstrapLauncherSession } from '@/auth/launcherBootstrap'
+import { bootstrapLauncherSession, applyLauncherAuthSession } from '@/auth/launcherBootstrap'
+import { getElectronAPI } from '@/utils/electron'
 import { useSettingsStore } from '@/stores/settings'
 import '@/styles/theme.scss'
 
@@ -50,3 +51,8 @@ void initElectronRuntimeConfig()
 app.mount('#app')
 window.__lianyuNavigateQuickChat = (target) => router.push(target)
 void readToken().then(() => bootstrapLauncherSession(pinia))
+getElectronAPI()?.onAuthSessionUpdated?.((session) => {
+  if (session?.token) {
+    applyLauncherAuthSession(pinia, session)
+  }
+})

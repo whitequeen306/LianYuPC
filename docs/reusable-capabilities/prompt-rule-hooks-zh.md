@@ -1,250 +1,192 @@
-# Prompt 规则 Hook 插件化能力手册（Spring · 可复用）
+# Prompt 规则插件化能力（槽位 + 贡献者）
 
-> **文档类型：** 能力规范（Capability Spec），不是某次迭代的变更日志。  
-> **用法：** 给其它项目的智能体/工程师作**参考**——在拼 system prompt 时插件化「回复规则 / 语言规则 / 场景规则」。  
-> **边界：** 本机制管 **prompt 文案组装**，不是 Spring AI `Advisor`（调用链拦截）；二者可并存。
+> **文档类型：** 能力规范（Capability Spec）  
+> **边界：** 管 **system prompt 文案如何组装**；不是「大模型调用链上的拦截器」。二者可并存。
 
 ---
 
-## 0. 给智能体怎么用
+## 何时使用 · 作用场景
 
-```text
-读 docs/reusable-capabilities/prompt-rule-hooks-zh.md。
-为目标 Spring 项目实现 §2 四个核心类型 + §3 集成点；
-按 §4 槽位表添加业务 Hook（Java @Component）；
-用 §5 验收清单做单元测试。
-只复用接口与引擎，禁止照搬 LianYu 的拟人聊天/群聊/多语言具体文案。
-```
+### 适合采用
 
-**适配时必改：** 槽位枚举、各 Hook 的 `render()` 文案、与 `CharacterPromptBuilder` 等价的 prompt 组装类名与包路径。
+| 场景 | 说明 |
+|------|------|
+| **多套对话规则并存** | 除身份/人设外，还有回复风格、输出语言、群聊与单聊差异等，且会随配置变化 |
+| **规则频繁增删** | 常新增「禁止 AI 腔」「强制某语言」「场景专用指令」，不想每次改一大段手写拼接逻辑 |
+| **多人协作维护 prompt** | 希望按主题拆分（语言、安全、场景），合并顺序可控 |
+| **插件式扩展** | 希望 **新增规则 = 新增模块**，不改中央合并逻辑 |
+| **需要可测** | 规则生成应是「给定上下文 → 得到固定文本」，可在不调用真实 LLM 的情况下验收 |
 
-**命名建议：** 对外可称 **PromptRuleContributor**；LianYu 源码中仍叫 `PromptRuleHook`（语义是「贡献一段规则文本」，不是 Git/中间件钩子）。
+### 不必采用
+
+| 场景 | 更简单的做法 |
+|------|----------------|
+| 全局只有一段固定 system prompt | 单一模板或配置文件即可 |
+| 规则极少且稳定 | 在 prompt 组装处直接拼接字符串 |
+| 需要的是「每次调模型前改消息列表 / 注入记忆」 | 用 **调用链拦截器**（各 LLM SDK 的 middleware / advisor 等），不是本能力 |
+| 规则完全由运营在后台配置 | 直接用模板引擎或 CMS；本能力可作为「加载后仍按槽位合并」的一层 |
+
+### 典型产品形态
+
+- 角色扮演 / 虚拟伴侣对话（人设 + 行为规则 + 语言策略）
+- 多语言助手（用户输入语言 ≠ 模型输出语言）
+- 单聊与群聊共用后端，但群聊多一套发言规则
+- 生成结构化内容（如 JSON 卡片）需要独立的「生成质量规则」类别
 
 ---
 
 ## 1. 能力总览
 
-| ID | 能力 | 解决什么问题 | 核心类型 | 优先级 |
-|----|------|--------------|----------|--------|
-| R1 | 槽位化规则 | 规则与角色设定耦在一坨字符串里 | `PromptRuleSlot` | 必做 |
-| R2 | 插件化贡献 | 加规则要改巨型 Builder | `PromptRuleHook` | 必做 |
-| R3 | 上下文传参 | 规则需语言/人设/群聊参数 | `PromptRuleContext` | 必做 |
-| R4 | 收集与拼接 | 多 Hook 排序、过滤、合并 | `PromptRuleEngine` | 必做 |
-| R5 | 与 Spring 集成 | 自动发现所有 Hook | `@Component` + 构造器注入 `List<PromptRuleHook>` | 必做 |
-| R6 | 与 LLM 调用边界 | 避免误用 Advisor | 规则进 **SystemMessage**，调 `ChatModel`/`ChatClient` | 认知 |
+| ID | 概念 | 解决什么问题 |
+|----|------|--------------|
+| R1 | **槽位（Slot）** | 给规则分类，避免全部堆在一处 |
+| R2 | **贡献者（Contributor）** | 每类规则独立实现、可插拔 |
+| R3 | **上下文（Context）** | 生成规则所需的参数（语言、场景、限额等） |
+| R4 | **引擎（Engine）** | 按槽位收集、排序、拼接文本 |
+| R5 | **注册与发现** | 运行时自动收集所有贡献者，无需改引擎 |
+
+**命名说明：** 下文称 **贡献者（Contributor）**——向 prompt 贡献一段文本。有的实现里叫 Hook，语义相同，但**不是** Git 钩子、HTTP 中间件或 UI 生命周期回调。
 
 ---
 
-## 2. 核心机制（最小可复用内核）
+## 2. 核心机制（与实现语言无关）
 
-### 2.1 接口：PromptRuleHook
+### 2.1 贡献者（Contributor）
 
-```java
-public interface PromptRuleHook {
-    PromptRuleSlot slot();
+每个贡献者负责一件事：**在已知上下文下，输出一段 prompt 文本**。
 
-    default int order() {
-        return 100;
-    }
+贡献者至少声明：
 
-    String render(PromptRuleContext context);
-}
-```
-
-| 方法 | 含义 |
+| 属性 | 含义 |
 |------|------|
-| `slot()` | 本 Hook 属于哪个槽位（分类） |
-| `order()` | 同槽位多 Hook 时的拼接顺序，越小越靠前 |
-| `render()` | 根据上下文生成 **一段 prompt 文本**；返回 blank 则跳过 |
+| **所属槽位** | 这条规则属于哪一类（见 §2.2） |
+| **排序权重** | 同一槽位内多条规则时的先后顺序；数值越小越靠前 |
+| **渲染逻辑** | 输入上下文 → 输出文本；无内容则视为「本规则不适用」，不参与拼接 |
 
-### 2.2 槽位：PromptRuleSlot
+新增规则 = **注册一个新的贡献者**，不必修改引擎源码。
 
-```java
-public enum PromptRuleSlot {
-    REPLY_BEHAVIOR,      // 怎么回复：长度、语气、禁止项
-    OUTPUT_LANGUAGE,     // 输出语言强制
-    GROUP_CHAT,          // 群聊专用
-    CHARACTER_GENERATION // 角色生成 JSON 时的质量标准
-}
-```
+### 2.2 槽位（Slot）
 
-迁移时可增删枚举值；**不要**把业务字段塞进 enum，字段放 `PromptRuleContext`。
+槽位是**规则类别名**，只用于分组，不承载业务字段。示例（按产品裁剪、可增删）：
 
-### 2.3 上下文：PromptRuleContext
+| 槽位（示例名） | 典型内容 |
+|----------------|----------|
+| 回复行为 | 长度、语气、禁止项、是否允许多条消息 |
+| 输出语言 | 强制某种语言输出，不受用户输入语言干扰 |
+| 群聊场景 | 发言顺序、@ 上下文、多人约束 |
+| 生成质量 | 非对话任务（如生成 JSON）的格式与质量要求 |
 
-推荐 `record` + 静态工厂，避免 Builder 膨胀：
+业务参数（语言码、人设摘要、人数上限等）放在 **上下文**，不要写进槽位名本身。
 
-```java
-public record PromptRuleContext(
-        String outputLanguage,
-        String persona,
-        CharacterChatBehavior behavior,  // 目标项目可换成自己的类型或 Map
-        String characterName,
-        Integer maxPieces,
-        String otherCharactersLine,
-        String mentionContext,
-        Boolean showInnerThoughts
-) {
-    public static PromptRuleContext forReply(String lang, String persona,
-                                             Object behavior, boolean showInner) { ... }
-    public static PromptRuleContext forOutputLanguage(String lang) { ... }
-    public static PromptRuleContext forGroupChat(...) { ... }
-}
-```
+### 2.3 上下文（Context）
 
-### 2.4 引擎：PromptRuleEngine
+一次 prompt 组装所需的**只读输入**，按场景构造，例如：
 
-```java
-@Component
-public class PromptRuleEngine {
-    private final List<PromptRuleHook> hooks;
+- 期望输出语言
+- 角色/任务摘要
+- 场景参数（群成员列表、是否展示内心独白、单次最多几条回复等）
 
-    public PromptRuleEngine(List<PromptRuleHook> hooks) {
-        this.hooks = hooks == null ? List.of() : hooks;
-    }
+同一套引擎在不同场景传入不同上下文即可复用。
 
-    public String render(PromptRuleSlot slot, PromptRuleContext context) {
-        return hooks.stream()
-                .filter(h -> h.slot() == slot)
-                .sorted(Comparator.comparingInt(PromptRuleHook::order))
-                .map(h -> h.render(context))
-                .filter(s -> s != null && !s.isBlank())
-                .reduce((a, b) -> a + "\n\n" + b)
-                .orElse("");
-    }
-}
-```
+### 2.4 引擎（Engine）
 
-**特性：** Spring 自动注入所有 `PromptRuleHook` 实现；新增规则 = 新增 `@Component`，**不改引擎**。
+引擎对给定 **槽位 + 上下文** 执行固定流程：
+
+1. 找出所有声明属于该槽位的贡献者  
+2. 按排序权重排序  
+3. 逐个调用渲染逻辑，得到文本片段  
+4. 丢弃空片段  
+5. 用约定分隔符（通常为双换行）拼成一段完整规则文本  
+
+引擎本身**不包含**具体规则文案，只负责合并。
+
+### 2.5 注册与发现
+
+贡献者通过项目的**模块/插件注册机制**挂载（依赖注入、服务定位、插件清单等均可）。  
+引擎在启动或首次使用时收集已注册贡献者列表，之后按槽位查询即可。
 
 ---
 
-## 3. 集成点（在完整 prompt 中的位置）
+## 3. 在 system prompt 中的位置
 
-典型对话 system prompt 组装顺序（LianYu 参考）：
+推荐组装顺序（可按产品调整）：
 
-```text
-① 角色 promptTemplate + persona
-② 长期记忆块（Memory / RAG 预注入）
-③ Tool 使用说明（若启用 Spring AI @Tool）
-④ PromptRuleEngine → REPLY_BEHAVIOR
-⑤ PromptRuleEngine → OUTPUT_LANGUAGE
-⑥ 情绪 / 状态块（业务可选）
-⑦ 防 prompt 注入说明（UserInputSanitizer 等）
-⑧ Conversation 层追加：当前时间、城市、场景指令…
-```
+| 顺序 | 块 | 说明 |
+|------|-----|------|
+| ① | 身份 / 角色 / 任务 | 业务主模板 |
+| ② | 记忆或检索结果 | RAG、长期记忆等（若有） |
+| ③ | 工具说明 | 若启用 function calling / tools |
+| ④ | 引擎输出：回复行为槽位 | §2.4 |
+| ⑤ | 引擎输出：输出语言槽位 | §2.4 |
+| ⑥ | 场景块 | 群聊、表单、主动消息等 |
+| ⑦ | 安全与防注入 | 告知模型如何处理用户输入边界 |
+| ⑧ | 动态事实 | 当前时间、用户所在地等（可选） |
 
-**调用示例（概念）：**
+合并完成后，作为 **system 级指令**（各 API 中 system / developer message 等等价物）与对话历史一并交给模型。
 
-```java
-String replyRules = promptRuleEngine.render(
-        PromptRuleSlot.REPLY_BEHAVIOR,
-        PromptRuleContext.forReply(outputLanguage, persona, behavior, showInnerThoughts));
-if (!replyRules.isBlank()) {
-    prompt += "\n\n" + replyRules;
-}
-```
-
-群聊在 base prompt 之后追加：
-
-```java
-promptRuleEngine.render(PromptRuleSlot.GROUP_CHAT, PromptRuleContext.forGroupChat(...));
-```
-
-角色生成（非对话）：
-
-```java
-sysPrompt += promptRuleEngine.render(PromptRuleSlot.CHARACTER_GENERATION, ctx);
-```
+**集成原则：** 先由业务层拼好完整 system 文本，再发起 LLM 请求；本能力不负责 HTTP、流式或重试。
 
 ---
 
-## 4. LianYu 参考实现（Hook 清单）
+## 4. 与「调用链拦截器」的区别
 
-| Hook 类 | 槽位 | 职责摘要 |
-|---------|------|----------|
-| `ReplyBehaviorRuleHook` | `REPLY_BEHAVIOR` | 拟人回复、拆条、内心独白、禁 AI 腔；`lianyu.chat.humanize.enabled` |
-| `OutputLanguageRuleHook` | `OUTPUT_LANGUAGE` | 强制中/英/日/繁输出，覆盖历史语言漂移 |
-| `GroupChatRuleHook` | `GROUP_CHAT` | 群聊发言顺序、@ 上下文、多人场景 |
-| `CharacterGenerationRuleHook` | `CHARACTER_GENERATION` | AI 生成角色 JSON 的质量约束 |
+许多 LLM SDK 提供 **middleware / advisor / interceptor**：在每次请求前后修改消息、注入 memory、做安全过滤。
 
-**参考路径（LianYu-PC）：**
+| | Prompt 规则贡献者（本能力） | 调用链拦截器 |
+|--|----------------------------|--------------|
+| 层级 | 拼 **prompt 字符串** | 包装 **模型调用过程** |
+| 时机 | 调用前一次性算好 system 文本 | 每次请求链式执行 |
+| 典型用途 | 风格、语言、场景规则 | 记忆、RAG、安全、日志、重试 |
+| 是否互斥 | 否，可组合 | 可组合 |
 
-| 职责 | 路径 |
-|------|------|
-| 接口 | `backend/lianyu-service/.../rules/PromptRuleHook.java` |
-| 引擎 | `backend/lianyu-service/.../rules/PromptRuleEngine.java` |
-| 槽位 | `backend/lianyu-service/.../rules/PromptRuleSlot.java` |
-| 上下文 | `backend/lianyu-service/.../rules/PromptRuleContext.java` |
-| Hook 实现 | `backend/lianyu-service/.../rules/hooks/*.java` |
-| 组装入口 | `backend/lianyu-service/.../ai/CharacterPromptBuilder.java` |
-| 对话调用链 | `backend/lianyu-service/.../conversation/ConversationService.java` |
-| LLM 调用 | `backend/lianyu-service/.../ai/AiChatService.java`（`ChatModel` + `Prompt`，无 Advisor） |
+**建议：** 贡献者管「写什么规则」；拦截器管「怎么发请求、怎么记上下文」。
 
 ---
 
-## 5. 验收清单（迁移后必测）
+## 5. 能力裁剪
 
-```text
-1. 新增一个测试 Hook（slot=REPLY_BEHAVIOR，order=50）→ render 固定字符串
-2. PromptRuleEngine.render 应包含该字符串，且位于同 slot 其它 Hook 按 order 拼接
-3. render 返回 null/blank 的 Hook 不出现在结果中
-4. 两个 Hook 同 slot → 中间用双换行连接
-5. CharacterPromptBuilder（或等价类）集成后，最终 SystemMessage 含规则段且顺序符合 §3
-6. 单测不启动 LLM：只断言 prompt 字符串
-```
+| 你的产品 | 建议槽位 |
+|----------|----------|
+| 单聊 + 固定一种语言 | 回复行为 + 一个贡献者即可 |
+| 多语言输出 | + 输出语言 |
+| 群聊 | + 群聊场景（或自定义槽位名） |
+| 生成 JSON / 结构化卡片 | + 生成质量 |
+| 抽成公共库 | 只打包引擎 + 贡献者契约；业务规则留在各产品 |
 
-**可选增强（LianYu 尚未做，复用库可加）：**
+---
+
+## 6. 验收清单
+
+| # | 检查项 | 通过标准 |
+|---|--------|----------|
+| 1 | 注册测试贡献者 | 固定槽位、固定排序，渲染结果等于预期字符串 |
+| 2 | 同槽位多贡献者 | 按排序权重顺序拼接，中间用约定分隔符 |
+| 3 | 空规则 | 渲染无内容的贡献者不出现在最终结果 |
+| 4 | 端到端顺序 | 完整 system prompt 中各块顺序符合 §3 |
+| 5 | 可测性 | 不调用真实 LLM，仅断言拼接后的字符串 |
+
+---
+
+## 7. 可选增强
 
 | 增强 | 说明 |
 |------|------|
-| `supports(PromptRuleContext)` | 条件跳过 Hook |
-| YAML/DB 规则模板 | 运营可改文案，Java 只负责占位符 |
-| `prompt-rule-spring-boot-starter` | 单独 jar：`Engine` + 接口 + 自动配置 |
+| 条件启用 | 贡献者声明「在当前上下文下是否参与」 |
+| 外部模板 | 文案存 YAML/数据库，贡献者只做变量填充 |
+| 独立共享包 | 只含引擎契约与合并逻辑，由各产品注册自己的贡献者 |
 
 ---
 
-## 6. 与 Spring AI Advisor 的关系（勿混淆）
-
-| | PromptRuleHook（本能力） | Spring AI Advisor |
-|--|--------------------------|-------------------|
-| 层级 | 拼 **system prompt 文本** | 包 **ChatModel 调用** |
-| 时机 | 调模型**之前**，一次性字符串 | 每次 `call/stream` 链式执行 |
-| 典型用途 | 回复风格、语言、群聊规则 | Memory、RAG、SafeGuard、观测 |
-| LianYu 现状 | ✅ 使用 | ❌ 未使用 |
-
-**推荐组合：** 保留 Hook 管「写什么规则」；若未来引入 `ChatClient`，可用少量 Advisor 管日志/安全/重试，**不必**把 Hook 改成 Advisor。
-
----
-
-## 7. 迁移到其它项目（能力裁剪）
-
-| 场景 | 建议 |
-|------|------|
-| 只有单聊 + 固定中文 | `REPLY_BEHAVIOR` + 一个 Hook 即可 |
-| 多语言产品 | + `OUTPUT_LANGUAGE` Hook |
-| 群聊 | + `GROUP_CHAT` Hook + 群聊 prompt 追加方法 |
-| 角色 AI 生成 | + `CHARACTER_GENERATION` Hook |
-| 抽独立 starter | 复制 §2 四文件 + 测试；业务 Hook 留宿主项目 |
-
-**不要复用到其它项目的（LianYu 领域资产）：**
-
-- `ReplyBehaviorRuleHook` 内拟人/冷回复/内心独白等具体中文案
-- `CharacterPromptBuilder` 整类（强绑定角色、记忆、情绪）
-- Milvus 记忆、Tool 注册表（属另一能力层）
-
----
-
-## 8. 能力边界（写进方案避免误解）
+## 8. 能力边界
 
 | 误区 | 事实 |
 |------|------|
-| Hook = 中间件拦截 | 只是 **返回 prompt 片段**，不包装 HTTP/ChatModel |
-| Hook = Spring AI Advisor | 层级不同，见 §6 |
-| 叫 Hook 就必须 event 回调 | 更贴切名字是 **Contributor / FragmentProvider** |
-| 规则进 Hook 后不能测 | `render()` 应纯函数化，易单测 |
-| 外绑 skills 文件 | LianYu **无** skills 目录；规则在 Java Hook 内 |
+| 贡献者 = 中间件拦截 | 只生成文本片段，不包装网络或模型客户端 |
+| 贡献者 = 调用链拦截器 | 层级不同，见 §4 |
+| 叫 Hook 就是事件回调 | 更贴切名称是 **Contributor / FragmentProvider** |
+| 用了就不能单测 | 渲染逻辑应可独立测试 |
+| 等于外绑 skills | 本能力是**代码或配置插件**；外置 skill 目录需另建加载与权限层 |
 
 ---
 
-*Prompt 规则 Hook 插件化能力手册 · 供跨项目复用 · 参考实现 LianYu-PC*
+*Prompt 规则插件化能力规范 · 与编程语言无关 · 供跨项目复用*

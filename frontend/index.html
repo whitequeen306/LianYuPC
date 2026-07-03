@@ -49,13 +49,12 @@
     </style>
   </head>
   <body>
-    <div id="app">
-      <div id="app-boot" aria-hidden="true">
-        <img id="app-boot__logo" src="/logo.png" alt="" />
-        <p id="app-boot__title">LianYu</p>
-        <div id="app-boot__spinner"></div>
-      </div>
+    <div id="app-boot" aria-live="polite">
+      <img id="app-boot__logo" src="/logo.png" alt="" />
+      <p id="app-boot__title">LianYu</p>
+      <div id="app-boot__spinner"></div>
     </div>
+    <div id="app"></div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

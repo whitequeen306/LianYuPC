@@ -3,7 +3,8 @@ import { createPinia } from 'pinia'
 import LauncherPage from '@/pages/LauncherPage.vue'
 import { i18n } from '@/i18n'
 import { initElectronRuntimeConfig } from '@/utils/runtime'
-import { bootstrapLauncherSession } from '@/auth/launcherBootstrap'
+import { getElectronAPI } from '@/utils/electron'
+import { bootstrapLauncherSession, applyLauncherAuthSession } from '@/auth/launcherBootstrap'
 
 document.documentElement.classList.add('is-electron')
 window.__lianyuAuxSurface = 'launcher'
@@ -21,3 +22,8 @@ app.use(i18n)
 void initElectronRuntimeConfig()
 app.mount('#app')
 void bootstrapLauncherSession(pinia)
+getElectronAPI()?.onAuthSessionUpdated?.((session) => {
+  if (session?.token) {
+    applyLauncherAuthSession(pinia, session)
+  }
+})

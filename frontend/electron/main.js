@@ -113,15 +113,20 @@ const SHARED_WEB_PREFS = {
   devTools: isDebug,
 }
 
-/** 透明桌宠窗口：Windows 上 sandbox 会破坏透明合成，需单独关闭 */
+/** 透明桌宠：拖动时少触发整窗 setPosition，减轻 Windows 闪屏 */
 const LAUNCHER_WEB_PREFS = {
   ...SHARED_WEB_PREFS,
   sandbox: false,
+  backgroundThrottling: false,
   /** 识图问候 TTS 在无人点击桌宠时也需自动播放 */
   autoplayPolicy: 'no-user-gesture-required',
 }
 
 const DEFAULT_API_ORIGIN = 'http://localhost:8080'
+
+if (process.env.LIANYU_MAIN_STARTUP_SMOKE === '1' && process.env.LIANYU_SMOKE_USER_DATA) {
+  app.setPath('userData', process.env.LIANYU_SMOKE_USER_DATA)
+}
 
 try {
   loadRuntimeSecrets({
@@ -560,8 +565,23 @@ function loadRoute(win, hashRoute) {
 function attachWindowLogging(win, label) {
   registerTrustedWebContents(win)
   lockDownDevTools(win)
-  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     log(`${label} did-fail-load code=${errorCode} desc=${errorDescription} url=${validatedURL}`)
+    if (label === 'main' && isMainFrame && !isDev) {
+      dialog.showErrorBox(
+        'LianYu',
+        `主界面加载失败（${errorCode}）。请卸载后重新安装最新版本。\n${errorDescription || ''}`,
+      )
+    }
+  })
+  win.webContents.on('render-process-gone', (_event, details) => {
+    log(`${label} render-process-gone reason=${details?.reason} exitCode=${details?.exitCode}`)
+    if (label === 'main' && !isDev) {
+      dialog.showErrorBox(
+        'LianYu',
+        '界面进程异常退出，请重启应用。若反复出现请重新安装最新版本。',
+      )
+    }
   })
   win.webContents.on('did-finish-load', () => {
     log(`${label} did-finish-load url=${win.webContents.getURL()}`)
@@ -859,6 +879,15 @@ async function pullRendererAuthToken(win) {
   }
 }
 
+function broadcastAuthSessionToAuxWindows(session) {
+  const payload = session?.token ? session : null
+  for (const win of [launcherWindow, quickChatShell]) {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('desktop:auth-session-updated', payload)
+    }
+  }
+}
+
 async function ensureAuthSessionFromRenderer(win = mainWindow) {
   if (readAuthSession()?.token) return true
   const sources = []
@@ -868,12 +897,17 @@ async function ensureAuthSessionFromRenderer(win = mainWindow) {
   for (const source of sources) {
     const token = await pullRendererAuthToken(source)
     if (token) {
+      const previous = readAuthSession()
       writeAuthSession({
         token,
         tokenName: 'lianyu-token',
         savedAt: Date.now(),
       })
       launcherLoggedIn = true
+      const saved = readAuthSession()
+      if (!previous?.token || previous.token !== saved?.token) {
+        broadcastAuthSessionToAuxWindows(saved)
+      }
       return true
     }
   }
@@ -1202,9 +1236,22 @@ function createMainWindow() {
     void syncChromeFromRenderer(win)
   }
 
+  const revealFallbackTimer = setTimeout(() => {
+    if (!mainShown && !win.isDestroyed()) {
+      log('main window reveal fallback (timeout)')
+      revealMainWindow()
+    }
+  }, 10_000)
+
   // HTML 加载完即显示背景，不等 Vue ready-to-show（避免长时间白屏/无窗）
-  win.webContents.once('did-finish-load', revealMainWindow)
-  win.once('ready-to-show', revealMainWindow)
+  win.webContents.once('did-finish-load', () => {
+    clearTimeout(revealFallbackTimer)
+    revealMainWindow()
+  })
+  win.once('ready-to-show', () => {
+    clearTimeout(revealFallbackTimer)
+    revealMainWindow()
+  })
 
   win.on('minimize', () => {
     showLauncherWindow({ center: true, force: true })
@@ -2486,12 +2533,19 @@ function registerIpcHandlers() {
   })
   ipcMain.handle('auth:set-session', (event, session) => {
     if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    const previous = readAuthSession()
     const saved = writeAuthSession(session)
     if (session?.token && !saved) {
       return { ok: false, reason: 'session_write_failed' }
     }
     if (session?.token) {
       launcherLoggedIn = true
+      const tokenChanged = !previous?.token || previous.token !== saved?.token
+      const profileChanged = previous?.userId !== saved?.userId
+        || previous?.username !== saved?.username
+      if (tokenChanged || profileChanged) {
+        broadcastAuthSessionToAuxWindows(saved)
+      }
       setTimeout(() => prewarmLauncherWindow(), 4000)
       setTimeout(() => prewarmQuickChatShell(), 10000)
     }
@@ -2903,7 +2957,8 @@ function registerIpcHandlers() {
     launcherIsDragging = false
     launcherSuppressMoveSave = true
     clampLauncherToWorkArea()
-    resetLauncherInteraction()
+    writeLauncherPosition(launcherWindow.getBounds().x, launcherWindow.getBounds().y)
+    applyLauncherMouseMode()
     setTimeout(() => {
       launcherSuppressMoveSave = false
     }, 250)
@@ -2942,6 +2997,54 @@ function registerIpcHandlers() {
     if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     return openImageViewer(payload || {})
   })
+}
+
+async function runMainStartupSmokeTest() {
+  const outPath = process.env.LIANYU_SMOKE_SCREENSHOT || ''
+  try {
+    configureSecurity()
+    registerIpcHandlers()
+    const win = createMainWindow()
+    if (!win) throw new Error('main window missing')
+    await new Promise((resolve) => {
+      if (win.webContents.isLoading()) {
+        win.webContents.once('did-finish-load', resolve)
+      } else {
+        resolve()
+      }
+    })
+    let probe = null
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+      probe = await win.webContents.executeJavaScript(
+        `(() => ({
+          boot: !!document.getElementById('app-boot'),
+          landing: !!document.querySelector('.landing'),
+          loginBtn: !!document.querySelector('.landing-nav__actions'),
+          appHtml: (document.getElementById('app')?.innerHTML || '').slice(0, 120),
+          hash: location.hash,
+          vueErr: window.__vueErr || null,
+        }))()`,
+        true,
+      )
+      if (probe?.landing || probe?.loginBtn) break
+      await new Promise((r) => setTimeout(r, 500))
+    }
+    if (!probe?.landing && !probe?.loginBtn) {
+      throw new Error(`startup UI probe failed: ${JSON.stringify(probe)}`)
+    }
+    if (outPath) {
+      const image = await win.webContents.capturePage()
+      fs.writeFileSync(outPath, image.toPNG())
+    }
+    console.log('MAIN_STARTUP_SMOKE_OK', JSON.stringify(probe))
+    app.exit(0)
+  } catch (err) {
+    if (outPath && fs.existsSync(outPath)) {
+      try { fs.unlinkSync(outPath) } catch { /* ignore */ }
+    }
+    console.error('MAIN_STARTUP_SMOKE_FAIL', err?.message || err)
+    app.exit(1)
+  }
 }
 
 async function runLauncherSmokeTest() {
@@ -3032,6 +3135,10 @@ process.on('unhandledRejection', (reason) => {
 
 app.whenReady().then(() => {
   logger.initGlobalErrorHandlers()
+  if (process.env.LIANYU_MAIN_STARTUP_SMOKE === '1') {
+    log('main startup smoke test starting')
+    return runMainStartupSmokeTest()
+  }
   if (process.env.LIANYU_LAUNCHER_SMOKE === '1') {
     log('launcher smoke test starting')
     return runLauncherSmokeTest()
