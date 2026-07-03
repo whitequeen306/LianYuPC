@@ -308,6 +308,22 @@ public class AiChatService {
         }
     }
 
+    public List<ModelEntryDto> previewModels(Long userId, String baseUrl, String apiKey) {
+        VaultEntryResponse transientVault = VaultEntryResponse.builder()
+                .provider("__preview__")
+                .baseUrl(baseUrl)
+                .apiKey(apiKey)
+                .build();
+        try {
+            return ApiKeyVaultService.isOllamaEndpoint(baseUrl)
+                    ? fetchOllamaModels(transientVault)
+                    : fetchOpenAiCompatibleModels(transientVault, apiKey != null ? apiKey : "");
+        } catch (Exception e) {
+            if (e instanceof BusinessException be) throw be;
+            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "无法加载模型列表，请检查接口地址和密钥后重试");
+        }
+    }
+
     public List<ModelEntryDto> fetchModels(Long userId, String provider) {
         String cacheKey = CACHE_KEY_PREFIX + provider + ":" + userId;
         String cached = redisTemplate.opsForValue().get(cacheKey);

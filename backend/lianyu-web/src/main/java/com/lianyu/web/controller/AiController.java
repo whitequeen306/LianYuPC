@@ -9,6 +9,7 @@ import com.lianyu.service.dto.AiChatRequest;
 import com.lianyu.service.dto.ChatResult;
 import com.lianyu.service.dto.CreateVaultRequest;
 import com.lianyu.service.dto.ModelEntryDto;
+import com.lianyu.service.dto.PreviewModelsRequest;
 import com.lianyu.service.dto.UpdateVaultRequest;
 import com.lianyu.service.dto.VaultEntryResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -59,6 +60,13 @@ public class AiController {
     @GetMapping("/models")
     public Result<List<ModelEntryDto>> models(@RequestParam String provider) {
         return Result.ok(aiChatService.fetchModels(StpUtil.getLoginIdAsLong(), provider));
+    }
+
+    @Operation(summary = "预览模型列表（未保存配置时）")
+    @PostMapping("/models/preview")
+    public Result<List<ModelEntryDto>> previewModels(@Valid @RequestBody PreviewModelsRequest request) {
+        return Result.ok(aiChatService.previewModels(
+                StpUtil.getLoginIdAsLong(), request.getBaseUrl(), request.getApiKey()));
     }
 
     @Operation(summary = "添加 API Key 配置")

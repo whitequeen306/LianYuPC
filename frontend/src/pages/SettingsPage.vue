@@ -53,7 +53,7 @@
         </div>
         <div class="desktop-settings__row">
           <div>
-            <div class="desktop-settings__label">QQ 桥接</div>
+            <div class="desktop-settings__label">QQ 桥接（beta）</div>
             <div class="desktop-settings__hint">让 QQ 消息转发给云端 AI 并自动回复</div>
           </div>
           <el-button text :icon="Promotion" @click="goQqBridge">前往配置</el-button>
@@ -135,36 +135,6 @@
               <span class="info-label">密钥版本</span>
               <span class="info-value mono">{{ vault.keyVersion }}</span>
             </div>
-          </div>
-
-          <div class="card-footer">
-            <el-button
-              text
-              size="small"
-              :icon="RefreshRight"
-              :loading="modelsLoading[vault.provider]"
-              @click="handleFetchModels(vault.provider)"
-            >
-              获取模型列表
-            </el-button>
-            <span v-if="providerModels[vault.provider]?.length" class="model-count">
-              {{ providerModels[vault.provider].length }} 个模型可用
-            </span>
-          </div>
-
-          <div v-if="providerModels[vault.provider]?.length" class="model-list">
-            <el-tag
-              v-for="m in (providerModels[vault.provider] || []).slice(0, 8)"
-              :key="m.id"
-              size="small"
-              type="info"
-              effect="dark"
-            >
-              {{ m.name || m.id }}
-            </el-tag>
-            <span v-if="providerModels[vault.provider].length > 8" class="more-models">
-              +{{ providerModels[vault.provider].length - 8 }}
-            </span>
           </div>
         </div>
       </div>
@@ -254,11 +224,32 @@
         </el-form-item>
 
         <el-form-item label="默认模型（必填）" prop="modelDefault">
-          <el-input
-            v-model="form.modelDefault"
-            placeholder="例如: deepseek-chat、qwen-max"
-          />
-          <p class="field-hint">使用自定义接口时必须指定模型名称。</p>
+          <div class="model-input-row">
+            <el-select
+              v-model="form.modelDefault"
+              filterable
+              allow-create
+              default-first-option
+              :loading="dialogModelsLoading"
+              placeholder="点击右侧按钮拉取，或手动输入模型名"
+              class="model-select"
+            >
+              <el-option
+                v-for="m in dialogModels"
+                :key="m.id"
+                :label="m.name || m.id"
+                :value="m.id"
+              />
+            </el-select>
+            <el-button
+              :icon="RefreshRight"
+              :loading="dialogModelsLoading"
+              @click="handleFetchDialogModels"
+            >
+              拉取模型
+            </el-button>
+          </div>
+          <p class="field-hint">填写接口地址和密钥后点击「拉取模型」自动获取可用列表，也可手动输入。</p>
         </el-form-item>
       </el-form>
 
@@ -334,8 +325,8 @@ const dialogWidth = useResponsiveDialogWidth(480)
 const editingVault = ref(null)
 const submitting = ref(false)
 const formRef = ref(null)
-const modelsLoading = ref({})
-const providerModels = ref({})
+const dialogModels = ref([])
+const dialogModelsLoading = ref(false)
 
 const initialForm = () => ({
   provider: '',
@@ -455,6 +446,7 @@ async function onScreenObserveChange(enabled) {
 function showAddDialog() {
   editingVault.value = null
   Object.assign(form, initialForm())
+  dialogModels.value = []
   dialogVisible.value = true
 }
 
@@ -464,6 +456,7 @@ function showEditDialog(vault) {
   form.apiKey = vault.apiKey || ''
   form.baseUrl = vault.baseUrl || ''
   form.modelDefault = vault.modelDefault || ''
+  dialogModels.value = []
   dialogVisible.value = true
 }
 
@@ -517,15 +510,38 @@ async function confirmDelete(vault) {
   } catch {}
 }
 
-async function handleFetchModels(provider) {
-  modelsLoading.value[provider] = true
+async function handleFetchDialogModels() {
+  const baseUrl = form.baseUrl.trim()
+  if (!baseUrl) {
+    ElMessage.warning('请先填写接口地址')
+    return
+  }
+  const apiKey = form.apiKey?.trim()
+  dialogModelsLoading.value = true
   try {
-    const models = await providersStore.fetchModelsFor(provider)
-    providerModels.value[provider] = models
-  } catch {
-    // Handled by interceptor
+    let models
+    if (editingVault.value && !apiKey) {
+      // 编辑模式且未改密钥：用已保存凭据拉取
+      models = await providersStore.fetchModelsFor(editingVault.value.provider)
+    } else {
+      // 添加模式 / 编辑时填了新密钥：用表单值预览
+      if (!apiKey && !isOllamaProvider.value) {
+        ElMessage.warning('请先填写 API Key')
+        dialogModelsLoading.value = false
+        return
+      }
+      models = await providersStore.previewModelsFor(baseUrl, apiKey || 'local')
+    }
+    dialogModels.value = models || []
+    if (dialogModels.value.length) {
+      ElMessage.success(`获取到 ${dialogModels.value.length} 个模型`)
+    } else {
+      ElMessage.warning('未获取到模型，请检查接口地址和密钥')
+    }
+  } catch (e) {
+    ElMessage.error(`拉取模型失败：${e?.message || '请检查接口地址和密钥后重试'}`)
   } finally {
-    modelsLoading.value[provider] = false
+    dialogModelsLoading.value = false
   }
 }
 </script>
@@ -797,32 +813,13 @@ async function handleFetchModels(provider) {
   }
 }
 
-.card-footer {
+.model-input-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-top: $space-3;
-  border-top: 1px solid rgba($color-pink-rgb, 0.06);
-}
-
-.model-count {
-  font-size: $font-size-xs;
-  color: $color-text-muted;
-}
-
-.model-list {
-  display: flex;
-  flex-wrap: wrap;
   gap: $space-2;
-  margin-top: $space-3;
-  padding-top: $space-3;
-  border-top: 1px solid rgba($color-pink-rgb, 0.06);
+  width: 100%;
 }
 
-.more-models {
-  font-size: $font-size-xs;
-  color: $color-text-muted;
-  display: flex;
-  align-items: center;
+.model-select {
+  flex: 1;
 }
 </style>

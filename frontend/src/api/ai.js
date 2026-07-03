@@ -4,6 +4,10 @@ export function fetchModels(provider) {
   return http.get('/ai/models', { params: { provider }, skipGlobalError: true })
 }
 
+export function previewModels(data) {
+  return http.post('/ai/models/preview', data, { skipGlobalError: true })
+}
+
 export function chat(data) {
   return http.post('/ai/chat', data)
 }

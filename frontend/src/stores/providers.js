@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { listVaults, createVault, updateVault, deleteVault, fetchModels } from '@/api/ai'
+import { listVaults, createVault, updateVault, deleteVault, fetchModels, previewModels } from '@/api/ai'
 
 export const useProvidersStore = defineStore('providers', () => {
   const vaults = ref([])
@@ -46,13 +46,14 @@ export const useProvidersStore = defineStore('providers', () => {
     }
   }
 
-  function getModels(provider) {
-    return models.value[provider] || []
+  /** 未保存配置时预览模型列表（添加对话框 / 编辑时改了密钥） */
+  async function previewModelsFor(baseUrl, apiKey) {
+    return await previewModels({ baseUrl, apiKey })
   }
 
   return {
     vaults, models, loading, modelsLoading,
     fetchVaults, addVault, editVault, removeVault,
-    fetchModelsFor, getModels
+    fetchModelsFor, previewModelsFor
   }
 })

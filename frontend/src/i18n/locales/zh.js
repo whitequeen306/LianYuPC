@@ -34,12 +34,12 @@ export default {
     memory: '记忆',
     profile: '个人资料',
     settings: '设置',
-    qqBridge: 'QQ 桥接',
+    qqBridge: 'QQ 桥接（beta）',
     about: '关于'
   },
   qqBridge: {
     desc: '让本地 NapCat 收到的 QQ 消息转发给云端 AI，再把回复发回 QQ',
-    notElectron: 'QQ 桥接仅在桌面客户端可用。',
+    notElectron: 'QQ 桥接（beta）仅在桌面客户端可用。',
     mode: { title: '托管模式', auto: '自动', manual: '手动', hint: '自动：应用下载并运行 NapCat，扫码即用；手动：自行运行 NapCat 后填连接参数' },
     consent: { title: 'QQ 自动托管授权', body: '开启后，应用会从 NapCat 官方 GitHub 下载 NapCat 运行时到本机并自动配置启动，随后弹出扫码窗口登录 QQ。登录态保存在本地 NapCat，重启无需重扫。', confirm: '我已了解，开启', cancel: '取消' },
     host: { title: 'NapCat 运行时', start: '启动托管', stop: '停止托管', cancel: '取消', login: '登录QQ', version: '版本', token: '令牌', selfId: '当前QQ', noSelfId: '未登录', repair: '修复运行时', loginFailed: '打开登录窗失败，请确认运行时已就绪', startFailed: '启动失败，请检查网络后重试', stopFailed: '停止失败，请重试', reinstall: '升级运行时', upgradeHint: '检测到新版本 {latest}（当前 {installed}）', reinstallConfirm: '将停止当前运行时、删除旧版本并重新下载最新版，确认继续？', reinstallOk: '已开始升级，请等待下载完成', reinstallFailed: '升级失败，请重试或检查网络' },
@@ -366,7 +366,7 @@ export default {
     environment: '运行环境',
     envWeb: '网页版',
     envDesktop: '桌面版',
-    intro: '恋语（LianYu）是一款多角色 AI 陪伴应用，支持角色对话、朋友圈、日记、记忆与桌面桌宠。可在 Windows 桌面端使用，也能通过 QQ 桥接把消息转发给云端 AI。',
+    intro: '恋语（LianYu）是一款多角色 AI 陪伴应用，支持角色对话、朋友圈、日记、记忆与桌面桌宠。可在 Windows 桌面端使用，也能通过 QQ 桥接（beta）把消息转发给云端 AI。',
     techStack: '技术栈',
     techStackDesc: '前端 Vue 3 + Element Plus + Electron；后端 Spring Boot + MyBatis-Plus + MySQL。',
     copyright: '© 2026 恋语 LianYu',

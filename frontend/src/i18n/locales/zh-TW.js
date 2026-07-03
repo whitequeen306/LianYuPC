@@ -35,11 +35,12 @@ export default {
     memory: '記憶',
     profile: '個人資料',
     settings: '設定',
+    qqBridge: 'QQ 橋接（beta）',
     about: '關於'
   },
   qqBridge: {
     desc: '讓本地 NapCat 收到的 QQ 訊息轉發給雲端 AI，再把回覆發回 QQ',
-    notElectron: 'QQ 橋接僅在桌面用戶端可用。',
+    notElectron: 'QQ 橋接（beta）僅在桌面用戶端可用。',
     mode: { title: '託管模式', auto: '自動', manual: '手動', hint: '自動：應用下載並執行 NapCat，掃碼即用；手動：自行執行 NapCat 後填連線參數' },
     consent: { title: 'QQ 自動託管授權', body: '開啟後，應用會從 NapCat 官方 GitHub 下載 NapCat 執行環境到本機並自動設定啟動，隨後彈出掃碼視窗登入 QQ。登入態保存在本地 NapCat，重啟無需重掃。', confirm: '我已了解，開啟', cancel: '取消' },
     host: { title: 'NapCat 執行環境', start: '啟動託管', stop: '停止託管', cancel: '取消', login: '登入QQ', version: '版本', token: '令牌', selfId: '目前QQ', noSelfId: '未登入', repair: '修復執行環境', loginFailed: '開啟登入視窗失敗，請確認執行環境已就緒', startFailed: '啟動失敗，請檢查網路後重試', stopFailed: '停止失敗，請重試', reinstall: '升級執行環境', upgradeHint: '偵測到新版本 {latest}（目前 {installed}）', reinstallConfirm: '將停止目前執行環境、刪除舊版本並重新下載最新版，確認繼續？', reinstallOk: '已開始升級，請等待下載完成', reinstallFailed: '升級失敗，請重試或檢查網路' },
@@ -361,7 +362,7 @@ export default {
     environment: '執行環境',
     envWeb: '網頁版',
     envDesktop: '桌面版',
-    intro: '戀語（LianYu）是一款多角色 AI 陪伴應用，支援角色對話、朋友圈、日記、記憶與桌面桌寵。可在 Windows 桌面端使用，也能透過 QQ 橋接把訊息轉發給雲端 AI。',
+    intro: '戀語（LianYu）是一款多角色 AI 陪伴應用，支援角色對話、朋友圈、日記、記憶與桌面桌寵。可在 Windows 桌面端使用，也能透過 QQ 橋接（beta）把訊息轉發給雲端 AI。',
     techStack: '技術棧',
     techStackDesc: '前端 Vue 3 + Element Plus + Electron；後端 Spring Boot + MyBatis-Plus + MySQL。',
     copyright: '© 2026 戀語 LianYu',

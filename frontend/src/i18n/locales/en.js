@@ -34,12 +34,12 @@ export default {
     memory: 'Memory',
     profile: 'Profile',
     settings: 'Settings',
-    qqBridge: 'QQ Bridge',
+    qqBridge: 'QQ Bridge (beta)',
     about: 'About'
   },
   qqBridge: {
     desc: 'Forward QQ messages received by local NapCat to the cloud AI, and send replies back to QQ.',
-    notElectron: 'QQ bridge is only available in the desktop client.',
+    notElectron: 'QQ bridge (beta) is only available in the desktop client.',
     mode: { title: 'Hosting mode', auto: 'Auto', manual: 'Manual', hint: 'Auto: the app downloads and runs NapCat, scan to use; Manual: run NapCat yourself and fill in the connection params' },
     consent: { title: 'QQ auto-hosting consent', body: 'Once enabled, the app will download the NapCat runtime from the official NapCat GitHub to your machine, configure and start it automatically, then pop up a scan window to log in to QQ. The login state is kept by the local NapCat; no re-scan is needed after restart.', confirm: 'I understand, enable', cancel: 'Cancel' },
     host: { title: 'NapCat runtime', start: 'Start hosting', stop: 'Stop hosting', cancel: 'Cancel', login: 'Log in to QQ', version: 'Version', token: 'Token', selfId: 'Current QQ', noSelfId: 'Not logged in', repair: 'Repair runtime', loginFailed: 'Failed to open login window; make sure the runtime is ready', startFailed: 'Start failed; please check your network and retry', stopFailed: 'Stop failed; please retry', reinstall: 'Upgrade runtime', upgradeHint: 'New version {latest} available (current {installed})', reinstallConfirm: 'This will stop the runtime, remove the old version and re-download the latest. Continue?', reinstallOk: 'Upgrade started; please wait for the download to finish', reinstallFailed: 'Upgrade failed; please retry or check your network' },
@@ -364,7 +364,7 @@ export default {
     environment: 'Environment',
     envWeb: 'Web',
     envDesktop: 'Desktop',
-    intro: 'LianYu is a multi-character AI companion app supporting character chat, moments, diary, memory, and a desktop pet. Runs on Windows desktop and can relay QQ messages to the cloud AI via the QQ bridge.',
+    intro: 'LianYu is a multi-character AI companion app supporting character chat, moments, diary, memory, and a desktop pet. Runs on Windows desktop and can relay QQ messages to the cloud AI via the QQ bridge (beta).',
     techStack: 'Tech stack',
     techStackDesc: 'Frontend: Vue 3 + Element Plus + Electron; Backend: Spring Boot + MyBatis-Plus + MySQL.',
     copyright: '© 2026 LianYu',

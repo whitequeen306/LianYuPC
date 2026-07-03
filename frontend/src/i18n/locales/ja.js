@@ -34,12 +34,12 @@ export default {
     memory: '記憶',
     profile: 'プロフィール',
     settings: '設定',
-    qqBridge: 'QQ ブリッジ',
+    qqBridge: 'QQ ブリッジ（beta）',
     about: 'について'
   },
   qqBridge: {
     desc: 'ローカル NapCat が受信した QQ メッセージをクラウド AI に転送し、返信を QQ に送り返します。',
-    notElectron: 'QQ ブリッジはデスクトップ版でのみ利用できます。',
+    notElectron: 'QQ ブリッジ（beta）はデスクトップ版でのみ利用できます。',
     mode: { title: 'ホスティングモード', auto: '自動', manual: '手動', hint: '自動：アプリが NapCat をダウンロード・起動し、スキャンするだけで利用可能；手動：NapCat を自分で起動し接続情報を入力' },
     consent: { title: 'QQ 自動ホスティングの同意', body: '有効にすると、アプリは NapCat 公式 GitHub から NapCat ランタイムを本機にダウンロードし、自動で設定・起動した後、スキャンウィンドウを開いて QQ にログインします。ログイン状態はローカル NapCat に保持され、再起動時の再スキャンは不要です。', confirm: '了解して有効化', cancel: 'キャンセル' },
     host: { title: 'NapCat ランタイム', start: 'ホスティング開始', stop: 'ホスティング停止', cancel: 'キャンセル', login: 'QQ ログイン', version: 'バージョン', token: 'トークン', selfId: '現在のQQ', noSelfId: '未ログイン', repair: 'ランタイム修復', loginFailed: 'ログインウィンドウを開けませんでした。ランタイムが準備完了か確認してください', startFailed: '起動失敗、ネットワークを確認して再試行してください', stopFailed: '停止失敗、再試行してください', reinstall: 'ランタイム更新', upgradeHint: '新バージョン {latest} があります（現在 {installed}）', reinstallConfirm: '現在のランタイムを停止し、旧バージョンを削除して最新版を再ダウンロードします。続行しますか？', reinstallOk: '更新を開始しました。ダウンロード完了までお待ちください', reinstallFailed: '更新に失敗しました。再試行するかネットワークを確認してください' },
@@ -359,7 +359,7 @@ export default {
     environment: '実行環境',
     envWeb: 'ウェブ版',
     envDesktop: 'デスクトップ版',
-    intro: '恋語（LianYu）はマルチキャラクター AI 伴侣アプリです。キャラチャット・モーメンツ・日記・記憶・デスクトップペットをサポート。Windows デスクトップで利用可能、QQ ブリッジで QQ メッセージをクラウド AI に転送できます。',
+    intro: '恋語（LianYu）はマルチキャラクター AI 伴侣アプリです。キャラチャット・モーメンツ・日記・記憶・デスクトップペットをサポート。Windows デスクトップで利用可能、QQ ブリッジ（beta）で QQ メッセージをクラウド AI に転送できます。',
     techStack: '技術スタック',
     techStackDesc: 'フロントエンド Vue 3 + Element Plus + Electron；バックエンド Spring Boot + MyBatis-Plus + MySQL。',
     copyright: '© 2026 恋語 LianYu',
