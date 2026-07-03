@@ -284,10 +284,7 @@ const settingsStore = useSettingsStore()
 const router = useRouter()
 const goQqBridge = () => router.push('/app/qq-bridge')
 const goAbout = () => router.push('/app/about')
-const goBack = () => {
-  if (window.history.length > 1) router.back()
-  else router.push('/app')
-}
+const goBack = () => router.push('/app')
 const isElectron = isElectronApp()
 
 // ---- 诊断日志 ----

@@ -206,6 +206,20 @@
               </div>
               <p class="field-hint">{{ t('qqBridge.reply.segmentDelayHint') }}</p>
             </el-form-item>
+            <el-form-item :label="t('qqBridge.reply.segmentJitter')">
+              <div class="delay-row">
+                <el-input-number
+                  v-model="replyForm.segmentJitterMs"
+                  :min="0"
+                  :max="3000"
+                  :step="100"
+                  controls-position="right"
+                  class="delay-input"
+                />
+                <span class="delay-unit">ms</span>
+              </div>
+              <p class="field-hint">{{ t('qqBridge.reply.segmentJitterHint') }}</p>
+            </el-form-item>
             <el-form-item :label="t('qqBridge.reply.fallback')">
               <el-input
                 v-model="replyForm.fallbackText"
@@ -343,10 +357,7 @@ const { t } = useI18n()
 const router = useRouter()
 const store = useQqBridgeStore()
 const isElectron = isElectronApp()
-const goBack = () => {
-  if (window.history.length > 1) router.back()
-  else router.push('/app/settings')
-}
+const goBack = () => router.push('/app/settings')
 
 const hostStatus = computed(() => store.hostStatus || { state: 'stopped' })
 const bridgeStatus = computed(() => store.bridgeStatus || { state: 'stopped' })
@@ -395,7 +406,7 @@ const wsForm = reactive({ wsUrl: 'ws://127.0.0.1:3001', accessToken: '' })
 // 回复设置表单：segmentDelayMs（分段逐条发送条间延迟）+ fallbackText（兜底回复）。
 // 保存时须展开当前 settings.reply 以保留 timeoutMs 等未在 UI 暴露的字段
 // （writeQqBridgeSettings 顶层浅合并，reply 整体替换；缺字段会被 normalize 回落默认值）。
-const replyForm = reactive({ segmentDelayMs: 500, fallbackText: '' })
+const replyForm = reactive({ segmentDelayMs: 500, segmentJitterMs: 800, fallbackText: '' })
 
 // 消息路由下拉：拉取云端角色列表给「角色名」可读选项——选定角色后桥接按角色自动匹配会话，
 // 每个 QQ 用户独立会话、不受清空上下文影响，无需再粘会话号/开额外弹窗。
@@ -417,6 +428,8 @@ watch(
     // 允许 0（不延迟）：显式取非负有限数，否则回落 500（|| 会把 0 当假值）
     const segDelayMs = Number(s.reply?.segmentDelayMs)
     replyForm.segmentDelayMs = Number.isFinite(segDelayMs) && segDelayMs >= 0 ? segDelayMs : 500
+    const segJitterMs = Number(s.reply?.segmentJitterMs)
+    replyForm.segmentJitterMs = Number.isFinite(segJitterMs) && segJitterMs >= 0 ? segJitterMs : 800
     replyForm.fallbackText = s.reply?.fallbackText ?? ''
   },
   { immediate: true },
@@ -656,6 +669,7 @@ async function onSaveReply() {
       reply: {
         ...(settings.value.reply || {}),
         segmentDelayMs: Number(replyForm.segmentDelayMs) || 0,
+        segmentJitterMs: Number(replyForm.segmentJitterMs) || 0,
         fallbackText: replyForm.fallbackText,
       },
     })

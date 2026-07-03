@@ -38,6 +38,26 @@
         <span class="about-copyright">{{ t('about.copyright') }}</span>
       </div>
     </section>
+
+    <!-- 开发者 -->
+    <section class="section stagger-item">
+      <div class="section-header">
+        <h2 class="section-title">开发者</h2>
+      </div>
+      <div class="glass about-card about-devs">
+        <a
+          v-for="dev in developers"
+          :key="dev.url"
+          :href="dev.url"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="dev-item"
+        >
+          <span class="dev-name">{{ dev.name }}</span>
+          <el-icon class="dev-link-icon"><Link /></el-icon>
+        </a>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -46,7 +66,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { isElectronApp } from '@/utils/electron'
-import { ArrowLeft } from '@element-plus/icons-vue'
+import { ArrowLeft, Link } from '@element-plus/icons-vue'
 import { APP_LOGO } from '@/constants/brand'
 import pkg from '../../package.json'
 
@@ -56,6 +76,11 @@ const isElectron = isElectronApp()
 // 版本号取自 package.json，构建时注入；桌面版亦可由主进程覆盖但此处统一用前端版本
 const version = computed(() => pkg.version || '—')
 const goBack = () => router.push('/app/settings')
+
+const developers = [
+  { name: '青思雨', url: 'https://github.com/whitequeen306' },
+  { name: 'Clove.', url: 'https://github.com/2164312714-svg' },
+]
 
 // 彩蛋：连续点击恋语图标 10 次跳转爱发电赞助页。
 // 计数窗口 2s，中断则重置，避免误触。
@@ -189,5 +214,35 @@ function handleLogoClick() {
 .about-copyright {
   font-size: $font-size-xs;
   color: $color-text-muted;
+}
+
+.about-devs {
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+}
+
+.dev-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $space-3 $space-4;
+  border-radius: $radius-md;
+  background: rgba(128, 128, 140, 0.06);
+  text-decoration: none;
+  color: $color-text-primary;
+  font-size: $font-size-base;
+  font-weight: $font-weight-medium;
+  transition: all $transition-fast;
+  &:hover {
+    background: rgba($color-pink-rgb, 0.08);
+    color: $color-pink-primary;
+  }
+}
+
+.dev-link-icon {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  .dev-item:hover & { color: $color-pink-primary; }
 }
 </style>

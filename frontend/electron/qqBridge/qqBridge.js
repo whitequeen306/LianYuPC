@@ -210,10 +210,12 @@ async function handleOneBotMessage(event) {
 
   if (!client) return
   const target = resolveReplyTarget(event)
-  // 分段逐条发送：条间小幅延迟，避免 napcat/QQ 风控且更像真人连发
+  // 分段逐条发送：条间小幅延迟 + 随机抖动，避免 napcat/QQ 风控且更像真人连发
   // 允许 0（不延迟）：显式取非负有限数，|| 会把 0 当假值误用 500
   const segDelayMs = Number(settings.reply?.segmentDelayMs)
   const delayMs = Number.isFinite(segDelayMs) && segDelayMs >= 0 ? segDelayMs : DEFAULTS.reply.segmentDelayMs
+  const segJitterMs = Number(settings.reply?.segmentJitterMs)
+  const jitterMs = Number.isFinite(segJitterMs) && segJitterMs >= 0 ? segJitterMs : DEFAULTS.reply.segmentJitterMs
   try {
     for (let i = 0; i < replySegments.length; i++) {
       if (!client) break
@@ -224,7 +226,7 @@ async function handleOneBotMessage(event) {
         await client.sendPrivateMsg(target.userId, seg)
       }
       if (i < replySegments.length - 1) {
-        await sleep(delayMs)
+        await sleep(delayMs + Math.floor(Math.random() * (jitterMs + 1)))
       }
     }
     // 出向图片：AI 回复若含图（流里不带，须流后轮询 messages 取最新 assistant 记录），

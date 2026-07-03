@@ -43,6 +43,9 @@ export const DEFAULTS = {
     timeoutMs: 120000,
     // 分段逐条发送的条间延迟：避免 napcat/QQ 风控，且更像真人连发
     segmentDelayMs: 500,
+    // 随机抖动上限：在 segmentDelayMs 基础上加 0~jitterMs 的随机量，
+    // 让发送间隔不固定，降低 QQ 风控判定为机器人的概率。0 = 不抖动。
+    segmentJitterMs: 800,
   },
   hosting: {
     // 托管模式：'auto' = 桌面端自管 NapCat 运行时（下载/配置/拉起/扫码）；
@@ -119,6 +122,8 @@ export function normalizeQqBridgeSettings(settings) {
   // 须允许 0（"不延迟"）：Number(x) || 默认 会把 0 当假值误回落，故显式取非负有限数。
   const segDelayMs = Number(reply.segmentDelayMs)
   reply.segmentDelayMs = Number.isFinite(segDelayMs) && segDelayMs >= 0 ? segDelayMs : DEFAULTS.reply.segmentDelayMs
+  const segJitterMs = Number(reply.segmentJitterMs)
+  reply.segmentJitterMs = Number.isFinite(segJitterMs) && segJitterMs >= 0 ? segJitterMs : DEFAULTS.reply.segmentJitterMs
 
   return {
     enabled: raw.enabled === true,
