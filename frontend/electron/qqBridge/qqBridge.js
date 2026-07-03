@@ -267,6 +267,7 @@ async function resolveConversationId(sender, { force = false } = {}) {
     if (!characterId) return ''
     const created = await createConversation(characterId)
     if (created?.id) {
+      if (created?.characterName) bindingCharacterName = created.characterName
       sessionMap[groupKey] = String(created.id)
       persistSessionMap()
     }
@@ -287,6 +288,7 @@ async function resolveConversationId(sender, { force = false } = {}) {
         log('resolveConversationId: create conversation returned no id for', key)
         return null
       }
+      if (created?.characterName) bindingCharacterName = created.characterName
       sessionMap[key] = String(created.id)
       persistSessionMap()
       log(force ? 're-resolved conversation' : 'created conversation', sessionMap[key], 'for', key, '(character', characterId + ')')
@@ -306,7 +308,7 @@ async function resolveConversationId(sender, { force = false } = {}) {
  * binding.characterId 命中则复用；否则反查 binding.conversationId 详情拿 characterId，缓存并持久化。
  */
 async function resolveBindingCharacterId() {
-  if (bindingCharacterId && bindingCharacterName) return bindingCharacterId
+  if (bindingCharacterId) return bindingCharacterId
   const settings = lastSettings
   const convId = settings?.binding?.conversationId
   if (!convId || !lastApiOrigin || !lastAuthToken) return ''
