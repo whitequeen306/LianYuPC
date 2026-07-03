@@ -257,9 +257,20 @@ async function handleOneBotMessage(event) {
  * per-key inflight 锁防同一用户并发首消息时重复建会话。群聊已在调用前丢弃，此处只处理私聊。
  */
 async function resolveConversationId(sender, { force = false } = {}) {
-  // 群聊：用 binding.conversationId（白名单内所有群员共享角色会话）
+  // 群聊：binding.conversationId 优先；空则懒建群聊共享会话（按 group 缓存）
   if (sender?.messageType === 'group') {
-    return readQqBridgeSettings().binding?.conversationId || ''
+    const bound = readQqBridgeSettings().binding?.conversationId || ''
+    if (bound) return bound
+    const groupKey = `group:${sender?.groupId || 0}`
+    if (sessionMap[groupKey]) return sessionMap[groupKey]
+    const characterId = await resolveBindingCharacterId()
+    if (!characterId) return ''
+    const created = await createConversation(characterId)
+    if (created?.id) {
+      sessionMap[groupKey] = String(created.id)
+      persistSessionMap()
+    }
+    return created?.id ? String(created.id) : ''
   }
   const key = `private:${sender?.userId || 0}`
   if (!force && sessionMap[key]) return sessionMap[key]
@@ -295,7 +306,7 @@ async function resolveConversationId(sender, { force = false } = {}) {
  * binding.characterId 命中则复用；否则反查 binding.conversationId 详情拿 characterId，缓存并持久化。
  */
 async function resolveBindingCharacterId() {
-  if (bindingCharacterId) return bindingCharacterId
+  if (bindingCharacterId && bindingCharacterName) return bindingCharacterId
   const settings = lastSettings
   const convId = settings?.binding?.conversationId
   if (!convId || !lastApiOrigin || !lastAuthToken) return ''
