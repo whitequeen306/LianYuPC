@@ -15,6 +15,7 @@ COPY lianyu-ai/pom.xml lianyu-ai/pom.xml
 COPY lianyu-service/pom.xml lianyu-service/pom.xml
 COPY lianyu-web/pom.xml lianyu-web/pom.xml
 COPY lianyu-app/pom.xml lianyu-app/pom.xml
+COPY lianyu-qq-bridge/pom.xml lianyu-qq-bridge/pom.xml
 COPY settings-docker.xml /root/.m2/settings.xml
 RUN --mount=type=cache,target=/root/.m2 \
     mvn -B dependency:go-offline -q
@@ -28,6 +29,7 @@ COPY lianyu-ai/src lianyu-ai/src
 COPY lianyu-service/src lianyu-service/src
 COPY lianyu-web/src lianyu-web/src
 COPY lianyu-app/src lianyu-app/src
+COPY lianyu-qq-bridge/src lianyu-qq-bridge/src
 
 ARG APP_REVISION=dev
 RUN --mount=type=cache,target=/root/.m2 \
