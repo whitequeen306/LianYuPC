@@ -122,12 +122,21 @@ const LAUNCHER_WEB_PREFS = {
 
 const DEFAULT_API_ORIGIN = 'http://localhost:8080'
 
-loadRuntimeSecrets({
-  secretsDir: __dirname,
-  metaPath: path.join(__dirname, 'client-build.json'),
-  isPackaged: app.isPackaged,
-  isDev,
-})
+try {
+  loadRuntimeSecrets({
+    secretsDir: __dirname,
+    metaPath: path.join(__dirname, 'client-build.json'),
+    isPackaged: app.isPackaged,
+    isDev,
+  })
+} catch (err) {
+  console.error(`[main] loadRuntimeSecrets failed: ${err?.message || err}`)
+}
+
+function runtimeSecretsConfigured() {
+  if (isDev || !app.isPackaged) return true
+  return !!getRuntimeSecrets()?.apiOrigin
+}
 
 function resolveApiOrigin() {
   const secrets = getRuntimeSecrets()
@@ -519,12 +528,31 @@ function normalizeHashRoute(route) {
 
 function loadRoute(win, hashRoute) {
   const hash = normalizeHashRoute(hashRoute)
+  const hashBody = hash.startsWith('#') ? hash.slice(1) : hash
+  const routePath = (hashBody.split('?')[0] || '/')
+
   if (isDev) {
     const base = process.env.VITE_DEV_SERVER_URL.replace(/\/$/, '')
-    return win.loadURL(`${base.replace(/\/$/, '')}${hash}`)
+    if (routePath === '/launcher' || routePath.startsWith('/launcher/')) {
+      return win.loadURL(`${base}/launcher.html`)
+    }
+    if (routePath.startsWith('/quick/')) {
+      return win.loadURL(`${base}/quick.html#${hashBody}`)
+    }
+    return win.loadURL(`${base}${hash}`)
   }
-  const indexPath = resolveDistPath('index.html')
-  const hashBody = hash.startsWith('#') ? hash.slice(1) : hash
+
+  let htmlFile = 'index.html'
+  if (routePath === '/launcher' || routePath.startsWith('/launcher/')) {
+    htmlFile = 'launcher.html'
+  } else if (routePath.startsWith('/quick/')) {
+    htmlFile = 'quick.html'
+  }
+
+  const indexPath = resolveDistPath(htmlFile)
+  if (htmlFile === 'launcher.html') {
+    return win.loadFile(indexPath)
+  }
   return win.loadFile(indexPath, { hash: hashBody })
 }
 
@@ -914,32 +942,47 @@ function showLauncherWindow(options = {}) {
   void showLauncherWindowAsync(options)
 }
 
-async function showLauncherWindowAsync(options = {}) {
-  const { center = false, force = false } = options
+function isLauncherLoginReady() {
   refreshLauncherLoginState()
-  if (!launcherLoggedIn && mainWindow && !mainWindow.isDestroyed()) {
-    const state = await pullRendererDesktopState(mainWindow)
-    if (state?.loggedIn) {
+  if (launcherLoggedIn || !!readAuthSession()?.token) return true
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoading()) {
+    const url = mainWindow.webContents.getURL() || ''
+    if (url.includes('#/app') || url.includes('#/launcher') || url.includes('#/quick/')) {
       launcherLoggedIn = true
-      log('showLauncherWindow: recovered login state from renderer storage')
-    }
-    if (state?.showDesktopPet === true) {
-      writeDesktopSettings({ showDesktopPet: true, showLauncherLogo: true })
-    }
-    if (state?.launcherPetId) {
-      void syncLauncherPetId(state.launcherPetId)
+      return true
     }
   }
-  if (!launcherLoggedIn) {
+  return false
+}
+
+function applyLauncherStateFromRenderer(state) {
+  if (!state) return
+  if (state.loggedIn) {
+    launcherLoggedIn = true
+  }
+  if (state.showDesktopPet === true) {
+    writeDesktopSettings({ showDesktopPet: true, showLauncherLogo: true })
+  }
+  if (state.launcherPetId) {
+    void syncLauncherPetId(state.launcherPetId)
+  }
+}
+
+async function showLauncherWindowAsync(options = {}) {
+  const { center = false, force = false } = options
+  if (!isLauncherLoginReady()) {
     log('showLauncherWindow: aborted — not logged in')
     return
   }
+  launcherLoggedIn = true
+
   const settings = readDesktopSettings()
   if (!isDesktopPetEnabled(settings)) {
     log('showLauncherWindow: aborted — desktop pet disabled in settings')
     return
   }
   if (!force && isMainWindowOccupyingDesktop()) return
+
   const win = ensureLauncherWindow()
   if (!win) {
     log('showLauncherWindow: aborted — launcher window unavailable')
@@ -951,6 +994,7 @@ async function showLauncherWindowAsync(options = {}) {
   } else {
     clampLauncherToWorkArea()
   }
+
   const reveal = () => {
     if (!force && isMainWindowOccupyingDesktop()) return
     if (!win || win.isDestroyed()) return
@@ -961,13 +1005,17 @@ async function showLauncherWindowAsync(options = {}) {
     win.webContents.send('desktop:launcher-shown')
     log('showLauncherWindow: launcher shown')
     if (mainWindow && !mainWindow.isDestroyed()) {
+      void pullRendererDesktopState(mainWindow).then(applyLauncherStateFromRenderer)
       void syncChromeFromRenderer(mainWindow)
     }
   }
+
   if (win.webContents.isLoading()) {
-    win.webContents.once('ready-to-show', () => { void reveal() })
+    win.webContents.once('did-finish-load', () => {
+      setTimeout(reveal, 0)
+    })
   } else {
-    void reveal()
+    reveal()
   }
 }
 
@@ -1116,6 +1164,7 @@ function applyMainWindowCaption(win) {
 
 function hideMainToTray() {
   if (!mainWindow || mainWindow.isDestroyed()) return
+  prewarmLauncherWindow()
   mainWindow.hide()
   ensureTray()
   showLauncherWindow({ center: true, force: true })
@@ -1141,13 +1190,20 @@ function createMainWindow() {
   attachWindowLogging(win, 'main')
   attachCaptionMetricsChannel(win)
 
-  win.once('ready-to-show', () => {
+  let mainShown = false
+  const revealMainWindow = () => {
+    if (mainShown || win.isDestroyed()) return
+    mainShown = true
     applyMainWindowCaption(win)
     applyTitleBarOverlayToWindow(win, currentTitleBarPreset)
     pushCaptionMetrics(win)
-    void syncChromeFromRenderer(win)
     win.show()
-  })
+    void syncChromeFromRenderer(win)
+  }
+
+  // HTML 加载完即显示背景，不等 Vue ready-to-show（避免长时间白屏/无窗）
+  win.webContents.once('did-finish-load', revealMainWindow)
+  win.once('ready-to-show', revealMainWindow)
 
   win.on('minimize', () => {
     showLauncherWindow({ center: true, force: true })
@@ -1256,10 +1312,30 @@ function ensureLauncherWindow() {
   return createLauncherWindow()
 }
 
-/** 启动时预创建桌宠窗口（不显示），后续最小化/关闭时瞬间展示，消除冷创建延迟 */
+/** 启动时预创建桌宠窗口（不显示），关闭/最小化主窗口时无需冷启动 */
 function prewarmLauncherWindow() {
   if (!isDesktopPetEnabled(readDesktopSettings())) return
   createLauncherWindow()
+}
+
+/** 主窗口首屏完成后再预热桌宠/快捷聊，避免与主窗口争用 CPU/磁盘 */
+function scheduleAuxWindowPrewarm() {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const run = () => {
+    setTimeout(() => {
+      if (isDesktopPetEnabled(readDesktopSettings())) {
+        prewarmLauncherWindow()
+      }
+    }, 6000)
+    if (launcherLoggedIn) {
+      setTimeout(() => prewarmQuickChatShell(), 12000)
+    }
+  }
+  if (mainWindow.webContents.isLoading()) {
+    mainWindow.webContents.once('did-finish-load', run)
+  } else {
+    run()
+  }
 }
 
 function expandLauncherForPicker() {
@@ -1424,7 +1500,7 @@ function scheduleQuickChatReadyFallback(win) {
   quickChatReadyFallbackTimer = setTimeout(() => {
     quickChatReadyFallbackTimer = null
     revealPendingQuickChat(win)
-  }, 2500)
+  }, 1200)
 }
 
 async function navigateQuickChatShell(conversationId) {
@@ -1533,12 +1609,13 @@ function openQuickChatWindow(conversationId) {
   quickChatPendingShowId = id
 
   const beginOpen = async () => {
-    await navigateQuickChatShell(id)
     if (win.isDestroyed()) return
-    if (win.isVisible()) {
-      revealPendingQuickChat(win)
-      return
+    positionQuickChatNearLauncher(win)
+    if (!win.isVisible()) {
+      win.show()
+      win.moveTop()
     }
+    await navigateQuickChatShell(id)
     scheduleQuickChatReadyFallback(win)
   }
 
@@ -2188,8 +2265,8 @@ function registerIpcHandlers() {
     if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     launcherLoggedIn = !!loggedIn
     if (launcherLoggedIn) {
-      prewarmLauncherWindow()
-      prewarmQuickChatShell()
+      setTimeout(() => prewarmLauncherWindow(), 4000)
+      setTimeout(() => prewarmQuickChatShell(), 10000)
     } else {
       hideLauncherWindow()
       closeCharacterPicker()
@@ -2304,8 +2381,8 @@ function registerIpcHandlers() {
     }
     if (session?.token) {
       launcherLoggedIn = true
-      prewarmLauncherWindow()
-      prewarmQuickChatShell()
+      setTimeout(() => prewarmLauncherWindow(), 4000)
+      setTimeout(() => prewarmQuickChatShell(), 10000)
     }
     return { ok: true }
   })
@@ -2784,6 +2861,13 @@ async function runLauncherSmokeTest() {
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
+process.on('uncaughtException', (err) => {
+  log(`uncaughtException: ${err?.stack || err?.message || err}`)
+})
+process.on('unhandledRejection', (reason) => {
+  log(`unhandledRejection: ${reason?.stack || reason?.message || reason}`)
+})
+
 app.whenReady().then(() => {
   logger.initGlobalErrorHandlers()
   if (process.env.LIANYU_LAUNCHER_SMOKE === '1') {
@@ -2792,6 +2876,12 @@ app.whenReady().then(() => {
   }
   log('app ready')
   ensureToastAppRegistration()
+  if (!runtimeSecretsConfigured()) {
+    dialog.showErrorBox(
+      'LianYu',
+      '客户端配置读取失败，请卸载后重新安装最新版本。若仍失败请联系支持。',
+    )
+  }
   configureSecurity()
   configureAntiDebug()
   patchDesktopRequestOrigin()
@@ -2802,9 +2892,8 @@ app.whenReady().then(() => {
 
   if (readAuthSession()) {
     launcherLoggedIn = true
-    prewarmLauncherWindow()
-    prewarmQuickChatShell()
   }
+  scheduleAuxWindowPrewarm()
 
   void autoStartQqBridgeIfNeeded()
   void autoStartNapCatHostIfNeeded()

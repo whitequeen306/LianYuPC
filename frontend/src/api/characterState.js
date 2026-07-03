@@ -1,4 +1,4 @@
-import http from './index'
+import http from './httpCore'
 
 function requestConfig(options = {}) {
   return options.silent === true ? { skipGlobalError: true } : {}

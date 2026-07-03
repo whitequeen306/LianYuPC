@@ -146,7 +146,6 @@
       title="创建角色"
       :width="dialogWidth"
       destroy-on-close
-      @close="revokeAvatarPreview"
     >
       <el-form
         ref="formRef"
@@ -274,7 +273,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, watch, computed } from 'vue'
+import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -368,8 +367,6 @@ onMounted(async () => {
   void notificationsStore.init()
   await fetchCharacters()
 })
-
-onUnmounted(revokeAvatarPreview)
 
 watch(
   () => notificationsStore.latest,
@@ -492,7 +489,14 @@ function onCardFocusOut(characterId, event) {
   }
 }
 
+function revokeAvatarPreviewUrl(url) {
+  if (url && String(url).startsWith('blob:')) {
+    URL.revokeObjectURL(url)
+  }
+}
+
 function showCreateDialog() {
+  revokeAvatarPreviewUrl(form.avatarUrl)
   Object.assign(form, initialForm())
   settingsText.value = ''
   avatarFile.value = null
@@ -505,15 +509,6 @@ function triggerUpload() {
   fileInput.value?.click()
 }
 
-/** 释放当前头像预览的 blob: 对象 URL（仅对本地预览生效，服务器 URL 不动）。
- *  见 issue #17：createObjectURL 不 revoke 会持续占用 blob 引用直到页面卸载 */
-function revokeAvatarPreview() {
-  if (form.avatarUrl.startsWith('blob:')) {
-    URL.revokeObjectURL(form.avatarUrl)
-    form.avatarUrl = ''
-  }
-}
-
 function applyAvatarFile(file) {
   if (!file.type.startsWith('image/')) {
     ElMessage.warning('请上传图片文件（JPG / PNG / WebP）')
@@ -523,7 +518,7 @@ function applyAvatarFile(file) {
     ElMessage.warning('图片大小不能超过 8MB')
     return
   }
-  revokeAvatarPreview()
+  revokeAvatarPreviewUrl(form.avatarUrl)
   avatarFile.value = file
   form.avatarUrl = URL.createObjectURL(file)
 }

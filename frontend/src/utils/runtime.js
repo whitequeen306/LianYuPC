@@ -14,7 +14,7 @@ const PACKED_API_ORIGIN = (
 ).trim().replace(/\/$/, '')
 
 /** @type {string | null} */
-let cachedElectronOrigin = null
+let cachedElectronOrigin = PACKED_API_ORIGIN || null
 /** @type {Promise<void> | null} */
 let initPromise = null
 

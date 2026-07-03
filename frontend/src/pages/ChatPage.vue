@@ -28,6 +28,7 @@
             :status-text="emotionState.statusText"
           />
         </div>
+        <div class="gal-header__drag-region" aria-hidden="true" />
       </header>
 
       <div v-if="isBlocked" class="blocked-banner">
@@ -249,6 +250,8 @@ import {
 } from '@/utils/assistantReplySplit'
 import { getElectronAPI } from '@/utils/electron'
 import { useChatScroll, sleep, MIN_REPLY_DISPLAY_MS } from '@/composables/useChatScroll'
+import { useStreamAbort, isNetworkError } from '@/composables/useStreamAbort'
+import { drainAssistantStream } from '@/utils/assistantStreamDrain'
 import { formatSmartTime } from '@/utils/feedTime'
 import AssistantMessageContent from '@/components/AssistantMessageContent.vue'
 import { stripInnerThoughts, resolveShowInnerThoughts } from '@/utils/innerThoughtFilter'
@@ -306,6 +309,7 @@ const { isUserScrolledUp, scrollToBottom, jumpToBottom } = useChatScroll(msgList
   loadingOlder,
   onReachTop: () => { void loadOlderMessages() },
 })
+const { beginStream, isAbortError } = useStreamAbort()
 const fileInputRef = ref(null)
 const galBgRef = ref(null)
 
@@ -953,6 +957,9 @@ async function handleSend() {
     return
   }
 
+  const draftText = text
+  const draftImageUrl = imageUrl
+
   // 先 push 用户消息到列表，再清空输入框，避免视觉空档
   const userMsg = {
     _tempId: 'u' + Date.now(),
@@ -975,85 +982,63 @@ async function handleSend() {
   const streamCreatedAt = new Date(userCreatedMs + 1).toISOString()
   const sendStartedAt = Date.now()
   const sendConvId = currentConvId.value
-  let attempt = 0
-  let lastErr = null
-  let fullContent = ''
-  let ok = false
-  let postedOk = false
-  let pieces = null
+  const signal = beginStream()
+
+  const streamPayload = {
+    provider: currentProvider.value,
+    model: currentProvider.value === PLATFORM_PROVIDER ? undefined : (currentModel.value || undefined),
+    content: draftText || undefined,
+    imageUrl: draftImageUrl || undefined
+  }
+
+  async function attemptStream() {
+    const response = await sendMessageStream(sendConvId, streamPayload, { signal })
+    if (!response.ok) {
+      let errMsg = '消息发送失败，请稍后再试'
+      try {
+        const errBody = await response.json()
+        errMsg = humanizeError(errBody.message || errBody.msg, errMsg)
+      } catch { /* ignore */ }
+      throw new Error(errMsg)
+    }
+    return drainAssistantStream(response, { signal })
+  }
+
   try {
-    while (attempt < 2) {
-      attempt += 1
-      streamController = new AbortController()
-      const streamSignal = streamController.signal
-      let response = null
-      try {
-        response = await sendMessageStream(sendConvId, {
-          provider: currentProvider.value,
-          model: currentProvider.value === PLATFORM_PROVIDER ? undefined : (currentModel.value || undefined),
-          content: text || undefined,
-          imageUrl: imageUrl || undefined
-        }, streamSignal)
-      } catch (fetchErr) {
-        if (fetchErr?.name === 'AbortError') return            // #7：取消静默退出
-        lastErr = fetchErr
-        if (attempt < 2) {                                     // #13：fetch 阶段网络错，退避重试一次
-          await new Promise(r => setTimeout(r, 800))
-          if (isUnmounted || currentConvId.value !== sendConvId) return
-          continue
-        }
-        break
-      }
-      if (!response.ok) {
-        let errMsg = '消息发送失败，请稍后再试'
-        try {
-          const errBody = await response.json()
-          errMsg = humanizeError(errBody.message || errBody.msg, errMsg)
-        } catch { /* ignore */ }
-        const serverErr = new Error(errMsg)
-        serverErr.isServerError = true
-        lastErr = serverErr
-        break                                                   // 服务端拒绝：不重试
-      }
-      postedOk = true
-      try {
-        ({ fullContent, pieces } = await drainAssistantStream(response, streamSignal))
-        ok = true
-        break
-      } catch (drainErr) {
-        if (drainErr?.name === 'AbortError') return            // #7：取消静默退出
-        lastErr = drainErr
-        break                                                   // 流中断（POST 已成功）：不重试，避免服务端重复
+    let streamResult
+    try {
+      streamResult = await attemptStream()
+    } catch (err) {
+      if (isAbortError(err)) return
+      if (isNetworkError(err)) {
+        await sleep(800)
+        if (signal.aborted) return
+        streamResult = await attemptStream()
+      } else {
+        throw err
       }
     }
 
-    if (ok) {
-      const elapsed = Date.now() - sendStartedAt
-      if (elapsed < MIN_REPLY_DISPLAY_MS) {
-        await sleep(MIN_REPLY_DISPLAY_MS - elapsed)
-      }
-      if (!isUnmounted && currentConvId.value === sendConvId && fullContent?.trim()) {
-        syncStreamingAssistantBubbles(fullContent, streamGroupId, streamCreatedAt, pieces)
-        sortMessagesInTimelineOrder()
-        await nextTick()
-        scrollToBottom()
-        skipBounceOnce = true
-      }
-    } else {
-      if (postedOk) {
-        // 流中断但消息已存服务端：保留用户气泡，finally 的 poll 会恢复服务端状态；不回填以免重发重复
-        ElMessage.error(humanizeError(lastErr, '回复中断，已为你保留该消息'))
-      } else {
-        // 消息未存服务端（网络/服务端拒绝）：回填输入、移除本地用户气泡，用户可重发（issue #13）
-        ElMessage.error(humanizeError(lastErr, '消息发送失败，请稍后再试'))
-        inputText.value = text
-        if (imageUrl) pendingImageUrl.value = imageUrl
-        messages.value = messages.value.filter(
-          m => m._tempId !== userMsg._tempId && m._streamGroupId !== streamGroupId
-        )
-      }
+    const { fullContent, pieces } = streamResult
+    const elapsed = Date.now() - sendStartedAt
+    if (elapsed < MIN_REPLY_DISPLAY_MS) {
+      await sleep(MIN_REPLY_DISPLAY_MS - elapsed)
+    }
+
+    if (currentConvId.value === sendConvId && fullContent?.trim()) {
+      syncStreamingAssistantBubbles(fullContent, streamGroupId, streamCreatedAt, pieces)
+      sortMessagesInTimelineOrder()
+      await nextTick()
+      scrollToBottom()
       skipBounceOnce = true
     }
+  } catch (err) {
+    if (isAbortError(err)) return
+    ElMessage.error(humanizeError(err, '消息发送失败，请稍后再试'))
+    messages.value = messages.value.filter(m => m._streamGroupId !== streamGroupId)
+    inputText.value = draftText
+    pendingImageUrl.value = draftImageUrl
+    skipBounceOnce = true
   } finally {
     if (isUnmounted) return
     waitingReply.value = false
@@ -1065,56 +1050,6 @@ async function handleSend() {
     scrollToBottom()
     loadEmotionState()
   }
-}
-
-async function drainAssistantStream(response, signal) {
-  const reader = response.body?.getReader()
-  if (!reader) {
-    throw new Error('无法读取回复流')
-  }
-  const decoder = new TextDecoder()
-  let buffer = ''
-  let fullContent = ''
-  let serverPieces = null
-
-  while (true) {
-    if (signal?.aborted) {
-      const abortErr = new Error('stream aborted')
-      abortErr.name = 'AbortError'
-      throw abortErr
-    }
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const parts = buffer.split('\n')
-    buffer = parts.pop() || ''
-
-    for (const line of parts) {
-      const trimmed = line.trim()
-      if (!trimmed.startsWith('data:')) continue
-      const data = trimmed.slice(5).trim()
-      if (!data || data === '[DONE]') continue
-      try {
-        const payload = JSON.parse(data)
-        if (payload.error) {
-          throw new Error(payload.error)
-        }
-        if (payload.content) {
-          fullContent += payload.content
-        }
-        if (payload.replace) {
-          fullContent = payload.replace
-        }
-        if (Array.isArray(payload.pieces) && payload.pieces.length) {
-          serverPieces = payload.pieces.map(p => String(p ?? '').trim()).filter(Boolean)
-        }
-      } catch (e) {
-        if (e instanceof SyntaxError) continue
-        throw e
-      }
-    }
-  }
-  return { fullContent, pieces: serverPieces }
 }
 
 function triggerImageSelect() {
@@ -1294,7 +1229,8 @@ function formatTime(ts) {
 
 .gal-header__meta {
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
+  max-width: min(100%, 420px);
   display: flex;
   flex-direction: column;
   gap: 4px;

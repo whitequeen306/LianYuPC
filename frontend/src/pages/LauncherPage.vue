@@ -45,6 +45,9 @@ import { useI18n } from 'vue-i18n'
 import { gsap } from 'gsap'
 import { getElectronAPI } from '@/utils/electron'
 import LauncherPickPanel from '@/components/LauncherPickPanel.vue'
+import { useUserStore } from '@/stores/user'
+import { useCharactersStore } from '@/stores/characters'
+import { useConversationsStore } from '@/stores/conversations'
 import { DEFAULT_PET_ID, getPetById, getPetIdleUrl, getPetSpriteUrl, getPetPersona } from '@/constants/petCatalog'
 import { usePetSpriteAnimator } from '@/composables/usePetSpriteAnimator'
 
@@ -83,6 +86,15 @@ let greetingAudio = null
 let pendingGreetingAudioPayload = null
 
 const { playAnim, playAnimOnce, returnToIdle, setSpriteImage, setIdleFrame } = usePetSpriteAnimator(petRef)
+
+function prefetchPickerData() {
+  const userStore = useUserStore()
+  if (!userStore.isLoggedIn && !userStore.token) return
+  const charactersStore = useCharactersStore()
+  const conversationsStore = useConversationsStore()
+  void charactersStore.fetchList()
+  void conversationsStore.fetchList({ silent: true }).catch(() => [])
+}
 
 function setIdleFloatPaused(paused) {
   if (!idleFloatTween) return
@@ -380,6 +392,7 @@ onMounted(async () => {
       applyPetId(settings.launcherPetId)
     }
     getElectronAPI()?.requestChromeSync?.()
+    prefetchPickerData()
     startObserver()
   })
   unsubscribeLauncherHidden = getElectronAPI()?.onLauncherHidden?.(() => {
@@ -390,11 +403,13 @@ onMounted(async () => {
   unsubscribePickerToggle = getElectronAPI()?.onPickerToggle?.((payload) => {
     const open = payload?.open === true
     pickerOpen.value = open
+    if (open) prefetchPickerData()
     if (!open) {
       resetInteractionState()
       returnToIdle()
     }
   })
+  prefetchPickerData()
 })
 
 onUnmounted(() => {

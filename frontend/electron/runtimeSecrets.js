@@ -1,3 +1,8 @@
+/**
+ * Runtime config blob — obfuscation-only, NOT confidentiality protection.
+ * XOR + build metadata hides API origin / cert hints from casual inspection only.
+ * Never store real secrets (API keys, tokens, passwords) in runtime-secrets.bin.
+ */
 import fs from 'fs'
 import crypto from 'crypto'
 import path from 'path'
@@ -84,7 +89,8 @@ export function loadRuntimeSecrets(opts) {
   const buf = fs.readFileSync(binPath)
   const decoded = decodeRuntimeSecretsBuffer(buf, meta.version, meta.buildId)
   if (!decoded?.apiOrigin) {
-    throw new Error('runtime-secrets.bin decode failed')
+    console.error('[runtimeSecrets] runtime-secrets.bin decode failed')
+    return null
   }
   cachedSecrets = {
     apiOrigin: String(decoded.apiOrigin).trim().replace(/\/$/, ''),

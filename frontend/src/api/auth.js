@@ -1,4 +1,4 @@
-import http from './index'
+import http from './httpCore'
 import { storeToken, clearTokenStorage } from '@/utils/secureToken'
 
 export function getCaptcha() {

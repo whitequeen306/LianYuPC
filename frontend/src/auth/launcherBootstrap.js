@@ -1,22 +1,32 @@
 import { useUserStore } from '@/stores/user'
-import { getElectronAPI } from '@/utils/electron'
-import { syncSetTokenCache } from '@/utils/secureToken'
+import { readToken, syncSetTokenCache } from '@/utils/secureToken'
+import { getElectronAPI, normalizeAuthSession } from '@/utils/electron'
 
-/** 桌宠 / 角色选择器窗口：恢复登录态（不写回主进程，避免竞态覆盖 token） */
+/** 桌宠窗口：仅恢复本地 token，不阻塞 mount；完整 profile 同步放后台 */
 export async function bootstrapLauncherSession(pinia) {
-  // #14：辅助窗口不走 prepareAuthRoute，这里同样向主进程一次性取回 token 注入内存，
-  //       否则 restoreSession 内 readToken() 取不到内存值会误判未登录。
-  const electronAPI = getElectronAPI()
-  if (electronAPI?.bootstrapAuthToken) {
-    const token = await electronAPI.bootstrapAuthToken()
-    if (token) syncSetTokenCache(token)
-  }
   const userStore = useUserStore(pinia)
-  if (!userStore.isLoggedIn) {
-    const restored = await userStore.restoreSession()
-    if (!restored) return false
+  const electronAPI = getElectronAPI()
+
+  if (electronAPI?.getAuthSession) {
+    const session = normalizeAuthSession(await electronAPI.getAuthSession())
+    if (session?.token) {
+      userStore.token = session.token
+      syncSetTokenCache(session.token)
+      if (session.userId || session.username) {
+        userStore.applyProfile(session)
+      }
+      electronAPI.setLoginState?.(true)
+      void userStore.restoreSession()
+      return true
+    }
   }
-  getElectronAPI()?.setLoginState?.(true)
-  getElectronAPI()?.requestChromeSync?.()
-  return userStore.isLoggedIn
+
+  const token = await readToken()
+  if (!token) return false
+
+  userStore.token = token
+  syncSetTokenCache(token)
+  electronAPI?.setLoginState?.(true)
+  void userStore.restoreSession()
+  return true
 }

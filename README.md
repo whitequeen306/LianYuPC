@@ -1,353 +1,154 @@
-# LianYu-PC
+# 恋语 · LianYu
 
-LianYu 桌面 / Web 端：Spring Boot 3 + Vue 3 + Vite + Element Plus。与安卓端项目**完全独立**（安卓端目录只读参考，勿写入）。
+> 请记得，这里永远有人在等待着你的回应。
 
-**当前进度**：登录、角色、单聊 SSE、群聊 WebSocket、记忆、角色广场等核心功能已实现。
+**恋语（LianYu）** 是一款面向 Windows 的 AI 情感陪伴桌面应用。  
+它不是冷冰冰的对话框，而是能记住你、回应你、偶尔主动找你的「在场感」——从流式单聊到多角色群聊，从长期记忆到桌面桌宠，把陪伴拆成可感知的日常体验。
 
-## 仓库结构
-
-> **说明**：在 [GitHub 仓库文件页](https://github.com/whitequeen306/LianYuPC) 里，每一行**右侧文字**是该文件/文件夹**最近一次 Git 提交说明**，无法在网页上单独编辑。进入文件夹后，可阅读该目录下的 `README.md` 了解用途。
-
-
-```
-LianYu-PC/
-├── README.md                 # 本文件：克隆、.env、Docker 一键启动
-├── docker-compose.yml        # 编排：api-gateway + backend + MySQL/Redis/…
-├── certs/                    # TLS 证书（gitignore，见 certs/README.md）
-├── deploy/api-gateway/       # 云端 API 网关（Nginx TLS 反代）
-├── .env.example              # 环境变量模板 → 复制为 .env
-│
-├── frontend/                 # 【用户界面】Vue 3 单页应用 → 见 frontend/README.md
-│   ├── src/pages/            #     登录、聊天、群聊、角色广场、记忆…
-│   ├── Dockerfile            #     构建 dist + Nginx 反代后端
-│   └── nginx.conf
-│
-├── backend/                  # 【服务端 API】Spring Boot 多模块 → 见 backend/README.md
-│   ├── lianyu-web/           #     HTTP 接口、WebSocket、Swagger
-│   ├── lianyu-service/       #     业务逻辑、AI 聊天、Vault 轮询
-│   ├── lianyu-dao/           #     数据库实体 + Flyway 迁移
-│   ├── lianyu-app/           #     启动模块 application.yml
-│   └── Dockerfile            #     Maven 打包运行 jar
-│
-├── secrets/                  # 仅维护用示例（platform-keys.txt 不入库）
-└── CLAUDE.md                 # 协作者 / Agent 约定
-```
-
-| 目录 | 干什么 | 谁改 |
-|------|--------|------|
-| **`frontend/`** | 浏览器里看到的页面与交互；调 `/api`、连 `/ws` | 前端 / 全栈 |
-| **`backend/`** | 鉴权、数据库、AI、文件、推送等所有服务端能力 | 后端 / 全栈 |
-| 根目录 `docker-compose.yml` | api-gateway + backend + 中间件（前端 Electron 本地打包） | 部署 |
-
-## 环境要求
-
-| 组件 | 版本建议 |
-|------|----------|
-| JDK | **17**（与 `backend/pom.xml`、Dockerfile 一致） |
-| Maven | 3.9+ |
-| Node.js | 18+ |
-| Docker | 24+（Compose v2） |
-| 内存 | 建议 ≥16GB（含 Milvus standalone） |
-
-## 快速开始（推荐：全栈 Docker）
-
-### 1. 准备 `.env`
-
-```bash
-cp .env.example .env
-```
-
-按下面 [**环境变量说明**](#环境变量说明env) 填好**必填项**（尤其中间件密码与 `LIANYU_MASTER_KEY`），再启动。
-
-**平台聊天**：10 个团队公用 API Key 以 **密文** 存在 MySQL `api_key_vault`（Flyway **V22**），启动后 **10-key 轮询**；`.env` 里 **不要** 填 `OPENAI_API_KEY` / `OPENAI_API_KEYS`。
-
-### 2. 生成 TLS 证书（api-gateway 必填）
-
-`docker-compose.yml` 将 `./certs` 挂载到 Nginx。首次启动前生成自签证书：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/generate-dev-certs.ps1
-```
-
-生产环境将真实证书替换为 `certs/server.crt` 与 `certs/server.key`（见 [`certs/README.md`](certs/README.md)）。
-
-### 3. 一键启动（API 网关 + 后端 + 中间件）
-
-**前提**：已安装 [Docker Desktop](https://www.docker.com/products/docker-desktop/)（Compose v2），本机建议 ≥16GB 内存；**`LIANYU_MASTER_KEY` 须向团队负责人私聊索取**（不能留空）。
-
-```bash
-docker compose up -d --build
-```
-
-首次构建会拉镜像并编译后端，约 10–30 分钟视网速而定；Milvus 健康检查通过前 backend 会等待。
-
-默认会启动：`api-gateway` + `backend` + MySQL/Redis/RabbitMQ/MinIO/Milvus。  
-访问 API：`https://localhost/api/`（HTTP 80 会重定向到 HTTPS 443）。  
-本地调试文档（开发 profile）：`http://localhost:8080/doc.html`（backend 仅绑定 127.0.0.1）。
-
-### 4. API 文档与接口调试
-
-生产 compose **不在网关暴露** Swagger；开发时直连 backend：
-
-```text
-http://localhost:8080/doc.html
-```
-
-Swagger/Knife4j 页面可直接浏览；调试受保护 API 时在 Authorize 填 `lianyu-token`。
-
-### 5. 数据持久化（角色广场不会丢）
-
-`docker-compose.yml` 已给核心数据服务挂载 volume：
-
-- MySQL：`mysql_data`
-- MinIO：`minio_data`
-- Redis：`redis_data`
-- RabbitMQ：`rabbitmq_data`
-- Milvus：`milvus_data`
-
-角色广场模板数据来自 Flyway migration（MySQL），头像对象存 MinIO。  
-后端启动时会执行 `CharacterSquareAvatarSync`，将内置 `square-avatars/*` 同步到 MinIO（不存在才写入），因此首次启动也能看到头像；后续重启依赖 `minio_data` 持久化。
+**陪伴，而非打扰。**
 
 ---
 
-## 环境变量说明（`.env`）
+## 我们在做什么
 
-与 `docker-compose.yml`、`.env.example` 一一对应。  
-**用法**：复制 `.env.example` → `.env`，只改「必填」列；值不要加引号，整行粘贴（尤其 `LIANYU_MASTER_KEY`）。
+恋语想解决的不是「问一句答一句」，而是：
 
-### `LIANYU_MASTER_KEY` 是什么？（解密密钥）
-
-这是 **Jasypt 主密钥**，用来解密数据库里 `api_key_vault.api_key_encrypted` 字段（团队 10 个 API Key 的密文），**不是**某一个 `sk-...` 聊天 Key 本身。
-
-| 说明 | 内容 |
-|------|------|
-| 谁提供 | 团队负责人（与写入 V22 密文时用的是同一把） |
-| 填什么 | **整行原样粘贴**，一行、无换行，通常较长（内含 Base64） |
-| 标准格式 | `v1=<Base64主密钥>,current=v1` |
-| 示例形态（非真实值） | `v1=AbCdEf1234...+/=,current=v1` |
-| 填错现象 | 启动后聊天报「API Key 解密失败」 |
-
-生成新主密钥（仅负责人轮换时用）：
-
-```bash
-openssl rand -base64 32
-# 写入 .env：v1=<上面输出>,current=v1
-```
-
-轮换主密钥后需用 `backend/scripts/seed-default-vault-pool.ps1` 重新加密 10 个平台 Key 并更新迁移/SQL。
+- **被认真接住** —— 回复像对方真的在打字，而不是一次性弹出整段文字
+- **关系会生长** —— 重要对话会被记住，下次聊天仍能接上之前的细节
+- **角色有性格** —— 人设、语气、世界观可调，回复风格由规则引擎守护
+- **陪伴融入桌面** —— 关闭主窗口后，角色仍可留在桌面上，一键开聊
 
 ---
 
-### 必填（`docker compose up` 跑不起来就先看这里）
+## 核心体验
 
-| 变量名 | 用于 | 说明 | 示例 |
-|--------|------|------|------|
-| `MYSQL_ROOT_PASSWORD` | MySQL 容器 | root 密码，首次创建数据卷时生效 | 自设强密码 |
-| `MYSQL_USER` | MySQL 容器 | 业务库用户，库名固定 `lianyu` | `lianyu` |
-| `MYSQL_PASSWORD` | MySQL 容器 | 上面用户的密码，后端连库也用 | 与 compose 一致 |
-| `MYSQL_PORT` | 宿主机映射 | 本机连 MySQL 的端口（容器内仍是 3306） | `3307` |
-| `REDIS_PASSWORD` | Redis 容器 | 登录/验证码/Sa-Token/限流 | 自设 |
-| `REDIS_PORT` | 宿主机映射 | 本机连 Redis | `6379` |
-| `RABBITMQ_USER` | RabbitMQ | 管理账号 | `guest` |
-| `RABBITMQ_PASSWORD` | RabbitMQ | 管理密码 | 自设 |
-| `RABBITMQ_PORT` | 宿主机映射 | AMQP 端口 | `5672` |
-| `MINIO_ACCESS_KEY` | MinIO | 对象存储访问键（头像、聊天图） | 自设 |
-| `MINIO_SECRET_KEY` | MinIO | 对象存储密钥 | 自设 |
-| `MINIO_BUCKET` | 后端 | 默认桶名 | `lianyu` |
-| `MILVUS_PORT` | 宿主机映射 | 向量库 gRPC 端口 | `19530` |
-| `LIANYU_MASTER_KEY` | 后端 | **解密** `api_key_vault` 密文（见上一节） | 向团队索取整行 |
-| `SERVER_PORT` | 后端 | Spring Boot 暴露端口（compose 绑定 127.0.0.1） | `8080` |
-| `LIANYU_GATEWAY_HTTP_PORT` | api-gateway | 宿主机 HTTP（重定向到 HTTPS） | `80` |
-| `LIANYU_GATEWAY_HTTPS_PORT` | api-gateway | 宿主机 HTTPS API 入口 | `443` |
-| `CORS_ALLOWED_ORIGINS` | api-gateway + 后端 | 逗号分隔 Origin 白名单 | 见 `.env.example` |
+### 流式单聊
 
-> **注意**：改 `MYSQL_*` / `REDIS_PASSWORD` 等后，若容器已创建过旧卷，需 `docker compose down -v` 再 `up`（会清空数据），或保持与旧卷一致的密码。
+与角色的私聊采用逐字流式输出（SSE），像真实打字节奏；断线自动重连，长对话也有心跳保活。  
+支持聊天图片、内心独白（括号内的「未说出口的话」），以及跟随你输入习惯的中 / 日 / 英回应。
 
----
+单聊不是「把聊天记录丢给模型」这么简单。恋语在每次你发消息时，都会做一次完整的**上下文拼接工程**——把角色、记忆、关系、时间与场景压进同一条回复链路里，让模型「知道此刻该以什么身份、什么语气、带着哪些往事来回应你」。
 
-### 后端连接地址（Docker 全栈时一般不用改）
+#### 体验层
 
-`docker-compose.yml` 里 `backend` 服务会把下列变量**覆盖**为容器内服务名（`mysql`、`redis` 等）。  
-仅在 **不用 Docker、本机直接 `mvn spring-boot:run`** 时才需要填 `localhost`：
+- **流式在场感**：SSE 逐字输出，前端断线自动重连，长会话有心跳保活
+- **多段回复**：一条模型输出可拆成多条气泡，更像手机私聊的节奏
+- **内心独白**：括号内的「未说出口的话」可单独展示；也可按角色设置关闭
+- **识图聊天**：发图时先走视觉理解，再把识图结果并入本轮上下文
+- **语言跟随**：根据你的输入习惯自动选择中 / 日 / 英输出，并附带对应的自然对话风格约束
 
-| 变量名 | 默认值 | 说明 |
-|--------|--------|------|
-| `MYSQL_HOST` | `localhost` | MySQL 主机 |
-| `REDIS_HOST` | `localhost` | Redis 主机 |
-| `RABBITMQ_HOST` | `localhost` | RabbitMQ 主机 |
-| `MINIO_ENDPOINT` | `http://localhost:9000` | MinIO API 地址 |
-| `MILVUS_HOST` | `localhost` | Milvus 主机 |
+#### 上下文如何一层层拼起来
 
----
+每一轮单聊，服务端都会重新组装 **system prompt + 最近消息窗口**，大致分为以下几层（越靠后、越强调「以谁为准」）：
 
-### 平台 AI（团队 10-key 池 — 请保持为空）
+**1. 角色与人设**
 
-| 变量名 | 是否填写 | 说明 |
-|--------|----------|------|
-| `OPENAI_API_KEY` | **留空** | 已关闭单 Key 兜底；填了也不会作为平台池使用 |
-| `OPENAI_API_KEYS` | **留空** | 已关闭 env 逗号分隔池；平台池只走 MySQL |
-| `OPENAI_BASE_URL` | 留空 | 网关地址在 `api_key_vault.base_url`（V22 已写入） |
-| `OPENAI_CHAT_MODEL` | 留空 | 默认模型在 `api_key_vault.model_default` |
-| `OPENAI_EMBEDDING_MODEL` | 可选 | 仅影响 env 兜底嵌入模型名 |
+- 自定义 Prompt 模板，或默认「真实的人、手机私聊」基线
+- 性格、说话风格、背景故事等人设字段
+- Prompt 规则引擎注入的回复行为约束（长度、语气、是否展示内心戏等）
 
----
+**2. 长期记忆（结构化预注入）**
 
-### 可选（不填也能跑主流程）
+- 按类型注入：**用户画像、近期情绪线索、关系事件、专属仪式**
+- 长期记忆槽位（如姓名、喜好）带**权威优先级**：若对话历史里出现过矛盾的自述，必须以记忆为准，不能沿用旧说法
+- 从记忆中解析用户当前称呼，并强制模型只用最新名字
+- 用户本条消息若命中关键词，还会**动态 boost** 相关记忆条目
 
-| 变量名 | 说明 |
-|--------|------|
-| `LIANYU_GATEWAY_PORT` | 仅 `--profile dev-proxy` 时 web-gateway 端口，默认 `8088` |
-| `LIANYU_GATEWAY_HTTP_PORT` / `LIANYU_GATEWAY_HTTPS_PORT` | api-gateway 宿主机端口 |
-| `CORS_ALLOWED_ORIGINS` | nginx CORS map + Spring CORS / WebSocket 白名单 |
-| `APP_REVISION` | 镜像标签后缀，`docker compose build` 时可改成日期或 git hash |
-| `OLLAMA_BASE_URL` / `OLLAMA_CHAT_MODEL` | 本地 Ollama |
-| `DASHSCOPE_API_KEY` | 百炼视觉识图等 |
-| `EMBEDDING_API_KEY` | 记忆向量嵌入（百炼兼容接口） |
-| `RERANKER_API_KEY` | 记忆重排序 |
-| `LIANYU_VISION_MODEL` | 视觉模型名，默认 `qwen3-vl-flash` |
-| `LIANYU_MOMENTS_IMAGE_*` | 朋友圈文生图（可选） |
-| `LIANYU_PUSH_*` | 浏览器 Web Push（默认关） |
-| `LIANYU_API_DOCS_ENABLED` | 是否开放 Knife4j，开发 `true` |
-| `LIANYU_AI_DIRECT_CHAT` | 是否开放 `/api/ai/chat` 直连，默认 `false` |
-| `SPRING_PROFILES_ACTIVE` | 设 `prod` 时关闭 API 文档（见 `application-prod.yml`） |
+**3. 关系状态**
 
----
+- 信任、亲密、安全感、期待四维分数，以及当前**关系阶段**（试探、熟悉、依赖、稳定亲密、受伤、修复等）
+- 最近几次关系事件摘要（例如脆弱分享、误解、修复成功）
+- 每轮对话后根据 heuristics 更新分数与阶段，关系会真的「变」
 
-### 维护用（新人 clone **不需要**）
+**4. 本次对话 Earlier 摘要**
 
-| 文件 / 脚本 | 说明 |
-|-------------|------|
-| `secrets/platform-keys.txt` | 仅**轮换** 10 个平台 Key 时用（gitignore，勿提交）；**普通用户 clone 后不需要此文件** |
-| `docker-compose.override.yml.example` | 本地覆盖 compose 的示例（复制为 `docker-compose.override.yml`） |
-| `backend/scripts/seed-default-vault-pool.ps1` | 用当前 `LIANYU_MASTER_KEY` 重新加密并写入 MySQL id 1–10 |
+- 最近若干条消息保留原文；更早的内容由 **Session Summary** 异步压缩成摘要块
+- 摘要描述「本次聊天较早发生了什么」；若与最近几条消息冲突，**以最近消息为准**
+- 这样既撑得住长聊，又不把 token 全耗在历史原文上
 
----
+**5. 真实环境与跨模块活动**
 
-## API 文档（Knife4j / Swagger）
+- **当前真实时间**（含日期、星期、昼夜）：避免隔夜续聊时，模型还以为「现在是昨晚」
+- **现实城市模式**：若角色设定开启，注入权威城市；历史对话里的旧城市、旧天气一律视为过时
+- **角色近期活动**：近 7 日日记、朋友圈动态与互动，让聊天能接上「你不在窗口里时发生的事」
 
-**开发环境**默认开启（`lianyu.api-docs.enabled=true`，见 `application.yml`）。
+**6. 当前情绪状态**
 
-| 入口 | 说明 |
-|------|------|
-| http://localhost:8080/doc.html | Knife4j 主界面（推荐） |
-| http://localhost:8080/swagger-ui.html | SpringDoc UI |
-| http://localhost:8080/v3/api-docs | OpenAPI JSON |
+- 用户每发一条消息，都会驱动角色的**情绪机**（心情、强度、状态签名、上一刻过渡）
+- 情绪块放在高优先级位置，会压过「句句热情」「硬演设定」等通用规则——角色可以冷淡、可以闹别扭，而不是永远同一套模板脸
 
-经开发网关时同样可用：**http://localhost/doc.html**（`nginx.dev.conf` 已反代文档路径）。
+**7. 场景模式与护栏**
 
-**鉴权说明**
+- 晚安关键词 + 深夜时段 → 触发**晚安模式**（更短、更柔、更收束）
+- 用户输入经 sanitize 后以 XML 包裹，并附带防 prompt 注入的系统护栏
+- 单聊可启用 **Agent Tools**：模型在需要时主动查时间、天气、记忆
 
-- 浏览文档页面：**无需登录**。  
-- 在 Knife4j 里调试受保护接口：先 `POST /api/auth/login`（需验证码），将返回的 token 填入全局 Header **`lianyu-token`**。  
-- 公开接口：`/api/auth/captcha`、`/api/auth/login`、`/api/auth/register`、`/api/public/**`。
+#### 消息窗口与 Agentic 记忆
 
-**生产环境**
+- **最近消息窗口**：保留最近 N 条原始对话（用户 / 助手），与 system 中的摘要层配合使用
+- **memory_search**：当用户说「还记得吗」「上次说过」时，模型可主动调用语义检索——Milvus 向量召回 → Reranker 重排 → Redis 缓存，按需拉回具体往事，而不是把所有记忆一次性塞进 prompt
 
-```bash
-SPRING_PROFILES_ACTIVE=prod
-LIANYU_API_DOCS_ENABLED=false
-```
+#### 回复之后还会发生什么
 
-`application-prod.yml` 会关闭 Knife4j / SpringDoc / Sa-Token 文档白名单。
+- 助手回复经拆分、清洗、内心独白过滤后落库
+- 关系状态再次更新；情绪状态随用户本轮输入调整
+- 对话摘要异步写入长期记忆队列；Session Summary 在合适时机合并更早消息
+
+**一句话总结**：流式只是你看到的表面；底下是一次「人设 + 记忆 + 关系 + 时间 + 情绪 + 摘要 + 工具检索」的多层拼装，为的是让每一句回复都接得住上下文，而不是随机续写。
+
+### 多角色群聊
+
+多个角色同场对话，WebSocket 串行发言——一次只有一位角色在说话，避免混乱；你的新消息可以打断当前发言队列，群聊更像真实的多人场景。
+
+### 长期记忆
+
+对话中的重要片段会被摘要、分类（画像 / 情绪 / 关系 / 仪式等），写入 MySQL 与 Milvus 向量库。  
+单聊里记忆走**两条路**：发消息前结构化预注入 system prompt；聊天过程中模型还可通过 `memory_search` 按需召回具体往事。
+
+你可以在记忆面板里浏览、回顾被珍藏的片段；关系与称呼等信息也会随记忆更新，并在后续聊天中享有更高优先级。
+
+### 角色工坊与角色广场
+
+自由创建角色：设定性格、背景、说话方式；也可以从角色广场挑选模板快速开始。  
+每个角色都是独立的陪伴对象，拥有自己的会话与记忆。
+
+### 朋友圈与日记
+
+**朋友圈** —— 角色会发动态、互动、评论，像社交软件里的好友圈。  
+**日记** —— 记录与角色之间的日常与心绪，让陪伴不止于聊天窗口。
+
+### 桌面桌宠（Windows 客户端）
+
+关闭主窗口后，角色以像素桌宠形式留在桌面，点击即可快速开聊。  
+可选「屏幕观察」：桌宠会感知当前窗口与屏幕内容（截图仅用于 AI 分析、不长期保存），在合适的时机主动问候——像真的在惦记你。
+
+### 主动问候
+
+久未开口时，角色可能先来找你。  
+配合关系状态与桌面感知，问候更贴近场景，而不是机械的定时推送。
 
 ---
 
-## 主要 HTTP API 一览
+## 产品形态
 
-前缀均为 `/api`，统一响应 `Result<T>`（`code` / `message` / `data`）。完整定义以 **Swagger** 为准。
-
-| 模块 | 路径前缀 | 说明 |
-|------|----------|------|
-| 认证 | `/api/auth` | 验证码、注册、登录、登出、`/me`、头像 |
-| 角色 | `/api/character` | CRUD、广场 `/square`、从广场添加、AI 生成 |
-| 会话 | `/api/conversation` | 单聊会话、消息（含 SSE `/messages/stream`）、分页历史、聊天图上传 |
-| 群聊 | `/api/conversation/group` | 创建群、成员、改标题；消息走 **WebSocket** `/ws` + STOMP |
-| AI | `/api/ai` | Vault CRUD、`/models`；直连 `/chat` 默认关闭 |
-| 记忆 | `/api/memory` | 列表分页、详情、删除 |
-| 动态 | `/api/moments` | 朋友圈流、评论、未读 |
-| 通知 | `/api/notifications` | 站内通知、Web Push 订阅 |
-| 公开文件 | `/api/public/files/**` | MinIO 公开资源 |
-
-**WebSocket**：`ws://localhost:8080/ws`（STOMP），CONNECT 头需 `token`；订阅 `/topic/group/{conversationId}` 需会话归属。
-
-**常见错误码**：`401` 未登录；`403` 无权限 / 内容策略 `CONTENT_POLICY_VIOLATION`；`1005` `AUTH_RATE_LIMITED` 登录限流（HTTP 429）。
+| | |
+|---|---|
+| **客户端** | Windows 桌面应用（Electron），托盘驻留、快捷聊天、桌宠 |
+| **服务** | 云端 API，对话、记忆、文件与推送由服务端承载 |
+| **定位** | 私人情感陪伴空间，而非公开社交产品 |
 
 ---
 
-## Docker 说明
+## 设计理念
 
-### 默认：全栈镜像模式
-
-| 服务 | 宿主机端口 | 用途 |
-|------|------------|------|
-| api-gateway | `${LIANYU_GATEWAY_HTTP_PORT:-80}` / `${LIANYU_GATEWAY_HTTPS_PORT:-443}` | TLS API 入口（反代 backend） |
-| backend | `127.0.0.1:${SERVER_PORT:-8080}` | Spring Boot API / WS（仅本机） |
-| mysql | 3307→3306 | 业务库 `lianyu` |
-| redis | 6379 | Sa-Token、验证码、限流、seq |
-| rabbitmq | 5672 / 15672 | 记忆摘要、推送 |
-| minio | 9000 / 9001 | 头像、聊天图片 |
-| milvus | 19530 | 记忆向量 |
- 
-### 镜像重建（确保使用最新代码）
-
-```bash
-# 可选：变更镜像标签，避免 Docker 复用旧 tag
-set APP_REVISION=20260601
-
-docker compose build --no-cache
-docker compose up -d
-```
-
-### 可选：仅本地联调网关（宿主机跑前后端）
-
-```bash
-docker compose --profile dev-proxy up -d web-gateway
-```
-
-`web-gateway` 只是反代宿主机 `5173/8080`，不打包业务代码。
-
-### Electron 桌面客户端发布
-
-桌面 UI **不在服务器 Docker 中构建**；在本地打包 Electron 安装包：
-
-```bash
-cd frontend
-# 云端 API 地址见 .env.production.cloud
-npm run electron:release
-```
-
-产出：`frontend/release/v{version}/LianYu Setup {version}.exe`。迁机后更新 `frontend/.env.production.cloud` 中的 `VITE_LIANYU_API_ORIGIN` 并重打安装包。
-
-### Dockerfile 要点
-
-| 文件 | 是否打包业务源码 |
-|------|------------------|
-| `backend/Dockerfile` | ✅ 所有模块 `src` + `mvn clean package` |
-| `frontend/Dockerfile` | ✅ `src` + `npm run build` → `dist` |
-| `frontend/Dockerfile.gateway` | ❌ 仅 Nginx 配置，反代宿主机 |
-
-构建后端需 `backend/settings-docker.xml`（阿里云 Maven 镜像）。
+- **在场感优先** —— 流式、串行、主动，都是为了「对方真的在这里」
+- **记忆即关系** —— 被记住的细节，比单次回复更重要
+- **尊重边界** —— 观察与问候可关闭；陪伴是选项，不是侵入
+- **持续迭代** —— 单聊、群聊、记忆、桌宠、朋友圈等能力仍在不断打磨
 
 ---
 
-## 构建与检查（推仓库前）
+## 关于本仓库
 
-```bash
-# 后端
-cd backend && mvn -B test
-
-# 前端
-cd frontend && npm ci && npm run build && npm run test -- --run
-```
-
-CI（`.github/workflows/ci.yml`）在 push/PR 时自动跑上述测试。
-
----
-
-## 与安卓端
-
-安卓项目位于 `LianYu-master`（路径因机器而异），**禁止**在本仓库外修改安卓代码；仅作 UI / Prompt / 业务对照参考。
-
-## 更多文档
-
-- Agent 约定：`CLAUDE.md`
+本仓库为 **恋语 PC 端** 的完整源码（前端 + 后端），与安卓端项目相互独立。  
+技术栈与协作约定见 [`CLAUDE.md`](CLAUDE.md)。

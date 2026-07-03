@@ -4,7 +4,7 @@
       <div class="quick-chat__meta">
         <span class="quick-chat__avatar">
           <img v-if="characterAvatar" :src="characterAvatar" :alt="characterName" />
-          <el-icon v-else :size="16"><User /></el-icon>
+          <span v-else class="quick-chat__avatar-fallback" aria-hidden="true">?</span>
         </span>
         <span class="quick-chat__name">{{ headerLabel }}</span>
       </div>
@@ -21,7 +21,7 @@
     </header>
 
     <div v-if="loading" class="quick-chat__state">
-      <el-icon class="is-loading" :size="22"><Loading /></el-icon>
+      <span class="quick-chat__spinner" aria-hidden="true" />
     </div>
 
     <div v-else ref="msgListRef" class="quick-chat__log">
@@ -51,24 +51,25 @@
     </div>
 
     <footer class="quick-chat__foot">
-      <el-input
+      <textarea
         ref="inputRef"
         v-model="inputText"
-        type="textarea"
-        :rows="2"
-        resize="none"
+        class="quick-chat__input"
+        rows="2"
         placeholder="输入消息…"
         :disabled="waitingReply || loading"
         @keydown.enter.exact.prevent="handleSend"
       />
-      <el-button
-        type="primary"
-        :icon="Promotion"
-        :loading="waitingReply"
-        :disabled="!inputText.trim() || loading"
+      <button
+        type="button"
+        class="quick-chat__send"
+        :disabled="!inputText.trim() || waitingReply || loading"
         @click="handleSend"
-      />
+      >
+        {{ waitingReply ? '…' : '发送' }}
+      </button>
     </footer>
+    <p v-if="errorText" class="quick-chat__error" role="alert">{{ errorText }}</p>
   </div>
 </template>
 
@@ -76,8 +77,6 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { User, Loading, Promotion } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
 import { useCharactersStore } from '@/stores/characters'
 import { useNotificationsStore } from '@/stores/notifications'
 import { getConversation, getMessages, sendMessageStream } from '@/api/conversation'
@@ -86,6 +85,8 @@ import { humanizeError } from '@/utils/errorMessage'
 import { resolveMediaUrl } from '@/utils/media'
 import { getElectronAPI } from '@/utils/electron'
 import { useChatScroll, sleep, MIN_REPLY_DISPLAY_MS } from '@/composables/useChatScroll'
+import { useStreamAbort, isNetworkError } from '@/composables/useStreamAbort'
+import { drainAssistantStream } from '@/utils/assistantStreamDrain'
 import AssistantMessageContent from '@/components/AssistantMessageContent.vue'
 import { stripInnerThoughts, resolveShowInnerThoughts } from '@/utils/innerThoughtFilter'
 import { formatSmartTime } from '@/utils/feedTime'
@@ -106,8 +107,17 @@ const currentConvId = ref(null)
 const msgListRef = ref(null)
 const scrollAnchor = ref(null)
 const inputRef = ref(null)
+const errorText = ref('')
+let errorTimer = null
+
+function showError(message) {
+  errorText.value = message
+  clearTimeout(errorTimer)
+  errorTimer = setTimeout(() => { errorText.value = '' }, 3200)
+}
 
 const { scrollToBottom } = useChatScroll(msgListRef, scrollAnchor)
+const { beginStream, isAbortError } = useStreamAbort()
 
 const characterName = computed(() => activeCharacter.value?.name || '聊天')
 const characterAvatar = computed(() => {
@@ -220,7 +230,7 @@ async function loadConversation(convId) {
   } catch (err) {
     messages.value = []
     activeCharacter.value = null
-    ElMessage.error(humanizeError(err, '无法加载会话'))
+    showError(humanizeError(err, '无法加载会话'))
   } finally {
     loading.value = false
     await nextTick()
@@ -229,47 +239,12 @@ async function loadConversation(convId) {
   }
 }
 
-async function drainAssistantStream(response, signal) {
-  const reader = response.body?.getReader()
-  if (!reader) throw new Error('无法读取回复流')
-  const decoder = new TextDecoder()
-  let buffer = ''
-  let fullContent = ''
-  while (true) {
-    if (signal?.aborted) {
-      const abortErr = new Error('stream aborted')
-      abortErr.name = 'AbortError'
-      throw abortErr
-    }
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const parts = buffer.split('\n')
-    buffer = parts.pop() || ''
-    for (const line of parts) {
-      const trimmed = line.trim()
-      if (!trimmed.startsWith('data:')) continue
-      const data = trimmed.slice(5).trim()
-      if (!data || data === '[DONE]') continue
-      try {
-        const payload = JSON.parse(data)
-        if (payload.error) throw new Error(payload.error)
-        if (payload.content) fullContent += payload.content
-        if (payload.replace) fullContent = payload.replace
-      } catch (e) {
-        if (e instanceof SyntaxError) continue
-        throw e
-      }
-    }
-  }
-  return fullContent
-}
-
 async function handleSend() {
   const text = inputText.value.trim()
   const convId = currentConvId.value
   if (!text || !convId || waitingReply.value) return
 
+  const draftText = text
   const userMsg = {
     _tempId: `u-${Date.now()}`,
     role: 'user',
@@ -283,81 +258,58 @@ async function handleSend() {
   scrollToBottom({ force: true })
 
   const startedAt = Date.now()
-  let attempt = 0
-  let lastErr = null
-  let fullContent = ''
-  let ok = false
-  let postedOk = false
+  const signal = beginStream()
+  const streamPayload = {
+    provider: PLATFORM_PROVIDER,
+    content: draftText,
+  }
+
+  async function attemptStream() {
+    const response = await sendMessageStream(convId, streamPayload, { signal })
+    if (!response.ok) {
+      let errMsg = '消息发送失败'
+      try {
+        const body = await response.json()
+        errMsg = humanizeError(body.message || body.msg, errMsg)
+      } catch { /* ignore */ }
+      throw new Error(errMsg)
+    }
+    const { fullContent } = await drainAssistantStream(response, { signal })
+    return fullContent
+  }
+
   try {
-    while (attempt < 2) {
-      attempt += 1
-      streamController = new AbortController()
-      const streamSignal = streamController.signal
-      let response = null
-      try {
-        response = await sendMessageStream(convId, {
-          provider: PLATFORM_PROVIDER,
-          content: text,
-        }, streamSignal)
-      } catch (fetchErr) {
-        if (fetchErr?.name === 'AbortError') return            // #7：取消静默退出
-        lastErr = fetchErr
-        if (attempt < 2) {                                     // #13：fetch 阶段网络错，退避重试一次
-          await new Promise(r => setTimeout(r, 800))
-          if (isUnmounted) return
-          continue
-        }
-        break
-      }
-      if (!response.ok) {
-        let errMsg = '消息发送失败'
-        try {
-          const body = await response.json()
-          errMsg = humanizeError(body.message || body.msg, errMsg)
-        } catch { /* ignore */ }
-        const serverErr = new Error(errMsg)
-        serverErr.isServerError = true
-        lastErr = serverErr
-        break                                                   // 服务端拒绝：不重试
-      }
-      postedOk = true
-      try {
-        fullContent = await drainAssistantStream(response, streamSignal)
-        ok = true
-        break
-      } catch (drainErr) {
-        if (drainErr?.name === 'AbortError') return            // #7：取消静默退出
-        lastErr = drainErr
-        break                                                   // 流中断（POST 已成功）：不重试，避免服务端重复
+    let fullContent
+    try {
+      fullContent = await attemptStream()
+    } catch (err) {
+      if (isAbortError(err)) return
+      if (isNetworkError(err)) {
+        await sleep(800)
+        if (signal.aborted) return
+        fullContent = await attemptStream()
+      } else {
+        throw err
       }
     }
 
-    if (ok) {
-      const elapsed = Date.now() - startedAt
-      if (elapsed < MIN_REPLY_DISPLAY_MS) {
-        await sleep(MIN_REPLY_DISPLAY_MS - elapsed)
-      }
-      if (!isUnmounted && fullContent?.trim()) {
-        messages.value.push({
-          _tempId: `a-${Date.now()}`,
-          role: 'assistant',
-          content: fullContent,
-          createdAt: new Date().toISOString(),
-        })
-      }
-      if (!isUnmounted) await loadMessages(convId)
-    } else {
-      if (postedOk) {
-        // 流中断但消息已存服务端：保留用户气泡，拉取服务端状态恢复；不回填以免重发重复
-        ElMessage.error(humanizeError(lastErr, '回复中断，已为你保留该消息'))
-        if (!isUnmounted) await loadMessages(convId)
-      } else {
-        // 消息未存服务端（网络/服务端拒绝）：回填输入、移除本地用户气泡，用户可重发（issue #13）
-        ElMessage.error(humanizeError(lastErr, '消息发送失败，请稍后再试'))
-        inputText.value = text
-        messages.value = messages.value.filter((m) => m._tempId !== userMsg._tempId)
-      }
+    const elapsed = Date.now() - startedAt
+    if (elapsed < MIN_REPLY_DISPLAY_MS) {
+      await sleep(MIN_REPLY_DISPLAY_MS - elapsed)
     }
+    if (fullContent?.trim()) {
+      messages.value.push({
+        _tempId: `a-${Date.now()}`,
+        role: 'assistant',
+        content: fullContent,
+        createdAt: new Date().toISOString(),
+      })
+    }
+    await loadMessages(convId)
+  } catch (err) {
+    if (isAbortError(err)) return
+    inputText.value = draftText
+    showError(humanizeError(err, '消息发送失败，请稍后再试'))
   } finally {
     if (isUnmounted) return
     waitingReply.value = false
@@ -401,6 +353,7 @@ onUnmounted(() => {
   isUnmounted = true
   streamController?.abort()
   stopPolling()
+  clearTimeout(errorTimer)
 })
 </script>
 
@@ -583,15 +536,65 @@ onUnmounted(() => {
   border-top: 1px solid var(--ly-border-subtle, rgba(255, 255, 255, 0.08));
   background: var(--ly-bg-secondary, #171e28);
   flex-shrink: 0;
+}
 
-  :deep(.el-textarea__inner) {
-    background: var(--ly-bg-surface, #1e2732);
-    color: var(--ly-text-primary, #f5f5f7);
-    box-shadow: none;
-  }
+.quick-chat__input {
+  flex: 1;
+  min-height: 52px;
+  resize: none;
+  border-radius: 12px;
+  border: 1px solid var(--ly-border-subtle, rgba(255, 255, 255, 0.08));
+  background: var(--ly-bg-surface, #1e2732);
+  color: var(--ly-text-primary, #f5f5f7);
+  padding: 10px 12px;
+  font: inherit;
+  line-height: 1.45;
 
-  .el-button {
-    flex-shrink: 0;
+  &:disabled {
+    opacity: 0.65;
   }
+}
+
+.quick-chat__send {
+  flex-shrink: 0;
+  min-width: 56px;
+  height: 40px;
+  border: none;
+  border-radius: 12px;
+  background: var(--ly-accent, #f4a6b5);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+}
+
+.quick-chat__spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(244, 166, 181, 0.2);
+  border-top-color: var(--ly-accent, #f4a6b5);
+  border-radius: 50%;
+  animation: quick-spin 0.8s linear infinite;
+}
+
+.quick-chat__avatar-fallback {
+  font-size: 12px;
+  color: var(--ly-text-muted, #8a727c);
+}
+
+.quick-chat__error {
+  margin: 0;
+  padding: 6px 12px 10px;
+  font-size: 12px;
+  color: #ffb4b4;
+  background: rgba(120, 24, 24, 0.35);
+}
+
+@keyframes quick-spin {
+  to { transform: rotate(360deg); }
 }
 </style>

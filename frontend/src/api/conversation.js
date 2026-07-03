@@ -1,4 +1,4 @@
-import http from './index'
+import http from './httpCore'
 import { applyOutputLanguageHeaders } from '@/utils/outputLanguageHeader'
 import { apiBasePath } from '@/utils/runtime'
 import { syncToken } from '@/utils/secureToken'
@@ -21,7 +21,6 @@ export function deleteConversation(id) {
   return http.delete(`/conversation/${id}`)
 }
 
-// 清空会话消息但保留会话行（ID 不变）——供「清空聊天记录」调用，避免外部绑定（QQ 桥接）因 ID 变化而 404
 export function clearConversationMessages(id) {
   return http.delete(`/conversation/${id}/messages`)
 }
@@ -58,17 +57,20 @@ export function updateGroupTitle(id, title) {
 }
 
 // Non-Axios SSE — fetch API handles streams better
-export async function sendMessageStream(id, data, signal) {
+export async function sendMessageStream(id, data, options = {}) {
   const token = syncToken()
   const bodyText = JSON.stringify(data)
   const headers = applyOutputLanguageHeaders({
     'Content-Type': 'application/json',
     'lianyu-token': token || ''
   })
-  return fetch(`${apiBasePath()}/conversation/${id}/messages/stream`, {
+  const fetchOptions = {
     method: 'POST',
     headers,
-    body: bodyText,
-    signal
-  })
+    body: bodyText
+  }
+  if (options.signal) {
+    fetchOptions.signal = options.signal
+  }
+  return fetch(`${apiBasePath()}/conversation/${id}/messages/stream`, fetchOptions)
 }

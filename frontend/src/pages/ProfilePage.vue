@@ -208,7 +208,7 @@ function triggerUpload() {
 /** 释放本地头像预览的 blob: 对象 URL（仅对本地预览生效，服务器 URL 不动）。
  *  见 issue #17：createObjectURL 不 revoke 会持续占用 blob 引用直到页面卸载 */
 function revokeLocalPreview() {
-  if (localPreviewUrl.value.startsWith('blob:')) {
+  if (localPreviewUrl.value?.startsWith('blob:')) {
     URL.revokeObjectURL(localPreviewUrl.value)
     localPreviewUrl.value = ''
   }
@@ -238,6 +238,10 @@ async function uploadAvatar(file) {
     uploadingAvatar.value = false
   }
 }
+
+onUnmounted(() => {
+  revokeLocalPreview()
+})
 
 function handleFileChange(e) {
   const file = e.target.files?.[0]

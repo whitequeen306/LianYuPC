@@ -1,3 +1,8 @@
+/**
+ * Builds runtime-secrets.bin for packaged Electron builds.
+ * Obfuscation-only (XOR + build/version key) — not encryption; do not pack real secrets.
+ * Must stay in sync with frontend/electron/runtimeSecrets.js decode logic.
+ */
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'

@@ -100,10 +100,11 @@ body.electron-app {
     box-sizing: border-box;
   }
 
-  /* 主界面 / 落地页 / 登录注册顶栏与标题栏同一行，不再额外顶出空白 */
+  /* 主界面 / 落地页 / 登录注册 / 单聊顶栏与标题栏同一行，不再额外顶出空白 */
   &:has(.app-header) #app,
   &:has(.landing-nav) #app,
-  &:has(.auth-page) #app {
+  &:has(.auth-page) #app,
+  &:has(.gal-header) #app {
     padding-top: 0;
   }
 
@@ -122,7 +123,8 @@ body.electron-app {
 
   &:has(.app-header)::before,
   &:has(.landing-nav)::before,
-  &:has(.auth-page)::before {
+  &:has(.auth-page)::before,
+  &:has(.gal-header)::before {
     display: none;
   }
 
@@ -195,30 +197,31 @@ body.electron-app {
   }
 
   .gal-header {
+    min-height: var(--electron-caption-height);
+    box-sizing: border-box;
     padding-right: calc(#{$space-2} + var(--electron-caption-controls-width));
     -webkit-app-region: no-drag;
     position: relative;
+    z-index: 10001;
+  }
 
-    &::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      right: var(--electron-caption-controls-width);
-      -webkit-app-region: drag;
-      z-index: 0;
-    }
-
-    > * {
-      position: relative;
-      z-index: 1;
-      -webkit-app-region: no-drag;
-    }
+  .gal-header__drag-region {
+    flex: 1;
+    min-width: 32px;
+    align-self: stretch;
+    -webkit-app-region: drag;
   }
 
   .gal-header__back,
   .gal-header__meta,
   .gal-header__meta * {
     -webkit-app-region: no-drag;
+  }
+
+  /* immersive 单聊顶栏已占满标题栏行，勿再扣减布局高度 */
+  .app-layout--immersive {
+    min-height: 100vh;
+    height: 100vh;
   }
 
   /* ElMessage / ElNotification 需在标题栏下方 */
@@ -257,7 +260,8 @@ body.electron-app {
 
 body.electron-app:has(.app-header) .electron-caption-drag,
 body.electron-app:has(.landing-nav) .electron-caption-drag,
-body.electron-app:has(.auth-page) .electron-caption-drag {
+body.electron-app:has(.auth-page) .electron-caption-drag,
+body.electron-app:has(.gal-header) .electron-caption-drag {
   display: none;
 }
 

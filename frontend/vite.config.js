@@ -68,7 +68,7 @@ export default defineConfig({
 
     modulePreload: false,
 
-    cssCodeSplit: false,
+    cssCodeSplit: true,
 
     sourcemap: isElectronPack ? false : undefined,
 
@@ -76,11 +76,24 @@ export default defineConfig({
 
     rollupOptions: {
 
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        launcher: resolve(__dirname, 'launcher.html'),
+        quick: resolve(__dirname, 'quick.html'),
+      },
+
       output: {
 
         compact: true,
 
         generatedCode: { preset: 'es2015' },
+
+        manualChunks(id) {
+          // 勿把 axios 与 element-plus 拆成跨 chunk 引用（Rollup 会误连，桌宠/快捷聊会拖入 360KB CSS）
+          if (id.includes('node_modules/vue') || id.includes('node_modules/@vue')) return 'vue-vendor'
+          if (id.includes('node_modules/pinia') || id.includes('node_modules/vue-router')) return 'vue-vendor'
+          if (id.includes('node_modules/vue-i18n')) return 'vue-vendor'
+        },
 
       },
 
