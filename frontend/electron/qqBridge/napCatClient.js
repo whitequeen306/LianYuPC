@@ -30,6 +30,7 @@ export function createNapCatClient({
   let reconnectTimer = null
   let connectTimer = null
   let selfIdProbeTimer = null
+  let probeEpoch = 0 // 递增计数器：kick 事件递增，使 in-flight 的 get_login_info 响应作废
   let reconnectAttempts = 0
   let stopped = true
   let connecting = false
@@ -57,9 +58,11 @@ export function createNapCatClient({
     }
   }
 
-  // 登录态补探：QQ 登录前 get_login_info 可能返回空 user_id（NapCat 尚未拿到登录态），
-  // 此时状态会停在 connected/未登录。用户登录 QQ 后需主动重探，否则状态长时间不变绿。
-  // 每 5s 重试一次，拿到 selfId 即升 ready 并停止；断线/停止时一并清掉。
+  // 登录态探测 + 在线 watchdog：
+  // - 未登录时每 5s 快速补探，拿到 selfId 即升 ready；
+  // - 已登录后切到 30s 慢速 watchdog，验证 QQ 是否仍在线；
+  // - watchdog 发现 get_login_info 返回空（QQ 被踢下线）→ 清 selfId、降级 connected、重启快速补探。
+  // 断线/停止时一并清掉定时器。
   function clearSelfIdProbe() {
     if (selfIdProbeTimer) {
       clearInterval(selfIdProbeTimer)
@@ -68,14 +71,27 @@ export function createNapCatClient({
   }
 
   function probeSelfId() {
-    if (selfId || stopped || !ws || ws.readyState !== WebSocket.OPEN) return
+    if (stopped || !ws || ws.readyState !== WebSocket.OPEN) return
+    const epoch = probeEpoch
     sendApi('get_login_info')
       .then((data) => {
+        if (epoch !== probeEpoch) return // 过时响应（kick 事件已递增 epoch），丢弃
         const id = data && data.user_id != null ? String(data.user_id) : ''
         if (id) {
-          selfId = id
-          emitStatus('ready', { selfId })
+          if (!selfId) {
+            // 首次拿到 selfId：升级到 ready，切慢速 watchdog
+            selfId = id
+            emitStatus('ready', { selfId })
+            clearSelfIdProbe()
+            selfIdProbeTimer = setInterval(probeSelfId, 30000)
+          }
+          // selfId 已存在且仍在线：无需变化
+        } else if (selfId) {
+          // QQ 下线了（之前有 selfId，现在 get_login_info 返回空）
+          selfId = ''
+          emitStatus('connected', { kicked: true })
           clearSelfIdProbe()
+          selfIdProbeTimer = setInterval(probeSelfId, 5000)
         }
       })
       .catch(() => {
@@ -181,6 +197,9 @@ export function createNapCatClient({
         selfId = data && data.user_id != null ? String(data.user_id) : ''
         if (selfId) {
           emitStatus('ready', { selfId })
+          // 已登录：启动 30s 慢速 watchdog，监测 QQ 是否被踢下线
+          clearSelfIdProbe()
+          selfIdProbeTimer = setInterval(probeSelfId, 30000)
         } else {
           // 未登录：开启补探，等用户登录 QQ 后自动升 ready（修复登录后状态长时间不变绿）
           startSelfIdProbe()
@@ -221,6 +240,30 @@ export function createNapCatClient({
       } catch (e) {
         console.warn('[qqBridge] onMessage handler error:', e?.message || e)
       }
+      return
+    }
+    // meta_event / notice：检测 QQ 下线（被踢/主动下线/网络断开）
+    // NapCat 在 QQ 被踢时会发 lifecycle disable 或自定义 notice，get_login_info 可能仍返回缓存 user_id，
+    // 故必须靠事件检测，不能只靠轮询。
+    // 注意：sub_type 里的 'kick' 不能裸匹配——group_decrease 群成员被踢的 sub_type 也是 'kick'，
+    // 那是群事件不是机器人掉线。只匹配 notice_type 含 offline、或 sub_type 为 disable/offline。
+    if (payload.post_type === 'meta_event' || payload.post_type === 'notice') {
+      const sub = payload.sub_type || ''
+      const ntype = payload.notice_type || ''
+      const isOffline = (
+        (payload.meta_event_type === 'lifecycle' && sub === 'disable') ||
+        /offline/i.test(ntype) ||
+        /offline|disable/i.test(sub)
+      )
+      if (isOffline && selfId) {
+        console.warn('[napcat] QQ offline event:', payload.meta_event_type || ntype, sub)
+        selfId = ''
+        probeEpoch++ // 使可能 in-flight 的 get_login_info 响应作废，防止撤销掉线检测
+        clearSelfIdProbe()
+        emitStatus('connected', { kicked: true })
+        selfIdProbeTimer = setInterval(probeSelfId, 5000)
+      }
+      return
     }
   }
 

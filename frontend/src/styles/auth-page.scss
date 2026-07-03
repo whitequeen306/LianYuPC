@@ -730,6 +730,10 @@ html.light .auth-page {
     }
   }
 
+  .remember-label {
+    color: #4a4a52;
+  }
+
   @media (max-width: 768px) {
     .auth-form-panel {
       border-top: 1px solid rgba(0, 0, 0, 0.08);

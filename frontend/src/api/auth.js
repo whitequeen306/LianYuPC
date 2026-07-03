@@ -1,5 +1,6 @@
 import http from './httpCore'
 import { storeToken, clearTokenStorage } from '@/utils/secureToken'
+import { getElectronAPI } from '@/utils/electron'
 
 export function getCaptcha() {
   return http.get('/auth/captcha', { skipGlobalError: true })
@@ -31,6 +32,9 @@ export async function refreshAuthToken() {
   const result = await http.post('/auth/refresh', {}, { skipAuthRefresh: true, skipGlobalError: true })
   if (result?.token) {
     await storeToken(result.token)
+    // 同步主进程 auth-session.bin：apiProxy 转发请求时 strip 渲染层 header、
+    // 从 auth-session.bin 重新注入 token，若不同步会导致旧 token → 401 → 误判掉线。
+    try { await getElectronAPI()?.updateAuthToken?.(result.token) } catch { /* 非 Electron 或无 session，忽略 */ }
   }
   return result
 }

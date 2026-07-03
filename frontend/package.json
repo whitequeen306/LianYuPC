@@ -1,6 +1,6 @@
 {
   "name": "lianyu-pc",
-  "version": "0.2.233",
+  "version": "0.2.241",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.js",
@@ -93,7 +93,7 @@
       "createStartMenuShortcut": true,
       "shortcutName": "LianYu",
       "uninstallDisplayName": "LianYu",
-      "deleteAppDataOnUninstall": true,
+      "deleteAppDataOnUninstall": false,
       "runAfterFinish": true
     }
   }

@@ -62,6 +62,13 @@
             />
           </el-form-item>
 
+          <div class="remember-row form-reveal">
+            <label class="remember-label">
+              <input type="checkbox" v-model="rememberPassword" class="remember-checkbox" />
+              <span>记住密码</span>
+            </label>
+          </div>
+
           <div class="captcha-row form-reveal">
             <div class="captcha-card">
               <span class="captcha-label">验证码</span>
@@ -123,6 +130,7 @@ import { ElMessage } from 'element-plus'
 import { getCaptcha } from '@/api/auth'
 import { getLastUsername } from '@/stores/user'
 import { humanizeError } from '@/utils/errorMessage'
+import { getElectronAPI } from '@/utils/electron'
 import AuthParticles from '@/components/auth/AuthParticles.vue'
 import { useAuthPageGsap } from '@/composables/useAuthPageGsap'
 
@@ -138,6 +146,8 @@ const captchaId = ref('')
 const captchaImageSrc = ref('')
 const captchaHint = ref('加载中...')
 
+const rememberPassword = ref(false)
+
 const form = reactive({
   username: '',
   password: '',
@@ -149,8 +159,22 @@ const rules = {
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
 }
 
-onMounted(() => {
+onMounted(async () => {
   form.username = getLastUsername()
+  // 尝试加载已记住的密码（safeStorage 加密存储，仅 Electron 环境可用）
+  try {
+    const electronAPI = getElectronAPI()
+    if (electronAPI?.loadCredential) {
+      const res = await electronAPI.loadCredential()
+      if (res?.ok && res.username) {
+        form.username = res.username
+        form.password = res.password || ''
+        rememberPassword.value = true
+      }
+    }
+  } catch {
+    /* 读取失败不影响登录流程 */
+  }
   refreshCaptcha()
 })
 
@@ -206,6 +230,19 @@ async function handleLogin() {
       },
     })
     ElMessage.success('登录成功')
+    // 根据勾选状态保存或清除记住的密码
+    try {
+      const electronAPI = getElectronAPI()
+      if (electronAPI?.saveCredential && electronAPI?.clearCredential) {
+        if (rememberPassword.value) {
+          await electronAPI.saveCredential({ username: form.username, password: form.password })
+        } else {
+          await electronAPI.clearCredential()
+        }
+      }
+    } catch {
+      /* 保存失败不影响登录 */
+    }
     await router.push('/app')
   } catch (err) {
     ElMessage.error(humanizeError(err, '登录失败，请检查账号、密码和验证码'))
@@ -223,4 +260,25 @@ async function handleLogin() {
 
 <style lang="scss" scoped>
 @use '@/styles/auth-page.scss';
+
+.remember-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+.remember-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  user-select: none;
+}
+.remember-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: #f4a6b5;
+  cursor: pointer;
+}
 </style>

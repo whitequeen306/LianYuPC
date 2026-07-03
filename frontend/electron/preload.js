@@ -64,7 +64,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAuthSession: () => ipcRenderer.invoke('auth:get-session'),
   setAuthSession: (session) => ipcRenderer.invoke('auth:set-session', session),
   clearAuthSession: () => ipcRenderer.invoke('auth:clear-session'),
+  updateAuthToken: (token) => ipcRenderer.invoke('auth:update-token', token),
   bootstrapAuthToken: () => ipcRenderer.invoke('auth:bootstrap-token'),
+  saveCredential: (credential) => ipcRenderer.invoke('auth:save-credential', credential),
+  loadCredential: () => ipcRenderer.invoke('auth:load-credential'),
+  clearCredential: () => ipcRenderer.invoke('auth:clear-credential'),
   getRuntimeConfig: () => ipcRenderer.invoke('runtime:get-config'),
   apiRequest: (payload) => ipcRenderer.invoke('api:request', payload),
   isLauncherVisible: () => ipcRenderer.invoke('desktop:is-launcher-visible'),
@@ -118,6 +122,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (_event, payload) => callback(payload)
     ipcRenderer.on('desktop:qq-bridge-status', handler)
     return () => ipcRenderer.removeListener('desktop:qq-bridge-status', handler)
+  },
+  onQqBridgeAlert: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on('desktop:qq-bridge-alert', handler)
+    return () => ipcRenderer.removeListener('desktop:qq-bridge-alert', handler)
   },
   startQqHost: (override) => ipcRenderer.invoke('desktop:start-qq-host', override),
   stopQqHost: () => ipcRenderer.invoke('desktop:stop-qq-host'),

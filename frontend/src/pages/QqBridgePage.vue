@@ -157,7 +157,13 @@
               </el-select>
             </el-form-item>
             <template v-if="bindingForm.allowMode === 'open'">
-              <el-alert type="warning" :closable="false" show-icon :title="t('qqBridge.binding.openModeWarning')" />
+              <el-alert
+                type="error"
+                :closable="false"
+                show-icon
+                :title="t('qqBridge.binding.openModeWarning')"
+                :description="t('qqBridge.binding.openModeWarningDesc')"
+              />
             </template>
             <template v-else>
               <div class="allowlist-grid">
@@ -192,34 +198,36 @@
         </div>
         <div class="glass qq-card reply-form">
           <el-form label-position="top">
-            <el-form-item :label="t('qqBridge.reply.segmentDelay')">
-              <div class="delay-row">
-                <el-input-number
-                  v-model="replyForm.segmentDelayMs"
-                  :min="0"
-                  :max="2000"
-                  :step="100"
-                  controls-position="right"
-                  class="delay-input"
-                />
-                <span class="delay-unit">ms</span>
-              </div>
-              <p class="field-hint">{{ t('qqBridge.reply.segmentDelayHint') }}</p>
-            </el-form-item>
-            <el-form-item :label="t('qqBridge.reply.segmentJitter')">
-              <div class="delay-row">
-                <el-input-number
-                  v-model="replyForm.segmentJitterMs"
-                  :min="0"
-                  :max="3000"
-                  :step="100"
-                  controls-position="right"
-                  class="delay-input"
-                />
-                <span class="delay-unit">ms</span>
-              </div>
-              <p class="field-hint">{{ t('qqBridge.reply.segmentJitterHint') }}</p>
-            </el-form-item>
+            <div class="reply-delay-grid">
+              <el-form-item :label="t('qqBridge.reply.segmentDelay')">
+                <div class="delay-row">
+                  <el-input-number
+                    v-model="replyForm.segmentDelayMs"
+                    :min="0"
+                    :max="2000"
+                    :step="100"
+                    controls-position="right"
+                    class="delay-input"
+                  />
+                  <span class="delay-unit">ms</span>
+                </div>
+                <p class="field-hint">{{ t('qqBridge.reply.segmentDelayHint') }}</p>
+              </el-form-item>
+              <el-form-item :label="t('qqBridge.reply.segmentJitter')">
+                <div class="delay-row">
+                  <el-input-number
+                    v-model="replyForm.segmentJitterMs"
+                    :min="0"
+                    :max="100000"
+                    :step="100"
+                    controls-position="right"
+                    class="delay-input"
+                  />
+                  <span class="delay-unit">ms</span>
+                </div>
+                <p class="field-hint">{{ t('qqBridge.reply.segmentJitterHint') }}</p>
+              </el-form-item>
+            </div>
             <el-form-item :label="t('qqBridge.reply.fallback')">
               <el-input
                 v-model="replyForm.fallbackText"
@@ -983,6 +991,12 @@ onUnmounted(() => {
 
 // 回复设置：延迟数值输入（弃用滑块——Electron 下 el-slider 拖拽不可靠，
 // 改 el-input-number 让用户直接填数值，+/- 步进 100ms，更稳更直观）
+.reply-delay-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0 $space-6;
+}
+
 .delay-row {
   display: flex;
   align-items: center;

@@ -32,6 +32,48 @@ function rejectSessionExpired() {
   return Promise.reject(new Error('登录已过期，请重新登录'))
 }
 
+// #15 单飞刷新：多个并发 401 共享同一次 refresh，避免刷新风暴。
+// refreshAuthToken 自身带 skipAuthRefresh 标记，不会递归触发。
+let refreshPromise = null
+function singleFlightRefresh() {
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      try {
+        const { refreshAuthToken } = await import('@/api/auth')
+        await refreshAuthToken()
+        return true
+      } catch {
+        return false
+      } finally {
+        refreshPromise = null
+      }
+    })()
+  }
+  return refreshPromise
+}
+
+/**
+ * 401 处理：先尝试单飞刷新 + 重放原请求，刷新失败才登出。
+ * - skipAuthRefresh：刷新请求自身的 401 不再递归刷新，直接登出
+ * - _authReplayed：已重放过的请求再 401 不二次刷新、不连坐登出
+ *   （刷新已成功但此请求仍 401，可能是业务级权限问题，不应踢掉整个会话）
+ */
+async function handle401(failedConfig) {
+  if (!failedConfig || failedConfig.skipAuthRefresh) {
+    return rejectSessionExpired()
+  }
+  if (failedConfig._authReplayed) {
+    // 重放仍 401：刷新已成功但此请求仍失败，不连坐登出
+    return Promise.reject(new Error('登录已过期，请重新登录'))
+  }
+  const ok = await singleFlightRefresh()
+  if (!ok) {
+    return rejectSessionExpired()
+  }
+  // 刷新成功：用新 token 重放原请求（request interceptor 会重新读 token）
+  return http({ ...failedConfig, _authReplayed: true })
+}
+
 const http = axios.create({
   baseURL: isElectronRuntime() ? `${ELECTRON_BASE_PLACEHOLDER}/api` : apiBasePath(),
   timeout: 60000,
@@ -64,7 +106,7 @@ http.interceptors.response.use(
         return body.data
       }
       if (body.code === 401) {
-        return rejectSessionExpired()
+        return handle401(response.config)
       }
       const msg = humanizeError(body.message, '请求失败，请稍后再试')
       return Promise.reject(new Error(msg))
@@ -73,7 +115,7 @@ http.interceptors.response.use(
   },
   (error) => {
     if (error.response?.status === 401) {
-      return rejectSessionExpired()
+      return handle401(error.config)
     }
     const apiErr = extractApiError(error)
     let fallback = '请求失败，请稍后再试'

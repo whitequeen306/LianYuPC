@@ -12,6 +12,7 @@ import {
   Notification,
   powerMonitor,
   dialog,
+  safeStorage,
 } from 'electron'
 import path from 'path'
 import fs from 'fs'
@@ -1694,6 +1695,81 @@ function quitApplication() {
   app.quit()
 }
 
+// QQ 桥接状态追踪：区分"掉线"（WS 断开）与"未登录"（WS 连上但 QQ 无登录态）
+let prevBridgeState = ''
+let notLoggedInTimer = null
+let lastDisconnectNotifyTs = 0
+let lastKickedTs = 0
+let napcatRestarting = false
+
+function clearNotLoggedInTimer() {
+  if (notLoggedInTimer) {
+    clearTimeout(notLoggedInTimer)
+    notLoggedInTimer = null
+  }
+}
+
+/** QQ 桥接告警：软件内弹窗 + 系统通知双发（窗口最小化/未聚焦时系统通知兜底） */
+const qqAlertTitles = {
+  kicked: 'QQ 已掉线',
+  disconnected: 'QQ 桥接掉线',
+  not_logged_in: 'QQ 未登录',
+  restart_failed: 'NapCat 重启失败',
+}
+
+function showQqBridgeNotification(title, body) {
+  if (!Notification.isSupported()) return
+  const notification = new Notification({ title, body, silent: false })
+  notification.on('click', () => showMainWindow('#/app/qq-bridge'))
+  notification.show()
+}
+
+function sendQqBridgeAlert(type, message) {
+  // 软件内弹窗：IPC → App.vue 弹 ElMessageBox
+  for (const win of [mainWindow, launcherWindow]) {
+    if (win && !win.isDestroyed()) {
+      try {
+        win.webContents.send('desktop:qq-bridge-alert', { type, message, ts: Date.now() })
+      } catch { /* 窗口可能已销毁 */ }
+    }
+  }
+  // 系统通知：窗口最小化/未聚焦时也能看到
+  showQqBridgeNotification(qqAlertTitles[type] || 'QQ 桥接提醒', message)
+}
+
+/** QQ 被踢下线后自动重启 NapCat 进程，尝试重新登录 */
+async function restartNapCatForReconnect() {
+  if (napcatRestarting) return
+  napcatRestarting = true
+  try {
+    log('[qqBridge] QQ kicked offline, restarting NapCat for reconnect...')
+    const settings = readQqBridgeSettings()
+    if (settings.hosting?.mode !== 'auto') {
+      sendQqBridgeAlert('restart_failed', 'QQ 已掉线，手动模式下需自行重启 NapCat 并扫码登录')
+      return
+    }
+    await stopNapCatHost()
+    await new Promise(r => setTimeout(r, 2000))
+    const ok = await startNapCatHost({
+      settings,
+      onStatus: (status) => pushQqHostStatus(status),
+      onDownload: (progress) => pushQqHostDownload(progress),
+      bridgeStarter: makeNapCatBridgeStarter(),
+    })
+    if (!ok) {
+      log('[qqBridge] NapCat restart returned false')
+      sendQqBridgeAlert('restart_failed', 'NapCat 重启失败，请打开 QQ 桥接页面扫码登录')
+      return
+    }
+    log('[qqBridge] NapCat restarted, waiting for auto-login...')
+  } catch (e) {
+    log('[qqBridge] NapCat restart failed:', e?.message || e)
+    sendQqBridgeAlert('restart_failed', 'NapCat 重启失败，请打开 QQ 桥接页面扫码登录')
+  } finally {
+    napcatRestarting = false
+  }
+}
+
 /** QQ 桥接状态推送到主窗口/启动器窗口，供渲染进程展示连接态/二维码（后续阶段） */
 function pushQqBridgeStatus(status) {
   const payload = { ...status, ts: Date.now() }
@@ -1706,6 +1782,41 @@ function pushQqBridgeStatus(status) {
       }
     }
   }
+
+  // 掉线/未登录/被踢 告警（软件内弹窗 + 系统通知双发）
+  const state = status?.state || ''
+  try {
+    if (state === 'ready') {
+      clearNotLoggedInTimer()
+    } else if (status?.kicked && state === 'connected') {
+      // QQ 被踢下线：弹软件内弹窗 + 自动重启 NapCat
+      lastKickedTs = Date.now()
+      clearNotLoggedInTimer()
+      sendQqBridgeAlert('kicked', 'QQ 已掉线（被踢下线/另一终端登录），正在重启 NapCat 尝试重新登录…')
+      restartNapCatForReconnect()
+    } else if (state === 'connected' && prevBridgeState !== 'connected') {
+      // 新 WS 连接：15s 后仍未 ready 则判定为"未登录"
+      clearNotLoggedInTimer()
+      notLoggedInTimer = setTimeout(() => {
+        sendQqBridgeAlert('not_logged_in', 'QQ 桥接已连接但未检测到登录态，请打开 QQ 桥接页面扫码登录')
+      }, 15000)
+    } else if (state === 'disconnected') {
+      // 掉线提醒：kick 后 60s 内的 disconnected 不弹（避免重启期间 WS 断开刷屏）
+      const now = Date.now()
+      if (now - lastKickedTs > 60000 &&
+          now - lastDisconnectNotifyTs > 30000 &&
+          (prevBridgeState === 'ready' || prevBridgeState === 'connected')) {
+        lastDisconnectNotifyTs = now
+        sendQqBridgeAlert('disconnected', 'QQ 连接已断开，正在尝试重连…')
+      }
+      clearNotLoggedInTimer()
+    } else if (state === 'stopped') {
+      clearNotLoggedInTimer()
+    }
+  } catch {
+    /* 通知失败不影响桥接 */
+  }
+  prevBridgeState = state
 }
 
 /** 启动时若已开启 QQ 桥接且已登录，自动拉起（默认自动；用户也可在设置中手动开关） */
@@ -2389,6 +2500,57 @@ function registerIpcHandlers() {
   ipcMain.handle('auth:clear-session', (event) => {
     if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     clearAuthSession()
+    return { ok: true }
+  })
+  // 滑动续签后仅更新 token 字段，保留 userId/username/nickname 等（refreshAuthToken 调用）。
+  // 不用 auth:set-session 是因为它会 sanitizeSession 整个替换，调用方需构造完整对象；
+  // 此处只改 token，其余字段从现有 auth-session.bin 读出保留。
+  ipcMain.handle('auth:update-token', (event, newToken) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    if (typeof newToken !== 'string' || !newToken.trim()) return { ok: false, reason: 'invalid_input' }
+    const current = readAuthSession()
+    if (!current?.token) return { ok: false, reason: 'no_session' }
+    writeAuthSession({ ...current, token: newToken.trim(), savedAt: Date.now() })
+    return { ok: true }
+  })
+
+  // 记住密码：用户显式勾选后用 safeStorage 加密存储用户名+密码，与 token 文件隔离。
+  // 仅用于下次登录自动填充；token 持久化（auth-session.bin）是更优的"保持登录"方案，
+  // 此功能仅补 token 过期需重新登录的场景。
+  const CREDENTIAL_FILE = 'credential.bin'
+  function credentialPath() {
+    return path.join(app.getPath('userData'), CREDENTIAL_FILE)
+  }
+
+  ipcMain.handle('auth:save-credential', (event, { username, password }) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    if (!username || !password) return { ok: false, reason: 'invalid_input' }
+    if (!safeStorage.isEncryptionAvailable()) return { ok: false, reason: 'encryption_unavailable' }
+    try {
+      const encrypted = safeStorage.encryptString(JSON.stringify({ username, password }))
+      fs.writeFileSync(credentialPath(), encrypted)
+      return { ok: true }
+    } catch {
+      return { ok: false, reason: 'write_failed' }
+    }
+  })
+
+  ipcMain.handle('auth:load-credential', (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    if (!safeStorage.isEncryptionAvailable()) return { ok: false, reason: 'encryption_unavailable' }
+    try {
+      if (!fs.existsSync(credentialPath())) return { ok: false, reason: 'not_found' }
+      const json = safeStorage.decryptString(fs.readFileSync(credentialPath()))
+      const data = JSON.parse(json)
+      return { ok: true, username: data.username || '', password: data.password || '' }
+    } catch {
+      return { ok: false, reason: 'read_failed' }
+    }
+  })
+
+  ipcMain.handle('auth:clear-credential', (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    try { fs.unlinkSync(credentialPath()) } catch { /* ignore */ }
     return { ok: true }
   })
 
