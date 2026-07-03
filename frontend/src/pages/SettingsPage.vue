@@ -453,7 +453,7 @@ function showAddDialog() {
 function showEditDialog(vault) {
   editingVault.value = vault
   form.provider = vault.provider
-  form.apiKey = vault.apiKey || ''
+  form.apiKey = ''
   form.baseUrl = vault.baseUrl || ''
   form.modelDefault = vault.modelDefault || ''
   dialogModels.value = []
