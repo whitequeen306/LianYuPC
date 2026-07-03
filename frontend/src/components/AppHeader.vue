@@ -103,7 +103,6 @@
           </div>
           <el-dropdown-menu>
             <el-dropdown-item command="profile" :icon="User">{{ t('header.profile') }}</el-dropdown-item>
-            <el-dropdown-item command="password" :icon="Lock">{{ t('header.changePassword') }}</el-dropdown-item>
             <el-dropdown-item command="settings" :icon="Setting">{{ t('nav.settings') }}</el-dropdown-item>
             <el-dropdown-item divided command="logout" :icon="SwitchButton">{{ t('header.logout') }}</el-dropdown-item>
           </el-dropdown-menu>
@@ -117,7 +116,7 @@
 <script setup>
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Bell, Lock, Moon, Setting, Sunny, SwitchButton, User, UserFilled } from '@element-plus/icons-vue'
+import { Bell, Moon, Setting, Sunny, SwitchButton, User, UserFilled } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { useNotificationsStore } from '@/stores/notifications'
 import { useSettingsStore } from '@/stores/settings'
@@ -145,10 +144,6 @@ async function handleNotificationClick(notification) {
 async function handleUserMenu(command) {
   if (command === 'profile') {
     router.push('/app/profile')
-    return
-  }
-  if (command === 'password') {
-    router.push({ path: '/app/profile', hash: '#password' })
     return
   }
   if (command === 'settings') {
