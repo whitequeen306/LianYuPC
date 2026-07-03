@@ -18,6 +18,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.net.UnknownHostException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -53,6 +54,9 @@ public final class SsrfPinningClientFactory {
         }
         OkHttpClient okHttp = new OkHttpClient.Builder()
                 .dns(new PinnedDns(endpoint.host(), endpoint.pinnedIps()))
+                .connectTimeout(Duration.ofSeconds(15))
+                .readTimeout(Duration.ofSeconds(60))
+                .writeTimeout(Duration.ofSeconds(30))
                 .build();
         return RestClient.builder().requestFactory(new OkHttp3ClientHttpRequestFactory(okHttp));
     }
