@@ -1,98 +1,98 @@
 {
-  "name": "lianyu-pc",
-  "version": "0.2.248",
-  "private": true,
-  "type": "module",
-  "main": "dist-electron/main.js",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "electron:dev": "node scripts/electron-dev.mjs",
-    "icon:regenerate": "python scripts/regenerate-icon.py",
-    "electron:build": "node scripts/electron-pack.mjs",
-    "electron:release": "node scripts/electron-release.mjs",
-    "electron:release:minor": "node scripts/electron-release.mjs minor",
-    "electron:release:major": "node scripts/electron-release.mjs major",
-    "preview": "vite preview",
-    "test": "vitest --passWithNoTests"
-  },
-  "dependencies": {
-    "@element-plus/icons-vue": "^2.3.1",
-    "@stomp/stompjs": "^7.0.0",
-    "active-win": "^8.2.1",
-    "axios": "^1.7.9",
-    "dompurify": "^3.4.8",
-    "element-plus": "^2.8.8",
-    "extract-zip": "^2.0.1",
-    "gsap": "^3.15.0",
-    "pinia": "^2.2.6",
-    "vue": "^3.5.13",
-    "vue-i18n": "^9.14.4",
-    "vue-router": "^4.4.5",
-    "ws": "^8.18.0"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-vue": "^5.2.1",
-    "@vue/test-utils": "^2.4.6",
-    "electron": "^42.3.2",
-    "electron-builder": "^26.8.1",
-    "jimp": "^0.22.12",
-    "rcedit": "^4.0.1",
-    "sass": "^1.80.7",
-    "vite": "^5.4.11",
-    "vite-plugin-electron": "^1.0.1",
-    "vite-plugin-electron-renderer": "^1.0.0",
-    "vitest": "^2.1.8"
-  },
-  "build": {
-    "appId": "com.lianyu.pc",
-    "productName": "LianYu",
-    "artifactName": "${productName} Setup ${version}.${ext}",
-    "directories": {
-      "output": "release"
+    "name": "lianyu-pc",
+    "version": "0.2.251",
+    "private": true,
+    "type": "module",
+    "main": "dist-electron/main.js",
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build",
+        "electron:dev": "node scripts/electron-dev.mjs",
+        "icon:regenerate": "python scripts/regenerate-icon.py",
+        "electron:build": "node scripts/electron-pack.mjs",
+        "electron:release": "node scripts/electron-release.mjs",
+        "electron:release:minor": "node scripts/electron-release.mjs minor",
+        "electron:release:major": "node scripts/electron-release.mjs major",
+        "preview": "vite preview",
+        "test": "vitest --passWithNoTests"
     },
-    "files": [
-      "dist-electron/**/*",
-      "dist/**/*",
-      "package.json"
-    ],
-    "extraResources": [],
-    "asar": true,
-    "asarUnpack": [],
-    "afterPack": "scripts/after-pack.mjs",
-    "extraMetadata": {
-      "main": "dist-electron/main.js"
+    "dependencies": {
+        "@element-plus/icons-vue": "^2.3.1",
+        "@stomp/stompjs": "^7.0.0",
+        "active-win": "^8.2.1",
+        "axios": "^1.7.9",
+        "dompurify": "^3.4.8",
+        "element-plus": "^2.8.8",
+        "extract-zip": "^2.0.1",
+        "gsap": "^3.15.0",
+        "pinia": "^2.2.6",
+        "vue": "^3.5.13",
+        "vue-i18n": "^9.14.4",
+        "vue-router": "^4.4.5",
+        "ws": "^8.18.0"
     },
-    "electronFuses": {
-      "runAsNode": false,
-      "enableNodeOptionsEnvironmentVariable": false,
-      "enableNodeCliInspectArguments": false,
-      "onlyLoadAppFromAsar": true,
-      "enableEmbeddedAsarIntegrityValidation": true,
-      "grantFileProtocolExtraPrivileges": true
+    "devDependencies": {
+        "@vitejs/plugin-vue": "^5.2.1",
+        "@vue/test-utils": "^2.4.6",
+        "electron": "^42.3.2",
+        "electron-builder": "^26.8.1",
+        "jimp": "^0.22.12",
+        "rcedit": "^4.0.1",
+        "sass": "^1.80.7",
+        "vite": "^5.4.11",
+        "vite-plugin-electron": "^1.0.1",
+        "vite-plugin-electron-renderer": "^1.0.0",
+        "vitest": "^2.1.8"
     },
-    "win": {
-      "target": "nsis",
-      "icon": "build/icon.ico",
-      "signAndEditExecutable": false
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": false,
-      "allowElevation": true,
-      "guid": "8F3C2A1B-4D5E-6F70-8A9B-0C1D2E3F4A5B",
-      "include": "build/installer.nsh",
-      "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico",
-      "language": "2052",
-      "multiLanguageInstaller": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "LianYu",
-      "uninstallDisplayName": "LianYu",
-      "deleteAppDataOnUninstall": false,
-      "runAfterFinish": true
+    "build": {
+        "appId": "com.lianyu.pc",
+        "productName": "LianYu",
+        "artifactName": "${productName} Setup ${version}.${ext}",
+        "directories": {
+            "output": "release"
+        },
+        "files": [
+            "dist-electron/**/*",
+            "dist/**/*",
+            "package.json"
+        ],
+        "extraResources": [],
+        "asar": true,
+        "asarUnpack": [],
+        "afterPack": "scripts/after-pack.mjs",
+        "extraMetadata": {
+            "main": "dist-electron/main.js"
+        },
+        "electronFuses": {
+            "runAsNode": false,
+            "enableNodeOptionsEnvironmentVariable": false,
+            "enableNodeCliInspectArguments": false,
+            "onlyLoadAppFromAsar": true,
+            "enableEmbeddedAsarIntegrityValidation": true,
+            "grantFileProtocolExtraPrivileges": true
+        },
+        "win": {
+            "target": "nsis",
+            "icon": "build/icon.ico",
+            "signAndEditExecutable": false
+        },
+        "nsis": {
+            "oneClick": false,
+            "perMachine": false,
+            "allowToChangeInstallationDirectory": false,
+            "allowElevation": true,
+            "guid": "8F3C2A1B-4D5E-6F70-8A9B-0C1D2E3F4A5B",
+            "include": "build/installer.nsh",
+            "installerIcon": "build/icon.ico",
+            "uninstallerIcon": "build/icon.ico",
+            "language": "2052",
+            "multiLanguageInstaller": true,
+            "createDesktopShortcut": true,
+            "createStartMenuShortcut": true,
+            "shortcutName": "LianYu",
+            "uninstallDisplayName": "LianYu",
+            "deleteAppDataOnUninstall": false,
+            "runAfterFinish": true
+        }
     }
-  }
 }

@@ -7,7 +7,7 @@ import path from 'path'
 const { state } = vi.hoisted(() => ({ state: { userData: '' } }))
 vi.mock('electron', () => ({ app: { getPath: () => state.userData } }))
 
-import { resolveLatestNapCatRelease, compareReleaseTags, getAssetDownloadUrls } from '../napcatRelease.js'
+import { resolveLatestNapCatRelease, compareReleaseTags, getAssetDownloadUrls, isNapCatInstallIntact } from '../napcatRelease.js'
 
 // 与 PINNED_RELEASES 内置锚点一致的 out-of-band 期望值
 const PINNED_TAG = 'v4.18.7'
@@ -204,5 +204,79 @@ describe('getAssetDownloadUrls — 镜像回退（受限网络 CDN RST 兜底）
     expect(urls).toEqual([undefined])
     expect(getAssetDownloadUrls(null)).toEqual([undefined])
     expect(getAssetDownloadUrls(undefined)).toEqual([undefined])
+  })
+})
+
+describe('isNapCatInstallIntact — 安装完整性校验', () => {
+  function seedDir(dir, files) {
+    fs.mkdirSync(dir, { recursive: true })
+    for (const [name, content] of Object.entries(files)) {
+      const p = path.join(dir, name)
+      fs.mkdirSync(path.dirname(p), { recursive: true })
+      fs.writeFileSync(p, content)
+    }
+  }
+
+  it('完整安装：exe + napcat.mjs + conout-*.js 全在 → true', () => {
+    const dir = path.join(tmp, 'napcat')
+    seedDir(dir, {
+      'NapCatWinBootMain.exe': 'fake',
+      'napcat.mjs': 'fake',
+      'conout-wiJ7YKRd.js': 'fake',
+    })
+    expect(isNapCatInstallIntact(dir)).toBe(true)
+  })
+
+  it('缺失 napcat.mjs → false', () => {
+    const dir = path.join(tmp, 'napcat')
+    seedDir(dir, {
+      'NapCatWinBootMain.exe': 'fake',
+      'conout-wiJ7YKRd.js': 'fake',
+    })
+    expect(isNapCatInstallIntact(dir)).toBe(false)
+  })
+
+  it('缺失 conout-*.js → false', () => {
+    const dir = path.join(tmp, 'napcat')
+    seedDir(dir, {
+      'NapCatWinBootMain.exe': 'fake',
+      'napcat.mjs': 'fake',
+    })
+    expect(isNapCatInstallIntact(dir)).toBe(false)
+  })
+
+  it('缺失 NapCatWinBootMain.exe → false', () => {
+    const dir = path.join(tmp, 'napcat')
+    seedDir(dir, {
+      'napcat.mjs': 'fake',
+      'conout-wiJ7YKRd.js': 'fake',
+    })
+    expect(isNapCatInstallIntact(dir)).toBe(false)
+  })
+
+  it('napcat.mjs 在 napcat/ 子目录 → true（兼容 Shell zip 布局）', () => {
+    const dir = path.join(tmp, 'napcat')
+    seedDir(dir, {
+      'NapCatWinBootMain.exe': 'fake',
+      'napcat/napcat.mjs': 'fake',
+      'conout-wiJ7YKRd.js': 'fake',
+    })
+    expect(isNapCatInstallIntact(dir)).toBe(true)
+  })
+
+  it('conout-*.js 文件名含随机 hash 仍能匹配 → true', () => {
+    const dir = path.join(tmp, 'napcat')
+    seedDir(dir, {
+      'NapCatWinBootMain.exe': 'fake',
+      'napcat.mjs': 'fake',
+      'conout-aBcDeF12.js': 'fake',
+    })
+    expect(isNapCatInstallIntact(dir)).toBe(true)
+  })
+
+  it('空目录 → false', () => {
+    const dir = path.join(tmp, 'napcat')
+    fs.mkdirSync(dir, { recursive: true })
+    expect(isNapCatInstallIntact(dir)).toBe(false)
   })
 })

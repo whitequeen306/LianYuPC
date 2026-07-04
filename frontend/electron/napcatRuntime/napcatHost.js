@@ -14,6 +14,7 @@
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
+import { spawnSync } from 'node:child_process'
 import {
   resolveLatestNapCatRelease,
   getNapCatInstallRoot,
@@ -22,6 +23,7 @@ import {
   compareReleaseTags,
   getAssetDownloadUrls,
   resolveQqInstallDir,
+  isNapCatInstallIntact,
 } from './napcatRelease.js'
 import { downloadAndExtractNapCat } from './napcatDownloader.js'
 import { ensureNapCatConfig } from './napcatConfig.js'
@@ -122,7 +124,7 @@ async function doStart({ settings, onStatus: statusCb, onDownload: dlCb, bridgeS
     // 避免把过时锚点写回 napcatVersion 造成"已装更新却记录成旧版"的漂移。
     const runningVersion = entry ? (installedVersion || release.tag) : release.tag
     currentRunningVersion = runningVersion
-    if (!entry) {
+    if (!isNapCatInstallIntact(installRoot)) {
       emit('downloading')
       await downloadFromCandidates(release, onDownload, signal)
     }
@@ -382,14 +384,39 @@ function teardownProc() {
     } catch {
       /* ignore */
     }
-    proc = null
   }
+  proc = null
   webuiInfo = null
   configInfo = null
-  currentRelease = null
-  currentUpgrade = null
   currentRunningVersion = null
-  currentSettings = null
+  bridgeFired = false
+}
+
+/**
+ * 杀残留的机器人 QQ.exe/QQEX.exe（NapCatWinBootMain 退出后，QQ.exe 被系统接管
+ * 成孤儿进程，taskkill /T 够不着）。按命令行中的 bot profile 路径精准定位，不误伤
+ * 用户日常 QQ。
+ */
+function killBotQqProcesses() {
+  if (process.platform !== 'win32') return
+  try {
+    const result = spawnSync(
+      'wmic',
+      ['process', 'where', 'name="QQ.exe" or name="QQEX.exe"', 'get', 'ProcessId,CommandLine', '/format:csv'],
+      { windowsHide: true, encoding: 'utf8', timeout: 10000, stdio: ['ignore', 'pipe', 'ignore'] },
+    )
+    const lines = (result.stdout || '').split(/\r?\n/)
+    for (const line of lines) {
+      if (!line.includes('napcat-bot-profile')) continue
+      // WMIC /format:csv → Node,ProcessId,CommandLine，ProcessId 是索引 1 的列
+      const fields = line.split(',')
+      const pid = Number(fields[1])
+      if (!pid || pid <= 0) continue
+      try { spawnSync('taskkill', ['/F', '/PID', String(pid)], { windowsHide: true, stdio: 'ignore' }) } catch { /* ignore */ }
+    }
+  } catch {
+    /* 非 Windows 或无残留进程，静默 */
+  }
 }
 
 // 置空回调；须在 emit 之后调用，否则推送被丢
@@ -416,6 +443,9 @@ export async function stopNapCatHost() {
   // 推送——此时 onStatus 仍在，状态条收到 clean 的 stopped（webui=null），最后
   // clearCallbacks 置空回调。顺序保证：推送送达 + 字段干净 + 回调不残留。
   teardownProc()
+  // 补杀：NapCatWinBootMain 退出后，QQ.exe 被系统接管成孤儿进程，
+  // napcatProcess 的 taskkill /T 够不着。扫命令行清掉。
+  killBotQqProcesses()
   // 清理 bot QQ 登录态：napcat-bot-profile 目录残留旧号 session，会导致下次启动
   // NapCat 自动快速登录旧号、撞 QQNT 单实例/session 残留而报「已登录无法重复登录」
   // （即使 bot 实际未在线）。停止托管=彻底下线，清掉 profile 让下次启动走扫码，

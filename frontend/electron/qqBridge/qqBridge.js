@@ -59,6 +59,7 @@ export function startQqBridge({ apiOrigin, authToken, settings, onStatus: cb } =
   // 加载持久化的会话隔离映射 + 绑定角色缓存（重启后复用，免重复建会话/反查）
   sessionMap = { ...((settings.binding || {}).sessionMap || {}) }
   bindingCharacterId = String(settings.binding?.characterId || '')
+  bindingCharacterName = settings.binding?.characterName || ''
   onStatus = cb
   client = createNapCatClient({
     wsUrl,
@@ -85,6 +86,7 @@ export function stopQqBridge() {
   lastAuthToken = ''
   sessionMap = {}
   bindingCharacterId = ''
+  bindingCharacterName = ''
   lastSettings = null
   onStatus = null
 }
@@ -100,8 +102,16 @@ async function handleOneBotMessage(event) {
   const settings = readQqBridgeSettings()
   if (!settings || !client) return
 
-  // 群聊：allowGroups 白名单内放行（免 @机器人也回复，让角色更活跃）；上下文用 binding 会话共享。
-  // 私聊：allowUsers 白名单内放行，per-user 隔离会话。
+  // 角色绑定热更新：UI 改了 characterId 后，下条消息自动感知并清空旧角色缓存（sessionMap + 角色名），
+  // 后续 resolveConversationId 会用新角色创建独占会话。无需重启桥接。
+  const newCharacterId = String(settings.binding?.characterId || '')
+  if (newCharacterId && newCharacterId !== bindingCharacterId) {
+    sessionMap = {}
+    bindingCharacterId = newCharacterId
+    bindingCharacterName = ''
+    persistSessionMap()
+    persistBindingCharacterId()
+  }
 
   // 放行判定：allowlist 模式默认拒绝（私聊须命中 allowUsers），open 模式不限制。
   // 见 isAllowedByBinding（issue #11：杜绝空表=静默全放行）
@@ -267,7 +277,10 @@ async function resolveConversationId(sender, { force = false } = {}) {
     if (!characterId) return ''
     const created = await createConversation(characterId)
     if (created?.id) {
-      if (created?.characterName) bindingCharacterName = created.characterName
+      if (created?.characterName) {
+        bindingCharacterName = created.characterName
+        persistBindingCharacterId()
+      }
       sessionMap[groupKey] = String(created.id)
       persistSessionMap()
     }
@@ -288,7 +301,10 @@ async function resolveConversationId(sender, { force = false } = {}) {
         log('resolveConversationId: create conversation returned no id for', key)
         return null
       }
-      if (created?.characterName) bindingCharacterName = created.characterName
+      if (created?.characterName) {
+        bindingCharacterName = created.characterName
+        persistBindingCharacterId()
+      }
       sessionMap[key] = String(created.id)
       persistSessionMap()
       log(force ? 're-resolved conversation' : 'created conversation', sessionMap[key], 'for', key, '(character', characterId + ')')
@@ -373,7 +389,7 @@ function persistSessionMap() {
 function persistBindingCharacterId() {
   try {
     const prev = readQqBridgeSettings()
-    writeQqBridgeSettings({ binding: { ...(prev.binding || {}), characterId: bindingCharacterId } })
+    writeQqBridgeSettings({ binding: { ...(prev.binding || {}), characterId: bindingCharacterId, characterName: bindingCharacterName } })
   } catch (e) {
     log('persistBindingCharacterId failed:', e?.message || e)
   }

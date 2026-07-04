@@ -23,7 +23,7 @@ import path from 'path'
 import crypto from 'crypto'
 import { Readable } from 'stream'
 import extract from 'extract-zip'
-import { getNapCatInstallRoot, isNapCatInstalled } from './napcatRelease.js'
+import { getNapCatInstallRoot, isNapCatInstallIntact } from './napcatRelease.js'
 
 /** 下载临时件后缀（仅在 sha256 校验通过后才解压并删除） */
 const PART_EXT = '.zip.part'
@@ -80,7 +80,7 @@ export async function downloadAndExtractNapCat({ release, onProgress, signal, st
     throw new Error('download aborted: release missing assetUrl/sha256')
   }
   const installRoot = getNapCatInstallRoot()
-  if (isNapCatInstalled(installRoot)) {
+  if (isNapCatInstallIntact(installRoot)) {
     onProgress?.({ phase: 'done', skipped: true })
     return { installRoot, skipped: true }
   }

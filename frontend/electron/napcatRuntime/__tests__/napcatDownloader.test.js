@@ -88,6 +88,8 @@ describe('downloadAndExtractNapCat 状态机', () => {
   it('已安装则跳过：仅发 done{skipped:true}，不发起请求', async () => {
     fs.mkdirSync(installRoot, { recursive: true })
     fs.writeFileSync(path.join(installRoot, 'NapCatWinBootMain.exe'), '') // 占位入口
+    fs.writeFileSync(path.join(installRoot, 'napcat.mjs'), '') // 核心必须存在（isNapCatInstallIntact 校验）
+    fs.writeFileSync(path.join(installRoot, 'conout-fake123.js'), '') // 依赖必须存在
     const phases = []
     const r = await downloadAndExtractNapCat({
       release: { assetUrl: 'http://127.0.0.1:1/never-hit', sha256: '0'.repeat(64), size: 1 },

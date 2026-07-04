@@ -363,6 +363,26 @@ export function isNapCatInstalled(installRoot = getNapCatInstallRoot()) {
 }
 
 /**
+ * 安装完整性校验：与 isNapCatInstalled 不同，除了 exe 还检查 napcat.mjs 核心
+ * 及其 conout-*.js 依赖都落在盘上。用于在启动路径中判定安装是否残缺，从而使
+ * 部分文件丢失（例如 reinstall 清不干净、被安全软件隔离等）时能触发重新解压。
+ */
+export function isNapCatInstallIntact(installRoot = getNapCatInstallRoot()) {
+  if (!locateNapCatEntry(installRoot)) return false
+  const mainMjsTop = path.join(installRoot, 'napcat.mjs')
+  const mainMjsSub = path.join(installRoot, 'napcat', 'napcat.mjs')
+  if (!fs.existsSync(mainMjsTop) && !fs.existsSync(mainMjsSub)) return false
+  try {
+    const entries = fs.readdirSync(installRoot)
+    const hasConout = entries.some((n) => /^conout-.+\.js$/i.test(n) && fs.statSync(path.join(installRoot, n)).isFile())
+    if (!hasConout) return false
+  } catch {
+    return false
+  }
+  return true
+}
+
+/**
  * 清空安装根及其兄弟临时件（.zip.part / .zip.part.json），供升级/重装前调用。
  * 注意：会一并删除 napcat 自身的 config 目录——但 token 持久化在
  * qq-bridge-settings.json 的 hosting 块，ensureNapCatConfig 会在下次启动时
