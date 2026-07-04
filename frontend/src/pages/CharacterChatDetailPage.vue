@@ -153,7 +153,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -226,24 +226,31 @@ const chatBgPreviewStyle = computed(() => {
 
 onMounted(loadCharacter)
 
+// 路由参数变化时重新加载（从外部导航回同一页面时不依赖 onMounted）
+watch(() => route.params.id, () => { loadCharacter() })
+
+function populateForm(settings) {
+  form.chatBackgroundKey = settings.chatBackgroundKey || ''
+  form.chatBackgroundImageUrl = settings.chatBackgroundImageUrl || ''
+  form.chatBackgroundPosX = clampPercentage(settings.chatBackgroundPosX, 50)
+  form.chatBackgroundPosY = clampPercentage(settings.chatBackgroundPosY, 50)
+  form.useGlobalChatBackground = settings.useGlobalChatBackground ?? true
+  form.proactiveEnabled = settings.proactiveEnabled ?? true
+  form.showInnerThoughts = settings.showInnerThoughts ?? true
+  form.doNotDisturbEnabled = settings.doNotDisturbEnabled ?? true
+  form.blocked = settings.blocked ?? false
+  form.dndStartMinutes = Number.isFinite(Number(settings.dndStartMinutes)) ? Number(settings.dndStartMinutes) : 23 * 60
+  form.dndEndMinutes = Number.isFinite(Number(settings.dndEndMinutes)) ? Number(settings.dndEndMinutes) : 8 * 60
+  form.city = typeof settings.city === 'string' ? settings.city : ''
+}
+
 async function loadCharacter() {
   loading.value = true
   try {
     const data = await getCharacter(route.params.id)
     character.value = data
     const settings = data.settings || {}
-    form.chatBackgroundKey = settings.chatBackgroundKey || ''
-    form.chatBackgroundImageUrl = settings.chatBackgroundImageUrl || ''
-    form.chatBackgroundPosX = clampPercentage(settings.chatBackgroundPosX, 50)
-    form.chatBackgroundPosY = clampPercentage(settings.chatBackgroundPosY, 50)
-    form.useGlobalChatBackground = settings.useGlobalChatBackground ?? true
-    form.proactiveEnabled = settings.proactiveEnabled ?? true
-    form.showInnerThoughts = settings.showInnerThoughts ?? true
-    form.doNotDisturbEnabled = settings.doNotDisturbEnabled ?? true
-    form.blocked = settings.blocked ?? false
-    form.dndStartMinutes = Number.isFinite(Number(settings.dndStartMinutes)) ? Number(settings.dndStartMinutes) : 23 * 60
-    form.dndEndMinutes = Number.isFinite(Number(settings.dndEndMinutes)) ? Number(settings.dndEndMinutes) : 8 * 60
-    form.city = typeof settings.city === 'string' ? settings.city : ''
+    populateForm(settings)
   } catch {
     character.value = null
   } finally {
@@ -284,6 +291,7 @@ async function handleSave() {
     }
     const updated = await updateCharacter(character.value.id, { settings })
     character.value = updated
+    populateForm(updated.settings || {})
     ElMessage.success(t('characterSettings.saved'))
   } finally {
     saving.value = false
