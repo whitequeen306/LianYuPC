@@ -198,6 +198,10 @@
         </div>
         <div class="glass qq-card reply-form">
           <el-form label-position="top">
+            <el-form-item :label="t('qqBridge.reply.suffix')">
+              <el-switch v-model="replyForm.appendCharacterSuffix" inline-prompt />
+              <p class="field-hint">{{ t('qqBridge.reply.suffixHint') }}</p>
+            </el-form-item>
             <div class="reply-delay-grid">
               <el-form-item :label="t('qqBridge.reply.segmentDelay')">
                 <div class="delay-row">
@@ -414,7 +418,7 @@ const wsForm = reactive({ wsUrl: 'ws://127.0.0.1:3001', accessToken: '' })
 // 回复设置表单：segmentDelayMs（分段逐条发送条间延迟）+ fallbackText（兜底回复）。
 // 保存时须展开当前 settings.reply 以保留 timeoutMs 等未在 UI 暴露的字段
 // （writeQqBridgeSettings 顶层浅合并，reply 整体替换；缺字段会被 normalize 回落默认值）。
-const replyForm = reactive({ segmentDelayMs: 500, segmentJitterMs: 800, fallbackText: '' })
+const replyForm = reactive({ segmentDelayMs: 500, segmentJitterMs: 800, fallbackText: '', appendCharacterSuffix: true })
 
 // 消息路由下拉：拉取云端角色列表给「角色名」可读选项——选定角色后桥接按角色自动匹配会话，
 // 每个 QQ 用户独立会话、不受清空上下文影响，无需再粘会话号/开额外弹窗。
@@ -439,6 +443,7 @@ watch(
     const segJitterMs = Number(s.reply?.segmentJitterMs)
     replyForm.segmentJitterMs = Number.isFinite(segJitterMs) && segJitterMs >= 0 ? segJitterMs : 800
     replyForm.fallbackText = s.reply?.fallbackText ?? ''
+    replyForm.appendCharacterSuffix = s.reply?.appendCharacterSuffix !== false
   },
   { immediate: true },
 )
@@ -679,6 +684,7 @@ async function onSaveReply() {
         segmentDelayMs: Number(replyForm.segmentDelayMs) || 0,
         segmentJitterMs: Number(replyForm.segmentJitterMs) || 0,
         fallbackText: replyForm.fallbackText,
+        appendCharacterSuffix: replyForm.appendCharacterSuffix !== false,
       },
     })
     ElMessage.success(t('qqBridge.reply.saved'))

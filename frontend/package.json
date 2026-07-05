@@ -79,7 +79,7 @@
         "nsis": {
             "oneClick": false,
             "perMachine": false,
-            "allowToChangeInstallationDirectory": false,
+            "allowToChangeInstallationDirectory": true,
             "allowElevation": true,
             "guid": "8F3C2A1B-4D5E-6F70-8A9B-0C1D2E3F4A5B",
             "include": "build/installer.nsh",

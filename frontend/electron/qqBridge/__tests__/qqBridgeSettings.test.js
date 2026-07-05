@@ -119,6 +119,14 @@ describe('normalizeQqBridgeSettings', () => {
     expect(normalizeQqBridgeSettings({ reply: { segmentDelayMs: 'abc' } }).reply.segmentDelayMs).toBe(500)
     expect(normalizeQqBridgeSettings({ reply: { segmentDelayMs: -10 } }).reply.segmentDelayMs).toBe(500)
   })
+
+  it('reply.appendCharacterSuffix 默认 true，仅显式 false 才关', () => {
+    expect(normalizeQqBridgeSettings({}).reply.appendCharacterSuffix).toBe(true)
+    expect(normalizeQqBridgeSettings({ reply: { appendCharacterSuffix: false } }).reply.appendCharacterSuffix).toBe(false)
+    // 非布尔（字符串/数字等）一律视为开，避免脏数据误关尾缀
+    expect(normalizeQqBridgeSettings({ reply: { appendCharacterSuffix: 'false' } }).reply.appendCharacterSuffix).toBe(true)
+    expect(normalizeQqBridgeSettings({ reply: { appendCharacterSuffix: 0 } }).reply.appendCharacterSuffix).toBe(true)
+  })
 })
 
 describe('writeQqBridgeSettings', () => {

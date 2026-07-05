@@ -230,7 +230,9 @@ async function handleOneBotMessage(event) {
   try {
     for (let i = 0; i < replySegments.length; i++) {
       if (!client) break
-      const seg = bindingCharacterName
+      // 尾缀受 reply.appendCharacterSuffix 开关控制（默认开）；关闭后即使绑了角色也不带尾缀
+      const appendSuffix = bindingCharacterName && settings.reply?.appendCharacterSuffix !== false
+      const seg = appendSuffix
         ? `${replySegments[i]}（本次回复由虚拟角色:${bindingCharacterName}回复）`
         : replySegments[i]
       if (target.kind === 'group') {

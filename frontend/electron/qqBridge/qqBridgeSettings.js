@@ -46,6 +46,9 @@ export const DEFAULTS = {
     // 随机抖动上限：在 segmentDelayMs 基础上加 0~jitterMs 的随机量，
     // 让发送间隔不固定，降低 QQ 风控判定为机器人的概率。0 = 不抖动。
     segmentJitterMs: 800,
+    // 回复尾缀开关：true=每条回复末尾附"（本次回复由虚拟角色:角色名回复）"；
+    // false=不带尾缀。默认开启；用户可在 QQ 桥设置页关闭。
+    appendCharacterSuffix: true,
   },
   hosting: {
     // 托管模式：'auto' = 桌面端自管 NapCat 运行时（下载/配置/拉起/扫码）；
@@ -124,6 +127,8 @@ export function normalizeQqBridgeSettings(settings) {
   reply.segmentDelayMs = Number.isFinite(segDelayMs) && segDelayMs >= 0 ? segDelayMs : DEFAULTS.reply.segmentDelayMs
   const segJitterMs = Number(reply.segmentJitterMs)
   reply.segmentJitterMs = Number.isFinite(segJitterMs) && segJitterMs >= 0 ? segJitterMs : DEFAULTS.reply.segmentJitterMs
+  // 尾缀开关仅显式 false 才关；缺省/非布尔一律视为开（默认带尾缀）
+  reply.appendCharacterSuffix = reply.appendCharacterSuffix !== false
 
   return {
     enabled: raw.enabled === true,
