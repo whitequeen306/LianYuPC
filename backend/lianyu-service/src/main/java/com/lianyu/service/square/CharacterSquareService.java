@@ -257,7 +257,7 @@ public class CharacterSquareService {
                     .summary(template.getSummary())
                     .avatarThumbUrl(thumbUrl)
                     .avatarUrl(avatarUrl)
-                    .tags(filterKnownLabels(parseTagKeys(template.getTagsJson()), template.getSettingsJson()))
+                    .tags(parseTagKeys(template.getTagsJson()))
                     .added(added != null)
                     .addedCharacterId(added != null ? added.getId() : null)
                     .likeCount(likeCount)
@@ -369,18 +369,5 @@ public class CharacterSquareService {
             return null;
         }
         return new LinkedHashMap<>(source);
-    }
-
-    private List<String> filterKnownLabels(List<String> labels, java.util.Map<String, Object> settings) {
-        if (labels == null) {
-            return List.of();
-        }
-        boolean allowNew = settings != null && Boolean.TRUE.equals(settings.get("allowNewTags"));
-        if (allowNew) {
-            return List.copyOf(labels);
-        }
-        return labels.stream()
-                .filter(CharacterSquareTags::isKnownLabel)
-                .toList();
     }
 }
