@@ -10,9 +10,9 @@ import lombok.Data;
 public class RegisterRequest {
     @NotBlank @Size(min = 2, max = 64)
     private String username;
-    @NotBlank @Size(min = 8, max = 128)
-    @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,}$",
-             message = "密码需至少8位，包含大小写字母和数字")
+    @NotBlank @Size(min = 6, max = 128)
+    @Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d).{6,}$",
+             message = "密码需至少6位，且必须同时包含字母和数字")
     private String password;
     @Size(max = 128)
     private String nickname;

@@ -62,12 +62,13 @@
             <el-input
               v-model="form.password"
               type="password"
-              placeholder="密码（至少 6 位）"
+              placeholder="密码（至少 6 位，含字母和数字）"
               :prefix-icon="Lock"
               show-password
               autocomplete="new-password"
               class="auth-input"
             />
+            <p class="field-hint">密码要求：至少 6 位，且必须同时包含字母和数字</p>
           </el-form-item>
 
           <el-form-item prop="confirmPassword">
@@ -182,6 +183,18 @@ const form = reactive({
   captchaAnswer: '',
 })
 
+const validatePassword = (_rule, value, callback) => {
+  if (!value) {
+    callback(new Error('请输入密码'))
+  } else if (value.length < 6) {
+    callback(new Error('密码至少 6 位'))
+  } else if (!/[A-Za-z]/.test(value) || !/\d/.test(value)) {
+    callback(new Error('密码必须同时包含字母和数字'))
+  } else {
+    callback()
+  }
+}
+
 const validateConfirm = (_rule, value, callback) => {
   if (value !== form.password) {
     callback(new Error('两次输入的密码不一致'))
@@ -196,8 +209,7 @@ const rules = {
     { min: 2, max: 64, message: '用户名长度 2-64 个字符', trigger: 'blur' },
   ],
   password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, message: '密码至少 6 位', trigger: 'blur' },
+    { validator: validatePassword, trigger: 'blur' },
   ],
   confirmPassword: [
     { required: true, message: '请确认密码', trigger: 'blur' },
@@ -262,4 +274,11 @@ async function handleRegister() {
 
 <style lang="scss" scoped>
 @use '@/styles/auth-page.scss';
+
+.field-hint {
+  margin: 4px 2px 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  line-height: 1.4;
+}
 </style>

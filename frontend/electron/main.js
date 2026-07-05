@@ -12,7 +12,6 @@ import {
   Notification,
   powerMonitor,
   dialog,
-  safeStorage,
 } from 'electron'
 import path from 'path'
 import fs from 'fs'
@@ -2565,46 +2564,6 @@ function registerIpcHandlers() {
     const current = readAuthSession()
     if (!current?.token) return { ok: false, reason: 'no_session' }
     writeAuthSession({ ...current, token: newToken.trim(), savedAt: Date.now() })
-    return { ok: true }
-  })
-
-  // 记住密码：用户显式勾选后用 safeStorage 加密存储用户名+密码，与 token 文件隔离。
-  // 仅用于下次登录自动填充；token 持久化（auth-session.bin）是更优的"保持登录"方案，
-  // 此功能仅补 token 过期需重新登录的场景。
-  const CREDENTIAL_FILE = 'credential.bin'
-  function credentialPath() {
-    return path.join(app.getPath('userData'), CREDENTIAL_FILE)
-  }
-
-  ipcMain.handle('auth:save-credential', (event, { username, password }) => {
-    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
-    if (!username || !password) return { ok: false, reason: 'invalid_input' }
-    if (!safeStorage.isEncryptionAvailable()) return { ok: false, reason: 'encryption_unavailable' }
-    try {
-      const encrypted = safeStorage.encryptString(JSON.stringify({ username, password }))
-      fs.writeFileSync(credentialPath(), encrypted)
-      return { ok: true }
-    } catch {
-      return { ok: false, reason: 'write_failed' }
-    }
-  })
-
-  ipcMain.handle('auth:load-credential', (event) => {
-    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
-    if (!safeStorage.isEncryptionAvailable()) return { ok: false, reason: 'encryption_unavailable' }
-    try {
-      if (!fs.existsSync(credentialPath())) return { ok: false, reason: 'not_found' }
-      const json = safeStorage.decryptString(fs.readFileSync(credentialPath()))
-      const data = JSON.parse(json)
-      return { ok: true, username: data.username || '', password: data.password || '' }
-    } catch {
-      return { ok: false, reason: 'read_failed' }
-    }
-  })
-
-  ipcMain.handle('auth:clear-credential', (event) => {
-    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
-    try { fs.unlinkSync(credentialPath()) } catch { /* ignore */ }
     return { ok: true }
   })
 
