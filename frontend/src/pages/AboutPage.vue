@@ -45,17 +45,24 @@
         <h2 class="section-title">开发者</h2>
       </div>
       <div class="glass about-card about-devs">
-        <a
-          v-for="dev in developers"
-          :key="dev.url"
-          :href="dev.url"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="dev-item"
-        >
-          <span class="dev-name">{{ dev.name }}</span>
-          <el-icon class="dev-link-icon"><Link /></el-icon>
-        </a>
+        <div class="dev-group">
+          <h3 class="dev-role">核心主开发者</h3>
+          <a :href="'https://github.com/whitequeen306'" target="_blank" rel="noopener noreferrer" class="dev-item">
+            <span class="dev-name">青思雨</span>
+            <el-icon class="dev-link-icon"><Link /></el-icon>
+          </a>
+        </div>
+        <div class="dev-group">
+          <h3 class="dev-role">开发者及 API 支持</h3>
+          <a :href="'https://github.com/2164312714-svg'" target="_blank" rel="noopener noreferrer" class="dev-item">
+            <span class="dev-name">Clove.</span>
+            <el-icon class="dev-link-icon"><Link /></el-icon>
+          </a>
+        </div>
+        <div class="dev-group">
+          <h3 class="dev-role">其它鸣谢</h3>
+          <p class="dev-item dev-thanks">恋语安卓端全体开发团队</p>
+        </div>
       </div>
     </section>
   </div>
@@ -76,11 +83,6 @@ const isElectron = isElectronApp()
 // 版本号取自 package.json，构建时注入；桌面版亦可由主进程覆盖但此处统一用前端版本
 const version = computed(() => pkg.version || '—')
 const goBack = () => router.push('/app/settings')
-
-const developers = [
-  { name: '青思雨', url: 'https://github.com/whitequeen306' },
-  { name: 'Clove.', url: 'https://github.com/2164312714-svg' },
-]
 
 // 彩蛋：连续点击恋语图标 10 次跳转爱发电赞助页。
 // 计数窗口 2s，中断则重置，避免误触。
@@ -244,5 +246,28 @@ function handleLogoClick() {
   font-size: $font-size-sm;
   color: $color-text-muted;
   .dev-item:hover & { color: $color-pink-primary; }
+}
+
+.dev-group {
+  & + .dev-group {
+    margin-top: $space-4;
+  }
+}
+
+.dev-role {
+  font-size: $font-size-xs;
+  font-weight: $font-weight-semibold;
+  color: $color-text-muted;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 $space-2 0;
+}
+
+.dev-thanks {
+  cursor: default;
+  &:hover {
+    background: rgba(128, 128, 140, 0.06);
+    color: $color-text-primary;
+  }
 }
 </style>
