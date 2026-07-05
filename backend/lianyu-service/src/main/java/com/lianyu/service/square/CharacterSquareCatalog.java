@@ -152,7 +152,7 @@ public final class CharacterSquareCatalog {
             "ganyu", "kurumi", "zero_two", "yuno", "mika", "megumi", "mahiru",
             "kotori", "tohka", "origami", "yoshino", "mukuro", "izayoi", "nia", "mayuri", "mio",
             "linzihan", "white_queen", "nahida", "kokomi", "furina", "shenhe", "hu_tao", "yae_miko",
-            "nilou", "klee", "raiden", "mavuika", "aru", "hoshino", "hina", "shiroko", "hikari",
+            "nilou", "klee", "raiden", "mavuika", "noelle", "aru", "hoshino", "hina", "shiroko", "hikari",
             "nozomi", "mari", "mutsuki", "emilia", "rem", "beatrice", "ram", "minerva", "echidna",
             "petra", "yu_nianan", "zhongli", "enoshima_junko", "kirigiri_kyoko", "nanami_chiaki",
             "fukawa_toko", "asahina_aoi"
