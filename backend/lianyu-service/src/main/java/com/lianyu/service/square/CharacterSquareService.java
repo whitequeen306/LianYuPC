@@ -257,7 +257,7 @@ public class CharacterSquareService {
                     .summary(template.getSummary())
                     .avatarThumbUrl(thumbUrl)
                     .avatarUrl(avatarUrl)
-                    .tags(parseTagKeys(template.getTagsJson()))
+                    .tags(filterKnownLabels(parseTagKeys(template.getTagsJson())))
                     .added(added != null)
                     .addedCharacterId(added != null ? added.getId() : null)
                     .likeCount(likeCount)
@@ -369,5 +369,14 @@ public class CharacterSquareService {
             return null;
         }
         return new LinkedHashMap<>(source);
+    }
+
+    private List<String> filterKnownLabels(List<String> labels) {
+        if (labels == null) {
+            return List.of();
+        }
+        return labels.stream()
+                .filter(CharacterSquareTags::isKnownLabel)
+                .toList();
     }
 }

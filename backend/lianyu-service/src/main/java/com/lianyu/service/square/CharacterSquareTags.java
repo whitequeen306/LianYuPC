@@ -17,6 +17,16 @@ final class CharacterSquareTags {
         return List.of(work(lang, workKey), personality(lang, personalityKey));
     }
 
+    static boolean isKnownLabel(String label) {
+        return KNOWN_ZH_LABELS.contains(label);
+    }
+
+    private static final java.util.Set<String> KNOWN_ZH_LABELS = java.util.Set.of(
+            "原神", "约会大作战", "未来日记", "蔚蓝档案", "国家队", "路人女主",
+            "邻座天使", "Re:零", "十日终焉", "弹丸论破",
+            "温柔", "傲娇", "病娇", "活泼少女", "大姐姐", "自设"
+    );
+
     /** 仅自设，无作品标签 */
     static List<CharacterSquareCatalog.Tag> ocOnly(String lang) {
         return List.of(personality(lang, "oc"));
