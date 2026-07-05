@@ -199,19 +199,21 @@ public class CharacterSquareService {
         String uiLang = OutputLanguage.fromCode(uiLanguageCode).getCode();
         CharacterSquareCatalog.LocalePack uiPack = CharacterSquareCatalog.resolve(slug, uiLang);
         CharacterSquareCatalog.LocalePack promptPack = CharacterSquareCatalog.resolve(slug, modelLang);
-        if (uiPack == null || promptPack == null) {
+        String resolvedName = uiPack != null ? uiPack.name() : template.getName();
+        String resolvedPrompt = promptPack != null ? promptPack.prompt() : template.getPromptTemplate();
+        if (resolvedName == null || resolvedName.isBlank()) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "角色模板不存在或已下架");
         }
 
         Character entity = new Character();
         entity.setOwnerUserId(userId);
         entity.setSourceTemplateId(templateId);
-        entity.setName(uiPack.name());
+        entity.setName(resolvedName);
         entity.setAvatarUrl(template.getAvatarUrl());
-        entity.setPromptTemplate(promptPack.prompt());
+        entity.setPromptTemplate(resolvedPrompt);
         Map<String, Object> settings = copySettings(template.getSettingsJson());
         characterCitySettingsService.applySquareAddCity(
-                userId, uiPack.name(), promptPack.prompt(), settings, cityMode, userCity);
+                userId, resolvedName, resolvedPrompt, settings, cityMode, userCity);
         entity.setSettings(settings);
 
         try {

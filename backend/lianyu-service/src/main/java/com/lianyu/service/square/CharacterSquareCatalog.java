@@ -170,7 +170,7 @@ public final class CharacterSquareCatalog {
     }
 
     public static boolean isKnownSlug(String slug) {
-        return slug != null && BY_SLUG.containsKey(slug);
+        return slug != null && !slug.isBlank();
     }
 
     /** Shared helper for franchise catalog modules (CL-064). */

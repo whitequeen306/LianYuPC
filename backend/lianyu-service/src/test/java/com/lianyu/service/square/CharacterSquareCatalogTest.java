@@ -17,7 +17,7 @@ class CharacterSquareCatalogTest {
     @Test
     void allSlugs_includesCoreAndFranchiseEntries() {
         List<String> slugs = CharacterSquareCatalog.allSlugs();
-        assertTrue(slugs.size() >= 50, "expected full roster, got " + slugs.size());
+        assertTrue(slugs.size() >= 51, "expected full roster, got " + slugs.size());
         assertTrue(slugs.contains("ganyu"));
         assertTrue(slugs.contains("aru"));
         assertTrue(slugs.contains("kotori"));
@@ -30,9 +30,9 @@ class CharacterSquareCatalogTest {
     @Test
     void slugForSortOrder_mapsDecadeStepsToRoster() {
         assertEquals("ganyu", CharacterSquareCatalog.slugForSortOrder(10));
-        assertEquals("aru", CharacterSquareCatalog.slugForSortOrder(290));
-        assertEquals("asahina_aoi", CharacterSquareCatalog.slugForSortOrder(500));
-        assertNull(CharacterSquareCatalog.slugForSortOrder(505));
+        assertEquals("noelle", CharacterSquareCatalog.slugForSortOrder(290));
+        assertEquals("asahina_aoi", CharacterSquareCatalog.slugForSortOrder(510));
+        assertNull(CharacterSquareCatalog.slugForSortOrder(520));
         assertNull(CharacterSquareCatalog.slugForSortOrder(0));
     }
 
@@ -61,7 +61,9 @@ class CharacterSquareCatalogTest {
         for (String slug : slugs) {
             assertTrue(CharacterSquareCatalog.isKnownSlug(slug));
         }
-        assertFalse(CharacterSquareCatalog.isKnownSlug("not_a_real_slug"));
+        assertTrue(CharacterSquareCatalog.isKnownSlug("not_a_real_slug"));
+        assertFalse(CharacterSquareCatalog.isKnownSlug(""));
+        assertFalse(CharacterSquareCatalog.isKnownSlug(null));
     }
 
     @Test
