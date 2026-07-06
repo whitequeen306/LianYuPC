@@ -60,6 +60,7 @@ public class UpdaterController {
 
     private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
+            .followRedirects(HttpClient.Redirect.ALWAYS)
             .build();
 
     @Operation(summary = "获取 latest.yml（改写下载链接为后端代理）")
