@@ -155,7 +155,11 @@ public class UpdaterController {
         }
 
         try {
-            // 先获取最新 release，找到对应资产的 browser_download_url
+            // 1. 获取最新 release，找到对应资产的 API url（非 browser_download_url）
+            //    browser_download_url 是 github.com web URL，Java HttpClient 对私有仓库
+            //    的 302 重定向处理有问题（Authorization 被跨域剥离后可能 403）；
+            //    asset url 是 api.github.com 端点，配合 Accept: octet-stream 直接返回
+            //    二进制流（与 getLatestYml 相同方式，已验证可行）。
             String apiUrl = GITHUB_API_BASE + "/" + owner + "/" + repo + "/releases/latest";
             HttpRequest apiReq = HttpRequest.newBuilder()
                     .uri(URI.create(apiUrl))
@@ -171,39 +175,41 @@ public class UpdaterController {
             }
 
             JsonNode release = objectMapper.readTree(apiResp.body());
-            String downloadUrl = null;
+            String assetApiUrl = null;
             long size = 0;
             for (JsonNode a : release.path("assets")) {
                 if (asset.equals(a.path("name").asText())) {
-                    downloadUrl = a.path("browser_download_url").asText();
+                    assetApiUrl = a.path("url").asText();
                     size = a.path("size").asLong();
                     break;
                 }
             }
-            if (downloadUrl == null) {
+            if (assetApiUrl == null) {
                 log.warn("updater: asset {} not found in latest release", asset);
                 return ResponseEntity.notFound().build();
             }
 
-            // 流式代理下载
-            final String finalUrl = downloadUrl;
+            // 2. 先发起 GitHub 下载请求并验证状态码（在 StreamingResponseBody 之外）
+            //    这样失败时能返回正确的 HTTP 错误码，而不是 200 + 空 body
+            HttpRequest dlReq = HttpRequest.newBuilder()
+                    .uri(URI.create(assetApiUrl))
+                    .header("Authorization", "token " + githubToken)
+                    .header("Accept", "application/octet-stream")
+                    .header("User-Agent", "lianyu-updater")
+                    .timeout(Duration.ofMinutes(10))
+                    .GET()
+                    .build();
+            HttpResponse<InputStream> dlResp = HTTP.send(dlReq, HttpResponse.BodyHandlers.ofInputStream());
+            if (dlResp.statusCode() != 200) {
+                log.warn("updater: asset download returned {}", dlResp.statusCode());
+                return ResponseEntity.status(dlResp.statusCode()).build();
+            }
+
+            // 3. 流式转发 InputStream → 客户端（不落地磁盘）
+            final InputStream in = dlResp.body();
             StreamingResponseBody body = outputStream -> {
-                try {
-                    HttpRequest dlReq = HttpRequest.newBuilder()
-                            .uri(URI.create(finalUrl))
-                            .header("Authorization", "token " + githubToken)
-                            .header("User-Agent", "lianyu-updater")
-                            .timeout(Duration.ofMinutes(10))
-                            .GET()
-                            .build();
-                    HttpResponse<InputStream> dlResp = HTTP.send(dlReq, HttpResponse.BodyHandlers.ofInputStream());
-                    if (dlResp.statusCode() != 200) {
-                        log.warn("updater: asset download returned {}", dlResp.statusCode());
-                        return;
-                    }
-                    try (InputStream in = dlResp.body()) {
-                        in.transferTo(outputStream);
-                    }
+                try (in) {
+                    in.transferTo(outputStream);
                 } catch (Exception e) {
                     log.error("updater: asset stream error", e);
                     throw new IOException("asset stream error", e);
