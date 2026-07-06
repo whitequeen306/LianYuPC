@@ -119,6 +119,36 @@ lianyu-app → lianyu-web → lianyu-service → lianyu-ai / lianyu-dao / lianyu
 - 仅后端修复（如 MinIO 资源、接口逻辑）部署后，**已安装的 Electron 客户端无需重装**即可生效；**仅前端 Vue 改动**（页面、样式、加载策略等）必须 **重新打 Electron 包** 用户才会看到。
 - Agent 排查「线上缺图 / 接口慢」时，先区分是 **服务端（MinIO/DB/API）** 还是 **客户端（未打包的前端改动）** 问题，避免在服务器上找不存在的前端构建产物。
 
+### Electron 客户端发布流程（自动更新通道）
+
+从 v0.2.256 起，客户端内置了 `electron-updater`，每次发版自动上传 GitHub Releases。用户端在「关于」页点「检查更新」即可一键升级。
+
+**发布命令：**
+```bash
+cd frontend
+npm run electron:release           # patch 升级（0.2.256 → 0.2.257）
+npm run electron:release:minor     # minor 升级
+npm run electron:release:major     # major 升级
+```
+
+**发布流程（一条命令全自动）：**
+1. `npm version <bump> --no-git-tag-version`（改 package.json 版本号）
+2. `vite build` + `esbuild` 主进程 bundle + `electron-builder` 打包
+3. 自动上传 `LianYu Setup x.x.x.exe` + `latest.yml` + `.blockmap` 到 GitHub Releases
+
+**GH_TOKEN 说明：**
+- 发布需要 GitHub Personal Access Token（classic，`repo` 权限）
+- 脚本自动从 Windows Credential Manager（`git credential.helper=manager`）取 token，**无需手动设环境变量**
+- 如果 credential manager 取不到，脚本会报错退出并指引配置
+- 仅本地打包（不上传 Release）用 `npm run electron:build`，不检查 GH_TOKEN
+
+**注意事项：**
+- 发布前 **先 commit 并 push 代码**（`git commit` → `git push origin main`），确保源码与 Release 对应
+- 发布后 package.json 版本号已变更，需再 `git add package.json` 并 commit push
+- electron-builder 子进程已配置 `--use-system-ca`，不会因 SSL 证书问题上传失败
+- 安装包路径：`frontend/release/v{version}/LianYu Setup {version}.exe`
+- Release 地址：`https://github.com/whitequeen306/LianYuPC/releases`
+
 ### Git 与云端同步
 
 - **主分支为 `main`**：本地开发、提交、推送均直接在 `main` 上进行（`git push origin main`），不经过 `develop` 分支。
