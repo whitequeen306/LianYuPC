@@ -1,191 +1,198 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
-// 用 vi.hoisted 把 mock 状态提到 hoist 层，工厂函数可安全引用；
-// vi.resetModules 后工厂重新执行，但 get/set 仍指向这些单例对象，状态得以保留/重置。
 const mocks = vi.hoisted(() => ({
   isPackaged: true,
   handleRegistry: new Map(),
   webSend: vi.fn(),
-  events: {},
-  calls: { check: 0, download: 0, quitInstall: 0 },
-  config: { autoDownload: true, autoInstallOnAppQuit: true },
-  feedUrl: null,
+  apiResponses: {},
+  netRequestImpl: null,
+  appVersion: '0.2.258',
 }))
 
 vi.mock('electron', () => ({
-  app: { get isPackaged() { return mocks.isPackaged } },
+  app: {
+    get isPackaged() { return mocks.isPackaged },
+    getVersion: () => mocks.appVersion,
+    getPath: () => '/tmp/lianyu-test',
+    quit: vi.fn(),
+  },
   ipcMain: { handle: (ch, fn) => mocks.handleRegistry.set(ch, fn) },
-}))
-
-vi.mock('electron-updater', () => ({
-  autoUpdater: {
-    get autoDownload() { return mocks.config.autoDownload },
-    set autoDownload(v) { mocks.config.autoDownload = v },
-    get autoInstallOnAppQuit() { return mocks.config.autoInstallOnAppQuit },
-    set autoInstallOnAppQuit(v) { mocks.config.autoInstallOnAppQuit = v },
-    setFeedURL: (cfg) => { mocks.feedUrl = cfg },
-    on: (ev, fn) => { mocks.events[ev] = fn },
-    checkForUpdates: () => { mocks.calls.check++; return Promise.resolve() },
-    downloadUpdate: () => { mocks.calls.download++; return Promise.resolve() },
-    quitAndInstall: () => { mocks.calls.quitInstall++ },
+  net: {
+    request: (opts) => {
+      if (mocks.netRequestImpl) return mocks.netRequestImpl(opts)
+      throw new Error('net.request not configured')
+    },
   },
 }))
 
-vi.mock('../../logger.js', () => ({ log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }))
+vi.mock('child_process', () => ({
+  spawn: vi.fn(() => ({ unref: vi.fn() })),
+}))
+
+vi.mock('fs', () => ({
+  default: {
+    mkdirSync: vi.fn(),
+    createWriteStream: vi.fn(() => ({ write: vi.fn(), end: (cb) => cb && cb() })),
+    existsSync: vi.fn(() => true),
+  },
+}))
+
+vi.mock('path', () => ({
+  default: {
+    join: (...args) => args.join('/'),
+  },
+}))
+
+vi.mock('../../logger.js', () => ({
+  log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(),
+}))
 
 vi.mock('../../runtimeSecrets.js', () => ({
   getRuntimeSecrets: () => ({ apiOrigin: 'https://api.lianyu.test' }),
 }))
 
+vi.mock('../../apiProxy.js', () => ({
+  performApiRequest: vi.fn(async ({ url }) => {
+    if (mocks.apiResponses[url]) return mocks.apiResponses[url]
+    return { status: 404, data: '' }
+  }),
+  isAllowedEgressUrl: () => true,
+}))
+
 const mockMainWindow = { isDestroyed: () => false, webContents: { send: mocks.webSend } }
 
-// 动态 import 配合 vi.resetModules，每个用例拿到干净的模块实例（initialized=false）
 async function loadUpdater() {
   return import('../updater.js')
 }
 
-describe('updater — initUpdater', () => {
+describe('updater (manual mode)', () => {
   beforeEach(() => {
     mocks.handleRegistry.clear()
     mocks.webSend.mockClear()
-    mocks.calls.check = 0
-    mocks.calls.download = 0
-    mocks.calls.quitInstall = 0
-    mocks.events = {}
-    mocks.config.autoDownload = true
-    mocks.config.autoInstallOnAppQuit = true
-    mocks.feedUrl = null
+    mocks.apiResponses = {}
+    mocks.netRequestImpl = null
     mocks.isPackaged = true
+    mocks.appVersion = '0.2.258'
     vi.resetModules()
   })
 
-  it('注册 3 个 IPC 通道并设 autoDownload=false / autoInstallOnAppQuit=false', async () => {
+  it('initUpdater 注册 3 个 IPC 通道', async () => {
     const { initUpdater } = await loadUpdater()
     initUpdater(mockMainWindow)
     expect(mocks.handleRegistry.has('updater:check')).toBe(true)
     expect(mocks.handleRegistry.has('updater:download')).toBe(true)
     expect(mocks.handleRegistry.has('updater:install')).toBe(true)
-    expect(mocks.config.autoDownload).toBe(false)
-    expect(mocks.config.autoInstallOnAppQuit).toBe(false)
   })
 
-  it('setFeedURL 用 generic provider 指向后端代理', async () => {
+  it('check: 有新版本时推送 update-available', async () => {
+    mocks.apiResponses['https://api.lianyu.test/api/public/updater/latest.yml'] = {
+      status: 200,
+      data: 'version: 0.2.260\nfiles:\n  - url: /api/public/updater/download?asset=test.exe\npath: test.exe\nsha512: abc\n',
+    }
     const { initUpdater } = await loadUpdater()
     initUpdater(mockMainWindow)
-    expect(mocks.feedUrl).toEqual({
-      provider: 'generic',
-      url: 'https://api.lianyu.test/api/public/updater',
-    })
+    const ret = await mocks.handleRegistry.get('updater:check')()
+    expect(ret.ok).toBe(true)
+    expect(ret.hasUpdate).toBe(true)
+    expect(ret.version).toBe('0.2.260')
+    expect(mocks.webSend).toHaveBeenLastCalledWith('updater:state', expect.objectContaining({
+      state: 'update-available', info: { version: '0.2.260' },
+    }))
   })
 
-  it('重复 initUpdater 不重复注册（幂等）', async () => {
+  it('check: 已是最新时推送 no-update', async () => {
+    mocks.appVersion = '0.2.260'
+    mocks.apiResponses['https://api.lianyu.test/api/public/updater/latest.yml'] = {
+      status: 200,
+      data: 'version: 0.2.260\nfiles:\n  - url: test.exe\nsha512: abc\n',
+    }
+    const { initUpdater } = await loadUpdater()
+    initUpdater(mockMainWindow)
+    const ret = await mocks.handleRegistry.get('updater:check')()
+    expect(ret.ok).toBe(true)
+    expect(ret.hasUpdate).toBe(false)
+    expect(mocks.webSend).toHaveBeenLastCalledWith('updater:state', expect.objectContaining({
+      state: 'no-update',
+    }))
+  })
+
+  it('check: latest.yml 请求失败时推送 error', async () => {
+    mocks.apiResponses['https://api.lianyu.test/api/public/updater/latest.yml'] = {
+      status: 500, data: '',
+    }
+    const { initUpdater } = await loadUpdater()
+    initUpdater(mockMainWindow)
+    const ret = await mocks.handleRegistry.get('updater:check')()
+    expect(ret.ok).toBe(false)
+    expect(mocks.webSend).toHaveBeenLastCalledWith('updater:state', expect.objectContaining({
+      state: 'error',
+    }))
+  })
+
+  it('install: 调用 spawn 启动安装包并退出', async () => {
+    const { initUpdater } = await loadUpdater()
+    initUpdater(mockMainWindow)
+    // 先模拟下载完成（downloadedInstallerPath 由 download 设置）
+    // 直接调 install，需要先调 download 设置路径
+    mocks.apiResponses['https://api.lianyu.test/api/public/updater/latest.yml'] = {
+      status: 200,
+      data: 'version: 0.2.260\nfiles:\n  - url: /api/public/updater/download?asset=test.exe\nsha512: abc\n',
+    }
+    // mock net.request for download
+    mocks.netRequestImpl = (opts) => {
+      const handlers = { response: null, error: null }
+      const req = {
+        on: (ev, fn) => { handlers[ev] = fn; return req },
+        end: () => {
+          setTimeout(() => {
+            handlers.response({
+              statusCode: 200,
+              headers: { 'content-length': '100' },
+              on: (ev, fn) => {
+                if (ev === 'data') setTimeout(() => fn(Buffer.alloc(100)), 1)
+                if (ev === 'end') setTimeout(() => fn(), 2)
+              },
+            })
+          }, 1)
+        },
+      }
+      return req
+    }
+    await mocks.handleRegistry.get('updater:download')()
+    const ret = await mocks.handleRegistry.get('updater:install')()
+    expect(ret.ok).toBe(true)
+    expect(mocks.webSend).toHaveBeenLastCalledWith('updater:state', expect.objectContaining({
+      state: 'installing',
+    }))
+  })
+
+  it('check: 无 apiOrigin 时推送 error', async () => {
+    vi.doMock('../../runtimeSecrets.js', () => ({
+      getRuntimeSecrets: () => null,
+    }))
+    const { initUpdater } = await loadUpdater()
+    initUpdater(mockMainWindow)
+    const ret = await mocks.handleRegistry.get('updater:check')()
+    expect(ret.ok).toBe(false)
+    vi.doUnmock('../../runtimeSecrets.js')
+  })
+
+  it('重复 initUpdater 幂等', async () => {
     const { initUpdater } = await loadUpdater()
     initUpdater(mockMainWindow)
     initUpdater(mockMainWindow)
     expect(mocks.handleRegistry.size).toBe(3)
   })
 
-  it('autoUpdater 事件触发后推送正确状态到 renderer', async () => {
-    const { initUpdater } = await loadUpdater()
-    initUpdater(mockMainWindow)
-
-    mocks.events['checking-for-update']()
-    expect(mocks.webSend).toHaveBeenLastCalledWith('updater:state', { state: 'checking', info: {} })
-
-    mocks.events['update-available']({ version: '0.2.260' })
-    expect(mocks.webSend).toHaveBeenLastCalledWith('updater:state', expect.objectContaining({
-      state: 'update-available', info: { version: '0.2.260' },
-    }))
-
-    mocks.events['update-not-available']()
-    expect(mocks.webSend).toHaveBeenLastCalledWith('updater:state', { state: 'no-update', info: {} })
-
-    mocks.events['download-progress']({ percent: 45, transferred: 100, total: 200, bytesPerSecond: 50 })
-    expect(mocks.webSend).toHaveBeenLastCalledWith('updater:state', expect.objectContaining({
-      state: 'downloading',
-      info: { percent: 45, transferred: 100, total: 200, bytesPerSecond: 50 },
-    }))
-
-    mocks.events['update-downloaded']({ version: '0.2.260' })
-    expect(mocks.webSend).toHaveBeenLastCalledWith('updater:state', expect.objectContaining({
-      state: 'ready', info: { version: '0.2.260' },
-    }))
-
-    mocks.events['error'](new Error('network'))
-    expect(mocks.webSend).toHaveBeenLastCalledWith('updater:state', expect.objectContaining({
-      state: 'error', info: { errorMessage: 'network' },
-    }))
-  })
-
-  it('updater:check 在 packaged 模式调用 autoUpdater.checkForUpdates', async () => {
-    const { initUpdater } = await loadUpdater()
-    initUpdater(mockMainWindow)
-    const ret = await mocks.handleRegistry.get('updater:check')()
-    expect(ret).toEqual({ ok: true })
-    expect(mocks.calls.check).toBe(1)
-  })
-
-  it('updater:check 在 dev 模式返回 dev-mode 且不调用 autoUpdater', async () => {
-    mocks.isPackaged = false
-    const { initUpdater } = await loadUpdater()
-    initUpdater(mockMainWindow)
-    const ret = await mocks.handleRegistry.get('updater:check')()
-    expect(ret).toEqual({ ok: false, reason: 'dev-mode' })
-    expect(mocks.calls.check).toBe(0)
-    expect(mocks.webSend).toHaveBeenLastCalledWith('updater:state', expect.objectContaining({
-      state: 'error', info: { errorMessage: 'dev-mode' },
-    }))
-  })
-
-  it('updater:download 调用 autoUpdater.downloadUpdate', async () => {
-    const { initUpdater } = await loadUpdater()
-    initUpdater(mockMainWindow)
-    const ret = await mocks.handleRegistry.get('updater:download')()
-    expect(ret).toEqual({ ok: true })
-    expect(mocks.calls.download).toBe(1)
-  })
-
-  it('updater:install 调用 autoUpdater.quitAndInstall', async () => {
-    const { initUpdater } = await loadUpdater()
-    initUpdater(mockMainWindow)
-    const ret = await mocks.handleRegistry.get('updater:install')()
-    expect(ret).toEqual({ ok: true })
-    expect(mocks.calls.quitInstall).toBe(1)
-    expect(mocks.webSend).toHaveBeenLastCalledWith('updater:state', expect.objectContaining({
-      state: 'installing',
-    }))
-  })
-
-  it('updater:check 异常时推送 error 状态', async () => {
-    // 临时把 checkForUpdates 改成 reject
-    mocks.events.__throw = true
-    const { initUpdater } = await loadUpdater()
-    initUpdater(mockMainWindow)
-    // 重新注册一个会抛错的 check
-    const au = (await import('electron-updater')).autoUpdater
-    au.checkForUpdates = () => Promise.reject(new Error('boom'))
-    const ret = await mocks.handleRegistry.get('updater:check')()
-    expect(ret.ok).toBe(false)
-    expect(ret.error).toBe('boom')
-    expect(mocks.webSend).toHaveBeenLastCalledWith('updater:state', expect.objectContaining({
-      state: 'error', info: { errorMessage: 'boom' },
-    }))
-  })
-
-  it('主窗口被销毁时 send 静默跳过不抛错', async () => {
+  it('主窗口销毁时 send 静默跳过', async () => {
     const destroyedWin = { isDestroyed: () => true, webContents: { send: vi.fn() } }
     const { initUpdater } = await loadUpdater()
     initUpdater(destroyedWin)
-    mocks.events['checking-for-update']()
+    mocks.apiResponses['https://api.lianyu.test/api/public/updater/latest.yml'] = {
+      status: 200,
+      data: 'version: 0.2.260\nfiles:\n  - url: test.exe\nsha512: abc\n',
+    }
+    await mocks.handleRegistry.get('updater:check')()
     expect(destroyedWin.webContents.send).not.toHaveBeenCalled()
-  })
-
-  it('getUpdaterState 返回当前状态', async () => {
-    const { initUpdater, getUpdaterState } = await loadUpdater()
-    initUpdater(mockMainWindow)
-    mocks.events['update-available']({ version: '0.2.260' })
-    expect(getUpdaterState()).toEqual(expect.objectContaining({
-      state: 'update-available', info: { version: '0.2.260' },
-    }))
   })
 })
