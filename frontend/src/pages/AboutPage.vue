@@ -49,20 +49,22 @@
         <div class="dev-group">
           <h3 class="dev-role">核心主开发者</h3>
           <a :href="'https://github.com/whitequeen306'" target="_blank" rel="noopener noreferrer" class="dev-item">
-            <span class="dev-name">青思雨</span>
+            <img src="/devs/white-queen.jpg" alt="白之女王" class="dev-avatar" />
+            <span class="dev-name">白之女王</span>
             <el-icon class="dev-link-icon"><Link /></el-icon>
           </a>
         </div>
         <div class="dev-group">
           <h3 class="dev-role">开发者及 API 支持</h3>
           <a :href="'https://github.com/2164312714-svg'" target="_blank" rel="noopener noreferrer" class="dev-item">
+            <img src="/devs/clove.jpg" alt="Clove" class="dev-avatar" />
             <span class="dev-name">Clove.</span>
             <el-icon class="dev-link-icon"><Link /></el-icon>
           </a>
         </div>
         <div class="dev-group">
           <h3 class="dev-role">其它鸣谢</h3>
-          <p class="dev-item dev-thanks">恋语安卓端全体开发团队</p>
+          <p class="dev-item dev-thanks">恋语安卓端全体开发团队以及各位用户</p>
         </div>
       </div>
     </section>
@@ -229,7 +231,7 @@ function handleLogoClick() {
 .dev-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: $space-3;
   padding: $space-3 $space-4;
   border-radius: $radius-md;
   background: rgba(128, 128, 140, 0.06);
@@ -244,7 +246,16 @@ function handleLogoClick() {
   }
 }
 
+.dev-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: $radius-full;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
 .dev-link-icon {
+  margin-left: auto;
   font-size: $font-size-sm;
   color: $color-text-muted;
   .dev-item:hover & { color: $color-pink-primary; }
