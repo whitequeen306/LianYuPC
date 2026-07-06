@@ -148,6 +148,11 @@ lianyu:
   security:
     # 经 api-gateway/nginx 反代时保持 true；直连后端且无可信代理时设为 false 防 X-Forwarded-For 伪造
     trust-forwarded-for: ${LIANYU_TRUST_FORWARDED_FOR:true}
+  updater:
+    # 用于代理 GitHub Releases（私有仓库）的 token；服务器上 git pull 用的同一 token 即可
+    github-token: ${LIANYU_GITHUB_TOKEN:}
+    owner: whitequeen306
+    repo: LianYuPC
   auth:
     rate-limit:
       per-ip-per-minute: 30

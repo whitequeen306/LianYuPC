@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   events: {},
   calls: { check: 0, download: 0, quitInstall: 0 },
   config: { autoDownload: true, autoInstallOnAppQuit: true },
+  feedUrl: null,
 }))
 
 vi.mock('electron', () => ({
@@ -22,6 +23,7 @@ vi.mock('electron-updater', () => ({
     set autoDownload(v) { mocks.config.autoDownload = v },
     get autoInstallOnAppQuit() { return mocks.config.autoInstallOnAppQuit },
     set autoInstallOnAppQuit(v) { mocks.config.autoInstallOnAppQuit = v },
+    setFeedURL: (cfg) => { mocks.feedUrl = cfg },
     on: (ev, fn) => { mocks.events[ev] = fn },
     checkForUpdates: () => { mocks.calls.check++; return Promise.resolve() },
     downloadUpdate: () => { mocks.calls.download++; return Promise.resolve() },
@@ -29,7 +31,11 @@ vi.mock('electron-updater', () => ({
   },
 }))
 
-vi.mock('../../logger.js', () => ({ log: vi.fn(), info: vi.fn() }))
+vi.mock('../../logger.js', () => ({ log: vi.fn(), info: vi.fn(), warn: vi.fn() }))
+
+vi.mock('../../runtimeSecrets.js', () => ({
+  getRuntimeSecrets: () => ({ apiOrigin: 'https://api.lianyu.test' }),
+}))
 
 const mockMainWindow = { isDestroyed: () => false, webContents: { send: mocks.webSend } }
 
@@ -48,6 +54,7 @@ describe('updater — initUpdater', () => {
     mocks.events = {}
     mocks.config.autoDownload = true
     mocks.config.autoInstallOnAppQuit = true
+    mocks.feedUrl = null
     mocks.isPackaged = true
     vi.resetModules()
   })
@@ -60,6 +67,15 @@ describe('updater — initUpdater', () => {
     expect(mocks.handleRegistry.has('updater:install')).toBe(true)
     expect(mocks.config.autoDownload).toBe(false)
     expect(mocks.config.autoInstallOnAppQuit).toBe(false)
+  })
+
+  it('setFeedURL 用 generic provider 指向后端代理', async () => {
+    const { initUpdater } = await loadUpdater()
+    initUpdater(mockMainWindow)
+    expect(mocks.feedUrl).toEqual({
+      provider: 'generic',
+      url: 'https://api.lianyu.test/api/public/updater',
+    })
   })
 
   it('重复 initUpdater 不重复注册（幂等）', async () => {

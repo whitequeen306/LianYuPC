@@ -1,6 +1,7 @@
 import { app, ipcMain } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import * as logger from '../logger.js'
+import { getRuntimeSecrets } from '../runtimeSecrets.js'
 
 let initialized = false
 /** @type {import('electron').BrowserWindow | null} */
@@ -87,6 +88,17 @@ export function initUpdater(mainWindow) {
   mainWindowRef = mainWindow
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false
+  // 改用 generic provider 指向后端代理（私有仓库不能直连 GitHub API）
+  const secrets = getRuntimeSecrets()
+  const feedUrl = secrets?.apiOrigin
+    ? `${secrets.apiOrigin}/api/public/updater`
+    : null
+  if (feedUrl) {
+    autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl })
+    logger.info('updater', `feed url: ${feedUrl}`)
+  } else {
+    logger.warn('updater', 'no apiOrigin available, feed URL not set')
+  }
   bindAutoUpdaterEvents()
   registerIpc()
   logger.info('updater', 'initialized')
