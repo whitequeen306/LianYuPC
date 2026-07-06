@@ -31,7 +31,7 @@ vi.mock('electron-updater', () => ({
   },
 }))
 
-vi.mock('../../logger.js', () => ({ log: vi.fn(), info: vi.fn(), warn: vi.fn() }))
+vi.mock('../../logger.js', () => ({ log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }))
 
 vi.mock('../../runtimeSecrets.js', () => ({
   getRuntimeSecrets: () => ({ apiOrigin: 'https://api.lianyu.test' }),

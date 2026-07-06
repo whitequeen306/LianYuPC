@@ -3,6 +3,12 @@ import { autoUpdater } from 'electron-updater'
 import * as logger from '../logger.js'
 import { getRuntimeSecrets } from '../runtimeSecrets.js'
 
+// 服务器用自签证书；electron-updater 可能用 Node.js https 模块（不走 Electron 证书 pinning），
+// 这里关闭 Node.js TLS 校验。常规 API 走 Electron net.request + setCertificateVerifyProc 仍受保护。
+if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === undefined) {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
+}
+
 let initialized = false
 /** @type {import('electron').BrowserWindow | null} */
 let mainWindowRef = null
@@ -19,7 +25,10 @@ function sendState(payload) {
 }
 
 function bindAutoUpdaterEvents() {
-  autoUpdater.on('checking-for-update', () => setState({ state: 'checking', info: {} }))
+  autoUpdater.on('checking-for-update', () => {
+    logger.info('updater', 'checking for updates...')
+    setState({ state: 'checking', info: {} })
+  })
   autoUpdater.on('update-available', (info) => setState({
     state: 'update-available',
     info: { version: info?.version },
@@ -38,10 +47,13 @@ function bindAutoUpdaterEvents() {
     state: 'ready',
     info: { version: info?.version },
   }))
-  autoUpdater.on('error', (err) => setState({
-    state: 'error',
-    info: { errorMessage: err?.message || String(err) },
-  }))
+  autoUpdater.on('error', (err) => {
+    logger.error('updater', `autoUpdater error: ${err?.message || String(err)}`)
+    setState({
+      state: 'error',
+      info: { errorMessage: err?.message || String(err) },
+    })
+  })
 }
 
 function registerIpc() {
