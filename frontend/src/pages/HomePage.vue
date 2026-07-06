@@ -60,8 +60,8 @@
             >
               <div class="portrait-ring">
                 <img
-                  v-if="state.avatarUrl"
-                  :src="resolveMediaUrl(state.avatarUrl)"
+                  v-if="resolveStateAvatar(state)"
+                  :src="resolveMediaUrl(resolveStateAvatar(state))"
                   class="portrait-img"
                   :alt="state.characterName"
                 />
@@ -156,6 +156,7 @@ import { useConversationsStore } from '@/stores/conversations'
 import { listAllDiaries, listCharacterStates } from '@/api/characterState'
 import { fetchMomentsFeed } from '@/api/moments'
 import { resolveMediaUrl } from '@/utils/media'
+import { pickCharacterAvatarRaw } from '@/utils/characterAvatar'
 import { formatFeedTime, parseFeedDateTime } from '@/utils/feedTime'
 import { truncateText } from '@/utils/text'
 import { useOpenSingleChat } from '@/composables/useOpenSingleChat'
@@ -171,6 +172,12 @@ const { openSingleChat } = useOpenSingleChat()
 const emotionStates = ref([])
 const feedPreview = ref([])
 const feedLoading = ref(true)
+
+function resolveStateAvatar(state) {
+  const char = charactersStore.list.find(c => c.id === state.characterId)
+  if (char) return pickCharacterAvatarRaw(char, 'thumb')
+  return state.avatarUrl || state.avatarThumbUrl || ''
+}
 
 const greeting = computed(() => {
   const hour = new Date().getHours()
@@ -213,7 +220,7 @@ const featuredCompanion = computed(() => {
     return {
       characterId: state.characterId,
       name: state.characterName,
-      avatarUrl: state.avatarUrl || char?.avatarUrl,
+      avatarUrl: state.avatarUrl || char?.avatarThumbUrl || char?.avatarUrl,
       emotion: state
     }
   }
