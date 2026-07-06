@@ -16,6 +16,13 @@ spring:
   jackson:
     time-zone: Asia/Shanghai
 
+  mvc:
+    async:
+      # StreamingResponseBody / SSE 等异步响应显式拉长超时，避免大文件代理下载在默认
+      # MVC async timeout 下被后端提前截断（nginx 侧表现为 upstream prematurely closed
+      # connection while reading upstream）。
+      request-timeout: 15m
+
   servlet:
     multipart:
       max-file-size: 10MB
