@@ -3,6 +3,28 @@
 协作者与 Cursor Agent 约定（技术栈、模块边界、工作守则）。  
 PC 端桌面/Web 复刻版，独立于安卓端项目。
 
+## 设计系统基线（强制遵守）
+
+项目根目录 `DESIGN.md` 是视觉设计的**唯一真相源**。它定义了：
+- 色板（rose-pink `#f4a6b5` + 暖黑背景 + 状态色）
+- 字体（PingFang SC 正文 / Noto Serif SC 标题 / Syne 品牌字）
+- 圆角（8/14/24/28/25px pill / 9999px full）
+- 间距（4px 步进 rem 制）
+- 组件令牌（按钮/输入框/卡片/对话框/玻璃面板）
+
+**任何新增或修改的 UI 必须遵守以下规则：**
+
+1. **先读 `DESIGN.md`** — 开始任何前端工作前，必须读取项目根的 `DESIGN.md`
+2. **只许用令牌** — 颜色、字体、圆角、间距只能引用 `DESIGN.md` 中已定义的令牌或对应的 CSS 变量（`--ly-accent`、`--ly-bg-*`、`--ly-text-*` 等），**不许硬编码 hex 值**
+3. **不许引入新色** — 不允许出现调色板之外的装饰色（蓝/绿/紫等），状态色（success/warning/error/info）仅用于 toast/badge
+4. **不许用 `border-radius: 0`** — 按钮必须 pill(25px)，卡片 lg(24px)，对话框 xl(28px)
+5. **不许用 `linear`/`ease` 缓动** — 过渡一律 `cubic-bezier(0.23, 1, 0.32, 1)` (EaseOutQuint)，时长 0.2~0.28s
+6. **深度靠玻璃不是阴影** — 卡片/对话框用 `backdrop-filter: blur()`，不用扁平阴影；主要按钮才加 pink glow
+7. **暗色优先 + 亮色对等** — 所有新组件必须同时适配 dark/light 两套 CSS 变量
+8. **如需扩展** — 如果 `DESIGN.md` 没有覆盖某种需求，先在 `DESIGN.md` 中新增令牌，再用新令牌写组件
+
+违反以上任一条的 UI 代码不得合入 `main` 分支。
+
 ## 项目根目录
 
 `C:\Users\hp\Desktop\LianYu-PC\`
