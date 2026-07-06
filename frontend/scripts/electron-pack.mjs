@@ -90,7 +90,7 @@ function buildMainCjsBundle() {
     bundle: true,
     platform: 'node',
     format: 'cjs',
-    external: ['electron', 'active-win', 'bytenode', 'ws', 'extract-zip'],
+    external: ['electron', 'active-win', 'bytenode', 'ws', 'extract-zip', 'electron-updater'],
     packages: 'external',
     minify: true,
     sourcemap: false,
@@ -217,7 +217,14 @@ killLianYuProcesses()
 removePartialReleaseArtifacts()
 
 const outputArg = `--config.directories.output=${outDir.replace(/\\/g, '/')}`
-execSync(`npx electron-builder --win ${outputArg}`, {
+// 配了 GH_TOKEN 才上传 Releases；否则只产本地包，避免误传
+const publishArg = process.env.GH_TOKEN ? '--publish always' : '--publish never'
+if (process.env.GH_TOKEN) {
+  console.log('GH_TOKEN detected -> will publish to GitHub Releases')
+} else {
+  console.log('GH_TOKEN not set -> local build only (no upload)')
+}
+execSync(`npx electron-builder --win ${outputArg} ${publishArg}`, {
   stdio: 'inherit',
   env: process.env,
 })

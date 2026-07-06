@@ -150,4 +150,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   exportLogs: () => ipcRenderer.invoke('desktop:export-logs'),
   getGlobalLogs: (maxLines) => ipcRenderer.invoke('desktop:get-global-logs', maxLines),
   openLogFolder: () => ipcRenderer.invoke('desktop:open-log-folder'),
+  // ── 应用自动更新（updater.js 主进程封装） ──
+  checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+  downloadUpdate: () => ipcRenderer.invoke('updater:download'),
+  installNow: () => ipcRenderer.invoke('updater:install'),
+  onUpdateState: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on('updater:state', handler)
+    return () => ipcRenderer.removeListener('updater:state', handler)
+  },
 })

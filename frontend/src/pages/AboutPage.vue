@@ -22,6 +22,7 @@
           <div class="info-row">
             <span class="info-label">{{ t('about.version') }}</span>
             <span class="info-value mono">v{{ version }}</span>
+            <AppUpdateButton v-if="isElectron" />
           </div>
           <div class="info-row">
             <span class="info-label">{{ t('about.environment') }}</span>
@@ -73,6 +74,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { isElectronApp } from '@/utils/electron'
+import AppUpdateButton from '@/components/AppUpdateButton.vue'
 import { ArrowLeft, Link } from '@element-plus/icons-vue'
 import { APP_LOGO } from '@/constants/brand'
 import pkg from '../../package.json'

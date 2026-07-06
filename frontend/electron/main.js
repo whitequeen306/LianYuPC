@@ -61,6 +61,7 @@ import {
 } from './napcatRuntime/napcatHost.js'
 import { wipeNapCatInstall } from './napcatRuntime/napcatRelease.js'
 import { loadRuntimeSecrets, getRuntimeSecrets } from './runtimeSecrets.js'
+import { initUpdater } from './updater/updater.js'
 import { RENDERER_AUTH_TOKEN_SCRIPT } from './rendererTokenScript.js'
 
 // Windows toast 通知归属：AUMID 必须在 app ready / 任何窗口创建前设置，
@@ -3116,6 +3117,7 @@ app.whenReady().then(() => {
   applyLaunchAtLogin(readDesktopSettings().launchAtLogin)
   registerIpcHandlers()
   createMainWindow()
+  initUpdater(mainWindow)
   ensureTray()
 
   if (readAuthSession()) {
