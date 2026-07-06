@@ -224,9 +224,11 @@ if (process.env.GH_TOKEN) {
 } else {
   console.log('GH_TOKEN not set -> local build only (no upload)')
 }
+const electronBuilderEnv = { ...process.env }
+electronBuilderEnv.NODE_OPTIONS = `${process.env.NODE_OPTIONS || ''} --use-system-ca`.trim()
 execSync(`npx electron-builder --win ${outputArg} ${publishArg}`, {
   stdio: 'inherit',
-  env: process.env,
+  env: electronBuilderEnv,
 })
 
 console.log(`\n??????: ${outDir}/LianYu Setup ${pkg.version}.exe`)
