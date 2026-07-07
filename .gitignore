@@ -51,6 +51,8 @@ certs/*.key
 .cortexloop/
 .superpowers/
 .worktrees/
+config.json
+avatar/
 
 # CodeCortexLoop generated reports (keep out of git)
 docs/cortexloop/
