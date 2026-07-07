@@ -7,6 +7,7 @@ latest.yml as the final write so clients never see a manifest before its files e
 import argparse
 import json
 import os
+import re
 import shlex
 import subprocess
 from pathlib import Path
@@ -18,6 +19,9 @@ USER = "root"
 ROOT = Path(__file__).resolve().parents[1]
 BUCKET = "lianyu"
 REPO = "whitequeen306/LianYuPC"
+RETENTION_RELEASES = 3
+VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
+UPDATE_ASSET_RE = re.compile(r"^updates/LianYu-Setup-(\d+)\.(\d+)\.(\d+)\.exe(?:\.blockmap)?$")
 
 
 def load_dotenv(path: Path) -> None:
@@ -110,6 +114,49 @@ def download_release_asset(client: paramiko.SSHClient, token: str, asset_id: int
     run(client, cmd, timeout=900, label=f"download GitHub asset {asset_id} -> {remote_path}")
 
 
+def update_asset_version(object_name: str) -> tuple[int, int, int] | None:
+    match = UPDATE_ASSET_RE.match(object_name)
+    if not match:
+        return None
+    return tuple(int(part) for part in match.groups())
+
+
+def stale_update_objects(object_names: list[str], keep: int = RETENTION_RELEASES) -> list[str]:
+    versions = {version for name in object_names if (version := update_asset_version(name)) is not None}
+    stale_versions = set(sorted(versions, reverse=True)[keep:])
+    return [name for name in object_names if update_asset_version(name) in stale_versions]
+
+
+def cleanup_old_update_assets(client: paramiko.SSHClient, keep: int = RETENTION_RELEASES) -> None:
+    list_cmd = (
+        "docker exec lianyu-minio sh -lc '"
+        "mc alias set local http://127.0.0.1:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\" >/dev/null && "
+        f"mc find local/{BUCKET}/updates --name \"LianYu-Setup-*\""
+        "'"
+    )
+    _, stdout, stderr = client.exec_command(list_cmd, timeout=120, get_pty=True)
+    out = stdout.read().decode("utf-8", errors="replace")
+    err = stderr.read().decode("utf-8", errors="replace")
+    code = stdout.channel.recv_exit_status()
+    if code != 0:
+        if err.strip():
+            print(err[-3000:])
+        raise SystemExit(code)
+
+    prefix = f"local/{BUCKET}/"
+    object_names = [line.strip().removeprefix(prefix) for line in out.splitlines() if line.strip().startswith(prefix)]
+    for object_name in stale_update_objects(object_names, keep=keep):
+        target = shlex.quote(f"local/{BUCKET}/{object_name}")
+        run(
+            client,
+            "docker exec lianyu-minio sh -lc '"
+            "mc alias set local http://127.0.0.1:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\" >/dev/null && "
+            f"mc rm {target}"
+            "'",
+            timeout=120,
+        )
+
+
 def artifact_paths(version: str) -> list[tuple[Path, str]]:
     release_dir = ROOT / "frontend" / "release" / f"v{version}"
     installer = release_dir / f"LianYu Setup {version}.exe"
@@ -130,6 +177,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", required=True)
     args = parser.parse_args()
+    if not VERSION_RE.fullmatch(args.version):
+        raise SystemExit("--version must use x.y.z numeric semver format")
 
     load_dotenv(ROOT / ".env")
     password = os.environ.get("DEPLOY_SSH_PASSWORD")
@@ -162,6 +211,7 @@ def main() -> None:
         )
     run(client, "docker exec lianyu-minio sh -lc 'rm -rf /tmp/lianyu-update-assets'")
     run(client, f"rm -rf {remote_tmp}")
+    cleanup_old_update_assets(client)
     run(client, "curl -k -s -o /dev/null -w 'latest=%{http_code}' https://154.219.111.30/api/public/files/updates/latest.yml")
     client.close()
     print("UPDATE_ASSETS_UPLOADED")
