@@ -51,7 +51,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useAppUpdater } from '@/composables/useAppUpdater'
+import { shouldAutoOpenUpdateDialog, useAppUpdater } from '@/composables/useAppUpdater'
 import { useResponsiveDialogWidth } from '@/composables/useResponsiveDialogWidth'
 
 const { state, info, download, install } = useAppUpdater()
@@ -96,7 +96,7 @@ const etaText = computed(() => {
 })
 
 watch(state, (next) => {
-  if (['checking', 'update-available', 'downloading', 'ready', 'installing', 'error'].includes(next)) {
+  if (shouldAutoOpenUpdateDialog(next)) {
     visible.value = true
   }
 })

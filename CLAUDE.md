@@ -123,6 +123,8 @@ lianyu-app → lianyu-web → lianyu-service → lianyu-ai / lianyu-dao / lianyu
 
 从 v0.2.261 起，客户端自动更新运行时读取自家源：`/api/public/files/updates/latest.yml`，安装包与 blockmap 存放在 MinIO 的 `updates/` 前缀下。GitHub Releases 仍作为备份发布渠道，但客户端更新检查/下载不再走 GitHub Releases 代理。
 
+发布脚本的资产流向是：本地 `electron-builder` 打包 → 上传 GitHub Releases（备份）→ 云服务器通过 GitHub Release asset API 下载安装包、blockmap、`latest.yml` → `docker cp` 进 `lianyu-minio` → `mc cp` 写入 MinIO bucket `lianyu/updates/`。不要用本地 SFTP/SCP 直接传大安装包到服务器，也不要直接写 MinIO 数据卷。
+
 **发布命令：**
 ```bash
 cd frontend
@@ -135,7 +137,8 @@ npm run electron:release:major     # major 升级
 1. `npm version <bump> --no-git-tag-version`（改 package.json 版本号）
 2. `vite build` + `esbuild` 主进程 bundle + `electron-builder` 打包
 3. 自动上传 `LianYu Setup x.x.x.exe` + `latest.yml` + `.blockmap` 到 GitHub Releases（备份渠道）
-4. 自动同步 `latest.yml`、安装包、`.blockmap` 到云端 MinIO `updates/`（客户端实际更新源）
+4. 云端从 GitHub Release 资产下载 `latest.yml`、安装包、`.blockmap`，同步到 MinIO `updates/`（客户端实际更新源）
+5. `latest.yml` 最后写入，避免客户端看到 manifest 时安装包还不存在；同步完成后只保留最近 3 个版本的安装包与 `.blockmap`，删除更旧版本，`latest.yml` 永远保留
 
 **GH_TOKEN 说明：**
 - 发布需要 GitHub Personal Access Token（classic，`repo` 权限）

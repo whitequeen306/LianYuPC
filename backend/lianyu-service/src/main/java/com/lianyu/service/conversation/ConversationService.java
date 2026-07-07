@@ -371,12 +371,16 @@ public class ConversationService {
 
             @Override
             public void onComplete(String fullContent, Throwable error) {
-                if (error != null) {
+                if (error != null && !isClientStreamDisconnect(error)) {
                     log.warn("Assistant stream failed, skip persist: convId={}, reason={}",
                             conversationId, error.getMessage());
                     return;
                 }
                 if (fullContent != null && !fullContent.isBlank()) {
+                    if (error != null) {
+                        log.info("Assistant stream client disconnected after generation, persist reply: convId={}, reason={}",
+                                conversationId, error.getMessage());
+                    }
                     List<MessageResponse> replies = saveAssistantReplies(
                             conversationId, streamCharacter, fullContent, null);
                     relationshipStateService.recordAssistantTurn(userId, character.getId(), conversationId, replies);
@@ -400,6 +404,10 @@ public class ConversationService {
         return hasImage
                 ? aiChatService.chatImageStream(userId, aiRequest, callback)
                 : aiChatService.chatStream(userId, aiRequest, callback);
+    }
+
+    private boolean isClientStreamDisconnect(Throwable error) {
+        return error instanceof java.io.IOException;
     }
 
     @Transactional

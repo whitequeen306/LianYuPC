@@ -110,4 +110,15 @@ describe('useAppUpdater', () => {
     expect(() => emitState(null)).not.toThrow()
     expect(state.value).toBe('idle')
   })
+
+  it('global update dialog auto-opens only for actionable states', async () => {
+    const { shouldAutoOpenUpdateDialog } = await import('../useAppUpdater.js')
+    expect(shouldAutoOpenUpdateDialog('checking')).toBe(false)
+    expect(shouldAutoOpenUpdateDialog('no-update')).toBe(false)
+    expect(shouldAutoOpenUpdateDialog('update-available')).toBe(true)
+    expect(shouldAutoOpenUpdateDialog('downloading')).toBe(true)
+    expect(shouldAutoOpenUpdateDialog('ready')).toBe(true)
+    expect(shouldAutoOpenUpdateDialog('installing')).toBe(true)
+    expect(shouldAutoOpenUpdateDialog('error')).toBe(true)
+  })
 })

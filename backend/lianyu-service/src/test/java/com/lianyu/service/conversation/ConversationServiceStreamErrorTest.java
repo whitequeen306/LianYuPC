@@ -6,7 +6,9 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.when;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lianyu.dao.entity.Character;
@@ -20,7 +22,10 @@ import com.lianyu.dao.mapper.UserMapper;
 import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.AssistantReplyService;
 import com.lianyu.service.ai.CharacterPromptBuilder;
+import com.lianyu.common.exception.BusinessException;
+import com.lianyu.common.base.ErrorCode;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
+import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterRecentActivityService;
 import com.lianyu.service.character.CharacterStateService;
 import com.lianyu.service.dto.SendMessageRequest;
@@ -32,10 +37,12 @@ import com.lianyu.service.storage.FileStorageService;
 import com.lianyu.service.support.OutputLanguageService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
+import java.io.IOException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatcher;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -128,6 +135,7 @@ class ConversationServiceStreamErrorTest {
         when(promptBuilder.buildSystemPrompt(any(), any(), anyString(), eq(true))).thenReturn("system");
         when(timeTool.readCurrentTimeFact()).thenReturn("2026-06-22 12:00");
         when(outputLanguageService.resolveForRequest(eq(userId), any())).thenReturn("zh");
+        when(chatBehaviorResolver.resolve(any())).thenReturn(new CharacterChatBehavior(3, true, 60, 0.9, 55, 65, null));
 
         ArgumentCaptor<AiChatService.StreamCallback> callbackCaptor = ArgumentCaptor.forClass(AiChatService.StreamCallback.class);
         when(aiChatService.chatStream(eq(userId), any(), callbackCaptor.capture())).thenReturn(new SseEmitter());
@@ -140,5 +148,105 @@ class ConversationServiceStreamErrorTest {
 
         verify(relationshipStateService, never()).recordAssistantTurn(anyLong(), anyLong(), anyLong(), any());
         verify(memoryWriter, never()).enqueueSummary(anyLong(), anyLong(), anyLong());
+        verify(messageMapper, never()).insert(argThatAssistantMessage());
+    }
+
+    @Test
+    void streamCallbackWithProviderConnectionReset_doesNotRecordAssistantTurn() {
+        long userId = 1L;
+        long convId = 9L;
+        long charId = 5L;
+
+        Conversation conv = new Conversation();
+        conv.setId(convId);
+        conv.setUserId(userId);
+        conv.setCharacterId(charId);
+        conv.setMode("SINGLE");
+
+        Character character = new Character();
+        character.setId(charId);
+        character.setOwnerUserId(userId);
+        character.setName("Test");
+
+        when(conversationMapper.selectById(convId)).thenReturn(conv);
+        when(characterMapper.selectById(charId)).thenReturn(character);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.increment(anyString(), eq(1L))).thenReturn(100L);
+        when(messageMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(memoryRetriever.retrieveProfileContext(anyLong(), anyLong(), anyString())).thenReturn("");
+        when(promptBuilder.buildSystemPrompt(any(), any(), anyString(), eq(true))).thenReturn("system");
+        when(timeTool.readCurrentTimeFact()).thenReturn("2026-06-22 12:00");
+        when(outputLanguageService.resolveForRequest(eq(userId), any())).thenReturn("zh");
+        when(chatBehaviorResolver.resolve(any())).thenReturn(new CharacterChatBehavior(3, true, 60, 0.9, 55, 65, null));
+
+        ArgumentCaptor<AiChatService.StreamCallback> callbackCaptor = ArgumentCaptor.forClass(AiChatService.StreamCallback.class);
+        when(aiChatService.chatStream(eq(userId), any(), callbackCaptor.capture())).thenReturn(new SseEmitter());
+
+        SendMessageRequest request = new SendMessageRequest();
+        request.setContent("hello");
+        service.sendMessageStream(userId, convId, request);
+
+        callbackCaptor.getValue().onComplete(
+                "partial text",
+                new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "Connection reset"));
+
+        verify(relationshipStateService, never()).recordAssistantTurn(anyLong(), anyLong(), anyLong(), any());
+        verify(memoryWriter, never()).enqueueSummary(anyLong(), anyLong(), anyLong());
+        verify(messageMapper, never()).insert(argThatAssistantMessage());
+    }
+
+    @Test
+    void streamCallbackWithClientDisconnectAndFullContent_recordsAssistantTurn() {
+        long userId = 1L;
+        long convId = 9L;
+        long charId = 5L;
+
+        Conversation conv = new Conversation();
+        conv.setId(convId);
+        conv.setUserId(userId);
+        conv.setCharacterId(charId);
+        conv.setMode("SINGLE");
+
+        Character character = new Character();
+        character.setId(charId);
+        character.setOwnerUserId(userId);
+        character.setName("Test");
+
+        when(conversationMapper.selectById(convId)).thenReturn(conv);
+        when(characterMapper.selectById(charId)).thenReturn(character);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(messageMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(memoryRetriever.retrieveProfileContext(anyLong(), anyLong(), anyString())).thenReturn("");
+        when(promptBuilder.buildSystemPrompt(any(), any(), anyString(), eq(true))).thenReturn("system");
+        when(timeTool.readCurrentTimeFact()).thenReturn("2026-06-22 12:00");
+        when(outputLanguageService.resolveForRequest(eq(userId), any())).thenReturn("zh");
+        when(chatBehaviorResolver.resolve(any())).thenReturn(new CharacterChatBehavior(3, true, 60, 0.9, 55, 65, null));
+        when(assistantReplyService.process(eq("complete reply"), eq(3)))
+                .thenReturn(new AssistantReplyService.ProcessedReply("complete reply", List.of("complete reply")));
+        when(valueOperations.increment(anyString(), eq(1L))).thenReturn(100L, 101L);
+
+        ArgumentCaptor<AiChatService.StreamCallback> callbackCaptor = ArgumentCaptor.forClass(AiChatService.StreamCallback.class);
+        when(aiChatService.chatStream(eq(userId), any(), callbackCaptor.capture())).thenReturn(new SseEmitter());
+
+        SendMessageRequest request = new SendMessageRequest();
+        request.setContent("hello");
+        service.sendMessageStream(userId, convId, request);
+
+        callbackCaptor.getValue().onComplete("complete reply", new IOException("Broken pipe"));
+
+        ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+        verify(messageMapper, atLeastOnce()).insert(messageCaptor.capture());
+        assertThat(messageCaptor.getAllValues())
+                .anySatisfy(message -> {
+                    assertThat(message.getRole()).isEqualTo("ASSISTANT");
+                    assertThat(message.getContent()).isEqualTo("complete reply");
+                });
+        verify(relationshipStateService).recordAssistantTurn(eq(userId), eq(charId), eq(convId), any());
+        verify(memoryWriter).enqueueSummary(eq(convId), eq(charId), eq(userId));
+    }
+
+    private Message argThatAssistantMessage() {
+        return org.mockito.ArgumentMatchers.argThat((ArgumentMatcher<Message>) message ->
+                message != null && "ASSISTANT".equals(message.getRole()));
     }
 }

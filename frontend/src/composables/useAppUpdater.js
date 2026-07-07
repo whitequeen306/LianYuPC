@@ -1,6 +1,10 @@
 import { ref, onBeforeUnmount } from 'vue'
 import { getElectronAPI, isElectronApp } from '@/utils/electron'
 
+export function shouldAutoOpenUpdateDialog(state) {
+  return ['update-available', 'downloading', 'ready', 'installing', 'error'].includes(state)
+}
+
 /**
  * 应用自动更新状态机 composable。
  * 订阅主进程 updater:state 事件，暴露 state/info + check/download/install actions。
