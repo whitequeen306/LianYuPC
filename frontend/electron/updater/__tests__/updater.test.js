@@ -32,7 +32,7 @@ vi.mock('child_process', () => ({
 vi.mock('fs', () => ({
   default: {
     mkdirSync: vi.fn(),
-    createWriteStream: vi.fn(() => ({ write: vi.fn(), end: (cb) => cb && cb() })),
+    createWriteStream: vi.fn(() => ({ write: vi.fn(), end: (cb) => cb && cb(), on: vi.fn(), destroy: vi.fn() })),
     existsSync: vi.fn(() => true),
   },
 }))
@@ -40,6 +40,7 @@ vi.mock('fs', () => ({
 vi.mock('path', () => ({
   default: {
     join: (...args) => args.join('/'),
+    basename: (value) => String(value).split('/').pop(),
   },
 }))
 
@@ -85,9 +86,9 @@ describe('updater (manual mode)', () => {
   })
 
   it('check: 有新版本时推送 update-available', async () => {
-    mocks.apiResponses['https://api.lianyu.test/api/public/updater/latest.yml'] = {
+    mocks.apiResponses['https://api.lianyu.test/api/public/files/updates/latest.yml'] = {
       status: 200,
-      data: 'version: 0.2.260\nfiles:\n  - url: /api/public/updater/download?asset=test.exe\npath: test.exe\nsha512: abc\n',
+      data: 'version: 0.2.260\nfiles:\n  - url: LianYu-Setup-0.2.260.exe\npath: LianYu-Setup-0.2.260.exe\nsha512: abc\n',
     }
     const { initUpdater } = await loadUpdater()
     initUpdater(mockMainWindow)
@@ -102,7 +103,7 @@ describe('updater (manual mode)', () => {
 
   it('check: 已是最新时推送 no-update', async () => {
     mocks.appVersion = '0.2.260'
-    mocks.apiResponses['https://api.lianyu.test/api/public/updater/latest.yml'] = {
+    mocks.apiResponses['https://api.lianyu.test/api/public/files/updates/latest.yml'] = {
       status: 200,
       data: 'version: 0.2.260\nfiles:\n  - url: test.exe\nsha512: abc\n',
     }
@@ -117,7 +118,7 @@ describe('updater (manual mode)', () => {
   })
 
   it('check: latest.yml 请求失败时推送 error', async () => {
-    mocks.apiResponses['https://api.lianyu.test/api/public/updater/latest.yml'] = {
+    mocks.apiResponses['https://api.lianyu.test/api/public/files/updates/latest.yml'] = {
       status: 500, data: '',
     }
     const { initUpdater } = await loadUpdater()
@@ -134,12 +135,14 @@ describe('updater (manual mode)', () => {
     initUpdater(mockMainWindow)
     // 先模拟下载完成（downloadedInstallerPath 由 download 设置）
     // 直接调 install，需要先调 download 设置路径
-    mocks.apiResponses['https://api.lianyu.test/api/public/updater/latest.yml'] = {
+    mocks.apiResponses['https://api.lianyu.test/api/public/files/updates/latest.yml'] = {
       status: 200,
-      data: 'version: 0.2.260\nfiles:\n  - url: /api/public/updater/download?asset=test.exe\nsha512: abc\n',
+      data: 'version: 0.2.260\nfiles:\n  - url: LianYu-Setup-0.2.260.exe\nsha512: abc\n',
     }
     // mock net.request for download
+    let requestedDownloadUrl = ''
     mocks.netRequestImpl = (opts) => {
+      requestedDownloadUrl = opts.url
       const handlers = { response: null, error: null }
       const req = {
         on: (ev, fn) => { handlers[ev] = fn; return req },
@@ -159,6 +162,11 @@ describe('updater (manual mode)', () => {
       return req
     }
     await mocks.handleRegistry.get('updater:download')()
+    expect(requestedDownloadUrl).toBe('https://api.lianyu.test/api/public/files/updates/LianYu-Setup-0.2.260.exe')
+    expect(mocks.webSend).toHaveBeenCalledWith('updater:state', expect.objectContaining({
+      state: 'downloading',
+      info: expect.objectContaining({ speedBytesPerSec: expect.any(Number), etaSeconds: expect.any(Number) }),
+    }))
     const ret = await mocks.handleRegistry.get('updater:install')()
     expect(ret.ok).toBe(true)
     expect(mocks.webSend).toHaveBeenLastCalledWith('updater:state', expect.objectContaining({
@@ -188,7 +196,7 @@ describe('updater (manual mode)', () => {
     const destroyedWin = { isDestroyed: () => true, webContents: { send: vi.fn() } }
     const { initUpdater } = await loadUpdater()
     initUpdater(destroyedWin)
-    mocks.apiResponses['https://api.lianyu.test/api/public/updater/latest.yml'] = {
+    mocks.apiResponses['https://api.lianyu.test/api/public/files/updates/latest.yml'] = {
       status: 200,
       data: 'version: 0.2.260\nfiles:\n  - url: test.exe\nsha512: abc\n',
     }

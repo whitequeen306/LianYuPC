@@ -30,7 +30,7 @@
         >
           <div class="feed-card__head">
             <div class="feed-card__avatar">
-              <img v-if="diary.avatarUrl" :src="resolveMediaUrl(diary.avatarUrl)" :alt="diary.characterName" />
+              <img v-if="diaryAvatarUrl(diary)" :src="resolveMediaUrl(diaryAvatarUrl(diary))" :alt="diary.characterName" />
               <el-icon v-else :size="18"><User /></el-icon>
             </div>
             <div class="feed-card__meta">
@@ -113,6 +113,10 @@ watch(
     applyRouteCharacterFilter()
   }
 )
+
+function diaryAvatarUrl(diary) {
+  return diary.avatarThumbUrl || diary.avatarUrl || ''
+}
 
 </script>
 

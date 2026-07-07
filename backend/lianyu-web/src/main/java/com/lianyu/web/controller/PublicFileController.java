@@ -54,7 +54,7 @@ public class PublicFileController {
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_TYPE, contentType)
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
+                    .header(HttpHeaders.CONTENT_DISPOSITION, contentDispositionFor(objectKey))
                     .header("X-Content-Type-Options", "nosniff")
                     .header(HttpHeaders.CACHE_CONTROL, cacheControlFor(objectKey))
                     .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(stat.size()))
@@ -75,9 +75,20 @@ public class PublicFileController {
     }
 
     private static String cacheControlFor(String objectKey) {
+        if (objectKey != null && objectKey.startsWith("updates/")) {
+            return objectKey.equals("updates/latest.yml") ? "no-cache" : "public, max-age=31536000, immutable";
+        }
         if (objectKey != null && objectKey.startsWith("square-avatars-thumb/")) {
             return "public, max-age=31536000, immutable";
         }
         return "public, max-age=86400";
+    }
+
+    private static String contentDispositionFor(String objectKey) {
+        if (objectKey != null && objectKey.startsWith("updates/") && !objectKey.equals("updates/latest.yml")) {
+            String filename = objectKey.substring("updates/".length());
+            return "attachment; filename=\"" + filename + "\"";
+        }
+        return "inline";
     }
 }

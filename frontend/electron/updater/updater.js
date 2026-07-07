@@ -11,6 +11,8 @@ let mainWindowRef = null
 let currentState = { state: 'idle', info: {} }
 let downloadedInstallerPath = null
 
+const UPDATE_MANIFEST_PATH = '/api/public/files/updates/latest.yml'
+
 function setState(partial) {
   currentState = { ...currentState, ...partial }
   sendState(currentState)
@@ -38,6 +40,20 @@ function parseLatestYml(ymlText) {
   }
 }
 
+function resolveLatestYmlUrl(apiOrigin) {
+  return `${apiOrigin}${UPDATE_MANIFEST_PATH}`
+}
+
+function resolveUpdateAssetUrl(assetUrl, latestYmlUrl) {
+  return new URL(assetUrl, latestYmlUrl).toString()
+}
+
+function formatInstallMessage(version) {
+  return version
+    ? `正在安装 v${version}，应用会关闭并在后台完成更新，请稍候。`
+    : '正在安装更新，应用会关闭并在后台完成更新，请稍候。'
+}
+
 function compareVersions(current, latest) {
   const c = current.split('.').map(Number)
   const l = latest.split('.').map(Number)
@@ -59,7 +75,7 @@ function registerIpc() {
     }
     setState({ state: 'checking', info: {} })
     try {
-      const ymlUrl = `${apiOrigin}/api/public/updater/latest.yml`
+      const ymlUrl = resolveLatestYmlUrl(apiOrigin)
       const resp = await performApiRequest({
         method: 'GET',
         url: ymlUrl,
@@ -101,7 +117,7 @@ function registerIpc() {
       return { ok: false, error: 'no api origin' }
     }
     try {
-      const ymlUrl = `${apiOrigin}/api/public/updater/latest.yml`
+      const ymlUrl = resolveLatestYmlUrl(apiOrigin)
       const ymlResp = await performApiRequest({
         method: 'GET',
         url: ymlUrl,
@@ -115,9 +131,7 @@ function registerIpc() {
       if (!info || !info.url) {
         throw new Error('latest.yml missing url')
       }
-      const downloadUrl = info.url.startsWith('http')
-        ? info.url
-        : `${apiOrigin}${info.url}`
+      const downloadUrl = resolveUpdateAssetUrl(info.url, ymlUrl)
       if (!isAllowedEgressUrl(downloadUrl, apiOrigin)) {
         throw new Error('download url not allowed')
       }
@@ -135,6 +149,7 @@ function registerIpc() {
         })
         let received = 0
         let total = 0
+        const startedAt = Date.now()
         const ws = fs.createWriteStream(installerPath)
         let settled = false
         const finish = (fn, v) => {
@@ -142,6 +157,7 @@ function registerIpc() {
           settled = true
           fn(v)
         }
+        ws.on('error', (err) => finish(reject, err))
 
         req.on('response', (res) => {
           if (res.statusCode !== 200) {
@@ -154,13 +170,22 @@ function registerIpc() {
           res.on('data', (chunk) => {
             received += chunk.length
             const percent = total > 0 ? Math.round((received / total) * 100) : 0
+            const elapsedSec = Math.max(0.001, (Date.now() - startedAt) / 1000)
+            const speedBytesPerSec = Math.round(received / elapsedSec)
+            const remaining = total > received && speedBytesPerSec > 0 ? total - received : 0
+            const etaSeconds = remaining > 0 ? Math.ceil(remaining / speedBytesPerSec) : 0
             setState({
               state: 'downloading',
-              info: { percent, transferred: received, total },
+              info: { percent, transferred: received, total, speedBytesPerSec, etaSeconds, version: info.version },
             })
             ws.write(chunk)
           })
           res.on('end', () => {
+            if (total > 0 && received !== total) {
+              ws.destroy()
+              finish(reject, new Error(`download incomplete: ${received}/${total}`))
+              return
+            }
             ws.end(() => {
               downloadedInstallerPath = installerPath
               setState({ state: 'ready', info: { version: info.version } })
@@ -186,7 +211,9 @@ function registerIpc() {
     if (!downloadedInstallerPath || !fs.existsSync(downloadedInstallerPath)) {
       return { ok: false, error: 'no downloaded installer' }
     }
-    setState({ state: 'installing', info: {} })
+    const versionMatch = path.basename(downloadedInstallerPath).match(/LianYu-Setup-(.+)\.exe$/)
+    const version = versionMatch ? versionMatch[1] : ''
+    setState({ state: 'installing', info: { version, message: formatInstallMessage(version) } })
     try {
       logger.info('updater', `installing: ${downloadedInstallerPath}`)
       spawn(downloadedInstallerPath, ['/S', '--force-run'], {
@@ -208,7 +235,7 @@ export function initUpdater(mainWindow) {
   initialized = true
   mainWindowRef = mainWindow
   registerIpc()
-  logger.info('updater', 'initialized (manual mode, no electron-updater HTTP)')
+  logger.info('updater', 'initialized (manual mode, self-hosted update source)')
 }
 
 export function getUpdaterState() {

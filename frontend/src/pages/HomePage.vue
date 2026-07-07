@@ -176,7 +176,15 @@ const feedLoading = ref(true)
 function resolveStateAvatar(state) {
   const char = charactersStore.list.find(c => c.id === state.characterId)
   if (char) return pickCharacterAvatarRaw(char, 'thumb')
-  return state.avatarUrl || state.avatarThumbUrl || ''
+  return state.avatarThumbUrl || state.avatarUrl || ''
+}
+
+function resolveCharacterAvatar(characterId, fallbackUrl = '', fallbackThumbUrl = '') {
+  const char = charactersStore.list.find(c => c.id === characterId)
+  if (char) {
+    return pickCharacterAvatarRaw(char, 'thumb') || fallbackThumbUrl || fallbackUrl || ''
+  }
+  return fallbackThumbUrl || fallbackUrl || ''
 }
 
 const greeting = computed(() => {
@@ -197,7 +205,11 @@ const featuredCompanion = computed(() => {
     return {
       characterId: latestCharacterMoment.characterId,
       name: latestCharacterMoment.characterName,
-      avatarUrl: latestCharacterMoment.avatarUrl,
+      avatarUrl: resolveCharacterAvatar(
+        latestCharacterMoment.characterId,
+        latestCharacterMoment.avatarUrl,
+        latestCharacterMoment.avatarThumbUrl
+      ),
       emotion
     }
   }
@@ -209,7 +221,7 @@ const featuredCompanion = computed(() => {
     return {
       characterId: conv.characterId,
       name: conv.characterName || conv.title,
-      avatarUrl: conv.characterAvatarUrl,
+      avatarUrl: resolveCharacterAvatar(conv.characterId, conv.characterAvatarUrl, conv.characterAvatarThumbUrl),
       emotion
     }
   }
@@ -220,7 +232,7 @@ const featuredCompanion = computed(() => {
     return {
       characterId: state.characterId,
       name: state.characterName,
-      avatarUrl: state.avatarUrl || char?.avatarThumbUrl || char?.avatarUrl,
+      avatarUrl: resolveStateAvatar(state),
       emotion: state
     }
   }
@@ -270,7 +282,7 @@ async function loadFeedPreview() {
       characterName: p.authorType === 'USER' ? t('moments.you') : p.characterName,
       avatarUrl: p.authorType === 'USER'
         ? (p.userAvatarUrl || userStore.avatarUrl)
-        : p.characterAvatarUrl,
+        : resolveCharacterAvatar(p.characterId, p.characterAvatarUrl, p.characterAvatarThumbUrl),
       title: '',
       content: p.content,
       createdAt: p.createdAt,
@@ -282,7 +294,7 @@ async function loadFeedPreview() {
       id: d.id,
       characterId: d.characterId,
       characterName: d.characterName,
-      avatarUrl: d.avatarUrl,
+      avatarUrl: resolveCharacterAvatar(d.characterId, d.avatarUrl, d.avatarThumbUrl),
       title: d.title,
       content: d.content,
       createdAt: d.createdAt,

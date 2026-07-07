@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process'
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -19,3 +20,5 @@ if (!process.env.GH_TOKEN) {
 process.chdir(root)
 execSync(`npm version ${bump} --no-git-tag-version`, { stdio: 'inherit' })
 execSync('node scripts/electron-pack.mjs', { stdio: 'inherit' })
+const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
+execSync(`python ../scripts/_upload_update_assets.py --version ${pkg.version}`, { stdio: 'inherit' })

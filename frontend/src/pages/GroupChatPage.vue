@@ -309,6 +309,7 @@ import { useOnboardingHint } from '@/composables/useOnboardingHint'
 import { Plus, ChatDotRound, ArrowLeft, ArrowDown, User, UserFilled, Promotion, Delete, Edit, Check, Close } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { resolveMediaUrl } from '@/utils/media'
+import { pickCharacterAvatarRaw } from '@/utils/characterAvatar'
 import { humanizeError } from '@/utils/errorMessage'
 import { formatSmartTime } from '@/utils/feedTime'
 import { resolveGroupDisplayTitle } from '@/utils/groupTitle'
@@ -379,6 +380,10 @@ const groupTitleInputRef = ref(null)
 const groupMembersCache = ref({})
 
 let msgCounter = 0
+
+function memberAvatar(member) {
+  return pickCharacterAvatarRaw(member, 'thumb')
+}
 
 function groupTitleLabel(title) {
   return resolveGroupDisplayTitle(title, t('group.untitled'))
@@ -486,7 +491,7 @@ async function appendCharacterMessage(body) {
     role: 'assistant',
     characterId: body.characterId,
     _charName: body.characterName || member?.name || '角色',
-    _charAvatar: member?.avatarUrl || null,
+    _charAvatar: memberAvatar(member) || null,
     content: body.content,
     _time: new Date().toISOString()
   })
@@ -632,7 +637,7 @@ function mapGroupMessages(msgs, seenChars) {
     ...m,
     _key: 'g' + (++msgCounter),
     _charName: (m.role || '').toLowerCase() === 'user' ? t('group.me') : (seenChars.get(m.characterId)?.name || t('group.roleFallback')),
-    _charAvatar: seenChars.get(m.characterId)?.avatarUrl || null,
+    _charAvatar: memberAvatar(seenChars.get(m.characterId)) || null,
     _time: m.createdAt
   }))
 }

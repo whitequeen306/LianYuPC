@@ -83,6 +83,7 @@ import { getConversation, getMessages, sendMessageStream } from '@/api/conversat
 import { PLATFORM_PROVIDER } from '@/constants/ai'
 import { humanizeError } from '@/utils/errorMessage'
 import { resolveMediaUrl } from '@/utils/media'
+import { pickCharacterAvatarRaw } from '@/utils/characterAvatar'
 import { getElectronAPI } from '@/utils/electron'
 import { useChatScroll, sleep, MIN_REPLY_DISPLAY_MS } from '@/composables/useChatScroll'
 import { useStreamAbort, isNetworkError } from '@/composables/useStreamAbort'
@@ -121,7 +122,7 @@ const { beginStream, isAbortError } = useStreamAbort()
 
 const characterName = computed(() => activeCharacter.value?.name || '聊天')
 const characterAvatar = computed(() => {
-  const url = activeCharacter.value?.avatarUrl
+  const url = pickCharacterAvatarRaw(activeCharacter.value, 'thumb')
   return url ? resolveMediaUrl(url) : ''
 })
 const showInnerThoughts = computed(() =>
@@ -208,6 +209,7 @@ async function resolveCharacter(charId, conv) {
       id: charId,
       name: conv.characterName || conv.title || '角色',
       avatarUrl: conv.characterAvatarUrl,
+      avatarThumbUrl: conv.characterAvatarThumbUrl,
     }
   }
   activeCharacter.value = char

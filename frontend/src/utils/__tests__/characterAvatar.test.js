@@ -20,4 +20,15 @@ describe('characterAvatar', () => {
     expect(nextCharacterAvatarTier(character, 'thumb')).toBe('orig')
     expect(nextCharacterAvatarTier(character, 'orig')).toBe('broken')
   })
+
+  it('falls back to thumb when raw avatarUrl is missing but thumb exists', () => {
+    const partial = {
+      id: 2,
+      avatarThumbUrl: '/api/public/files/square-avatars-thumb/citlali.jpg',
+      avatarUrl: '',
+    }
+
+    expect(pickCharacterAvatarRaw(partial, 'thumb')).toBe(partial.avatarThumbUrl)
+    expect(pickCharacterAvatarRaw(partial, 'orig')).toBe(partial.avatarThumbUrl)
+  })
 })

@@ -243,7 +243,7 @@
               class="moments-active-chip"
               @click="setFilter(c.id)"
             >
-              <img v-if="c.avatarUrl" :src="resolveMediaUrl(c.avatarUrl)" :alt="c.name" />
+              <img v-if="characterChipAvatar(c)" :src="resolveMediaUrl(characterChipAvatar(c))" :alt="c.name" />
               <span>{{ c.name }}</span>
             </button>
           </div>
@@ -302,6 +302,7 @@ import {
   markMomentsSeen
 } from '@/api/moments'
 import { resolveMediaUrl } from '@/utils/media'
+import { pickCharacterAvatarRaw } from '@/utils/characterAvatar'
 import { sanitizeHtml } from '@/utils/sanitize'
 import { feedDateKey, formatFeedDateLabel, formatFeedTime } from '@/utils/feedTime'
 import { truncateText } from '@/utils/text'
@@ -378,6 +379,16 @@ const activeInFeed = computed(() => {
   return charactersStore.list.filter(c => ids.has(c.id)).slice(0, 8)
 })
 
+function resolveCharacterAvatar(characterId, fallbackUrl = '', fallbackThumbUrl = '') {
+  const char = charactersStore.list.find(c => c.id === characterId)
+  if (char) return pickCharacterAvatarRaw(char, 'thumb') || fallbackThumbUrl || fallbackUrl || ''
+  return fallbackThumbUrl || fallbackUrl || ''
+}
+
+function characterChipAvatar(character) {
+  return pickCharacterAvatarRaw(character, 'thumb')
+}
+
 const firstCharacterPost = computed(() =>
   posts.value.find(p => p.authorType === 'CHARACTER' && p.characterId)
 )
@@ -393,7 +404,11 @@ const sidebarCompanion = computed(() => {
     return {
       characterId: filterCharId.value,
       name: char?.name || latestPost?.characterName || emotion?.characterName,
-      avatarUrl: char?.avatarUrl || latestPost?.characterAvatarUrl || emotion?.avatarUrl,
+      avatarUrl: resolveCharacterAvatar(
+        filterCharId.value,
+        latestPost?.characterAvatarUrl || emotion?.avatarUrl,
+        latestPost?.characterAvatarThumbUrl || emotion?.avatarThumbUrl
+      ),
       emotion
     }
   }
@@ -404,7 +419,7 @@ const sidebarCompanion = computed(() => {
     return {
       characterId: post.characterId,
       name: post.characterName,
-      avatarUrl: post.characterAvatarUrl,
+      avatarUrl: resolveCharacterAvatar(post.characterId, post.characterAvatarUrl, post.characterAvatarThumbUrl),
       emotion
     }
   }
@@ -415,7 +430,11 @@ const sidebarCompanion = computed(() => {
     return {
       characterId: state.characterId,
       name: state.characterName,
-      avatarUrl: state.avatarUrl || char?.avatarUrl,
+      avatarUrl: resolveCharacterAvatar(
+        state.characterId,
+        state.avatarUrl || char?.avatarUrl,
+        state.avatarThumbUrl || char?.avatarThumbUrl
+      ),
       emotion: state
     }
   }
@@ -686,7 +705,7 @@ function postAuthorAvatar(post) {
   if (post.authorType === 'USER') {
     return post.userAvatarUrl || userStore.avatarUrl || null
   }
-  return post.characterAvatarUrl
+  return resolveCharacterAvatar(post.characterId, post.characterAvatarUrl, post.characterAvatarThumbUrl)
 }
 
 async function submitUserPost() {

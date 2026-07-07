@@ -18,7 +18,7 @@
         <el-button text :icon="ArrowLeft" @click="goBack">返回</el-button>
         <div class="character-hero">
           <div class="hero-avatar">
-            <img v-if="character.avatarUrl" :src="resolveMediaUrl(character.avatarUrl)" />
+            <img v-if="characterAvatar" :src="resolveMediaUrl(characterAvatar)" />
             <el-icon v-else :size="22"><User /></el-icon>
           </div>
           <div>
@@ -161,6 +161,7 @@ import { ArrowLeft, Loading, User, WarningFilled } from '@element-plus/icons-vue
 import { getCharacter, updateCharacter, uploadChatBackground } from '@/api/character'
 import { clearConversationMessages, listConversations } from '@/api/conversation'
 import { resolveMediaUrl } from '@/utils/media'
+import { pickCharacterAvatarRaw } from '@/utils/characterAvatar'
 import { normalizeHex } from '@/utils/themeColor'
 
 const { t } = useI18n()
@@ -223,6 +224,8 @@ const chatBgPreviewStyle = computed(() => {
     backgroundRepeat: 'no-repeat'
   }
 })
+
+const characterAvatar = computed(() => pickCharacterAvatarRaw(character.value, 'thumb'))
 
 onMounted(loadCharacter)
 

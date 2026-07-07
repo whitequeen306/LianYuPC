@@ -33,6 +33,7 @@ public class FileStorageService {
     private static final String CHAT_IMAGE_PATH = "chat-images/";
     private static final String SQUARE_AVATAR_PATH = "square-avatars/";
     private static final String SQUARE_AVATAR_THUMB_PATH = "square-avatars-thumb/";
+    private static final String UPDATES_PATH = "updates/";
     private static final int SQUARE_AVATAR_THUMB_SIZE = 296;
     private static final long AVATAR_MAX_BYTES = ImageUploadValidator.MAX_BYTES;
     private static final String AVATAR_CONTENT_TYPE = "image/png";
@@ -41,7 +42,7 @@ public class FileStorageService {
             "image/jpeg", "image/png", "image/webp", "image/gif"
     );
     private static final Pattern SAFE_OBJECT_KEY = Pattern.compile(
-            "^(avatars/[a-zA-Z0-9._-]+|chat-images/[a-zA-Z0-9._-]+|square-avatars/[a-z0-9._-]+|square-avatars-thumb/[a-z0-9._-]+)$"
+            "^(avatars/[a-zA-Z0-9._-]+|chat-images/[a-zA-Z0-9._-]+|square-avatars/[a-z0-9._-]+|square-avatars-thumb/[a-z0-9._-]+|updates/(latest\\.yml|[a-zA-Z0-9._-]+\\.exe|[a-zA-Z0-9._-]+\\.exe\\.blockmap))$"
     );
 
     public String uploadAvatar(MultipartFile file) {
@@ -365,7 +366,7 @@ public class FileStorageService {
         if (SAFE_OBJECT_KEY.matcher(stored).matches()) {
             return stored;
         }
-        for (String prefix : new String[]{AVATAR_PATH, CHAT_IMAGE_PATH, SQUARE_AVATAR_PATH, SQUARE_AVATAR_THUMB_PATH}) {
+        for (String prefix : new String[]{AVATAR_PATH, CHAT_IMAGE_PATH, SQUARE_AVATAR_PATH, SQUARE_AVATAR_THUMB_PATH, UPDATES_PATH}) {
             int idx = stored.indexOf(prefix);
             if (idx >= 0) {
                 String key = stored.substring(idx);
@@ -413,6 +414,9 @@ public class FileStorageService {
                 }
             }
             return guessContentTypeFromKey(objectKey);
+        }
+        if (lowerKey.equals(UPDATES_PATH + "latest.yml")) {
+            return "text/yaml";
         }
         return "application/octet-stream";
     }
@@ -469,6 +473,7 @@ public class FileStorageService {
 
     private String guessContentTypeFromKey(String objectKey) {
         String lower = objectKey.toLowerCase();
+        if (lower.equals(UPDATES_PATH + "latest.yml")) return "text/yaml";
         if (lower.endsWith(".png")) return "image/png";
         if (lower.endsWith(".webp")) return "image/webp";
         if (lower.endsWith(".gif")) return "image/gif";

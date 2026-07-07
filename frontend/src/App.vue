@@ -10,6 +10,7 @@
         <component :is="Component" :key="viewKey(route)" />
       </transition>
     </router-view>
+    <AppUpdateDialog v-if="isElectron" />
   </el-config-provider>
 </template>
 
@@ -22,6 +23,7 @@ import { isElectronRuntime } from '@/utils/runtime'
 import { getElectronAPI } from '@/utils/electron'
 import { syncElectronTitleBar } from '@/utils/electronCaption'
 import { ElMessageBox } from 'element-plus'
+import AppUpdateDialog from '@/components/AppUpdateDialog.vue'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import ja from 'element-plus/es/locale/lang/ja'
 import en from 'element-plus/es/locale/lang/en'

@@ -90,7 +90,7 @@ function buildMainCjsBundle() {
     bundle: true,
     platform: 'node',
     format: 'cjs',
-    external: ['electron', 'active-win', 'bytenode', 'ws', 'extract-zip', 'electron-updater'],
+    external: ['electron', 'active-win', 'bytenode', 'ws', 'extract-zip'],
     packages: 'external',
     minify: true,
     sourcemap: false,

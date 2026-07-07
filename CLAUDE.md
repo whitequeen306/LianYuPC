@@ -121,7 +121,7 @@ lianyu-app → lianyu-web → lianyu-service → lianyu-ai / lianyu-dao / lianyu
 
 ### Electron 客户端发布流程（自动更新通道）
 
-从 v0.2.256 起，客户端内置了 `electron-updater`，每次发版自动上传 GitHub Releases。用户端在「关于」页点「检查更新」即可一键升级。
+从 v0.2.261 起，客户端自动更新运行时读取自家源：`/api/public/files/updates/latest.yml`，安装包与 blockmap 存放在 MinIO 的 `updates/` 前缀下。GitHub Releases 仍作为备份发布渠道，但客户端更新检查/下载不再走 GitHub Releases 代理。
 
 **发布命令：**
 ```bash
@@ -134,7 +134,8 @@ npm run electron:release:major     # major 升级
 **发布流程（一条命令全自动）：**
 1. `npm version <bump> --no-git-tag-version`（改 package.json 版本号）
 2. `vite build` + `esbuild` 主进程 bundle + `electron-builder` 打包
-3. 自动上传 `LianYu Setup x.x.x.exe` + `latest.yml` + `.blockmap` 到 GitHub Releases
+3. 自动上传 `LianYu Setup x.x.x.exe` + `latest.yml` + `.blockmap` 到 GitHub Releases（备份渠道）
+4. 自动同步 `latest.yml`、安装包、`.blockmap` 到云端 MinIO `updates/`（客户端实际更新源）
 
 **GH_TOKEN 说明：**
 - 发布需要 GitHub Personal Access Token（classic，`repo` 权限）
