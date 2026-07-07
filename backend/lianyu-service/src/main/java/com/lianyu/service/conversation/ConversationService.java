@@ -1141,12 +1141,16 @@ public class ConversationService {
         String characterAvatarUrl = character != null
                 ? fileStorageService.resolvePublicUrl(character.getAvatarUrl())
                 : null;
+        String characterAvatarThumbUrl = character != null
+                ? fileStorageService.resolveSquareAvatarThumbPublicUrl(character.getAvatarUrl())
+                : null;
         return ConversationResponse.builder()
                 .id(conv.getId())
                 .userId(conv.getUserId())
                 .characterId(conv.getCharacterId())
                 .characterName(characterName)
                 .characterAvatarUrl(characterAvatarUrl)
+                .characterAvatarThumbUrl(characterAvatarThumbUrl)
                 .mode(conv.getMode())
                 .title(conv.getTitle())
                 .lastMessage(lastMessage)

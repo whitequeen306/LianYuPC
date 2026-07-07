@@ -12,6 +12,7 @@ public class ConversationResponse {
     private Long characterId;
     private String characterName;
     private String characterAvatarUrl;
+    private String characterAvatarThumbUrl;
     private String mode;
     private String title;
     private String lastMessage;

@@ -228,6 +228,9 @@ public class MomentsCommentService {
                 .characterAvatarUrl(character != null
                         ? fileStorageService.resolvePublicUrl(character.getAvatarUrl())
                         : null)
+                .characterAvatarThumbUrl(character != null
+                        ? fileStorageService.resolveSquareAvatarThumbPublicUrl(character.getAvatarUrl())
+                        : null)
                 .userDisplayName(AUTHOR_USER.equals(row.getAuthorType()) ? "你" : null)
                 .parentId(row.getParentId())
                 .rootId(row.getRootId())

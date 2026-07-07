@@ -74,6 +74,7 @@ public class CharacterStateController {
             item.put("characterId", state.getCharacterId());
             item.put("characterName", character.getName());
             item.put("avatarUrl", fileStorageService.resolvePublicUrl(character.getAvatarUrl()));
+            item.put("avatarThumbUrl", fileStorageService.resolveSquareAvatarThumbPublicUrl(character.getAvatarUrl()));
             item.put("currentEmotion", state.getCurrentEmotion());
             item.put("emotionIntensity", state.getEmotionIntensity());
             item.put("statusText", state.getStatusText());
@@ -99,6 +100,12 @@ public class CharacterStateController {
             item.put("id", diary.getId());
             item.put("characterId", diary.getCharacterId());
             item.put("characterName", character != null ? character.getName() : "角色#" + characterId);
+            item.put("avatarUrl", character != null
+                    ? fileStorageService.resolvePublicUrl(character.getAvatarUrl())
+                    : null);
+            item.put("avatarThumbUrl", character != null
+                    ? fileStorageService.resolveSquareAvatarThumbPublicUrl(character.getAvatarUrl())
+                    : null);
             item.put("title", diary.getTitle());
             item.put("content", diary.getContent());
             item.put("mood", diary.getMood());
@@ -149,6 +156,9 @@ public class CharacterStateController {
             item.put("characterName", character != null ? character.getName() : "角色#" + diary.getCharacterId());
             item.put("avatarUrl", character != null
                     ? fileStorageService.resolvePublicUrl(character.getAvatarUrl())
+                    : null);
+            item.put("avatarThumbUrl", character != null
+                    ? fileStorageService.resolveSquareAvatarThumbPublicUrl(character.getAvatarUrl())
                     : null);
             item.put("title", diary.getTitle());
             item.put("content", diary.getContent());

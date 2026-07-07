@@ -13,6 +13,7 @@ public class MomentCommentResponse {
     private Long characterId;
     private String characterName;
     private String characterAvatarUrl;
+    private String characterAvatarThumbUrl;
     private String userDisplayName;
     private Long parentId;
     private Long rootId;

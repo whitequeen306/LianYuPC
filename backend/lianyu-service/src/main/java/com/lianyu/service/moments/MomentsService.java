@@ -487,6 +487,9 @@ public class MomentsService {
                 .characterAvatarUrl(userAuthored ? null : (character != null
                         ? fileStorageService.resolvePublicUrl(character.getAvatarUrl())
                         : null))
+                .characterAvatarThumbUrl(userAuthored ? null : (character != null
+                        ? fileStorageService.resolveSquareAvatarThumbPublicUrl(character.getAvatarUrl())
+                        : null))
                 .userDisplayName(userAuthored ? "你" : null)
                 .userAvatarUrl(userAuthored && user != null
                         ? fileStorageService.resolvePublicUrl(user.getAvatarUrl())

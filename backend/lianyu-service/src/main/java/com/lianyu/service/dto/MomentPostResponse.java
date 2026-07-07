@@ -14,6 +14,7 @@ public class MomentPostResponse {
     private Long characterId;
     private String characterName;
     private String characterAvatarUrl;
+    private String characterAvatarThumbUrl;
     private String userDisplayName;
     private String userAvatarUrl;
     private String imageUrl;
