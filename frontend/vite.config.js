@@ -68,7 +68,7 @@ export default defineConfig({
 
     modulePreload: false,
 
-    cssCodeSplit: true,
+    cssCodeSplit: !isElectronPack,
 
     sourcemap: isElectronPack ? false : undefined,
 

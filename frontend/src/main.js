@@ -12,6 +12,7 @@ import { readToken } from './utils/secureToken'
 import { installMainHttpToasts } from '@/api/installMainHttpToasts'
 import { prepareAuthRoute, bootstrapAuth } from './auth/bootstrap'
 import { bootstrapLauncherSession } from './auth/launcherBootstrap'
+import { recoverFromStartupRouteError } from './router/startupErrorRecovery'
 import * as rendererLogger from './utils/logger'
 import './styles/theme.scss'
 import './styles/global.scss'
@@ -83,6 +84,7 @@ function isDesktopAuxSurface() {
 
 router.onError((err) => {
   const msg = err?.message || String(err)
+  if (recoverFromStartupRouteError(err)) return
   showBootSplashError('界面加载失败，请重启应用或重新安装。')
   if (typeof window !== 'undefined') {
     window.__vueErr = (window.__vueErr || []).concat(`router: ${msg}`)
