@@ -3126,16 +3126,22 @@ app.whenReady().then(() => {
   startupMainProfiler.mark('configureSecurity:done')
   configureAntiDebug()
   startupMainProfiler.mark('configureAntiDebug:done')
-  patchDesktopRequestOrigin()
-  startupMainProfiler.mark('patchDesktopRequestOrigin:done')
-  applyLaunchAtLogin(readDesktopSettings().launchAtLogin)
-  startupMainProfiler.mark('applyLaunchAtLogin:done')
   registerIpcHandlers()
   startupMainProfiler.mark('registerIpcHandlers:done')
   createMainWindow()
   startupMainProfiler.mark('createMainWindow:done')
   schedulePostWindowStartup({
     mainWindow,
+    patchDesktopRequestOrigin: () => {
+      startupMainProfiler.mark('postWindow:patchDesktopRequestOrigin:start')
+      patchDesktopRequestOrigin()
+      startupMainProfiler.mark('postWindow:patchDesktopRequestOrigin:done')
+    },
+    applyLaunchAtLogin: () => {
+      startupMainProfiler.mark('postWindow:applyLaunchAtLogin:start')
+      applyLaunchAtLogin(readDesktopSettings().launchAtLogin)
+      startupMainProfiler.mark('postWindow:applyLaunchAtLogin:done')
+    },
     initUpdater: (win) => {
       startupMainProfiler.mark('postWindow:initUpdater:start')
       initUpdater(win)
