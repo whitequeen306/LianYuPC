@@ -70,6 +70,7 @@ import { RENDERER_AUTH_TOKEN_SCRIPT } from './rendererTokenScript.js'
 // Windows toast 通知归属：AUMID 必须在 app ready / 任何窗口创建前设置，
 // 否则 new Notification() 弹的 toast 无归属（不认图标、不进操作中心）。
 app.setAppUserModelId('com.lianyu.pc')
+app.commandLine.appendSwitch('disable-http2')
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 

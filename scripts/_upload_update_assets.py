@@ -157,6 +157,17 @@ def cleanup_old_update_assets(client: paramiko.SSHClient, keep: int = RETENTION_
         )
 
 
+def configure_update_assets_public_read(client: paramiko.SSHClient) -> None:
+    run(
+        client,
+        "docker exec lianyu-minio sh -lc '"
+        "mc alias set local http://127.0.0.1:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\" >/dev/null && "
+        f"mc anonymous set download local/{BUCKET}/updates"
+        "'",
+        timeout=120,
+    )
+
+
 def artifact_paths(version: str) -> list[tuple[Path, str]]:
     release_dir = ROOT / "frontend" / "release" / f"v{version}"
     installer = release_dir / f"LianYu Setup {version}.exe"
@@ -211,8 +222,9 @@ def main() -> None:
         )
     run(client, "docker exec lianyu-minio sh -lc 'rm -rf /tmp/lianyu-update-assets'")
     run(client, f"rm -rf {remote_tmp}")
+    configure_update_assets_public_read(client)
     cleanup_old_update_assets(client)
-    run(client, "curl -k -s -o /dev/null -w 'latest=%{http_code}' https://154.219.111.30/api/public/files/updates/latest.yml")
+    run(client, "curl -k -fsS -o /dev/null -w 'latest=%{http_code}' https://154.219.111.30/api/public/files/updates/latest.yml")
     client.close()
     print("UPDATE_ASSETS_UPLOADED")
 

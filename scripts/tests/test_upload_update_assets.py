@@ -41,6 +41,14 @@ class FakeClient:
 
 
 class UpdateAssetRetentionTest(unittest.TestCase):
+    def test_configure_update_assets_public_read_sets_prefix_policy(self):
+        module = load_module()
+        client = FakeClient("")
+
+        module.configure_update_assets_public_read(client)
+
+        self.assertTrue(any("mc anonymous set download local/lianyu/updates" in cmd for cmd in client.commands))
+
     def test_stale_update_objects_keeps_latest_three_versions_and_latest_manifest(self):
         module = load_module()
         objects = [
