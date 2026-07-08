@@ -1,5 +1,5 @@
-/** 羁绊页角色卡片：仅单聊角色主动消息 */
-export const CHAR_CARD_UNREAD_TYPES = new Set(['PROACTIVE_MESSAGE'])
+/** 羁绊页角色卡片：单聊普通回复 + 主动消息 */
+export const CHAR_CARD_UNREAD_TYPES = new Set(['MESSAGE', 'PROACTIVE_MESSAGE'])
 
 /** 顶栏铃铛：动态与日记相关 */
 export const BELL_UNREAD_TYPES = new Set(['MOMENT_NEW', 'MOMENT_COMMENT', 'DIARY_NEW'])

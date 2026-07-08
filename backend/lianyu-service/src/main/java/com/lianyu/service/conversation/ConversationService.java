@@ -205,7 +205,14 @@ public class ConversationService {
         if (conversation.getCharacterId() != null) {
             character = characterMapper.selectById(conversation.getCharacterId());
         }
-        return toResponse(conversation, character);
+        Map<Long, String> lastMessageMap = buildLastMessageSnippetMap(List.of(conversationId));
+        Map<Long, String> lastCharacterMessageMap = buildLastCharacterMessageSnippetMap(List.of(conversationId));
+        return toResponse(
+                conversation,
+                character,
+                lastMessageMap.get(conversationId),
+                lastCharacterMessageMap.get(conversationId)
+        );
     }
 
     @Transactional

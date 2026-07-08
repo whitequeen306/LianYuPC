@@ -294,6 +294,7 @@ import { fixUtf8Mojibake } from '@/utils/textEncoding'
 import { listCharacterStates } from '@/api/characterState'
 import { getSavedUserCity, saveUserCity } from '@/utils/userCity'
 import { buildLatestSingleConversationMap, selectCharacterPreview } from '@/pages/charactersPreview'
+import { resolveCharacterCardRefreshTarget } from '@/pages/charactersRealtime'
 import CharacterCityModeForm from '@/components/CharacterCityModeForm.vue'
 
 const { t } = useI18n()
@@ -309,6 +310,7 @@ const loading = computed({
   set: (v) => { storeLoading.value = v }
 })
 const {
+  conversationModeById,
   ingestConversations,
   ingestUnreadNotifications,
   refreshUnreadFromApi,
@@ -317,7 +319,7 @@ const {
 } = useConversationUnread()
 
 /** characterId -> { id, lastMessage, lastCharacterMessage } for SINGLE conversations */
-const singleConvByCharacterId = ref({})
+const singleConvByCharacterId = computed(() => buildSingleConvMap(conversationsStore.list || []))
 const emotionByCharacterId = ref({})
 const hoveredCharacterId = ref(null)
 const characterAvatarTier = ref({})
@@ -374,9 +376,14 @@ watch(
   async () => {
     await refreshUnreadFromApi()
     try {
-      const convList = await conversationsStore.fetchList()
-      ingestConversations(convList || [])
-      singleConvByCharacterId.value = buildSingleConvMap(convList)
+      const latestList = notificationsStore.latest || []
+      const refreshTarget = latestList
+        .map(notification => resolveCharacterCardRefreshTarget(notification, conversationModeById.value))
+        .find(Boolean)
+
+      if (refreshTarget) {
+        await conversationsStore.refreshConversationSummary(refreshTarget)
+      }
     } catch {}
   }
 )
@@ -414,7 +421,6 @@ async function fetchCharacters() {
     ])
     ingestConversations(convList || [])
     ingestUnreadNotifications(unreadList || [])
-    singleConvByCharacterId.value = buildSingleConvMap(convList)
     await loadCharacterStates()
   } catch {} finally {
     loading.value = false

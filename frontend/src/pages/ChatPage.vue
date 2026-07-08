@@ -232,6 +232,7 @@ import { useNotificationsStore } from '@/stores/notifications'
 import { useUserStore } from '@/stores/user'
 import { useSettingsStore } from '@/stores/settings'
 import { useCharactersStore } from '@/stores/characters'
+import { useConversationsStore } from '@/stores/conversations'
 import { humanizeError } from '@/utils/errorMessage'
 import { getConversation, getMessages, sendMessageStream, uploadChatImage } from '@/api/conversation'
 import { fetchModels } from '@/api/ai'
@@ -266,6 +267,7 @@ const providersStore = useProvidersStore()
 const notificationsStore = useNotificationsStore()
 const userStore = useUserStore()
 const settingsStore = useSettingsStore()
+const conversationsStore = useConversationsStore()
 
 const charactersStore = useCharactersStore()
 const messages = ref([])
@@ -967,6 +969,10 @@ async function handleSend() {
     createdAt: new Date().toISOString()
   }
   messages.value.push(userMsg)
+  conversationsStore.patchRealtimeSummary(currentConvId.value, {
+    lastMessage: userMsg.content,
+    updatedAt: userMsg.createdAt,
+  })
 
   inputText.value = ''
   pendingImageUrl.value = ''
@@ -1024,6 +1030,11 @@ async function handleSend() {
     }
 
     if (currentConvId.value === sendConvId && fullContent?.trim()) {
+      conversationsStore.patchRealtimeSummary(sendConvId, {
+        lastMessage: fullContent,
+        lastCharacterMessage: fullContent,
+        updatedAt: new Date().toISOString(),
+      })
       syncStreamingAssistantBubbles(fullContent, streamGroupId, streamCreatedAt, pieces)
       sortMessagesInTimelineOrder()
       await nextTick()

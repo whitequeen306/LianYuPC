@@ -79,6 +79,7 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useCharactersStore } from '@/stores/characters'
 import { useNotificationsStore } from '@/stores/notifications'
+import { useConversationsStore } from '@/stores/conversations'
 import { getConversation, getMessages, sendMessageStream } from '@/api/conversation'
 import { PLATFORM_PROVIDER } from '@/constants/ai'
 import { humanizeError } from '@/utils/errorMessage'
@@ -98,6 +99,7 @@ const route = useRoute()
 const { t, locale } = useI18n()
 const charactersStore = useCharactersStore()
 const notificationsStore = useNotificationsStore()
+const conversationsStore = useConversationsStore()
 
 const loading = ref(true)
 const waitingReply = ref(false)
@@ -253,6 +255,10 @@ async function handleSend() {
     createdAt: new Date().toISOString(),
   }
   messages.value.push(userMsg)
+  conversationsStore.patchRealtimeSummary(convId, {
+    lastMessage: userMsg.content,
+    updatedAt: userMsg.createdAt,
+  })
   inputText.value = ''
   waitingReply.value = true
   await nextTick()
@@ -299,6 +305,11 @@ async function handleSend() {
       await sleep(MIN_REPLY_DISPLAY_MS - elapsed)
     }
     if (fullContent?.trim()) {
+      conversationsStore.patchRealtimeSummary(convId, {
+        lastMessage: fullContent,
+        lastCharacterMessage: fullContent,
+        updatedAt: new Date().toISOString(),
+      })
       messages.value.push({
         _tempId: `a-${Date.now()}`,
         role: 'assistant',
