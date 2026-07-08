@@ -49,6 +49,7 @@ import {
   stopQqBridge,
   getQqBridgeStatus,
 } from './qqBridge/qqBridge.js'
+import { createQqBridgeCoordinator } from './qqBridge/qqBridgeCoordinator.js'
 import {
   readQqBridgeSettings,
   writeQqBridgeSettings,
@@ -87,8 +88,6 @@ let quickChatShellReady = false
 /** @type {string | null} */
 let quickChatPendingShowId = null
 let quickChatReadyFallbackTimer = null
-/** NapCat WebUI 扫码登录窗（自管托管）单例 */
-let qqLoginWindow = null
 /** 图片查看器独立窗口（微信/QQ 风格）单例；主进程主动 loadURL(data:) + executeJavaScript 注入逻辑 */
 let imageViewerWindow = null
 /** @type {Tray | null} */
@@ -522,6 +521,29 @@ function resolveDistRoot() {
 function resolveDistPath(...segments) {
   return path.join(resolveDistRoot(), ...segments)
 }
+
+const qqBridgeCoordinator = createQqBridgeCoordinator({
+  getWindows: () => [mainWindow, launcherWindow],
+  Notification,
+  showMainWindow,
+  log: (...args) => log(args.join(' ')),
+  readQqBridgeSettings,
+  writeQqBridgeSettings,
+  startNapCatHost,
+  stopNapCatHost,
+  getNapCatHostStatus,
+  startQqBridge,
+  stopQqBridge,
+  getQqBridgeStatus,
+  resolveDesktopAuthToken,
+  resolveApiOrigin,
+  performApiRequest,
+  BrowserWindow,
+  shell,
+  isAllowedExternalUrl,
+  resolveDistPath,
+  logger,
+})
 
 function resolveTrayIcon() {
   // 打包后 build/icon.ico 不在 asar 里；dist/icon.ico 才在（regenerate-icon.py 同步写
@@ -1738,10 +1760,7 @@ function quitApplication(options = {}) {
   isQuitting = true
   stopQqBridge()
   stopNapCatHost()
-  if (qqLoginWindow && !qqLoginWindow.isDestroyed()) {
-    qqLoginWindow.destroy()
-  }
-  qqLoginWindow = null
+  qqBridgeCoordinator.dispose()
   closeCharacterPicker()
   if (quickChatShell && !quickChatShell.isDestroyed()) quickChatShell.destroy()
   quickChatShell = null
@@ -1756,418 +1775,14 @@ function quitApplication(options = {}) {
   app.quit()
 }
 
-// QQ 桥接状态追踪：区分"掉线"（WS 断开）与"未登录"（WS 连上但 QQ 无登录态）
-let prevBridgeState = ''
-let notLoggedInTimer = null
-let lastDisconnectNotifyTs = 0
-let lastKickedTs = 0
-let napcatRestarting = false
-
-function clearNotLoggedInTimer() {
-  if (notLoggedInTimer) {
-    clearTimeout(notLoggedInTimer)
-    notLoggedInTimer = null
-  }
-}
-
-/** QQ 桥接告警：软件内弹窗 + 系统通知双发（窗口最小化/未聚焦时系统通知兜底） */
-const qqAlertTitles = {
-  kicked: 'QQ 已掉线',
-  disconnected: 'QQ 桥接掉线',
-  not_logged_in: 'QQ 未登录',
-  restart_failed: 'NapCat 重启失败',
-}
-
-function showQqBridgeNotification(title, body) {
-  if (!Notification.isSupported()) return
-  const notification = new Notification({ title, body, silent: false })
-  notification.on('click', () => showMainWindow('#/app/qq-bridge'))
-  notification.show()
-}
-
-function sendQqBridgeAlert(type, message) {
-  // 软件内弹窗：IPC → App.vue 弹 ElMessageBox
-  for (const win of [mainWindow, launcherWindow]) {
-    if (win && !win.isDestroyed()) {
-      try {
-        win.webContents.send('desktop:qq-bridge-alert', { type, message, ts: Date.now() })
-      } catch { /* 窗口可能已销毁 */ }
-    }
-  }
-  // 系统通知：窗口最小化/未聚焦时也能看到
-  showQqBridgeNotification(qqAlertTitles[type] || 'QQ 桥接提醒', message)
-}
-
-/** QQ 被踢下线后自动重启 NapCat 进程，尝试重新登录 */
-async function restartNapCatForReconnect() {
-  if (napcatRestarting) return
-  napcatRestarting = true
-  try {
-    log('[qqBridge] QQ kicked offline, restarting NapCat for reconnect...')
-    const settings = readQqBridgeSettings()
-    if (settings.hosting?.mode !== 'auto') {
-      sendQqBridgeAlert('restart_failed', 'QQ 已掉线，手动模式下需自行重启 NapCat 并扫码登录')
-      return
-    }
-    await stopNapCatHost()
-    await new Promise(r => setTimeout(r, 2000))
-    const ok = await startNapCatHost({
-      settings,
-      onStatus: (status) => pushQqHostStatus(status),
-      onDownload: (progress) => pushQqHostDownload(progress),
-      bridgeStarter: makeNapCatBridgeStarter(),
-    })
-    if (!ok) {
-      log('[qqBridge] NapCat restart returned false')
-      sendQqBridgeAlert('restart_failed', 'NapCat 重启失败，请打开 QQ 桥接页面扫码登录')
-      return
-    }
-    log('[qqBridge] NapCat restarted, waiting for auto-login...')
-  } catch (e) {
-    log('[qqBridge] NapCat restart failed:', e?.message || e)
-    sendQqBridgeAlert('restart_failed', 'NapCat 重启失败，请打开 QQ 桥接页面扫码登录')
-  } finally {
-    napcatRestarting = false
-  }
-}
-
-/** QQ 桥接状态推送到主窗口/启动器窗口，供渲染进程展示连接态/二维码（后续阶段） */
-function pushQqBridgeStatus(status) {
-  const payload = { ...status, ts: Date.now() }
-  for (const win of [mainWindow, launcherWindow]) {
-    if (win && !win.isDestroyed()) {
-      try {
-        win.webContents.send('desktop:qq-bridge-status', payload)
-      } catch {
-        /* 窗口可能已销毁 */
-      }
-    }
-  }
-
-  // 掉线/未登录/被踢 告警（软件内弹窗 + 系统通知双发）
-  const state = status?.state || ''
-  try {
-    if (state === 'ready') {
-      clearNotLoggedInTimer()
-    } else if (status?.kicked && state === 'connected') {
-      // QQ 被踢下线：弹软件内弹窗 + 自动重启 NapCat
-      lastKickedTs = Date.now()
-      clearNotLoggedInTimer()
-      sendQqBridgeAlert('kicked', 'QQ 已掉线（被踢下线/另一终端登录），正在重启 NapCat 尝试重新登录…')
-      restartNapCatForReconnect()
-    } else if (state === 'connected' && prevBridgeState !== 'connected') {
-      // 新 WS 连接：15s 后仍未 ready 则判定为"未登录"
-      clearNotLoggedInTimer()
-      notLoggedInTimer = setTimeout(() => {
-        sendQqBridgeAlert('not_logged_in', 'QQ 桥接已连接但未检测到登录态，请打开 QQ 桥接页面扫码登录')
-      }, 15000)
-    } else if (state === 'disconnected') {
-      // 掉线提醒：kick 后 60s 内的 disconnected 不弹（避免重启期间 WS 断开刷屏）
-      const now = Date.now()
-      if (now - lastKickedTs > 60000 &&
-          now - lastDisconnectNotifyTs > 30000 &&
-          (prevBridgeState === 'ready' || prevBridgeState === 'connected')) {
-        lastDisconnectNotifyTs = now
-        sendQqBridgeAlert('disconnected', 'QQ 连接已断开，正在尝试重连…')
-      }
-      clearNotLoggedInTimer()
-    } else if (state === 'stopped') {
-      clearNotLoggedInTimer()
-    }
-  } catch {
-    /* 通知失败不影响桥接 */
-  }
-  prevBridgeState = state
-}
-
-/** 启动时若已开启 QQ 桥接且已登录，自动拉起（默认自动；用户也可在设置中手动开关） */
-async function autoStartQqBridgeIfNeeded() {
-  try {
-    const settings = readQqBridgeSettings()
-    if (settings.hosting?.mode === 'auto') return // 自管模式下桥接由 napcatHost 在就绪后拉起
-    if (!settings.enabled || !settings.binding?.conversationId) return
-    const authToken = await resolveDesktopAuthToken()
-    if (!authToken) {
-      log('[qqBridge] auto-start skipped: not logged in yet')
-      return
-    }
-    startQqBridge({
-      apiOrigin: resolveApiOrigin(),
-      authToken,
-      settings,
-      onStatus: (status) => pushQqBridgeStatus(status),
-    })
-    log('[qqBridge] auto-started ->', settings.napcat?.wsUrl)
-  } catch (e) {
-    console.warn('[qqBridge] auto-start failed:', e?.message || e)
-  }
-}
-
-/** NapCat 自管托管状态推送到主窗口/启动器窗口，供渲染进程展示下载进度/连接态/扫码入口 */
-function pushQqHostStatus(status) {
-  const payload = { ...status, ts: Date.now() }
-  for (const win of [mainWindow, launcherWindow]) {
-    if (win && !win.isDestroyed()) {
-      try {
-        win.webContents.send('desktop:qq-host-status', payload)
-      } catch {
-        /* 窗口可能已销毁 */
-      }
-    }
-  }
-}
-
-/** 下载/解压进度推送（phase: downloading/extracting/done） */
-function pushQqHostDownload(progress) {
-  const payload = { ...progress, ts: Date.now() }
-  for (const win of [mainWindow, launcherWindow]) {
-    if (win && !win.isDestroyed()) {
-      try {
-        win.webContents.send('desktop:qq-host-download', payload)
-      } catch {
-        /* 窗口可能已销毁 */
-      }
-    }
-  }
-}
-
-/**
- * 自动绑定桥接会话——全自动链路的最后一步：conversationId 为空时无需用户手动粘贴 UUID。
- * 先复用最近的单聊会话（私聊机器人路由到 SINGLE 会话最贴切）；若无则用首个可用人设新建一个。
- * 返回 { conversationId } 或 null（无可用会话/人设——用户须先在 App 内建一个人设）。
- * 复用主进程 performApiRequest：走 net.request + 证书 pin + lianyu-token 注入 + SSRF 校验，
- * 与渲染端 axios 同构地解包 Result<T> 信封（code===200 取 data）。
- */
-async function ensureBridgeBinding({ apiOrigin, authToken, characterId }) {
-  const unwrap = (res, path) => {
-    if (!res || res.status < 200 || res.status >= 300) throw new Error(`api:${path} HTTP ${res?.status}`)
-    let body
-    try { body = JSON.parse(res.data || '{}') } catch { throw new Error(`api:${path} non-json`) }
-    if (typeof body.code === 'number') {
-      if (body.code !== 200) throw new Error(`api:${path} code ${body.code}`)
-      return body.data
-    }
-    return body
-  }
-  const apiGet = async (path) => {
-    const res = await performApiRequest({ method: 'GET', url: `${apiOrigin}${path}`, timeoutMs: 15000, apiOrigin, authToken })
-    return unwrap(res, path)
-  }
-  const apiPost = async (path, payload) => {
-    const res = await performApiRequest({
-      method: 'POST',
-      url: `${apiOrigin}${path}`,
-      headers: { 'Content-Type': 'application/json' },
-      body: payload,
-      timeoutMs: 30000,
-      apiOrigin,
-      authToken,
-    })
-    return unwrap(res, path)
-  }
-
-  // 1. 复用 SINGLE 会话：指定 characterId 时只认该角色的 SINGLE 会话；否则取首个 SINGLE（或首项）
-  try {
-    const list = await apiGet('/api/conversation')
-    if (Array.isArray(list) && list.length) {
-      const single = characterId
-        ? list.find((c) => c?.mode === 'SINGLE' && String(c?.characterId) === String(characterId))
-        : (list.find((c) => c?.mode === 'SINGLE') || list[0])
-      if (single?.id) {
-        log(`[ensureBridgeBinding] reuse conversation ${single.id}` + (characterId ? ` (character ${characterId})` : ''))
-        return {
-          conversationId: String(single.id),
-          characterId: characterId ? String(characterId) : (single.characterId ? String(single.characterId) : ''),
-        }
-      }
-    }
-  } catch (e) {
-    log(`[ensureBridgeBinding] list conversations failed: ${e?.message || e}`)
-  }
-
-  // 2. 无可复用会话 → 新建 SINGLE：指定 characterId 时用它（须在用户角色列表内），否则用首个可用角色
-  try {
-    const chars = await apiGet('/api/character')
-    const pick = characterId
-      ? (Array.isArray(chars) ? chars.find((c) => String(c?.id) === String(characterId)) : null)
-      : (Array.isArray(chars) && chars.length ? chars[0] : null)
-    if (!pick?.id) {
-      log(`[ensureBridgeBinding] no character available${characterId ? ` for id=${characterId}` : ''}; skip auto-bind`)
-      return null
-    }
-    const created = await apiPost('/api/conversation', { characterId: String(pick.id), mode: 'SINGLE' })
-    if (!created?.id) {
-      log('[ensureBridgeBinding] create conversation returned no id')
-      return null
-    }
-    log(`[ensureBridgeBinding] created conversation ${created.id} (character ${pick.id})`)
-    return { conversationId: String(created.id), characterId: String(pick.id) }
-  } catch (e) {
-    log(`[ensureBridgeBinding] auto-create conversation failed: ${e?.message || e}`)
-  }
-  return null
-}
-
-/**
- * napcatHost 就绪后拉起 qqBridge 的闭包：在此懒解析 LianYu 登录态与 apiOrigin，
- * 用 host 写入的 wsUrl/accessToken 覆盖设置后 startQqBridge。
- * 桥接失败不致命——NapCat 进程仍在，用户可在设置页重试。
- */
-function makeNapCatBridgeStarter() {
-  return async ({ wsUrl, accessToken }) => {
-    try {
-      const authToken = await resolveDesktopAuthToken()
-      if (!authToken) {
-        log('[napcatHost] bridge starter: 未登录，暂不拉起桥接')
-        return
-      }
-      let settings = readQqBridgeSettings()
-      // 已绑定角色 id 时跳过 ensureBridgeBinding：桥接按角色做 per-user 懒建会话
-      // （resolveConversationId 为每个 QQ 用户独立建该角色的 SINGLE 会话），无需共享会话号；
-      // 也不受清空上下文影响（会话被删后 404 自动 re-resolve）。仅当角色/会话号都没配时才兜底自动绑定。
-      if (!settings.binding?.conversationId && !settings.binding?.characterId) {
-        log('[napcatHost] bridge starter: 未配置 characterId/conversationId，自动绑定中…')
-        const result = await ensureBridgeBinding({ apiOrigin: resolveApiOrigin(), authToken, characterId: settings.binding?.characterId })
-        if (!result?.conversationId) {
-          log('[napcatHost] bridge starter: 自动绑定失败（无可用会话/人设），暂不拉起桥接')
-          return
-        }
-        const prevBinding = settings.binding || {}
-        const hasAllowEntries = (prevBinding.allowUsers || []).length > 0 || (prevBinding.allowGroups || []).length > 0
-        // 用户选择 open：自动绑定时默认开放（任何 QQ 用户/群均可驱动机器人，配额风险用户已知晓）。
-        // 但若用户已显式配置白名单条目，保留其原 allowMode，不擅自放宽。
-        writeQqBridgeSettings({
-          binding: {
-            ...prevBinding,
-            conversationId: result.conversationId,
-            ...(hasAllowEntries ? {} : { allowMode: 'open' }),
-          },
-        })
-        settings = readQqBridgeSettings()
-        log(`[napcatHost] bridge starter: 已自动绑定 conversationId=${result.conversationId}`)
-      }
-      startQqBridge({
-        apiOrigin: resolveApiOrigin(),
-        authToken,
-        settings: {
-          ...settings,
-          enabled: true,
-          napcat: { ...settings.napcat, wsUrl, accessToken },
-        },
-        onStatus: (status) => {
-          // 仅推送桥接状态；不再写回 hosting.qqUserId——该字段原意是 quick-login
-          // 参数，但 resolveLaunchTarget 未实际使用（死代码），残留旧号反而会让下次
-          // 启动误判已登录。停止托管时已统一清空 qqUserId + bot profile 登录态。
-          pushQqBridgeStatus(status)
-        },
-      })
-      log('[napcatHost] bridge auto-started ->', wsUrl)
-    } catch (e) {
-      console.warn('[napcatHost] bridge starter failed:', e?.message || e)
-    }
-  }
-}
-
-/** 启动时若开启自管托管且已同意，自动拉起 NapCat 运行时（登录态由 bridgeStarter 懒解析） */
-async function autoStartNapCatHostIfNeeded() {
-  try {
-    const settings = readQqBridgeSettings()
-    if (settings.hosting?.mode !== 'auto' || !settings.hosting?.consented) return
-    await startNapCatHost({
-      settings,
-      onStatus: (status) => pushQqHostStatus(status),
-      onDownload: (progress) => pushQqHostDownload(progress),
-      bridgeStarter: makeNapCatBridgeStarter(),
-    })
-    log('[napcatHost] auto-started')
-  } catch (e) {
-    console.warn('[napcatHost] auto-start failed:', e?.message || e)
-  }
-}
-
-/** 判定 URL 是否为本地 NapCat WebUI 同源（127.0.0.1/localhost + 指定端口） */
-function isLocalNapCatUrl(url, port) {
-  try {
-    const u = new URL(url)
-    return (u.hostname === '127.0.0.1' || u.hostname === 'localhost') && u.port === String(port)
-  } catch {
-    return false
-  }
-}
-
-/**
- * 打开 NapCat WebUI 扫码登录窗：独立会话分区装
- * http://127.0.0.1:<port>/webui?token=<token>。仅允许 127.0.0.1 同源导航/弹窗，
- * 外部链接交系统浏览器、其余拒绝。单例复用，重开则聚焦并重载（令牌可能已变）。
- * 同意门 + 运行态双校验：未同意或 host 未就绪则拒绝，避免空窗。
- */
-function openQqLoginWindow() {
-  const settings = readQqBridgeSettings()
-  if (!settings.hosting?.consented) {
-    log('openQqLoginWindow: not consented')
-    return { ok: false, reason: 'not_consented' }
-  }
-  const status = getNapCatHostStatus()
-  const webui = status?.webui
-  const port = webui?.port || settings.hosting?.webuiPort || 6099
-  const token = webui?.token || settings.hosting?.webuiToken || ''
-  if (!token) {
-    log('openQqLoginWindow: no webui token (host not ready)')
-    return { ok: false, reason: 'not_running' }
-  }
-  const url = webui?.url || `http://127.0.0.1:${port}/webui?token=${token}`
-
-  if (qqLoginWindow && !qqLoginWindow.isDestroyed()) {
-    qqLoginWindow.show()
-    qqLoginWindow.focus()
-    try {
-      qqLoginWindow.loadURL(url)
-    } catch {
-      /* ignore */
-    }
-    return { ok: true, reused: true }
-  }
-
-  const win = new BrowserWindow({
-    width: 520,
-    height: 720,
-    minWidth: 360,
-    minHeight: 480,
-    title: 'QQ 登录 · NapCat',
-    icon: resolveDistPath('icon.ico'),
-    backgroundColor: '#ffffff',
-    autoHideMenuBar: true,
-    show: false,
-    webPreferences: {
-      contextIsolation: true,
-      sandbox: true,
-      nodeIntegration: false,
-      partition: 'persist:napcat-webui',
-    },
-  })
-  qqLoginWindow = win
-  win.setMenuBarVisibility(false)
-  win.once('ready-to-show', () => {
-    if (!win.isDestroyed()) win.show()
-  })
-  win.webContents.on('did-fail-load', (_e, errorCode, errorDesc) => {
-    log(`openQqLoginWindow: load failed ${errorCode} ${errorDesc}`)
-  })
-  // 仅允许 127.0.0.1 同源导航；阻止任何外部跳转/重定向
-  win.webContents.on('will-navigate', (e, navUrl) => {
-    if (!isLocalNapCatUrl(navUrl, port)) e.preventDefault()
-  })
-  win.webContents.setWindowOpenHandler(({ url: openUrl }) => {
-    if (isLocalNapCatUrl(openUrl, port)) return { action: 'allow' }
-    if (isAllowedExternalUrl(openUrl)) shell.openExternal(openUrl)
-    return { action: 'deny' }
-  })
-  win.on('closed', () => {
-    qqLoginWindow = null
-  })
-  win.loadURL(url)
-  return { ok: true }
-}
+const pushQqBridgeStatus = (status) => qqBridgeCoordinator.pushQqBridgeStatus(status)
+const pushQqHostStatus = (status) => qqBridgeCoordinator.pushQqHostStatus(status)
+const pushQqHostDownload = (progress) => qqBridgeCoordinator.pushQqHostDownload(progress)
+const ensureBridgeBinding = (args) => qqBridgeCoordinator.ensureBridgeBinding(args)
+const makeNapCatBridgeStarter = () => qqBridgeCoordinator.makeNapCatBridgeStarter()
+const autoStartQqBridgeIfNeeded = () => qqBridgeCoordinator.autoStartQqBridgeIfNeeded()
+const autoStartNapCatHostIfNeeded = () => qqBridgeCoordinator.autoStartNapCatHostIfNeeded()
+const openQqLoginWindow = () => qqBridgeCoordinator.openQqLoginWindow()
 
 /**
  * 独立图片查看器窗口（微信/QQ 风格）。
