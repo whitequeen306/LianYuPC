@@ -98,6 +98,14 @@ router.onError((err) => {
     window.__lianyuNavigateQuickChat = (target) => router.push(target)
   }
 
+  if (!aux) {
+    try {
+      await prepareAuthRoute(pinia)
+    } catch {
+      // keep anonymous startup path if lightweight auth bootstrap fails
+    }
+  }
+
   app.mount('#app')
 
   try {
@@ -112,9 +120,7 @@ router.onError((err) => {
   if (aux) {
     void bootstrapLauncherSession(pinia)
   } else {
-    void readToken()
-      .then(() => prepareAuthRoute(pinia))
-      .then(() => bootstrapAuth(pinia))
+    void readToken().then(() => bootstrapAuth(pinia))
   }
 
   if (aux && isQuickChatSurface()) {

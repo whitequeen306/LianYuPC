@@ -293,6 +293,7 @@ import { nextCharacterAvatarTier, pickCharacterAvatarRaw } from '@/utils/charact
 import { fixUtf8Mojibake } from '@/utils/textEncoding'
 import { listCharacterStates } from '@/api/characterState'
 import { getSavedUserCity, saveUserCity } from '@/utils/userCity'
+import { buildLatestSingleConversationMap, selectCharacterPreview } from '@/pages/charactersPreview'
 import CharacterCityModeForm from '@/components/CharacterCityModeForm.vue'
 
 const { t } = useI18n()
@@ -381,27 +382,7 @@ watch(
 )
 
 function buildSingleConvMap(convList) {
-  const map = {}
-  for (const c of convList || []) {
-    if (c?.mode !== 'SINGLE' || !c.characterId) continue
-    const prev = map[c.characterId]
-    const entry = {
-      id: c.id,
-      lastMessage: c.lastMessage || '',
-      lastCharacterMessage: c.lastCharacterMessage || ''
-    }
-    if (!prev) {
-      map[c.characterId] = entry
-      continue
-    }
-    if (entry.lastMessage && !prev.lastMessage) {
-      prev.lastMessage = entry.lastMessage
-    }
-    if (entry.lastCharacterMessage && !prev.lastCharacterMessage) {
-      prev.lastCharacterMessage = entry.lastCharacterMessage
-    }
-  }
-  return map
+  return buildLatestSingleConversationMap(convList)
 }
 
 function buildEmotionMap(states) {
@@ -441,8 +422,10 @@ async function fetchCharacters() {
 }
 
 function lastMessageForCharacter(characterId) {
-  const preview = singleConvByCharacterId.value[characterId]?.lastMessage?.trim()
-  return preview || t('characters.noMessagesYet')
+  return selectCharacterPreview(
+    singleConvByCharacterId.value[characterId],
+    t('characters.noMessagesYet')
+  )
 }
 
 function characterAvatarSrc(character) {

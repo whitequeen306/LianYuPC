@@ -1,4 +1,4 @@
-import { onUnmounted } from 'vue'
+import { onScopeDispose } from 'vue'
 
 export function isAbortError(err) {
   return err?.name === 'AbortError'
@@ -14,8 +14,8 @@ export function isNetworkError(err) {
     || msg.includes('load failed')
 }
 
-/** Abort in-flight SSE when leaving the page or starting a new stream. */
-export function useStreamAbort() {
+export function useStreamAbort(options = {}) {
+  const { abortOnUnmount = true } = options
   let controller = null
 
   function beginStream() {
@@ -29,7 +29,9 @@ export function useStreamAbort() {
     controller = null
   }
 
-  onUnmounted(() => abortStream())
+  onScopeDispose(() => {
+    if (abortOnUnmount) abortStream()
+  })
 
   return { beginStream, abortStream, isAbortError }
 }

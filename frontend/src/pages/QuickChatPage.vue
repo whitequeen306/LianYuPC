@@ -118,7 +118,7 @@ function showError(message) {
 }
 
 const { scrollToBottom } = useChatScroll(msgListRef, scrollAnchor)
-const { beginStream, isAbortError } = useStreamAbort()
+const { beginStream, abortStream, isAbortError } = useStreamAbort({ abortOnUnmount: false })
 
 const characterName = computed(() => activeCharacter.value?.name || '聊天')
 const characterAvatar = computed(() => {
@@ -173,7 +173,6 @@ const messageTimeline = computed(() => {
 })
 
 let pollTimer = null
-let streamController = null     // SSE 流 AbortController（issue #7）：关窗/卸载时 abort
 let isUnmounted = false         // 卸载标志：流 finally 守卫，避免对已卸载实例写状态
 
 function closeWindow() {
@@ -313,6 +312,7 @@ async function handleSend() {
     inputText.value = draftText
     showError(humanizeError(err, '消息发送失败，请稍后再试'))
   } finally {
+    if (!signal.aborted) abortStream()
     if (isUnmounted) return
     waitingReply.value = false
     await nextTick()
@@ -353,7 +353,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   isUnmounted = true
-  streamController?.abort()
   stopPolling()
   clearTimeout(errorTimer)
 })

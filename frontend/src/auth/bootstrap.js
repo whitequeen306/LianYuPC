@@ -28,16 +28,17 @@ export async function prepareAuthRoute(pinia) {
     await readToken()
   }
   const hashPath = (window.location.hash.replace(/^#/, '') || '/').split('?')[0]
-  if (!AUTO_ENTRY_PATHS.has(hashPath)) return
+  if (!AUTO_ENTRY_PATHS.has(hashPath)) return false
 
   const cachedToken = syncToken()
-  if (!cachedToken) return
+  if (!cachedToken) return false
 
   const userStore = useUserStore(pinia)
   userStore.token = cachedToken
   syncSetTokenCache(cachedToken)
   hydrateProfileFromCache(userStore)
   await router.replace('/app')
+  return true
 }
 
 /** mount 后恢复完整会话（profile + 主进程同步） */
@@ -55,6 +56,8 @@ export async function bootstrapAuth(pinia) {
     if (AUTO_ENTRY_PATHS.has(hashPath)) {
       await router.replace('/app')
     }
+  } else if (router.currentRoute.value?.meta?.requiresAuth) {
+    await router.replace('/')
   }
   return restored
 }

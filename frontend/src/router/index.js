@@ -161,17 +161,17 @@ router.beforeEach(async (to, from, next) => {
     userStore.token = token
     syncSetTokenCache(token)
   }
-  const hasValidSession = !!(token && userStore.isLoggedIn)
+  const hasStartupToken = !!token
 
   if (to.meta.guest) {
-    if (hasValidSession) {
+    if (hasStartupToken) {
       return next('/app')
     }
     return next()
   }
 
   if (to.meta.public) {
-    if (to.name === 'Landing' && hasValidSession) {
+    if (to.name === 'Landing' && hasStartupToken) {
       return next('/app')
     }
     return next()

@@ -309,7 +309,7 @@ const { isUserScrolledUp, scrollToBottom, jumpToBottom } = useChatScroll(msgList
   loadingOlder,
   onReachTop: () => { void loadOlderMessages() },
 })
-const { beginStream, isAbortError } = useStreamAbort()
+const { beginStream, abortStream, isAbortError } = useStreamAbort({ abortOnUnmount: false })
 const fileInputRef = ref(null)
 const galBgRef = ref(null)
 
@@ -394,7 +394,6 @@ const NORMAL_POLL_MS = 10000
 let assistantLineCount = 0
 let skipBounceOnce = false
 let bounceTween = null
-let streamController = null     // SSE 流 AbortController（issue #7）：卸载时 abort 中止拉流
 let isUnmounted = false         // 卸载标志：流 finally 守卫，避免对已卸载实例写状态
 const burstTimers = []          // scheduleOpeningPollBurst 的 setTimeout 句柄，卸载时清理
 
@@ -560,7 +559,6 @@ watch(() => route.params.id, async (id) => {
 
 onUnmounted(() => {
   isUnmounted = true
-  streamController?.abort()
   burstTimers.forEach((id) => clearTimeout(id))
   burstTimers.length = 0
   setActiveChatConversationId(null)
@@ -1040,6 +1038,7 @@ async function handleSend() {
     pendingImageUrl.value = draftImageUrl
     skipBounceOnce = true
   } finally {
+    if (!signal.aborted) abortStream()
     if (isUnmounted) return
     waitingReply.value = false
     if (currentConvId.value === sendConvId) {
