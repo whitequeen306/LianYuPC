@@ -15,15 +15,22 @@ const MAX_BODY_BYTES = 20 * 1024 * 1024
  * 是否允许的出口 URL：必须 http(s)、host:port 与 API origin 精确一致。
  * 非 API host 既不发出请求也不返回响应体（issue #6：阻断 SSRF / CSP 绕过 / pin 绕过）。
  */
-export function isAllowedEgressUrl(url, apiOrigin) {
+export function isAllowedEgressUrl(url, apiOrigin, extraOrigin = '') {
   if (!url || typeof url !== 'string') return false
   let parsed
   try { parsed = new URL(url) } catch { return false }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
-  let apiParsed
-  try { apiParsed = new URL(apiOrigin) } catch { return false }
+  const allowedHosts = new Set()
+  for (const origin of [apiOrigin, extraOrigin]) {
+    if (!origin) continue
+    try {
+      allowedHosts.add(new URL(origin).host)
+    } catch {
+      // ignore malformed origin
+    }
+  }
   // host 含端口；hostname 相同但端口不同（如 API 在 8443，攻击者指向同主机 1234）仍视为越权
-  return parsed.host === apiParsed.host
+  return allowedHosts.has(parsed.host)
 }
 
 /**

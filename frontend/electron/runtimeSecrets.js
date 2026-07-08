@@ -25,7 +25,7 @@ export const RUNTIME_SECRETS_PEPPER = 'LianYu-RtSec-v1-8F3C2A1B'
 const DEFAULT_API_ORIGIN = 'http://localhost:8080'
 const SECRETS_FILENAME = 'runtime-secrets.bin'
 
-/** @type {{ apiOrigin: string, certFingerprint: string, pinnedSpki: string } | null} */
+/** @type {{ apiOrigin: string, updateOrigin: string, certFingerprint: string, pinnedSpki: string } | null} */
 let cachedSecrets = null
 
 function deriveKey(version, buildId) {
@@ -72,8 +72,16 @@ export function loadRuntimeSecrets(opts) {
     )
       .trim()
       .replace(/\/$/, '')
+    const updateOrigin = (
+      process.env.LIANYU_UPDATE_ORIGIN
+      || process.env.VITE_LIANYU_UPDATE_ORIGIN
+      || ''
+    )
+      .trim()
+      .replace(/\/$/, '')
     cachedSecrets = {
       apiOrigin,
+      updateOrigin,
       certFingerprint: (
         process.env.LIANYU_CERT_FINGERPRINT
         || process.env.VITE_LIANYU_CERT_FINGERPRINT
@@ -94,6 +102,7 @@ export function loadRuntimeSecrets(opts) {
   }
   cachedSecrets = {
     apiOrigin: String(decoded.apiOrigin).trim().replace(/\/$/, ''),
+    updateOrigin: String(decoded.updateOrigin || '').trim().replace(/\/$/, ''),
     certFingerprint: String(decoded.certFingerprint || '').trim(),
     pinnedSpki: String(decoded.pinnedSpki || '').trim(),
   }

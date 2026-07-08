@@ -45,6 +45,7 @@ packRuntimeSecrets({
   version: pkg.version,
   buildId,
   apiOrigin: cloudEnv.VITE_LIANYU_API_ORIGIN || 'http://localhost:8080',
+  updateOrigin: cloudEnv.VITE_LIANYU_UPDATE_ORIGIN || '',
   certFingerprint: cloudEnv.VITE_LIANYU_CERT_FINGERPRINT || '',
   outPath: path.join(electronDir, 'runtime-secrets.bin'),
 })

@@ -29,6 +29,11 @@ function resolveApiOrigin() {
   return secrets?.apiOrigin || ''
 }
 
+function resolveUpdateOrigin() {
+  const secrets = getRuntimeSecrets()
+  return secrets?.updateOrigin || ''
+}
+
 function parseLatestYml(ymlText) {
   const versionMatch = ymlText.match(/^version:\s*(\S+)/m)
   const urlMatch = ymlText.match(/^url:\s*(\S+)/m) || ymlText.match(/^\s*-\s*url:\s*(\S+)/m)
@@ -45,7 +50,10 @@ function resolveLatestYmlUrl(apiOrigin) {
   return `${apiOrigin}${UPDATE_MANIFEST_PATH}`
 }
 
-function resolveUpdateAssetUrl(assetUrl, latestYmlUrl) {
+function resolveUpdateAssetUrl(assetUrl, latestYmlUrl, updateOrigin = '') {
+  if (updateOrigin && assetUrl && !/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(assetUrl)) {
+    return new URL(assetUrl.replace(/^\/+/, ''), `${updateOrigin}/`).toString()
+  }
   return new URL(assetUrl, latestYmlUrl).toString()
 }
 
@@ -132,8 +140,8 @@ function registerIpc() {
       if (!info || !info.url) {
         throw new Error('latest.yml missing url')
       }
-      const downloadUrl = resolveUpdateAssetUrl(info.url, ymlUrl)
-      if (!isAllowedEgressUrl(downloadUrl, apiOrigin)) {
+      const downloadUrl = resolveUpdateAssetUrl(info.url, ymlUrl, resolveUpdateOrigin())
+      if (!isAllowedEgressUrl(downloadUrl, apiOrigin, resolveUpdateOrigin())) {
         throw new Error('download url not allowed')
       }
 

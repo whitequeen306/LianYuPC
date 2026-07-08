@@ -51,7 +51,10 @@ vi.mock('../../logger.js', () => ({
 }))
 
 vi.mock('../../runtimeSecrets.js', () => ({
-  getRuntimeSecrets: () => ({ apiOrigin: 'https://api.lianyu.test' }),
+  getRuntimeSecrets: () => ({
+    apiOrigin: 'https://api.lianyu.test',
+    updateOrigin: 'https://download.lianyu.test',
+  }),
 }))
 
 vi.mock('../../apiProxy.js', () => ({
@@ -166,7 +169,7 @@ describe('updater (manual mode)', () => {
       return req
     }
     await mocks.handleRegistry.get('updater:download')()
-    expect(requestedDownloadUrl).toBe('https://api.lianyu.test/api/public/files/updates/LianYu-Setup-0.2.260.exe')
+    expect(requestedDownloadUrl).toBe('https://download.lianyu.test/LianYu-Setup-0.2.260.exe')
     expect(mocks.webSend).toHaveBeenCalledWith('updater:state', expect.objectContaining({
       state: 'downloading',
       info: expect.objectContaining({ speedBytesPerSec: expect.any(Number), etaSeconds: expect.any(Number) }),
@@ -179,6 +182,39 @@ describe('updater (manual mode)', () => {
     await new Promise((resolve) => setTimeout(resolve, 550))
     expect(mocks.quitAndInstall).toHaveBeenCalledTimes(1)
     expect(mocks.appQuit).not.toHaveBeenCalled()
+  })
+
+  it('download: 绝对 asset url 保持原样，不强制改写到 updateOrigin', async () => {
+    const { initUpdater } = await loadUpdater()
+    initUpdater(mockMainWindow)
+    mocks.apiResponses['https://api.lianyu.test/api/public/files/updates/latest.yml'] = {
+      status: 200,
+      data: 'version: 0.2.260\nfiles:\n  - url: https://mirror.lianyu.test/LianYu-Setup-0.2.260.exe\nsha512: abc\n',
+    }
+    let requestedDownloadUrl = ''
+    mocks.netRequestImpl = (opts) => {
+      requestedDownloadUrl = opts.url
+      const handlers = { response: null, error: null }
+      const req = {
+        on: (ev, fn) => { handlers[ev] = fn; return req },
+        end: () => {
+          setTimeout(() => {
+            handlers.response({
+              statusCode: 200,
+              headers: { 'content-length': '100' },
+              on: (ev, fn) => {
+                if (ev === 'data') setTimeout(() => fn(Buffer.alloc(100)), 1)
+                if (ev === 'end') setTimeout(() => fn(), 2)
+              },
+            })
+          }, 1)
+        },
+      }
+      return req
+    }
+    const ret = await mocks.handleRegistry.get('updater:download')()
+    expect(ret.ok).toBe(true)
+    expect(requestedDownloadUrl).toBe('https://mirror.lianyu.test/LianYu-Setup-0.2.260.exe')
   })
 
   it('check: 无 apiOrigin 时推送 error', async () => {

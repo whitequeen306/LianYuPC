@@ -24,10 +24,11 @@ function deriveKey(version, buildId) {
 }
 
 /**
- * @param {{ version: string, buildId: string, apiOrigin: string, certFingerprint: string, outPath: string }} opts
+ * @param {{ version: string, buildId: string, apiOrigin: string, updateOrigin?: string, certFingerprint: string, outPath: string }} opts
  */
 export function packRuntimeSecrets(opts) {
   const apiOrigin = String(opts.apiOrigin || '').trim().replace(/\/$/, '')
+  const updateOrigin = String(opts.updateOrigin || '').trim().replace(/\/$/, '')
   const certFingerprint = String(opts.certFingerprint || '').trim()
   if (!apiOrigin) {
     throw new Error('packRuntimeSecrets: apiOrigin is required')
@@ -35,6 +36,7 @@ export function packRuntimeSecrets(opts) {
 
   const payload = JSON.stringify({
     apiOrigin,
+    updateOrigin,
     certFingerprint,
     pinnedSpki: PINNED_SPKI,
   })

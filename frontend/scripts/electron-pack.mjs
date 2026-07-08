@@ -203,6 +203,7 @@ packRuntimeSecrets({
   version: pkg.version,
   buildId,
   apiOrigin: packApiOrigin,
+  updateOrigin: cloudEnv.VITE_LIANYU_UPDATE_ORIGIN || '',
   certFingerprint: packCertFingerprint,
   outPath: path.join(root, 'dist-electron', 'runtime-secrets.bin'),
 })

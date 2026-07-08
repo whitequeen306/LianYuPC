@@ -164,12 +164,16 @@ function expectedCertFingerprint() {
 const ALLOW_SYSTEM_CA = process.env.LIANYU_ALLOW_SYSTEM_CA === '1'
 
 function isApiHostname(hostname) {
-  const apiOrigin = resolveApiOrigin()
-  try {
-    return hostname === new URL(apiOrigin).hostname
-  } catch {
-    return false
+  const origins = [resolveApiOrigin(), getRuntimeSecrets()?.updateOrigin || '']
+  for (const origin of origins) {
+    if (!origin) continue
+    try {
+      if (hostname === new URL(origin).hostname) return true
+    } catch {
+      // ignore malformed origin
+    }
   }
+  return false
 }
 
 /** Electron cert.fingerprint 为 sha256/<base64>，构建注入为冒号分隔 hex */
