@@ -10,6 +10,7 @@ let initialized = false
 let mainWindowRef = null
 let currentState = { state: 'idle', info: {} }
 let downloadedInstallerPath = null
+let quitAndInstallRef = null
 
 const UPDATE_MANIFEST_PATH = '/api/public/files/updates/latest.yml'
 
@@ -220,7 +221,13 @@ function registerIpc() {
         detached: true,
         stdio: 'ignore',
       }).unref()
-      setTimeout(() => app.quit(), 500)
+      setTimeout(() => {
+        if (typeof quitAndInstallRef === 'function') {
+          quitAndInstallRef()
+          return
+        }
+        app.quit()
+      }, 500)
       return { ok: true }
     } catch (err) {
       const msg = err?.message || String(err)
@@ -230,10 +237,11 @@ function registerIpc() {
   })
 }
 
-export function initUpdater(mainWindow) {
+export function initUpdater(mainWindow, options = {}) {
   if (initialized) return
   initialized = true
   mainWindowRef = mainWindow
+  quitAndInstallRef = typeof options.quitAndInstall === 'function' ? options.quitAndInstall : null
   registerIpc()
   logger.info('updater', 'initialized (manual mode, self-hosted update source)')
 }

@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   apiResponses: {},
   netRequestImpl: null,
   appVersion: '0.2.258',
+  appQuit: vi.fn(),
+  quitAndInstall: vi.fn(),
 }))
 
 vi.mock('electron', () => ({
@@ -14,7 +16,7 @@ vi.mock('electron', () => ({
     get isPackaged() { return mocks.isPackaged },
     getVersion: () => mocks.appVersion,
     getPath: () => '/tmp/lianyu-test',
-    quit: vi.fn(),
+    quit: mocks.appQuit,
   },
   ipcMain: { handle: (ch, fn) => mocks.handleRegistry.set(ch, fn) },
   net: {
@@ -74,6 +76,8 @@ describe('updater (manual mode)', () => {
     mocks.netRequestImpl = null
     mocks.isPackaged = true
     mocks.appVersion = '0.2.258'
+    mocks.appQuit.mockClear()
+    mocks.quitAndInstall.mockClear()
     vi.resetModules()
   })
 
@@ -132,7 +136,7 @@ describe('updater (manual mode)', () => {
 
   it('install: 调用 spawn 启动安装包并退出', async () => {
     const { initUpdater } = await loadUpdater()
-    initUpdater(mockMainWindow)
+    initUpdater(mockMainWindow, { quitAndInstall: mocks.quitAndInstall })
     // 先模拟下载完成（downloadedInstallerPath 由 download 设置）
     // 直接调 install，需要先调 download 设置路径
     mocks.apiResponses['https://api.lianyu.test/api/public/files/updates/latest.yml'] = {
@@ -172,6 +176,9 @@ describe('updater (manual mode)', () => {
     expect(mocks.webSend).toHaveBeenLastCalledWith('updater:state', expect.objectContaining({
       state: 'installing',
     }))
+    await new Promise((resolve) => setTimeout(resolve, 550))
+    expect(mocks.quitAndInstall).toHaveBeenCalledTimes(1)
+    expect(mocks.appQuit).not.toHaveBeenCalled()
   })
 
   it('check: 无 apiOrigin 时推送 error', async () => {

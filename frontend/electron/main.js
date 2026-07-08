@@ -1733,7 +1733,8 @@ function closeFocusedQuickChat() {
   return false
 }
 
-function quitApplication() {
+function quitApplication(options = {}) {
+  const force = options.force === true
   isQuitting = true
   stopQqBridge()
   stopNapCatHost()
@@ -1748,6 +1749,10 @@ function quitApplication() {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy()
   tray?.destroy()
   tray = null
+  if (force) {
+    app.exit(0)
+    return
+  }
   app.quit()
 }
 
@@ -3144,7 +3149,9 @@ app.whenReady().then(() => {
     },
     initUpdater: (win) => {
       startupMainProfiler.mark('postWindow:initUpdater:start')
-      initUpdater(win)
+      initUpdater(win, {
+        quitAndInstall: () => quitApplication({ force: true }),
+      })
       startupMainProfiler.mark('postWindow:initUpdater:done')
     },
     ensureTray: () => {
