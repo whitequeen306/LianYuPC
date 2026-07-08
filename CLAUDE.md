@@ -142,8 +142,9 @@ npm run electron:release:major     # major 升级
 
 **GH_TOKEN 说明：**
 - 发布需要 GitHub Personal Access Token（classic，`repo` 权限）
-- 脚本自动从 Windows Credential Manager（`git credential.helper=manager`）取 token，**无需手动设环境变量**
-- 如果 credential manager 取不到，脚本会报错退出并指引配置
+- 发布脚本优先读取当前 shell 的 `GH_TOKEN`；若未设置，会自动回退到 Windows Credential Manager（要求 `git credential.helper=manager` 且 `git credential fill` 能返回 `github.com` 的 `password=`）
+- 查看当前机器是否已存 GitHub 凭据：在 PowerShell 执行 ``"protocol=https`nhost=github.com`n" | git credential fill``；若输出含 `password=gho_...`，脚本即可自动取到，无需手动设环境变量
+- 如果 credential manager 取不到，再临时设置 `GH_TOKEN` 后重跑发布命令；**不要把 PAT 写进仓库、`.env`、`package.json` 或任何提交文件**
 - 仅本地打包（不上传 Release）用 `npm run electron:build`，不检查 GH_TOKEN
 
 **注意事项：**
