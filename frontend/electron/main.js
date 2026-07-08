@@ -62,6 +62,8 @@ import {
 import { wipeNapCatInstall } from './napcatRuntime/napcatRelease.js'
 import { loadRuntimeSecrets, getRuntimeSecrets } from './runtimeSecrets.js'
 import { initUpdater } from './updater/updater.js'
+import { schedulePostWindowStartup } from './startupOrchestrator.js'
+import { createStartupProfiler } from './startupProfiler.js'
 import { RENDERER_AUTH_TOKEN_SCRIPT } from './rendererTokenScript.js'
 
 // Windows toast 通知归属：AUMID 必须在 app ready / 任何窗口创建前设置，
@@ -507,6 +509,11 @@ function logPath() {
 function log(message) {
   logger.info('main', message)
 }
+
+const startupMainProfiler = createStartupProfiler({
+  prefix: 'startup-main',
+  log,
+})
 
 function resolveDistRoot() {
   return path.join(__dirname, '../dist')
@@ -1245,10 +1252,12 @@ function createMainWindow() {
 
   // HTML 加载完即显示背景，不等 Vue ready-to-show（避免长时间白屏/无窗）
   win.webContents.once('did-finish-load', () => {
+    startupMainProfiler.mark('mainWindow:did-finish-load')
     clearTimeout(revealFallbackTimer)
     revealMainWindow()
   })
   win.once('ready-to-show', () => {
+    startupMainProfiler.mark('mainWindow:ready-to-show')
     clearTimeout(revealFallbackTimer)
     revealMainWindow()
   })
@@ -3094,6 +3103,7 @@ process.on('unhandledRejection', (reason) => {
 })
 
 app.whenReady().then(() => {
+  startupMainProfiler.mark('whenReady')
   logger.initGlobalErrorHandlers()
   if (process.env.LIANYU_MAIN_STARTUP_SMOKE === '1') {
     log('main startup smoke test starting')
@@ -3105,6 +3115,7 @@ app.whenReady().then(() => {
   }
   log('app ready')
   ensureToastAppRegistration()
+  startupMainProfiler.mark('ensureToastAppRegistration:done')
   if (!runtimeSecretsConfigured()) {
     dialog.showErrorBox(
       'LianYu',
@@ -3112,18 +3123,40 @@ app.whenReady().then(() => {
     )
   }
   configureSecurity()
+  startupMainProfiler.mark('configureSecurity:done')
   configureAntiDebug()
+  startupMainProfiler.mark('configureAntiDebug:done')
   patchDesktopRequestOrigin()
+  startupMainProfiler.mark('patchDesktopRequestOrigin:done')
   applyLaunchAtLogin(readDesktopSettings().launchAtLogin)
+  startupMainProfiler.mark('applyLaunchAtLogin:done')
   registerIpcHandlers()
+  startupMainProfiler.mark('registerIpcHandlers:done')
   createMainWindow()
-  initUpdater(mainWindow)
-  ensureTray()
+  startupMainProfiler.mark('createMainWindow:done')
+  schedulePostWindowStartup({
+    mainWindow,
+    initUpdater: (win) => {
+      startupMainProfiler.mark('postWindow:initUpdater:start')
+      initUpdater(win)
+      startupMainProfiler.mark('postWindow:initUpdater:done')
+    },
+    ensureTray: () => {
+      startupMainProfiler.mark('postWindow:ensureTray:start')
+      ensureTray()
+      startupMainProfiler.mark('postWindow:ensureTray:done')
+    },
+    scheduleAuxWindowPrewarm: () => {
+      startupMainProfiler.mark('postWindow:scheduleAuxWindowPrewarm:start')
+      scheduleAuxWindowPrewarm()
+      startupMainProfiler.mark('postWindow:scheduleAuxWindowPrewarm:done')
+    },
+  })
 
   if (readAuthSession()) {
     launcherLoggedIn = true
   }
-  scheduleAuxWindowPrewarm()
+  startupMainProfiler.mark('readAuthSession:done')
 
   void autoStartQqBridgeIfNeeded()
   void autoStartNapCatHostIfNeeded()

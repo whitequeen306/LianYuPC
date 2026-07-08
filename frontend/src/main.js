@@ -14,10 +14,18 @@ import { prepareAuthRoute, bootstrapAuth } from './auth/bootstrap'
 import { bootstrapLauncherSession } from './auth/launcherBootstrap'
 import { recoverFromStartupRouteError } from './router/startupErrorRecovery'
 import * as rendererLogger from './utils/logger'
+import { createStartupProfiler } from '@/utils/startupProfiler'
 import './styles/theme.scss'
 import './styles/global.scss'
 import './styles/app-shell.scss'
 import directivesPlugin from './directives'
+
+const startupRendererProfiler = createStartupProfiler({
+  prefix: 'startup-renderer',
+  log: (message) => rendererLogger.info('startup', message),
+})
+
+startupRendererProfiler.mark('entry')
 
 const isElectronRuntime = typeof window !== 'undefined' && (
   window.electronAPI?.isElectron === true
@@ -92,35 +100,50 @@ router.onError((err) => {
 })
 
 ;(async () => {
+  startupRendererProfiler.mark('iife:start')
   void initElectronRuntimeConfig()
+  startupRendererProfiler.mark('initElectronRuntimeConfig:queued')
+
   const aux = isDesktopAuxSurface()
   if (isQuickChatSurface()) {
     window.__lianyuNavigateQuickChat = (target) => router.push(target)
   }
 
   if (!aux) {
+    startupRendererProfiler.mark('prepareAuthRoute:start')
     try {
       await prepareAuthRoute(pinia)
     } catch {
       // keep anonymous startup path if lightweight auth bootstrap fails
+    } finally {
+      startupRendererProfiler.mark('prepareAuthRoute:done')
     }
   }
 
   app.mount('#app')
+  startupRendererProfiler.mark('app:mounted')
 
   try {
     await router.isReady()
+    startupRendererProfiler.mark('router:isReady')
   } catch {
     showBootSplashError('启动失败，请重新安装最新版本。')
     return
   } finally {
     dismissBootSplash()
+    startupRendererProfiler.mark('bootSplash:dismissed')
   }
 
   if (aux) {
-    void bootstrapLauncherSession(pinia)
+    startupRendererProfiler.mark('bootstrapLauncherSession:start')
+    void bootstrapLauncherSession(pinia).finally(() => {
+      startupRendererProfiler.mark('bootstrapLauncherSession:done')
+    })
   } else {
-    void readToken().then(() => bootstrapAuth(pinia))
+    startupRendererProfiler.mark('bootstrapAuth:start')
+    void readToken().then(() => bootstrapAuth(pinia)).finally(() => {
+      startupRendererProfiler.mark('bootstrapAuth:done')
+    })
   }
 
   if (aux && isQuickChatSurface()) {
