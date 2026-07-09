@@ -66,6 +66,7 @@ import { initUpdater } from './updater/updater.js'
 import { schedulePostWindowStartup } from './startupOrchestrator.js'
 import { createStartupProfiler } from './startupProfiler.js'
 import { RENDERER_AUTH_TOKEN_SCRIPT } from './rendererTokenScript.js'
+import { clampLauncherBoundsToWorkArea, isLauncherWithinWorkArea } from './launcherBounds.js'
 
 // Windows toast 通知归属：AUMID 必须在 app ready / 任何窗口创建前设置，
 // 否则 new Notification() 弹的 toast 无归属（不认图标、不进操作中心）。
@@ -640,11 +641,11 @@ function isMainWindowOccupyingDesktop() {
 }
 
 function isPositionWithinAnyWorkArea(x, y, width = LAUNCHER_WINDOW.width, height = LAUNCHER_WINDOW.height) {
-  const right = x + width
-  const bottom = y + height
   return screen.getAllDisplays().some((display) => {
-    const area = display.workArea
-    return x >= area.x && y >= area.y && right <= area.x + area.width && bottom <= area.y + area.height
+    return isLauncherWithinWorkArea(
+      { x, y, width, height },
+      display.workArea,
+    )
   })
 }
 
@@ -678,24 +679,21 @@ function resetLauncherCompactSize() {
   launcherSuppressMoveSave = false
 }
 
+function clampLauncherBoundsForNearestDisplay(bounds, options) {
+  const display = screen.getDisplayNearestPoint({
+    x: bounds.x + bounds.width / 2,
+    y: bounds.y + bounds.height / 2,
+  })
+  return clampLauncherBoundsToWorkArea(bounds, display.workArea, options)
+}
+
 function clampLauncherToWorkArea() {
   if (!launcherWindow || launcherWindow.isDestroyed() || launcherIsDragging) return
   const bounds = launcherWindow.getBounds()
-  const winWidth = bounds.width
-  const winHeight = bounds.height
-  const centerX = bounds.x + winWidth / 2
-  const centerY = bounds.y + winHeight / 2
-  const display = screen.getDisplayNearestPoint({ x: centerX, y: centerY })
-  const area = display.workArea
-  let x = bounds.x
-  let y = bounds.y
-  if (x + winWidth > area.x + area.width) x = area.x + area.width - winWidth
-  if (y + winHeight > area.y + area.height) y = area.y + area.height - winHeight
-  if (x < area.x) x = area.x
-  if (y < area.y) y = area.y
+  const { x, y } = clampLauncherBoundsForNearestDisplay(bounds)
   if (x !== bounds.x || y !== bounds.y) {
     launcherSuppressMoveSave = true
-    launcherWindow.setPosition(Math.round(x), Math.round(y))
+    launcherWindow.setPosition(x, y)
     writeLauncherPosition(x, y)
     launcherSuppressMoveSave = false
   }
@@ -2516,9 +2514,13 @@ function registerIpcHandlers() {
     if (!launcherWindow || launcherWindow.isDestroyed()) return { ok: false }
     if (!Number.isFinite(dx) || !Number.isFinite(dy)) return { ok: false }
     const bounds = launcherWindow.getBounds()
-    launcherWindow.setPosition(Math.round(bounds.x + dx), Math.round(bounds.y + dy))
-    const next = launcherWindow.getBounds()
-    writeLauncherPosition(next.x, next.y)
+    const clamped = clampLauncherBoundsForNearestDisplay(
+      { ...bounds, x: bounds.x + dx, y: bounds.y + dy },
+      { axis: 'y' },
+    )
+    launcherWindow.setPosition(clamped.x, clamped.y)
+    const saved = launcherWindow.getBounds()
+    writeLauncherPosition(saved.x, saved.y)
     return { ok: true }
   })
 
@@ -2539,7 +2541,11 @@ function registerIpcHandlers() {
     if (dx === 0 && dy === 0) return
     launcherIsDragging = true
     const bounds = launcherWindow.getBounds()
-    launcherWindow.setPosition(Math.round(bounds.x + dx), Math.round(bounds.y + dy))
+    const next = clampLauncherBoundsForNearestDisplay(
+      { ...bounds, x: bounds.x + dx, y: bounds.y + dy },
+      { axis: 'y' },
+    )
+    launcherWindow.setPosition(next.x, next.y)
   })
 
   ipcMain.on('desktop:launcher-drag-end', (event) => {
@@ -2563,8 +2569,10 @@ function registerIpcHandlers() {
     if (!launcherWindow || launcherWindow.isDestroyed()) return { ok: false }
     if (!Number.isFinite(x) || !Number.isFinite(y)) return { ok: false }
     launcherIsDragging = true
-    launcherWindow.setPosition(Math.round(x), Math.round(y))
-    writeLauncherPosition(Math.round(x), Math.round(y))
+    const bounds = launcherWindow.getBounds()
+    const clamped = clampLauncherBoundsForNearestDisplay({ ...bounds, x, y }, { axis: 'y' })
+    launcherWindow.setPosition(clamped.x, clamped.y)
+    writeLauncherPosition(clamped.x, clamped.y)
     return { ok: true }
   })
 
