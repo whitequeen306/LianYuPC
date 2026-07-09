@@ -2,6 +2,7 @@ package com.lianyu.service.character;
 
 import com.lianyu.dao.entity.Character;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.Map;
 
 /**
@@ -31,7 +32,8 @@ public final class CharacterPreferenceResolver {
         }
         int start = resolveInt(settings, KEY_DND_START_MINUTES, DEFAULT_DND_START);
         int end = resolveInt(settings, KEY_DND_END_MINUTES, DEFAULT_DND_END);
-        int now = LocalTime.now().getHour() * 60 + LocalTime.now().getMinute();
+        LocalTime localNow = LocalTime.now(ZoneId.of("Asia/Shanghai"));
+        int now = localNow.getHour() * 60 + localNow.getMinute();
         if (start == end) {
             return true;
         }

@@ -482,10 +482,15 @@ public class ConversationService {
         if (character == null) {
             return;
         }
+        CharacterChatBehavior coldOpenBehavior = chatBehaviorResolver.resolve(character);
+        if (!coldOpenBehavior.proactiveEnabled()) {
+            log.debug("Cold open skipped (proactive disabled): convId={}", conversationId);
+            return;
+        }
         try {
             ensureCharacterAvailableForProactive(character);
         } catch (BusinessException e) {
-            log.debug("Cold open skipped (character unavailable): convId={}, reason={}", conversationId, e.getMessage());
+            log.debug("Cold open skipped (character unavailable): convId={}, reason=", conversationId, e.getMessage());
             return;
         }
         String lockKey = COLD_OPEN_LOCK_PREFIX + conversationId;
@@ -550,6 +555,11 @@ public class ConversationService {
         }
         Character character = characterMapper.selectById(conversation.getCharacterId());
         if (character == null) {
+            return;
+        }
+        CharacterChatBehavior followUpBehavior = chatBehaviorResolver.resolve(character);
+        if (!followUpBehavior.proactiveEnabled()) {
+            log.debug("Cold open follow-up skipped (proactive disabled): convId={}", conversationId);
             return;
         }
         try {

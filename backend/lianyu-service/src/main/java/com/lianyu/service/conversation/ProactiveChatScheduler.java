@@ -64,13 +64,7 @@ public class ProactiveChatScheduler {
             return;
         }
 
-        List<Conversation> candidates = conversationMapper.selectList(
-                new LambdaQueryWrapper<Conversation>()
-                        .eq(Conversation::getMode, "SINGLE")
-                        .isNotNull(Conversation::getCharacterId)
-                        .orderByDesc(Conversation::getCreatedAt)
-                        .last("LIMIT " + Math.max(1, scanLimit))
-        );
+        List<Conversation> candidates = conversationMapper.selectSingleConversationsOrderByLastMessage(Math.max(1, scanLimit));
         if (candidates.isEmpty()) {
             return;
         }
