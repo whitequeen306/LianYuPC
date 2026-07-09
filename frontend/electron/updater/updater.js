@@ -5,6 +5,7 @@ import { performApiRequest, isAllowedEgressUrl } from '../apiProxy.js'
 import { spawn } from 'child_process'
 import path from 'path'
 import fs from 'fs'
+import { createHash } from 'crypto'
 
 let initialized = false
 let mainWindowRef = null
@@ -13,6 +14,8 @@ let downloadedInstallerPath = null
 let quitAndInstallRef = null
 
 const UPDATE_MANIFEST_PATH = '/api/public/files/updates/latest.yml'
+const UPDATE_DOWNLOAD_CONCURRENCY = 6
+const UPDATE_DOWNLOAD_RETRIES = 2
 
 function setState(partial) {
   currentState = { ...currentState, ...partial }
@@ -55,6 +58,230 @@ function resolveUpdateAssetUrl(assetUrl, latestYmlUrl, updateOrigin = '') {
     return new URL(assetUrl.replace(/^\/+/, ''), `${updateOrigin}/`).toString()
   }
   return new URL(assetUrl, latestYmlUrl).toString()
+}
+
+function getHeader(headers, name) {
+  const value = headers?.[name] || headers?.[name.toLowerCase()]
+  return Array.isArray(value) ? value[0] : value
+}
+
+function parseContentRange(value) {
+  const match = String(value || '').match(/^bytes\s+(\d+)-(\d+)\/(\d+)$/i)
+  if (!match) return null
+  return { start: Number(match[1]), end: Number(match[2]), total: Number(match[3]) }
+}
+
+function createRequest(url, range) {
+  const req = net.request({ method: 'GET', url })
+  if (range && typeof req.setHeader === 'function') req.setHeader('Range', range)
+  return req
+}
+
+function requestToFile({ url, filePath, range, expectedBytes, expectedRange, onProgress }) {
+  return new Promise((resolve, reject) => {
+    const req = createRequest(url, range)
+    const ws = fs.createWriteStream(filePath)
+    let received = 0
+    let settled = false
+    const finish = (fn, value) => {
+      if (settled) return
+      settled = true
+      fn(value)
+    }
+
+    ws.on('error', (err) => finish(reject, err))
+    req.on('response', (res) => {
+      const expectedStatus = range ? 206 : 200
+      if (res.statusCode !== expectedStatus) {
+        ws.destroy()
+        finish(reject, new Error(`download HTTP ${res.statusCode}`))
+        return
+      }
+      if (expectedRange) {
+        const contentRange = parseContentRange(getHeader(res.headers, 'content-range'))
+        if (!contentRange || contentRange.start !== expectedRange.start || contentRange.end !== expectedRange.end || contentRange.total !== expectedRange.total) {
+          ws.destroy()
+          finish(reject, new Error('Content-Range mismatch'))
+          return
+        }
+      }
+      const lenHeader = getHeader(res.headers, 'content-length')
+      const total = expectedBytes || (lenHeader ? parseInt(lenHeader, 10) || 0 : 0)
+      res.on('data', (chunk) => {
+        received += chunk.length
+        onProgress?.(chunk.length, total)
+        ws.write(chunk)
+      })
+      res.on('end', () => {
+        if (total > 0 && received !== total) {
+          ws.destroy()
+          finish(reject, new Error(`download incomplete: ${received}/${total}`))
+          return
+        }
+        ws.end(() => finish(resolve, { received, total }))
+      })
+      res.on('error', (err) => finish(reject, err))
+    })
+    req.on('error', (err) => finish(reject, err))
+    req.end()
+  })
+}
+
+function probeRangeSupport(url, probePath) {
+  return new Promise((resolve) => {
+    const req = createRequest(url, 'bytes=0-0')
+    const ws = fs.createWriteStream(probePath)
+    let settled = false
+    const finish = (value) => {
+      if (settled) return
+      settled = true
+      ws.destroy()
+      try { fs.unlinkSync(probePath) } catch (_) {}
+      resolve(value)
+    }
+
+    ws.on('error', () => finish(null))
+    req.on('response', (res) => {
+      const range = parseContentRange(getHeader(res.headers, 'content-range'))
+      if (res.statusCode !== 206 || !range?.total) {
+        if (typeof res.destroy === 'function') res.destroy()
+        if (typeof req.abort === 'function') req.abort()
+        finish(null)
+        return
+      }
+      res.on('data', (chunk) => ws.write(chunk))
+      res.on('end', () => ws.end(() => finish({ total: range.total })))
+      res.on('error', () => finish(null))
+    })
+    req.on('error', () => finish(null))
+    req.end()
+  })
+}
+
+function createParts(total, concurrency = UPDATE_DOWNLOAD_CONCURRENCY) {
+  const partCount = Math.min(concurrency, total)
+  const partSize = Math.ceil(total / partCount)
+  return Array.from({ length: partCount }, (_, index) => {
+    const start = index * partSize
+    const end = Math.min(total - 1, start + partSize - 1)
+    return { index, start, end, size: end - start + 1 }
+  })
+}
+
+async function withRetries(fn) {
+  let lastError = null
+  for (let attempt = 0; attempt <= UPDATE_DOWNLOAD_RETRIES; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastError = err
+    }
+  }
+  throw lastError
+}
+
+function emitDownloadProgress({ received, total, startedAt, version }) {
+  const percent = total > 0 ? Math.round((received / total) * 100) : 0
+  const elapsedSec = Math.max(0.001, (Date.now() - startedAt) / 1000)
+  const speedBytesPerSec = Math.round(received / elapsedSec)
+  const remaining = total > received && speedBytesPerSec > 0 ? total - received : 0
+  const etaSeconds = remaining > 0 ? Math.ceil(remaining / speedBytesPerSec) : 0
+  setState({
+    state: 'downloading',
+    info: { percent, transferred: received, total, speedBytesPerSec, etaSeconds, version },
+  })
+}
+
+function mergeParts(parts, installerPath) {
+  return new Promise((resolve, reject) => {
+    const ws = fs.createWriteStream(installerPath)
+    let current = 0
+    let settled = false
+    const finish = (fn, value) => {
+      if (settled) return
+      settled = true
+      fn(value)
+    }
+    ws.on('error', (err) => finish(reject, err))
+
+    const pipeNext = () => {
+      if (current >= parts.length) {
+        ws.end(() => finish(resolve))
+        return
+      }
+      const part = parts[current]
+      const rs = fs.createReadStream(part.filePath)
+      rs.on('error', (err) => finish(reject, err))
+      rs.on('end', () => {
+        try { fs.unlinkSync(part.filePath) } catch (_) {}
+        current += 1
+        pipeNext()
+      })
+      rs.pipe(ws, { end: false })
+    }
+    pipeNext()
+  })
+}
+
+function hashFile(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = createHash('sha512')
+    const rs = fs.createReadStream(filePath)
+    rs.on('data', (chunk) => hash.update(chunk))
+    rs.on('end', () => resolve(hash.digest('base64')))
+    rs.on('error', reject)
+  })
+}
+
+async function verifyInstallerSha512(installerPath, expectedSha512) {
+  if (!expectedSha512) throw new Error('latest.yml missing sha512')
+  const actualSha512 = await hashFile(installerPath)
+  if (actualSha512 !== expectedSha512) {
+    try { fs.unlinkSync(installerPath) } catch (_) {}
+    throw new Error('sha512 mismatch')
+  }
+}
+
+async function downloadSingle({ downloadUrl, installerPath, startedAt, version }) {
+  let received = 0
+  return requestToFile({
+    url: downloadUrl,
+    filePath: installerPath,
+    onProgress: (bytes, total) => {
+      received += bytes
+      emitDownloadProgress({ received, total, startedAt, version })
+    },
+  })
+}
+
+async function downloadParallel({ downloadUrl, installerPath, total, startedAt, version }) {
+  const parts = createParts(total).map((part) => ({
+    ...part,
+    filePath: `${installerPath}.part.${part.index}`,
+  }))
+  const partProgress = new Array(parts.length).fill(0)
+
+  await Promise.all(parts.map((part) => withRetries(() => {
+    partProgress[part.index] = 0
+    return requestToFile({
+      url: downloadUrl,
+      filePath: part.filePath,
+      range: `bytes=${part.start}-${part.end}`,
+      expectedBytes: part.size,
+      expectedRange: { start: part.start, end: part.end, total },
+      onProgress: (bytes) => {
+        partProgress[part.index] += bytes
+        const received = partProgress.reduce((sum, value) => sum + value, 0)
+        emitDownloadProgress({ received, total, startedAt, version })
+      },
+    })
+  })))
+
+  const received = partProgress.reduce((sum, value) => sum + value, 0)
+  if (received !== total) {
+    throw new Error(`download incomplete: ${received}/${total}`)
+  }
+  await mergeParts(parts, installerPath)
 }
 
 function formatInstallMessage(version) {
@@ -126,6 +353,7 @@ function registerIpc() {
       return { ok: false, error: 'no api origin' }
     }
     try {
+      downloadedInstallerPath = null
       const ymlUrl = resolveLatestYmlUrl(apiOrigin)
       const ymlResp = await performApiRequest({
         method: 'GET',
@@ -150,66 +378,22 @@ function registerIpc() {
       const installerPath = path.join(installerDir, `LianYu-Setup-${info.version}.exe`)
 
       setState({ state: 'downloading', info: { percent: 0 } })
+      const startedAt = Date.now()
+      const probe = await probeRangeSupport(downloadUrl, `${installerPath}.probe`)
+      if (probe?.total) {
+        await downloadParallel({ downloadUrl, installerPath, total: probe.total, startedAt, version: info.version })
+      } else {
+        await downloadSingle({ downloadUrl, installerPath, startedAt, version: info.version })
+      }
 
-      await new Promise((resolve, reject) => {
-        const req = net.request({
-          method: 'GET',
-          url: downloadUrl,
-        })
-        let received = 0
-        let total = 0
-        const startedAt = Date.now()
-        const ws = fs.createWriteStream(installerPath)
-        let settled = false
-        const finish = (fn, v) => {
-          if (settled) return
-          settled = true
-          fn(v)
-        }
-        ws.on('error', (err) => finish(reject, err))
-
-        req.on('response', (res) => {
-          if (res.statusCode !== 200) {
-            finish(reject, new Error(`download HTTP ${res.statusCode}`))
-            return
-          }
-          const lenHeader = res.headers['content-length']
-          if (lenHeader) total = parseInt(Array.isArray(lenHeader) ? lenHeader[0] : lenHeader, 10) || 0
-
-          res.on('data', (chunk) => {
-            received += chunk.length
-            const percent = total > 0 ? Math.round((received / total) * 100) : 0
-            const elapsedSec = Math.max(0.001, (Date.now() - startedAt) / 1000)
-            const speedBytesPerSec = Math.round(received / elapsedSec)
-            const remaining = total > received && speedBytesPerSec > 0 ? total - received : 0
-            const etaSeconds = remaining > 0 ? Math.ceil(remaining / speedBytesPerSec) : 0
-            setState({
-              state: 'downloading',
-              info: { percent, transferred: received, total, speedBytesPerSec, etaSeconds, version: info.version },
-            })
-            ws.write(chunk)
-          })
-          res.on('end', () => {
-            if (total > 0 && received !== total) {
-              ws.destroy()
-              finish(reject, new Error(`download incomplete: ${received}/${total}`))
-              return
-            }
-            ws.end(() => {
-              downloadedInstallerPath = installerPath
-              setState({ state: 'ready', info: { version: info.version } })
-              finish(resolve, { ok: true })
-            })
-          })
-          res.on('error', (err) => finish(reject, err))
-        })
-        req.on('error', (err) => finish(reject, err))
-        req.end()
-      })
+      await verifyInstallerSha512(installerPath, info.sha512)
+      downloadedInstallerPath = installerPath
+      setState({ state: 'ready', info: { version: info.version } })
 
       return { ok: true }
     } catch (err) {
       const msg = err?.message || String(err)
+      downloadedInstallerPath = null
       logger.error('updater', `download failed: ${msg}`)
       setState({ state: 'error', info: { errorMessage: msg } })
       return { ok: false, error: msg }
