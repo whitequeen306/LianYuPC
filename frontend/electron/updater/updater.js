@@ -223,6 +223,18 @@ function mergeParts(parts, installerPath) {
   })
 }
 
+function cleanupInstallerArtifacts(installerPath) {
+  const targets = [installerPath]
+  for (let index = 0; index < UPDATE_DOWNLOAD_CONCURRENCY; index++) {
+    targets.push(`${installerPath}.part.${index}`)
+  }
+  for (const target of targets) {
+    try {
+      if (fs.existsSync(target)) fs.unlinkSync(target)
+    } catch (_) {}
+  }
+}
+
 function hashFile(filePath) {
   return new Promise((resolve, reject) => {
     const hash = createHash('sha512')
@@ -294,18 +306,12 @@ function isValidInstallerVersion(version) {
   return /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)
 }
 
-function quoteCmdArg(value) {
-  const text = String(value)
-  if (/["\r\n]/.test(text)) throw new Error('invalid installer path')
-  return `"${text}"`
-}
-
 function launchInstallerDetached(installerPath) {
-  const command = `start "" ${quoteCmdArg(installerPath)}`
-  return spawn('cmd.exe', ['/d', '/s', '/c', command], {
+  return spawn(installerPath, [], {
     detached: true,
+    shell: false,
     stdio: 'ignore',
-    windowsHide: true,
+    windowsHide: false,
   })
 }
 
@@ -371,6 +377,7 @@ function registerIpc() {
       setState({ state: 'error', info: { errorMessage: 'no api origin' } })
       return { ok: false, error: 'no api origin' }
     }
+    let installerPath = null
     try {
       downloadedInstallerPath = null
       const ymlUrl = resolveLatestYmlUrl(apiOrigin)
@@ -395,9 +402,9 @@ function registerIpc() {
         throw new Error('download url not allowed')
       }
 
-      const installerDir = path.join(app.getPath('temp'), 'lianyu-updater')
+      const installerDir = path.join(app.getPath('userData'), 'updates')
       fs.mkdirSync(installerDir, { recursive: true })
-      const installerPath = path.join(installerDir, `LianYu-Setup-${info.version}.exe`)
+      installerPath = path.join(installerDir, `LianYu-Setup-${info.version}.exe`)
 
       setState({ state: 'downloading', info: { percent: 0 } })
       const startedAt = Date.now()
@@ -416,6 +423,7 @@ function registerIpc() {
     } catch (err) {
       const msg = err?.message || String(err)
       downloadedInstallerPath = null
+      if (installerPath) cleanupInstallerArtifacts(installerPath)
       logger.error('updater', `download failed: ${msg}`)
       setState({ state: 'error', info: { errorMessage: msg } })
       return { ok: false, error: msg }

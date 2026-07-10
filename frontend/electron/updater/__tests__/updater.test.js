@@ -14,13 +14,15 @@ const mocks = vi.hoisted(() => ({
   quitAndInstall: vi.fn(),
   writes: new Map(),
   removedFiles: [],
+  mkdirCalls: [],
+  existingFiles: new Set(),
 }))
 
 vi.mock('electron', () => ({
   app: {
     get isPackaged() { return mocks.isPackaged },
     getVersion: () => mocks.appVersion,
-    getPath: () => '/tmp/lianyu-test',
+    getPath: (name) => name === 'userData' ? '/tmp/lianyu-test' : '/tmp/lianyu-temp',
     quit: mocks.appQuit,
   },
   ipcMain: { handle: (ch, fn) => mocks.handleRegistry.set(ch, fn) },
@@ -38,7 +40,7 @@ vi.mock('child_process', () => ({
 
 vi.mock('fs', () => ({
   default: {
-    mkdirSync: vi.fn(),
+    mkdirSync: vi.fn((dirPath) => { mocks.mkdirCalls.push(dirPath) }),
     createWriteStream: vi.fn((filePath) => {
       const stream = new EventEmitter()
       mocks.writes.set(filePath, [])
@@ -73,7 +75,7 @@ vi.mock('fs', () => ({
       }
       return stream
     }),
-    existsSync: vi.fn(() => true),
+    existsSync: vi.fn((filePath) => mocks.existingFiles.size === 0 || mocks.existingFiles.has(filePath)),
     unlinkSync: vi.fn((filePath) => { mocks.removedFiles.push(filePath) }),
   },
 }))
@@ -123,6 +125,8 @@ describe('updater (manual mode)', () => {
     vi.mocked(spawn).mockClear()
     mocks.writes = new Map()
     mocks.removedFiles = []
+    mocks.mkdirCalls = []
+    mocks.existingFiles = new Set()
     vi.resetModules()
   })
 
@@ -242,9 +246,10 @@ describe('updater (manual mode)', () => {
     expect(requestedRanges.filter(Boolean).length).toBeGreaterThan(1)
     expect(requestedRanges).toContain('bytes=0-1')
     expect(requestedRanges).toContain('bytes=10-11')
-    const finalPath = '/tmp/lianyu-test/lianyu-updater/LianYu-Setup-0.2.260.exe'
+    const finalPath = '/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe'
     expect(Buffer.concat(mocks.writes.get(finalPath)).toString()).toBe('abcdefghijkl')
     expect(mocks.removedFiles).toContain(`${finalPath}.part.0`)
+    expect(mocks.mkdirCalls).toContain('/tmp/lianyu-test/updates')
     expect(mocks.webSend).toHaveBeenCalledWith('updater:state', expect.objectContaining({
       state: 'ready',
       info: { version: '0.2.260' },
@@ -282,7 +287,7 @@ describe('updater (manual mode)', () => {
 
     expect(ret.ok).toBe(true)
     expect(requestedRanges).toEqual(['bytes=0-0', ''])
-    const finalPath = '/tmp/lianyu-test/lianyu-updater/LianYu-Setup-0.2.260.exe'
+    const finalPath = '/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe'
     expect(Buffer.concat(mocks.writes.get(finalPath)).toString()).toBe('abcdefghijkl')
   })
 
@@ -396,6 +401,8 @@ describe('updater (manual mode)', () => {
 
     expect(ret.ok).toBe(false)
     expect(ret.error).toContain('Content-Range mismatch')
+    expect(mocks.removedFiles).toContain('/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe')
+    expect(mocks.removedFiles).toContain('/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe.part.0')
   })
 
   it('install: 调用 spawn 启动安装包并退出', async () => {
@@ -430,6 +437,7 @@ describe('updater (manual mode)', () => {
       return req
     }
     await mocks.handleRegistry.get('updater:download')()
+    mocks.existingFiles.add('/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe')
     expect(requestedDownloadUrl).toBe('https://download.lianyu.test/LianYu-Setup-0.2.260.exe')
     expect(mocks.webSend).toHaveBeenCalledWith('updater:state', expect.objectContaining({
       state: 'downloading',
@@ -443,15 +451,11 @@ describe('updater (manual mode)', () => {
         message: expect.not.stringContaining('后台'),
       }),
     }))
-    expect(spawn).toHaveBeenCalledWith('cmd.exe', [
-      '/d',
-      '/s',
-      '/c',
-      'start "" "/tmp/lianyu-test/lianyu-updater/LianYu-Setup-0.2.260.exe"',
-    ], expect.objectContaining({
+    expect(spawn).toHaveBeenCalledWith('/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe', [], expect.objectContaining({
       detached: true,
+      shell: false,
       stdio: 'ignore',
-      windowsHide: true,
+      windowsHide: false,
     }))
     await new Promise((resolve) => setTimeout(resolve, 550))
     expect(mocks.quitAndInstall).toHaveBeenCalledTimes(1)
