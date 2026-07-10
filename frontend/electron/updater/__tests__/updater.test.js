@@ -439,12 +439,15 @@ describe('updater (manual mode)', () => {
     expect(ret.ok).toBe(true)
     expect(mocks.webSend).toHaveBeenLastCalledWith('updater:state', expect.objectContaining({
       state: 'installing',
+      info: expect.objectContaining({
+        message: expect.not.stringContaining('后台'),
+      }),
     }))
     expect(spawn).toHaveBeenCalledWith('cmd.exe', [
       '/d',
       '/s',
       '/c',
-      'start "" /min "/tmp/lianyu-test/lianyu-updater/LianYu-Setup-0.2.260.exe" /S --force-run',
+      'start "" "/tmp/lianyu-test/lianyu-updater/LianYu-Setup-0.2.260.exe"',
     ], expect.objectContaining({
       detached: true,
       stdio: 'ignore',

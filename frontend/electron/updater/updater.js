@@ -286,8 +286,8 @@ async function downloadParallel({ downloadUrl, installerPath, total, startedAt, 
 
 function formatInstallMessage(version) {
   return version
-    ? `正在安装 v${version}，应用会关闭并在后台完成更新，请稍候。`
-    : '正在安装更新，应用会关闭并在后台完成更新，请稍候。'
+    ? `正在打开 v${version} 安装向导，请在弹出的窗口中继续安装。`
+    : '正在打开安装向导，请在弹出的窗口中继续安装。'
 }
 
 function isValidInstallerVersion(version) {
@@ -301,7 +301,7 @@ function quoteCmdArg(value) {
 }
 
 function launchInstallerDetached(installerPath) {
-  const command = `start "" /min ${quoteCmdArg(installerPath)} /S --force-run`
+  const command = `start "" ${quoteCmdArg(installerPath)}`
   return spawn('cmd.exe', ['/d', '/s', '/c', command], {
     detached: true,
     stdio: 'ignore',

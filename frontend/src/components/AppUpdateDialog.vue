@@ -26,7 +26,7 @@
       </div>
 
       <div v-if="state === 'installing'" class="upd-installing">
-        {{ info.message || '正在后台安装更新，请稍候。' }}
+        {{ info.message || '正在打开安装向导，请在弹出的窗口中继续安装。' }}
       </div>
 
       <div v-if="state === 'error'" class="upd-error">
@@ -40,7 +40,7 @@
         立即下载
       </el-button>
       <el-button v-if="state === 'ready'" type="primary" class="btn-cta" @click="install">
-        安装并重启
+        打开安装向导
       </el-button>
       <el-button v-if="state === 'error'" type="primary" class="btn-cta" @click="download">
         重试下载
@@ -68,7 +68,7 @@ const headline = computed(() => {
     case 'update-available': return `发现新版本 v${info.value.version || ''}`
     case 'downloading': return `正在下载 v${info.value.version || ''}`
     case 'ready': return `v${info.value.version || ''} 已下载完成`
-    case 'installing': return '正在安装更新'
+    case 'installing': return '正在打开安装向导'
     case 'error': return '更新失败'
     default: return '应用更新'
   }
@@ -76,10 +76,10 @@ const headline = computed(() => {
 
 const hint = computed(() => {
   switch (state.value) {
-    case 'update-available': return '建议立即更新以获得最新修复。下载完成后可一键安装并重启。'
+    case 'update-available': return '建议立即更新以获得最新修复。下载完成后会打开安装向导。'
     case 'downloading': return '下载期间可以停留在当前页面，请保持网络连接。'
-    case 'ready': return '安装会关闭当前应用并在后台完成，期间请不要手动重新打开。'
-    case 'installing': return '应用即将关闭并后台安装，完成后会自动重新启动。'
+    case 'ready': return '点击后会关闭当前应用并打开安装向导，请按提示完成安装。'
+    case 'installing': return '安装向导即将打开，请在弹出的窗口中继续安装。'
     case 'error': return '请检查网络后重试。如果多次失败，可以稍后再试。'
     default: return '正在与更新源通信。'
   }
