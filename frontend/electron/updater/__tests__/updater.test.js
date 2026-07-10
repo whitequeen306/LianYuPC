@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { EventEmitter } from 'events'
 import { createHash } from 'crypto'
+import { spawn } from 'child_process'
 
 const mocks = vi.hoisted(() => ({
   isPackaged: true,
@@ -119,6 +120,7 @@ describe('updater (manual mode)', () => {
     mocks.appVersion = '0.2.258'
     mocks.appQuit.mockClear()
     mocks.quitAndInstall.mockClear()
+    vi.mocked(spawn).mockClear()
     mocks.writes = new Map()
     mocks.removedFiles = []
     vi.resetModules()
@@ -438,9 +440,81 @@ describe('updater (manual mode)', () => {
     expect(mocks.webSend).toHaveBeenLastCalledWith('updater:state', expect.objectContaining({
       state: 'installing',
     }))
+    expect(spawn).toHaveBeenCalledWith('cmd.exe', [
+      '/d',
+      '/s',
+      '/c',
+      'start "" /min "/tmp/lianyu-test/lianyu-updater/LianYu-Setup-0.2.260.exe" /S --force-run',
+    ], expect.objectContaining({
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    }))
     await new Promise((resolve) => setTimeout(resolve, 550))
     expect(mocks.quitAndInstall).toHaveBeenCalledTimes(1)
     expect(mocks.appQuit).not.toHaveBeenCalled()
+  })
+
+  it('install: 拒绝非 semver 版本的安装包路径，避免 cmd 注入', async () => {
+    const { initUpdater } = await loadUpdater()
+    initUpdater(mockMainWindow, { quitAndInstall: mocks.quitAndInstall })
+    mocks.apiResponses['https://api.lianyu.test/api/public/files/updates/latest.yml'] = {
+      status: 200,
+      data: `version: 0.2.260&calc\nfiles:\n  - url: LianYu-Setup-0.2.260.exe\nsha512: ${sha512Base64(Buffer.alloc(100))}\n`,
+    }
+    mocks.netRequestImpl = () => {
+      const handlers = { response: null, error: null }
+      const req = {
+        on: (ev, fn) => { handlers[ev] = fn; return req },
+        end: () => setTimeout(() => handlers.response({
+          statusCode: 200,
+          headers: { 'content-length': '100' },
+          on: (ev, fn) => {
+            if (ev === 'data') setTimeout(() => fn(Buffer.alloc(100)), 1)
+            if (ev === 'end') setTimeout(() => fn(), 2)
+          },
+        }), 1),
+      }
+      return req
+    }
+
+    const downloadRet = await mocks.handleRegistry.get('updater:download')()
+
+    expect(downloadRet.ok).toBe(false)
+    expect(downloadRet.error).toBe('invalid installer version')
+    await expect(mocks.handleRegistry.get('updater:install')()).resolves.toEqual({ ok: false, error: 'no downloaded installer' })
+    expect(spawn).not.toHaveBeenCalled()
+  })
+
+  it('install: 拒绝带前导零的版本号', async () => {
+    const { initUpdater } = await loadUpdater()
+    initUpdater(mockMainWindow, { quitAndInstall: mocks.quitAndInstall })
+    mocks.apiResponses['https://api.lianyu.test/api/public/files/updates/latest.yml'] = {
+      status: 200,
+      data: `version: 01.2.3\nfiles:\n  - url: LianYu-Setup-01.2.3.exe\nsha512: ${sha512Base64(Buffer.alloc(100))}\n`,
+    }
+    mocks.netRequestImpl = () => {
+      const handlers = { response: null, error: null }
+      const req = {
+        on: (ev, fn) => { handlers[ev] = fn; return req },
+        end: () => setTimeout(() => handlers.response({
+          statusCode: 200,
+          headers: { 'content-length': '100' },
+          on: (ev, fn) => {
+            if (ev === 'data') setTimeout(() => fn(Buffer.alloc(100)), 1)
+            if (ev === 'end') setTimeout(() => fn(), 2)
+          },
+        }), 1),
+      }
+      return req
+    }
+
+    const downloadRet = await mocks.handleRegistry.get('updater:download')()
+
+    expect(downloadRet.ok).toBe(false)
+    expect(downloadRet.error).toBe('invalid installer version')
+    await expect(mocks.handleRegistry.get('updater:install')()).resolves.toEqual({ ok: false, error: 'no downloaded installer' })
+    expect(spawn).not.toHaveBeenCalled()
   })
 
   it('download: 绝对 asset url 保持原样，不强制改写到 updateOrigin', async () => {

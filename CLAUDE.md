@@ -148,6 +148,7 @@ npm run electron:release:major     # major 升级
 - 仅本地打包（不上传 Release）用 `npm run electron:build`，不检查 GH_TOKEN
 
 **注意事项：**
+- 发布前必须先检查当前最新正式 Release 与本地版本号：执行 `gh release list --limit 5` 和读取 `frontend/package.json`，确认下一个版本号高于最新正式包；不要只按本地 `package.json` 猜版本。若存在 Draft Release（如上次失败残留），需先判断是否删除/跳过，最终发布版本必须是最新正式版本的下一个 patch/minor/major。
 - 发布前 **先 commit 并 push 代码**（`git commit` → `git push origin main`），确保源码与 Release 对应
 - 发布后 package.json 版本号已变更，需再 `git add package.json` 并 commit push
 - electron-builder 子进程已配置 `--use-system-ca`，不会因 SSL 证书问题上传失败

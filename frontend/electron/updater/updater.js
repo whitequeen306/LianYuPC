@@ -290,6 +290,25 @@ function formatInstallMessage(version) {
     : '正在安装更新，应用会关闭并在后台完成更新，请稍候。'
 }
 
+function isValidInstallerVersion(version) {
+  return /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)
+}
+
+function quoteCmdArg(value) {
+  const text = String(value)
+  if (/["\r\n]/.test(text)) throw new Error('invalid installer path')
+  return `"${text}"`
+}
+
+function launchInstallerDetached(installerPath) {
+  const command = `start "" /min ${quoteCmdArg(installerPath)} /S --force-run`
+  return spawn('cmd.exe', ['/d', '/s', '/c', command], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+  })
+}
+
 function compareVersions(current, latest) {
   const c = current.split('.').map(Number)
   const l = latest.split('.').map(Number)
@@ -368,6 +387,9 @@ function registerIpc() {
       if (!info || !info.url) {
         throw new Error('latest.yml missing url')
       }
+      if (!isValidInstallerVersion(info.version)) {
+        throw new Error('invalid installer version')
+      }
       const downloadUrl = resolveUpdateAssetUrl(info.url, ymlUrl, resolveUpdateOrigin())
       if (!isAllowedEgressUrl(downloadUrl, apiOrigin, resolveUpdateOrigin())) {
         throw new Error('download url not allowed')
@@ -406,13 +428,13 @@ function registerIpc() {
     }
     const versionMatch = path.basename(downloadedInstallerPath).match(/LianYu-Setup-(.+)\.exe$/)
     const version = versionMatch ? versionMatch[1] : ''
+    if (!isValidInstallerVersion(version)) {
+      return { ok: false, error: 'invalid installer version' }
+    }
     setState({ state: 'installing', info: { version, message: formatInstallMessage(version) } })
     try {
       logger.info('updater', `installing: ${downloadedInstallerPath}`)
-      spawn(downloadedInstallerPath, ['/S', '--force-run'], {
-        detached: true,
-        stdio: 'ignore',
-      }).unref()
+      launchInstallerDetached(downloadedInstallerPath).unref()
       setTimeout(() => {
         if (typeof quitAndInstallRef === 'function') {
           quitAndInstallRef()
