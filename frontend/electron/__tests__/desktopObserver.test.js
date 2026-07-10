@@ -45,7 +45,7 @@ vi.mock('electron', () => ({
   desktopCapturer: { getSources: mocks.getSources },
   screen: { getCursorScreenPoint: mocks.getCursor },
 }))
-vi.mock('active-win', () => ({ activeWin: async () => null }))
+vi.mock('active-win', () => ({ activeWindow: async () => null }))
 
 let observer
 

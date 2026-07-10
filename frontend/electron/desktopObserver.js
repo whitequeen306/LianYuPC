@@ -212,8 +212,8 @@ async function captureScreen() {
 
 async function getActiveWindowTitle() {
   try {
-    const { activeWin } = await import('active-win')
-    const win = await activeWin()
+    const { activeWindow } = await import('active-win')
+    const win = await activeWindow()
     if (win) {
       return win.title || win.owner?.name || '未知'
     }
