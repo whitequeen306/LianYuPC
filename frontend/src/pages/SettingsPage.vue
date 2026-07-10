@@ -9,6 +9,17 @@
       <p class="page-desc">{{ t('settings.desc') }}</p>
     </header>
 
+    <!-- 关于 -->
+    <section class="section stagger-item">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">{{ t('about.title') }}</h2>
+          <p class="section-desc">{{ t('about.desc') }}</p>
+        </div>
+        <el-button type="primary" class="btn-cta" :icon="Promotion" @click="goAbout">{{ t('about.viewDetail') }}</el-button>
+      </div>
+    </section>
+
     <!-- Desktop quick entry -->
     <section v-if="isElectron" class="section stagger-item desktop-section">
       <div class="section-header">
@@ -163,17 +174,6 @@
           </div>
           <el-button text :icon="FolderOpened" @click="openLogFolder">打开文件夹</el-button>
         </div>
-      </div>
-    </section>
-
-    <!-- 关于 -->
-    <section class="section stagger-item">
-      <div class="section-header">
-        <div>
-          <h2 class="section-title">{{ t('about.title') }}</h2>
-          <p class="section-desc">{{ t('about.desc') }}</p>
-        </div>
-        <el-button type="primary" class="btn-cta" :icon="Promotion" @click="goAbout">{{ t('about.viewDetail') }}</el-button>
       </div>
     </section>
 
