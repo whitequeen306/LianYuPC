@@ -202,7 +202,7 @@ lianyu:
       enabled: ${LIANYU_MULTIMODAL_ENABLED:true}
       base-url: ${MULTIMODAL_BASE_URL:https://clove.dpdns.org/v1}
       api-key: ${MULTIMODAL_API_KEY:}
-      model: ${MULTIMODAL_MODEL:qwen3.7-plus}
+      model: ${MULTIMODAL_MODEL:kimi-k2.6}
       max-tokens: 800
       describe-max-tokens: 420
     tts:
