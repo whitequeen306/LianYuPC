@@ -10,6 +10,7 @@ import os
 import re
 import shlex
 import subprocess
+import time
 from pathlib import Path
 
 import paramiko
@@ -77,28 +78,45 @@ def github_token() -> str:
 
 
 def release_assets(version: str, token: str) -> dict[str, dict[str, int | str]]:
+    # Prefer the canonical published-release-by-tag endpoint. It returns the single
+    # release owning tag v{version} (drafts have no git tag, so a still-draft release
+    # 404s here and falls through to the listing fallback below). Assets are inlined.
     proc = subprocess.run(
-        ["gh", "api", f"repos/{REPO}/releases"],
+        ["gh", "api", f"repos/{REPO}/releases/tags/v{version}"],
         text=True,
         capture_output=True,
         check=False,
     )
-    if proc.returncode != 0:
-        raise SystemExit(proc.stderr.strip() or proc.stdout.strip() or "gh api releases failed")
-    releases = json.loads(proc.stdout)
-    release = next((item for item in releases if item.get("tag_name") == f"v{version}"), None)
-    if not release:
-        raise SystemExit(f"missing GitHub release: v{version}")
-    assets_proc = subprocess.run(
-        ["gh", "api", f"repos/{REPO}/releases/{release['id']}/assets"],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if assets_proc.returncode != 0:
-        raise SystemExit(assets_proc.stderr.strip() or assets_proc.stdout.strip() or "gh api release assets failed")
-    release = {"assets": json.loads(assets_proc.stdout)}
-    return {asset["name"]: {"id": asset["id"], "size": asset["size"]} for asset in release.get("assets", [])}
+    if proc.returncode == 0:
+        rel = json.loads(proc.stdout)
+        assets = rel.get("assets", []) or []
+    else:
+        # Fallback: list releases (per_page=100 covers this repo in one page) and merge
+        # assets across ALL releases matching tag v{version}. Handles the rare case where
+        # electron-builder left assets split across a draft + a published release.
+        # Asset IDs are repo-global, so downloads work regardless of owning release.
+        list_proc = subprocess.run(
+            ["gh", "api", f"repos/{REPO}/releases?per_page=100"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if list_proc.returncode != 0:
+            raise SystemExit(list_proc.stderr.strip() or list_proc.stdout.strip() or "gh api releases failed")
+        releases = json.loads(list_proc.stdout)
+        matches = [r for r in releases if r.get("tag_name") == f"v{version}"]
+        if not matches:
+            raise SystemExit(f"missing GitHub release: v{version}")
+        # Prefer non-draft, then most assets — but still merge across all matches.
+        matches.sort(key=lambda r: (r.get("draft", True), -len(r.get("assets", []))))
+        assets = []
+        seen: set[str] = set()
+        for r in matches:
+            for a in r.get("assets", []) or []:
+                if a.get("name") and a["name"] not in seen:
+                    seen.add(a["name"])
+                    assets.append(a)
+    return {asset["name"]: {"id": asset["id"], "size": asset["size"]} for asset in assets}
 
 
 def download_release_asset(client: paramiko.SSHClient, token: str, asset_id: int | str, size: int | str, remote_path: str) -> None:
@@ -196,16 +214,27 @@ def main() -> None:
     if not password:
         raise SystemExit("Set DEPLOY_SSH_PASSWORD in .env or environment")
     token = github_token()
-    assets = release_assets(args.version, token)
+    expected_targets = {target for _src, target in artifact_paths(args.version)}
+    # GitHub asset listing is eventually consistent right after upload/publish;
+    # retry a few times so a momentarily-unlisted asset doesn't fail the sync.
+    assets = {}
+    for attempt in range(4):
+        assets = release_assets(args.version, token)
+        if expected_targets <= set(assets):
+            break
+        missing = expected_targets - set(assets)
+        print(f"waiting for GitHub assets to propagate (attempt {attempt + 1}/4, missing: {', '.join(sorted(missing))})...", flush=True)
+        time.sleep(10)
+    missing = expected_targets - set(assets)
+    if missing:
+        raise SystemExit(f"missing GitHub release asset(s): {', '.join(sorted(missing))}")
 
     client = connect(password)
 
     remote_tmp = f"/tmp/lianyu-update-assets-{args.version}"
     run(client, f"rm -rf {remote_tmp} && mkdir -p {remote_tmp}")
     for _src, target in artifact_paths(args.version):
-        asset = assets.get(target)
-        if not asset:
-            raise SystemExit(f"missing GitHub release asset: {target}")
+        asset = assets[target]
         download_release_asset(client, token, asset["id"], asset["size"], f"{remote_tmp}/{target}")
 
     run(client, "docker exec lianyu-minio sh -lc 'rm -rf /tmp/lianyu-update-assets && mkdir -p /tmp/lianyu-update-assets'")
