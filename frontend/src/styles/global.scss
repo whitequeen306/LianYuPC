@@ -343,21 +343,31 @@ html:not(.dark) {
 }
 
 // --- Page Transition ---
-// out-in 模式：leave 快速淡出让位，enter 柔和上浮进入，无黑屏（#app 满屏背景兜底）。
+// out-in 模式：纯 opacity 淡入淡出（删除 translateY，避免 backdrop-filter 逐帧重栅格化）。
+// 时长缩短 + EaseOutQuint（DESIGN.md 规则 5）。reduced-motion 下即时切换。
 .page-enter-active {
-  animation: pageEnter 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: pageEnter $transition-page-enter;
 }
 .page-leave-active {
-  animation: pageLeave 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: pageLeave $transition-page-leave;
 }
 
 @keyframes pageEnter {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 @keyframes pageLeave {
   from { opacity: 1; }
   to { opacity: 0; }
+}
+
+// 路由过渡期间暂停气氛层动画（#app::before ambientShift + app-atmosphere 常驻 orb +
+// atmosphere-panel 侧栏 orb），把 GPU 帧预算让给页面淡入。!important 压过 scoped 选择器。
+.ly-route-transitioning #app::before,
+.ly-route-transitioning .app-atmosphere__orb,
+.ly-route-transitioning .atmosphere-panel__orb--a,
+.ly-route-transitioning .atmosphere-panel__orb--b {
+  animation-play-state: paused !important;
 }
 
 // --- Staggered Reveal ---
@@ -382,6 +392,10 @@ html:not(.dark) {
     opacity: 1;
     animation: none;
     transform: none;
+  }
+  .page-enter-active,
+  .page-leave-active {
+    animation: none;
   }
 }
 

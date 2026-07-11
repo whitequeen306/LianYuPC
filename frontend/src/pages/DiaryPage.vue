@@ -49,7 +49,8 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted, onActivated, watch } from 'vue'
+defineOptions({ name: 'DiaryPage' })
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { Loading, Notebook, User } from '@element-plus/icons-vue'
@@ -97,6 +98,10 @@ const groupedDiaries = computed(() => {
 
 onMounted(async () => {
   applyRouteCharacterFilter()
+  await loadDiaries()
+})
+
+async function loadDiaries() {
   try {
     const data = await listAllDiaries({ page: 1, size: 50 })
     diaries.value = Array.isArray(data) ? data : []
@@ -105,6 +110,12 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+}
+
+let firstActivation = true
+onActivated(() => {
+  if (firstActivation) { firstActivation = false; return }
+  loadDiaries()
 })
 
 watch(

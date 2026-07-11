@@ -7,7 +7,9 @@
     />
     <router-view v-slot="{ Component, route }">
       <transition :name="pageTransitionName" :mode="pageTransitionMode">
-        <component :is="Component" :key="viewKey(route)" />
+        <keep-alive :include="keepAlivePages">
+          <component :is="Component" :key="viewKey(route)" />
+        </keep-alive>
       </transition>
     </router-view>
     <AppUpdateDialog v-if="isElectron" />
@@ -24,6 +26,11 @@ import { getElectronAPI } from '@/utils/electron'
 import { syncElectronTitleBar } from '@/utils/electronCaption'
 import { ElMessageBox } from 'element-plus'
 import AppUpdateDialog from '@/components/AppUpdateDialog.vue'
+import { KEEP_ALIVE_PAGES } from '@/composables/useKeepAlivePages'
+import {
+  ROUTE_TRANSITION_CLASS,
+  ROUTE_TRANSITION_DURATION_MS,
+} from '@/composables/useRouteTransition'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import ja from 'element-plus/es/locale/lang/ja'
 import en from 'element-plus/es/locale/lang/en'
@@ -31,6 +38,19 @@ import en from 'element-plus/es/locale/lang/en'
 const userStore = useUserStore()
 const settingsStore = useSettingsStore()
 const route = useRoute()
+
+const keepAlivePages = KEEP_ALIVE_PAGES
+
+let transitionTimer = null
+function markRouteTransitioning() {
+  const root = document.documentElement
+  root.classList.add(ROUTE_TRANSITION_CLASS)
+  if (transitionTimer) clearTimeout(transitionTimer)
+  transitionTimer = setTimeout(() => {
+    root.classList.remove(ROUTE_TRANSITION_CLASS)
+    transitionTimer = null
+  }, ROUTE_TRANSITION_DURATION_MS)
+}
 
 const elementLocaleMap = { zh: zhCn, ja, en }
 const elementLocale = computed(() => elementLocaleMap[settingsStore.uiLanguage] || zhCn)
@@ -140,6 +160,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   qqAlertUnsub?.()
+  if (transitionTimer) { clearTimeout(transitionTimer); transitionTimer = null }
 })
 
 watch(isLauncherSurface, (launcher) => {
@@ -155,5 +176,12 @@ watch(isQuickChatSurface, (quick) => {
 watch(
   () => [route.name, route.path, settingsStore.theme],
   () => syncElectronChrome(),
+)
+
+watch(
+  () => route.path,
+  (to, from) => {
+    if (to !== from) markRouteTransitioning()
+  }
 )
 </script>

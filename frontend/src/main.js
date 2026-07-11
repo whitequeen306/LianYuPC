@@ -150,4 +150,11 @@ router.onError((err) => {
     const { useUserStore } = await import('@/stores/user')
     void useUserStore(pinia).fetchProfile({ skipGlobalError: true }).catch(() => {})
   }
+
+  // 空闲预热相邻路由 chunk：解析+编译进内存，消除首次进页的 JS parse 抖动（非 aux 表面）
+  if (!aux) {
+    import('@/composables/useRouteTransition').then(({ prefetchRoutesOnIdle }) => {
+      prefetchRoutesOnIdle()
+    }).catch(() => {})
+  }
 })()

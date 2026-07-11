@@ -273,7 +273,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch, computed } from 'vue'
+import { ref, reactive, onMounted, onActivated, watch, computed } from 'vue'
+defineOptions({ name: 'CharactersPage' })
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -369,6 +370,12 @@ const spotlightLastLine = computed(() => {
 onMounted(async () => {
   void notificationsStore.init()
   await fetchCharacters()
+})
+
+let firstActivation = true
+onActivated(() => {
+  if (firstActivation) { firstActivation = false; return }
+  fetchCharacters()
 })
 
 watch(

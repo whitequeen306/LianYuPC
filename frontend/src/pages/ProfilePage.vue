@@ -119,7 +119,8 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onActivated, onDeactivated, onUnmounted, reactive, ref, watch } from 'vue'
+defineOptions({ name: 'ProfilePage' })
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { UploadFilled, UserFilled } from '@element-plus/icons-vue'
@@ -197,6 +198,19 @@ onMounted(async () => {
     await nextTick()
     document.getElementById('password')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
+})
+
+let firstActivation = true
+onActivated(() => {
+  if (firstActivation) { firstActivation = false; return }
+  userStore.fetchProfile().catch(() => {})
+})
+
+onDeactivated(() => {
+  passwordForm.oldPassword = ''
+  passwordForm.newPassword = ''
+  passwordForm.confirmPassword = ''
+  passwordFormRef.value?.clearValidate()
 })
 
 onUnmounted(revokeLocalPreview)

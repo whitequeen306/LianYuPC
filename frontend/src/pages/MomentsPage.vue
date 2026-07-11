@@ -294,7 +294,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onActivated, onDeactivated, onUnmounted, reactive, ref, watch } from 'vue'
+defineOptions({ name: 'MomentsPage' })
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
@@ -506,7 +507,18 @@ onMounted(async () => {
   } catch {
     /* ignore */
   }
+})
+
+let firstActivation = true
+onActivated(() => {
   startCommentPolling()
+  if (firstActivation) { firstActivation = false; return }
+  reloadFeed()
+  loadSidebarData()
+})
+
+onDeactivated(() => {
+  stopCommentPolling()
 })
 
 watch(

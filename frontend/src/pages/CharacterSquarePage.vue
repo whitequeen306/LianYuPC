@@ -241,7 +241,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onActivated, onUnmounted, ref, watch } from 'vue'
+defineOptions({ name: 'CharacterSquarePage' })
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -385,6 +386,12 @@ function scheduleCommentsForTemplates(templateIds = []) {
 }
 
 onMounted(() => loadCatalog())
+
+let firstActivation = true
+onActivated(() => {
+  if (firstActivation) { firstActivation = false; return }
+  loadCatalog()
+})
 
 async function loadCatalog(force = false) {
   const seq = ++catalogRequestSeq

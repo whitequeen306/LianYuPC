@@ -139,7 +139,8 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, onActivated } from 'vue'
+defineOptions({ name: 'HomePage' })
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useUserStore } from '@/stores/user'
@@ -264,6 +265,17 @@ onMounted(async () => {
     emotionStates.value = []
   }
   await loadFeedPreview()
+})
+
+let firstActivation = true
+onActivated(() => {
+  if (firstActivation) { firstActivation = false; return }
+  charactersStore.fetchList().catch(() => [])
+  conversationsStore.fetchList().catch(() => [])
+  listCharacterStates({ silent: true }).then((states) => {
+    emotionStates.value = Array.isArray(states) ? states : []
+  }).catch(() => {})
+  loadFeedPreview()
 })
 
 async function loadFeedPreview() {

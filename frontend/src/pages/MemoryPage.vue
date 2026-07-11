@@ -100,7 +100,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onActivated } from 'vue'
+defineOptions({ name: 'MemoryPage' })
 import { useI18n } from 'vue-i18n'
 import { useCharactersStore } from '@/stores/characters'
 import { listMemories, getMemory, deleteMemory } from '@/api/memory'
@@ -139,6 +140,12 @@ const groupedMemories = computed(() => {
 
 onMounted(async () => {
   await charactersStore.fetchList().catch(() => [])
+  fetchMemories()
+})
+
+let firstActivation = true
+onActivated(() => {
+  if (firstActivation) { firstActivation = false; return }
   fetchMemories()
 })
 
