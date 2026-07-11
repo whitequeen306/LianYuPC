@@ -312,6 +312,7 @@ export default {
     commentSent: 'コメントを送信しました。キャラが返信するかもしれません',
     reply: '返信',
     replyingTo: '{name} に返信',
+    replyAuthorLabel: '{author} が {target} に返信',
     you: 'あなた',
     composeTitle: '投稿する',
     composePlaceholder: '今の気持ちをシェア…',

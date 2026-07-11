@@ -161,18 +161,35 @@
                   <el-icon class="is-loading" :size="14"><Loading /></el-icon>
                 </div>
 
-                <ul v-else-if="getComments(item.post.id).length" class="feed-comment-list">
+                <ul v-else-if="threadedComments(item.post.id).length" class="feed-comment-list">
                   <li
-                    v-for="c in getComments(item.post.id)"
+                    v-for="c in threadedComments(item.post.id)"
                     :key="c.id"
                     class="feed-comment-item"
-                    :class="{ 'feed-comment-item--reply': c.parentId }"
                   >
-                    <span class="feed-comment-item__name">{{ c.characterName || t('moments.you') }}</span>
-                    <span>{{ c.content }}</span>
+                    <div class="feed-comment-item__row">
+                      <span class="feed-comment-item__name">{{ formatCommentAuthorLabel(c) }}</span>
+                      <span>{{ c.content }}</span>
+                    </div>
                     <button type="button" class="feed-comment-item__reply" @click="setReplyTarget(item.post, c)">
                       {{ t('moments.reply') }}
                     </button>
+
+                    <ul v-if="c.replies?.length" class="feed-comment-reply-list">
+                      <li
+                        v-for="reply in c.replies"
+                        :key="reply.id"
+                        class="feed-comment-item feed-comment-item--reply"
+                      >
+                        <div class="feed-comment-item__row">
+                          <span class="feed-comment-item__name">{{ formatCommentAuthorLabel(reply) }}</span>
+                          <span>{{ reply.content }}</span>
+                        </div>
+                        <button type="button" class="feed-comment-item__reply" @click="setReplyTarget(item.post, reply)">
+                          {{ t('moments.reply') }}
+                        </button>
+                      </li>
+                    </ul>
                   </li>
                 </ul>
 
@@ -308,6 +325,7 @@ import { feedDateKey, formatFeedDateLabel, formatFeedTime } from '@/utils/feedTi
 import { truncateText } from '@/utils/text'
 import { useOpenSingleChat } from '@/composables/useOpenSingleChat'
 import AtmospherePanel from '@/components/AtmospherePanel.vue'
+import { buildMomentCommentThread, formatMomentCommentAuthorLabel } from './momentsCommentThread'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -610,6 +628,18 @@ function getComments(postId) {
   return commentsByPost.value[postId] || []
 }
 
+function threadedComments(postId) {
+  return buildMomentCommentThread(getComments(postId))
+}
+
+function formatCommentAuthorLabel(comment) {
+  return formatMomentCommentAuthorLabel(
+    comment,
+    t('moments.you'),
+    (author, target) => t('moments.replyAuthorLabel', { author, target })
+  )
+}
+
 function commentCount(post) {
   const loaded = getComments(post.id).length
   if (loaded > 0) return loaded
@@ -801,6 +831,37 @@ function goToCharacterChat(characterId) {
   margin: 0 0 $space-2;
   font-size: $font-size-xs;
   color: $color-text-muted;
+}
+
+.feed-comment-item {
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+
+  &__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: $space-2;
+    line-height: 1.6;
+  }
+
+  &__name {
+    font-weight: 600;
+    color: $color-text-primary;
+  }
+
+  &__reply {
+    align-self: flex-start;
+  }
+}
+
+.feed-comment-reply-list {
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+  margin: 0;
+  padding: 0 0 0 $space-4;
+  list-style: none;
 }
 
 .link-btn {

@@ -319,6 +319,7 @@ export default {
     commentSent: '评论已发送，角色们可能会回复',
     reply: '回复',
     replyingTo: '回复 {name}',
+    replyAuthorLabel: '{author} 回复 {target}',
     you: '你',
     composeTitle: '发一条动态',
     composePlaceholder: '分享此刻的想法…',

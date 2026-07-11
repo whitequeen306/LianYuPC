@@ -73,6 +73,7 @@ export default {
     commentSent: '評論已傳送，角色們可能會回覆',
     reply: '回覆',
     replyingTo: '回覆 {name}',
+    replyAuthorLabel: '{author} 回覆 {target}',
     you: '你',
     composeTitle: '發一條動態',
     composePlaceholder: '分享此刻的想法…',

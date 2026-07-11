@@ -317,6 +317,7 @@ export default {
     commentSent: 'Comment sent. Characters may reply soon',
     reply: 'Reply',
     replyingTo: 'Replying to {name}',
+    replyAuthorLabel: '{author} replied to {target}',
     you: 'You',
     composeTitle: 'Share a moment',
     composePlaceholder: 'What\'s on your mind…',
