@@ -307,11 +307,21 @@ function isValidInstallerVersion(version) {
 }
 
 function launchInstallerDetached(installerPath) {
-  return spawn(installerPath, [], {
+  const escapedPath = String(installerPath).replace(/'/g, "''")
+  const script = `Start-Process -FilePath '${escapedPath}'`
+  return spawn('powershell.exe', [
+    '-NoLogo',
+    '-NoProfile',
+    '-NonInteractive',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-Command',
+    script,
+  ], {
     detached: true,
     shell: false,
     stdio: 'ignore',
-    windowsHide: false,
+    windowsHide: true,
   })
 }
 

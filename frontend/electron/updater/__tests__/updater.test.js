@@ -451,11 +451,22 @@ describe('updater (manual mode)', () => {
         message: expect.not.stringContaining('后台'),
       }),
     }))
-    expect(spawn).toHaveBeenCalledWith('/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe', [], expect.objectContaining({
+    expect(spawn).toHaveBeenCalledTimes(1)
+    const [command, args, options] = vi.mocked(spawn).mock.calls[0]
+    expect(command).toMatch(/powershell(\.exe)?$/i)
+    expect(args).toEqual(expect.arrayContaining([
+      '-NoLogo',
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+    ]))
+    expect(args.join(' ')).toContain("Start-Process -FilePath '/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe'")
+    expect(options).toEqual(expect.objectContaining({
       detached: true,
       shell: false,
       stdio: 'ignore',
-      windowsHide: false,
+      windowsHide: true,
     }))
     await new Promise((resolve) => setTimeout(resolve, 550))
     expect(mocks.quitAndInstall).toHaveBeenCalledTimes(1)
