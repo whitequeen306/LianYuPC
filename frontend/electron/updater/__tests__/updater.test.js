@@ -15,7 +15,8 @@ const mocks = vi.hoisted(() => ({
   removedFiles: [],
   mkdirCalls: [],
   existingFiles: new Set(),
-  shellOpenPath: vi.fn(),
+  shellOpenPath: vi.fn(async () => ''),
+  shellShowItemInFolder: vi.fn(),
 }))
 
 vi.mock('electron', () => ({
@@ -34,6 +35,7 @@ vi.mock('electron', () => ({
   },
   shell: {
     openPath: mocks.shellOpenPath,
+    showItemInFolder: mocks.shellShowItemInFolder,
   },
 }))
 
@@ -83,6 +85,7 @@ vi.mock('path', () => ({
   default: {
     join: (...args) => args.join('/'),
     basename: (value) => String(value).split('/').pop(),
+    dirname: (value) => String(value).split('/').slice(0, -1).join('/'),
   },
 }))
 
@@ -122,6 +125,7 @@ describe('updater (manual mode)', () => {
     mocks.appQuit.mockClear()
     mocks.quitAndInstall.mockClear()
     mocks.shellOpenPath.mockClear()
+    mocks.shellShowItemInFolder.mockClear()
     mocks.writes = new Map()
     mocks.removedFiles = []
     mocks.mkdirCalls = []
@@ -151,12 +155,13 @@ describe('updater (manual mode)', () => {
     }
   }
 
-  it('initUpdater 注册 3 个 IPC 通道', async () => {
+  it('initUpdater 注册 4 个 IPC 通道', async () => {
     const { initUpdater } = await loadUpdater()
     initUpdater(mockMainWindow)
     expect(mocks.handleRegistry.has('updater:check')).toBe(true)
     expect(mocks.handleRegistry.has('updater:download')).toBe(true)
     expect(mocks.handleRegistry.has('updater:install')).toBe(true)
+    expect(mocks.handleRegistry.has('updater:openInstallerFolder')).toBe(true)
   })
 
   it('check: 有新版本时推送 update-available', async () => {
@@ -445,15 +450,46 @@ describe('updater (manual mode)', () => {
     const ret = await mocks.handleRegistry.get('updater:install')()
     expect(ret.ok).toBe(true)
     expect(mocks.webSend).toHaveBeenLastCalledWith('updater:state', expect.objectContaining({
-      state: 'installing',
+      state: 'ready',
       info: expect.objectContaining({
-        message: expect.not.stringContaining('后台'),
+        message: expect.stringContaining('安装包'),
       }),
     }))
-    expect(mocks.shellOpenPath).toHaveBeenCalledTimes(1)
-    expect(mocks.shellOpenPath).toHaveBeenCalledWith('/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe')
+    expect(mocks.shellOpenPath).not.toHaveBeenCalled()
+    expect(mocks.shellShowItemInFolder).not.toHaveBeenCalled()
     await new Promise((resolve) => setTimeout(resolve, 550))
-    expect(mocks.quitAndInstall).toHaveBeenCalledTimes(1)
+    expect(mocks.quitAndInstall).not.toHaveBeenCalled()
+    expect(mocks.appQuit).not.toHaveBeenCalled()
+  })
+
+  it('ready action: 打开安装包目录并且不退出应用', async () => {
+    configureLatest('0.2.260')
+    const { initUpdater } = await loadUpdater()
+    initUpdater(mockMainWindow, { quitAndInstall: mocks.quitAndInstall })
+    mocks.netRequestImpl = () => {
+      const handlers = { response: null, error: null }
+      const req = {
+        on: (ev, fn) => { handlers[ev] = fn; return req },
+        end: () => setTimeout(() => handlers.response({
+          statusCode: 200,
+          headers: { 'content-length': '12' },
+          on: (ev, fn) => {
+            if (ev === 'data') setTimeout(() => fn(Buffer.from('abcdefghijkl')), 1)
+            if (ev === 'end') setTimeout(() => fn(), 2)
+          },
+        }), 1),
+      }
+      return req
+    }
+    await mocks.handleRegistry.get('updater:download')()
+    mocks.existingFiles.add('/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe')
+
+    const ret = await mocks.handleRegistry.get('updater:openInstallerFolder')()
+
+    expect(ret.ok).toBe(true)
+    expect(mocks.shellShowItemInFolder).toHaveBeenCalledWith('/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe')
+    expect(mocks.shellOpenPath).toHaveBeenCalledWith('/tmp/lianyu-test/updates')
+    expect(mocks.quitAndInstall).not.toHaveBeenCalled()
     expect(mocks.appQuit).not.toHaveBeenCalled()
   })
 
@@ -567,7 +603,7 @@ describe('updater (manual mode)', () => {
     const { initUpdater } = await loadUpdater()
     initUpdater(mockMainWindow)
     initUpdater(mockMainWindow)
-    expect(mocks.handleRegistry.size).toBe(3)
+    expect(mocks.handleRegistry.size).toBe(4)
   })
 
   it('主窗口销毁时 send 静默跳过', async () => {

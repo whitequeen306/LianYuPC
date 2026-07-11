@@ -7,6 +7,7 @@ const mockApi = {
   checkForUpdates: vi.fn(() => Promise.resolve({ ok: true })),
   downloadUpdate: vi.fn(() => Promise.resolve({ ok: true })),
   installNow: vi.fn(() => Promise.resolve({ ok: true })),
+  openInstallerFolder: vi.fn(() => Promise.resolve({ ok: true })),
   onUpdateState: (cb) => {
     onUpdateStateCallbacks.push(cb)
     return () => {
@@ -42,6 +43,7 @@ describe('useAppUpdater', () => {
     mockApi.checkForUpdates.mockClear()
     mockApi.downloadUpdate.mockClear()
     mockApi.installNow.mockClear()
+    mockApi.openInstallerFolder.mockClear()
     onBeforeUnmountCb = null
     vi.resetModules()
   })
@@ -83,14 +85,22 @@ describe('useAppUpdater', () => {
     expect(mockApi.installNow).toHaveBeenCalled()
   })
 
+  it('openInstallerFolder 调用 electronAPI.openInstallerFolder', async () => {
+    const { useAppUpdater } = await import('../useAppUpdater.js')
+    const { openInstallerFolder } = useAppUpdater()
+    await openInstallerFolder()
+    expect(mockApi.openInstallerFolder).toHaveBeenCalled()
+  })
+
   it('非 Electron 环境 isElectron=false 且 actions 为 no-op', async () => {
     mockIsElectron = false
     const { useAppUpdater } = await import('../useAppUpdater.js')
-    const { isElectron, check, download, install } = useAppUpdater()
+    const { isElectron, check, download, install, openInstallerFolder } = useAppUpdater()
     expect(isElectron.value).toBe(false)
     expect(await check()).toBeUndefined()
     expect(await download()).toBeUndefined()
     expect(await install()).toBeUndefined()
+    expect(await openInstallerFolder()).toBeUndefined()
     expect(mockApi.checkForUpdates).not.toHaveBeenCalled()
     expect(onUpdateStateCallbacks.length).toBe(0)
   })

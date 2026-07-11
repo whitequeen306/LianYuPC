@@ -10,7 +10,6 @@ let initialized = false
 let mainWindowRef = null
 let currentState = { state: 'idle', info: {} }
 let downloadedInstallerPath = null
-let quitAndInstallRef = null
 
 const UPDATE_MANIFEST_PATH = '/api/public/files/updates/latest.yml'
 const UPDATE_DOWNLOAD_CONCURRENCY = 6
@@ -301,12 +300,19 @@ function formatInstallMessage(version) {
     : '正在打开安装向导，请在弹出的窗口中继续安装。'
 }
 
+function formatOpenFolderMessage(version) {
+  return version
+    ? `安装包 v${version} 已下载到本地，请打开目录后双击安装包完成更新。`
+    : '安装包已下载到本地，请打开目录后双击安装包完成更新。'
+}
+
 function isValidInstallerVersion(version) {
   return /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)
 }
 
-async function launchInstallerDetached(installerPath) {
-  const errorMessage = await shell.openPath(installerPath)
+async function openInstallerFolder(installerPath) {
+  shell.showItemInFolder(installerPath)
+  const errorMessage = await shell.openPath(path.dirname(installerPath))
   if (errorMessage) {
     throw new Error(errorMessage)
   }
@@ -436,17 +442,20 @@ function registerIpc() {
     if (!isValidInstallerVersion(version)) {
       return { ok: false, error: 'invalid installer version' }
     }
-    setState({ state: 'installing', info: { version, message: formatInstallMessage(version) } })
+    setState({ state: 'ready', info: { version, message: formatOpenFolderMessage(version) } })
+    return { ok: true }
+  })
+
+  ipcMain.handle('updater:openInstallerFolder', async () => {
+    if (!downloadedInstallerPath || !fs.existsSync(downloadedInstallerPath)) {
+      return { ok: false, error: 'no downloaded installer' }
+    }
+    const versionMatch = path.basename(downloadedInstallerPath).match(/LianYu-Setup-(.+)\.exe$/)
+    const version = versionMatch ? versionMatch[1] : ''
     try {
-      logger.info('updater', `installing: ${downloadedInstallerPath}`)
-      await launchInstallerDetached(downloadedInstallerPath)
-      setTimeout(() => {
-        if (typeof quitAndInstallRef === 'function') {
-          quitAndInstallRef()
-          return
-        }
-        app.quit()
-      }, 500)
+      logger.info('updater', `open installer folder: ${downloadedInstallerPath}`)
+      await openInstallerFolder(downloadedInstallerPath)
+      setState({ state: 'ready', info: { version, message: formatOpenFolderMessage(version) } })
       return { ok: true }
     } catch (err) {
       const msg = err?.message || String(err)
@@ -460,7 +469,6 @@ export function initUpdater(mainWindow, options = {}) {
   if (initialized) return
   initialized = true
   mainWindowRef = mainWindow
-  quitAndInstallRef = typeof options.quitAndInstall === 'function' ? options.quitAndInstall : null
   registerIpc()
   logger.info('updater', 'initialized (manual mode, self-hosted update source)')
 }

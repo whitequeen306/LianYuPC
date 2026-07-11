@@ -7,7 +7,7 @@ export function shouldAutoOpenUpdateDialog(state) {
 
 /**
  * 应用自动更新状态机 composable。
- * 订阅主进程 updater:state 事件，暴露 state/info + check/download/install actions。
+ * 订阅主进程 updater:state 事件，暴露 state/info + check/download/install/openFolder actions。
  * 非 Electron 环境下 isElectron=false，actions 为 no-op。
  */
 export function useAppUpdater() {
@@ -43,6 +43,10 @@ export function useAppUpdater() {
     if (!isElectron.value) return
     return getElectronAPI()?.installNow?.()
   }
+  async function openInstallerFolder() {
+    if (!isElectron.value) return
+    return getElectronAPI()?.openInstallerFolder?.()
+  }
 
-  return { state, info, isElectron, check, download, install }
+  return { state, info, isElectron, check, download, install, openInstallerFolder }
 }
