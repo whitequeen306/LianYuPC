@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { EventEmitter } from 'events'
 import { createHash } from 'crypto'
-import { spawn } from 'child_process'
 
 const mocks = vi.hoisted(() => ({
   isPackaged: true,
@@ -16,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   removedFiles: [],
   mkdirCalls: [],
   existingFiles: new Set(),
+  shellOpenPath: vi.fn(),
 }))
 
 vi.mock('electron', () => ({
@@ -32,10 +32,9 @@ vi.mock('electron', () => ({
       throw new Error('net.request not configured')
     },
   },
-}))
-
-vi.mock('child_process', () => ({
-  spawn: vi.fn(() => ({ unref: vi.fn() })),
+  shell: {
+    openPath: mocks.shellOpenPath,
+  },
 }))
 
 vi.mock('fs', () => ({
@@ -122,7 +121,7 @@ describe('updater (manual mode)', () => {
     mocks.appVersion = '0.2.258'
     mocks.appQuit.mockClear()
     mocks.quitAndInstall.mockClear()
-    vi.mocked(spawn).mockClear()
+    mocks.shellOpenPath.mockClear()
     mocks.writes = new Map()
     mocks.removedFiles = []
     mocks.mkdirCalls = []
@@ -405,7 +404,7 @@ describe('updater (manual mode)', () => {
     expect(mocks.removedFiles).toContain('/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe.part.0')
   })
 
-  it('install: 调用 spawn 启动安装包并退出', async () => {
+  it('install: 调用 shell.openPath 启动安装包并退出', async () => {
     const { initUpdater } = await loadUpdater()
     initUpdater(mockMainWindow, { quitAndInstall: mocks.quitAndInstall })
     // 先模拟下载完成（downloadedInstallerPath 由 download 设置）
@@ -451,23 +450,8 @@ describe('updater (manual mode)', () => {
         message: expect.not.stringContaining('后台'),
       }),
     }))
-    expect(spawn).toHaveBeenCalledTimes(1)
-    const [command, args, options] = vi.mocked(spawn).mock.calls[0]
-    expect(command).toMatch(/powershell(\.exe)?$/i)
-    expect(args).toEqual(expect.arrayContaining([
-      '-NoLogo',
-      '-NoProfile',
-      '-NonInteractive',
-      '-ExecutionPolicy',
-      'Bypass',
-    ]))
-    expect(args.join(' ')).toContain("Start-Process -FilePath '/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe'")
-    expect(options).toEqual(expect.objectContaining({
-      detached: true,
-      shell: false,
-      stdio: 'ignore',
-      windowsHide: true,
-    }))
+    expect(mocks.shellOpenPath).toHaveBeenCalledTimes(1)
+    expect(mocks.shellOpenPath).toHaveBeenCalledWith('/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe')
     await new Promise((resolve) => setTimeout(resolve, 550))
     expect(mocks.quitAndInstall).toHaveBeenCalledTimes(1)
     expect(mocks.appQuit).not.toHaveBeenCalled()
@@ -501,7 +485,7 @@ describe('updater (manual mode)', () => {
     expect(downloadRet.ok).toBe(false)
     expect(downloadRet.error).toBe('invalid installer version')
     await expect(mocks.handleRegistry.get('updater:install')()).resolves.toEqual({ ok: false, error: 'no downloaded installer' })
-    expect(spawn).not.toHaveBeenCalled()
+    expect(mocks.shellOpenPath).not.toHaveBeenCalled()
   })
 
   it('install: 拒绝带前导零的版本号', async () => {
@@ -532,7 +516,7 @@ describe('updater (manual mode)', () => {
     expect(downloadRet.ok).toBe(false)
     expect(downloadRet.error).toBe('invalid installer version')
     await expect(mocks.handleRegistry.get('updater:install')()).resolves.toEqual({ ok: false, error: 'no downloaded installer' })
-    expect(spawn).not.toHaveBeenCalled()
+    expect(mocks.shellOpenPath).not.toHaveBeenCalled()
   })
 
   it('download: 绝对 asset url 保持原样，不强制改写到 updateOrigin', async () => {

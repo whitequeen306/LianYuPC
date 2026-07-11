@@ -1,8 +1,7 @@
-import { app, ipcMain, net } from 'electron'
+import { app, ipcMain, net, shell } from 'electron'
 import * as logger from '../logger.js'
 import { getRuntimeSecrets } from '../runtimeSecrets.js'
 import { performApiRequest, isAllowedEgressUrl } from '../apiProxy.js'
-import { spawn } from 'child_process'
 import path from 'path'
 import fs from 'fs'
 import { createHash } from 'crypto'
@@ -306,23 +305,11 @@ function isValidInstallerVersion(version) {
   return /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)
 }
 
-function launchInstallerDetached(installerPath) {
-  const escapedPath = String(installerPath).replace(/'/g, "''")
-  const script = `Start-Process -FilePath '${escapedPath}'`
-  return spawn('powershell.exe', [
-    '-NoLogo',
-    '-NoProfile',
-    '-NonInteractive',
-    '-ExecutionPolicy',
-    'Bypass',
-    '-Command',
-    script,
-  ], {
-    detached: true,
-    shell: false,
-    stdio: 'ignore',
-    windowsHide: true,
-  })
+async function launchInstallerDetached(installerPath) {
+  const errorMessage = await shell.openPath(installerPath)
+  if (errorMessage) {
+    throw new Error(errorMessage)
+  }
 }
 
 function compareVersions(current, latest) {
@@ -452,7 +439,7 @@ function registerIpc() {
     setState({ state: 'installing', info: { version, message: formatInstallMessage(version) } })
     try {
       logger.info('updater', `installing: ${downloadedInstallerPath}`)
-      launchInstallerDetached(downloadedInstallerPath).unref()
+      await launchInstallerDetached(downloadedInstallerPath)
       setTimeout(() => {
         if (typeof quitAndInstallRef === 'function') {
           quitAndInstallRef()
