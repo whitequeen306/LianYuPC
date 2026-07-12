@@ -43,6 +43,7 @@ import {
   onWindowChanged,
 } from './desktopObserver.js'
 import { prepareGreetingPayload } from './greetingAudio.js'
+import { readLastChatModel, writeLastChatModel } from './lastChatModelStore.js'
 import { performApiRequest, isAllowedEgressUrl, egressLimiter } from './apiProxy.js'
 import {
   startQqBridge,
@@ -2265,11 +2266,14 @@ function registerIpcHandlers() {
       return { ok: false, reason: 'not_logged_in' }
     }
     const resolvedPetId = petId || settings.launcherPetId || 'raiden'
+    const lastChatModel = readLastChatModel()
     const started = startDesktopObserver({
       apiOrigin: resolveApiOrigin(),
       authToken,
       persona,
       petId: resolvedPetId,
+      provider: lastChatModel.provider,
+      model: lastChatModel.model,
       onGreeting: (payload) => {
         if (!isDesktopPetActivelyVisible()) return
         const forward = prepareGreetingPayload(payload)
@@ -2302,6 +2306,11 @@ function registerIpcHandlers() {
     if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     stopDesktopObserver()
     return { ok: true }
+  })
+
+  ipcMain.handle('desktop:set-last-chat-model', (event, payload) => {
+    if (!guardTrusted(event)) return { ok: false }
+    return writeLastChatModel(payload || {})
   })
 
   ipcMain.handle('desktop:get-qq-bridge-settings', (event) => {

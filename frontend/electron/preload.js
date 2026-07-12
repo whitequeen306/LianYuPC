@@ -71,6 +71,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   isLauncherVisible: () => ipcRenderer.invoke('desktop:is-launcher-visible'),
   startDesktopObserver: (config) => ipcRenderer.invoke('desktop:start-observer', config),
   stopDesktopObserver: () => ipcRenderer.invoke('desktop:stop-observer'),
+  setLastChatModel: (payload) => ipcRenderer.invoke('desktop:set-last-chat-model', payload),
   onLauncherGreeting: (callback) => {
     const handler = (_event, payload) => callback(payload)
     ipcRenderer.on('desktop:launcher-greeting', handler)

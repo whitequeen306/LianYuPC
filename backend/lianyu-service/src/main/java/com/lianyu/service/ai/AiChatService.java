@@ -84,6 +84,7 @@ public class AiChatService {
     private final PromptRuleEngine promptRuleEngine;
     private final OutputLanguageService outputLanguageService;
     private final MultimodalOutputParser multimodalOutputParser;
+    private final VisionAnalysisParser visionAnalysisParser;
 
     @Value("${spring.ai.openai.chat.options.model:}")
     private String defaultModel;
@@ -94,13 +95,13 @@ public class AiChatService {
     @Value("${lianyu.ai.multimodal.enabled:true}")
     private boolean multimodalEnabled;
 
-    @Value("${lianyu.ai.multimodal.base-url:https://clove.dpdns.org/v1}")
+    @Value("${lianyu.ai.multimodal.base-url:https://dashscope.aliyuncs.com/compatible-mode/v1}")
     private String multimodalBaseUrl;
 
     @Value("${lianyu.ai.multimodal.api-key:}")
     private String multimodalApiKey;
 
-    @Value("${lianyu.ai.multimodal.model:qwen3.7-plus}")
+    @Value("${lianyu.ai.multimodal.model:qwen3-vl-flash}")
     private String multimodalModel;
 
     @Value("${lianyu.ai.multimodal.max-tokens:800}")
@@ -129,28 +130,15 @@ public class AiChatService {
             "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
             Long.class);
 
-    /**
-     * 多模态图片回复规范：模型须先输出 <json> 结构化分析（子意图/置信度/图片理解），
-     * 再以角色身份输出最终回复。禁止把图片理解直接念给用户。
-     */
-    private static final String MULTIMODAL_JSON_INSTRUCTION = """
+    private static final String VISION_ANALYSIS_JSON_INSTRUCTION = """
 
-            【图片回复规范——必须严格遵守】
-            用户发了一张图片。你要先用 <json></json> 块输出结构化分析，再以你的角色身份输出最终回复。两步在同一次回复内完成，顺序为：先 <json> 块，随后另起一行写最终回复。
-
-            <json>{"sub_intent":"用户发图的目的","confidence":"high|medium|low","image_description":"结合上下文推断的要点"}</json>
-            （另起一行，以你的角色身份对用户说话）
-
-            字段要求：
-            - sub_intent：从以下选最接近的一个：分享日常 / 求识图认物 / 截图问问题 / 求情绪回应 / 炫耀 / 其他
-            - confidence：你能否看清这张图。high=清楚；low=看不清/模糊/无法辨认；medium=部分清楚
-            - image_description：结合对话上下文推断出的要点，不是逐字客观描述。例如用户说"看我今天吃的"就聚焦食物；不要机械罗列画面元素。
-
-            回复要求：
-            - <json> 块之后那段话才是给用户看的最终回复，必须以你的角色身份、性格、语气来说，结合上下文自然回应。
-            - 绝不允许把 image_description 直接念给用户当回复。
-            - 若 confidence 为 low，最终回复要明确告诉用户你看不清这张图，并请其重发或描述一下。
-            - 最终回复里不要再出现 JSON 或"以下是分析"之类的话。
+            你是图片分析助手，只输出 JSON，不输出 markdown，不输出解释。
+            JSON 字段固定为：subIntent, confidence, imageDescription。
+            - subIntent: 判断用户发送这张图片的子意图，如求识图/分享日常/展示成果/吐槽/求建议/闲聊。
+            - confidence: 诚实表达看得清程度。看不清、模糊、遮挡、分辨率不足时必须明确写低置信。
+            - imageDescription: 只写客观可见内容，不脑补，不扮演角色。
+            输出格式示例：
+            {"subIntent":"求识图","confidence":"high","imageDescription":"一只橘猫趴在窗台上"}
             """;
 
     public AiChatService(ApiKeyVaultService vaultService,
@@ -178,6 +166,7 @@ public class AiChatService {
         this.promptRuleEngine = promptRuleEngine;
         this.outputLanguageService = outputLanguageService;
         this.multimodalOutputParser = new MultimodalOutputParser(objectMapper);
+        this.visionAnalysisParser = new VisionAnalysisParser(objectMapper);
     }
 
     public SseEmitter chatStream(Long userId, AiChatRequest request) {
@@ -673,12 +662,13 @@ public class AiChatService {
     /**
      * 桌面感知：截图 VL 识图 → 角色语气生成主动问候。
      */
-    public String observeDesktop(String imageBase64, String windowTitle, String persona) {
+    public String observeDesktop(Long userId, String imageBase64, String windowTitle, String persona,
+                                 String provider, String model) {
         if (!multimodalEnabled) {
             return null;
         }
         VaultEntryResponse visionVault = buildMultimodalVault();
-        ChatModel chatModel = buildChatModel(visionVault, multimodalModel, visionVault.getApiKey());
+        ChatModel visionChatModel = buildChatModel(visionVault, multimodalModel, visionVault.getApiKey());
 
         byte[] imageBytes;
         try {
@@ -688,43 +678,37 @@ public class AiChatService {
             return null;
         }
 
-        // Stage 1: VL 识图
+        // Stage 1: 视觉 JSON 分析
         Media media = Media.builder()
                 .data(new ByteArrayResource(imageBytes))
                 .mimeType(MimeTypeUtils.IMAGE_PNG)
                 .build();
         Message vlMessage = UserMessage.builder()
-                .text("请客观简洁描述这张屏幕截图的内容。"
-                + "如果图中包含知名游戏/软件界面/视频画面，请明确指出。"
-                + "如果图中包含动漫/游戏角色，用\"角色：XXX\"格式写出角色名。")
+                .text("请分析这张桌面截图，判断用户当前大概在做什么，并只输出结构化 JSON。"
+                        + "若看不清必须如实说明。")
                 .media(media)
                 .build();
-        List<Message> vlMessages = List.of(
-                new SystemMessage("你是屏幕内容识别助手。只输出客观描述，不扮演角色，不闲聊。"),
-                vlMessage);
-        Prompt vlPromptObj = new Prompt(vlMessages, OpenAiChatOptions.builder()
-                .model(multimodalModel).temperature(0.2).maxTokens(multimodalDescribeMaxTokens).build());
-        ChatResponse vlResponse = chatModel.call(vlPromptObj);
-        String description = extractStreamDelta(vlResponse);
-        if (description == null || description.isBlank()) {
-            log.warn("Desktop observe: VL returned empty description");
+        VisionAnalysisResult analysis = analyzeImage(visionChatModel, vlMessage, multimodalDescribeMaxTokens);
+        if (analysis.imageDescription() == null || analysis.imageDescription().isBlank()) {
+            log.warn("Desktop observe: vision analysis returned empty description");
             return null;
         }
-        log.info("Desktop observe: VL description ({} chars)", description.length());
+        log.info("Desktop observe: vision result confidence={}, subIntent={}",
+                analysis.confidence(), analysis.subIntent());
 
-        // Stage 2: 角色语气生成问候
+        // Stage 2: 用户当前文本模型生成桌宠问候（provider/model 由调用方携带，缺省走平台默认）
         String personaText = (persona != null && !persona.isBlank()) ? persona : "你是一个可爱的桌面宠物。";
         String winTitle = (windowTitle != null && !windowTitle.isBlank()) ? windowTitle : "未知";
-        String greetingPrompt = personaText + "\n\n"
-                + "你正在看着用户的电脑屏幕。当前画面：" + description + "\n"
-                + "用户正在使用的窗口：" + winTitle + "\n\n"
-                + "请用你的角色语气，对用户正在做的事情说一句话（像打招呼或随口感叹）。\n"
-                + "要求：自然、口语化、不超过40字。不要加上动作描述或括号。直接输出说的话。";
+        VaultEntryResponse textVault = resolveVault(userId, (provider != null && !provider.isBlank()) ? provider : null);
+        String textModel = (model != null && !model.isBlank()) ? model.trim() : resolveChatModel(null, textVault);
+        String textApiKey = resolveApiKeyForProvider(textVault);
+        logChatVaultUsage(userId, null, textVault, textModel, "desktop-observe");
+        ChatModel textChatModel = buildChatModel(textVault, textModel, textApiKey);
+        String greetingPrompt = buildDesktopGreetingPrompt(personaText, winTitle, analysis);
 
         List<Message> greetingMessages = List.of(new UserMessage(greetingPrompt));
-        Prompt greetingPromptObj = new Prompt(greetingMessages, OpenAiChatOptions.builder()
-                .model(multimodalModel).temperature(0.9).maxTokens(120).build());
-        ChatResponse greetingResponse = chatModel.call(greetingPromptObj);
+        Prompt greetingPromptObj = buildGenerationPrompt(textVault, textModel, greetingMessages);
+        ChatResponse greetingResponse = textChatModel.call(greetingPromptObj);
         String greeting = extractStreamDelta(greetingResponse);
         if (greeting == null || greeting.isBlank()) {
             log.warn("Desktop observe: greeting generation returned empty");
@@ -734,7 +718,7 @@ public class AiChatService {
         return greeting.trim();
     }
 
-    /** 多模态模型 Vault（自建中转 url/key，qwen3.7-plus），图片消息与桌宠屏幕观察共用。 */
+    /** 视觉模型 Vault（DashScope 官方 OpenAI-compatible url/key，qwen3-vl-flash）。 */
     private VaultEntryResponse buildMultimodalVault() {
         String apiKey = multimodalApiKey;
         if (apiKey == null || apiKey.isBlank()) {
@@ -795,34 +779,46 @@ public class AiChatService {
         return emitter;
     }
 
-    private ChatResult doImageChat(Long userId, AiChatRequest request) {
+    private ChatResult doImageChat(Long userId, AiChatRequest request) throws Exception {
         if (!multimodalEnabled) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "图片识别功能未启用");
         }
-        VaultEntryResponse vault = buildMultimodalVault();
-        ChatModel chatModel = buildChatModel(vault, multimodalModel, vault.getApiKey());
-        List<Message> messages = buildMultimodalMessages(request.getMessages(), request.getImageUrl());
-        Prompt prompt = new Prompt(messages, OpenAiChatOptions.builder()
-                .model(multimodalModel)
-                .temperature(0.8)
-                .maxTokens(multimodalMaxTokens)
-                .build());
-        ChatResponse response = chatModel.call(prompt);
-        String raw = extractStreamDelta(response);
-        if (raw == null || raw.isBlank()) {
-            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "图片识别失败，请换一张图片再试");
-        }
-        MultimodalOutputParser.Result parsed = multimodalOutputParser.parse(raw);
-        String reply = (parsed.reply() == null || parsed.reply().isBlank()) ? raw : parsed.reply();
-        log.info("Multimodal chat: userId={}, subIntent={}, confidence={}, low={}",
-                userId, parsed.subIntent(), parsed.confidence(),
-                MultimodalOutputParser.isLowConfidence(parsed.confidence()));
-        ChatResult.ChatResultBuilder builder = ChatResult.builder().content(reply);
-        if (response.getMetadata() != null && response.getMetadata().getUsage() != null) {
-            var usage = response.getMetadata().getUsage();
-            builder.totalTokens(usage.getTotalTokens() != null ? usage.getTotalTokens().intValue() : null);
-        }
-        return builder.build();
+        VaultEntryResponse visionVault = buildMultimodalVault();
+        ChatModel visionChatModel = buildChatModel(visionVault, multimodalModel, visionVault.getApiKey());
+        MessageDto imageDto = lastImageMessage(request.getMessages(), request.getImageUrl());
+        VisionAnalysisResult analysis = analyzeImage(
+                visionChatModel,
+                buildVisionUserMessage(imageDto),
+                multimodalMaxTokens);
+
+        VaultEntryResponse textVault = resolveVaultForGeneration(userId, request.getProvider());
+        String textModel = resolveModel(request, textVault);
+        String textApiKey = resolveApiKeyForProvider(textVault);
+        logChatVaultUsage(userId, request.getProvider(), textVault, textModel, "image-text");
+        ChatModel textChatModel = buildChatModel(textVault, textModel, textApiKey);
+        List<MessageDto> textDtos = buildImageAugmentedTextMessageDtos(request.getMessages(), analysis);
+        List<Message> messages = toTextOnlySpringMessages(textDtos);
+        Prompt prompt = buildPrompt(request, textVault, messages);
+
+        // 第二阶段须与主聊天链路一致：进 ChatToolContext + 走语言门控，
+        // 重试 seed 用文本化后的 dtos（已无图片 media），避免重生成时再带图。
+        return withChatToolScope(userId, request, () -> {
+            ChatResponse response = textChatModel.call(prompt);
+            String raw = extractStreamDelta(response);
+            if (raw == null || raw.isBlank()) {
+                throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "图片识别失败，请换一张图片再试");
+            }
+            String reply = enforceExpectedLanguage(userId, request, textVault, textModel, textChatModel, raw, null, textDtos);
+            log.info("Multimodal chat: userId={}, subIntent={}, confidence={}, low={}",
+                    userId, analysis.subIntent(), analysis.confidence(),
+                    VisionAnalysisParser.isLowConfidence(analysis.confidence()));
+            ChatResult.ChatResultBuilder builder = ChatResult.builder().content(reply);
+            if (response.getMetadata() != null && response.getMetadata().getUsage() != null) {
+                var usage = response.getMetadata().getUsage();
+                builder.totalTokens(usage.getTotalTokens() != null ? usage.getTotalTokens().intValue() : null);
+            }
+            return builder.build();
+        });
     }
 
     /**
@@ -837,8 +833,7 @@ public class AiChatService {
         int start = 0;
         if ("system".equalsIgnoreCase(dtos.get(0).getRole())) {
             String sysContent = dtos.get(0).getContent();
-            messages.add(new SystemMessage(
-                    (sysContent != null ? sysContent : "") + "\n\n" + MULTIMODAL_JSON_INSTRUCTION));
+            messages.add(new SystemMessage(sysContent != null ? sysContent : ""));
             start = 1;
         }
         if (start < dtos.size() - 1) {
@@ -854,6 +849,146 @@ public class AiChatService {
             imageDto.setContent(text);
             imageDto.setImageUrl(imageUrl);
             messages.add(buildVisionUserMessage(imageDto));
+        }
+        return messages;
+    }
+
+    private VisionAnalysisResult analyzeImage(ChatModel chatModel, Message visionUserMessage, int maxTokens) {
+        List<Message> messages = List.of(new SystemMessage(VISION_ANALYSIS_JSON_INSTRUCTION), visionUserMessage);
+        Prompt prompt = new Prompt(messages, OpenAiChatOptions.builder()
+                .model(multimodalModel)
+                .temperature(0.1)
+                .maxTokens(maxTokens)
+                .build());
+        ChatResponse response = chatModel.call(prompt);
+        String raw = extractStreamDelta(response);
+        if (raw == null || raw.isBlank()) {
+            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "图片识别失败，请换一张清晰点的图片再试");
+        }
+        try {
+            return visionAnalysisParser.parse(raw);
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "图片识别失败，请换一张清晰点的图片再试");
+        }
+    }
+
+    private MessageDto lastImageMessage(List<MessageDto> dtos, String imageUrl) {
+        if (dtos == null || dtos.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "缺少图片消息");
+        }
+        MessageDto last = dtos.get(dtos.size() - 1);
+        MessageDto copy = new MessageDto();
+        copy.setRole((last.getRole() != null && !last.getRole().isBlank()) ? last.getRole() : "user");
+        copy.setContent(last.getContent());
+        copy.setImageUrl((last.getImageUrl() != null && !last.getImageUrl().isBlank()) ? last.getImageUrl() : imageUrl);
+        if (copy.getImageUrl() == null || copy.getImageUrl().isBlank()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "无效的图片地址");
+        }
+        return copy;
+    }
+
+    /**
+     * 图片两阶段链路的第二阶段：把视觉 JSON 结果编进系统补充上下文，再交给文本模型产出最终回复。
+     * 文本阶段不再携带图片 media，只保留文字历史与最后一条用户文字。
+     */
+    private List<Message> buildImageAugmentedTextMessages(List<MessageDto> dtos, VisionAnalysisResult analysis) {
+        return toTextOnlySpringMessages(buildImageAugmentedTextMessageDtos(dtos, analysis));
+    }
+
+    private List<MessageDto> buildImageAugmentedTextMessageDtos(List<MessageDto> dtos, VisionAnalysisResult analysis) {
+        List<MessageDto> out = new ArrayList<>();
+        int start = 0;
+        if (dtos != null && !dtos.isEmpty() && "system".equalsIgnoreCase(dtos.get(0).getRole())) {
+            String sysContent = dtos.get(0).getContent();
+            MessageDto sys = new MessageDto();
+            sys.setRole("system");
+            sys.setContent(((sysContent != null) ? sysContent : "") + "\n\n" + buildImageAnalysisAugmentation(analysis));
+            out.add(sys);
+            start = 1;
+        } else {
+            MessageDto sys = new MessageDto();
+            sys.setRole("system");
+            sys.setContent(buildImageAnalysisAugmentation(analysis));
+            out.add(sys);
+        }
+        if (dtos != null) {
+            int lastIdx = dtos.size() - 1;
+            for (int i = start; i < lastIdx; i++) {
+                MessageDto src = dtos.get(i);
+                if (src.getContent() == null || src.getContent().isBlank()) {
+                    continue;
+                }
+                MessageDto copy = new MessageDto();
+                copy.setRole(src.getRole());
+                copy.setContent(src.getContent());
+                out.add(copy);
+            }
+            if (start <= lastIdx) {
+                MessageDto last = dtos.get(lastIdx);
+                String text = (last.getContent() != null && !last.getContent().isBlank())
+                        ? last.getContent()
+                        : "请看看这张图片，并用你的性格自然回应。";
+                MessageDto user = new MessageDto();
+                user.setRole("user");
+                user.setContent(text);
+                out.add(user);
+            }
+        }
+        return out;
+    }
+
+    private String buildImageAnalysisAugmentation(VisionAnalysisResult analysis) {
+        String subIntent = analysis != null && analysis.subIntent() != null ? analysis.subIntent() : "未知";
+        String confidence = analysis != null && analysis.confidence() != null ? analysis.confidence() : "unknown";
+        String description = analysis != null && analysis.imageDescription() != null ? analysis.imageDescription() : "";
+        return "[图片分析结果]\n"
+                + "- 子意图: " + subIntent + "\n"
+                + "- 可辨识度: " + confidence + "\n"
+                + "- 客观描述: " + description + "\n\n"
+                + "规则:\n"
+                + "1. 若可辨识度低，必须如实告诉用户这张图看不太清，不要假装看到细节。\n"
+                + "2. 保持角色语气、人设、关系状态。\n"
+                + "3. 不要输出 JSON。";
+    }
+
+    private String buildDesktopGreetingPrompt(String persona, String windowTitle, VisionAnalysisResult analysis) {
+        String personaText = (persona != null && !persona.isBlank()) ? persona : "你是一个可爱的桌面宠物。";
+        String winTitle = (windowTitle != null && !windowTitle.isBlank()) ? windowTitle : "未知";
+        String description = analysis != null && analysis.imageDescription() != null ? analysis.imageDescription() : "";
+        String confidence = analysis != null && analysis.confidence() != null ? analysis.confidence() : "unknown";
+        return personaText + "\n\n"
+                + "你正在看着用户的电脑屏幕。当前画面：" + description + "\n"
+                + "图像可辨识度：" + confidence + "\n"
+                + "用户正在使用的窗口：" + winTitle + "\n\n"
+                + "如果图像可辨识度低，请自然承认看不太清。"
+                + "请用你的角色语气，对用户正在做的事情说一句话。\n"
+                + "要求：自然、口语化、不超过40字。不要加括号或动作描写。";
+    }
+
+    private List<Message> toTextOnlySpringMessages(List<MessageDto> dtos) {
+        if (dtos == null || dtos.isEmpty()) {
+            return List.of();
+        }
+        List<Message> messages = new ArrayList<>();
+        for (MessageDto dto : dtos) {
+            boolean hasContent = dto.getContent() != null && !dto.getContent().isBlank();
+            if (!hasContent) {
+                continue;
+            }
+            String role = dto.getRole() != null ? dto.getRole().toLowerCase() : "user";
+            switch (role) {
+                case "system" -> messages.add(new SystemMessage(dto.getContent()));
+                case "assistant" -> messages.add(new AssistantMessage(dto.getContent()));
+                default -> {
+                    String raw = dto.getContent() != null ? dto.getContent() : "";
+                    if (raw.contains("<user_message")) {
+                        messages.add(new UserMessage(raw));
+                    } else {
+                        UserInputSanitizer.SanitizedUserText sanitized = UserInputSanitizer.sanitizeChatMessage(raw);
+                        messages.add(new UserMessage(sanitized.modelText()));
+                    }
+                }
+            }
         }
         return messages;
     }
@@ -1124,6 +1259,17 @@ public class AiChatService {
                                            ChatModel chatModel,
                                            String content,
                                            Runnable onHeartbeat) {
+        return enforceExpectedLanguage(userId, request, vault, model, chatModel, content, onHeartbeat, request.getMessages());
+    }
+
+    private String enforceExpectedLanguage(Long userId,
+                                           AiChatRequest request,
+                                           VaultEntryResponse vault,
+                                           String model,
+                                           ChatModel chatModel,
+                                           String content,
+                                           Runnable onHeartbeat,
+                                           List<MessageDto> retrySeedMessages) {
         String expected = request.getExpectedLanguage();
         if (expected == null || expected.isBlank() || content == null || content.isBlank()) {
             return content;
@@ -1136,7 +1282,7 @@ public class AiChatService {
         }
 
         String current = content;
-        List<MessageDto> retryMessages = copyMessageDtos(request.getMessages());
+        List<MessageDto> retryMessages = copyMessageDtos(retrySeedMessages);
         int retries = 0;
         while (retries < LANGUAGE_GATE_MAX_RETRIES) {
             // 阻塞重生成前发心跳，避免纠错期间连接因无数据被代理/客户端判为空闲超时（issue #22）

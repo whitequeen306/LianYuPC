@@ -19,4 +19,12 @@ public class ObserveDesktopRequest {
 
     @Size(max = 64, message = "桌宠 ID 过长")
     private String petId;
+
+    /** 可选：最近聊天用的 provider，缺省走平台默认文本模型 */
+    @Size(max = 64, message = "provider 过长")
+    private String provider;
+
+    /** 可选：最近聊天用的 model，缺省由 vault/model_default 决定 */
+    @Size(max = 128, message = "model 过长")
+    private String model;
 }

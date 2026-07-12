@@ -62,7 +62,8 @@ public class ObserveController {
 
         try {
             String greeting = aiChatService.observeDesktop(
-                    request.getImageBase64(), request.getWindowTitle(), request.getPersona());
+                    userId, request.getImageBase64(), request.getWindowTitle(), request.getPersona(),
+                    request.getProvider(), request.getModel());
             if (greeting == null || greeting.isBlank()) {
                 return Result.fail(400, "未能生成问候语");
             }

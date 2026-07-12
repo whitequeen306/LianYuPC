@@ -995,6 +995,14 @@ async function handleSend() {
     imageUrl: draftImageUrl || undefined
   }
 
+  // 上报最近聊天模型给主进程，供桌宠屏幕观察走同一文本模型
+  try {
+    getElectronAPI()?.setLastChatModel?.({
+      provider: currentProvider.value,
+      model: currentProvider.value === PLATFORM_PROVIDER ? '' : (currentModel.value || ''),
+    })
+  } catch { /* ignore */ }
+
   async function attemptStream() {
     const response = await sendMessageStream(sendConvId, streamPayload, { signal })
     if (!response.ok) {

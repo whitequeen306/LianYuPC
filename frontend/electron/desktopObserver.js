@@ -17,6 +17,8 @@ let lastApiOrigin = ''
 let lastAuthToken = ''
 let lastPersona = ''
 let lastPetId = ''
+let lastProvider = ''
+let lastModel = ''
 let onGreeting = null
 let onCaptureStart = null
 let onCaptureEnd = null
@@ -25,13 +27,15 @@ let isPaused = false
 let idleSince = 0
 let lastMousePos = { x: 0, y: 0 }
 
-export function startDesktopObserver({ apiOrigin, authToken, persona, petId, onGreeting: cb, onCaptureStart: cs, onCaptureEnd: ce }) {
+export function startDesktopObserver({ apiOrigin, authToken, persona, petId, provider, model, onGreeting: cb, onCaptureStart: cs, onCaptureEnd: ce }) {
   stopDesktopObserver()
   if (!apiOrigin || !authToken || !persona || !cb) return false
   lastApiOrigin = apiOrigin
   lastAuthToken = authToken
   lastPersona = persona
   lastPetId = petId
+  lastProvider = provider || ''
+  lastModel = model || ''
   onGreeting = cb
   onCaptureStart = cs || null
   onCaptureEnd = ce || null
@@ -134,6 +138,8 @@ export async function runObserve() {
       windowTitle,
       persona: lastPersona,
       petId: lastPetId,
+      provider: lastProvider || undefined,
+      model: lastModel || undefined,
     })
 
     const req = net.request({

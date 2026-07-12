@@ -200,9 +200,9 @@ lianyu:
     # 多模态模型：图片消息(识图+角色回复一次完成) 与 桌宠屏幕观察 共用
     multimodal:
       enabled: ${LIANYU_MULTIMODAL_ENABLED:true}
-      base-url: ${MULTIMODAL_BASE_URL:https://clove.dpdns.org/v1}
-      api-key: ${MULTIMODAL_API_KEY:}
-      model: ${MULTIMODAL_MODEL:kimi-k2.6}
+      base-url: ${MULTIMODAL_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+      api-key: ${MULTIMODAL_API_KEY:${DASHSCOPE_API_KEY:}}
+      model: ${MULTIMODAL_MODEL:qwen3-vl-flash}
       max-tokens: 800
       describe-max-tokens: 420
     tts:
