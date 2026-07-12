@@ -101,7 +101,7 @@ public class AiChatService {
     @Value("${lianyu.ai.multimodal.api-key:}")
     private String multimodalApiKey;
 
-    @Value("${lianyu.ai.multimodal.model:qwen3-vl-flash}")
+    @Value("${lianyu.ai.multimodal.model:qwen3-vl-plus}")
     private String multimodalModel;
 
     @Value("${lianyu.ai.multimodal.max-tokens:800}")
