@@ -68,6 +68,7 @@ const currentPetId = ref(DEFAULT_PET_ID)
 let clickTimer = null
 let toastTimer = null
 let greetingTimer = null
+let mouseInsideSprite = false
 let unsubscribeLauncherMessage = null
 let unsubscribePetChanged = null
 let unsubscribeInteractionReset = null
@@ -219,6 +220,21 @@ function releasePointerCapture(state) {
       hitboxRef.value.releasePointerCapture(state.pointerId)
     }
   } catch { /* ignore */ }
+}
+
+// 鼠标穿透/捕获切换：主进程默认穿透+转发，渲染层在鼠标进入精灵区域时切回捕获，离开时放行。
+// 这样透明边框区域的点击会穿透到桌面文件（修复“白边挡点击”）。
+function onSpriteHoverTest(e) {
+  if (pickerOpen.value || pointerState.value) return
+  const wrap = wrapRef.value
+  if (!wrap) return
+  const r = wrap.getBoundingClientRect()
+  const inside = e.clientX >= r.left && e.clientX <= r.right
+    && e.clientY >= r.top && e.clientY <= r.bottom
+  if (inside !== mouseInsideSprite) {
+    mouseInsideSprite = inside
+    getElectronAPI()?.setLauncherMousePassthrough?.(!inside)
+  }
 }
 
 function onPointerDown(e) {
@@ -448,6 +464,7 @@ onMounted(async () => {
     }
   })
   prefetchPickerData()
+  window.addEventListener('mousemove', onSpriteHoverTest)
 })
 
 onUnmounted(() => {
@@ -456,6 +473,7 @@ onUnmounted(() => {
   clearTimeout(greetingTimer)
   stopGreetingAudio()
   if (dragRafId != null) { cancelAnimationFrame(dragRafId); dragRafId = null }
+  window.removeEventListener('mousemove', onSpriteHoverTest)
   getElectronAPI()?.stopDesktopObserver?.()
   unsubscribeObserveCapturing?.()
   unsubscribeLauncherMessage?.()

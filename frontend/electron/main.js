@@ -646,6 +646,7 @@ function isPositionWithinAnyWorkArea(x, y, width = LAUNCHER_WINDOW.width, height
     return isLauncherWithinWorkArea(
       { x, y, width, height },
       display.workArea,
+      { bottomOverflow: Math.round(height * 0.5) },
     )
   })
 }
@@ -680,12 +681,14 @@ function resetLauncherCompactSize() {
   launcherSuppressMoveSave = false
 }
 
-function clampLauncherBoundsForNearestDisplay(bounds, options) {
+function clampLauncherBoundsForNearestDisplay(bounds, options = {}) {
   const display = screen.getDisplayNearestPoint({
     x: bounds.x + bounds.width / 2,
     y: bounds.y + bounds.height / 2,
   })
-  return clampLauncherBoundsToWorkArea(bounds, display.workArea, options)
+  // 允许桌宠下半截溢出工作区底部（拖到底边露半截身子），不覆盖默认 0 行为
+  const merged = { bottomOverflow: Math.round(bounds.height * 0.5), ...options }
+  return clampLauncherBoundsToWorkArea(bounds, display.workArea, merged)
 }
 
 function clampLauncherToWorkArea() {
@@ -751,8 +754,13 @@ function applyLauncherMouseMode() {
     launcherWindow.setIgnoreMouseEvents(true, { forward: true })
     return
   }
-  // 桌宠可见时始终由窗口接收鼠标；可点区域由 CSS pointer-events 限定（与 v0.2.112 前一致）
-  launcherWindow.setIgnoreMouseEvents(false)
+  // picker 打开时整窗接收点击（面板可点）；否则默认穿透+转发，由渲染层在鼠标进入精灵时切回捕获，
+  // 透明边框区域放行点击穿透到桌面文件（修复“白边挡点击”）
+  if (launcherPickerOpen) {
+    launcherWindow.setIgnoreMouseEvents(false)
+  } else {
+    launcherWindow.setIgnoreMouseEvents(true, { forward: true })
+  }
 }
 
 function setLauncherMousePassthrough(ignore) {

@@ -1,5 +1,6 @@
 export function clampLauncherBoundsToWorkArea(bounds, workArea, options = {}) {
   const axis = options.axis || 'both'
+  const bottomOverflow = options.bottomOverflow || 0
   let x = bounds.x
   let y = bounds.y
 
@@ -8,19 +9,22 @@ export function clampLauncherBoundsToWorkArea(bounds, workArea, options = {}) {
     if (x < workArea.x) x = workArea.x
   }
   if (axis !== 'x') {
-    if (y + bounds.height > workArea.y + workArea.height) y = workArea.y + workArea.height - bounds.height
+    const maxBottom = workArea.y + workArea.height + bottomOverflow
+    if (y + bounds.height > maxBottom) y = maxBottom - bounds.height
     if (y < workArea.y) y = workArea.y
   }
 
   return { x: Math.round(x), y: Math.round(y) }
 }
 
-export function isLauncherWithinWorkArea(bounds, workArea) {
+export function isLauncherWithinWorkArea(bounds, workArea, options = {}) {
+  const bottomOverflow = options.bottomOverflow || 0
   const right = bounds.x + bounds.width
   const bottom = bounds.y + bounds.height
+  const maxBottom = workArea.y + workArea.height + bottomOverflow
 
   return bounds.x >= workArea.x
     && bounds.y >= workArea.y
     && right <= workArea.x + workArea.width
-    && bottom <= workArea.y + workArea.height
+    && bottom <= maxBottom
 }
