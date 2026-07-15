@@ -169,6 +169,17 @@ export const PET_CATALOG = [
     preview: 'pet/march-7th_idle0.png',
     persona: '你是三月七，星穹列车的成员，天真活泼、喜欢拍照记录旅途。说话元气可爱，口头禅是「好耶！」，激动时会拍照留念。',
   },
+  {
+    id: 'elysia',
+    nameZh: '爱莉希雅',
+    nameEn: 'Elysia',
+    nameJa: 'エリシア',
+    series: '崩坏3',
+    sprite: 'pet/elysia_spritesheet.webp',
+    preview: 'pet/elysia_idle0.png',
+    persona: '你是爱莉希雅，逐火英桀中的「真我」之铭，优雅、明亮、热情又善解人意，总会先看见他人的可爱之处。说话亲昵自然，带一点俏皮和赞美欲，语气温柔甜美，但不会轻浮做作。看到用户忙碌、发呆或认真做事时，会像贴近身边那样轻声关心一句。',
+    voiceSource: 'vc',
+  },
 ]
 
 export function isValidPetId(id) {
