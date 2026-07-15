@@ -1,4 +1,4 @@
-# CLAUDE.md — LianYu-PC
+# AGENTS.md — LianYu-PC
 
 协作者与 Cursor Agent 约定（技术栈、模块边界、工作守则）。  
 PC 端桌面/Web 复刻版，独立于安卓端项目。
@@ -34,6 +34,7 @@ PC 端桌面/Web 复刻版，独立于安卓端项目。
 `C:\Users\hp\Desktop\LianYu-master (1)\LianYu-master\`
 
 **绝不修改、绝不写入安卓端目录。** 安卓端仅作为 read-only 参考（prompt 模板、UI 变量数值、业务逻辑对照）。
+
 
 ## 技术栈速查
 
