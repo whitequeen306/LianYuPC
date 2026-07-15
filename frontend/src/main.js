@@ -90,6 +90,20 @@ function isDesktopAuxSurface() {
   return isLauncherOnlySurface() || isQuickChatSurface()
 }
 
+const LAST_ROUTE_KEY = 'lianyu-last-route'
+
+router.afterEach((to) => {
+  try {
+    const token = syncToken()
+    if (!token) return
+    if (!to?.path || typeof to.path !== 'string') return
+    if (!to.path.startsWith('/app')) return
+    localStorage.setItem(LAST_ROUTE_KEY, to.path)
+  } catch {
+    // ignore storage failures
+  }
+})
+
 router.onError((err) => {
   const msg = err?.message || String(err)
   if (recoverFromStartupRouteError(err)) return

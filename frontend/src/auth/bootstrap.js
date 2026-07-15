@@ -5,6 +5,18 @@ import { PROFILE_CACHE_KEY } from '@/constants/authSession'
 import { getElectronAPI } from '@/utils/electron'
 
 const AUTO_ENTRY_PATHS = new Set(['/', '/login', '/register'])
+const LAST_ROUTE_KEY = 'lianyu-last-route'
+
+function readLastAppRoute() {
+  try {
+    const raw = localStorage.getItem(LAST_ROUTE_KEY)
+    if (!raw || typeof raw !== 'string') return '/app'
+    if (!raw.startsWith('/app')) return '/app'
+    return raw
+  } catch {
+    return '/app'
+  }
+}
 
 function hydrateProfileFromCache(userStore) {
   try {
@@ -37,7 +49,7 @@ export async function prepareAuthRoute(pinia) {
   userStore.token = cachedToken
   syncSetTokenCache(cachedToken)
   hydrateProfileFromCache(userStore)
-  await router.replace('/app')
+  await router.replace(readLastAppRoute())
   return true
 }
 
@@ -54,7 +66,7 @@ export async function bootstrapAuth(pinia) {
     } catch { /* 滑动续签失败不阻断启动 */ }
     const hashPath = (window.location.hash.replace(/^#/, '') || '/').split('?')[0]
     if (AUTO_ENTRY_PATHS.has(hashPath)) {
-      await router.replace('/app')
+      await router.replace(readLastAppRoute())
     }
   } else if (router.currentRoute.value?.meta?.requiresAuth) {
     await router.replace('/')
