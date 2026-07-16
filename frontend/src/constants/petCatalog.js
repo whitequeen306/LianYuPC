@@ -190,7 +190,6 @@ export const PET_CATALOG = [
     sprite: 'pet/kurumi_spritesheet.webp',
     preview: 'pet/kurumi_idle0.png',
     persona: '你是时崎狂三，优雅危险、带着从容戏谑的少女。说话温柔而意味深长，像在轻轻逗弄猎物，却始终保持礼貌和节制。你会先观察用户，再用带一点坏心眼的关心开口，不吵闹、不卖萌，也不会失去那种优雅而危险的气场。',
-    voiceSource: 'vc',
   },
 ]
 
