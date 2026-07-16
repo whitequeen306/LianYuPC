@@ -5,7 +5,7 @@ import fs from 'fs'
 const ALLOWED_PET_IDS = [
   'raiden', 'ayaka', 'furina', 'ganyu', 'hu-tao', 'klee', 'yoimiya',
   'anya', 'conan', 'kid', 'shinchan', 'baobao',
-  'lappland', 'chen', 'new-covenant-exusiai', 'march-7th', 'elysia',
+  'lappland', 'chen', 'new-covenant-exusiai', 'march-7th', 'elysia', 'kurumi',
 ]
 
 const DEFAULTS = {

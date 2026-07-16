@@ -40,4 +40,13 @@ describe('desktopSettings writeDesktopSettings', () => {
     expect(next.launcherPetId).toBe('elysia')
     expect(readDesktopSettings().launcherPetId).toBe('elysia')
   })
+
+  it('accepts kurumi as a valid launcher pet id', async () => {
+    const { writeDesktopSettings, readDesktopSettings } = await import('../desktopSettings.js')
+
+    const next = writeDesktopSettings({ launcherPetId: 'kurumi' })
+
+    expect(next.launcherPetId).toBe('kurumi')
+    expect(readDesktopSettings().launcherPetId).toBe('kurumi')
+  })
 })

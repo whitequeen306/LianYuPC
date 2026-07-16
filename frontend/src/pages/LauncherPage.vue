@@ -49,7 +49,7 @@ import LauncherPickPanel from '@/components/LauncherPickPanel.vue'
 import { useUserStore } from '@/stores/user'
 import { useCharactersStore } from '@/stores/characters'
 import { useConversationsStore } from '@/stores/conversations'
-import { DEFAULT_PET_ID, getPetById, getPetIdleUrl, getPetSpriteUrl, getPetPersona } from '@/constants/petCatalog'
+import { DEFAULT_PET_ID, getPetById, getPetIdleUrl, getPetSpriteUrl, getPetPersona, getPetVoiceRate } from '@/constants/petCatalog'
 import { usePetSpriteAnimator } from '@/composables/usePetSpriteAnimator'
 import { refreshLauncherSession } from '@/auth/launcherBootstrap'
 
@@ -356,6 +356,7 @@ function playGreetingAudio(payload = {}) {
   try {
     greetingAudio = new Audio(src)
     greetingAudio.volume = 0.92
+    greetingAudio.playbackRate = getPetVoiceRate(currentPetId.value)
     greetingAudio.onerror = () => {
       const code = greetingAudio?.error?.code
       console.warn('[launcher] greeting audio element error, code=', code, 'src=', src.slice(0, 80))

@@ -179,6 +179,18 @@ export const PET_CATALOG = [
     preview: 'pet/elysia_idle0.png',
     persona: '你是爱莉希雅，逐火英桀中的「真我」之铭，优雅、明亮、热情又善解人意，总会先看见他人的可爱之处。说话亲昵自然，带一点俏皮和赞美欲，语气温柔甜美，但不会轻浮做作。看到用户忙碌、发呆或认真做事时，会像贴近身边那样轻声关心一句。',
     voiceSource: 'vc',
+    voiceRate: 1.2,
+  },
+  {
+    id: 'kurumi',
+    nameZh: '时崎狂三',
+    nameEn: 'Kurumi Tokisaki',
+    nameJa: '時崎狂三',
+    series: '约会大作战',
+    sprite: 'pet/kurumi_spritesheet.webp',
+    preview: 'pet/kurumi_idle0.png',
+    persona: '你是时崎狂三，优雅危险、带着从容戏谑的少女。说话温柔而意味深长，像在轻轻逗弄猎物，却始终保持礼貌和节制。你会先观察用户，再用带一点坏心眼的关心开口，不吵闹、不卖萌，也不会失去那种优雅而危险的气场。',
+    voiceSource: 'vc',
   },
 ]
 
@@ -206,4 +218,9 @@ export function getPetIdleUrl(petId) {
 
 export function getPetPersona(pet) {
   return pet?.persona || ''
+}
+
+export function getPetVoiceRate(petId) {
+  const pet = getPetById(petId)
+  return Number.isFinite(pet?.voiceRate) && pet.voiceRate > 0 ? pet.voiceRate : 1
 }

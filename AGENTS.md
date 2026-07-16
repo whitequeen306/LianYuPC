@@ -1,6 +1,6 @@
 # AGENTS.md — LianYu-PC
 
-协作者与 Cursor Agent 约定（技术栈、模块边界、工作守则）。  
+协作者与Agent 约定（技术栈、模块边界、工作守则）。  
 PC 端桌面/Web 复刻版，独立于安卓端项目。
 
 ## 设计系统基线（强制遵守）
@@ -167,7 +167,26 @@ npm run electron:release:major     # major 升级
 ## 工作约定
 
 - 所有文件操作在 `C:\Users\hp\Desktop\LianYu-PC\` 下进行
-- 安卓端目录绝不写入，仅 read-only 参考
 - `pom.xml` / `package.json` 变更后必跑 OSV-Scanner
 - 日志用 `@Slf4j` + traceId
 - 统一返回格式 `Result<T>`
+
+## 桌宠开发
+
+新增角色桌宠（atlas + 语音 + 前后端接入）时，**必须先读取 skill 文档**：
+
+`Pets/skills/hatch-lianyu-pet/SKILL.md`
+
+该 skill 自带脚本（`Pets/skills/hatch-lianyu-pet/scripts/`），包含完整流程：参考图 → gpt-image-2 生成逐帧 → hatch-pet 拼合 atlas → 接入 petCatalog/desktopSettings/pet-voices → 打包发布。参考图放到 `Pets/images/` 下。
+
+涉及的关键文件（新增角色时都要改）：
+
+| 文件 | 作用 |
+|---|---|
+| `frontend/public/pet/<id>_spritesheet.webp` | 1536×1872 atlas（新增） |
+| `frontend/public/pet/<id>_idle0.png` | 192×208 预览帧（新增） |
+| `frontend/src/constants/petCatalog.js` | 桌宠目录条目 |
+| `frontend/electron/desktopSettings.js` | 主进程 ALLOWED_PET_IDS（**漏了会导致切换不生效**） |
+| `backend/.../resources/pet-voices.json` | 后端语音映射（改后需重建 backend） |
+
+**注意**：前端改动需要重新打 Electron 包；后端 `pet-voices.json` 改动需要服务器 `python scripts/_cloud_deploy_pull.py` 重建 backend，否则截图语音不出声。
