@@ -61,6 +61,7 @@ public class CharacterDiaryService {
     private final ConversationMapper conversationMapper;
     private final MessageMapper messageMapper;
     private final AiChatService aiChatService;
+    private final com.lianyu.service.graph.ChatTurnFacade chatTurnFacade;
     private final CharacterPromptBuilder promptBuilder;
     private final MemoryRetriever memoryRetriever;
     private final OutputLanguageService outputLanguageService;
@@ -214,14 +215,16 @@ public class CharacterDiaryService {
         }
         Collections.reverse(recentMessages);
 
-        String memoryContext = memoryRetriever.retrieveProfileContext(characterId, userId);
-        String relationshipContext = relationshipStateService.buildPromptContext(userId, characterId);
-        String mergedContext = memoryContext != null
-                ? memoryContext + "\n\n" + relationshipContext
-                : relationshipContext;
         String lang = outputLanguageService.resolveForUser(userId);
-
-        String basePrompt = promptBuilder.buildSystemPrompt(character, mergedContext, lang, true);
+        String basePrompt = chatTurnFacade.assembleSystemPrompt(
+                com.lianyu.ai.graph.ChatTurnScene.DIARY,
+                userId,
+                null,
+                character,
+                null,
+                null,
+                null,
+                null);
 
         String instruction = switch (OutputLanguage.fromCode(lang)) {
             case JA -> """

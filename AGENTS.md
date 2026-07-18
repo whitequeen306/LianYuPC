@@ -66,7 +66,7 @@ backend/
 ├── lianyu-dao/              # MySQL：Entity / Mapper / Flyway migration
 ├── lianyu-storage/          # MinIO client + Milvus client（无事务外部存储）
 ├── lianyu-security/         # Sa-Token、Jasypt、BCrypt 封装、密钥版本管理
-├── lianyu-ai/               # Spring AI 集成、CharacterPromptBuilder、ChatMemory
+├── lianyu-ai/               # Spring AI 集成、ChatTurn Graph 契约（Keys/State/Scene）
 ├── lianyu-service/          # 业务逻辑（角色/对话/群聊/记忆）
 ├── lianyu-web/              # Controller、SSE、WebSocket、CORS、全局异常处理
 └── lianyu-app/              # 启动类、application.yml、Docker 打包
@@ -81,6 +81,7 @@ lianyu-app → lianyu-web → lianyu-service → lianyu-ai / lianyu-dao / lianyu
 
 ## 关键设计决策
 
+- **AI 回合编排**：Spring AI Alibaba Graph（`CompiledGraph chatTurn`）。`OverAllState` + `ChatTurnKeys` 承载上下文；`ChatTurnFacade` 为外层入口。SSE / 配额 / Resilience4j / 落库回调留在 ConversationService 等适配层。
 - **Web 容器**：Servlet（Spring MVC），不用 WebFlux。SSE 用 `SseEmitter` + Tomcat NIO。
 - **dao 与 storage 分离**：`lianyu-dao` 只管 MySQL；MinIO/Milvus 走 `lianyu-storage`。事务边界清晰。
 - **API Key 加密**：Jasypt AES-GCM 字段级加密；主密钥来自环境变量 `LIANYU_MASTER_KEY`，支持多版本轮换（`v1=...,v2=...,current=v2`）。

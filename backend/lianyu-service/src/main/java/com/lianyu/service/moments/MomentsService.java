@@ -63,6 +63,7 @@ public class MomentsService {
     private final CharacterMapper characterMapper;
     private final UserMapper userMapper;
     private final AiChatService aiChatService;
+    private final com.lianyu.service.graph.ChatTurnFacade chatTurnFacade;
     private final CharacterPromptBuilder promptBuilder;
     private final MemoryRetriever memoryRetriever;
     private final NotificationService notificationService;
@@ -388,11 +389,15 @@ public class MomentsService {
     }
 
     private String buildSystemPrompt(Long userId, Character character, String memoryContext, String userInput) {
-        String lang = outputLanguageService.resolveForRequest(userId, userInput);
-        String relationshipContext = relationshipStateService.buildPromptContext(userId, character.getId());
-        String mergedContext = memoryContext != null ? memoryContext + "\n\n" + relationshipContext : relationshipContext;
-        String base = promptBuilder.buildSystemPrompt(character, mergedContext, lang, true);
-        return base + outputLanguageService.buildNaturalStyleBlock(lang);
+        return chatTurnFacade.assembleSystemPrompt(
+                com.lianyu.ai.graph.ChatTurnScene.MOMENTS,
+                userId,
+                null,
+                character,
+                userInput,
+                userInput,
+                null,
+                null);
     }
 
     private List<Message> getRecentMessages(Long conversationId, int limit) {

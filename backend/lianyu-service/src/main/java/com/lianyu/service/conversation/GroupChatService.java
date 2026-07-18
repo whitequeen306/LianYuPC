@@ -64,6 +64,7 @@ public class GroupChatService {
     private final CharacterMapper characterMapper;
     private final MessageMapper messageMapper;
     private final AiChatService aiChatService;
+    private final com.lianyu.service.graph.ChatTurnFacade chatTurnFacade;
     private final CharacterPromptBuilder promptBuilder;
     private final OutputLanguageService outputLanguageService;
     private final MemoryRetriever memoryRetriever;
@@ -212,31 +213,17 @@ public class GroupChatService {
         String mentionTarget = pickProactiveMentionTarget(character, members, nameMap);
         String warmHint = (contextHint == null || contextHint.isBlank()) ? "最近群聊" : contextHint.trim();
 
-        String memoryCtx = memoryRetriever.retrieveProfileContext(character.getId(), userId);
         CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
         int maxPieces = behavior.maxRepliesPerTurn();
         String mentionCtx = buildMentionContext(character, historySnapshot, nameMap);
 
         String outputLang = outputLanguageService.resolveForRequest(userId, warmHint);
         String othersLine = buildOtherCharactersContext(members, character, outputLang);
-        String systemPrompt = promptBuilder.buildSystemPrompt(character, memoryCtx, outputLang, true);
-        systemPrompt = promptBuilder.appendGroupChatInstructions(
-                systemPrompt,
-                character,
-                maxPieces,
-                othersLine,
-                mentionCtx,
-                outputLang);
-
-        AiChatRequest aiReq = new AiChatRequest();
-        aiReq.setProvider(AiConstants.PLATFORM_PROVIDER);
-        aiReq.setTemperature(0.85);
-        ChatToolContext.bindTo(aiReq, character);
 
         List<MessageDto> allMsgs = new ArrayList<>();
         MessageDto sysDto = new MessageDto();
         sysDto.setRole("system");
-        sysDto.setContent(systemPrompt);
+        sysDto.setContent("");
         allMsgs.add(sysDto);
 
         for (Message msg : historySnapshot) {
@@ -276,11 +263,20 @@ public class GroupChatService {
                     """.formatted(mentionTarget, maxPieces);
         };
         allMsgs.add(buildUserMessage(proactiveInstruction + "\n\n最近气氛参考：" + warmHint));
-        aiReq.setMessages(allMsgs);
-        aiReq.setExpectedLanguage(outputLang);
 
         try {
-            ChatResult result = aiChatService.chatBlocking(userId, aiReq);
+            var result = chatTurnFacade.invokeBlocking(com.lianyu.service.graph.ChatTurnCommand.builder()
+                    .scene(com.lianyu.ai.graph.ChatTurnScene.GROUP)
+                    .userId(userId)
+                    .character(character)
+                    .provider(AiConstants.PLATFORM_PROVIDER)
+                    .temperature(0.85)
+                    .rawUserText(warmHint)
+                    .preparedMessages(allMsgs)
+                    .groupExtras(new com.lianyu.service.graph.ChatTurnPromptAssembler.GroupExtras(
+                            maxPieces, othersLine, mentionCtx))
+                    .streaming(false)
+                    .build());
             String cleanedContent = sanitizeGroupReply(result.getContent(), character.getName(), members, nameMap);
             if (cleanedContent == null || cleanedContent.isBlank()) {
                 return false;
@@ -474,32 +470,16 @@ public class GroupChatService {
             }
 
             Map<Long, String> nameMap = loadCharacterNameMap(members);
-            String memoryCtx = memoryRetriever.retrieveProfileContext(character.getId(), userId);
             CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
             int maxPieces = behavior.maxRepliesPerTurn();
             String mentionCtx = buildMentionContext(character, historySnapshot, nameMap);
-
             String outputLang = outputLanguageService.resolveForRequest(userId, request.getContent());
             String othersLine = buildOtherCharactersContext(members, character, outputLang);
-            String systemPrompt = promptBuilder.buildSystemPrompt(character, memoryCtx, outputLang, true);
-            systemPrompt = promptBuilder.appendGroupChatInstructions(
-                    systemPrompt,
-                    character,
-                    maxPieces,
-                    othersLine,
-                    mentionCtx,
-                    outputLang);
-
-            AiChatRequest aiReq = new AiChatRequest();
-            aiReq.setProvider(request.getProvider());
-            aiReq.setModel(request.getModel());
-            aiReq.setTemperature(request.getTemperature());
-            ChatToolContext.bindTo(aiReq, character);
 
             List<MessageDto> allMsgs = new ArrayList<>();
             MessageDto sysDto = new MessageDto();
             sysDto.setRole("system");
-            sysDto.setContent(systemPrompt);
+            sysDto.setContent("");
             allMsgs.add(sysDto);
 
             for (Message msg : historySnapshot) {
@@ -524,10 +504,21 @@ public class GroupChatService {
                 dto.setContent(content);
                 allMsgs.add(dto);
             }
-            aiReq.setMessages(allMsgs);
-            aiReq.setExpectedLanguage(outputLang);
 
-            ChatResult result = aiChatService.chatBlocking(userId, aiReq);
+            var result = chatTurnFacade.invokeBlocking(com.lianyu.service.graph.ChatTurnCommand.builder()
+                    .scene(com.lianyu.ai.graph.ChatTurnScene.GROUP)
+                    .userId(userId)
+                    .character(character)
+                    .provider(request.getProvider())
+                    .model(request.getModel())
+                    .temperature(request.getTemperature())
+                    .rawUserText(request.getContent())
+                    .modelUserText(request.getModelContentForAi())
+                    .preparedMessages(allMsgs)
+                    .groupExtras(new com.lianyu.service.graph.ChatTurnPromptAssembler.GroupExtras(
+                            maxPieces, othersLine, mentionCtx))
+                    .streaming(false)
+                    .build());
             String cleanedContent = sanitizeGroupReply(result.getContent(), character.getName(), members, nameMap);
             return new CharacterReply(character.getId(), character.getName(), cleanedContent, result.getTotalTokens());
         } catch (Exception e) {

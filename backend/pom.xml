@@ -31,9 +31,10 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- Framework -->
-        <spring-boot.version>3.3.5</spring-boot.version>
-        <spring-ai.version>1.0.0</spring-ai.version>
-        <spring-security-crypto.version>6.3.4</spring-security-crypto.version>
+        <spring-boot.version>3.5.5</spring-boot.version>
+        <spring-ai.version>1.1.2</spring-ai.version>
+        <spring-ai-alibaba.version>1.1.2.2</spring-ai-alibaba.version>
+        <spring-security-crypto.version>6.5.3</spring-security-crypto.version>
 
         <!-- Data -->
         <mybatis-plus.version>3.5.9</mybatis-plus.version>
@@ -79,6 +80,15 @@
                 <groupId>org.springframework.ai</groupId>
                 <artifactId>spring-ai-bom</artifactId>
                 <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Spring AI Alibaba BOM (Graph orchestration) -->
+            <dependency>
+                <groupId>com.alibaba.cloud.ai</groupId>
+                <artifactId>spring-ai-alibaba-bom</artifactId>
+                <version>${spring-ai-alibaba.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

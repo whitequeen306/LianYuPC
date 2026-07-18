@@ -22,6 +22,7 @@ import com.lianyu.dao.mapper.UserMapper;
 import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.AssistantReplyService;
 import com.lianyu.service.ai.CharacterPromptBuilder;
+import com.lianyu.service.graph.ChatTurnFacade;
 import com.lianyu.common.exception.BusinessException;
 import com.lianyu.common.base.ErrorCode;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
@@ -59,6 +60,7 @@ class ConversationServiceStreamErrorTest {
     @Mock private CharacterMapper characterMapper;
     @Mock private UserMapper userMapper;
     @Mock private AiChatService aiChatService;
+    @Mock private ChatTurnFacade chatTurnFacade;
     @Mock private CharacterPromptBuilder promptBuilder;
     @Mock private MemoryRetriever memoryRetriever;
     @Mock private MemoryWriter memoryWriter;
@@ -89,6 +91,7 @@ class ConversationServiceStreamErrorTest {
                 characterMapper,
                 userMapper,
                 aiChatService,
+                chatTurnFacade,
                 promptBuilder,
                 memoryRetriever,
                 memoryWriter,
@@ -131,14 +134,10 @@ class ConversationServiceStreamErrorTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.increment(anyString(), eq(1L))).thenReturn(100L);
         when(messageMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
-        when(memoryRetriever.retrieveProfileContext(anyLong(), anyLong(), anyString())).thenReturn("");
-        when(promptBuilder.buildSystemPrompt(any(), any(), anyString(), eq(true))).thenReturn("system");
-        when(timeTool.readCurrentTimeFact()).thenReturn("2026-06-22 12:00");
-        when(outputLanguageService.resolveForRequest(eq(userId), any())).thenReturn("zh");
         when(chatBehaviorResolver.resolve(any())).thenReturn(new CharacterChatBehavior(3, true, 60, 0.9, 55, 65, null));
 
         ArgumentCaptor<AiChatService.StreamCallback> callbackCaptor = ArgumentCaptor.forClass(AiChatService.StreamCallback.class);
-        when(aiChatService.chatStream(eq(userId), any(), callbackCaptor.capture())).thenReturn(new SseEmitter());
+        when(chatTurnFacade.invokeStream(any(), callbackCaptor.capture())).thenReturn(new SseEmitter());
 
         SendMessageRequest request = new SendMessageRequest();
         request.setContent("hello");
@@ -173,14 +172,10 @@ class ConversationServiceStreamErrorTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.increment(anyString(), eq(1L))).thenReturn(100L);
         when(messageMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
-        when(memoryRetriever.retrieveProfileContext(anyLong(), anyLong(), anyString())).thenReturn("");
-        when(promptBuilder.buildSystemPrompt(any(), any(), anyString(), eq(true))).thenReturn("system");
-        when(timeTool.readCurrentTimeFact()).thenReturn("2026-06-22 12:00");
-        when(outputLanguageService.resolveForRequest(eq(userId), any())).thenReturn("zh");
         when(chatBehaviorResolver.resolve(any())).thenReturn(new CharacterChatBehavior(3, true, 60, 0.9, 55, 65, null));
 
         ArgumentCaptor<AiChatService.StreamCallback> callbackCaptor = ArgumentCaptor.forClass(AiChatService.StreamCallback.class);
-        when(aiChatService.chatStream(eq(userId), any(), callbackCaptor.capture())).thenReturn(new SseEmitter());
+        when(chatTurnFacade.invokeStream(any(), callbackCaptor.capture())).thenReturn(new SseEmitter());
 
         SendMessageRequest request = new SendMessageRequest();
         request.setContent("hello");
@@ -216,17 +211,13 @@ class ConversationServiceStreamErrorTest {
         when(characterMapper.selectById(charId)).thenReturn(character);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(messageMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
-        when(memoryRetriever.retrieveProfileContext(anyLong(), anyLong(), anyString())).thenReturn("");
-        when(promptBuilder.buildSystemPrompt(any(), any(), anyString(), eq(true))).thenReturn("system");
-        when(timeTool.readCurrentTimeFact()).thenReturn("2026-06-22 12:00");
-        when(outputLanguageService.resolveForRequest(eq(userId), any())).thenReturn("zh");
         when(chatBehaviorResolver.resolve(any())).thenReturn(new CharacterChatBehavior(3, true, 60, 0.9, 55, 65, null));
         when(assistantReplyService.process(eq("complete reply"), eq(3)))
                 .thenReturn(new AssistantReplyService.ProcessedReply("complete reply", List.of("complete reply")));
         when(valueOperations.increment(anyString(), eq(1L))).thenReturn(100L, 101L);
 
         ArgumentCaptor<AiChatService.StreamCallback> callbackCaptor = ArgumentCaptor.forClass(AiChatService.StreamCallback.class);
-        when(aiChatService.chatStream(eq(userId), any(), callbackCaptor.capture())).thenReturn(new SseEmitter());
+        when(chatTurnFacade.invokeStream(any(), callbackCaptor.capture())).thenReturn(new SseEmitter());
 
         SendMessageRequest request = new SendMessageRequest();
         request.setContent("hello");

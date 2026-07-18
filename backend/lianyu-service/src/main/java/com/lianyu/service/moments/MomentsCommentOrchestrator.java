@@ -46,6 +46,7 @@ public class MomentsCommentOrchestrator {
     private final CharacterMapper characterMapper;
     private final MomentsCommentService momentsCommentService;
     private final AiChatService aiChatService;
+    private final com.lianyu.service.graph.ChatTurnFacade chatTurnFacade;
     private final CharacterPromptBuilder promptBuilder;
     private final MemoryRetriever memoryRetriever;
     private final OutputLanguageService outputLanguageService;
@@ -58,6 +59,7 @@ public class MomentsCommentOrchestrator {
                                       CharacterMapper characterMapper,
                                       @Lazy MomentsCommentService momentsCommentService,
                                       AiChatService aiChatService,
+                                      com.lianyu.service.graph.ChatTurnFacade chatTurnFacade,
                                       CharacterPromptBuilder promptBuilder,
                                       MemoryRetriever memoryRetriever,
                                       OutputLanguageService outputLanguageService,
@@ -69,6 +71,7 @@ public class MomentsCommentOrchestrator {
         this.characterMapper = characterMapper;
         this.momentsCommentService = momentsCommentService;
         this.aiChatService = aiChatService;
+        this.chatTurnFacade = chatTurnFacade;
         this.promptBuilder = promptBuilder;
         this.memoryRetriever = memoryRetriever;
         this.outputLanguageService = outputLanguageService;
@@ -547,11 +550,16 @@ public class MomentsCommentOrchestrator {
                                             MomentsPost post,
                                             MomentsCommentAudience audience,
                                             String instruction) {
-        String memoryContext = memoryRetriever.retrieveProfileContext(character.getId(), userId);
         String lang = outputLanguageService.resolveForRequest(userId, null);
-        String systemPrompt = promptBuilder.buildSystemPrompt(character, memoryContext, lang, true)
-                + buildMomentsSceneGuard(audience, lang)
-                + outputLanguageService.buildNaturalStyleBlock(lang);
+        String systemPrompt = chatTurnFacade.assembleSystemPrompt(
+                com.lianyu.ai.graph.ChatTurnScene.MOMENTS,
+                userId,
+                null,
+                character,
+                null,
+                null,
+                buildMomentsSceneGuard(audience, lang),
+                null);
 
         AiChatRequest req = new AiChatRequest();
         req.setProvider(AiConstants.PLATFORM_PROVIDER);

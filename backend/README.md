@@ -17,7 +17,7 @@
 | **lianyu-app** | 启动入口、`application.yml`、角色广场头像资源 `square-avatars/` |
 | **lianyu-web** | Controller、全局异常、CORS、Knife4j、WebSocket 配置 |
 | **lianyu-service** | 业务：用户/角色/会话/群聊/记忆/朋友圈/Vault/AI 聊天 |
-| **lianyu-ai** | Spring AI、Prompt 组装、ChatMemory |
+| **lianyu-ai** | Spring AI、ChatTurn Graph 契约（Keys/State/Scene） |
 | **lianyu-dao** | MyBatis-Plus 实体与 Mapper、**Flyway** 迁移 `db/migration/` |
 | **lianyu-security** | Sa-Token、BCrypt、Jasypt 字段加密（`LIANYU_MASTER_KEY`） |
 | **lianyu-storage** | MinIO、Milvus 客户端 |

@@ -21,6 +21,9 @@ import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.AssistantReplyService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lianyu.service.ai.CharacterPromptBuilder;
+import com.lianyu.service.graph.ChatTurnCommand;
+import com.lianyu.service.graph.ChatTurnFacade;
+import com.lianyu.service.graph.ChatTurnResult;
 import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
 import com.lianyu.service.character.CharacterStateService;
@@ -49,6 +52,7 @@ class ConversationRelationshipFlowTest {
         GroupMemberMapper groupMemberMapper = mock(GroupMemberMapper.class);
         CharacterMapper characterMapper = mock(CharacterMapper.class);
         AiChatService aiChatService = mock(AiChatService.class);
+        ChatTurnFacade chatTurnFacade = mock(ChatTurnFacade.class);
         CharacterPromptBuilder promptBuilder = mock(CharacterPromptBuilder.class);
         MemoryRetriever memoryRetriever = mock(MemoryRetriever.class);
         MemoryWriter memoryWriter = mock(MemoryWriter.class);
@@ -77,6 +81,7 @@ class ConversationRelationshipFlowTest {
                 characterMapper,
                 userMapper,
                 aiChatService,
+                chatTurnFacade,
                 promptBuilder,
                 memoryRetriever,
                 memoryWriter,
@@ -116,16 +121,13 @@ class ConversationRelationshipFlowTest {
         when(chatBehaviorResolver.resolve(character)).thenReturn(behavior);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.increment("msg_seq:11")).thenReturn(1L, 2L);
-        when(memoryRetriever.retrieveProfileContext(eq(5L), eq(3L), any())).thenReturn("[profile]\n喜欢夜跑");
-        when(relationshipStateService.buildPromptContext(3L, 5L))
-                .thenReturn("关系阶段: familiar\n近期关系事件:\n- 用户解释了迟到原因");
-        when(outputLanguageService.resolveForRequest(eq(3L), any())).thenReturn("zh-CN");
-        when(outputLanguageService.buildNaturalStyleBlock("zh-CN")).thenReturn("\n[style]");
-        when(promptBuilder.buildSystemPrompt(any(Character.class), any(String.class), any(String.class), eq(true)))
-                .thenReturn("关系阶段: familiar\n[system]");
         when(messageMapper.selectList(any())).thenReturn(List.of());
-        when(aiChatService.chatBlocking(eq(3L), any()))
-                .thenReturn(ChatResult.builder().content("没关系，我还在。 ").totalTokens(12).build());
+        when(chatTurnFacade.invokeBlocking(any(ChatTurnCommand.class)))
+                .thenReturn(ChatTurnResult.builder()
+                        .systemPrompt("关系阶段: familiar\n[system]")
+                        .content("没关系，我还在。 ")
+                        .totalTokens(12)
+                        .build());
         when(assistantReplyService.process("没关系，我还在。 ", 1))
                 .thenReturn(new AssistantReplyService.ProcessedReply(
                         "没关系，我还在。", List.of("没关系，我还在。")));
@@ -151,7 +153,7 @@ class ConversationRelationshipFlowTest {
         assertEquals("没关系，我还在。", response.getContent());
         verify(relationshipStateService).recordUserTurn(eq(3L), eq(5L), eq(11L), any(Message.class), anyList());
         verify(relationshipStateService).recordAssistantTurn(eq(3L), eq(5L), eq(11L), anyList());
-        verify(aiChatService).chatBlocking(eq(3L), argThat(req ->
-                req.getMessages().get(0).getContent().contains("关系阶段: familiar")));
+        verify(chatTurnFacade).invokeBlocking(argThat(cmd ->
+                cmd.getCharacter() != null && cmd.getCharacter().getId().equals(5L)));
     }
 }

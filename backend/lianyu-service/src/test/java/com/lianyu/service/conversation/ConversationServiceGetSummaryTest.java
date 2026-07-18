@@ -75,6 +75,7 @@ class ConversationServiceGetSummaryTest {
                 characterMapper,
                 userMapper,
                 aiChatService,
+                null,
                 promptBuilder,
                 memoryRetriever,
                 memoryWriter,

@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lianyu.common.base.ErrorCode;
 import com.lianyu.common.constant.AiConstants;
 import com.lianyu.common.exception.BusinessException;
-import com.lianyu.common.i18n.OutputLanguage;
 import com.lianyu.common.util.UserInputSanitizer;
 import com.lianyu.dao.entity.Character;
 import com.lianyu.dao.entity.Conversation;
@@ -16,13 +15,16 @@ import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.GroupMemberMapper;
 import com.lianyu.dao.mapper.MessageMapper;
 import com.lianyu.dao.mapper.UserMapper;
+import com.lianyu.ai.graph.ChatTurnScene;
 import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.AssistantReplyService;
 import com.lianyu.service.ai.CharacterPromptBuilder;
+import com.lianyu.service.graph.ChatTurnCommand;
+import com.lianyu.service.graph.ChatTurnFacade;
+import com.lianyu.service.graph.ChatTurnResult;
 import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
 import com.lianyu.service.ai.InnerThoughtFilter;
-import com.lianyu.service.character.CharacterCitySettingsService;
 import com.lianyu.service.character.CharacterPreferenceResolver;
 import com.lianyu.service.character.CharacterRecentActivityService;
 import com.lianyu.service.character.CharacterStateService;
@@ -37,7 +39,6 @@ import com.lianyu.service.support.OutputLanguageService;
 import com.lianyu.service.tools.ChatToolContext;
 import com.lianyu.service.tools.TimeTool;
 import java.io.IOException;
-import java.time.LocalTime;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -77,6 +78,7 @@ public class ConversationService {
     private final CharacterMapper characterMapper;
     private final UserMapper userMapper;
     private final AiChatService aiChatService;
+    private final ChatTurnFacade chatTurnFacade;
     private final CharacterPromptBuilder promptBuilder;
     private final MemoryRetriever memoryRetriever;
     private final MemoryWriter memoryWriter;
@@ -274,25 +276,22 @@ public class ConversationService {
         // 更新角色情绪
         characterStateService.afterUserMessage(character.getId(), userId, turn.aiUserContent());
 
-        String memoryContext = buildProfileContextForChat(
-                userId, conversationId, character.getId(), turn.aiUserContent());
-        String systemPrompt = buildSystemPromptForUser(
-                userId,
-                character,
-                memoryContext,
-                turn.rawLanguageSample());
-
-        AiChatRequest aiRequest = buildChatRequest(
-                request, character, systemPrompt, history, turn.userMsg().getId(), turn.aiUserContent());
-        aiRequest.setExpectedLanguage(outputLanguageService.resolveForRequest(userId, turn.rawLanguageSample()));
-
         boolean hasImage = turn.userMsg().getImageUrl() != null && !turn.userMsg().getImageUrl().isBlank();
-        if (hasImage) {
-            aiRequest.setImageUrl(turn.userMsg().getImageUrl());
-        }
-        ChatResult chatResult = hasImage
-                ? aiChatService.chatImageBlocking(userId, aiRequest)
-                : aiChatService.chatBlocking(userId, aiRequest);
+        ChatTurnResult chatResult = chatTurnFacade.invokeBlocking(ChatTurnCommand.builder()
+                .scene(ChatTurnScene.SINGLE)
+                .userId(userId)
+                .conversationId(conversationId)
+                .character(character)
+                .provider(request.getProvider())
+                .model(request.getModel())
+                .temperature(request.getTemperature())
+                .rawUserText(turn.rawLanguageSample())
+                .modelUserText(turn.aiUserContent())
+                .imageUrl(hasImage ? turn.userMsg().getImageUrl() : null)
+                .currentUserMsgId(turn.userMsg().getId())
+                .historyMessages(history)
+                .streaming(false)
+                .build());
 
         List<MessageResponse> replies = saveAssistantReplies(
                 conversationId, character, chatResult.getContent(), chatResult.getTotalTokens());
@@ -337,22 +336,7 @@ public class ConversationService {
         // 更新角色情绪
         characterStateService.afterUserMessage(character.getId(), userId, turn.aiUserContent());
 
-        String memoryContext = buildProfileContextForChat(
-                userId, conversationId, character.getId(), turn.aiUserContent());
-        String systemPrompt = buildSystemPromptForUser(
-                userId,
-                character,
-                memoryContext,
-                turn.rawLanguageSample());
-
-        AiChatRequest aiRequest = buildChatRequest(
-                request, character, systemPrompt, history, turn.userMsg().getId(), turn.aiUserContent());
-        aiRequest.setExpectedLanguage(outputLanguageService.resolveForRequest(userId, turn.rawLanguageSample()));
-
         boolean hasImage = turn.userMsg().getImageUrl() != null && !turn.userMsg().getImageUrl().isBlank();
-        if (hasImage) {
-            aiRequest.setImageUrl(turn.userMsg().getImageUrl());
-        }
 
         final Character streamCharacter = character;
         final CharacterChatBehavior streamBehavior = chatBehaviorResolver.resolve(character);
@@ -408,9 +392,21 @@ public class ConversationService {
                 }
             }
         };
-        return hasImage
-                ? aiChatService.chatImageStream(userId, aiRequest, callback)
-                : aiChatService.chatStream(userId, aiRequest, callback);
+        return chatTurnFacade.invokeStream(ChatTurnCommand.builder()
+                .scene(ChatTurnScene.SINGLE)
+                .userId(userId)
+                .conversationId(conversationId)
+                .character(character)
+                .provider(request.getProvider())
+                .model(request.getModel())
+                .temperature(request.getTemperature())
+                .rawUserText(turn.rawLanguageSample())
+                .modelUserText(turn.aiUserContent())
+                .imageUrl(hasImage ? turn.userMsg().getImageUrl() : null)
+                .currentUserMsgId(turn.userMsg().getId())
+                .historyMessages(history)
+                .streaming(true)
+                .build(), callback);
     }
 
     private boolean isClientStreamDisconnect(Throwable error) {
@@ -426,24 +422,18 @@ public class ConversationService {
         }
         ensureCharacterAvailableForProactive(character);
 
-        String memoryContext = memoryRetriever.retrieveProfileContext(character.getId(), userId);
-        String relationshipContext = relationshipStateService.buildPromptContext(userId, character.getId());
-        String systemPrompt = proactiveSystemPrompt(userId, character, memoryContext + "\n\n" + relationshipContext, null);
         List<Message> history = getRecentMessages(conversationId, contextWindow);
-
-        AiChatRequest aiRequest = new AiChatRequest();
-        ChatToolContext.bindTo(aiRequest, character);
-        List<MessageDto> allMessages = new ArrayList<>();
-        allMessages.add(buildSystemMessage(systemPrompt));
+        CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
+        int maxPieces = behavior.maxRepliesPerTurn();
+        List<MessageDto> prepared = new ArrayList<>();
+        prepared.add(buildSystemMessage(""));
         for (Message msg : history) {
             MessageDto dto = new MessageDto();
             dto.setRole(msg.getRole().toLowerCase());
             dto.setContent(msg.getContent());
-            allMessages.add(dto);
+            prepared.add(dto);
         }
-        CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
-        int maxPieces = behavior.maxRepliesPerTurn();
-        allMessages.add(buildUserMessage(String.format("""
+        prepared.add(buildUserMessage(String.format("""
                 你现在要主动给用户发一段消息，而不是等待用户先开口。
                 要求：
                 1) 1~%d条短消息（符合你的性格，话多的可多条，话少的可一条）；
@@ -451,9 +441,18 @@ public class ConversationService {
                 3) 语气自然，围绕最近上下文或角色设定关心用户；
                 4) 不要重复历史原话，不要机械问候。
                 """, maxPieces)));
-        aiRequest.setMessages(allMessages);
 
-        ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
+        ChatTurnResult chatResult = chatTurnFacade.invokeBlocking(ChatTurnCommand.builder()
+                .scene(ChatTurnScene.PROACTIVE)
+                .userId(userId)
+                .conversationId(conversationId)
+                .character(character)
+                .rawUserText(null)
+                .modelUserText(null)
+                .preparedMessages(prepared)
+                .historyMessages(history)
+                .streaming(false)
+                .build());
         List<MessageResponse> replies = saveAssistantReplies(
                 conversationId, character, chatResult.getContent(), chatResult.getTotalTokens());
         if (!replies.isEmpty()) {
@@ -873,22 +872,6 @@ public class ConversationService {
         return new PreparedUserTurn(userMsg, aiUserContent, rawLanguageSample);
     }
 
-    private AiChatRequest buildChatRequest(SendMessageRequest request,
-                                           Character character,
-                                           String systemPrompt,
-                                           List<Message> history,
-                                           Long currentUserMsgId,
-                                           String currentAiUserContent) {
-        AiChatRequest aiRequest = new AiChatRequest();
-        aiRequest.setProvider(request.getProvider());
-        aiRequest.setModel(request.getModel());
-        aiRequest.setTemperature(request.getTemperature());
-        ChatToolContext.bindTo(aiRequest, character);
-        aiRequest.setMessages(buildChatMessageDtos(
-                systemPrompt, history, currentUserMsgId, currentAiUserContent));
-        return aiRequest;
-    }
-
     private String normalizeImageUrl(String imageUrl) {
         if (imageUrl == null || imageUrl.isBlank()) {
             return null;
@@ -905,39 +888,6 @@ public class ConversationService {
             return text;
         }
         return hasImage ? "（用户发送了一张图片）" : "";
-    }
-
-    /**
-     * 构建发给主聊天模型的消息列表。有图时 currentAiUserContent 已含识图结果，不再传图片。
-     */
-    private List<MessageDto> buildChatMessageDtos(String systemPrompt,
-                                                  List<Message> history,
-                                                  Long currentUserMsgId,
-                                                  String currentAiUserContent) {
-        List<MessageDto> allMessages = new ArrayList<>();
-        allMessages.add(buildSystemMessage(systemPrompt));
-        for (Message msg : history) {
-            MessageDto dto = new MessageDto();
-            dto.setRole(msg.getRole().toLowerCase());
-            String content = msg.getContent();
-            if (currentUserMsgId != null
-                    && currentUserMsgId.equals(msg.getId())
-                    && currentAiUserContent != null
-                    && !currentAiUserContent.isBlank()) {
-                content = currentAiUserContent.contains("<user_message")
-                        ? currentAiUserContent
-                        : UserInputSanitizer.wrapStoredTextForModel(currentAiUserContent);
-            } else if (content == null || content.isBlank()) {
-                if (msg.getImageUrl() != null && !msg.getImageUrl().isBlank()) {
-                    content = "（用户发送了一张图片）";
-                } else {
-                    continue;
-                }
-            }
-            dto.setContent(content);
-            allMessages.add(dto);
-        }
-        return allMessages;
     }
 
     private List<MessageResponse> saveAssistantReplies(Long conversationId,
@@ -1000,77 +950,6 @@ public class ConversationService {
         return MULTI_SPACE.matcher(text).replaceAll(" ").trim();
     }
 
-    private String buildProfileContextForChat(
-            Long userId, Long conversationId, Long characterId, String userInput) {
-        String memoryContext = memoryRetriever.retrieveProfileContext(characterId, userId, userInput);
-        String relationshipContext = relationshipStateService.buildPromptContext(userId, characterId);
-        StringBuilder combined = new StringBuilder();
-        if (memoryContext != null && !memoryContext.isBlank()) {
-            combined.append(memoryContext);
-        }
-        if (relationshipContext != null && !relationshipContext.isBlank()) {
-            if (!combined.isEmpty()) {
-                combined.append("\n\n");
-            }
-            combined.append(relationshipContext);
-        }
-        String sessionBlock = sessionSummaryService.formatForPrompt(conversationId);
-        if (sessionBlock != null && !sessionBlock.isBlank()) {
-            combined.append(sessionBlock);
-        }
-        return combined.toString();
-    }
-
-    private String buildSystemPromptForUser(Long userId, Character character, String memoryContext, String userInput) {
-        String lang = outputLanguageService.resolveForRequest(userId, userInput);
-        String base = promptBuilder.buildSystemPrompt(character, memoryContext, lang, true);
-        base = appendCurrentTimeContext(base);
-        base = appendRecentActivityContext(base, userId, character.getId(), lang);
-        base = appendCurrentRealCityContext(base, character);
-        base = appendGoodnightContextIfApplicable(base, userInput, lang);
-        return enforceNaturalChatStyle(base, lang, character);
-    }
-
-    /** 每次用户发消息都注入真实时间，避免隔夜续聊时模型仍以为在昨晚。 */
-    private String appendCurrentTimeContext(String basePrompt) {
-        String timeFact = timeTool.readCurrentTimeFact();
-        return basePrompt + """
-
-                
-                === 当前真实环境 ===
-                """ + timeFact + """
-                
-                注意：上方对话记录中的消息可能发生在更早的时刻（例如昨晚）。判断「现在」是白天还是夜晚、今天星期几、是否跨天等，必须以本条中的当前真实时间为准，不要根据旧对话的语气或内容臆测当前时刻。""";
-    }
-
-    private String appendRecentActivityContext(String basePrompt, Long userId, Long characterId, String lang) {
-        String block = characterRecentActivityService.formatForPrompt(userId, characterId, lang);
-        if (block == null || block.isBlank()) {
-            return basePrompt;
-        }
-        return basePrompt + "\n\n" + block;
-    }
-
-    /** 现实城市模式：注入权威城市，避免历史对话中的旧城市误导模型。 */
-    private String appendCurrentRealCityContext(String basePrompt, Character character) {
-        Map<String, Object> settings = character != null ? character.getSettings() : null;
-        if (!CharacterCitySettingsService.MODE_REAL.equals(CharacterCitySettingsService.resolveCityMode(settings))) {
-            return basePrompt;
-        }
-        String city = CharacterCitySettingsService.resolveRealCity(settings);
-        if (city.isBlank()) {
-            return basePrompt;
-        }
-        return basePrompt + """
-
-
-                === 用户当前所在现实城市（权威） ===
-                """ + city + """
-
-                注意：对话历史中若提到用户还在其他城市、或基于旧城市的天气/当地情况，一律视为过时信息。
-                涉及用户所在地、搬迁、当地天气与时区等，必须以本条中的当前城市为准，不要沿用历史里的旧城市。""";
-    }
-
     private String appendCityChangeContext(String basePrompt, String previousCity, String newCity) {
         return basePrompt + """
 
@@ -1082,69 +961,17 @@ public class ConversationService {
                 + "你本次主动开口就是为了关心用户这次换城市，不要假装用户还在旧城市。";
     }
 
-    /** 单聊主动开口（含破冰/跟进）：在 system 中预置已查询的真实时间与天气。 */
+    /** 单聊主动开口（含破冰/跟进）：走 PROACTIVE scene（含真实时间/天气块）。 */
     private String proactiveSystemPrompt(Long userId, Character character, String memoryContext, String userInput) {
-        return buildSystemPromptForUser(userId, character, memoryContext, userInput)
-                + proactiveRealWorldContext.buildBlock(character);
-    }
-
-    /**
-     * 晚安仪式：23:00-08:00 + 晚安关键词 → 注入特殊晚安指令。
-     */
-    private String appendGoodnightContextIfApplicable(String basePrompt, String userInput, String lang) {
-        if (userInput == null || userInput.isBlank()) {
-            return basePrompt;
-        }
-        if (!isGoodnightTime() || !containsGoodnightKeyword(userInput)) {
-            return basePrompt;
-        }
-        return switch (OutputLanguage.fromCode(lang)) {
-            case JA -> basePrompt + """
-
-                    === おやすみモード（最優先） ===
-                    ユーザーが「おやすみ」を言った。あなたはとても優しく、落ち着いた口調で応答する。
-                    静かに相手を眠りに誘い、短く温かいおやすみの言葉をかける。長文は避け、1〜3文で。
-                    子守唄や寝物語を求められたら短く応じてもよい。""";
-            case EN -> basePrompt + """
-
-                    === Goodnight Mode (Highest Priority) ===
-                    The user just said goodnight. Respond with your gentlest, most soothing voice.
-                    Help them drift off to sleep with a short, warm goodnight message. Keep it to 1-3 sentences.
-                    If they ask for a lullaby or bedtime story, you may provide a short one.""";
-            case ZH_TW -> basePrompt + """
-
-                    === 晚安模式（最高優先） ===
-                    用戶剛剛說了晚安。用你最溫柔、最平靜的語氣回應。
-                    輕輕哄對方入睡，送上一句溫暖的晚安。控制在1-3句話，不要長篇大論。
-                    如果對方想聽睡前故事或搖籃曲，可以簡短回應。""";
-            default -> basePrompt + """
-
-                    === 晚安模式（最高优先级） ===
-                    用户刚刚说了晚安。用你最温柔、最平静的语气回应。
-                    轻轻哄对方入睡，送上一句温暖的晚安。控制在1-3句话，不要长篇大论。
-                    如果对方想听睡前故事或摇篮曲，可以简短回应。""";
-        };
-    }
-
-    private boolean isGoodnightTime() {
-        int minutes = LocalTime.now().getHour() * 60 + LocalTime.now().getMinute();
-        return minutes >= 23 * 60 || minutes < 8 * 60; // 23:00 - 08:00
-    }
-
-    private static final Pattern GOODNIGHT_KEYWORDS = Pattern.compile(
-            "晚安|睡了|睡觉|眠い|おやすみ|good\\s*night|nighty|night night|gn|安|困了|我要睡了|先睡了|去睡了|睡吧");
-
-    private boolean containsGoodnightKeyword(String text) {
-        if (text == null || text.isBlank()) {
-            return false;
-        }
-        return GOODNIGHT_KEYWORDS.matcher(text.toLowerCase()).find();
-    }
-
-    private String enforceNaturalChatStyle(String basePrompt, String languageCode, Character character) {
-        String prompt = basePrompt == null ? "" : basePrompt;
-        boolean showInnerThoughts = CharacterPreferenceResolver.showInnerThoughts(character);
-        return prompt + outputLanguageService.buildNaturalStyleBlock(languageCode, showInnerThoughts);
+        return chatTurnFacade.assembleSystemPrompt(
+                ChatTurnScene.PROACTIVE,
+                userId,
+                null,
+                character,
+                userInput,
+                userInput,
+                null,
+                null);
     }
 
     private ConversationResponse toResponse(Conversation conv, Character character) {

@@ -52,7 +52,7 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.ollama.api.OllamaApi;
-import org.springframework.ai.ollama.api.OllamaOptions;
+import org.springframework.ai.ollama.api.OllamaChatOptions;
 import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.ai.openai.OpenAiChatModel;
@@ -1070,7 +1070,7 @@ public class AiChatService {
         List<ToolCallback> toolCallbacks = toolManager.resolveToolCallbacks(request);
 
         if (ApiKeyVaultService.isOllamaEndpoint(vault.getBaseUrl())) {
-            OllamaOptions.Builder builder = OllamaOptions.builder()
+            OllamaChatOptions.Builder builder = OllamaChatOptions.builder()
                     .model(model)
                     .temperature(temperature);
             applyToolCallbacks(builder, toolCallbacks);
@@ -1083,7 +1083,7 @@ public class AiChatService {
         return new Prompt(messages, builder.build());
     }
 
-    private static void applyToolCallbacks(OllamaOptions.Builder builder, List<ToolCallback> toolCallbacks) {
+    private static void applyToolCallbacks(OllamaChatOptions.Builder builder, List<ToolCallback> toolCallbacks) {
         if (!toolCallbacks.isEmpty()) {
             builder.toolCallbacks(toolCallbacks).internalToolExecutionEnabled(true);
         }
@@ -1116,7 +1116,7 @@ public class AiChatService {
 
     private Prompt buildGenerationPrompt(VaultEntryResponse vault, String model, List<Message> messages) {
         if (ApiKeyVaultService.isOllamaEndpoint(vault.getBaseUrl())) {
-            return new Prompt(messages, OllamaOptions.builder()
+            return new Prompt(messages, OllamaChatOptions.builder()
                     .model(model)
                     .temperature(0.6)
                     .build());
@@ -1402,7 +1402,7 @@ public class AiChatService {
                     .build();
             return OllamaChatModel.builder()
                     .ollamaApi(ollamaApi)
-                    .defaultOptions(OllamaOptions.builder().model(model).build())
+                    .defaultOptions(OllamaChatOptions.builder().model(model).build())
                     .build();
         }
         boolean userSupplied = baseUrl != null && !baseUrl.isBlank();
