@@ -31,6 +31,7 @@ public class FileStorageService {
 
     private static final String AVATAR_PATH = "avatars/";
     private static final String CHAT_IMAGE_PATH = "chat-images/";
+    private static final String CHAT_VOICE_PATH = "chat-voice/";
     private static final String SQUARE_AVATAR_PATH = "square-avatars/";
     private static final String SQUARE_AVATAR_THUMB_PATH = "square-avatars-thumb/";
     private static final String UPDATES_PATH = "updates/";
@@ -38,11 +39,13 @@ public class FileStorageService {
     private static final long AVATAR_MAX_BYTES = ImageUploadValidator.MAX_BYTES;
     private static final String AVATAR_CONTENT_TYPE = "image/png";
     private static final long CHAT_IMAGE_MAX_BYTES = 5L * 1024 * 1024;
+    private static final long CHAT_VOICE_MAX_BYTES = 2L * 1024 * 1024;
     private static final Set<String> CHAT_IMAGE_TYPES = Set.of(
             "image/jpeg", "image/png", "image/webp", "image/gif"
     );
+    private static final Pattern SAFE_PET_ID = Pattern.compile("^[a-z0-9-]{1,32}$");
     private static final Pattern SAFE_OBJECT_KEY = Pattern.compile(
-            "^(avatars/[a-zA-Z0-9._-]+|chat-images/[a-zA-Z0-9._-]+|square-avatars/[a-z0-9._-]+|square-avatars-thumb/[a-z0-9._-]+|updates/(latest\\.yml|[a-zA-Z0-9._-]+\\.exe|[a-zA-Z0-9._-]+\\.exe\\.blockmap))$"
+            "^(avatars/[a-zA-Z0-9._-]+|chat-images/[a-zA-Z0-9._-]+|chat-voice/[a-z0-9-]+/[a-zA-Z0-9._-]+|square-avatars/[a-z0-9._-]+|square-avatars-thumb/[a-z0-9._-]+|updates/(latest\\.yml|[a-zA-Z0-9._-]+\\.exe|[a-zA-Z0-9._-]+\\.exe\\.blockmap))$"
     );
 
     public String uploadAvatar(MultipartFile file) {
@@ -296,6 +299,61 @@ public class FileStorageService {
         }
     }
 
+    /**
+     * Upload server-generated chat voice (TTS). Returns object key for DB storage.
+     * {@code petId} is embedded in the path for client playback-rate lookup.
+     */
+    public String uploadChatVoiceBytes(String petId, byte[] bytes, String contentType) {
+        if (bytes == null || bytes.length == 0) {
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.BAD_REQUEST, "语音数据为空");
+        }
+        if (bytes.length > CHAT_VOICE_MAX_BYTES) {
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.BAD_REQUEST, "语音文件过大");
+        }
+        if (petId == null || !SAFE_PET_ID.matcher(petId).matches()) {
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.BAD_REQUEST, "无效的语音角色");
+        }
+        String mime = normalizeVoiceContentType(contentType);
+        String ext = mime.contains("mpeg") || mime.contains("mp3") ? ".mp3" : ".wav";
+        String objectName = CHAT_VOICE_PATH + petId + "/"
+                + UUID.randomUUID().toString().replace("-", "") + ext;
+        try {
+            minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(minioConfig.getBucket())
+                            .object(objectName)
+                            .stream(new java.io.ByteArrayInputStream(bytes), bytes.length, -1)
+                            .contentType(mime)
+                            .build()
+            );
+            log.info("Chat voice uploaded: {} ({} bytes)", objectName, bytes.length);
+            return objectName;
+        } catch (com.lianyu.common.exception.BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Chat voice upload failed", e);
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.UPLOAD_FAILED, "语音上传失败，请稍后再试");
+        }
+    }
+
+    private static String normalizeVoiceContentType(String contentType) {
+        if (contentType == null || contentType.isBlank()) {
+            return "audio/wav";
+        }
+        String lower = contentType.toLowerCase().trim();
+        if (lower.startsWith("audio/wav") || lower.equals("audio/x-wav") || lower.equals("audio/wave")) {
+            return "audio/wav";
+        }
+        if (lower.startsWith("audio/mpeg") || lower.equals("audio/mp3")) {
+            return "audio/mpeg";
+        }
+        return "audio/wav";
+    }
+
     public byte[] readObjectBytes(String objectKey) {
         validateObjectKey(objectKey);
         try (GetObjectResponse object = getObject(objectKey);
@@ -366,7 +424,8 @@ public class FileStorageService {
         if (SAFE_OBJECT_KEY.matcher(stored).matches()) {
             return stored;
         }
-        for (String prefix : new String[]{AVATAR_PATH, CHAT_IMAGE_PATH, SQUARE_AVATAR_PATH, SQUARE_AVATAR_THUMB_PATH, UPDATES_PATH}) {
+        for (String prefix : new String[]{
+                AVATAR_PATH, CHAT_IMAGE_PATH, CHAT_VOICE_PATH, SQUARE_AVATAR_PATH, SQUARE_AVATAR_THUMB_PATH, UPDATES_PATH}) {
             int idx = stored.indexOf(prefix);
             if (idx >= 0) {
                 String key = stored.substring(idx);
@@ -414,6 +473,15 @@ public class FileStorageService {
                 }
             }
             return guessContentTypeFromKey(objectKey);
+        }
+        if (lowerKey.startsWith(CHAT_VOICE_PATH)) {
+            if (storedContentType != null) {
+                String normalized = storedContentType.toLowerCase();
+                if (normalized.startsWith("audio/")) {
+                    return normalized;
+                }
+            }
+            return lowerKey.endsWith(".mp3") ? "audio/mpeg" : "audio/wav";
         }
         if (lowerKey.equals(UPDATES_PATH + "latest.yml")) {
             return "text/yaml";

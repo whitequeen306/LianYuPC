@@ -50,9 +50,23 @@ public class DashScopeTtsService {
         this.petVoiceRegistry = petVoiceRegistry;
     }
 
-    public record SynthesizedAudio(String mimeType, String base64) {}
+    public record SynthesizedAudio(String mimeType, String base64, byte[] bytes) {
+        public SynthesizedAudio(String mimeType, String base64) {
+            this(mimeType, base64, null);
+        }
+    }
 
     public SynthesizedAudio synthesizeForPet(String petId, String text) {
+        byte[] bytes = synthesizeBytesForPet(petId, text);
+        if (bytes == null || bytes.length == 0) {
+            return null;
+        }
+        String mime = guessMimeType(null, bytes);
+        return new SynthesizedAudio(mime, Base64.getEncoder().encodeToString(bytes), bytes);
+    }
+
+    /** Raw audio bytes for server-side upload (chat cold-open voice). */
+    public byte[] synthesizeBytesForPet(String petId, String text) {
         if (!enabled) {
             log.info("Pet TTS skipped: disabled");
             return null;
@@ -81,7 +95,7 @@ public class DashScopeTtsService {
                 return null;
             }
             log.info("Pet TTS ok: petId={}, bytes={}", petId, bytes.length);
-            return new SynthesizedAudio(guessMimeType(audioUrl, bytes), Base64.getEncoder().encodeToString(bytes));
+            return bytes;
         } catch (Exception e) {
             log.warn("Pet TTS synthesis failed for pet {}: {}", petId, e.getMessage());
             return null;

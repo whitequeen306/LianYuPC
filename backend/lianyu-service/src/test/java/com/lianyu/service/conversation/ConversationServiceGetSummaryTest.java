@@ -3,6 +3,7 @@ package com.lianyu.service.conversation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -73,8 +74,12 @@ class ConversationServiceGetSummaryTest {
                 messageMapper,
                 groupMemberMapper,
                 characterMapper,
+                mock(com.lianyu.dao.mapper.CharacterSquareTemplateMapper.class),
                 userMapper,
                 aiChatService,
+                mock(com.lianyu.service.ai.PetMeetVoiceCatalog.class),
+                mock(com.lianyu.service.ai.PetVoiceRegistry.class),
+                mock(com.lianyu.service.ai.DashScopeTtsService.class),
                 null,
                 promptBuilder,
                 memoryRetriever,

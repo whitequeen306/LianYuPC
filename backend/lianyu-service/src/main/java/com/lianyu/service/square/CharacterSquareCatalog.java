@@ -140,6 +140,7 @@ public final class CharacterSquareCatalog {
                         promptEnMahiru())
         ));
         CharacterSquareCatalogGenshin.register(map);
+        CharacterSquareCatalogHonkai.register(map);
         CharacterSquareCatalogDal.register(map);
         CharacterSquareCatalogBlueArchive.register(map);
         CharacterSquareCatalogReZero.register(map);
@@ -155,7 +156,7 @@ public final class CharacterSquareCatalog {
             "nilou", "klee", "raiden", "mavuika", "noelle", "aru", "hoshino", "hina", "shiroko", "hikari",
             "nozomi", "mari", "mutsuki", "emilia", "rem", "beatrice", "ram", "minerva", "echidna",
             "petra", "yu_nianan", "zhongli", "enoshima_junko", "kirigiri_kyoko", "nanami_chiaki",
-            "fukawa_toko", "asahina_aoi"
+            "fukawa_toko", "asahina_aoi", "ayaka", "elysia"
     );
 
     public static String slugForSortOrder(int sortOrder) {

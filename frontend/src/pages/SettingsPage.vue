@@ -71,7 +71,7 @@
         </div>
         <div v-if="desktopForm.showDesktopPet" class="desktop-settings__pet-block">
           <div class="desktop-settings__label">桌宠角色</div>
-          <div class="desktop-settings__hint">选择关闭主窗口后在桌面显示的角色形象</div>
+          <div class="desktop-settings__hint">选择关闭主窗口后在桌面显示的角色形象；带「语音」标记的支持截图问候与点击/拖跑常驻语音</div>
           <div class="pet-picker">
             <button
               v-for="pet in petCatalog"
@@ -81,6 +81,7 @@
               :class="{ 'is-active': desktopForm.launcherPetId === pet.id }"
               @click="selectPet(pet.id)"
             >
+              <span v-if="petHasInteractiveVoice(pet)" class="pet-picker__voice-badge">语音</span>
               <img :src="pet.previewUrl" :alt="petDisplayName(pet)" class="pet-picker__img" />
               <span class="pet-picker__name">{{ petDisplayName(pet) }}</span>
             </button>
@@ -272,7 +273,7 @@ import { useProvidersStore } from '@/stores/providers'
 import { useDesktopStore } from '@/stores/desktop'
 import { useSettingsStore } from '@/stores/settings'
 import { getElectronAPI, isElectronApp } from '@/utils/electron'
-import { PET_CATALOG, getPetPreviewUrl } from '@/constants/petCatalog'
+import { PET_CATALOG, getPetPreviewUrl, petHasInteractiveVoice } from '@/constants/petCatalog'
 
 const { t } = useI18n()
 import { Plus, Edit, Delete, RefreshRight, Loading, Connection, Promotion, ArrowLeft, Download, FolderOpened } from '@element-plus/icons-vue'
@@ -688,16 +689,17 @@ async function handleFetchDialogModels() {
 }
 
 .pet-picker__item {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
   padding: $space-2;
   border: 2px solid transparent;
-  border-radius: 12px;
+  border-radius: $radius-md;
   background: rgba(255, 255, 255, 0.03);
   cursor: pointer;
-  transition: border-color 0.2s ease, background 0.2s ease, transform 0.15s ease;
+  transition: border-color $transition-fast, background $transition-fast, transform $transition-fast;
 
   &:hover {
     background: rgba($color-pink-rgb, 0.08);
@@ -709,6 +711,22 @@ async function handleFetchDialogModels() {
     background: rgba($color-pink-rgb, 0.12);
     box-shadow: 0 0 0 1px rgba($color-pink-rgb, 0.2);
   }
+}
+
+.pet-picker__voice-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+  padding: 1px 6px;
+  border-radius: $radius-pill;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  color: $color-text-inverse;
+  background: $color-pink-primary;
+  pointer-events: none;
 }
 
 .pet-picker__img {

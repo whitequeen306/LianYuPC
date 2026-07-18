@@ -15,6 +15,8 @@ public class Message {
     private Long characterId;
     private String content;
     private String imageUrl;
+    /** Client asset path (pet/voice/...) or future object-storage URL */
+    private String audioUrl;
     private Integer tokens;
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;

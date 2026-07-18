@@ -58,8 +58,12 @@ class ConversationServiceStreamErrorTest {
     @Mock private MessageMapper messageMapper;
     @Mock private GroupMemberMapper groupMemberMapper;
     @Mock private CharacterMapper characterMapper;
+    @Mock private com.lianyu.dao.mapper.CharacterSquareTemplateMapper squareTemplateMapper;
     @Mock private UserMapper userMapper;
     @Mock private AiChatService aiChatService;
+    @Mock private com.lianyu.service.ai.PetMeetVoiceCatalog petMeetVoiceCatalog;
+    @Mock private com.lianyu.service.ai.PetVoiceRegistry petVoiceRegistry;
+    @Mock private com.lianyu.service.ai.DashScopeTtsService dashScopeTtsService;
     @Mock private ChatTurnFacade chatTurnFacade;
     @Mock private CharacterPromptBuilder promptBuilder;
     @Mock private MemoryRetriever memoryRetriever;
@@ -89,8 +93,12 @@ class ConversationServiceStreamErrorTest {
                 messageMapper,
                 groupMemberMapper,
                 characterMapper,
+                squareTemplateMapper,
                 userMapper,
                 aiChatService,
+                petMeetVoiceCatalog,
+                petVoiceRegistry,
+                dashScopeTtsService,
                 chatTurnFacade,
                 promptBuilder,
                 memoryRetriever,

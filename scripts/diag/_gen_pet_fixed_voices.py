@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""Generate fixed click/run/meet/enter/noon/evening WAV clips for VC pets via DashScope qwen3-tts-vc."""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+OUT_ROOT = ROOT / "frontend" / "public" / "pet" / "voice"
+PET_VOICES = ROOT / "backend" / "lianyu-service" / "src" / "main" / "resources" / "pet-voices.json"
+SYNTH_URL = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+
+# Keep in sync with frontend/src/constants/petCatalog.js fixedVoiceLines
+# and backend PetMeetVoiceCatalog
+LINES: dict[str, dict[str, str]] = {
+    "raiden": {
+        "meet": "……你来了。",
+        "enter": "回来了？",
+        "noon": "午安。",
+        "evening": "夜深了。",
+        "wait": "……还不回？",
+        "click": "何事？",
+        "run": "跟上。",
+    },
+    "ayaka": {
+        "meet": "初次见面，请多关照。",
+        "enter": "欢迎回来。",
+        "noon": "中午好，用过膳了吗？",
+        "evening": "晚上好，今天辛苦了。",
+        "wait": "请问……是有什么事耽搁了吗？",
+        "click": "有什么事吗？",
+        "run": "请当心脚下。",
+    },
+    "ganyu": {
+        "meet": "你好……我是甘雨。",
+        "enter": "啊…你回来了。",
+        "noon": "中午了……记得吃饭。",
+        "evening": "晚上好……别太晚睡。",
+        "wait": "那个……你还在吗？",
+        "click": "啊…找我吗？",
+        "run": "我跟上了…",
+    },
+    "klee": {
+        "meet": "哇！新朋友！可莉是可莉！",
+        "enter": "欸嘿！你回来啦！",
+        "noon": "中午啦！可莉肚子饿了！",
+        "evening": "晚上好！可莉想你啦！",
+        "wait": "诶？怎么不回可莉呀？",
+        "click": "嘿嘿，找可莉玩吗？",
+        "run": "可莉跑起来啦！",
+    },
+    "elysia": {
+        "meet": "嗨～很高兴遇见你。",
+        "enter": "哎呀，你来啦～",
+        "noon": "午安呀，吃点好吃的了吗？",
+        "evening": "晚上好～今天过得开心吗？",
+        "wait": "不回人家消息吗？",
+        "click": "嗨～找人家有事？",
+        "run": "跟紧我哦。",
+    },
+}
+
+
+def load_dotenv() -> dict[str, str]:
+    env: dict[str, str] = {}
+    path = ROOT / ".env"
+    if not path.exists():
+        return env
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        env[k.strip()] = v.strip().strip('"').strip("'")
+    return env
+
+
+def http_json(url: str, payload: dict, api_key: str) -> dict:
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def download(url: str) -> bytes:
+    with urllib.request.urlopen(url, timeout=60) as resp:
+        return resp.read()
+
+
+def synth(api_key: str, model: str, voice: str, text: str) -> bytes:
+    body = {
+        "model": model,
+        "input": {
+            "text": text,
+            "voice": voice,
+            "language_type": "Chinese",
+        },
+    }
+    root = http_json(SYNTH_URL, body, api_key)
+    audio_url = (((root.get("output") or {}).get("audio") or {}).get("url")) or ""
+    if not audio_url:
+        raise RuntimeError(f"missing audio url: {json.dumps(root, ensure_ascii=False)[:400]}")
+    return download(audio_url)
+
+
+def main() -> int:
+    env = load_dotenv()
+    api_key = os.environ.get("DASHSCOPE_API_KEY") or env.get("DASHSCOPE_API_KEY") or ""
+    if not api_key:
+        print("ERROR: DASHSCOPE_API_KEY missing", file=sys.stderr)
+        return 1
+
+    voices_doc = json.loads(PET_VOICES.read_text(encoding="utf-8"))
+    model = voices_doc.get("model") or "qwen3-tts-vc-2026-01-22"
+    voice_map: dict[str, str] = voices_doc.get("voices") or {}
+
+    args = [a for a in sys.argv[1:] if a != "--force"]
+    force = "--force" in sys.argv
+    only_kinds = None
+    only_pets = set()
+    for a in args:
+        if a.startswith("kind="):
+            only_kinds = set(a.split("=", 1)[1].split(","))
+        else:
+            only_pets.add(a)
+    if not only_pets:
+        only_pets = set(LINES.keys())
+
+    ok = 0
+    for pet_id, lines in LINES.items():
+        if pet_id not in only_pets:
+            continue
+        voice = voice_map.get(pet_id)
+        if not voice:
+            print(f"SKIP {pet_id}: no voice mapping")
+            continue
+        out_dir = OUT_ROOT / pet_id
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for kind, text in lines.items():
+            if only_kinds is not None and kind not in only_kinds:
+                continue
+            out_path = out_dir / f"{kind}.wav"
+            if out_path.exists() and out_path.stat().st_size > 1000 and not force:
+                print(f"KEEP {out_path.relative_to(ROOT)}")
+                ok += 1
+                continue
+            print(f"GEN  {pet_id}/{kind}: {text}")
+            try:
+                audio = synth(api_key, model, voice, text)
+            except urllib.error.HTTPError as e:
+                err = e.read().decode("utf-8", errors="replace")
+                print(f"FAIL {pet_id}/{kind}: HTTP {e.code} {err[:300]}", file=sys.stderr)
+                return 1
+            out_path.write_bytes(audio)
+            print(f"OK   {out_path.relative_to(ROOT)} ({len(audio)} bytes)")
+            ok += 1
+            time.sleep(0.8)
+    print(f"done clips={ok}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

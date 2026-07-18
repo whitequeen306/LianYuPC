@@ -6,11 +6,13 @@ import com.lianyu.common.constant.AiConstants;
 import com.lianyu.common.exception.BusinessException;
 import com.lianyu.common.util.UserInputSanitizer;
 import com.lianyu.dao.entity.Character;
+import com.lianyu.dao.entity.CharacterSquareTemplate;
 import com.lianyu.dao.entity.Conversation;
 import com.lianyu.dao.entity.GroupMember;
 import com.lianyu.dao.entity.Message;
 import com.lianyu.dao.entity.User;
 import com.lianyu.dao.mapper.CharacterMapper;
+import com.lianyu.dao.mapper.CharacterSquareTemplateMapper;
 import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.GroupMemberMapper;
 import com.lianyu.dao.mapper.MessageMapper;
@@ -19,6 +21,9 @@ import com.lianyu.ai.graph.ChatTurnScene;
 import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.AssistantReplyService;
 import com.lianyu.service.ai.CharacterPromptBuilder;
+import com.lianyu.service.ai.DashScopeTtsService;
+import com.lianyu.service.ai.PetMeetVoiceCatalog;
+import com.lianyu.service.ai.PetVoiceRegistry;
 import com.lianyu.service.graph.ChatTurnCommand;
 import com.lianyu.service.graph.ChatTurnFacade;
 import com.lianyu.service.graph.ChatTurnResult;
@@ -71,13 +76,24 @@ public class ConversationService {
     private static final String SEQ_KEY_PREFIX = "msg_seq:";
     private static final String GROUP_TURN_KEY_PREFIX = "group_chat:turn:";
     private static final String COLD_OPEN_LOCK_PREFIX = "coldopen:lock:";
+    private static final String FIXED_VOICE_ENTER_PREFIX = "chat:fixed-voice:enter:";
+    private static final String FIXED_VOICE_SLOT_PREFIX = "chat:fixed-voice:slot:";
+    private static final java.time.ZoneId FIXED_VOICE_ZONE = java.time.ZoneId.of("Asia/Shanghai");
+    /** Re-enter chat voice at most once per this TTL. */
+    private static final java.time.Duration ENTER_VOICE_COOLDOWN = java.time.Duration.ofHours(6);
+    /** Skip enter voice if last activity was more recent than this. */
+    private static final long ENTER_MIN_IDLE_MINUTES = 20;
 
     private final ConversationMapper conversationMapper;
     private final MessageMapper messageMapper;
     private final GroupMemberMapper groupMemberMapper;
     private final CharacterMapper characterMapper;
+    private final CharacterSquareTemplateMapper squareTemplateMapper;
     private final UserMapper userMapper;
     private final AiChatService aiChatService;
+    private final PetMeetVoiceCatalog petMeetVoiceCatalog;
+    private final PetVoiceRegistry petVoiceRegistry;
+    private final DashScopeTtsService dashScopeTtsService;
     private final ChatTurnFacade chatTurnFacade;
     private final CharacterPromptBuilder promptBuilder;
     private final MemoryRetriever memoryRetriever;
@@ -505,8 +521,20 @@ public class ConversationService {
                 return;
             }
 
+            String vcPetId = resolveVcPetId(character);
+            if (vcPetId != null) {
+                if (sendAiColdOpenWithVoice(userId, conversationId, character, vcPetId)) {
+                    return;
+                }
+                // TTS/AI failure fallback: fixed meet clip so open is never silent for VC pets.
+                if (trySendFixedMeetVoice(userId, conversationId, character)) {
+                    return;
+                }
+            }
+
             CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
-            int maxPieces = behavior.maxRepliesPerTurn();
+            // Cold-open text: 1–2 short lines (not the full chat burst budget).
+            int maxPieces = Math.min(2, Math.max(1, behavior.maxRepliesPerTurn()));
             String memoryContext = memoryRetriever.retrieveProfileContext(character.getId(), userId);
             String systemPrompt = proactiveSystemPrompt(userId, character, memoryContext, null);
 
@@ -541,6 +569,296 @@ public class ConversationService {
         } finally {
             redisTemplate.delete(lockKey);
         }
+    }
+
+    /**
+     * VC square pets: AI writes 1 voice line (+ optional 1 text), TTS the first into a voice bubble.
+     * Keeps ice-break presence without flooding (max 1 voice + 1 text).
+     */
+    private boolean sendAiColdOpenWithVoice(Long userId,
+                                            Long conversationId,
+                                            Character character,
+                                            String petId) {
+        String memoryContext = memoryRetriever.retrieveProfileContext(character.getId(), userId);
+        String systemPrompt = proactiveSystemPrompt(userId, character, memoryContext, null);
+
+        AiChatRequest aiRequest = new AiChatRequest();
+        ChatToolContext.bindTo(aiRequest, character);
+        aiRequest.setProvider(AiConstants.PLATFORM_PROVIDER);
+        List<MessageDto> allMessages = new ArrayList<>();
+        allMessages.add(buildSystemMessage(systemPrompt));
+        allMessages.add(buildUserMessage("""
+                这是你和该用户在本会话里的第一次开口（会话中还没有任何历史消息）。
+                请按下面格式输出破冰内容（用空行分隔），控制数量：
+                第一行：一句适合朗读的短问候（8～28字，口语自然，不要括号旁白、不要引号、不要多句）
+                第二行（可选）：一句短文字关心（≤30字）；若只需一句就不要写第二行
+                总共最多两行，不要更多。"""));
+        aiRequest.setMessages(allMessages);
+
+        ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
+        if (findLastMessage(conversationId) != null) {
+            return true;
+        }
+        List<String> pieces = splitColdOpenPieces(chatResult.getContent(), 2);
+        if (pieces.isEmpty()) {
+            return false;
+        }
+
+        String voiceLine = pieces.get(0);
+        String audioObjectKey = synthesizeAndStoreChatVoice(petId, voiceLine);
+        if (audioObjectKey == null) {
+            return false;
+        }
+
+        long seq = getNextSeq(conversationId);
+        Message voiceMsg = new Message();
+        voiceMsg.setSeq(seq);
+        voiceMsg.setConversationId(conversationId);
+        voiceMsg.setRole("ASSISTANT");
+        voiceMsg.setCharacterId(character.getId());
+        voiceMsg.setContent(voiceLine);
+        voiceMsg.setAudioUrl(audioObjectKey);
+        voiceMsg.setTokens(chatResult.getTotalTokens());
+        messageMapper.insert(voiceMsg);
+
+        if (pieces.size() > 1) {
+            Message textMsg = new Message();
+            textMsg.setSeq(getNextSeq(conversationId));
+            textMsg.setConversationId(conversationId);
+            textMsg.setRole("ASSISTANT");
+            textMsg.setCharacterId(character.getId());
+            textMsg.setContent(pieces.get(1));
+            messageMapper.insert(textMsg);
+        }
+
+        memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
+        notificationService.notifyProactiveMessage(
+                userId, conversationId, character.getId(), character.getName(), voiceLine);
+        log.info("Cold open AI voice: convId={}, petId={}, pieces={}", conversationId, petId, pieces.size());
+        return true;
+    }
+
+    private String resolveVcPetId(Character character) {
+        if (character == null || character.getSourceTemplateId() == null) {
+            return null;
+        }
+        CharacterSquareTemplate template = squareTemplateMapper.selectById(character.getSourceTemplateId());
+        if (template == null || template.getSlug() == null) {
+            return null;
+        }
+        String slug = template.getSlug().trim().toLowerCase();
+        return petVoiceRegistry.hasVoice(slug) ? slug : null;
+    }
+
+    private String synthesizeAndStoreChatVoice(String petId, String text) {
+        try {
+            byte[] bytes = dashScopeTtsService.synthesizeBytesForPet(petId, text);
+            if (bytes == null || bytes.length == 0) {
+                return null;
+            }
+            return fileStorageService.uploadChatVoiceBytes(petId, bytes, "audio/wav");
+        } catch (Exception e) {
+            log.warn("Cold open TTS store failed: petId={}, reason={}", petId, e.getMessage());
+            return null;
+        }
+    }
+
+    private List<String> splitColdOpenPieces(String fullContent, int maxPieces) {
+        int capped = Math.max(1, Math.min(maxPieces, 2));
+        AssistantReplyService.ProcessedReply processed = assistantReplyService.process(fullContent, capped);
+        List<String> out = new ArrayList<>();
+        for (String piece : processed.pieces()) {
+            String cleaned = sanitizeAssistantText(piece);
+            if (!cleaned.isBlank()) {
+                out.add(cleaned);
+            }
+            if (out.size() >= capped) {
+                break;
+            }
+        }
+        return out;
+    }
+
+    /**
+     * User opened a SINGLE chat page. VC square pets may send a short fixed "welcome back" voice
+     * (enter), alternating with normal text/AI turns elsewhere. Cooldown + idle gate avoid spam.
+     */
+    @Transactional
+    public List<MessageResponse> onSingleChatOpened(Long userId, Long conversationId) {
+        Conversation conversation = findOwned(userId, conversationId);
+        if (!"SINGLE".equalsIgnoreCase(conversation.getMode())) {
+            return List.of();
+        }
+        Character character = characterMapper.selectById(conversation.getCharacterId());
+        if (character == null) {
+            return List.of();
+        }
+        try {
+            ensureCharacterAvailableForProactive(character);
+        } catch (BusinessException e) {
+            return List.of();
+        }
+        Message last = findLastMessage(conversationId);
+        if (last == null) {
+            // First open: cold-open / meet voice owns the empty session.
+            return List.of();
+        }
+        if (last.getCreatedAt() != null
+                && last.getCreatedAt().isAfter(java.time.LocalDateTime.now().minusMinutes(ENTER_MIN_IDLE_MINUTES))) {
+            return List.of();
+        }
+        String enterKey = FIXED_VOICE_ENTER_PREFIX + conversationId;
+        Boolean acquired = redisTemplate.opsForValue().setIfAbsent(enterKey, "1", ENTER_VOICE_COOLDOWN);
+        if (!Boolean.TRUE.equals(acquired)) {
+            return List.of();
+        }
+        MessageResponse sent = insertFixedVoiceIfPresent(
+                userId, conversationId, character, PetMeetVoiceCatalog.Kind.ENTER);
+        if (sent == null) {
+            redisTemplate.delete(enterKey);
+            return List.of();
+        }
+        return List.of(sent);
+    }
+
+    /**
+     * After two unreplied AI proactives: one character-flavored fixed "why no reply" voice,
+     * then pause further proactives until the user replies.
+     */
+    @Transactional
+    public List<MessageResponse> trySendWaitNudgeVoice(Long userId, Long conversationId) {
+        Conversation conversation = findOwned(userId, conversationId);
+        if (!"SINGLE".equalsIgnoreCase(conversation.getMode())) {
+            return List.of();
+        }
+        if (!proactiveUnrepliedThrottle.shouldSendWaitVoice(conversationId)) {
+            return List.of();
+        }
+        Character character = characterMapper.selectById(conversation.getCharacterId());
+        if (character == null) {
+            return List.of();
+        }
+        try {
+            ensureCharacterAvailableForProactive(character);
+        } catch (BusinessException e) {
+            return List.of();
+        }
+        MessageResponse sent = insertFixedVoiceIfPresent(
+                userId, conversationId, character, PetMeetVoiceCatalog.Kind.WAIT);
+        if (sent == null) {
+            return List.of();
+        }
+        proactiveUnrepliedThrottle.markWaitVoiceSent(conversationId);
+        return List.of(sent);
+    }
+
+    /**
+     * Noon / evening fixed voice for VC square pets. Returns a reply list when sent;
+     * caller should apply proactive cooldown. Daily per-slot Redis key prevents repeats.
+     */
+    @Transactional
+    public List<MessageResponse> trySendTimedFixedVoice(Long userId, Long conversationId) {
+        Conversation conversation = findOwned(userId, conversationId);
+        if (!"SINGLE".equalsIgnoreCase(conversation.getMode())) {
+            return List.of();
+        }
+        Character character = characterMapper.selectById(conversation.getCharacterId());
+        if (character == null) {
+            return List.of();
+        }
+        try {
+            ensureCharacterAvailableForProactive(character);
+        } catch (BusinessException e) {
+            return List.of();
+        }
+        if (proactiveUnrepliedThrottle.isPaused(conversationId)) {
+            return List.of();
+        }
+        if (findLastMessage(conversationId) == null) {
+            return List.of();
+        }
+        PetMeetVoiceCatalog.Kind slot = resolveTimedVoiceSlot(java.time.LocalTime.now(FIXED_VOICE_ZONE));
+        if (slot == null) {
+            return List.of();
+        }
+        String day = java.time.LocalDate.now(FIXED_VOICE_ZONE).toString();
+        String slotKey = FIXED_VOICE_SLOT_PREFIX + slot.fileStem() + ":" + conversationId + ":" + day;
+        Boolean acquired = redisTemplate.opsForValue()
+                .setIfAbsent(slotKey, "1", java.time.Duration.ofHours(26));
+        if (!Boolean.TRUE.equals(acquired)) {
+            return List.of();
+        }
+        MessageResponse sent = insertFixedVoiceIfPresent(userId, conversationId, character, slot);
+        if (sent == null) {
+            redisTemplate.delete(slotKey);
+            return List.of();
+        }
+        return List.of(sent);
+    }
+
+    /** Asia/Shanghai: noon 11:30–13:30, evening 18:30–21:00. */
+    public static PetMeetVoiceCatalog.Kind resolveTimedVoiceSlot(java.time.LocalTime localTime) {
+        if (localTime == null) {
+            return null;
+        }
+        java.time.LocalTime noonStart = java.time.LocalTime.of(11, 30);
+        java.time.LocalTime noonEnd = java.time.LocalTime.of(13, 30);
+        java.time.LocalTime eveningStart = java.time.LocalTime.of(18, 30);
+        java.time.LocalTime eveningEnd = java.time.LocalTime.of(21, 0);
+        if (!localTime.isBefore(noonStart) && localTime.isBefore(noonEnd)) {
+            return PetMeetVoiceCatalog.Kind.NOON;
+        }
+        if (!localTime.isBefore(eveningStart) && localTime.isBefore(eveningEnd)) {
+            return PetMeetVoiceCatalog.Kind.EVENING;
+        }
+        return null;
+    }
+
+    /**
+     * Square characters with a desktop-pet VC mapping get a fixed first-meet voice message
+     * instead of an AI-generated cold-open line.
+     */
+    private boolean trySendFixedMeetVoice(Long userId, Long conversationId, Character character) {
+        if (findLastMessage(conversationId) != null) {
+            return true;
+        }
+        return insertFixedVoiceIfPresent(userId, conversationId, character, PetMeetVoiceCatalog.Kind.MEET)
+                != null;
+    }
+
+    private MessageResponse insertFixedVoiceIfPresent(Long userId,
+                                                      Long conversationId,
+                                                      Character character,
+                                                      PetMeetVoiceCatalog.Kind kind) {
+        if (character.getSourceTemplateId() == null) {
+            return null;
+        }
+        CharacterSquareTemplate template = squareTemplateMapper.selectById(character.getSourceTemplateId());
+        if (template == null || template.getSlug() == null) {
+            return null;
+        }
+        PetMeetVoiceCatalog.MeetClip clip = petMeetVoiceCatalog.find(template.getSlug(), kind);
+        if (clip == null || !PetMeetVoiceCatalog.isSafeClientAudioPath(clip.audioPath())) {
+            return null;
+        }
+        long seq = getNextSeq(conversationId);
+        Message assistantMsg = new Message();
+        assistantMsg.setSeq(seq);
+        assistantMsg.setConversationId(conversationId);
+        assistantMsg.setRole("ASSISTANT");
+        assistantMsg.setCharacterId(character.getId());
+        assistantMsg.setContent(clip.text());
+        assistantMsg.setAudioUrl(clip.audioPath());
+        messageMapper.insert(assistantMsg);
+        notificationService.notifyProactiveMessage(
+                userId,
+                conversationId,
+                character.getId(),
+                character.getName(),
+                clip.text());
+        log.info("Fixed chat voice: convId={}, kind={}, petId={}, slug={}",
+                conversationId, kind.fileStem(), clip.petId(), template.getSlug());
+        return toMessageResponse(assistantMsg);
     }
 
     /**
@@ -1020,8 +1338,21 @@ public class ConversationService {
                 .characterId(msg.getCharacterId())
                 .content(msg.getContent())
                 .imageUrl(fileStorageService.resolvePublicUrl(msg.getImageUrl()))
+                .audioUrl(resolveMessageAudioUrl(msg.getAudioUrl()))
                 .tokens(msg.getTokens())
                 .createdAt(msg.getCreatedAt())
                 .build();
+    }
+
+    /** Client-bundled pet clips stay as relative paths; remote URLs go through storage resolver. */
+    private String resolveMessageAudioUrl(String audioUrl) {
+        if (audioUrl == null || audioUrl.isBlank()) {
+            return null;
+        }
+        String trimmed = audioUrl.trim();
+        if (PetMeetVoiceCatalog.isSafeClientAudioPath(trimmed)) {
+            return trimmed;
+        }
+        return fileStorageService.resolvePublicUrl(trimmed);
     }
 }

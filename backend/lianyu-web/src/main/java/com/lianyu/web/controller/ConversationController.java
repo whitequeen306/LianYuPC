@@ -110,4 +110,13 @@ public class ConversationController {
         long userId = StpUtil.getLoginIdAsLong();
         return Result.ok(conversationService.getMessages(userId, id, beforeSeq, limit));
     }
+
+    @Operation(summary = "进入单聊页（可触发固定欢迎语音）")
+    @PostMapping("/{id}/opened")
+    public Result<List<MessageResponse>> opened(@PathVariable("id") Long id) {
+        long userId = StpUtil.getLoginIdAsLong();
+        authRateLimiter.checkRateLimit("rate:opened:", String.valueOf(userId),
+                30, java.time.Duration.ofMinutes(1), "操作过于频繁，请稍后再试");
+        return Result.ok(conversationService.onSingleChatOpened(userId, id));
+    }
 }

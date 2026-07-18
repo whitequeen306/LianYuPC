@@ -91,6 +91,11 @@ public class ProactiveChatScheduler {
         Map<Long, Long> userMsgCountMap = loadUserMessageCounts(convIds, activitySince);
         Map<String, CharacterState> stateMap = loadCharacterStates(candidates);
 
+        // Fixed noon/evening voice: shorter idle (15m), once per slot per day — before AI text.
+        int timedSent = trySendTimedFixedVoices(candidates, characterMap, latestMessageMap);
+        // After 2 unreplied AI proactives: one fixed "why no reply" voice, then pause.
+        int waitSent = trySendWaitNudgeVoices(candidates, characterMap, latestMessageMap);
+
         List<ScoredCandidate> scored = new ArrayList<>();
         for (Conversation conv : candidates) {
             Character character = characterMap.get(conv.getCharacterId());
@@ -126,13 +131,17 @@ public class ProactiveChatScheduler {
 
         scored.sort(Comparator.comparingDouble(ScoredCandidate::effectiveProb).reversed());
 
-        int sent = 0;
+        int sent = timedSent + waitSent;
         int quota = Math.max(1, maxConversationsPerRun);
+
         for (ScoredCandidate item : scored) {
             if (sent >= quota) {
                 break;
             }
             if (ThreadLocalRandom.current().nextDouble() > item.effectiveProb()) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(redisTemplate.hasKey(cooldownKey(item.conv().getId())))) {
                 continue;
             }
             try {
@@ -154,6 +163,93 @@ public class ProactiveChatScheduler {
                 log.debug("Proactive chat skipped for convId={}, reason={}", item.conv().getId(), e.getMessage());
             }
         }
+    }
+
+    private int trySendWaitNudgeVoices(List<Conversation> candidates,
+                                       Map<Long, Character> characterMap,
+                                       Map<Long, Message> latestMessageMap) {
+        int sent = 0;
+        int quota = Math.max(1, maxConversationsPerRun);
+        for (Conversation conv : candidates) {
+            if (sent >= quota) {
+                break;
+            }
+            if (!proactiveUnrepliedThrottle.shouldSendWaitVoice(conv.getId())) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(redisTemplate.hasKey(cooldownKey(conv.getId())))) {
+                continue;
+            }
+            Message last = latestMessageMap.get(conv.getId());
+            if (last == null || !"ASSISTANT".equalsIgnoreCase(last.getRole())) {
+                continue;
+            }
+            Character character = characterMap.get(conv.getCharacterId());
+            CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
+            if (!behavior.proactiveEnabled()) {
+                continue;
+            }
+            try {
+                var replies = conversationService.trySendWaitNudgeVoice(conv.getUserId(), conv.getId());
+                if (!replies.isEmpty()) {
+                    sent++;
+                    setCooldown(conv.getId(), behavior);
+                    log.info("Proactive wait voice: convId={}, character={}",
+                            conv.getId(), character != null ? character.getName() : "-");
+                }
+            } catch (Exception e) {
+                log.debug("Proactive wait voice skipped for convId={}, reason={}",
+                        conv.getId(), e.getMessage());
+            }
+        }
+        return sent;
+    }
+
+    private int trySendTimedFixedVoices(List<Conversation> candidates,
+                                        Map<Long, Character> characterMap,
+                                        Map<Long, Message> latestMessageMap) {
+        if (ConversationService.resolveTimedVoiceSlot(java.time.LocalTime.now(
+                java.time.ZoneId.of("Asia/Shanghai"))) == null) {
+            return 0;
+        }
+        int sent = 0;
+        int quota = Math.max(1, maxConversationsPerRun);
+        for (Conversation conv : candidates) {
+            if (sent >= quota) {
+                break;
+            }
+            if (Boolean.TRUE.equals(redisTemplate.hasKey(cooldownKey(conv.getId())))) {
+                continue;
+            }
+            if (proactiveUnrepliedThrottle.isPaused(conv.getId())) {
+                continue;
+            }
+            Message last = latestMessageMap.get(conv.getId());
+            if (last == null || last.getCreatedAt() == null) {
+                continue;
+            }
+            if (last.getCreatedAt().isAfter(LocalDateTime.now().minusMinutes(15))) {
+                continue;
+            }
+            Character character = characterMap.get(conv.getCharacterId());
+            CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
+            if (!behavior.proactiveEnabled()) {
+                continue;
+            }
+            try {
+                var fixed = conversationService.trySendTimedFixedVoice(conv.getUserId(), conv.getId());
+                if (!fixed.isEmpty()) {
+                    sent++;
+                    setCooldown(conv.getId(), behavior);
+                    log.info("Proactive fixed voice: convId={}, character={}",
+                            conv.getId(), character != null ? character.getName() : "-");
+                }
+            } catch (Exception e) {
+                log.debug("Proactive fixed voice skipped for convId={}, reason={}",
+                        conv.getId(), e.getMessage());
+            }
+        }
+        return sent;
     }
 
     private Map<Long, Long> loadUserMessageCounts(List<Long> convIds, LocalDateTime since) {

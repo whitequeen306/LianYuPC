@@ -14,6 +14,7 @@ public class MessageResponse {
     private Long characterId;
     private String content;
     private String imageUrl;
+    private String audioUrl;
     private Integer tokens;
     private LocalDateTime createdAt;
 }

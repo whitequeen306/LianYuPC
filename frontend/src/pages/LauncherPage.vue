@@ -50,6 +50,7 @@ import { useUserStore } from '@/stores/user'
 import { useCharactersStore } from '@/stores/characters'
 import { useConversationsStore } from '@/stores/conversations'
 import { DEFAULT_PET_ID, getPetById, getPetIdleUrl, getPetSpriteUrl, getPetPersona, getPetVoiceRate } from '@/constants/petCatalog'
+import { playPetFixedVoice, stopPetFixedVoice } from '@/utils/petFixedVoice'
 import { usePetSpriteAnimator } from '@/composables/usePetSpriteAnimator'
 import { refreshLauncherSession } from '@/auth/launcherBootstrap'
 
@@ -268,6 +269,7 @@ function onPointerMove(e) {
     const runAnim = totalDx >= 0 ? 'run-right' : 'run-left'
     state.runAnim = runAnim
     playAnim(runAnim, { loop: true })
+    playPetFixedVoice(currentPetId.value, 'run', { busy: isGreetingAudioBusy() })
   }
   if (state.moved) {
     const dx = e.screenX - state.lastScreenX
@@ -310,6 +312,7 @@ function onPointerUp(e) {
     clickTimer = setTimeout(() => {
       clickTimer = null
       playAnimOnce('wave')
+      playPetFixedVoice(currentPetId.value, 'click', { busy: isGreetingAudioBusy() })
       getElectronAPI()?.toggleCharacterPicker?.()
     }, 240)
   } else if (wasMoved) {
@@ -344,6 +347,10 @@ function stopGreetingAudio() {
   greetingAudio = null
 }
 
+function isGreetingAudioBusy() {
+  return !!greetingAudio && !greetingAudio.paused && !greetingAudio.ended
+}
+
 function playGreetingAudio(payload = {}) {
   const mime = payload.audioMimeType || 'audio/wav'
   const src = payload.audioUrl
@@ -352,6 +359,7 @@ function playGreetingAudio(payload = {}) {
     console.warn('[launcher] greeting has no audioUrl/audioBase64')
     return false
   }
+  stopPetFixedVoice()
   stopGreetingAudio()
   try {
     greetingAudio = new Audio(src)

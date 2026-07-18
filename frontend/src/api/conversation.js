@@ -44,6 +44,11 @@ export function getMessages(id, params = {}, options = {}) {
   })
 }
 
+/** Enter single-chat page — may insert a fixed welcome-back voice for VC pets. */
+export function notifyConversationOpened(id) {
+  return http.post(`/conversation/${id}/opened`, {}, { skipGlobalError: true })
+}
+
 export function createGroupConversation(data) {
   return http.post('/conversation/group', data)
 }

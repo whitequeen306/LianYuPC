@@ -92,8 +92,15 @@
             <div v-if="item.imageUrl" class="gal-bubble__image">
               <img :src="resolveMediaUrl(item.imageUrl)" alt="" @click="openImagePreview(item.imageUrl)" />
             </div>
+            <VoiceMessageBubble
+              v-if="item.audioUrl"
+              class="gal-bubble__voice"
+              :audio-url="item.audioUrl"
+              variant="hero"
+              :playback-rate="getPetVoiceRate(petIdFromAudioUrl(item.audioUrl))"
+            />
             <AssistantMessageContent
-              v-if="item.content"
+              v-else-if="item.content"
               :content="item.content"
               :show-inner-thoughts="showInnerThoughts"
               variant="chat"
@@ -234,7 +241,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useCharactersStore } from '@/stores/characters'
 import { useConversationsStore } from '@/stores/conversations'
 import { humanizeError } from '@/utils/errorMessage'
-import { getConversation, getMessages, sendMessageStream, uploadChatImage } from '@/api/conversation'
+import { getConversation, getMessages, notifyConversationOpened, sendMessageStream, uploadChatImage } from '@/api/conversation'
 import { fetchModels } from '@/api/ai'
 import { ArrowLeft, ArrowDown, ChatDotRound, Promotion, Picture, Close, User, UserFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -255,7 +262,14 @@ import { useStreamAbort, isNetworkError } from '@/composables/useStreamAbort'
 import { drainAssistantStream } from '@/utils/assistantStreamDrain'
 import { formatSmartTime } from '@/utils/feedTime'
 import AssistantMessageContent from '@/components/AssistantMessageContent.vue'
+import VoiceMessageBubble from '@/components/VoiceMessageBubble.vue'
+import { getPetVoiceRate } from '@/constants/petCatalog'
 import { stripInnerThoughts, resolveShowInnerThoughts } from '@/utils/innerThoughtFilter'
+
+function petIdFromAudioUrl(audioUrl) {
+  const m = String(audioUrl || '').match(/(?:pet\/voice|chat-voice)\/([a-z0-9-]+)\//i)
+  return m?.[1] || ''
+}
 
 const TIME_GAP_MS = 5 * 60 * 1000
 // 用户仅发图时填入 content 的占位文案；模板里据此隐藏重复文字（见 :85 与 :958 两处引用，改这里即同步）
@@ -428,7 +442,7 @@ function onActiveCharacterAvatarError() {
 
 function expandAssistantForDisplay(msg) {
   const displayContent = stripInnerThoughts(msg.content, showInnerThoughts.value)
-  if (!displayContent) return []
+  if (!displayContent && !msg.audioUrl && !msg.imageUrl) return []
   return [{
     ...msg,
     content: displayContent,
@@ -444,7 +458,7 @@ const messageTimeline = computed(() => {
       ? expandAssistantForDisplay(msg)
       : [{ ...msg, _key: msg.id || msg._tempId }]
     for (const part of parts) {
-      if (!part.content && !part.imageUrl) continue
+      if (!part.content && !part.imageUrl && !part.audioUrl) continue
       const ms = parseMessageTime(part)
       if (prevMs != null && ms - prevMs > TIME_GAP_MS) {
         items.push({
@@ -710,7 +724,8 @@ function mergePolledMessages(incoming) {
     if (!msg.id) continue
     const existing = byId.get(msg.id)
     if (existing) {
-      if (existing.content !== msg.content || existing.role !== msg.role || existing.imageUrl !== msg.imageUrl) {
+      if (existing.content !== msg.content || existing.role !== msg.role
+        || existing.imageUrl !== msg.imageUrl || existing.audioUrl !== msg.audioUrl) {
         Object.assign(existing, msg)
         changed = true
       }
@@ -785,6 +800,7 @@ async function loadConversation(convId) {
     const conv = await getConversation(convId)
     await resolveActiveCharacter(conv.characterId, conv)
     await loadRecentMessages(convId)
+    await maybeNotifyOpened(convId)
   } catch {
     messages.value = []
     activeCharacter.value = null
@@ -801,6 +817,20 @@ async function loadConversation(convId) {
     scheduleOpeningPollBurst()
   } else {
     stopFastPolling()
+  }
+}
+
+async function maybeNotifyOpened(convId) {
+  if (!convId || currentConvId.value !== convId) return
+  try {
+    const added = await notifyConversationOpened(convId)
+    if (!Array.isArray(added) || added.length === 0) return
+    if (currentConvId.value !== convId) return
+    mergePolledMessages(added)
+    await nextTick()
+    scrollToBottom({ force: true })
+  } catch {
+    // best-effort presence hook
   }
 }
 
