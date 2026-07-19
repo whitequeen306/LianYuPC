@@ -83,12 +83,11 @@ def release_assets(version: str, token: str) -> dict[str, dict[str, int | str]]:
     # 404s here and falls through to the listing fallback below). Assets are inlined.
     proc = subprocess.run(
         ["gh", "api", f"repos/{REPO}/releases/tags/v{version}"],
-        text=True,
         capture_output=True,
         check=False,
     )
     if proc.returncode == 0:
-        rel = json.loads(proc.stdout)
+        rel = json.loads(proc.stdout.decode("utf-8"))
         assets = rel.get("assets", []) or []
     else:
         # Fallback: list releases (per_page=100 covers this repo in one page) and merge
@@ -97,13 +96,15 @@ def release_assets(version: str, token: str) -> dict[str, dict[str, int | str]]:
         # Asset IDs are repo-global, so downloads work regardless of owning release.
         list_proc = subprocess.run(
             ["gh", "api", f"repos/{REPO}/releases?per_page=100"],
-            text=True,
             capture_output=True,
             check=False,
         )
         if list_proc.returncode != 0:
-            raise SystemExit(list_proc.stderr.strip() or list_proc.stdout.strip() or "gh api releases failed")
-        releases = json.loads(list_proc.stdout)
+            err = (list_proc.stderr or list_proc.stdout or b"gh api releases failed").decode(
+                "utf-8", errors="replace"
+            )
+            raise SystemExit(err.strip())
+        releases = json.loads(list_proc.stdout.decode("utf-8"))
         matches = [r for r in releases if r.get("tag_name") == f"v{version}"]
         if not matches:
             raise SystemExit(f"missing GitHub release: v{version}")
