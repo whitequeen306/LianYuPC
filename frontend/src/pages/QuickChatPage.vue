@@ -35,8 +35,15 @@
           :class="item.role === 'user' ? 'quick-chat__row--user' : 'quick-chat__row--hero'"
         >
           <div class="quick-chat__bubble">
+            <VoiceMessageBubble
+              v-if="item.audioUrl"
+              :audio-url="item.audioUrl"
+              :transcript="item.content || ''"
+              variant="hero"
+              :playback-rate="getPetVoiceRate(petIdFromAudioUrl(item.audioUrl))"
+            />
             <AssistantMessageContent
-              v-if="item.role === 'assistant' && item.content"
+              v-else-if="item.role === 'assistant' && item.content"
               :content="item.content"
               :show-inner-thoughts="showInnerThoughts"
               variant="chat"
@@ -90,8 +97,15 @@ import { useChatScroll, sleep, MIN_REPLY_DISPLAY_MS } from '@/composables/useCha
 import { useStreamAbort, isNetworkError } from '@/composables/useStreamAbort'
 import { drainAssistantStream } from '@/utils/assistantStreamDrain'
 import AssistantMessageContent from '@/components/AssistantMessageContent.vue'
+import VoiceMessageBubble from '@/components/VoiceMessageBubble.vue'
+import { getPetVoiceRate } from '@/constants/petCatalog'
 import { stripInnerThoughts, resolveShowInnerThoughts } from '@/utils/innerThoughtFilter'
 import { formatSmartTime } from '@/utils/feedTime'
+
+function petIdFromAudioUrl(audioUrl) {
+  const m = String(audioUrl || '').match(/(?:pet\/voice|chat-voice)\/([a-z0-9-]+)\//i)
+  return m?.[1] || ''
+}
 
 const TIME_GAP_MS = 5 * 60 * 1000
 
@@ -154,7 +168,8 @@ const messageTimeline = computed(() => {
     const visibleContent = role === 'assistant'
       ? stripInnerThoughts(msg.content, showInnerThoughts.value)
       : msg.content
-    if (!visibleContent?.trim()) continue
+    const hasAudio = !!msg.audioUrl
+    if (!hasAudio && !visibleContent?.trim()) continue
     const ms = parseMessageTime(msg)
     if (prevMs != null && ms - prevMs > TIME_GAP_MS) {
       items.push({
@@ -167,6 +182,7 @@ const messageTimeline = computed(() => {
       type: 'message',
       role,
       content: msg.content,
+      audioUrl: msg.audioUrl || '',
       _key: msg.id || msg._tempId || `${role}-${ms}`,
     })
     prevMs = ms

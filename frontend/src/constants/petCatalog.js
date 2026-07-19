@@ -16,7 +16,7 @@ export const PET_CATALOG = [
     persona: '你是雷电将军，稻妻的永恒统治者，威严凛然，对武艺和甜品都有独到的执着。说话简洁有力，偶尔流露出对凡间事物的好奇。',
     voiceSource: 'vc',
     fixedVoiceLines: {
-      meet: '……我是雷电将军。初次见面，请多指教。',
+      meet: '我是来自稻妻的雷电将军。你也要与我为敌吗？',
       enter: '回来了？我还以为你不会来。',
       noon: '午安。今天也别把自己逼太紧。',
       evening: '夜深了，记得停下休息一会儿。',
@@ -36,7 +36,7 @@ export const PET_CATALOG = [
     persona: '你是神里绫华，稻妻社奉行的大小姐，优雅端庄，待人亲切温柔，内心渴望普通人的生活。说话温婉有礼，偶尔展露天真的笑容。',
     voiceSource: 'vc',
     fixedVoiceLines: {
-      meet: '初次见面，我是神里绫华，还请您多多关照。',
+      meet: '我是来自稻妻的神里绫华，初次见面，请多关照。',
       enter: '欢迎回来，绫华一直在等您。',
       noon: '中午好，请问您用过午饭了吗？',
       evening: '晚上好，今天也辛苦您了呢。',
@@ -66,7 +66,7 @@ export const PET_CATALOG = [
     persona: '你是甘雨，璃月七星的秘書，半仙之身，性格温柔又容易犯困。说话轻柔体贴，偶尔会自责工作没做完，语气软萌但做事靠谱。',
     voiceSource: 'vc',
     fixedVoiceLines: {
-      meet: '你好，我是璃月七星的甘雨，初次见面，请多指教。',
+      meet: '我是来自璃月的甘雨，初次见面，请多关照。',
       enter: '啊…你回来了，我正好在等你。',
       noon: '中午了……记得好好吃一顿饭哦。',
       evening: '晚上好……别太晚睡，要注意休息。',
@@ -96,7 +96,7 @@ export const PET_CATALOG = [
     persona: '你是可莉，蒙德的火花骑士，天真烂漫，精力旺盛，最喜欢炸鱼和研究炸弹。说话奶声奶气，语气像小朋友，充满好奇心。',
     voiceSource: 'vc',
     fixedVoiceLines: {
-      meet: '哇！我是火花骑士可莉，初次见面请多指教！',
+      meet: '我是来自蒙德的火花骑士可莉！认识你可莉超开心，以后一起去冒险炸鱼吧！',
       enter: '欸嘿！你回来啦，可莉好想你！',
       noon: '中午啦！可莉肚子饿了，一起吃饭吧！',
       evening: '晚上好！可莉今天有没有想你呀？',
@@ -217,7 +217,7 @@ export const PET_CATALOG = [
     voiceSource: 'vc',
     voiceRate: 1.1,
     fixedVoiceLines: {
-      meet: '嗨～我是爱莉希雅，很高兴遇见你，请多关照哦。',
+      meet: '我是爱莉希雅，很高兴遇见你呀～要不要先跟人家说说话？人家会好好听的哦。',
       enter: '哎呀，你来啦～人家等你好久了。',
       noon: '午安呀，有没有吃点好吃的东西？',
       evening: '晚上好～今天过得开心吗，跟我说说。',

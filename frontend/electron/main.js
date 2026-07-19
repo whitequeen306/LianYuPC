@@ -742,7 +742,8 @@ function buildTrayMenu() {
   ])
 }
 
-const LAUNCHER_WINDOW = { width: 200, height: 268 }
+// Tall enough for voice caption above the 208px sprite without clipping.
+const LAUNCHER_WINDOW = { width: 200, height: 320 }
 /** 角色列表固定高度：不随角色数量变化 */
 const PICKER_PANEL_HEIGHT = 320
 const PICKER_PANEL_WIDTH = 320

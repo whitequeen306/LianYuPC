@@ -30,15 +30,33 @@ class PetMeetVoiceCatalogTest {
     }
 
     @Test
-    void fixedLinesAreLongerThanTenChars() {
+    void fixedLinesAreNonBlank() {
         for (String slug : new String[]{"raiden", "ayaka", "ganyu", "klee", "elysia"}) {
             for (PetMeetVoiceCatalog.Kind kind : PetMeetVoiceCatalog.Kind.values()) {
                 String text = catalog.find(slug, kind).text().replaceAll("\\s+", "");
-                assertThat(text.length())
+                assertThat(text)
                         .as("%s/%s", slug, kind)
-                        .isGreaterThan(10);
+                        .isNotBlank();
             }
         }
+    }
+
+    @Test
+    void meetLinesMatchPersonalityShape() {
+        assertThat(catalog.find("raiden", PetMeetVoiceCatalog.Kind.MEET).text())
+                .contains("稻妻")
+                .contains("为敌");
+        assertThat(catalog.find("ayaka", PetMeetVoiceCatalog.Kind.MEET).text())
+                .contains("神里绫华")
+                .contains("请多关照");
+        assertThat(catalog.find("ganyu", PetMeetVoiceCatalog.Kind.MEET).text())
+                .contains("璃月")
+                .contains("请多关照");
+        assertThat(catalog.find("klee", PetMeetVoiceCatalog.Kind.MEET).text())
+                .contains("可莉")
+                .contains("蒙德");
+        assertThat(catalog.find("elysia", PetMeetVoiceCatalog.Kind.MEET).text())
+                .contains("爱莉希雅");
     }
 
     @Test

@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import router from '@/router'
 
 /** 当前正在查看的单聊会话 ID（ChatPage 设置，用于抑制同会话的站内通知） */
 export const activeChatConversationId = ref(null)
@@ -19,4 +20,30 @@ export function requestActiveChatRefresh(conversationId) {
   if (activeId == null || conversationId == null) return
   if (activeId !== Number(conversationId)) return
   refreshHandler?.()
+}
+
+/**
+ * True when the user is already looking at this conversation
+ * (ChatPage state and/or current route — covers square cold-open race).
+ */
+export function isViewingConversation(conversationId) {
+  if (conversationId == null) return false
+  const id = Number(conversationId)
+  if (!Number.isFinite(id) || id <= 0) return false
+  if (activeChatConversationId.value === id) return true
+
+  try {
+    const path = String(router.currentRoute.value?.path || '')
+    const pathMatch = path.match(/\/(?:app\/)?chat\/(\d+)/)
+    if (pathMatch && Number(pathMatch[1]) === id) return true
+  } catch {
+    // ignore
+  }
+
+  const hash = typeof window !== 'undefined' ? String(window.location.hash || '') : ''
+  const hashMatch = hash.match(/#\/(?:app\/)?chat\/(\d+)/)
+    || hash.match(/#\/quick\/chat\/(\d+)/)
+  if (hashMatch && Number(hashMatch[1]) === id) return true
+
+  return false
 }

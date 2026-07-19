@@ -8,16 +8,31 @@ import {
   markNotificationsRead,
 } from '@/api/notification'
 import { buildWsUrl, isElectronRuntime } from '@/utils/runtime'
-import { activeChatConversationId, requestActiveChatRefresh } from '@/composables/useActiveChatContext'
+import { isViewingConversation, requestActiveChatRefresh } from '@/composables/useActiveChatContext'
+import { pushChatMessageToast } from '@/composables/useInAppMessageToast'
 import { getElectronAPI } from '@/utils/electron'
 import { navigateToNotification } from '@/composables/useNotificationNavigation'
 import { BELL_UNREAD_TYPES, countUnreadByTypes } from '@/constants/notificationTypes'
 
-/** 仅这些类型弹出站内通知；群聊发言与普通回复不弹窗 */
-const IN_APP_POPUP_TYPES = new Set(['PROACTIVE_MESSAGE', 'MOMENT_NEW', 'MOMENT_COMMENT', 'DIARY_NEW'])
+/** 动态 / 日记仍用 Element 站内通知 */
+const FEED_POPUP_TYPES = new Set(['MOMENT_NEW', 'MOMENT_COMMENT', 'DIARY_NEW'])
 
-function shouldShowInAppPopup(type) {
-  return IN_APP_POPUP_TYPES.has(type || '')
+/** 角色消息：微信/QQ 式顶栏条（当前会话不弹） */
+const CHAT_TOAST_TYPES = new Set(['PROACTIVE_MESSAGE', 'MESSAGE'])
+
+function shouldShowFeedPopup(type) {
+  return FEED_POPUP_TYPES.has(type || '')
+}
+
+function shouldShowChatToast(type) {
+  return CHAT_TOAST_TYPES.has(type || '')
+}
+
+function isAppSurfaceVisible() {
+  if (typeof document === 'undefined') return false
+  if (document.visibilityState && document.visibilityState !== 'visible') return false
+  if (document.hidden) return false
+  return true
 }
 
 export const useNotificationsStore = defineStore('notifications', () => {
@@ -242,12 +257,10 @@ export const useNotificationsStore = defineStore('notifications', () => {
   function onIncomingNotification(data) {
     if (!data) return
     const convId = data.conversationId != null ? Number(data.conversationId) : null
-    const viewingSameChat =
-      convId != null &&
-      activeChatConversationId.value != null &&
-      activeChatConversationId.value === convId
+    const type = data.type || ''
 
-    if (viewingSameChat) {
+    // 正在看该会话（含广场刚加入后的破冰消息）→ 不弹窗，只静默刷新
+    if (convId != null && isViewingConversation(convId)) {
       latest.value = [{ ...data, read: true }, ...latest.value].slice(0, 50)
       void markConversationRead(convId)
       requestActiveChatRefresh(convId)
@@ -255,22 +268,34 @@ export const useNotificationsStore = defineStore('notifications', () => {
     }
 
     latest.value = [data, ...latest.value].slice(0, 50)
-    if (!data.read && BELL_UNREAD_TYPES.has(data.type || '')) {
+    if (!data.read && BELL_UNREAD_TYPES.has(type)) {
       bellUnreadCount.value += 1
     }
-    if (!shouldShowInAppPopup(data.type)) {
-      return
+
+    if (shouldShowChatToast(type) && isAppSurfaceVisible()) {
+      pushChatMessageToast({
+        characterName: extractCharacterName(data.title),
+        preview: data.contentPreview || '',
+        createdAt: data.createdAt,
+        conversationId: convId,
+        characterId: data.characterId != null ? Number(data.characterId) : null,
+        raw: data,
+      })
+      playSound()
+    } else if (shouldShowFeedPopup(type)) {
+      ElNotification({
+        title: data.title || '新消息',
+        message: data.contentPreview || '',
+        type: 'info',
+        duration: 4500,
+        onClick: () => {
+          void navigateToNotification(data)
+        }
+      })
+      playSound()
     }
-    ElNotification({
-      title: data.title || '新消息',
-      message: data.contentPreview || '',
-      type: 'info',
-      duration: 4500,
-      onClick: () => {
-        void navigateToNotification(data)
-      }
-    })
-    playSound()
+
+    // Desktop/OS toast only when main window is backgrounded (gated in main process).
     notifyProactiveDesktopIfNeeded(data)
   }
 

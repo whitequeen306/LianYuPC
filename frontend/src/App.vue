@@ -12,6 +12,7 @@
         </keep-alive>
       </transition>
     </router-view>
+    <InAppMessageToastHost v-if="!isLauncherSurface && !isQuickChatSurface" />
     <AppUpdateDialog v-if="isElectron" />
   </el-config-provider>
 </template>
@@ -26,6 +27,7 @@ import { getElectronAPI } from '@/utils/electron'
 import { syncElectronTitleBar } from '@/utils/electronCaption'
 import { ElMessageBox } from 'element-plus'
 import AppUpdateDialog from '@/components/AppUpdateDialog.vue'
+import InAppMessageToastHost from '@/components/InAppMessageToastHost.vue'
 import { KEEP_ALIVE_PAGES } from '@/composables/useKeepAlivePages'
 import {
   ROUTE_TRANSITION_CLASS,

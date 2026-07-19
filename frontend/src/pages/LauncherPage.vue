@@ -283,8 +283,10 @@ function onPointerMove(e) {
     const runAnim = totalDx >= 0 ? 'run-right' : 'run-left'
     state.runAnim = runAnim
     playAnim(runAnim, { loop: true })
+    const runLine = getPetFixedVoiceLine(currentPetId.value, 'run')
     if (playPetFixedVoice(currentPetId.value, 'run', { busy: isGreetingAudioBusy() })) {
-      showVoiceCaption(getPetFixedVoiceLine(currentPetId.value, 'run'))
+      // Caption must accompany voice; window height reserves space above the sprite.
+      showVoiceCaption(runLine)
     }
   }
   if (state.moved) {

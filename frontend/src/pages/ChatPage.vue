@@ -96,6 +96,7 @@
               v-if="item.audioUrl"
               class="gal-bubble__voice"
               :audio-url="item.audioUrl"
+              :transcript="item.content || ''"
               variant="hero"
               :playback-rate="getPetVoiceRate(petIdFromAudioUrl(item.audioUrl))"
             />
@@ -546,6 +547,10 @@ function bounceCharacterBg() {
 }
 
 onMounted(async () => {
+  // Mark active session immediately so square cold-open / meet voice never toasts here.
+  const routeConvId = route.params.id != null ? Number(route.params.id) : null
+  if (routeConvId) setActiveChatConversationId(routeConvId)
+
   await providersStore.fetchVaults()
   if (userStore.isLoggedIn) {
     await userStore.fetchProfile().catch(() => {})
@@ -566,6 +571,7 @@ onMounted(async () => {
 
 watch(() => route.params.id, async (id) => {
   if (id) {
+    setActiveChatConversationId(Number(id))
     skipBounceOnce = true
     await loadConversation(Number(id))
     // 切换到不同角色时恢复该角色的 API 选择记忆
