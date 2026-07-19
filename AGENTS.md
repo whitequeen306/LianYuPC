@@ -109,22 +109,23 @@ lianyu-app → lianyu-web → lianyu-service → lianyu-ai / lianyu-dao / lianyu
 
 **前后端分离：** Electron 只在本机打；云端只跑 backend/api-gateway + 中间件，不构建前端。
 
-功能改动已 commit 到 `main`、工作区干净后，**只跑本地一条龙**（目录已 `.gitignore`，不入仓）：
+功能改动已 commit 到 `main`、工作区干净后，跑本地一条龙（`local/` 已 `.gitignore`，不入仓）。
+
+**禁止无脑跑无参数全量。** 按改动选参数；脚本启动会打印 `SHIP PLAN`（push/deploy/electron 各 YES/no），对不上就 Ctrl+C。
+
+| 场景 | 命令 | 会触发 |
+|---|---|---|
+| **只改后端**（Java / Flyway / `pet-voices.json` 等） | `.\local\ship-release.ps1 -BackendOnly` | push + 云端 rebuild；**绝不**打 Electron / Releases / MinIO 更新包 |
+| **只改前端**（Vue / Electron / `public/pet`） | `.\local\ship-release.ps1 -ElectronOnly` | push + Electron + GitHub Releases + MinIO；**绝不** docker rebuild backend |
+| **前后端都改** | `.\local\ship-release.ps1` | 全量（唯一允许的无参数用法） |
+| minor / major | 在上面对应命令后加 `-Bump minor` | 同上 |
 
 ```powershell
 cd C:\Users\hp\Desktop\LianYu-PC
-.\local\ship-release.ps1
+.\local\ship-release.ps1 -BackendOnly    # 例：只后端
 ```
 
-| 场景 | 命令 |
-|---|---|
-| 全量（push + 云端 + Electron patch） | `.\local\ship-release.ps1` |
-| 仅后端 | `.\local\ship-release.ps1 -BackendOnly` |
-| 仅 Electron（代码已在远端） | `.\local\ship-release.ps1 -ElectronOnly` |
-| minor / major | `.\local\ship-release.ps1 -Bump minor` |
-
-说明、env 清单、凭据检查：**`local/README.md`**（与脚本同目录，亦不入仓）。  
-缺文件时按该 README 重建，不要把长流程写回本文件。
+说明、env 清单：**`local/README.md`**。缺文件按该 README 重建，不要把长流程写回本文件。
 
 **边界（仍须记住）：**
 
