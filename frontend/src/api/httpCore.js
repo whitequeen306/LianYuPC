@@ -80,6 +80,15 @@ const http = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+/** Keep axios config (e.g. skipGlobalError) on wrapped rejects so toast interceptor can honor it. */
+export function toHttpError(message, config, extras = {}) {
+  const err = new Error(message)
+  if (config) err.config = config
+  if (extras.response) err.response = extras.response
+  if (extras.code != null) err.code = extras.code
+  return err
+}
+
 http.interceptors.request.use(async (config) => {
   if (isElectronRuntime()) {
     await ensureApiOriginReady()
@@ -109,7 +118,7 @@ http.interceptors.response.use(
         return handle401(response.config)
       }
       const msg = humanizeError(body.message, '请求失败，请稍后再试')
-      return Promise.reject(new Error(msg))
+      return Promise.reject(toHttpError(msg, response.config, { response, code: body.code }))
     }
     return body
   },
@@ -127,7 +136,10 @@ http.interceptors.response.use(
       fallback = '请求失败，请稍后再试'
     }
     const msg = humanizeError(error, fallback)
-    return Promise.reject(new Error(msg))
+    return Promise.reject(toHttpError(msg, error.config, {
+      response: error.response,
+      code: apiErr?.code,
+    }))
   },
 )
 

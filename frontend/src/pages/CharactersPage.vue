@@ -382,6 +382,8 @@ watch(
   () => notificationsStore.latest,
   async () => {
     await refreshUnreadFromApi()
+    // Empty bond list: stale notification conversationIds must not hit getConversation.
+    if (!characters.value.length) return
     try {
       const latestList = notificationsStore.latest || []
       const refreshTarget = latestList
