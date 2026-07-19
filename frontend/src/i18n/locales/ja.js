@@ -332,6 +332,8 @@ export default {
     moreComments: '他 {n}件',
     addComment: 'コメント',
     hideComments: 'コメントを閉じる',
+    expandAllComments: 'コメントをすべて表示（{n}件）',
+    collapseComments: 'コメントを折りたたむ',
     typeDiary: '日記',
     typeMoment: 'モーメント'
   },

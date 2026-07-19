@@ -505,7 +505,7 @@ public class ConversationService {
         try {
             ensureCharacterAvailableForProactive(character);
         } catch (BusinessException e) {
-            log.debug("Cold open skipped (character unavailable): convId={}, reason=", conversationId, e.getMessage());
+            log.debug("Cold open skipped (character unavailable): convId={}, reason={}", conversationId, e.getMessage());
             return;
         }
         String lockKey = COLD_OPEN_LOCK_PREFIX + conversationId;
@@ -590,7 +590,7 @@ public class ConversationService {
         allMessages.add(buildUserMessage("""
                 这是你和该用户在本会话里的第一次开口（会话中还没有任何历史消息）。
                 请按下面格式输出破冰内容（用空行分隔），控制数量：
-                第一行：一句适合朗读的短问候（8～28字，口语自然，不要括号旁白、不要引号、不要多句）
+                第一行：一句适合朗读的问候（必须超过10个汉字，建议12～28字，口语自然；不要括号旁白、不要引号、不要多句）
                 第二行（可选）：一句短文字关心（≤30字）；若只需一句就不要写第二行
                 总共最多两行，不要更多。"""));
         aiRequest.setMessages(allMessages);

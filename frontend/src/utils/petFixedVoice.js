@@ -28,7 +28,8 @@ export function playPetFixedVoice(petId, kind, { busy = false } = {}) {
   try {
     const audio = new Audio(src)
     audio.volume = 0.9
-    audio.playbackRate = getPetVoiceRate(petId)
+    const rate = getPetVoiceRate(petId)
+    audio.playbackRate = Number.isFinite(rate) && rate > 0 ? Math.min(rate, 1.1) : 1
     audio.onended = () => {
       if (currentAudio === audio) currentAudio = null
     }

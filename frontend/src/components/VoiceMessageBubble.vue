@@ -55,50 +55,103 @@ function resolveMessageAudioUrl(url) {
 }
 
 function stop() {
-  if (!audio) return
-  try {
-    audio.pause()
-    audio.currentTime = 0
-  } catch {
-    // ignore
+  if (audio) {
+    try {
+      audio.pause()
+      audio.currentTime = 0
+    } catch {
+      // ignore
+    }
   }
   audio = null
   playing.value = false
+  revokeBlobUrl()
 }
 
-function toggle() {
+let blobUrl = null
+
+function revokeBlobUrl() {
+  if (!blobUrl) return
+  try {
+    URL.revokeObjectURL(blobUrl)
+  } catch {
+    // ignore
+  }
+  blobUrl = null
+}
+
+function applyPlaybackRate(el) {
+  const rate = Number.isFinite(props.playbackRate) && props.playbackRate > 0
+    ? Math.min(props.playbackRate, 1.1)
+    : 1
+  el.playbackRate = rate
+}
+
+function bindAudioEvents(el) {
+  el.onloadedmetadata = () => {
+    if (Number.isFinite(el?.duration) && el.duration > 0) {
+      durationSec.value = el.duration
+    }
+  }
+  el.onended = () => {
+    playing.value = false
+    audio = null
+    revokeBlobUrl()
+  }
+  el.onerror = () => {
+    playing.value = false
+    audio = null
+    revokeBlobUrl()
+  }
+}
+
+async function playFrom(url) {
+  audio = new Audio(url)
+  audio.volume = 0.92
+  applyPlaybackRate(audio)
+  bindAudioEvents(audio)
+  await audio.play()
+}
+
+async function toggle() {
   if (playing.value) {
     stop()
     return
   }
   if (!src.value) return
   stop()
-  audio = new Audio(src.value)
-  audio.volume = 0.92
-  if (Number.isFinite(props.playbackRate) && props.playbackRate > 0) {
-    audio.playbackRate = props.playbackRate
-  }
-  audio.onloadedmetadata = () => {
-    if (Number.isFinite(audio?.duration) && audio.duration > 0) {
-      durationSec.value = audio.duration
-    }
-  }
-  audio.onended = () => {
-    playing.value = false
-    audio = null
-  }
-  audio.onerror = () => {
-    playing.value = false
-    audio = null
-  }
   playing.value = true
-  const p = audio.play()
-  if (p && typeof p.catch === 'function') {
-    p.catch(() => {
+  try {
+    // Media elements can usually play cross-origin without CORS (unlike fetch).
+    await playFrom(src.value)
+  } catch {
+    try {
+      // Electron/file origin: if direct play fails, fetch→blob (needs ACAO on API).
+      const playUrl = await resolvePlayableUrl(src.value)
+      await playFrom(playUrl)
+    } catch {
       playing.value = false
       audio = null
-    })
+      revokeBlobUrl()
+    }
   }
+}
+
+async function resolvePlayableUrl(url) {
+  if (!url) return ''
+  if (url.startsWith('blob:') || url.startsWith('data:') || url.startsWith('file:')) {
+    return url
+  }
+  if (url.includes('/pet/voice/') || url.includes('pet/voice/')) {
+    return url
+  }
+  const resp = await fetch(url, { credentials: 'omit', mode: 'cors' })
+  if (!resp.ok) throw new Error(`audio fetch ${resp.status}`)
+  const blob = await resp.blob()
+  if (!blob || blob.size < 16) throw new Error('empty audio blob')
+  revokeBlobUrl()
+  blobUrl = URL.createObjectURL(blob)
+  return blobUrl
 }
 
 watch(() => props.audioUrl, () => stop())

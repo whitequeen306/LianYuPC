@@ -339,6 +339,8 @@ export default {
     moreComments: '还有 {n} 条评论',
     addComment: '写评论',
     hideComments: '收起评论',
+    expandAllComments: '展开全部 {n} 条评论',
+    collapseComments: '收起评论列表',
     typeDiary: '日记',
     typeMoment: '动态'
   },

@@ -337,6 +337,8 @@ export default {
     moreComments: '{n} more comments',
     addComment: 'Comment',
     hideComments: 'Hide comments',
+    expandAllComments: 'Show all {n} comments',
+    collapseComments: 'Collapse comments',
     typeDiary: 'Diary',
     typeMoment: 'Moment'
   },

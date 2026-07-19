@@ -93,6 +93,8 @@ export default {
     moreComments: '還有 {n} 則評論',
     addComment: '寫評論',
     hideComments: '收起評論',
+    expandAllComments: '展開全部 {n} 則評論',
+    collapseComments: '收起評論列表',
     typeDiary: '日記',
     typeMoment: '動態'
   },

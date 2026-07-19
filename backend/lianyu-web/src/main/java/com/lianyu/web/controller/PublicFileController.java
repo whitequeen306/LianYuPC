@@ -52,12 +52,16 @@ public class PublicFileController {
                 }
             };
 
+            // Electron loads the renderer from a non-http origin; <audio> needs CORS on public media.
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_TYPE, contentType)
                     .header(HttpHeaders.CONTENT_DISPOSITION, contentDispositionFor(objectKey))
                     .header("X-Content-Type-Options", "nosniff")
                     .header(HttpHeaders.CACHE_CONTROL, cacheControlFor(objectKey))
                     .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(stat.size()))
+                    .header(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                    .header(HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS, "GET, HEAD, OPTIONS")
+                    .header(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Content-Length, Content-Type")
                     .body(body);
         } catch (Exception e) {
             log.warn("Public file not found: {}", objectKey);

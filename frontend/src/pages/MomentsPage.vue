@@ -161,37 +161,55 @@
                   <el-icon class="is-loading" :size="14"><Loading /></el-icon>
                 </div>
 
-                <ul v-else-if="threadedComments(item.post.id).length" class="feed-comment-list">
-                  <li
-                    v-for="c in threadedComments(item.post.id)"
-                    :key="c.id"
-                    class="feed-comment-item"
+                <template v-else-if="threadedComments(item.post.id).length">
+                  <div
+                    class="feed-comment-scroll"
+                    :class="{ 'feed-comment-scroll--expanded': commentsFullyExpanded[item.post.id] }"
                   >
-                    <div class="feed-comment-item__row">
-                      <span class="feed-comment-item__name">{{ formatCommentAuthorLabel(c) }}</span>
-                      <span>{{ c.content }}</span>
-                    </div>
-                    <button type="button" class="feed-comment-item__reply" @click="setReplyTarget(item.post, c)">
-                      {{ t('moments.reply') }}
-                    </button>
-
-                    <ul v-if="c.replies?.length" class="feed-comment-reply-list">
+                    <ul class="feed-comment-list">
                       <li
-                        v-for="reply in c.replies"
-                        :key="reply.id"
-                        class="feed-comment-item feed-comment-item--reply"
+                        v-for="c in threadedComments(item.post.id)"
+                        :key="c.id"
+                        class="feed-comment-item"
                       >
                         <div class="feed-comment-item__row">
-                          <span class="feed-comment-item__name">{{ formatCommentAuthorLabel(reply) }}</span>
-                          <span>{{ reply.content }}</span>
+                          <span class="feed-comment-item__name">{{ formatCommentAuthorLabel(c) }}</span>
+                          <span>{{ c.content }}</span>
                         </div>
-                        <button type="button" class="feed-comment-item__reply" @click="setReplyTarget(item.post, reply)">
+                        <button type="button" class="feed-comment-item__reply" @click="setReplyTarget(item.post, c)">
                           {{ t('moments.reply') }}
                         </button>
+
+                        <ul v-if="c.replies?.length" class="feed-comment-reply-list">
+                          <li
+                            v-for="reply in c.replies"
+                            :key="reply.id"
+                            class="feed-comment-item feed-comment-item--reply"
+                          >
+                            <div class="feed-comment-item__row">
+                              <span class="feed-comment-item__name">{{ formatCommentAuthorLabel(reply) }}</span>
+                              <span>{{ reply.content }}</span>
+                            </div>
+                            <button type="button" class="feed-comment-item__reply" @click="setReplyTarget(item.post, reply)">
+                              {{ t('moments.reply') }}
+                            </button>
+                          </li>
+                        </ul>
                       </li>
                     </ul>
-                  </li>
-                </ul>
+                  </div>
+
+                  <button
+                    v-if="commentCount(item.post) > 6"
+                    type="button"
+                    class="feed-comment-fold"
+                    @click="toggleCommentsFullyExpanded(item.post.id)"
+                  >
+                    {{ commentsFullyExpanded[item.post.id]
+                      ? t('feed.collapseComments')
+                      : t('feed.expandAllComments', { n: commentCount(item.post) }) }}
+                  </button>
+                </template>
 
                 <p v-else class="feed-comment-preview">{{ t('moments.noComments') }}</p>
 
@@ -347,6 +365,7 @@ const recentDiaries = ref([])
 
 const commentsByPost = ref({})
 const commentsLoading = reactive({})
+const commentsFullyExpanded = reactive({})
 const draftByPost = reactive({})
 const replyTarget = reactive({})
 const sending = reactive({})
@@ -594,6 +613,7 @@ async function reloadFeed() {
   posts.value = []
   commentsByPost.value = {}
   Object.keys(expandedComments).forEach(k => delete expandedComments[k])
+  Object.keys(commentsFullyExpanded).forEach(k => delete commentsFullyExpanded[k])
   try {
     const data = await fetchMomentsFeed({
       characterId: filterCharId.value || undefined,
@@ -624,16 +644,33 @@ async function loadComments(postId, silent = false) {
   if (!postId) return
   if (!silent) commentsLoading[postId] = true
   try {
-    const data = await fetchMomentComments(postId, { limit: 80 })
+    const all = []
+    let cursorId = undefined
+    let guard = 0
+    while (guard < 20) {
+      guard += 1
+      const data = await fetchMomentComments(postId, {
+        limit: 200,
+        ...(cursorId ? { cursor: cursorId } : {})
+      })
+      const batch = data?.items || []
+      all.push(...batch)
+      if (!data?.hasMore || !data?.nextCursor || batch.length === 0) break
+      cursorId = data.nextCursor
+    }
     commentsByPost.value = {
       ...commentsByPost.value,
-      [postId]: data?.items || []
+      [postId]: all
     }
   } catch {
     if (!silent) commentsByPost.value = { ...commentsByPost.value, [postId]: [] }
   } finally {
     if (!silent) commentsLoading[postId] = false
   }
+}
+
+function toggleCommentsFullyExpanded(postId) {
+  commentsFullyExpanded[postId] = !commentsFullyExpanded[postId]
 }
 
 function getComments(postId) {
@@ -654,8 +691,8 @@ function formatCommentAuthorLabel(comment) {
 
 function commentCount(post) {
   const loaded = getComments(post.id).length
-  if (loaded > 0) return loaded
-  return post.commentCount ?? 0
+  const reported = post.commentCount ?? 0
+  return Math.max(loaded, reported)
 }
 
 function commentActionLabel(post) {
@@ -843,6 +880,51 @@ function goToCharacterChat(characterId) {
   margin: 0 0 $space-2;
   font-size: $font-size-xs;
   color: $color-text-muted;
+}
+
+.feed-comment-zone {
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+  margin-top: $space-3;
+}
+
+.feed-comment-scroll {
+  max-height: 14rem;
+  overflow-y: auto;
+  padding-right: $space-1;
+  transition: max-height 0.24s cubic-bezier(0.23, 1, 0.32, 1);
+
+  &--expanded {
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+.feed-comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.feed-comment-fold {
+  align-self: flex-start;
+  margin: 0;
+  padding: $space-1 $space-3;
+  border: none;
+  border-radius: $radius-pill;
+  background: rgba($color-pink-rgb, 0.1);
+  color: $color-pink-primary;
+  font-size: $font-size-xs;
+  cursor: pointer;
+  transition: background 0.2s cubic-bezier(0.23, 1, 0.32, 1);
+
+  &:hover {
+    background: rgba($color-pink-rgb, 0.18);
+  }
 }
 
 .feed-comment-item {

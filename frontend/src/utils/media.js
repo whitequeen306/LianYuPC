@@ -1,6 +1,6 @@
 import { apiOrigin, isElectronRuntime } from '@/utils/runtime.js'
 
-const OBJECT_KEY_PREFIXES = ['square-avatars/', 'chat-images/', 'avatars/']
+const OBJECT_KEY_PREFIXES = ['square-avatars/', 'chat-images/', 'chat-voice/', 'avatars/']
 
 export { isElectronRuntime }
 

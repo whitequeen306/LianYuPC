@@ -44,7 +44,8 @@ public class MomentsCommentService {
 
     public MomentCommentListResponse listComments(Long userId, Long postId, Long cursor, int limit) {
         MomentsPost post = findOwnedPost(userId, postId);
-        int realLimit = Math.min(Math.max(1, limit), 100);
+        // Allow loading a full post comment thread in one request (UI still collapses).
+        int realLimit = Math.min(Math.max(1, limit), 500);
 
         LambdaQueryWrapper<MomentsComment> qw = new LambdaQueryWrapper<MomentsComment>()
                 .eq(MomentsComment::getPostId, post.getId())

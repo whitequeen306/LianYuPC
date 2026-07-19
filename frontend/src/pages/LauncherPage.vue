@@ -364,7 +364,8 @@ function playGreetingAudio(payload = {}) {
   try {
     greetingAudio = new Audio(src)
     greetingAudio.volume = 0.92
-    greetingAudio.playbackRate = getPetVoiceRate(currentPetId.value)
+    const rate = getPetVoiceRate(currentPetId.value)
+    greetingAudio.playbackRate = Number.isFinite(rate) && rate > 0 ? Math.min(rate, 1.1) : 1
     greetingAudio.onerror = () => {
       const code = greetingAudio?.error?.code
       console.warn('[launcher] greeting audio element error, code=', code, 'src=', src.slice(0, 80))

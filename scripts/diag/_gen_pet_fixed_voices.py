@@ -17,54 +17,68 @@ PET_VOICES = ROOT / "backend" / "lianyu-service" / "src" / "main" / "resources" 
 SYNTH_URL = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 
 # Keep in sync with frontend/src/constants/petCatalog.js fixedVoiceLines
-# and backend PetMeetVoiceCatalog
+# and backend PetMeetVoiceCatalog. Every line MUST be > 10 Chinese characters.
 LINES: dict[str, dict[str, str]] = {
     "raiden": {
-        "meet": "……你来了。",
-        "enter": "回来了？",
-        "noon": "午安。",
-        "evening": "夜深了。",
-        "wait": "……还不回？",
-        "click": "何事？",
-        "run": "跟上。",
+        "meet": "……你终于来了，我已等候多时。",
+        "enter": "回来了？我还以为你不会来。",
+        "noon": "午安。今天也别把自己逼太紧。",
+        "evening": "夜深了，记得停下休息一会儿。",
+        "wait": "……还不回我吗？我在这里等着。",
+        "click": "何事？有话就慢慢说吧。",
+        "run": "跟上，别落在我后面了。",
     },
     "ayaka": {
-        "meet": "初次见面，请多关照。",
-        "enter": "欢迎回来。",
-        "noon": "中午好，用过膳了吗？",
-        "evening": "晚上好，今天辛苦了。",
-        "wait": "请问……是有什么事耽搁了吗？",
-        "click": "有什么事吗？",
-        "run": "请当心脚下。",
+        "meet": "初次见面，还请您多多关照呐。",
+        "enter": "欢迎回来，绫华一直在等您。",
+        "noon": "中午好，请问您用过午饭了吗？",
+        "evening": "晚上好，今天也辛苦您了呢。",
+        "wait": "请问……是有什么事情耽搁了吗？",
+        "click": "有什么事吗？绫华愿意听您说。",
+        "run": "请当心脚下，绫华跟在您身边。",
     },
     "ganyu": {
-        "meet": "你好……我是甘雨。",
-        "enter": "啊…你回来了。",
-        "noon": "中午了……记得吃饭。",
-        "evening": "晚上好……别太晚睡。",
-        "wait": "那个……你还在吗？",
-        "click": "啊…找我吗？",
-        "run": "我跟上了…",
+        "meet": "你好……我是甘雨，请多关照。",
+        "enter": "啊…你回来了，我正好在等你。",
+        "noon": "中午了……记得好好吃一顿饭哦。",
+        "evening": "晚上好……别太晚睡，要注意休息。",
+        "wait": "那个……你还在吗？我有点担心。",
+        "click": "啊…找我吗？我在听你说呢。",
+        "run": "我跟上了……请别跑太快呀。",
     },
     "klee": {
-        "meet": "哇！新朋友！可莉是可莉！",
-        "enter": "欸嘿！你回来啦！",
-        "noon": "中午啦！可莉肚子饿了！",
-        "evening": "晚上好！可莉想你啦！",
-        "wait": "诶？怎么不回可莉呀？",
-        "click": "嘿嘿，找可莉玩吗？",
-        "run": "可莉跑起来啦！",
+        "meet": "哇！新朋友！可莉是火花骑士可莉！",
+        "enter": "欸嘿！你回来啦，可莉好想你！",
+        "noon": "中午啦！可莉肚子饿了，一起吃饭吧！",
+        "evening": "晚上好！可莉今天有没有想你呀？",
+        "wait": "诶？怎么不回可莉呀，可莉等好久了！",
+        "click": "嘿嘿，找可莉玩吗？可莉超开心！",
+        "run": "可莉跑起来啦，你也要跟上哦！",
     },
     "elysia": {
-        "meet": "嗨～很高兴遇见你。",
-        "enter": "哎呀，你来啦～",
-        "noon": "午安呀，吃点好吃的了吗？",
-        "evening": "晚上好～今天过得开心吗？",
-        "wait": "不回人家消息吗？",
-        "click": "嗨～找人家有事？",
-        "run": "跟紧我哦。",
+        "meet": "嗨～很高兴遇见你，要好好相处哦。",
+        "enter": "哎呀，你来啦～人家等你好久了。",
+        "noon": "午安呀，有没有吃点好吃的东西？",
+        "evening": "晚上好～今天过得开心吗，跟我说说。",
+        "wait": "不回人家消息吗？我会有一点点想你哦。",
+        "click": "嗨～找人家有事？慢慢说给我听。",
+        "run": "跟紧我哦，可别一不小心走丢啦。",
     },
 }
+
+
+def _char_len(text: str) -> int:
+    return len(text.replace(" ", "").replace("\u3000", ""))
+
+
+def validate_lines() -> None:
+    bad: list[str] = []
+    for pet_id, kinds in LINES.items():
+        for kind, text in kinds.items():
+            if _char_len(text) <= 10:
+                bad.append(f"{pet_id}/{kind} len={_char_len(text)}: {text}")
+    if bad:
+        raise SystemExit("LINES too short (need >10 chars):\n  " + "\n  ".join(bad))
 
 
 def load_dotenv() -> dict[str, str]:
@@ -119,6 +133,7 @@ def synth(api_key: str, model: str, voice: str, text: str) -> bytes:
 
 
 def main() -> int:
+    validate_lines()
     env = load_dotenv()
     api_key = os.environ.get("DASHSCOPE_API_KEY") or env.get("DASHSCOPE_API_KEY") or ""
     if not api_key:

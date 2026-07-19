@@ -30,6 +30,18 @@ class PetMeetVoiceCatalogTest {
     }
 
     @Test
+    void fixedLinesAreLongerThanTenChars() {
+        for (String slug : new String[]{"raiden", "ayaka", "ganyu", "klee", "elysia"}) {
+            for (PetMeetVoiceCatalog.Kind kind : PetMeetVoiceCatalog.Kind.values()) {
+                String text = catalog.find(slug, kind).text().replaceAll("\\s+", "");
+                assertThat(text.length())
+                        .as("%s/%s", slug, kind)
+                        .isGreaterThan(10);
+            }
+        }
+    }
+
+    @Test
     void validatesClientAudioPaths() {
         assertThat(PetMeetVoiceCatalog.isSafeClientAudioPath("pet/voice/raiden/meet.wav")).isTrue();
         assertThat(PetMeetVoiceCatalog.isSafeClientAudioPath("pet/voice/ayaka/noon.wav")).isTrue();

@@ -14,8 +14,8 @@ describe('petCatalog', () => {
     expect(getPetById('kurumi').nameZh).toBe('时崎狂三')
   })
 
-  it('uses a faster voice rate for elysia', () => {
-    expect(getPetVoiceRate('elysia')).toBe(1.2)
+  it('uses a slightly faster voice rate for elysia', () => {
+    expect(getPetVoiceRate('elysia')).toBe(1.1)
     expect(getPetVoiceRate('kurumi')).toBe(1)
   })
 
@@ -26,10 +26,13 @@ describe('petCatalog', () => {
     expect(getPetFixedVoiceUrl('raiden', 'run')).toContain('pet/voice/raiden/run.wav')
   })
 
-  it('defines chat fixed lines for enter noon evening', () => {
-    const lines = getPetById('elysia').fixedVoiceLines
-    expect(lines.enter).toBeTruthy()
-    expect(lines.noon).toBeTruthy()
-    expect(lines.evening).toBeTruthy()
+  it('defines chat fixed lines longer than 10 characters', () => {
+    const pets = ['raiden', 'ayaka', 'ganyu', 'klee', 'elysia']
+    for (const id of pets) {
+      const lines = getPetById(id).fixedVoiceLines
+      for (const [kind, text] of Object.entries(lines)) {
+        expect(String(text).replace(/\s/g, '').length, `${id}/${kind}`).toBeGreaterThan(10)
+      }
+    }
   })
 })

@@ -41,7 +41,17 @@ public class CorsConfig {
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
 
+        // Public media (chat TTS etc.): Electron file:// / null Origin needs wildcard ACAO.
+        CorsConfiguration publicFiles = new CorsConfiguration();
+        publicFiles.setAllowedOriginPatterns(List.of("*"));
+        publicFiles.setAllowedMethods(List.of("GET", "HEAD", "OPTIONS"));
+        publicFiles.setAllowedHeaders(List.of("*"));
+        publicFiles.setAllowCredentials(false);
+        publicFiles.setMaxAge(3600L);
+
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        // More specific path first — public files must not require credentialed origin match.
+        source.registerCorsConfiguration("/api/public/files/**", publicFiles);
         // 仅 REST /api；/ws 由 WebSocketConfig.setAllowedOriginPatterns 单独处理
         source.registerCorsConfiguration("/api/**", config);
         return new CorsFilter(source);
