@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   getPetById,
+  getPetFixedVoiceLine,
   getPetFixedVoiceUrl,
   getPetVoiceRate,
   isValidPetId,
@@ -24,6 +25,7 @@ describe('petCatalog', () => {
     expect(petHasInteractiveVoice('kurumi')).toBe(false)
     expect(getPetById('raiden').fixedVoiceLines.click).toBeTruthy()
     expect(getPetFixedVoiceUrl('raiden', 'run')).toContain('pet/voice/raiden/run.wav')
+    expect(getPetFixedVoiceLine('raiden', 'click').length).toBeGreaterThan(10)
   })
 
   it('defines chat fixed lines longer than 10 characters', () => {

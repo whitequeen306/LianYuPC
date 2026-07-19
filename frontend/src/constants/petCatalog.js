@@ -281,5 +281,12 @@ export function getPetFixedVoiceUrl(petId, kind) {
   return resolveStaticAsset(`pet/voice/${petId}/${kind}.wav`)
 }
 
+/** Caption text that must accompany fixed voice playback */
+export function getPetFixedVoiceLine(petId, kind) {
+  if (!petId || !kind) return ''
+  const line = getPetById(petId)?.fixedVoiceLines?.[kind]
+  return typeof line === 'string' ? line.trim() : ''
+}
+
 /** 常驻固定语音全局冷却（点击 / 拖跑共用） */
 export const PET_FIXED_VOICE_COOLDOWN_MS = 5000

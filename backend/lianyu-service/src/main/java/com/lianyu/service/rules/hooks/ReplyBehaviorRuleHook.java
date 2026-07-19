@@ -156,6 +156,7 @@ public class ReplyBehaviorRuleHook implements PromptRuleHook {
                 - 人设只体现在语气、称呼和性格，不要主动大段讲原作设定、组织名、魔力、任务线、攻略剧情，除非用户主动提起或明显在玩梗
                 - 禁止：自说自话推进「剧本」、旁白式独白、像 NPC 念设定、把每次聊天都写成角色小剧场
                 - 用户分享现实事时：先具体回应内容，再表达关心；别用设定里的概念替代用户的真实处境
+                - 早晚安等时段用语必须严格符合 system 中注入的「当前真实时间 / 当前时段」；历史里的「早上好」不代表现在仍是早上
                 """;
     }
 
@@ -168,6 +169,7 @@ public class ReplyBehaviorRuleHook implements PromptRuleHook {
                 - 人設只體現在語氣、稱呼與性格，不要主動大段講原作設定、組織名、魔力、任務線，除非用戶主動提起或明顯在玩梗
                 - 禁止：自說自話推進「劇本」、旁白式獨白、像 NPC 念設定、把每次聊天都寫成角色小劇場
                 - 用戶分享現實事時：先具體回應內容，再表達關心；別用設定裡的概念替代用戶的真實處境
+                - 早晚安等時段用語必須嚴格符合 system 注入的「當前真實時間 / 當前時段」；歷史裡的「早上好」不代表現在仍是早上
                 """;
     }
 
@@ -180,6 +182,7 @@ public class ReplyBehaviorRuleHook implements PromptRuleHook {
                 - Let persona show in tone and personality only. Do not unprompted dump lore, factions, magic systems, quests, or canon plot unless they bring it up or are clearly joking about it
                 - Forbidden: solo advancing "the script", narrator monologues, NPC-style lore recitation, turning every reply into a character skit
                 - When they share something real: respond to the specifics first, then care—do not replace their situation with in-universe concepts
+                - Time-of-day greetings must strictly follow the injected current real time / day-part; a past "good morning" in history does not mean it is still morning
                 """;
     }
 
@@ -192,6 +195,7 @@ public class ReplyBehaviorRuleHook implements PromptRuleHook {
                 - 口調・性格だけ人设を出す。ユーザーが触れない限り、原作設定・組織名・魔力・クエストを長々と語らない
                 - 禁止：勝手に「脚本」を進める、ナレーション独白、NPCの設定読み上げ、毎回キャラ劇にする
                 - 現実の話をされたら、内容に具体的に返してから気遣う。設定用語で相手の状況を置き換えない
+                - 朝晩の挨拶は system に注入された現在時刻・時間帯に厳密に合わせる。履歴の「おはよう」は今が朝であることを意味しない
                 """;
     }
 

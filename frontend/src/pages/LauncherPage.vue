@@ -2,40 +2,45 @@
   <div
     ref="containerRef"
     class="pet-root"
-    :class="{ 'pet-root--picker-open': pickerOpen }"
+    :class="{
+      'pet-root--picker-open': pickerOpen,
+      'pet-root--picker-left': pickerOpen && pickerDock === 'left',
+    }"
   >
-    <LauncherPickPanel v-if="pickerOpen" class="pet-picker" />
-    <transition name="pet-toast-fade">
-      <div v-if="toastText" class="pet-toast" role="status">
-        {{ toastText }}
+    <div class="pet-stage">
+      <transition name="pet-toast-fade">
+        <div v-if="toastText" class="pet-toast" role="status">
+          {{ toastText }}
+        </div>
+      </transition>
+      <transition name="pet-greeting-pop">
+        <div v-if="greetingText" class="pet-greeting" role="status" @click="dismissGreeting">
+          {{ greetingText }}
+        </div>
+      </transition>
+      <transition name="pet-observe-fade">
+        <div v-if="isObserving" class="pet-observe-badge" role="status" aria-label="正在观察屏幕">
+          ● 观察中
+        </div>
+      </transition>
+      <div ref="wrapRef" class="pet-wrap">
+        <canvas
+          ref="petRef"
+          class="pet-canvas"
+          width="192"
+          height="208"
+          aria-hidden="true"
+        />
+        <div
+          ref="hitboxRef"
+          class="pet-hitbox"
+          title="单击选角色，按住拖动"
+          @contextmenu.prevent="onContextMenu"
+          @pointerdown.prevent="onPointerDown"
+        />
       </div>
-    </transition>
-    <transition name="pet-greeting-pop">
-      <div v-if="greetingText" class="pet-greeting" role="status" @click="dismissGreeting">
-        {{ greetingText }}
-      </div>
-    </transition>
-    <transition name="pet-observe-fade">
-      <div v-if="isObserving" class="pet-observe-badge" role="status" aria-label="正在观察屏幕">
-        ● 观察中
-      </div>
-    </transition>
-    <div ref="wrapRef" class="pet-wrap">
-      <canvas
-        ref="petRef"
-        class="pet-canvas"
-        width="192"
-        height="208"
-        aria-hidden="true"
-      />
-      <div
-        ref="hitboxRef"
-        class="pet-hitbox"
-        title="单击选角色，按住拖动"
-        @contextmenu.prevent="onContextMenu"
-        @pointerdown.prevent="onPointerDown"
-      />
     </div>
+    <LauncherPickPanel v-if="pickerOpen" class="pet-picker" />
   </div>
 </template>
 
@@ -49,7 +54,15 @@ import LauncherPickPanel from '@/components/LauncherPickPanel.vue'
 import { useUserStore } from '@/stores/user'
 import { useCharactersStore } from '@/stores/characters'
 import { useConversationsStore } from '@/stores/conversations'
-import { DEFAULT_PET_ID, getPetById, getPetIdleUrl, getPetSpriteUrl, getPetPersona, getPetVoiceRate } from '@/constants/petCatalog'
+import {
+  DEFAULT_PET_ID,
+  getPetById,
+  getPetFixedVoiceLine,
+  getPetIdleUrl,
+  getPetSpriteUrl,
+  getPetPersona,
+  getPetVoiceRate,
+} from '@/constants/petCatalog'
 import { playPetFixedVoice, stopPetFixedVoice } from '@/utils/petFixedVoice'
 import { usePetSpriteAnimator } from '@/composables/usePetSpriteAnimator'
 import { refreshLauncherSession } from '@/auth/launcherBootstrap'
@@ -64,6 +77,7 @@ const toastText = ref('')
 const greetingText = ref('')
 const isObserving = ref(false)
 const pickerOpen = ref(false)
+const pickerDock = ref('right')
 const dragging = ref(false)
 const currentPetId = ref(DEFAULT_PET_ID)
 let clickTimer = null
@@ -269,7 +283,9 @@ function onPointerMove(e) {
     const runAnim = totalDx >= 0 ? 'run-right' : 'run-left'
     state.runAnim = runAnim
     playAnim(runAnim, { loop: true })
-    playPetFixedVoice(currentPetId.value, 'run', { busy: isGreetingAudioBusy() })
+    if (playPetFixedVoice(currentPetId.value, 'run', { busy: isGreetingAudioBusy() })) {
+      showVoiceCaption(getPetFixedVoiceLine(currentPetId.value, 'run'))
+    }
   }
   if (state.moved) {
     const dx = e.screenX - state.lastScreenX
@@ -312,7 +328,9 @@ function onPointerUp(e) {
     clickTimer = setTimeout(() => {
       clickTimer = null
       playAnimOnce('wave')
-      playPetFixedVoice(currentPetId.value, 'click', { busy: isGreetingAudioBusy() })
+      if (playPetFixedVoice(currentPetId.value, 'click', { busy: isGreetingAudioBusy() })) {
+        showVoiceCaption(getPetFixedVoiceLine(currentPetId.value, 'click'))
+      }
       getElectronAPI()?.toggleCharacterPicker?.()
     }, 240)
   } else if (wasMoved) {
@@ -398,17 +416,24 @@ function flushPendingGreetingAudio() {
   playGreetingAudio(payload)
 }
 
+function showVoiceCaption(text, { holdMs = 10000 } = {}) {
+  const line = String(text || '').trim()
+  if (!line) return
+  greetingText.value = line
+  clearTimeout(greetingTimer)
+  greetingTimer = setTimeout(() => { greetingText.value = '' }, holdMs)
+}
+
 function showGreeting(payload = {}) {
-  const text = payload.text || ''
+  const text = String(payload.text || '').trim()
+  // Pet voice must always show caption text (skip audio-only payloads).
   if (!text) return
-  greetingText.value = text
+  showVoiceCaption(text)
   playGreetingAudio(payload)
   // greeting 动画: wave 挥手 → 短暂停顿 → jump 弹跳
   playAnimOnce('wave', () => {
     setTimeout(() => { playAnimOnce('jump') }, 300)
   })
-  clearTimeout(greetingTimer)
-  greetingTimer = setTimeout(() => { greetingText.value = '' }, 10000)
 }
 
 function dismissGreeting() {
@@ -463,12 +488,15 @@ onMounted(async () => {
     launcherActive = false
     stopObserver()
     pickerOpen.value = false
+    pickerDock.value = 'right'
   })
   unsubscribePickerToggle = getElectronAPI()?.onPickerToggle?.((payload) => {
     const open = payload?.open === true
     pickerOpen.value = open
+    pickerDock.value = payload?.dock === 'left' ? 'left' : 'right'
     if (open) prefetchPickerData()
     if (!open) {
+      pickerDock.value = 'right'
       resetInteractionState()
       returnToIdle()
     }
@@ -521,13 +549,31 @@ body:has(.pet-root),
 }
 
 .pet-root--picker-open {
+  flex-direction: row;
+  align-items: flex-end;
   justify-content: flex-start;
+  gap: 8px;
   pointer-events: auto;
+}
+
+.pet-root--picker-left {
+  flex-direction: row-reverse;
+}
+
+.pet-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 200px;
+  width: 200px;
+  height: 100%;
+  min-height: 0;
 }
 
 .pet-picker {
   flex: 0 0 320px;
-  width: 100%;
+  width: 320px;
   height: 320px;
   pointer-events: auto;
 }
@@ -555,27 +601,37 @@ body:has(.pet-root),
   50% { opacity: 0.55; }
 }
 .pet-toast {
-  max-width: 100%; margin-bottom: 4px;
-  padding: 5px 8px; border-radius: 10px;
-  background: rgba(14, 14, 22, 0.92);
-  border: 1px solid rgba(236, 72, 153, 0.28);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-  color: #f5f5f7; font-size: 11px;
-  line-height: 1.4; text-align: center;
-  word-break: break-all; pointer-events: auto;
+  max-width: 100%;
+  margin-bottom: $space-1;
+  padding: 5px 8px;
+  border-radius: $radius-md;
+  background: var(--ly-bg-glass);
+  border: 1px solid rgba($color-pink-rgb, 0.28);
+  backdrop-filter: blur(12px);
+  color: var(--ly-text-primary);
+  font-size: $font-size-xs;
+  line-height: 1.4;
+  text-align: center;
+  word-break: break-all;
+  pointer-events: auto;
 }
 
 .pet-greeting {
-  max-width: 92%; margin-bottom: 6px;
-  padding: 8px 14px; border-radius: 14px;
-  background: linear-gradient(135deg, rgba(236, 72, 153, 0.90), rgba(168, 85, 247, 0.85));
-  border: 1px solid rgba(236, 72, 153, 0.55);
-  box-shadow:
-    0 0 24px rgba(236, 72, 153, 0.28),
-    0 8px 28px rgba(0, 0, 0, 0.42);
-  color: #fff; font-size: 14px; font-weight: 500;
-  line-height: 1.45; text-align: center;
-  word-break: break-word; pointer-events: auto;
+  max-width: 92%;
+  margin-bottom: $space-2;
+  padding: 8px 14px;
+  border-radius: $radius-md;
+  background: rgba($color-pink-rgb, 0.88);
+  border: 1px solid rgba($color-pink-rgb, 0.55);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 0 24px rgba($color-pink-rgb, 0.22);
+  color: $color-text-inverse;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.45;
+  text-align: center;
+  word-break: break-word;
+  pointer-events: auto;
   cursor: pointer;
 }
 
@@ -608,10 +664,10 @@ body:has(.pet-root),
 }
 
 .pet-greeting-pop-enter-active {
-  transition: opacity 0.35s ease, transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: opacity 0.28s cubic-bezier(0.23, 1, 0.32, 1), transform 0.28s cubic-bezier(0.23, 1, 0.32, 1);
 }
 .pet-greeting-pop-leave-active {
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  transition: opacity 0.24s cubic-bezier(0.23, 1, 0.32, 1), transform 0.24s cubic-bezier(0.23, 1, 0.32, 1);
 }
 .pet-greeting-pop-enter-from {
   opacity: 0; transform: translateY(12px) scale(0.85);

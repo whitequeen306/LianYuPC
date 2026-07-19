@@ -1452,22 +1452,26 @@ function expandLauncherForPicker() {
     y: pet.y + pet.height / 2,
   })
   const area = display.workArea
-  const width = PICKER_PANEL_WIDTH
-  const height = PICKER_PANEL_HEIGHT + LAUNCHER_WINDOW.height + PICKER_PET_GAP
+  // Pet stage (voice caption on top) + character picker beside it (prefer right).
+  const width = LAUNCHER_WINDOW.width + PICKER_PET_GAP + PICKER_PANEL_WIDTH
+  const height = Math.max(LAUNCHER_WINDOW.height, PICKER_PANEL_HEIGHT)
 
-  let x = pet.x + Math.round((pet.width - width) / 2)
-  let y = pet.y - PICKER_PANEL_HEIGHT - PICKER_PET_GAP
-  if (y < area.y) {
-    y = pet.y + pet.height + PICKER_PET_GAP
+  let dock = 'right'
+  let x = pet.x
+  let y = pet.y + pet.height - height
+  if (x + width > area.x + area.width) {
+    // Not enough room on the right — grow leftward and dock picker on the left.
+    dock = 'left'
+    x = pet.x + pet.width - width
   }
+  if (x < area.x) x = area.x
   if (x + width > area.x + area.width) {
     x = area.x + area.width - width
   }
-  if (x < area.x) x = area.x
+  if (y < area.y) y = area.y
   if (y + height > area.y + area.height) {
     y = area.y + area.height - height
   }
-  if (y < area.y) y = area.y
 
   launcherWindow.setBounds({
     x: Math.round(x),
@@ -1475,6 +1479,7 @@ function expandLauncherForPicker() {
     width,
     height,
   }, false)
+  return dock
 }
 
 function shrinkLauncherAfterPicker() {
@@ -1510,14 +1515,14 @@ function openCharacterPicker() {
 
   launcherPickerOpen = true
   applyLauncherMouseMode()
-  expandLauncherForPicker()
+  const dock = expandLauncherForPicker() || 'right'
 
   if (!launcherWindow.isVisible()) {
     launcherWindow.show()
   }
   launcherWindow.focus()
   launcherWindow.moveTop()
-  launcherWindow.webContents.send('desktop:picker-toggle', { open: true })
+  launcherWindow.webContents.send('desktop:picker-toggle', { open: true, dock })
 }
 
 function toggleCharacterPicker() {
@@ -1558,10 +1563,16 @@ function positionQuickChatNearLauncher(win) {
   })
   const area = display.workArea
   const gap = 12
-  let x = anchorBounds.x + anchorBounds.width + gap
-  let y = anchorBounds.y + Math.round((anchorBounds.height - winBounds.height) / 2)
+  // Sit to the right of the pet stage; caption stays above the sprite in the launcher.
+  const stageW = Math.min(anchorBounds.width, LAUNCHER_WINDOW.width)
+  const stageH = Math.min(anchorBounds.height, LAUNCHER_WINDOW.height)
+  const stageX = anchorBounds.x
+  const stageY = anchorBounds.y + anchorBounds.height - stageH
+
+  let x = stageX + stageW + gap
+  let y = stageY
   if (x + winBounds.width > area.x + area.width) {
-    x = anchorBounds.x - winBounds.width - gap
+    x = stageX - winBounds.width - gap
   }
   if (x < area.x) x = area.x
   if (y < area.y) y = area.y
