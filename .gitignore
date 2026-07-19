@@ -7,6 +7,9 @@ secrets/platform-keys.txt
 backend/scripts/_vault_reseed.sql
 backend/scripts/out/
 
+# Local one-shot ship scripts / notes (never commit; see AGENTS.md → 发布发版)
+local/
+
 # Java / Maven
 backend/target/
 backend/*/target/

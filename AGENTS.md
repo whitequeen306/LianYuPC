@@ -105,65 +105,33 @@ lianyu-app → lianyu-web → lianyu-service → lianyu-ai / lianyu-dao / lianyu
 - Docker Compose 编排全部中间件
 - `.env.example` 入仓，`.env` 入 `.gitignore`
 
-## 部署与发布（前后端分离，务必遵守）
+## 发布发版（Agent 必看 — 不要另想流程）
 
-**前端在本地打包，不在服务器上构建或部署；后端在服务器上跑 Docker，不涉及前端打包。**
+**前后端分离：** Electron 只在本机打；云端只跑 backend/api-gateway + 中间件，不构建前端。
 
-| 端 | 运行位置 | 发布方式 | 不要做什么 |
-|---|---|---|---|
-| **前端（Electron 桌面客户端）** | 用户本机 | 本地 `frontend/` 下 `npm run electron:release`（或 `electron:build`），产出 `frontend/release/v{version}/LianYu Setup {version}.exe` | 不要在云端执行 `vite build` / `electron-builder`；不要把 `frontend/dist`、`release` 部署到服务器 |
-| **后端 + API 网关** | 云服务器 `/opt/lianyu` | `git pull origin main` 后 `docker compose up -d --build backend api-gateway`（见 `scripts/_cloud_deploy_pull.py`） | 不要指望「部署后端」顺带更新客户端 UI；前端改动必须重新打 Electron 安装包 |
+功能改动已 commit 到 `main`、工作区干净后，**只跑本地一条龙**（目录已 `.gitignore`，不入仓）：
 
-补充约定：
-
-- 云端 Compose 仅跑 **backend、api-gateway** 与中间件（MySQL / Redis / MinIO / Milvus / RabbitMQ）；**无 frontend 容器**（`web-gateway` 仅 `dev-proxy` profile 本地联调用）。
-- 客户端通过 `frontend/.env.production.cloud` 中的 `VITE_LIANYU_API_ORIGIN` 指向云端 API；API 地址变更改 env 并重打 Electron，不是改服务器前端静态资源。
-- 仅后端修复（如 MinIO 资源、接口逻辑）部署后，**已安装的 Electron 客户端无需重装**即可生效；**仅前端 Vue 改动**（页面、样式、加载策略等）必须 **重新打 Electron 包** 用户才会看到。
-- Agent 排查「线上缺图 / 接口慢」时，先区分是 **服务端（MinIO/DB/API）** 还是 **客户端（未打包的前端改动）** 问题，避免在服务器上找不存在的前端构建产物。
-
-### Electron 客户端发布流程（自动更新通道）
-
-从 v0.2.261 起，客户端自动更新运行时读取自家源：`/api/public/files/updates/latest.yml`，安装包与 blockmap 存放在 MinIO 的 `updates/` 前缀下。GitHub Releases 仍作为备份发布渠道，但客户端更新检查/下载不再走 GitHub Releases 代理。
-
-发布脚本的资产流向是：本地 `electron-builder` 打包 → 上传 GitHub Releases（备份）→ 云服务器通过 GitHub Release asset API 下载安装包、blockmap、`latest.yml` → `docker cp` 进 `lianyu-minio` → `mc cp` 写入 MinIO bucket `lianyu/updates/`。不要用本地 SFTP/SCP 直接传大安装包到服务器，也不要直接写 MinIO 数据卷。
-
-**发布命令：**
-```bash
-cd frontend
-npm run electron:release           # patch 升级（0.2.256 → 0.2.257）
-npm run electron:release:minor     # minor 升级
-npm run electron:release:major     # major 升级
+```powershell
+cd C:\Users\hp\Desktop\LianYu-PC
+.\local\ship-release.ps1
 ```
 
-**发布流程（一条命令全自动）：**
-1. `npm version <bump> --no-git-tag-version`（改 package.json 版本号）
-2. `vite build` + `esbuild` 主进程 bundle + `electron-builder` 打包
-3. 自动上传 `LianYu Setup x.x.x.exe` + `latest.yml` + `.blockmap` 到 GitHub Releases（备份渠道）
-4. 云端从 GitHub Release 资产下载 `latest.yml`、安装包、`.blockmap`，同步到 MinIO `updates/`（客户端实际更新源）
-5. `latest.yml` 最后写入，避免客户端看到 manifest 时安装包还不存在；同步完成后只保留最近 3 个版本的安装包与 `.blockmap`，删除更旧版本，`latest.yml` 永远保留
+| 场景 | 命令 |
+|---|---|
+| 全量（push + 云端 + Electron patch） | `.\local\ship-release.ps1` |
+| 仅后端 | `.\local\ship-release.ps1 -BackendOnly` |
+| 仅 Electron（代码已在远端） | `.\local\ship-release.ps1 -ElectronOnly` |
+| minor / major | `.\local\ship-release.ps1 -Bump minor` |
 
-**GH_TOKEN 说明：**
-- 发布需要 GitHub Personal Access Token（classic，`repo` 权限）
-- 发布脚本优先读取当前 shell 的 `GH_TOKEN`；若未设置，会自动回退到 Windows Credential Manager（要求 `git credential.helper=manager` 且 `git credential fill` 能返回 `github.com` 的 `password=`）
-- 查看当前机器是否已存 GitHub 凭据：在 PowerShell 执行 ``"protocol=https`nhost=github.com`n" | git credential fill``；若输出含 `password=gho_...`，脚本即可自动取到，无需手动设环境变量
-- 如果 credential manager 取不到，再临时设置 `GH_TOKEN` 后重跑发布命令；**不要把 PAT 写进仓库、`.env`、`package.json` 或任何提交文件**
-- 仅本地打包（不上传 Release）用 `npm run electron:build`，不检查 GH_TOKEN
+说明、env 清单、凭据检查：**`local/README.md`**（与脚本同目录，亦不入仓）。  
+缺文件时按该 README 重建，不要把长流程写回本文件。
 
-**注意事项：**
-- 发布前必须先检查当前最新正式 Release 与本地版本号：执行 `gh release list --limit 5` 和读取 `frontend/package.json`，确认下一个版本号高于最新正式包；不要只按本地 `package.json` 猜版本。若存在 Draft Release（如上次失败残留），需先判断是否删除/跳过，最终发布版本必须是最新正式版本的下一个 patch/minor/major。
-- 发布前 **先 commit 并 push 代码**（`git commit` → `git push origin main`），确保源码与 Release 对应
-- 发布后 package.json 版本号已变更，需再 `git add package.json` 并 commit push
-- electron-builder 子进程已配置 `--use-system-ca`，不会因 SSL 证书问题上传失败
-- 安装包路径：`frontend/release/v{version}/LianYu Setup {version}.exe`
-- Release 地址：`https://github.com/whitequeen306/LianYuPC/releases`
+**边界（仍须记住）：**
 
-### Git 与云端同步
-
-- **主分支为 `main`**：本地开发、提交、推送均直接在 `main` 上进行（`git push origin main`），不经过 `develop` 分支。
-- **前后端源码均 push 到 GitHub**（`frontend/` 与 `backend/` 同在 monorepo）；本地改动完成并验证后，先提交再推送，不要只改本地不打远程。
-- **云服务器不承载 Git 开发**，只在 `/opt/lianyu` **`git pull origin main`** 拉取 `main` 分支，再 `docker compose up -d --build backend api-gateway`（自动化见 `scripts/_cloud_deploy_pull.py`）。
-- 常规流程：本地改完 → `git commit` → `git push origin main` → 服务器 pull + 重建后端容器；**前端 Electron 安装包在本地打完，不上传服务器**（安装包可另存 release 目录或 GitHub Releases，按需）。
-- Agent 执行发布时：**在 `main` 上提交并 push**，再服务器 pull；不要 SCP 源码或 jar 覆盖 `/opt/lianyu`，不要跳过 Git 直接在服务器改代码。
+- 主分支始终是 `main`；禁止 SCP 源码/jar 覆盖 `/opt/lianyu`
+- 只改后端 → 用户无需重装客户端；只改前端 Vue/Electron/`public/pet` → 必须打 Electron
+- 改 API Origin → 改已入仓的 `frontend/.env.production.cloud` 后重打 Electron
+- 云端部署读根目录 `.env` 的 `DEPLOY_SSH_PASSWORD`；`GH_TOKEN` 用环境变量或 Credential Manager，**禁止写入任何文件**
 
 ## 工作约定
 
@@ -190,4 +158,4 @@ npm run electron:release:major     # major 升级
 | `frontend/electron/desktopSettings.js` | 主进程 ALLOWED_PET_IDS（**漏了会导致切换不生效**） |
 | `backend/.../resources/pet-voices.json` | 后端语音映射（改后需重建 backend） |
 
-**注意**：前端改动需要重新打 Electron 包；后端 `pet-voices.json` 改动需要服务器 `python scripts/_cloud_deploy_pull.py` 重建 backend，否则截图语音不出声。
+**注意**：前端改动走 `.\local\ship-release.ps1`；仅改 `pet-voices.json` / 后端可用 `-BackendOnly`。
