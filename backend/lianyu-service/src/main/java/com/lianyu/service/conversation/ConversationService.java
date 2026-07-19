@@ -21,7 +21,6 @@ import com.lianyu.ai.graph.ChatTurnScene;
 import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.AssistantReplyService;
 import com.lianyu.service.ai.CharacterPromptBuilder;
-import com.lianyu.service.ai.DashScopeTtsService;
 import com.lianyu.service.ai.PetMeetVoiceCatalog;
 import com.lianyu.service.ai.PetVoiceRegistry;
 import com.lianyu.service.graph.ChatTurnCommand;
@@ -93,7 +92,6 @@ public class ConversationService {
     private final AiChatService aiChatService;
     private final PetMeetVoiceCatalog petMeetVoiceCatalog;
     private final PetVoiceRegistry petVoiceRegistry;
-    private final DashScopeTtsService dashScopeTtsService;
     private final ChatTurnFacade chatTurnFacade;
     private final CharacterPromptBuilder promptBuilder;
     private final MemoryRetriever memoryRetriever;
@@ -521,15 +519,13 @@ public class ConversationService {
                 return;
             }
 
-            String vcPetId = resolveVcPetId(character);
-            if (vcPetId != null) {
-                if (sendAiColdOpenWithVoice(userId, conversationId, character, vcPetId)) {
-                    return;
-                }
-                // TTS/AI failure fallback: fixed meet clip so open is never silent for VC pets.
+            // VC square pets: always use the fixed meet clip (no AI / time / weather).
+            if (resolveVcPetId(character) != null) {
                 if (trySendFixedMeetVoice(userId, conversationId, character)) {
                     return;
                 }
+                log.warn("Fixed meet voice missing for VC characterId={}, falling back to text cold open",
+                        character.getId());
             }
 
             CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
@@ -571,73 +567,6 @@ public class ConversationService {
         }
     }
 
-    /**
-     * VC square pets: AI writes 1 voice line (+ optional 1 text), TTS the first into a voice bubble.
-     * Keeps ice-break presence without flooding (max 1 voice + 1 text).
-     */
-    private boolean sendAiColdOpenWithVoice(Long userId,
-                                            Long conversationId,
-                                            Character character,
-                                            String petId) {
-        String memoryContext = memoryRetriever.retrieveProfileContext(character.getId(), userId);
-        String systemPrompt = proactiveSystemPrompt(userId, character, memoryContext, null);
-
-        AiChatRequest aiRequest = new AiChatRequest();
-        ChatToolContext.bindTo(aiRequest, character);
-        aiRequest.setProvider(AiConstants.PLATFORM_PROVIDER);
-        List<MessageDto> allMessages = new ArrayList<>();
-        allMessages.add(buildSystemMessage(systemPrompt));
-        allMessages.add(buildUserMessage("""
-                这是你和该用户在本会话里的第一次开口（会话中还没有任何历史消息）。
-                请按下面格式输出破冰内容（用空行分隔），控制数量：
-                第一行：一句适合朗读的问候（必须超过10个汉字，建议12～28字，口语自然；不要括号旁白、不要引号、不要多句）
-                第二行（可选）：一句短文字关心（≤30字）；若只需一句就不要写第二行
-                总共最多两行，不要更多。"""));
-        aiRequest.setMessages(allMessages);
-
-        ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
-        if (findLastMessage(conversationId) != null) {
-            return true;
-        }
-        List<String> pieces = splitColdOpenPieces(chatResult.getContent(), 2);
-        if (pieces.isEmpty()) {
-            return false;
-        }
-
-        String voiceLine = pieces.get(0);
-        String audioObjectKey = synthesizeAndStoreChatVoice(petId, voiceLine);
-        if (audioObjectKey == null) {
-            return false;
-        }
-
-        long seq = getNextSeq(conversationId);
-        Message voiceMsg = new Message();
-        voiceMsg.setSeq(seq);
-        voiceMsg.setConversationId(conversationId);
-        voiceMsg.setRole("ASSISTANT");
-        voiceMsg.setCharacterId(character.getId());
-        voiceMsg.setContent(voiceLine);
-        voiceMsg.setAudioUrl(audioObjectKey);
-        voiceMsg.setTokens(chatResult.getTotalTokens());
-        messageMapper.insert(voiceMsg);
-
-        if (pieces.size() > 1) {
-            Message textMsg = new Message();
-            textMsg.setSeq(getNextSeq(conversationId));
-            textMsg.setConversationId(conversationId);
-            textMsg.setRole("ASSISTANT");
-            textMsg.setCharacterId(character.getId());
-            textMsg.setContent(pieces.get(1));
-            messageMapper.insert(textMsg);
-        }
-
-        memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
-        notificationService.notifyProactiveMessage(
-                userId, conversationId, character.getId(), character.getName(), voiceLine);
-        log.info("Cold open AI voice: convId={}, petId={}, pieces={}", conversationId, petId, pieces.size());
-        return true;
-    }
-
     private String resolveVcPetId(Character character) {
         if (character == null || character.getSourceTemplateId() == null) {
             return null;
@@ -648,35 +577,6 @@ public class ConversationService {
         }
         String slug = template.getSlug().trim().toLowerCase();
         return petVoiceRegistry.hasVoice(slug) ? slug : null;
-    }
-
-    private String synthesizeAndStoreChatVoice(String petId, String text) {
-        try {
-            byte[] bytes = dashScopeTtsService.synthesizeBytesForPet(petId, text);
-            if (bytes == null || bytes.length == 0) {
-                return null;
-            }
-            return fileStorageService.uploadChatVoiceBytes(petId, bytes, "audio/wav");
-        } catch (Exception e) {
-            log.warn("Cold open TTS store failed: petId={}, reason={}", petId, e.getMessage());
-            return null;
-        }
-    }
-
-    private List<String> splitColdOpenPieces(String fullContent, int maxPieces) {
-        int capped = Math.max(1, Math.min(maxPieces, 2));
-        AssistantReplyService.ProcessedReply processed = assistantReplyService.process(fullContent, capped);
-        List<String> out = new ArrayList<>();
-        for (String piece : processed.pieces()) {
-            String cleaned = sanitizeAssistantText(piece);
-            if (!cleaned.isBlank()) {
-                out.add(cleaned);
-            }
-            if (out.size() >= capped) {
-                break;
-            }
-        }
-        return out;
     }
 
     /**

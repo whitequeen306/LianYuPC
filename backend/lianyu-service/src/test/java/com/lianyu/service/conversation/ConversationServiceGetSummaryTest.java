@@ -79,7 +79,6 @@ class ConversationServiceGetSummaryTest {
                 aiChatService,
                 mock(com.lianyu.service.ai.PetMeetVoiceCatalog.class),
                 mock(com.lianyu.service.ai.PetVoiceRegistry.class),
-                mock(com.lianyu.service.ai.DashScopeTtsService.class),
                 null,
                 promptBuilder,
                 memoryRetriever,

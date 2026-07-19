@@ -63,7 +63,6 @@ class ConversationServiceStreamErrorTest {
     @Mock private AiChatService aiChatService;
     @Mock private com.lianyu.service.ai.PetMeetVoiceCatalog petMeetVoiceCatalog;
     @Mock private com.lianyu.service.ai.PetVoiceRegistry petVoiceRegistry;
-    @Mock private com.lianyu.service.ai.DashScopeTtsService dashScopeTtsService;
     @Mock private ChatTurnFacade chatTurnFacade;
     @Mock private CharacterPromptBuilder promptBuilder;
     @Mock private MemoryRetriever memoryRetriever;
@@ -98,7 +97,6 @@ class ConversationServiceStreamErrorTest {
                 aiChatService,
                 petMeetVoiceCatalog,
                 petVoiceRegistry,
-                dashScopeTtsService,
                 chatTurnFacade,
                 promptBuilder,
                 memoryRetriever,

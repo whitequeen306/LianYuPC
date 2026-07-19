@@ -20,7 +20,7 @@ SYNTH_URL = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-gene
 # and backend PetMeetVoiceCatalog. Every line MUST be > 10 Chinese characters.
 LINES: dict[str, dict[str, str]] = {
     "raiden": {
-        "meet": "……你终于来了，我已等候多时。",
+        "meet": "……我是雷电将军。初次见面，请多指教。",
         "enter": "回来了？我还以为你不会来。",
         "noon": "午安。今天也别把自己逼太紧。",
         "evening": "夜深了，记得停下休息一会儿。",
@@ -29,7 +29,7 @@ LINES: dict[str, dict[str, str]] = {
         "run": "跟上，别落在我后面了。",
     },
     "ayaka": {
-        "meet": "初次见面，还请您多多关照呐。",
+        "meet": "初次见面，我是神里绫华，还请您多多关照。",
         "enter": "欢迎回来，绫华一直在等您。",
         "noon": "中午好，请问您用过午饭了吗？",
         "evening": "晚上好，今天也辛苦您了呢。",
@@ -38,7 +38,7 @@ LINES: dict[str, dict[str, str]] = {
         "run": "请当心脚下，绫华跟在您身边。",
     },
     "ganyu": {
-        "meet": "你好……我是甘雨，请多关照。",
+        "meet": "你好，我是璃月七星的甘雨，初次见面，请多指教。",
         "enter": "啊…你回来了，我正好在等你。",
         "noon": "中午了……记得好好吃一顿饭哦。",
         "evening": "晚上好……别太晚睡，要注意休息。",
@@ -47,7 +47,7 @@ LINES: dict[str, dict[str, str]] = {
         "run": "我跟上了……请别跑太快呀。",
     },
     "klee": {
-        "meet": "哇！新朋友！可莉是火花骑士可莉！",
+        "meet": "哇！我是火花骑士可莉，初次见面请多指教！",
         "enter": "欸嘿！你回来啦，可莉好想你！",
         "noon": "中午啦！可莉肚子饿了，一起吃饭吧！",
         "evening": "晚上好！可莉今天有没有想你呀？",
@@ -56,7 +56,7 @@ LINES: dict[str, dict[str, str]] = {
         "run": "可莉跑起来啦，你也要跟上哦！",
     },
     "elysia": {
-        "meet": "嗨～很高兴遇见你，要好好相处哦。",
+        "meet": "嗨～我是爱莉希雅，很高兴遇见你，请多关照哦。",
         "enter": "哎呀，你来啦～人家等你好久了。",
         "noon": "午安呀，有没有吃点好吃的东西？",
         "evening": "晚上好～今天过得开心吗，跟我说说。",
