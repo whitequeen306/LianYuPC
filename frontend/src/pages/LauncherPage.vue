@@ -45,7 +45,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { getActivePinia } from 'pinia'
 import { useI18n } from 'vue-i18n'
 import { gsap } from 'gsap'
@@ -494,7 +494,15 @@ onMounted(async () => {
     const open = payload?.open === true
     pickerOpen.value = open
     pickerDock.value = payload?.dock === 'left' ? 'left' : 'right'
-    if (open) prefetchPickerData()
+    if (open) {
+      prefetchPickerData()
+      // Force a layout/paint pass after the side panel mounts (transparent Electron).
+      void nextTick(() => {
+        const root = document.querySelector('.pet-root')
+        if (root) void root.offsetHeight
+        window.dispatchEvent(new Event('resize'))
+      })
+    }
     if (!open) {
       pickerDock.value = 'right'
       resetInteractionState()
@@ -605,9 +613,8 @@ body:has(.pet-root),
   margin-bottom: $space-1;
   padding: 5px 8px;
   border-radius: $radius-md;
-  background: var(--ly-bg-glass);
+  background: var(--ly-bg-glass-strong, var(--ly-bg-glass));
   border: 1px solid rgba($color-pink-rgb, 0.28);
-  backdrop-filter: blur(12px);
   color: var(--ly-text-primary);
   font-size: $font-size-xs;
   line-height: 1.4;
@@ -621,9 +628,8 @@ body:has(.pet-root),
   margin-bottom: $space-2;
   padding: 8px 14px;
   border-radius: $radius-md;
-  background: rgba($color-pink-rgb, 0.88);
+  background: rgba($color-pink-rgb, 0.92);
   border: 1px solid rgba($color-pink-rgb, 0.55);
-  backdrop-filter: blur(14px);
   box-shadow: 0 0 24px rgba($color-pink-rgb, 0.22);
   color: $color-text-inverse;
   font-size: 0.875rem;

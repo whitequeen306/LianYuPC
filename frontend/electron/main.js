@@ -747,6 +747,36 @@ const LAUNCHER_WINDOW = { width: 200, height: 268 }
 const PICKER_PANEL_HEIGHT = 320
 const PICKER_PANEL_WIDTH = 320
 const PICKER_PET_GAP = 8
+/** Side dock for in-launcher picker: 'right' | 'left' */
+let launcherPickerDock = 'right'
+
+/**
+ * Windows DWM often leaves newly resized transparent regions black until a
+ * composite kick (move/opacity). Force a full-frame repaint after picker expand.
+ */
+function forceTransparentWindowRepaint(win) {
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return
+  try {
+    win.webContents.invalidate()
+  } catch {
+    // ignore
+  }
+  if (process.platform !== 'win32') return
+  try {
+    win.setOpacity(0.99)
+    setTimeout(() => {
+      if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return
+      try {
+        win.setOpacity(1)
+        win.webContents.invalidate()
+      } catch {
+        // ignore
+      }
+    }, 16)
+  } catch {
+    // ignore
+  }
+}
 
 function applyLauncherMouseMode() {
   if (!launcherWindow || launcherWindow.isDestroyed()) return
@@ -1373,7 +1403,10 @@ function createLauncherWindow() {
     moveTimer = setTimeout(() => {
       const bounds = win.getBounds()
       if (launcherPickerOpen) {
-        const petX = bounds.x + Math.round((bounds.width - LAUNCHER_WINDOW.width) / 2)
+        // Pet stage docks to the side opposite the picker panel.
+        const petX = launcherPickerDock === 'left'
+          ? bounds.x + bounds.width - LAUNCHER_WINDOW.width
+          : bounds.x
         const petY = bounds.y + bounds.height - LAUNCHER_WINDOW.height
         writeLauncherPosition(petX, petY)
       } else {
@@ -1473,6 +1506,7 @@ function expandLauncherForPicker() {
     y = area.y + area.height - height
   }
 
+  launcherPickerDock = dock
   launcherWindow.setBounds({
     x: Math.round(x),
     y: Math.round(y),
@@ -1523,6 +1557,10 @@ function openCharacterPicker() {
   launcherWindow.focus()
   launcherWindow.moveTop()
   launcherWindow.webContents.send('desktop:picker-toggle', { open: true, dock })
+  // Transparent resize + Vue mount: kick DWM paint now and after panel first paint.
+  forceTransparentWindowRepaint(launcherWindow)
+  setTimeout(() => forceTransparentWindowRepaint(launcherWindow), 48)
+  setTimeout(() => forceTransparentWindowRepaint(launcherWindow), 160)
 }
 
 function toggleCharacterPicker() {
@@ -1539,10 +1577,12 @@ function closeCharacterPicker() {
   }
 
   launcherPickerOpen = false
+  launcherPickerDock = 'right'
   if (launcherWindow && !launcherWindow.isDestroyed()) {
     launcherWindow.webContents.send('desktop:picker-toggle', { open: false })
     shrinkLauncherAfterPicker()
     resetLauncherInteraction()
+    forceTransparentWindowRepaint(launcherWindow)
   }
 
   if (pickerWindow && !pickerWindow.isDestroyed()) {

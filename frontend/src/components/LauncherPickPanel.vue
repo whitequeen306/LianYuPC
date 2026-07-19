@@ -202,14 +202,15 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   position: relative;
-  border-radius: 16px 16px 0 0;
-  background: rgba(14, 14, 22, 0.96);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-bottom: none;
-  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(16px);
+  // Opaque fill — no backdrop-filter: Electron transparent windows paint black
+  // edges with blur until the window is moved (Windows DWM).
+  border-radius: $radius-lg;
+  background: var(--ly-bg-glass-strong, rgba(30, 39, 50, 0.96));
+  border: 1px solid rgba($color-pink-rgb, 0.18);
   overflow: hidden;
   pointer-events: auto;
+  transform: translateZ(0);
+  contain: paint;
 }
 
 .launcher-pick__head {
@@ -217,20 +218,20 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 12px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba($color-pink-rgb, 0.12);
 }
 
 .launcher-pick__title {
   margin: 0;
   font-size: 15px;
   font-weight: 600;
-  color: #f5f5f7;
+  color: var(--ly-text-primary);
 }
 
 .launcher-pick__close {
   border: none;
   background: transparent;
-  color: #a1a1aa;
+  color: var(--ly-text-muted);
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
@@ -238,7 +239,7 @@ onUnmounted(() => {
   pointer-events: auto;
 
   &:hover {
-    color: #f5f5f7;
+    color: var(--ly-text-primary);
   }
 }
 
@@ -252,7 +253,7 @@ onUnmounted(() => {
   gap: 12px;
   padding: 24px;
   text-align: center;
-  color: #a1a1aa;
+  color: var(--ly-text-secondary);
   font-size: 13px;
 }
 
@@ -272,15 +273,16 @@ onUnmounted(() => {
   gap: 10px;
   padding: 10px 12px;
   border: none;
-  border-radius: 12px;
+  border-radius: $radius-md;
   background: transparent;
-  color: #f5f5f7;
+  color: var(--ly-text-primary);
   cursor: pointer;
   text-align: left;
   pointer-events: auto;
+  transition: background 0.22s cubic-bezier(0.23, 1, 0.32, 1);
 
   &:hover:not(:disabled) {
-    background: rgba(236, 72, 153, 0.12);
+    background: rgba($color-pink-rgb, 0.12);
   }
 
   &:disabled {
@@ -313,8 +315,8 @@ onUnmounted(() => {
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  border-radius: 999px;
-  background: #ff4d4f;
+  border-radius: 9999px;
+  background: $color-error;
   color: #fff;
   font-size: 10px;
   font-weight: 700;
@@ -337,10 +339,10 @@ onUnmounted(() => {
 
 .launcher-pick__btn {
   border: none;
-  border-radius: 10px;
+  border-radius: $radius-pill;
   padding: 8px 14px;
-  background: #f4a6b5;
-  color: #fff;
+  background: $color-pink-primary;
+  color: var(--ly-text-inverse);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -350,8 +352,8 @@ onUnmounted(() => {
 .launcher-pick__spinner {
   width: 20px;
   height: 20px;
-  border: 2px solid rgba(244, 166, 181, 0.2);
-  border-top-color: #f4a6b5;
+  border: 2px solid rgba($color-pink-rgb, 0.2);
+  border-top-color: $color-pink-primary;
   border-radius: 50%;
   animation: launcher-pick-spin 0.8s linear infinite;
 }
@@ -364,7 +366,7 @@ onUnmounted(() => {
 
 .launcher-pick__avatar-fallback {
   font-size: 12px;
-  color: #a1a1aa;
+  color: var(--ly-text-muted);
 }
 
 .launcher-pick__toast {
@@ -374,9 +376,9 @@ onUnmounted(() => {
   transform: translateX(-50%);
   margin: 0;
   padding: 6px 10px;
-  border-radius: 8px;
-  background: rgba(20, 20, 28, 0.92);
-  color: #f5f5f7;
+  border-radius: $radius-md;
+  background: var(--ly-bg-glass-strong, rgba(30, 39, 50, 0.92));
+  color: var(--ly-text-primary);
   font-size: 12px;
   pointer-events: none;
 }
