@@ -286,8 +286,8 @@ function onPointerMove(e) {
     state.runAnim = runAnim
     playAnim(runAnim, { loop: true })
     const runLine = getPetFixedVoiceLine(currentPetId.value, 'run')
+    // Show caption whenever audio actually starts (cooldown/busy → no audio, no caption).
     if (playPetFixedVoice(currentPetId.value, 'run', { busy: isGreetingAudioBusy() })) {
-      // Caption must accompany voice; window height reserves space above the sprite.
       showVoiceCaption(runLine)
     }
   }
@@ -573,14 +573,18 @@ body:has(.pet-root),
 }
 
 .pet-stage {
+  /* Fill the full launcher height (320px) so caption above the 208px sprite is not clipped.
+     A fixed 200px stage used to shrink/hide .pet-greeting when run/click voice played. */
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
-  flex: 0 0 200px;
+  flex: 1 1 auto;
+  align-self: stretch;
   width: 200px;
   height: 100%;
   min-height: 0;
+  overflow: visible;
 }
 
 .pet-picker {
@@ -591,6 +595,7 @@ body:has(.pet-root),
 }
 
 .pet-observe-badge {
+  flex-shrink: 0;
   margin-bottom: 6px;
   padding: 3px 10px;
   border-radius: 999px;
@@ -601,6 +606,7 @@ body:has(.pet-root),
   letter-spacing: 0.5px;
   pointer-events: none;
   animation: pet-observe-pulse 1.4s ease-in-out infinite;
+  z-index: 2;
 }
 .pet-observe-fade-enter-active, .pet-observe-fade-leave-active {
   transition: opacity 0.2s ease;
@@ -613,6 +619,7 @@ body:has(.pet-root),
   50% { opacity: 0.55; }
 }
 .pet-toast {
+  flex-shrink: 0;
   max-width: 100%;
   margin-bottom: $space-1;
   padding: 5px 8px;
@@ -625,9 +632,11 @@ body:has(.pet-root),
   text-align: center;
   word-break: break-all;
   pointer-events: auto;
+  z-index: 2;
 }
 
 .pet-greeting {
+  flex-shrink: 0;
   max-width: 92%;
   margin-bottom: $space-2;
   padding: 8px 14px;
@@ -643,10 +652,12 @@ body:has(.pet-root),
   word-break: break-word;
   pointer-events: auto;
   cursor: pointer;
+  z-index: 2;
 }
 
 .pet-wrap {
   position: relative; width: 192px; height: 208px;
+  flex-shrink: 0;
   pointer-events: none;
   will-change: transform;
 }
