@@ -601,7 +601,19 @@ function resolveMemberChars(ids) {
 async function loadGroupMembers(groupId, fallbackIds) {
   try {
     const members = await getGroupMembers(groupId)
-    if (members?.length) return members
+    if (members?.length) {
+      // Prefer API thumbs; fill gaps from local character list (square-template avatars).
+      return members.map((m) => {
+        const local = characters.value.find((x) => x.id === m.id)
+        if (!local) return m
+        return {
+          ...m,
+          avatarUrl: m.avatarUrl || local.avatarUrl,
+          avatarThumbUrl: m.avatarThumbUrl || local.avatarThumbUrl,
+          settings: m.settings || local.settings,
+        }
+      })
+    }
   } catch {}
   return fallbackIds?.length ? resolveMemberChars(fallbackIds) : []
 }

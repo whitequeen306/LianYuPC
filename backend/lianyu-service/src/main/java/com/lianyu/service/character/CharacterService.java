@@ -111,6 +111,11 @@ public class CharacterService {
         return toResponse(entity);
     }
 
+    /** Public avatar/settings mapping (incl. square-template avatar fallback). */
+    public CharacterResponse toPublicResponse(Character entity) {
+        return toResponse(entity);
+    }
+
     @Transactional
     public CharacterResponse update(Long userId, Long characterId, UpdateCharacterRequest request) {
         Character entity = findOwned(userId, characterId);

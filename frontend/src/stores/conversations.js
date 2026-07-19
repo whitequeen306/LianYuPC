@@ -77,14 +77,19 @@ export const useConversationsStore = defineStore('conversations', () => {
 
   async function refreshConversationSummary(id) {
     if (!id) return null
-    const conversation = await getConversation(id)
-    if (!conversation?.id) return null
-    patchRealtimeSummary(id, {
-      lastMessage: conversation.lastMessage ?? null,
-      lastCharacterMessage: conversation.lastCharacterMessage ?? null,
-      updatedAt: conversation.updatedAt || conversation.lastMessageAt || conversation.createdAt || null,
-    })
-    return conversation
+    // Stale/missing conversation ids (e.g. empty bond list) must not toast "对话不存在".
+    try {
+      const conversation = await getConversation(id, { silent: true })
+      if (!conversation?.id) return null
+      patchRealtimeSummary(id, {
+        lastMessage: conversation.lastMessage ?? null,
+        lastCharacterMessage: conversation.lastCharacterMessage ?? null,
+        updatedAt: conversation.updatedAt || conversation.lastMessageAt || conversation.createdAt || null,
+      })
+      return conversation
+    } catch {
+      return null
+    }
   }
 
   function removeLocal(id) {

@@ -99,6 +99,7 @@
               :transcript="item.content || ''"
               variant="hero"
               :playback-rate="getPetVoiceRate(petIdFromAudioUrl(item.audioUrl))"
+              :volume-gain="getPetVoiceVolume(petIdFromAudioUrl(item.audioUrl))"
             />
             <AssistantMessageContent
               v-else-if="item.content"
@@ -264,7 +265,7 @@ import { drainAssistantStream } from '@/utils/assistantStreamDrain'
 import { formatSmartTime } from '@/utils/feedTime'
 import AssistantMessageContent from '@/components/AssistantMessageContent.vue'
 import VoiceMessageBubble from '@/components/VoiceMessageBubble.vue'
-import { getPetVoiceRate } from '@/constants/petCatalog'
+import { getPetVoiceRate, getPetVoiceVolume } from '@/constants/petCatalog'
 import { stripInnerThoughts, resolveShowInnerThoughts } from '@/utils/innerThoughtFilter'
 
 function petIdFromAudioUrl(audioUrl) {

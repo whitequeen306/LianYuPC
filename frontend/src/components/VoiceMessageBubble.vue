@@ -39,6 +39,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { resolveMediaUrl, resolveStaticAsset } from '@/utils/media.js'
+import { applyPetVoiceGain } from '@/utils/petVoiceGain.js'
 
 const props = defineProps({
   audioUrl: { type: String, required: true },
@@ -48,6 +49,8 @@ const props = defineProps({
   transcript: { type: String, default: '' },
   variant: { type: String, default: 'hero' },
   playbackRate: { type: Number, default: 1 },
+  /** Absolute loudness multiplier; >1 boosts via Web Audio gain */
+  volumeGain: { type: Number, default: 0.92 },
 })
 
 const playing = ref(false)
@@ -209,7 +212,7 @@ async function probeDuration(url) {
 
 async function playFrom(url) {
   audio = new Audio(url)
-  audio.volume = 0.92
+  applyPetVoiceGain(audio, props.volumeGain)
   applyPlaybackRate(audio)
   bindAudioEvents(audio)
   await audio.play()

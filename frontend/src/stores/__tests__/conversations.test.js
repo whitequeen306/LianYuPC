@@ -73,7 +73,7 @@ describe('conversations store realtime summary patching', () => {
 
     await store.refreshConversationSummary(1)
 
-    expect(getConversationMock).toHaveBeenCalledWith(1)
+    expect(getConversationMock).toHaveBeenCalledWith(1, { silent: true })
     expect(store.list[0]).toMatchObject({
       id: 1,
       lastMessage: '接口返回新摘要',

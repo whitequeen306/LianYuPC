@@ -20,7 +20,7 @@ SYNTH_URL = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-gene
 # and backend PetMeetVoiceCatalog. Meet lines are personality-shaped (no fixed length).
 LINES: dict[str, dict[str, str]] = {
     "raiden": {
-        "meet": "我是来自稻妻的雷电将军。你也要与我为敌吗？",
+        "meet": "浮世皆泡影，唯有永恒方为归宿，此身虽然尊贵殊胜，不过你不必紧张。",
         "enter": "回来了？我还以为你不会来。",
         "noon": "午安。今天也别把自己逼太紧。",
         "evening": "夜深了，记得停下休息一会儿。",
@@ -29,7 +29,8 @@ LINES: dict[str, dict[str, str]] = {
         "run": "跟上，别落在我后面了。",
     },
     "ayaka": {
-        "meet": "我是来自稻妻的神里绫华，初次见面，请多关照。",
+        # Four em-dashes create the dramatic pause before 参上 in VC TTS.
+        "meet": "稻妻神里流太刀术皆传————神里绫华，参上！请多关照。",
         "enter": "欢迎回来，绫华一直在等您。",
         "noon": "中午好，请问您用过午饭了吗？",
         "evening": "晚上好，今天也辛苦您了呢。",
@@ -56,7 +57,7 @@ LINES: dict[str, dict[str, str]] = {
         "run": "可莉跑起来啦，你也要跟上哦！",
     },
     "elysia": {
-        "meet": "我是爱莉希雅，很高兴遇见你呀～要不要先跟人家说说话？人家会好好听的哦。",
+        "meet": "嗨~我是爱莉希雅，大家都叫我粉色妖精小姐，你就是那位远道而来的客人吗？",
         "enter": "哎呀，你来啦～人家等你好久了。",
         "noon": "午安呀，有没有吃点好吃的东西？",
         "evening": "晚上好～今天过得开心吗，跟我说说。",

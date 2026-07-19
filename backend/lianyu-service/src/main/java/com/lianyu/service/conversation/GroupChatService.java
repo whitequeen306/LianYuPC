@@ -24,6 +24,7 @@ import com.lianyu.service.ai.InnerThoughtFilter;
 import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
 import com.lianyu.service.character.CharacterPreferenceResolver;
+import com.lianyu.service.character.CharacterService;
 import com.lianyu.service.dto.*;
 import com.lianyu.service.memory.MemoryRetriever;
 import com.lianyu.service.notification.NotificationService;
@@ -72,6 +73,7 @@ public class GroupChatService {
     private final StringRedisTemplate redisTemplate;
     private final FileStorageService fileStorageService;
     private final CharacterChatBehaviorResolver chatBehaviorResolver;
+    private final CharacterService characterService;
     private final AssistantReplyService assistantReplyService;
     private final AssistantReplySplitter replySplitter;
     private final NotificationService notificationService;
@@ -313,11 +315,8 @@ public class GroupChatService {
             for (GroupMember member : members) {
                 Character character = charMap.get(member.getCharacterId());
                 if (character != null) {
-                    result.add(CharacterResponse.builder()
-                            .id(character.getId())
-                            .name(character.getName())
-                            .avatarUrl(fileStorageService.resolvePublicUrl(character.getAvatarUrl()))
-                            .build());
+                    // Same mapping as single-chat: square-template avatar + thumb URL.
+                    result.add(characterService.toPublicResponse(character));
                 }
             }
         }

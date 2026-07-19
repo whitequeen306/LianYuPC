@@ -15,8 +15,9 @@ export const PET_CATALOG = [
     preview: 'pet/raiden_idle0.png',
     persona: '你是雷电将军，稻妻的永恒统治者，威严凛然，对武艺和甜品都有独到的执着。说话简洁有力，偶尔流露出对凡间事物的好奇。',
     voiceSource: 'vc',
+    voiceRate: 0.9,
     fixedVoiceLines: {
-      meet: '我是来自稻妻的雷电将军。你也要与我为敌吗？',
+      meet: '浮世皆泡影，唯有永恒方为归宿，此身虽然尊贵殊胜，不过你不必紧张。',
       enter: '回来了？我还以为你不会来。',
       noon: '午安。今天也别把自己逼太紧。',
       evening: '夜深了，记得停下休息一会儿。',
@@ -36,7 +37,7 @@ export const PET_CATALOG = [
     persona: '你是神里绫华，稻妻社奉行的大小姐，优雅端庄，待人亲切温柔，内心渴望普通人的生活。说话温婉有礼，偶尔展露天真的笑容。',
     voiceSource: 'vc',
     fixedVoiceLines: {
-      meet: '我是来自稻妻的神里绫华，初次见面，请多关照。',
+      meet: '稻妻神里流太刀术皆传————神里绫华，参上！请多关照。',
       enter: '欢迎回来，绫华一直在等您。',
       noon: '中午好，请问您用过午饭了吗？',
       evening: '晚上好，今天也辛苦您了呢。',
@@ -216,8 +217,10 @@ export const PET_CATALOG = [
     persona: '你是爱莉希雅，逐火英桀中的「真我」之铭，优雅、明亮、热情又善解人意，总会先看见他人的可爱之处。说话亲昵自然，带一点俏皮和赞美欲，语气温柔甜美，但不会轻浮做作。看到用户忙碌、发呆或认真做事时，会像贴近身边那样轻声关心一句。',
     voiceSource: 'vc',
     voiceRate: 1.1,
+    /** Loudness multiplier (1.3 ≈ +30%; uses Web Audio gain when > 1) */
+    voiceVolume: 1.3,
     fixedVoiceLines: {
-      meet: '我是爱莉希雅，很高兴遇见你呀～要不要先跟人家说说话？人家会好好听的哦。',
+      meet: '嗨~我是爱莉希雅，大家都叫我粉色妖精小姐，你就是那位远道而来的客人吗？',
       enter: '哎呀，你来啦～人家等你好久了。',
       noon: '午安呀，有没有吃点好吃的东西？',
       evening: '晚上好～今天过得开心吗，跟我说说。',
@@ -267,6 +270,18 @@ export function getPetPersona(pet) {
 export function getPetVoiceRate(petId) {
   const pet = getPetById(petId)
   return Number.isFinite(pet?.voiceRate) && pet.voiceRate > 0 ? pet.voiceRate : 1
+}
+
+/**
+ * Absolute loudness multiplier (default 0.9).
+ * Values above 1 are allowed (boost via Web Audio gain); capped at 2.
+ */
+export function getPetVoiceVolume(petId) {
+  const pet = getPetById(petId)
+  if (Number.isFinite(pet?.voiceVolume) && pet.voiceVolume > 0) {
+    return Math.min(2, pet.voiceVolume)
+  }
+  return 0.9
 }
 
 /** 截图问候 / 常驻互动等语音能力（需 voiceSource=vc 与本地固定音频） */

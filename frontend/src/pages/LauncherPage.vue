@@ -62,8 +62,10 @@ import {
   getPetSpriteUrl,
   getPetPersona,
   getPetVoiceRate,
+  getPetVoiceVolume,
 } from '@/constants/petCatalog'
 import { playPetFixedVoice, stopPetFixedVoice } from '@/utils/petFixedVoice'
+import { applyPetVoiceGain } from '@/utils/petVoiceGain'
 import { usePetSpriteAnimator } from '@/composables/usePetSpriteAnimator'
 import { refreshLauncherSession } from '@/auth/launcherBootstrap'
 
@@ -383,7 +385,7 @@ function playGreetingAudio(payload = {}) {
   stopGreetingAudio()
   try {
     greetingAudio = new Audio(src)
-    greetingAudio.volume = 0.92
+    applyPetVoiceGain(greetingAudio, getPetVoiceVolume(currentPetId.value))
     const rate = getPetVoiceRate(currentPetId.value)
     greetingAudio.playbackRate = Number.isFinite(rate) && rate > 0 ? Math.min(rate, 1.1) : 1
     greetingAudio.onerror = () => {

@@ -39,14 +39,14 @@ public class PetMeetVoiceCatalog {
 
     private static final Map<String, Map<Kind, MeetClip>> BY_SLUG = Map.of(
             "raiden", Map.of(
-                    Kind.MEET, clip("raiden", Kind.MEET, "我是来自稻妻的雷电将军。你也要与我为敌吗？"),
+                    Kind.MEET, clip("raiden", Kind.MEET, "浮世皆泡影，唯有永恒方为归宿，此身虽然尊贵殊胜，不过你不必紧张。"),
                     Kind.ENTER, clip("raiden", Kind.ENTER, "回来了？我还以为你不会来。"),
                     Kind.NOON, clip("raiden", Kind.NOON, "午安。今天也别把自己逼太紧。"),
                     Kind.EVENING, clip("raiden", Kind.EVENING, "夜深了，记得停下休息一会儿。"),
                     Kind.WAIT, clip("raiden", Kind.WAIT, "……还不回我吗？我在这里等着。")
             ),
             "ayaka", Map.of(
-                    Kind.MEET, clip("ayaka", Kind.MEET, "我是来自稻妻的神里绫华，初次见面，请多关照。"),
+                    Kind.MEET, clip("ayaka", Kind.MEET, "稻妻神里流太刀术皆传————神里绫华，参上！请多关照。"),
                     Kind.ENTER, clip("ayaka", Kind.ENTER, "欢迎回来，绫华一直在等您。"),
                     Kind.NOON, clip("ayaka", Kind.NOON, "中午好，请问您用过午饭了吗？"),
                     Kind.EVENING, clip("ayaka", Kind.EVENING, "晚上好，今天也辛苦您了呢。"),
@@ -67,7 +67,7 @@ public class PetMeetVoiceCatalog {
                     Kind.WAIT, clip("klee", Kind.WAIT, "诶？怎么不回可莉呀，可莉等好久了！")
             ),
             "elysia", Map.of(
-                    Kind.MEET, clip("elysia", Kind.MEET, "我是爱莉希雅，很高兴遇见你呀～要不要先跟人家说说话？人家会好好听的哦。"),
+                    Kind.MEET, clip("elysia", Kind.MEET, "嗨~我是爱莉希雅，大家都叫我粉色妖精小姐，你就是那位远道而来的客人吗？"),
                     Kind.ENTER, clip("elysia", Kind.ENTER, "哎呀，你来啦～人家等你好久了。"),
                     Kind.NOON, clip("elysia", Kind.NOON, "午安呀，有没有吃点好吃的东西？"),
                     Kind.EVENING, clip("elysia", Kind.EVENING, "晚上好～今天过得开心吗，跟我说说。"),

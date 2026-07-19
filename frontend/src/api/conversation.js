@@ -9,8 +9,10 @@ export function listConversations(options = {}) {
   })
 }
 
-export function getConversation(id) {
-  return http.get(`/conversation/${id}`)
+export function getConversation(id, options = {}) {
+  return http.get(`/conversation/${id}`, {
+    skipGlobalError: options.silent === true
+  })
 }
 
 export function createConversation(data) {

@@ -7,7 +7,7 @@
     </template>
     <template v-else-if="layout === 'single'">
       <div class="group-avatar__cell group-avatar__cell--full">
-        <img v-if="displayMembers[0].avatarUrl" :src="resolveMediaUrl(displayMembers[0].avatarUrl)" :alt="displayMembers[0].name" />
+        <img v-if="memberAvatarSrc(displayMembers[0])" :src="resolveMediaUrl(memberAvatarSrc(displayMembers[0]))" :alt="displayMembers[0].name" />
         <el-icon v-else :size="iconSize"><User /></el-icon>
       </div>
     </template>
@@ -18,13 +18,13 @@
         class="group-avatar__cell"
         :class="i === 0 ? 'group-avatar__cell--left' : 'group-avatar__cell--right'"
       >
-        <img v-if="m.avatarUrl" :src="resolveMediaUrl(m.avatarUrl)" :alt="m.name" />
+        <img v-if="memberAvatarSrc(m)" :src="resolveMediaUrl(memberAvatarSrc(m))" :alt="m.name" />
         <el-icon v-else :size="smallIconSize"><User /></el-icon>
       </div>
     </template>
     <template v-else-if="layout === 'triple'">
       <div class="group-avatar__cell group-avatar__cell--triple-main">
-        <img v-if="displayMembers[0].avatarUrl" :src="resolveMediaUrl(displayMembers[0].avatarUrl)" :alt="displayMembers[0].name" />
+        <img v-if="memberAvatarSrc(displayMembers[0])" :src="resolveMediaUrl(memberAvatarSrc(displayMembers[0]))" :alt="displayMembers[0].name" />
         <el-icon v-else :size="smallIconSize"><User /></el-icon>
       </div>
       <div class="group-avatar__triple-side">
@@ -33,7 +33,7 @@
           :key="m.id || i"
           class="group-avatar__cell group-avatar__cell--triple-sub"
         >
-          <img v-if="m.avatarUrl" :src="resolveMediaUrl(m.avatarUrl)" :alt="m.name" />
+          <img v-if="memberAvatarSrc(m)" :src="resolveMediaUrl(memberAvatarSrc(m))" :alt="m.name" />
           <el-icon v-else :size="tinyIconSize"><User /></el-icon>
         </div>
       </div>
@@ -44,7 +44,7 @@
         :key="m.id || i"
         class="group-avatar__cell group-avatar__cell--quad"
       >
-        <img v-if="m.avatarUrl" :src="resolveMediaUrl(m.avatarUrl)" :alt="m.name" />
+        <img v-if="memberAvatarSrc(m)" :src="resolveMediaUrl(memberAvatarSrc(m))" :alt="m.name" />
         <el-icon v-else :size="tinyIconSize"><User /></el-icon>
       </div>
     </template>
@@ -54,7 +54,7 @@
         :key="m.id || i"
         class="group-avatar__cell group-avatar__cell--grid"
       >
-        <img v-if="m.avatarUrl" :src="resolveMediaUrl(m.avatarUrl)" :alt="m.name" />
+        <img v-if="memberAvatarSrc(m)" :src="resolveMediaUrl(memberAvatarSrc(m))" :alt="m.name" />
         <el-icon v-else :size="tinyIconSize"><User /></el-icon>
       </div>
     </template>
@@ -65,6 +65,7 @@
 import { computed } from 'vue'
 import { User } from '@element-plus/icons-vue'
 import { resolveMediaUrl } from '@/utils/media'
+import { pickCharacterAvatarRaw } from '@/utils/characterAvatar'
 
 const props = defineProps({
   members: {
@@ -84,6 +85,10 @@ const tinyIconSize = computed(() => Math.round(props.size * 0.26))
 
 const displayMembers = computed(() => (props.members || []).filter(Boolean))
 
+function memberAvatarSrc(member) {
+  return pickCharacterAvatarRaw(member, 'thumb')
+}
+
 const layout = computed(() => {
   const n = displayMembers.value.length
   if (n <= 0) return 'empty'
@@ -99,10 +104,9 @@ const layout = computed(() => {
 .group-avatar {
   position: relative;
   flex-shrink: 0;
-  border-radius: $radius-lg;
   overflow: hidden;
-  background: rgba($color-pink-rgb, 0.08);
-  border: 1px solid rgba($color-pink-rgb, 0.12);
+  border-radius: $radius-md;
+  background: var(--ly-bg-surface, #1e2732);
 }
 
 .group-avatar__placeholder {
@@ -111,16 +115,12 @@ const layout = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: $color-pink-primary;
+  color: var(--ly-text-muted);
 }
 
 .group-avatar__cell {
   overflow: hidden;
-  background: rgba($color-bg-surface, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: $color-pink-primary;
+  background: var(--ly-bg-elevated, #252f3c);
 
   img {
     width: 100%;
@@ -137,39 +137,32 @@ const layout = computed(() => {
 
 .group-avatar--double {
   display: flex;
-  width: 100%;
-  height: 100%;
-  gap: 1px;
 
   .group-avatar__cell--left,
   .group-avatar__cell--right {
-    flex: 1;
+    width: 50%;
     height: 100%;
   }
 }
 
 .group-avatar--triple {
   display: flex;
-  width: 100%;
-  height: 100%;
-  gap: 1px;
 
   .group-avatar__cell--triple-main {
-    flex: 1;
+    width: 50%;
     height: 100%;
   }
 
   .group-avatar__triple-side {
-    flex: 1;
+    width: 50%;
+    height: 100%;
     display: flex;
     flex-direction: column;
-    gap: 1px;
-    height: 100%;
   }
 
   .group-avatar__cell--triple-sub {
-    flex: 1;
     width: 100%;
+    height: 50%;
   }
 }
 
@@ -177,9 +170,6 @@ const layout = computed(() => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   grid-template-rows: 1fr 1fr;
-  gap: 1px;
-  width: 100%;
-  height: 100%;
 
   .group-avatar__cell--quad {
     width: 100%;
@@ -189,16 +179,12 @@ const layout = computed(() => {
 
 .group-avatar--grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(3, 1fr);
-  gap: 1px;
-  width: 100%;
-  height: 100%;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr;
 
   .group-avatar__cell--grid {
     width: 100%;
     height: 100%;
-    min-height: 0;
   }
 }
 </style>

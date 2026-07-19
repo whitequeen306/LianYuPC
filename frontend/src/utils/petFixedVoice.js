@@ -1,9 +1,11 @@
 import {
   getPetFixedVoiceUrl,
   getPetVoiceRate,
+  getPetVoiceVolume,
   PET_FIXED_VOICE_COOLDOWN_MS,
   petHasInteractiveVoice,
 } from '@/constants/petCatalog.js'
+import { applyPetVoiceGain } from '@/utils/petVoiceGain.js'
 
 let lastPlayAt = 0
 let currentAudio = null
@@ -27,7 +29,7 @@ export function playPetFixedVoice(petId, kind, { busy = false } = {}) {
   stopPetFixedVoice()
   try {
     const audio = new Audio(src)
-    audio.volume = 0.9
+    applyPetVoiceGain(audio, getPetVoiceVolume(petId))
     const rate = getPetVoiceRate(petId)
     audio.playbackRate = Number.isFinite(rate) && rate > 0 ? Math.min(rate, 1.1) : 1
     audio.onended = () => {

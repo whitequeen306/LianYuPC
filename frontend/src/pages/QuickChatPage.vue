@@ -41,6 +41,7 @@
               :transcript="item.content || ''"
               variant="hero"
               :playback-rate="getPetVoiceRate(petIdFromAudioUrl(item.audioUrl))"
+              :volume-gain="getPetVoiceVolume(petIdFromAudioUrl(item.audioUrl))"
             />
             <AssistantMessageContent
               v-else-if="item.role === 'assistant' && item.content"
@@ -98,7 +99,7 @@ import { useStreamAbort, isNetworkError } from '@/composables/useStreamAbort'
 import { drainAssistantStream } from '@/utils/assistantStreamDrain'
 import AssistantMessageContent from '@/components/AssistantMessageContent.vue'
 import VoiceMessageBubble from '@/components/VoiceMessageBubble.vue'
-import { getPetVoiceRate } from '@/constants/petCatalog'
+import { getPetVoiceRate, getPetVoiceVolume } from '@/constants/petCatalog'
 import { stripInnerThoughts, resolveShowInnerThoughts } from '@/utils/innerThoughtFilter'
 import { formatSmartTime } from '@/utils/feedTime'
 
