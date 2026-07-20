@@ -36,6 +36,7 @@ PC 端桌面/Web 复刻版，独立于安卓端项目。
 1. **先读** `local/ship-release.ps1` 与 `local/README.md`（`local/` 已 gitignore，只在本机）
 2. **用脚本跑**，不要手写拆开 `git push` + `python scripts/_cloud_deploy_pull.py` + `npm run electron:release`
 3. 按改动选参数：`-BackendOnly` / `-ElectronOnly` / 无参数全量（见下方「发布发版」表）
+4.如果遇到错误无法正常执行必须要明确要告诉用户脚本的问题是什么
 
 缺 `local/ship-release.ps1` 时按 `local/README.md` 重建，不要另发明流程。
 
