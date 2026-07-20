@@ -75,10 +75,10 @@ public class PetMeetVoiceCatalog {
             ),
             "eriri", Map.of(
                     Kind.MEET, clip("eriri", Kind.MEET, "你是外来的人吗？外面的世界是什么样子的？我很少见到陌生人。"),
-                    Kind.ENTER, clip("eriri", Kind.ENTER, "哼……又来了啊。才、才不是特意在等你呢。"),
-                    Kind.NOON, clip("eriri", Kind.NOON, "中午了……你、你记得吃饭了吗？别饿着。"),
-                    Kind.EVENING, clip("eriri", Kind.EVENING, "都这么晚了……别熬夜，画也画不完的。"),
-                    Kind.WAIT, clip("eriri", Kind.WAIT, "……喂，怎么不回消息啊？我可是很忙的。")
+                    Kind.ENTER, clip("eriri", Kind.ENTER, "你回来了……我等你很久了。"),
+                    Kind.NOON, clip("eriri", Kind.NOON, "中午了……你吃东西了吗？"),
+                    Kind.EVENING, clip("eriri", Kind.EVENING, "天黑了……你会陪着我吗？"),
+                    Kind.WAIT, clip("eriri", Kind.WAIT, "……你怎么不理我？我有点害怕。")
             )
     );
 

@@ -23,7 +23,7 @@ final class CharacterSquareTags {
 
     private static final java.util.Set<String> KNOWN_ZH_LABELS = java.util.Set.of(
             "原神", "约会大作战", "未来日记", "蔚蓝档案", "国家队", "路人女主",
-            "邻座天使", "Re:零", "十日终焉", "弹丸论破", "崩坏3",
+            "邻座天使", "Re:零", "十日终焉", "弹丸论破", "崩坏3", "龙族",
             "温柔", "傲娇", "病娇", "活泼少女", "大姐姐", "自设"
     );
 
@@ -47,6 +47,7 @@ final class CharacterSquareTags {
             case "danganronpa" -> tag("danganronpa", workLabel(code, "弹丸论破", "彈丸論破", "ダンガンロンパ", "Danganronpa"));
             case "honkai3" -> tag("honkai3", workLabel(code, "崩坏3", "崩壞3", "崩壊3rd", "Honkai Impact 3rd"));
             case "wuthering" -> tag("wuthering", workLabel(code, "鸣潮", "鳴潮", "鳴潮", "Wuthering Waves"));
+            case "longzu" -> tag("longzu", workLabel(code, "龙族", "龍族", "龍族", "Dragon Raja"));
             default -> tag(workKey, workKey);
         };
     }

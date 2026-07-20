@@ -106,21 +106,14 @@ public class CharacterSquareService {
         Set<Long> userLikes = squareLikeService.getUserLikes(userId);
         Map<Long, Character> addedByTemplateId = loadAddedCharacters(userId);
         String slug = normalizeSlug(template);
-        return stripPromptFromApi(toTemplateResponse(
+        // 预览展示人设正文（catalog LocalePack.prompt）；情绪状态机由聊天时另行注入，不在此字段。
+        return toTemplateResponse(
                 template,
                 addedByTemplateId.get(template.getId()),
                 uiLang,
                 likeCounts.getOrDefault(template.getId(), 0L),
                 userLikes.contains(template.getId()),
-                squareAddCountService.getCount(slug)));
-    }
-
-    private CharacterSquareTemplateResponse stripPromptFromApi(CharacterSquareTemplateResponse response) {
-        if (response == null) {
-            return null;
-        }
-        response.setPromptTemplate(null);
-        return response;
+                squareAddCountService.getCount(slug));
     }
 
     private List<CharacterSquareTemplateCardResponse> buildCardList(Long userId, String uiLang) {
