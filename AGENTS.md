@@ -29,6 +29,16 @@ PC 端桌面/Web 复刻版，独立于安卓端项目。
 
 `C:\Users\hp\Desktop\LianYu-PC\`
 
+## 推送 / 部署 / 发版（强制）
+
+凡涉及 **`git push`、云服务器部署、Electron 发版、GitHub Releases、MinIO 更新包**（用户说「一条龙」「发版」「部署」「上线」等）时：
+
+1. **先读** `local/ship-release.ps1` 与 `local/README.md`（`local/` 已 gitignore，只在本机）
+2. **用脚本跑**，不要手写拆开 `git push` + `python scripts/_cloud_deploy_pull.py` + `npm run electron:release`
+3. 按改动选参数：`-BackendOnly` / `-ElectronOnly` / 无参数全量（见下方「发布发版」表）
+
+缺 `local/ship-release.ps1` 时按 `local/README.md` 重建，不要另发明流程。
+
 ## 安卓端（只读参考）
 
 `C:\Users\hp\Desktop\LianYu-master (1)\LianYu-master\`
@@ -107,11 +117,18 @@ lianyu-app → lianyu-web → lianyu-service → lianyu-ai / lianyu-dao / lianyu
 
 ## 发布发版（Agent 必看 — 不要另想流程）
 
+**唯一入口：`.\local\ship-release.ps1`。** 详细说明见文首「推送 / 部署 / 发版（强制）」与 `local/README.md`。
+
 **前后端分离：** Electron 只在本机打；云端只跑 backend/api-gateway + 中间件，不构建前端。
 
-功能改动已 commit 到 `main`、工作区干净后，跑本地一条龙（`local/` 已 `.gitignore`，不入仓）。
+功能改动**先自行 commit 到 `main`**、工作区干净后，再跑一条龙（脚本**不**替你写业务 commit）。
 
-**禁止无脑跑无参数全量。** 按改动选参数；脚本启动会打印 `SHIP PLAN`（push/deploy/electron 各 YES/no），对不上就 Ctrl+C。
+**禁止：**
+
+- 手搓 `git push` + `_cloud_deploy_pull.py` + `electron:release`（易漏 Draft 清理 / 版本号回写）
+- 无脑跑无参数全量（只改一侧却 FULL）
+
+脚本启动会打印 `SHIP PLAN`（push/deploy/electron 各 YES/no），对不上就 Ctrl+C。
 
 | 场景 | 命令 | 会触发 |
 |---|---|---|
@@ -124,8 +141,6 @@ lianyu-app → lianyu-web → lianyu-service → lianyu-ai / lianyu-dao / lianyu
 cd C:\Users\hp\Desktop\LianYu-PC
 .\local\ship-release.ps1 -BackendOnly    # 例：只后端
 ```
-
-说明、env 清单：**`local/README.md`**。缺文件按该 README 重建，不要把长流程写回本文件。
 
 **边界（仍须记住）：**
 
