@@ -1012,13 +1012,46 @@ public class ConversationService {
     private Map<Long, String> snippetMapFromMessages(List<Message> messages) {
         Map<Long, String> result = new HashMap<>();
         for (Message lastMsg : messages) {
-            if (lastMsg == null || lastMsg.getConversationId() == null || lastMsg.getContent() == null) {
+            if (lastMsg == null || lastMsg.getConversationId() == null) {
                 continue;
             }
-            String content = lastMsg.getContent();
-            result.put(lastMsg.getConversationId(), content.length() > 120 ? content.substring(0, 120) + "..." : content);
+            String snippet = formatConversationPreviewSnippet(lastMsg);
+            if (snippet != null && !snippet.isBlank()) {
+                result.put(lastMsg.getConversationId(), snippet);
+            }
         }
         return result;
+    }
+
+    /**
+     * Bond-card / conversation list preview. Voice messages show duration instead of transcript.
+     */
+    static String formatConversationPreviewSnippet(Message message) {
+        if (message == null) {
+            return null;
+        }
+        String audioUrl = message.getAudioUrl();
+        if (audioUrl != null && !audioUrl.isBlank()) {
+            int seconds = estimateVoicePreviewSeconds(message.getContent());
+            return "语音 " + seconds + "″";
+        }
+        String content = message.getContent();
+        if (content == null || content.isBlank()) {
+            return null;
+        }
+        return content.length() > 120 ? content.substring(0, 120) + "..." : content;
+    }
+
+    /** Rough conversational TTS pace (~3.2 Chinese chars/sec), matching frontend voice bubble. */
+    static int estimateVoicePreviewSeconds(String text) {
+        if (text == null || text.isBlank()) {
+            return 1;
+        }
+        int chars = text.replaceAll("\\s+", "").length();
+        if (chars <= 0) {
+            return 1;
+        }
+        return Math.max(1, (int) Math.round(chars / 3.2));
     }
 
     private Conversation findOwned(Long userId, Long conversationId) {

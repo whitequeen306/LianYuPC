@@ -637,6 +637,8 @@ async function startChat(char) {
     const conv = existing?.id
       ? { id: existing.id }
       : await createConversation({ characterId: char.id, mode: 'SINGLE' })
+    const { setActiveChatConversationId } = await import('@/composables/useActiveChatContext')
+    setActiveChatConversationId(conv.id)
     await notificationsStore.markConversationRead(conv.id)
     await refreshUnreadFromApi()
     router.push({ path: `/chat/${conv.id}` })

@@ -31,7 +31,7 @@ class PetMeetVoiceCatalogTest {
 
     @Test
     void fixedLinesAreNonBlank() {
-        for (String slug : new String[]{"raiden", "ayaka", "ganyu", "klee", "elysia"}) {
+        for (String slug : new String[]{"raiden", "ayaka", "ganyu", "klee", "elysia", "eriri"}) {
             for (PetMeetVoiceCatalog.Kind kind : PetMeetVoiceCatalog.Kind.values()) {
                 String text = catalog.find(slug, kind).text().replaceAll("\\s+", "");
                 assertThat(text)
@@ -44,8 +44,8 @@ class PetMeetVoiceCatalogTest {
     @Test
     void meetLinesMatchPersonalityShape() {
         assertThat(catalog.find("raiden", PetMeetVoiceCatalog.Kind.MEET).text())
-                .contains("稻妻")
-                .contains("为敌");
+                .contains("浮世皆泡影")
+                .contains("永恒方为归宿");
         assertThat(catalog.find("ayaka", PetMeetVoiceCatalog.Kind.MEET).text())
                 .contains("神里绫华")
                 .contains("请多关照");
@@ -57,6 +57,10 @@ class PetMeetVoiceCatalogTest {
                 .contains("蒙德");
         assertThat(catalog.find("elysia", PetMeetVoiceCatalog.Kind.MEET).text())
                 .contains("爱莉希雅");
+        assertThat(catalog.find("eriri", PetMeetVoiceCatalog.Kind.MEET).text())
+                .isEqualTo("你是外来的人吗？外面的世界是什么样子的？我很少见到陌生人。");
+        assertThat(catalog.find("eriri", PetMeetVoiceCatalog.Kind.ENTER).audioPath())
+                .isEqualTo("pet/voice/eriri/enter.wav");
     }
 
     @Test

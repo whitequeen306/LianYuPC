@@ -29,8 +29,7 @@ LINES: dict[str, dict[str, str]] = {
         "run": "跟上，别落在我后面了。",
     },
     "ayaka": {
-        # Four em-dashes create the dramatic pause before 参上 in VC TTS.
-        "meet": "稻妻神里流太刀术皆传————神里绫华，参上！请多关照。",
+        "meet": "你好，我是稻妻社奉行神里家神里绫华，初次见面，请多关照。",
         "enter": "欢迎回来，绫华一直在等您。",
         "noon": "中午好，请问您用过午饭了吗？",
         "evening": "晚上好，今天也辛苦您了呢。",
@@ -64,6 +63,14 @@ LINES: dict[str, dict[str, str]] = {
         "wait": "不回人家消息吗？我会有一点点想你哦。",
         "click": "嗨～找人家有事？慢慢说给我听。",
         "run": "跟紧我哦，可别一不小心走丢啦。",
+    },
+    # Chat VC only (no desktop pet) — meet/enter/noon/evening/wait; no click/run.
+    "eriri": {
+        "meet": "你是外来的人吗？外面的世界是什么样子的？我很少见到陌生人。",
+        "enter": "哼……又来了啊。才、才不是特意在等你呢。",
+        "noon": "中午了……你、你记得吃饭了吗？别饿着。",
+        "evening": "都这么晚了……别熬夜，画也画不完的。",
+        "wait": "……喂，怎么不回消息啊？我可是很忙的。",
     },
 }
 

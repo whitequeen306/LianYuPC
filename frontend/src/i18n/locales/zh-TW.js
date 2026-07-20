@@ -228,6 +228,8 @@ export default {
     cityRequired: '請填寫城市',
     confirmAdd: '確認加入',
     mostLiked: '更多人喜歡的角色',
+    voiceInteraction: '有語音互動',
+    addCount: '已添加 {n} 次',
     like: '點讚',
     commentWrite: '寫評語...',
     commentPlaceholder: '寫下你對這個角色的短評（最多 60 字）',

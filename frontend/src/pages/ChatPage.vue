@@ -817,7 +817,9 @@ async function loadConversation(convId) {
     stopFastPolling()
   }
   await nextTick()
-  scrollToBottom({ force: true })
+  jumpToBottom()
+  // Layout/images can grow after first paint — snap again without smooth scroll.
+  requestAnimationFrame(() => jumpToBottom())
   syncAwaitingOpening()
   if (awaitingOpening.value) {
     startFastPolling()
@@ -835,7 +837,7 @@ async function maybeNotifyOpened(convId) {
     if (currentConvId.value !== convId) return
     mergePolledMessages(added)
     await nextTick()
-    scrollToBottom({ force: true })
+    jumpToBottom()
   } catch {
     // best-effort presence hook
   }

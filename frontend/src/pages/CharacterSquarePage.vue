@@ -104,6 +104,10 @@
         <div class="card-body">
           <SquareDanmakuLayer :comments="commentsByTemplateId[item.id] || []" />
           <h3 class="char-name">{{ item.name }}</h3>
+          <div v-if="item.hasVoiceInteraction || (item.addCount ?? 0) > 0" class="badge-row">
+            <span v-if="item.hasVoiceInteraction" class="voice-badge">{{ t('characterSquare.voiceInteraction') }}</span>
+            <span v-if="(item.addCount ?? 0) > 0" class="add-count">{{ t('characterSquare.addCount', { n: item.addCount }) }}</span>
+          </div>
           <p v-if="item.summary" class="char-summary">{{ item.summary }}</p>
           <div v-if="item.tags?.length" class="tag-row">
             <span v-for="tag in item.tags" :key="tag" class="meta-tag">{{ tag }}</span>
@@ -582,6 +586,9 @@ async function startChat(characterId) {
   try {
     const conv = await createConversation({ characterId, mode: 'SINGLE' })
     if (conv?.id) {
+      // Suppress meet/proactive toast if the cold-open notification races with navigation.
+      const { setActiveChatConversationId } = await import('@/composables/useActiveChatContext')
+      setActiveChatConversationId(conv.id)
       router.push(`/app/chat/${conv.id}`)
     }
   } catch {
@@ -900,6 +907,29 @@ async function startChat(characterId) {
   font-weight: $font-weight-semibold;
   color: $color-text-primary;
   margin-bottom: $space-2;
+}
+
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-2;
+  justify-content: center;
+  margin-bottom: $space-2;
+}
+
+.voice-badge {
+  font-size: $font-size-xs;
+  padding: 2px 8px;
+  border-radius: $radius-full;
+  background: rgba($color-pink-rgb, 0.14);
+  color: $color-pink-primary;
+  border: 1px solid rgba($color-pink-rgb, 0.22);
+  font-weight: $font-weight-semibold;
+}
+
+.add-count {
+  font-size: $font-size-xs;
+  color: $color-text-secondary;
 }
 
 .char-summary {

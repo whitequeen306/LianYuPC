@@ -25,6 +25,8 @@ public class CharacterSquareTemplate {
     private Object tagsJson;
     private Integer isEnabled;
     private Integer sortOrder;
+    /** 累计被用户从广场添加的次数 */
+    private Long addCount;
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
     @TableField(fill = FieldFill.INSERT_UPDATE)

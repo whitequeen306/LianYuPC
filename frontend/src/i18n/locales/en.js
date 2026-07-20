@@ -180,6 +180,8 @@ export default {
     cityRequired: 'Please enter a city',
     confirmAdd: 'Add character',
     mostLiked: 'Most liked',
+    voiceInteraction: 'Voice chat',
+    addCount: 'Added {n} times',
     like: 'Like',
     commentWrite: 'Write a comment...',
     commentPlaceholder: 'Short comment about this character (max 60 chars)',

@@ -46,7 +46,7 @@ public class PetMeetVoiceCatalog {
                     Kind.WAIT, clip("raiden", Kind.WAIT, "……还不回我吗？我在这里等着。")
             ),
             "ayaka", Map.of(
-                    Kind.MEET, clip("ayaka", Kind.MEET, "稻妻神里流太刀术皆传————神里绫华，参上！请多关照。"),
+                    Kind.MEET, clip("ayaka", Kind.MEET, "你好，我是稻妻社奉行神里家神里绫华，初次见面，请多关照。"),
                     Kind.ENTER, clip("ayaka", Kind.ENTER, "欢迎回来，绫华一直在等您。"),
                     Kind.NOON, clip("ayaka", Kind.NOON, "中午好，请问您用过午饭了吗？"),
                     Kind.EVENING, clip("ayaka", Kind.EVENING, "晚上好，今天也辛苦您了呢。"),
@@ -72,6 +72,13 @@ public class PetMeetVoiceCatalog {
                     Kind.NOON, clip("elysia", Kind.NOON, "午安呀，有没有吃点好吃的东西？"),
                     Kind.EVENING, clip("elysia", Kind.EVENING, "晚上好～今天过得开心吗，跟我说说。"),
                     Kind.WAIT, clip("elysia", Kind.WAIT, "不回人家消息吗？我会有一点点想你哦。")
+            ),
+            "eriri", Map.of(
+                    Kind.MEET, clip("eriri", Kind.MEET, "你是外来的人吗？外面的世界是什么样子的？我很少见到陌生人。"),
+                    Kind.ENTER, clip("eriri", Kind.ENTER, "哼……又来了啊。才、才不是特意在等你呢。"),
+                    Kind.NOON, clip("eriri", Kind.NOON, "中午了……你、你记得吃饭了吗？别饿着。"),
+                    Kind.EVENING, clip("eriri", Kind.EVENING, "都这么晚了……别熬夜，画也画不完的。"),
+                    Kind.WAIT, clip("eriri", Kind.WAIT, "……喂，怎么不回消息啊？我可是很忙的。")
             )
     );
 

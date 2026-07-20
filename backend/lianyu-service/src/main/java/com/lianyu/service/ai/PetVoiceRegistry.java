@@ -53,7 +53,7 @@ public class PetVoiceRegistry {
         if (petId == null || petId.isBlank()) {
             return null;
         }
-        return voices.get(petId.trim());
+        return voices.get(petId.trim().toLowerCase(java.util.Locale.ROOT));
     }
 
     public boolean hasVoice(String petId) {

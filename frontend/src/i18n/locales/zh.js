@@ -181,6 +181,8 @@ export default {
     fictionalCityFailed: '由于角色背景原因虚构失败，建议您选择现实城市',
     confirmAdd: '确认加入',
     mostLiked: '更多人喜欢的角色',
+    voiceInteraction: '有语音交互',
+    addCount: '已添加 {n} 次',
     like: '点赞',
     commentWrite: '写评语...',
     commentPlaceholder: '写下你对这个角色的短评（最多 60 字）',

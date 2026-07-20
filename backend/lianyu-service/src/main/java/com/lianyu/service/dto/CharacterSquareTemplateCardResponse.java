@@ -21,4 +21,8 @@ public class CharacterSquareTemplateCardResponse {
     private Long addedCharacterId;
     private long likeCount;
     private boolean liked;
+    /** 广场 VC 角色：固定开场/时段语音等 */
+    private boolean hasVoiceInteraction;
+    /** 累计被用户添加次数 */
+    private long addCount;
 }

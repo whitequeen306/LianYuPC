@@ -23,4 +23,8 @@ public class CharacterSquareTemplateResponse {
     private long likeCount;
     /** 当前用户是否已点赞 */
     private boolean liked;
+    /** 是否有 VC 语音交互（开场/时段固定语音等） */
+    private boolean hasVoiceInteraction;
+    /** 累计被用户添加次数 */
+    private long addCount;
 }

@@ -34,8 +34,8 @@ describe('petCatalog', () => {
 
   it('keeps updated meet lines for raiden, ayaka, and elysia', () => {
     expect(getPetFixedVoiceLine('raiden', 'meet')).toContain('永恒方为归宿')
-    expect(getPetFixedVoiceLine('ayaka', 'meet')).toContain('————')
-    expect(getPetFixedVoiceLine('ayaka', 'meet')).toContain('参上')
+    expect(getPetFixedVoiceLine('ayaka', 'meet')).toContain('稻妻社奉行神里家')
+    expect(getPetFixedVoiceLine('ayaka', 'meet')).toContain('请多关照')
     expect(getPetFixedVoiceLine('elysia', 'meet')).toContain('粉色妖精小姐')
   })
 

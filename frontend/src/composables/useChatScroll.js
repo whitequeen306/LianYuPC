@@ -38,14 +38,21 @@ export function useChatScroll(containerRef, anchorRef, options = {}) {
 
   function scrollToBottom({ force = false, behavior = 'smooth' } = {}) {
     if (!force && isUserScrolledUp.value) return
-    anchorRef.value?.scrollIntoView({ behavior })
+    const el = containerRef.value
+    // Instant jump for enter-chat / "回到底部"; smooth only for live append while reading.
+    if (behavior === 'auto' && el) {
+      el.scrollTop = el.scrollHeight
+    } else {
+      anchorRef.value?.scrollIntoView({ behavior })
+    }
     if (force) {
       isUserScrolledUp.value = false
     }
   }
 
+  /** Enter conversation / button: snap to latest without animating from the top. */
   function jumpToBottom() {
-    scrollToBottom({ force: true })
+    scrollToBottom({ force: true, behavior: 'auto' })
   }
 
   onMounted(() => {

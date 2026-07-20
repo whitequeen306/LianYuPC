@@ -134,7 +134,7 @@ function showError(message) {
   errorTimer = setTimeout(() => { errorText.value = '' }, 3200)
 }
 
-const { scrollToBottom } = useChatScroll(msgListRef, scrollAnchor)
+const { scrollToBottom, jumpToBottom } = useChatScroll(msgListRef, scrollAnchor)
 const { beginStream, abortStream, isAbortError } = useStreamAbort({ abortOnUnmount: false })
 
 const characterName = computed(() => activeCharacter.value?.name || '聊天')
@@ -254,7 +254,8 @@ async function loadConversation(convId) {
   } finally {
     loading.value = false
     await nextTick()
-    scrollToBottom({ force: true })
+    jumpToBottom()
+    requestAnimationFrame(() => jumpToBottom())
     getElectronAPI()?.notifyQuickChatReady?.()
   }
 }

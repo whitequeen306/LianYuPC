@@ -8,12 +8,15 @@ import com.lianyu.dao.entity.Character;
 import com.lianyu.dao.entity.CharacterSquareTemplate;
 import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.CharacterSquareTemplateMapper;
+import com.lianyu.service.ai.PetVoiceRegistry;
 import com.lianyu.service.character.CharacterCitySettingsService;
 import com.lianyu.service.character.CharacterService;
+import com.lianyu.service.conversation.ConversationService;
 import com.lianyu.service.dto.CharacterResponse;
 import com.lianyu.service.dto.CharacterSquarePageResponse;
 import com.lianyu.service.dto.CharacterSquareTemplateCardResponse;
 import com.lianyu.service.dto.CharacterSquareTemplateResponse;
+import com.lianyu.service.dto.CreateConversationRequest;
 import com.lianyu.service.storage.FileStorageService;
 import com.lianyu.service.support.OutputLanguageService;
 import java.util.ArrayList;
@@ -44,9 +47,14 @@ public class CharacterSquareService {
     private final SquareLikeService squareLikeService;
     @Lazy
     private final CharacterService characterService;
+    /** Lazy: square add creates SINGLE conv + cold-open meet voice. */
+    @Lazy
+    private final ConversationService conversationService;
     private final FileStorageService fileStorageService;
     private final OutputLanguageService outputLanguageService;
     private final CharacterCitySettingsService characterCitySettingsService;
+    private final SquareAddCountService squareAddCountService;
+    private final PetVoiceRegistry petVoiceRegistry;
 
     public CharacterSquarePageResponse listTemplatesPage(
             Long userId, String uiLanguageCode, String tag, String keyword, int page, int size) {
@@ -97,12 +105,14 @@ public class CharacterSquareService {
         Map<Long, Long> likeCounts = squareLikeService.getLikeCounts();
         Set<Long> userLikes = squareLikeService.getUserLikes(userId);
         Map<Long, Character> addedByTemplateId = loadAddedCharacters(userId);
+        String slug = normalizeSlug(template);
         return stripPromptFromApi(toTemplateResponse(
                 template,
                 addedByTemplateId.get(template.getId()),
                 uiLang,
                 likeCounts.getOrDefault(template.getId(), 0L),
-                userLikes.contains(template.getId())));
+                userLikes.contains(template.getId()),
+                squareAddCountService.getCount(slug)));
     }
 
     private CharacterSquareTemplateResponse stripPromptFromApi(CharacterSquareTemplateResponse response) {
@@ -125,6 +135,7 @@ public class CharacterSquareService {
         Map<Long, Long> likeCounts = squareLikeService.getLikeCounts();
         Set<Long> userLikes = squareLikeService.getUserLikes(userId);
         Map<Long, Character> addedByTemplateId = loadAddedCharacters(userId);
+        Map<String, Long> addCounts = squareAddCountService.getCountsBySlug();
         Map<String, CharacterSquareTemplate> bySlug = new LinkedHashMap<>();
         for (CharacterSquareTemplate template : templates) {
             String slug = normalizeSlug(template);
@@ -136,12 +147,17 @@ public class CharacterSquareService {
 
         return bySlug.values().stream()
                 .sorted(likeCountComparator(likeCounts))
-                .map(t -> toCardResponse(
-                        t,
-                        addedByTemplateId.get(t.getId()),
-                        uiLang,
-                        likeCounts.getOrDefault(t.getId(), 0L),
-                        userLikes.contains(t.getId())))
+                .map(t -> {
+                    String slug = normalizeSlug(t);
+                    String cacheKey = slug == null ? "" : slug.trim().toLowerCase();
+                    return toCardResponse(
+                            t,
+                            addedByTemplateId.get(t.getId()),
+                            uiLang,
+                            likeCounts.getOrDefault(t.getId(), 0L),
+                            userLikes.contains(t.getId()),
+                            addCounts.getOrDefault(cacheKey, 0L));
+                })
                 .toList();
     }
 
@@ -224,6 +240,17 @@ public class CharacterSquareService {
 
         log.info("Character added from square: userId={}, templateId={}, slug={}, characterId={}",
                 userId, templateId, slug, entity.getId());
+
+        // 累计添加：先写 DB，再删 Redis Hash（读时回填），保证一致性
+        squareAddCountService.incrementAndInvalidate(templateId);
+
+        // Create SINGLE conversation immediately so meet/cold-open voice is sent on add,
+        // not only when the user first opens the chat page (avoids toast-while-viewing race).
+        CreateConversationRequest convReq = new CreateConversationRequest();
+        convReq.setCharacterId(entity.getId());
+        convReq.setMode("SINGLE");
+        conversationService.create(userId, convReq);
+
         return characterService.get(userId, entity.getId());
     }
 
@@ -244,11 +271,13 @@ public class CharacterSquareService {
             Character added,
             String uiLang,
             long likeCount,
-            boolean liked) {
+            boolean liked,
+            long addCount) {
         String slug = normalizeSlug(template);
         CharacterSquareCatalog.LocalePack pack = CharacterSquareCatalog.resolve(slug, uiLang);
         String avatarUrl = fileStorageService.resolvePublicUrl(template.getAvatarUrl());
         String thumbUrl = fileStorageService.resolveSquareAvatarThumbPublicUrl(template.getAvatarUrl());
+        boolean hasVoice = petVoiceRegistry.hasVoice(slug);
         if (pack == null) {
             return CharacterSquareTemplateCardResponse.builder()
                     .id(template.getId())
@@ -262,6 +291,8 @@ public class CharacterSquareService {
                     .addedCharacterId(added != null ? added.getId() : null)
                     .likeCount(likeCount)
                     .liked(liked)
+                    .hasVoiceInteraction(hasVoice)
+                    .addCount(addCount)
                     .build();
         }
 
@@ -279,6 +310,8 @@ public class CharacterSquareService {
                 .addedCharacterId(added != null ? added.getId() : null)
                 .likeCount(likeCount)
                 .liked(liked)
+                .hasVoiceInteraction(hasVoice)
+                .addCount(addCount)
                 .build();
     }
 
@@ -287,9 +320,11 @@ public class CharacterSquareService {
             Character added,
             String uiLang,
             long likeCount,
-            boolean liked) {
+            boolean liked,
+            long addCount) {
         String slug = normalizeSlug(template);
         CharacterSquareCatalog.LocalePack pack = CharacterSquareCatalog.resolve(slug, uiLang);
+        boolean hasVoice = petVoiceRegistry.hasVoice(slug);
         if (pack == null) {
             return CharacterSquareTemplateResponse.builder()
                     .id(template.getId())
@@ -304,6 +339,8 @@ public class CharacterSquareService {
                     .addedCharacterId(added != null ? added.getId() : null)
                     .likeCount(likeCount)
                     .liked(liked)
+                    .hasVoiceInteraction(hasVoice)
+                    .addCount(addCount)
                     .build();
         }
 
@@ -323,6 +360,8 @@ public class CharacterSquareService {
                 .addedCharacterId(added != null ? added.getId() : null)
                 .likeCount(likeCount)
                 .liked(liked)
+                .hasVoiceInteraction(hasVoice)
+                .addCount(addCount)
                 .build();
     }
 

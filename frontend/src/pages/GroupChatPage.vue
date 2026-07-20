@@ -723,7 +723,8 @@ async function openGroup(group, memberIds) {
   }
   connectWebSocket(group.id)
   await nextTick()
-  scrollGroupBottom({ force: true })
+  jumpToBottom()
+  requestAnimationFrame(() => jumpToBottom())
 }
 
 function leaveGroup() {
