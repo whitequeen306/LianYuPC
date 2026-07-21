@@ -67,8 +67,10 @@ class PetMeetVoiceCatalogTest {
     void validatesClientAudioPaths() {
         assertThat(PetMeetVoiceCatalog.isSafeClientAudioPath("pet/voice/raiden/meet.wav")).isTrue();
         assertThat(PetMeetVoiceCatalog.isSafeClientAudioPath("pet/voice/ayaka/noon.wav")).isTrue();
+        assertThat(PetMeetVoiceCatalog.isSafeClientAudioPath("pet/voice/erii_uesugi/meet.wav")).isTrue();
         assertThat(PetMeetVoiceCatalog.isSafeClientAudioPath("https://evil.example/x.wav")).isFalse();
         assertThat(PetMeetVoiceCatalog.isSafeClientAudioPath("../etc/passwd")).isFalse();
+        assertThat(PetMeetVoiceCatalog.isSafeClientAudioPath("pet/voice/erii_uesugi/../evil.wav")).isFalse();
     }
 
     @Test

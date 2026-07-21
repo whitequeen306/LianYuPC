@@ -30,8 +30,9 @@ public class PetMeetVoiceCatalog {
     public record MeetClip(String petId, String text, String audioPath) {
     }
 
+    /** Pet ids may use underscore (e.g. erii_uesugi); hyphen still allowed. */
     private static final Pattern SAFE_AUDIO_PATH =
-            Pattern.compile("^pet/voice/[a-z0-9-]+/[a-z]+\\.wav$");
+            Pattern.compile("^pet/voice/[a-z0-9_-]+/[a-z]+\\.wav$");
 
     private static MeetClip clip(String petId, Kind kind, String text) {
         return new MeetClip(petId, text, "pet/voice/" + petId + "/" + kind.fileStem() + ".wav");
