@@ -64,8 +64,8 @@ LINES: dict[str, dict[str, str]] = {
         "click": "嗨～找人家有事？慢慢说给我听。",
         "run": "跟紧我哦，可别一不小心走丢啦。",
     },
-    # Chat VC only (no desktop pet) — 龙族 上杉绘梨衣; meet/enter/noon/evening/wait.
-    "eriri": {
+    # Chat VC only — 龙族 上杉绘梨衣 (erii_uesugi); meet/enter/noon/evening/wait.
+    "erii_uesugi": {
         "meet": "你是外来的人吗？外面的世界是什么样子的？我很少见到陌生人。",
         "enter": "你回来了……我等你很久了。",
         "noon": "中午了……你吃东西了吗？",

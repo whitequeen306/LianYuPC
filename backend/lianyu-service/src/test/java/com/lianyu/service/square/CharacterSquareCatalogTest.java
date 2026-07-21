@@ -24,7 +24,7 @@ class CharacterSquareCatalogTest {
         assertTrue(slugs.contains("emilia"));
         assertTrue(slugs.contains("zhongli"));
         assertTrue(slugs.contains("enoshima_junko"));
-        assertTrue(slugs.contains("eriri"));
+        assertTrue(slugs.contains("erii_uesugi"));
         assertTrue(new HashSet<>(slugs).size() == slugs.size(), "duplicate slug keys");
     }
 
@@ -35,7 +35,7 @@ class CharacterSquareCatalogTest {
         assertEquals("asahina_aoi", CharacterSquareCatalog.slugForSortOrder(510));
         assertEquals("ayaka", CharacterSquareCatalog.slugForSortOrder(520));
         assertEquals("elysia", CharacterSquareCatalog.slugForSortOrder(530));
-        assertEquals("eriri", CharacterSquareCatalog.slugForSortOrder(540));
+        assertEquals("erii_uesugi", CharacterSquareCatalog.slugForSortOrder(540));
         assertNull(CharacterSquareCatalog.slugForSortOrder(550));
         assertNull(CharacterSquareCatalog.slugForSortOrder(0));
     }

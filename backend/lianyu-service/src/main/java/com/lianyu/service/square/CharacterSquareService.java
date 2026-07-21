@@ -318,13 +318,16 @@ public class CharacterSquareService {
         String slug = normalizeSlug(template);
         CharacterSquareCatalog.LocalePack pack = CharacterSquareCatalog.resolve(slug, uiLang);
         boolean hasVoice = petVoiceRegistry.hasVoice(slug);
+        String avatarUrl = fileStorageService.resolvePublicUrl(template.getAvatarUrl());
+        String thumbUrl = fileStorageService.resolveSquareAvatarThumbPublicUrl(template.getAvatarUrl());
         if (pack == null) {
             return CharacterSquareTemplateResponse.builder()
                     .id(template.getId())
                     .slug(slug)
                     .name(template.getName())
                     .summary(template.getSummary())
-                    .avatarUrl(fileStorageService.resolvePublicUrl(template.getAvatarUrl()))
+                    .avatarThumbUrl(thumbUrl)
+                    .avatarUrl(avatarUrl)
                     .promptTemplate(template.getPromptTemplate())
                     .tags(parseTagKeys(template.getTagsJson()))
                     .tagKeys(parseTagKeys(template.getTagsJson()))
@@ -345,7 +348,8 @@ public class CharacterSquareService {
                 .slug(slug)
                 .name(pack.name())
                 .summary(pack.summary())
-                .avatarUrl(fileStorageService.resolvePublicUrl(template.getAvatarUrl()))
+                .avatarThumbUrl(thumbUrl)
+                .avatarUrl(avatarUrl)
                 .promptTemplate(pack.prompt())
                 .tags(tagLabels)
                 .tagKeys(tagKeys)

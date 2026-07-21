@@ -10,8 +10,8 @@
 
     <div class="atmosphere-panel__portrait">
       <img
-        v-if="companion.avatarUrl"
-        :src="resolveMediaUrl(companion.avatarUrl)"
+        v-if="portraitSrc"
+        :src="resolveMediaUrl(portraitSrc)"
         :alt="companion.name"
         class="atmosphere-panel__img"
       />
@@ -50,11 +50,13 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { User } from '@element-plus/icons-vue'
 import EmotionBadge from '@/components/EmotionBadge.vue'
 import { resolveMediaUrl } from '@/utils/media'
+import { pickCharacterAvatarRaw } from '@/utils/characterAvatar'
 
-defineProps({
+const props = defineProps({
   companion: { type: Object, default: null },
   quote: { type: String, default: '' },
   eyebrow: { type: String, required: true },
@@ -65,4 +67,6 @@ defineProps({
 })
 
 defineEmits(['chat', 'explore'])
+
+const portraitSrc = computed(() => pickCharacterAvatarRaw(props.companion, 'thumb'))
 </script>

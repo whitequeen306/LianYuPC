@@ -190,13 +190,13 @@
       <div v-if="previewItem" class="preview-body">
         <div class="preview-hero">
           <img
-            v-if="previewItem.avatarUrl && !isAvatarBroken(previewItem.id)"
-            :src="resolveMediaUrl(previewItem.avatarUrl)"
+            v-if="previewAvatarSrc && !isAvatarBroken(previewItem.id)"
+            :src="resolveMediaUrl(previewAvatarSrc)"
             class="preview-avatar"
             :alt="previewItem.name"
             loading="lazy"
             decoding="async"
-            @error="markAvatarBroken(previewItem.id)"
+            @error="onAvatarError(previewItem)"
           />
           <div v-else class="preview-avatar placeholder">
             <el-icon :size="36"><User /></el-icon>
@@ -256,6 +256,7 @@ import { useCharactersStore } from '@/stores/characters'
 import { createConversation } from '@/api/conversation'
 import { getSavedUserCity, saveUserCity } from '@/utils/userCity'
 import { resolveMediaUrl } from '@/utils/media'
+import { nextCharacterAvatarTier, pickCharacterAvatarRaw } from '@/utils/characterAvatar'
 import CharacterCityModeForm from '@/components/CharacterCityModeForm.vue'
 import SquareCommentInput from '@/components/SquareCommentInput.vue'
 import SquareDanmakuLayer from '@/components/SquareDanmakuLayer.vue'
@@ -299,18 +300,15 @@ let catalogRequestSeq = 0
 
 function avatarSrc(item) {
   if (!item) return ''
-  if (avatarLoadTier.value[item.id] === 'orig') {
-    return item.avatarUrl || item.avatarThumbUrl || ''
-  }
-  if (avatarLoadTier.value[item.id] === 'broken') {
-    return ''
-  }
-  return item.avatarThumbUrl || item.avatarUrl || ''
+  const tier = avatarLoadTier.value[item.id] || 'thumb'
+  return pickCharacterAvatarRaw(item, tier)
 }
 
 function isAvatarBroken(templateId) {
   return avatarLoadTier.value[templateId] === 'broken'
 }
+
+const previewAvatarSrc = computed(() => avatarSrc(previewItem.value))
 
 function isMostLiked(templateId) {
   return squareStore.isMostLiked(templateId, templates.value)
@@ -351,13 +349,9 @@ function markAvatarBroken(templateId) {
 
 function onAvatarError(item) {
   if (!item?.id) return
-  const thumb = item.avatarThumbUrl || ''
-  const orig = item.avatarUrl || ''
-  if (avatarLoadTier.value[item.id] !== 'orig' && orig && orig !== thumb) {
-    avatarLoadTier.value = { ...avatarLoadTier.value, [item.id]: 'orig' }
-    return
-  }
-  markAvatarBroken(item.id)
+  const current = avatarLoadTier.value[item.id] || 'thumb'
+  const next = nextCharacterAvatarTier(item, current)
+  avatarLoadTier.value = { ...avatarLoadTier.value, [item.id]: next }
 }
 
 function prefetchThumbUrls(items = []) {
@@ -472,7 +466,14 @@ async function openPreview(item) {
   previewLoading.value = true
   try {
     const detail = await fetchSquareTemplateDetail(item.id)
-    previewItem.value = { ...item, ...detail, avatarUrl: detail?.avatarUrl || item.avatarUrl }
+    // 详情接口缺字段时不要用 undefined 盖掉卡片上的 thumb / avatar
+    previewItem.value = {
+      ...item,
+      ...detail,
+      avatarUrl: detail?.avatarUrl || item.avatarUrl,
+      avatarThumbUrl: detail?.avatarThumbUrl || item.avatarThumbUrl,
+      promptTemplate: detail?.promptTemplate || item.promptTemplate,
+    }
   } catch {
     /* keep card data */
   } finally {

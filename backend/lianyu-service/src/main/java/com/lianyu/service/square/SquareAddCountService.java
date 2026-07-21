@@ -3,6 +3,7 @@ package com.lianyu.service.square;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lianyu.dao.entity.CharacterSquareTemplate;
 import com.lianyu.dao.mapper.CharacterSquareTemplateMapper;
+import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -26,6 +27,12 @@ public class SquareAddCountService {
 
     private final CharacterSquareTemplateMapper templateMapper;
     private final StringRedisTemplate stringRedisTemplate;
+
+    /** Flyway 合并/回填后避免读到旧 hash；启动时清一次再按需回填。 */
+    @PostConstruct
+    void clearStaleCacheOnBoot() {
+        invalidateCache();
+    }
 
     public void incrementAndInvalidate(Long templateId) {
         if (templateId == null) {

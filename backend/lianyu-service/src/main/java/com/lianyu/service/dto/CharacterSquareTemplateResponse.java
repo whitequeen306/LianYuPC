@@ -11,6 +11,8 @@ public class CharacterSquareTemplateResponse {
     private String slug;
     private String name;
     private String summary;
+    /** 296×296 缩略图（预览/列表共用） */
+    private String avatarThumbUrl;
     private String avatarUrl;
     private String promptTemplate;
     private List<String> tags;
