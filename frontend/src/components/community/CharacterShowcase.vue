@@ -33,46 +33,59 @@ defineProps({
 .character-showcase {
   display: flex;
   flex-direction: column;
-  gap: $space-3;
+  gap: $space-5;
 }
 
 .character-showcase__title {
   margin: 0;
-  font-size: $font-size-lg;
+  font-size: $font-size-xl;
   font-weight: $font-weight-semibold;
+  letter-spacing: 0.01em;
   color: var(--ly-text-primary);
 }
 
 .character-showcase__hidden,
 .character-showcase__empty {
   margin: 0;
+  padding: $space-5 $space-6;
+  border-radius: $radius-lg;
+  background: color-mix(in srgb, var(--ly-accent) 5%, transparent);
   color: var(--ly-text-muted);
   font-size: $font-size-sm;
 }
 
 .character-showcase__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: $space-3;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: $space-4;
 }
 
 .character-showcase__card {
   display: flex;
   align-items: center;
-  gap: $space-3;
-  padding: $space-3;
+  gap: $space-4;
+  padding: $space-4;
   border-radius: $radius-lg;
+  transition:
+    transform 0.24s cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 0.24s cubic-bezier(0.23, 1, 0.32, 1);
+
+  &:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--ly-accent) 22%, transparent);
+  }
 }
 
 .character-showcase__avatar {
-  width: 48px;
-  height: 48px;
+  width: 52px;
+  height: 52px;
   border-radius: 9999px;
   overflow: hidden;
   background: var(--ly-bg-elevated);
   display: grid;
   place-items: center;
   flex-shrink: 0;
+  color: var(--ly-text-muted);
 
   img {
     width: 100%;
@@ -84,6 +97,7 @@ defineProps({
 .character-showcase__meta {
   display: flex;
   flex-direction: column;
+  gap: $space-1;
   min-width: 0;
 }
 

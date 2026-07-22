@@ -71,23 +71,26 @@ const visibleItems = computed(() => {
 .profile-post-list {
   display: flex;
   flex-direction: column;
-  gap: $space-3;
+  gap: $space-5;
 }
 
 .profile-post-list__head h3 {
   margin: 0;
-  font-size: $font-size-lg;
+  font-size: $font-size-xl;
+  font-weight: $font-weight-semibold;
+  letter-spacing: 0.01em;
   color: var(--ly-text-primary);
 }
 
 .profile-post-list__desc {
-  margin: $space-1 0 0;
+  margin: $space-2 0 0;
   color: var(--ly-text-muted);
   font-size: $font-size-sm;
+  line-height: $line-height-normal;
 }
 
 .profile-post-list__empty {
-  padding: $space-5;
+  padding: $space-8;
   border-radius: $radius-lg;
   color: var(--ly-text-muted);
   text-align: center;
@@ -96,11 +99,13 @@ const visibleItems = computed(() => {
 .profile-post-list__stack {
   display: flex;
   flex-direction: column;
-  gap: $space-3;
+  gap: $space-5;
 }
 
 .profile-post-list__more {
   display: flex;
   gap: $space-2;
+  justify-content: center;
+  padding-top: $space-1;
 }
 </style>

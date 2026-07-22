@@ -7,6 +7,7 @@
     </header>
 
     <section v-tilt class="feed-compose-card glass stagger-item">
+      <span class="feed-compose-card__label">分享此刻</span>
       <el-input
         v-model="draft"
         type="textarea"
@@ -41,17 +42,22 @@
     <div v-if="loading && posts.length === 0" class="feed-empty glass stagger-item">加载中…</div>
     <div v-else-if="!posts.length" class="feed-empty glass stagger-item">{{ t('community.empty') }}</div>
 
-    <div class="community-feed">
-      <CommunityPostCard
-        v-for="post in posts"
-        :key="post.id"
-        :post="post"
-        :show-comments="openCommentsId === post.id"
-        allow-delete
-        @like="onLike"
-        @toggle-comments="toggleComments"
-        @delete="onDelete"
-      />
+    <div v-else class="community-feed">
+      <header class="community-feed__head stagger-item">
+        <span class="community-feed__eyebrow">最新动态</span>
+      </header>
+      <div class="community-feed__stack">
+        <CommunityPostCard
+          v-for="post in posts"
+          :key="post.id"
+          :post="post"
+          :show-comments="openCommentsId === post.id"
+          allow-delete
+          @like="onLike"
+          @toggle-comments="toggleComments"
+          @delete="onDelete"
+        />
+      </div>
     </div>
 
     <div v-if="hasMore" class="load-more">
@@ -192,16 +198,39 @@ async function onDelete(post) {
 .community-feed {
   display: flex;
   flex-direction: column;
-  gap: $space-3;
-  margin-top: $space-4;
+  gap: $space-5;
+  margin-top: $space-8;
+}
+
+.community-feed__eyebrow {
+  display: inline-block;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  letter-spacing: 0.16em;
+  color: $color-pink-primary;
+  opacity: 0.9;
+}
+
+.community-feed__stack {
+  display: flex;
+  flex-direction: column;
+  gap: $space-5;
 }
 
 .feed-compose-card {
-  padding: $space-4;
+  padding: $space-5;
   border-radius: $radius-lg;
   display: flex;
   flex-direction: column;
-  gap: $space-3;
+  gap: $space-4;
+}
+
+.feed-compose-card__label {
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  letter-spacing: 0.16em;
+  color: $color-pink-primary;
+  opacity: 0.9;
 }
 
 .compose-actions {
@@ -243,16 +272,16 @@ async function onDelete(post) {
 }
 
 .feed-empty {
-  padding: $space-6;
+  padding: $space-10;
   text-align: center;
   color: var(--ly-text-muted);
   border-radius: $radius-lg;
-  margin-top: $space-4;
+  margin-top: $space-8;
 }
 
 .load-more {
   display: flex;
   justify-content: center;
-  margin: $space-4 0;
+  margin: $space-6 0 $space-4;
 }
 </style>

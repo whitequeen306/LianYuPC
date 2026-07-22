@@ -535,10 +535,13 @@ async function handleChangePassword() {
 <style lang="scss" scoped>
 .profile-page {
   max-width: 880px;
+  display: flex;
+  flex-direction: column;
+  gap: $space-8;
 }
 
 .page-header {
-  margin-bottom: $space-6;
+  margin-bottom: 0;
   animation: fadeSlideUp 0.5s ease both;
 }
 
@@ -642,13 +645,13 @@ async function handleChangePassword() {
 }
 
 .password-card {
-  margin-top: $space-5;
+  margin-top: 0;
 }
 
 .privacy-card {
-  margin-top: $space-5;
+  margin-top: 0;
   display: block;
-  padding: $space-5;
+  padding: $space-6;
 }
 
 .privacy-row {
@@ -660,21 +663,31 @@ async function handleChangePassword() {
 }
 
 .moment-archive-card {
-  padding: $space-4;
+  padding: $space-5;
   border-radius: $radius-lg;
   display: flex;
   flex-direction: column;
-  gap: $space-2;
+  gap: $space-3;
+  transition:
+    transform 0.24s cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 0.24s cubic-bezier(0.23, 1, 0.32, 1);
+
+  &:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--ly-accent) 22%, transparent);
+  }
 }
 
 .moment-archive-card__content {
   margin: 0;
   color: var(--ly-text-primary);
+  line-height: $line-height-normal;
   white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .moment-archive-card__time {
-  font-size: $font-size-sm;
+  font-size: $font-size-xs;
   color: var(--ly-text-muted);
 }
 

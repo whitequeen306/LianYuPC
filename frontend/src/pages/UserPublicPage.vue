@@ -12,7 +12,8 @@
         <img v-if="profile.avatarUrl" :src="resolveMediaUrl(profile.avatarUrl)" alt="" />
         <el-icon v-else :size="36"><UserFilled /></el-icon>
       </div>
-      <div>
+      <div class="profile-hero__meta">
+        <span class="profile-hero__eyebrow">社区用户</span>
         <h2>{{ profile.nickname }}</h2>
       </div>
     </section>
@@ -132,30 +133,51 @@ function toggleComments(post) {
 .user-public-page {
   display: flex;
   flex-direction: column;
-  gap: $space-5;
+  gap: $space-8;
+  max-width: 880px;
 }
 
 .profile-hero {
   display: flex;
   align-items: center;
-  gap: $space-4;
-  padding: $space-5;
-  border-radius: $radius-lg;
+  gap: $space-5;
+  padding: $space-6;
+  border-radius: $radius-xl;
+}
+
+.profile-hero__meta {
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+  min-width: 0;
 
   h2 {
     margin: 0;
+    font-size: $font-size-2xl;
+    font-weight: $font-weight-semibold;
+    letter-spacing: 0.01em;
     color: var(--ly-text-primary);
   }
 }
 
+.profile-hero__eyebrow {
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  letter-spacing: 0.16em;
+  color: $color-pink-primary;
+  opacity: 0.9;
+}
+
 .profile-hero__avatar {
-  width: 72px;
-  height: 72px;
+  width: 84px;
+  height: 84px;
   border-radius: $radius-full;
   overflow: hidden;
   background: var(--ly-bg-elevated);
   display: grid;
   place-items: center;
+  flex-shrink: 0;
+  color: var(--ly-text-muted);
 
   img {
     width: 100%;

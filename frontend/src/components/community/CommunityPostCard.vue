@@ -26,7 +26,11 @@
 
     <p v-if="post.content" class="community-post-card__body" v-html="sanitizeHtml(post.content)" />
 
-    <div v-if="images.length" class="community-post-card__images" :class="`count-${Math.min(images.length, 3)}`">
+    <div
+      v-if="images.length"
+      class="community-post-card__images"
+      :class="[`count-${Math.min(images.length, 3)}`, { 'is-multi': images.length > 1 }]"
+    >
       <img
         v-for="(src, idx) in images"
         :key="`${src}-${idx}`"
@@ -159,11 +163,21 @@ function goUser(userId) {
 
 <style lang="scss" scoped>
 .community-post-card {
-  padding: $space-4;
+  padding: $space-5;
   border-radius: $radius-lg;
   display: flex;
   flex-direction: column;
-  gap: $space-3;
+  gap: $space-4;
+  transition:
+    transform 0.24s cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 0.24s cubic-bezier(0.23, 1, 0.32, 1),
+    box-shadow 0.24s cubic-bezier(0.23, 1, 0.32, 1);
+
+  &:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--ly-accent) 22%, transparent);
+    box-shadow: $shadow-glow-pink;
+  }
 }
 
 .community-post-card__head {
@@ -187,14 +201,15 @@ function goUser(userId) {
 }
 
 .community-post-card__avatar {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: $radius-full;
   overflow: hidden;
   background: var(--ly-bg-elevated);
   display: grid;
   place-items: center;
   flex-shrink: 0;
+  color: var(--ly-text-muted);
 
   img {
     width: 100%;
@@ -206,24 +221,36 @@ function goUser(userId) {
 .community-post-card__meta {
   display: flex;
   flex-direction: column;
+  gap: $space-1;
   min-width: 0;
 }
 
 .community-post-card__name {
   font-weight: $font-weight-semibold;
   color: var(--ly-text-primary);
+  line-height: 1.2;
 }
 
 .community-post-card__time,
 .community-post-card__status {
-  font-size: $font-size-sm;
+  font-size: $font-size-xs;
   color: var(--ly-text-muted);
+  line-height: 1.2;
+}
+
+.community-post-card__status {
+  padding: $space-1 $space-3;
+  border-radius: $radius-full;
+  background: color-mix(in srgb, var(--ly-accent) 12%, transparent);
+  color: var(--ly-accent);
+  font-weight: $font-weight-medium;
 }
 
 .community-post-card__body {
   margin: 0;
   color: var(--ly-text-primary);
-  line-height: 1.6;
+  font-size: $font-size-base;
+  line-height: $line-height-normal;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -233,26 +260,42 @@ function goUser(userId) {
   gap: $space-2;
 
   &.count-1 { grid-template-columns: 1fr; }
-  &.count-2,
-  &.count-3 { grid-template-columns: repeat(2, 1fr); }
+  &.count-2 { grid-template-columns: repeat(2, 1fr); }
+  &.count-3 { grid-template-columns: repeat(3, 1fr); }
 
   img {
     width: 100%;
-    max-height: 280px;
-    object-fit: cover;
     border-radius: $radius-md;
+    object-fit: cover;
+  }
+
+  // 单图：保留自然比例，限制高度，不铺满整行
+  &.count-1 img {
+    max-height: 400px;
+    max-width: 100%;
+    justify-self: start;
+  }
+
+  // 多图：统一方形瓦片，网格整齐不参差
+  &.is-multi img {
+    aspect-ratio: 1;
   }
 }
 
 .community-post-card__reject {
   margin: 0;
+  padding: $space-3 $space-4;
+  border-radius: $radius-md;
+  background: color-mix(in srgb, var(--ly-error) 12%, transparent);
   font-size: $font-size-sm;
   color: var(--ly-error);
 }
 
 .community-post-card__actions {
   display: flex;
-  gap: $space-4;
+  gap: $space-2;
+  padding-top: $space-4;
+  border-top: 1px solid color-mix(in srgb, var(--ly-accent) 10%, transparent);
 }
 
 .action-btn {
@@ -263,25 +306,34 @@ function goUser(userId) {
   border: none;
   color: var(--ly-text-secondary);
   cursor: pointer;
-  padding: 0;
-  transition: color 0.22s cubic-bezier(0.23, 1, 0.32, 1);
+  padding: $space-2 $space-3;
+  border-radius: $radius-full;
+  font-size: $font-size-sm;
+  transition:
+    color 0.22s cubic-bezier(0.23, 1, 0.32, 1),
+    background 0.22s cubic-bezier(0.23, 1, 0.32, 1);
 
-  &.active,
   &:hover {
+    color: var(--ly-accent);
+    background: color-mix(in srgb, var(--ly-accent) 8%, transparent);
+  }
+
+  &.active {
     color: var(--ly-accent);
   }
 }
 
 .community-post-card__comments {
-  border-top: 1px solid color-mix(in srgb, var(--ly-accent) 18%, transparent);
-  padding-top: $space-3;
+  border-top: 1px solid color-mix(in srgb, var(--ly-accent) 12%, transparent);
+  padding-top: $space-4;
   display: flex;
   flex-direction: column;
-  gap: $space-2;
+  gap: $space-3;
 }
 
 .comment-row {
   font-size: $font-size-sm;
+  line-height: $line-height-normal;
   color: var(--ly-text-secondary);
 }
 
@@ -298,7 +350,7 @@ function goUser(userId) {
 .comment-compose {
   display: flex;
   gap: $space-2;
-  margin-top: $space-2;
+  margin-top: $space-1;
 }
 
 .is-pending {
