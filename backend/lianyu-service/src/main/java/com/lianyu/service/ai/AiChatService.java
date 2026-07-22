@@ -40,6 +40,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -540,6 +541,42 @@ public class AiChatService {
             return "";
         }
         return city.trim();
+    }
+
+    /**
+     * Community UGC moderation. Returns true if content is safe to publish.
+     * On AI failure returns empty Optional so caller can fall back to rules.
+     */
+    public Optional<Boolean> moderateCommunityContent(Long userId, String content) {
+        try {
+            VaultEntryResponse vault = resolveVaultForGeneration(userId, null);
+            String model = resolveGenerationModel(vault);
+            ChatModel chatModel = buildChatModel(vault, model, vaultService.decryptKeyForChat(vault.getId()));
+            String safe = UserInputSanitizer.sanitizeGenerationDescription(
+                    content != null ? content : "");
+            String sysPrompt = """
+                    你是社区内容审核助手。判断用户动态是否适合公开（无色情、仇恨、暴力教唆、欺诈、隐私泄露、违法内容）。
+                    只输出 JSON：{"allow":true} 或 {"allow":false,"reason":"简短原因"}。不要 markdown。
+                    """;
+            String userPrompt = "待审内容："
+                    + (safe.isBlank() ? "（空）" : safe.substring(0, Math.min(safe.length(), 1000)));
+            List<Message> messages = List.of(new SystemMessage(sysPrompt), new UserMessage(userPrompt));
+            Prompt prompt = buildGenerationPrompt(vault, model, messages);
+            ChatResponse response = chatModel.call(prompt);
+            String raw = extractStreamDelta(response);
+            if (raw == null || raw.isBlank()) {
+                return Optional.empty();
+            }
+            String cleaned = extractJsonObject(raw.trim());
+            JsonNode root = objectMapper.readTree(cleaned);
+            if (root == null || !root.has("allow")) {
+                return Optional.empty();
+            }
+            return Optional.of(root.get("allow").asBoolean(false));
+        } catch (Exception e) {
+            log.warn("Community moderation AI failed: userId={}, reason={}", userId, e.getMessage());
+            return Optional.empty();
+        }
     }
 
     private String resolveGenerationModel(VaultEntryResponse vault) {

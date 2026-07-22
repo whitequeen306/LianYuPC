@@ -14,6 +14,7 @@ export default {
     characters: 'Bonds',
     groupChat: 'Group',
     moments: 'Feed',
+    community: 'Community',
     diary: 'Diary',
     memory: 'Memory',
     profile: 'Me',
@@ -30,6 +31,8 @@ export default {
     chat: 'Chat',
     groupChat: 'Group chat',
     moments: 'Moments',
+    community: 'Community',
+    userPublic: 'User profile',
     diary: 'Diary',
     memory: 'Memory',
     profile: 'Profile',
@@ -380,5 +383,12 @@ export default {
     nickname: 'Nickname',
     avatar: 'Avatar',
     save: 'Save changes'
+  },
+  community: {
+    title: 'Community',
+    desc: 'Share characters, stories, and daily moments with other travelers.',
+    composePlaceholder: 'Say something… images welcome',
+    publish: 'Publish',
+    empty: 'No posts yet — be the first'
   }
 }

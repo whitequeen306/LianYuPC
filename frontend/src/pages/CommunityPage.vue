@@ -1,0 +1,258 @@
+<template>
+  <div class="community-page companion-page companion-feed stagger-container">
+    <header class="companion-hero stagger-item">
+      <span class="companion-eyebrow">Community</span>
+      <h1 class="companion-title">{{ t('community.title') }}</h1>
+      <p class="companion-lead">{{ t('community.desc') }}</p>
+    </header>
+
+    <section v-tilt class="feed-compose-card glass stagger-item">
+      <el-input
+        v-model="draft"
+        type="textarea"
+        :rows="3"
+        :autosize="{ minRows: 3, maxRows: 6 }"
+        :placeholder="t('community.composePlaceholder')"
+        maxlength="1000"
+        show-word-limit
+        resize="none"
+      />
+      <div v-if="pendingImages.length" class="compose-images">
+        <div v-for="(img, idx) in pendingImages" :key="img" class="compose-images__item">
+          <img :src="resolveMediaUrl(img)" alt="" />
+          <button type="button" class="compose-images__remove" @click="pendingImages.splice(idx, 1)">×</button>
+        </div>
+      </div>
+      <div class="compose-actions">
+        <el-button :loading="uploading" @click="triggerPick">上传图片</el-button>
+        <el-button
+          v-bubble-btn
+          type="primary"
+          :loading="sending"
+          :disabled="!canPublish"
+          @click="publish"
+        >
+          {{ t('community.publish') }}
+        </el-button>
+        <input ref="fileInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden @change="onPick" />
+      </div>
+    </section>
+
+    <div v-if="loading && posts.length === 0" class="feed-empty glass stagger-item">加载中…</div>
+    <div v-else-if="!posts.length" class="feed-empty glass stagger-item">{{ t('community.empty') }}</div>
+
+    <div class="community-feed">
+      <CommunityPostCard
+        v-for="post in posts"
+        :key="post.id"
+        :post="post"
+        :show-comments="openCommentsId === post.id"
+        allow-delete
+        @like="onLike"
+        @toggle-comments="toggleComments"
+        @delete="onDelete"
+      />
+    </div>
+
+    <div v-if="hasMore" class="load-more">
+      <el-button text type="primary" :loading="loadingMore" @click="loadMore">加载更多</el-button>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import CommunityPostCard from '@/components/community/CommunityPostCard.vue'
+import {
+  createCommunityPost,
+  deleteCommunityPost,
+  fetchCommunityFeed,
+  toggleCommunityLike,
+  uploadCommunityImage
+} from '@/api/community'
+import { resolveMediaUrl } from '@/utils/media'
+
+const { t } = useI18n()
+
+const posts = ref([])
+const cursor = ref(null)
+const hasMore = ref(false)
+const loading = ref(false)
+const loadingMore = ref(false)
+const draft = ref('')
+const pendingImages = ref([])
+const uploading = ref(false)
+const sending = ref(false)
+const openCommentsId = ref(null)
+const fileInput = ref(null)
+
+const canPublish = computed(() => draft.value.trim() || pendingImages.value.length)
+
+onMounted(() => reload())
+
+async function reload() {
+  loading.value = true
+  cursor.value = null
+  try {
+    const data = await fetchCommunityFeed({ limit: 20 })
+    posts.value = data?.items || []
+    cursor.value = data?.nextCursor || null
+    hasMore.value = !!data?.hasMore
+  } catch (e) {
+    ElMessage.error(e?.message || '加载失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadMore() {
+  if (!hasMore.value || loadingMore.value) return
+  loadingMore.value = true
+  try {
+    const data = await fetchCommunityFeed({ cursor: cursor.value, limit: 20 })
+    const batch = data?.items || []
+    posts.value = [...posts.value, ...batch]
+    cursor.value = data?.nextCursor || null
+    hasMore.value = !!data?.hasMore
+  } finally {
+    loadingMore.value = false
+  }
+}
+
+function triggerPick() {
+  fileInput.value?.click()
+}
+
+async function onPick(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  if (pendingImages.value.length >= 9) {
+    ElMessage.warning('最多 9 张图片')
+    return
+  }
+  uploading.value = true
+  try {
+    const res = await uploadCommunityImage(file)
+    if (res?.imageUrl) pendingImages.value.push(res.imageUrl)
+  } catch (e) {
+    ElMessage.error(e?.message || '上传失败')
+  } finally {
+    uploading.value = false
+  }
+}
+
+async function publish() {
+  if (!canPublish.value || sending.value) return
+  sending.value = true
+  try {
+    const created = await createCommunityPost({
+      content: draft.value.trim(),
+      imageUrls: [...pendingImages.value]
+    })
+    draft.value = ''
+    pendingImages.value = []
+    posts.value = [created, ...posts.value]
+    ElMessage.success('已提交，审核通过后会出现在广场')
+  } catch (e) {
+    ElMessage.error(e?.message || '发布失败')
+  } finally {
+    sending.value = false
+  }
+}
+
+async function onLike(post) {
+  try {
+    const res = await toggleCommunityLike(post.id)
+    post.likedByMe = !!res?.liked
+    post.likeCount = res?.likeCount ?? post.likeCount
+  } catch (e) {
+    ElMessage.error(e?.message || '操作失败')
+  }
+}
+
+function toggleComments(post) {
+  openCommentsId.value = openCommentsId.value === post.id ? null : post.id
+}
+
+async function onDelete(post) {
+  try {
+    await ElMessageBox.confirm('确定删除这条动态？', '删除确认', { type: 'warning' })
+    await deleteCommunityPost(post.id)
+    posts.value = posts.value.filter((p) => p.id !== post.id)
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(e?.message || '删除失败')
+  }
+}
+</script>
+
+<style lang="scss" scoped>
+.community-feed {
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+  margin-top: $space-4;
+}
+
+.feed-compose-card {
+  padding: $space-4;
+  border-radius: $radius-lg;
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+}
+
+.compose-actions {
+  display: flex;
+  gap: $space-3;
+  justify-content: flex-end;
+}
+
+.compose-images {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: $space-2;
+}
+
+.compose-images__item {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: $radius-md;
+  overflow: hidden;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.compose-images__remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: $radius-full;
+  background: var(--ly-bg-elevated);
+  color: var(--ly-text-primary);
+  cursor: pointer;
+}
+
+.feed-empty {
+  padding: $space-6;
+  text-align: center;
+  color: var(--ly-text-muted);
+  border-radius: $radius-lg;
+  margin-top: $space-4;
+}
+
+.load-more {
+  display: flex;
+  justify-content: center;
+  margin: $space-4 0;
+}
+</style>

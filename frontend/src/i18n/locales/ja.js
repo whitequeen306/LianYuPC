@@ -14,6 +14,7 @@ export default {
     characters: '絆',
     groupChat: 'グループ',
     moments: 'フィード',
+    community: 'コミュニティ',
     diary: '日記',
     memory: '記憶',
     profile: 'マイ',
@@ -30,6 +31,8 @@ export default {
     chat: 'チャット',
     groupChat: 'グループ',
     moments: 'モーメンツ',
+    community: 'コミュニティ',
+    userPublic: 'ユーザーページ',
     diary: '日記',
     memory: '記憶',
     profile: 'プロフィール',
@@ -375,5 +378,12 @@ export default {
     nickname: 'ニックネーム',
     avatar: 'アバター',
     save: '保存'
+  },
+  community: {
+    title: 'コミュニティ',
+    desc: '設定や日常をシェアして、他の旅人と出会おう。',
+    composePlaceholder: 'ひとこと書いてみよう…画像もOK',
+    publish: '投稿',
+    empty: 'まだ投稿がありません'
   }
 }

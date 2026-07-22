@@ -14,6 +14,7 @@ export default {
     characters: '羁绊',
     groupChat: '群聊',
     moments: '动态',
+    community: '社区',
     diary: '日记',
     memory: '记忆',
     profile: '我的',
@@ -30,6 +31,8 @@ export default {
     chat: '对话',
     groupChat: '群聊',
     moments: '朋友圈',
+    community: '用户社区',
+    userPublic: '用户主页',
     diary: '角色日记',
     memory: '记忆',
     profile: '个人资料',
@@ -382,5 +385,12 @@ export default {
     nickname: '昵称',
     avatar: '头像',
     save: '保存修改'
+  },
+  community: {
+    title: '用户社区',
+    desc: '分享人设、趣事与日常，和别的旅人相遇。',
+    composePlaceholder: '说点什么吧…也可以配图',
+    publish: '发布',
+    empty: '还没有人发动态，来做第一个吧'
   }
 }

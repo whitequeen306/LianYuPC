@@ -13,7 +13,10 @@ import com.lianyu.service.dto.LoginRequest;
 import com.lianyu.service.dto.LoginResponse;
 import com.lianyu.service.dto.RegisterRequest;
 import com.lianyu.service.dto.UpdateProfileRequest;
+import com.lianyu.service.dto.UpdateUserSettingsRequest;
 import com.lianyu.service.dto.UserProfile;
+import com.lianyu.service.dto.UserSettingsResponse;
+import com.lianyu.service.user.UserPublicProfileService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.time.Duration;
@@ -44,6 +47,7 @@ public class AuthController {
     private final CaptchaService captchaService;
     private final AuthRateLimiter authRateLimiter;
     private final ClientIpResolver clientIpResolver;
+    private final UserPublicProfileService userPublicProfileService;
 
     @Operation(summary = "获取验证码")
     @GetMapping("/captcha")
@@ -119,6 +123,20 @@ public class AuthController {
         long userId = StpUtil.getLoginIdAsLong();
         authService.changePassword(userId, request);
         return Result.ok();
+    }
+
+    @Operation(summary = "获取当前用户隐私设置")
+    @GetMapping("/me/settings")
+    public Result<UserSettingsResponse> getSettings() {
+        long userId = StpUtil.getLoginIdAsLong();
+        return Result.ok(userPublicProfileService.getMySettings(userId));
+    }
+
+    @Operation(summary = "更新当前用户隐私设置")
+    @PutMapping("/me/settings")
+    public Result<UserSettingsResponse> updateSettings(@RequestBody UpdateUserSettingsRequest request) {
+        long userId = StpUtil.getLoginIdAsLong();
+        return Result.ok(userPublicProfileService.updateMySettings(userId, request));
     }
 
     private void verifyCaptcha(CaptchaVerifyRequest captcha) {

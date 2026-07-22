@@ -69,6 +69,72 @@
       </el-form>
     </section>
 
+    <section class="profile-card glass stagger-item privacy-card">
+      <div class="password-card__head">
+        <h2 class="section-title">主页隐私</h2>
+        <p class="section-desc">控制其他用户是否能在你的主页看到角色橱窗（默认关闭）。</p>
+      </div>
+      <div class="privacy-row">
+        <span>允许别人查看我的角色</span>
+        <el-switch
+          v-model="showCharactersOnProfile"
+          :loading="settingsSaving"
+          @change="savePrivacySettings"
+        />
+      </div>
+    </section>
+
+    <CharacterShowcase
+      class="stagger-item"
+      title="我的角色橱窗预览"
+      :characters="showcaseCharacters"
+      :hidden="!showCharactersOnProfile"
+    />
+
+    <ProfilePostList
+      class="stagger-item"
+      title="社区动态"
+      desc="你在社区发布的动态（含审核中）"
+      :items="communityPosts"
+      :loading="communityLoading"
+      :loading-more="communityLoadingMore"
+      :has-more="communityHasMore"
+      empty-text="还没有社区动态"
+      @load-more="loadMoreCommunity"
+    >
+      <template #default="{ items }">
+        <CommunityPostCard
+          v-for="post in items"
+          :key="post.id"
+          :post="post"
+          :show-comments="openCommentsId === post.id"
+          allow-delete
+          @like="onCommunityLike"
+          @toggle-comments="toggleComments"
+          @delete="onCommunityDelete"
+        />
+      </template>
+    </ProfilePostList>
+
+    <ProfilePostList
+      class="stagger-item"
+      title="我对角色发的动态"
+      desc="仅自己可见的角色朋友圈归档"
+      :items="momentPosts"
+      :loading="momentsLoading"
+      :loading-more="momentsLoadingMore"
+      :has-more="momentsHasMore"
+      empty-text="还没有对角色发过动态"
+      @load-more="loadMoreMoments"
+    >
+      <template #default="{ items }">
+        <article v-for="post in items" :key="post.id" class="moment-archive-card glass">
+          <p class="moment-archive-card__content">{{ post.content }}</p>
+          <span class="moment-archive-card__time">{{ formatMomentTime(post.createdAt) }}</span>
+        </article>
+      </template>
+    </ProfilePostList>
+
     <section id="password" class="profile-card glass stagger-item password-card">
       <div class="password-card__head">
         <h2 class="section-title">账号安全</h2>
@@ -122,13 +188,24 @@
 import { computed, nextTick, onMounted, onActivated, onDeactivated, onUnmounted, reactive, ref, watch } from 'vue'
 defineOptions({ name: 'ProfilePage' })
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled, UserFilled } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
+import { useCharactersStore } from '@/stores/characters'
 import { resolveMediaUrl } from '@/utils/media'
+import { formatFeedTime } from '@/utils/feedTime'
+import CharacterShowcase from '@/components/community/CharacterShowcase.vue'
+import ProfilePostList from '@/components/community/ProfilePostList.vue'
+import CommunityPostCard from '@/components/community/CommunityPostCard.vue'
+import { fetchUserCommunityPosts, getMyUserSettings, updateMyUserSettings } from '@/api/users'
+import { deleteCommunityPost, toggleCommunityLike } from '@/api/community'
+import { fetchMyMomentPosts } from '@/api/moments'
 
 const userStore = useUserStore()
+const charactersStore = useCharactersStore()
 const route = useRoute()
+const { t, locale } = useI18n()
 const formRef = ref(null)
 const passwordFormRef = ref(null)
 const fileInput = ref(null)
@@ -137,6 +214,41 @@ const changingPassword = ref(false)
 const uploadingAvatar = ref(false)
 const isDragging = ref(false)
 const localPreviewUrl = ref('')
+
+const showCharactersOnProfile = ref(false)
+const settingsSaving = ref(false)
+const communityPosts = ref([])
+const communityCursor = ref(null)
+const communityHasMore = ref(false)
+const communityLoading = ref(false)
+const communityLoadingMore = ref(false)
+const momentPosts = ref([])
+const momentsCursor = ref(null)
+const momentsHasMore = ref(false)
+const momentsLoading = ref(false)
+const momentsLoadingMore = ref(false)
+const openCommentsId = ref(null)
+
+const showcaseCharacters = computed(() =>
+  (charactersStore.list || []).map((c) => ({
+    characterId: c.id,
+    name: c.name,
+    avatarUrl: c.avatarUrl,
+    companionshipDays: companionshipDays(c.createdAt)
+  }))
+)
+
+function companionshipDays(createdAt) {
+  if (!createdAt) return 1
+  const start = new Date(createdAt)
+  if (Number.isNaN(start.getTime())) return 1
+  const days = Math.floor((Date.now() - start.getTime()) / 86400000) + 1
+  return Math.max(1, days)
+}
+
+function formatMomentTime(iso) {
+  return formatFeedTime(iso, t, locale.value)
+}
 
 const form = reactive({
   nickname: userStore.nickname || ''
@@ -194,6 +306,12 @@ onMounted(async () => {
   } catch {
     // ignore
   }
+  await Promise.all([
+    loadPrivacySettings(),
+    charactersStore.fetchList().catch(() => []),
+    loadCommunityPosts(),
+    loadMomentPosts()
+  ])
   if (route.hash === '#password') {
     await nextTick()
     document.getElementById('password')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -204,7 +322,115 @@ let firstActivation = true
 onActivated(() => {
   if (firstActivation) { firstActivation = false; return }
   userStore.fetchProfile().catch(() => {})
+  loadPrivacySettings()
+  loadCommunityPosts()
+  loadMomentPosts()
 })
+
+async function loadPrivacySettings() {
+  try {
+    const data = await getMyUserSettings()
+    showCharactersOnProfile.value = !!data?.showCharactersOnProfile
+  } catch {
+    showCharactersOnProfile.value = false
+  }
+}
+
+async function savePrivacySettings(value) {
+  settingsSaving.value = true
+  try {
+    const data = await updateMyUserSettings({ showCharactersOnProfile: !!value })
+    showCharactersOnProfile.value = !!data?.showCharactersOnProfile
+    ElMessage.success('已更新隐私设置')
+  } catch (e) {
+    showCharactersOnProfile.value = !value
+    ElMessage.error(e?.message || '保存失败')
+  } finally {
+    settingsSaving.value = false
+  }
+}
+
+async function loadCommunityPosts() {
+  if (!userStore.userId) return
+  communityLoading.value = true
+  try {
+    const data = await fetchUserCommunityPosts(userStore.userId, { limit: 5 })
+    communityPosts.value = data?.items || []
+    communityCursor.value = data?.nextCursor || null
+    communityHasMore.value = !!data?.hasMore
+  } catch {
+    communityPosts.value = []
+  } finally {
+    communityLoading.value = false
+  }
+}
+
+async function loadMoreCommunity() {
+  if (!communityHasMore.value || communityLoadingMore.value) return
+  communityLoadingMore.value = true
+  try {
+    const data = await fetchUserCommunityPosts(userStore.userId, {
+      cursor: communityCursor.value,
+      limit: 10
+    })
+    communityPosts.value = [...communityPosts.value, ...(data?.items || [])]
+    communityCursor.value = data?.nextCursor || null
+    communityHasMore.value = !!data?.hasMore
+  } finally {
+    communityLoadingMore.value = false
+  }
+}
+
+async function loadMomentPosts() {
+  momentsLoading.value = true
+  try {
+    const data = await fetchMyMomentPosts({ limit: 5 })
+    momentPosts.value = data?.items || []
+    momentsCursor.value = data?.nextCursor || null
+    momentsHasMore.value = !!data?.hasMore
+  } catch {
+    momentPosts.value = []
+  } finally {
+    momentsLoading.value = false
+  }
+}
+
+async function loadMoreMoments() {
+  if (!momentsHasMore.value || momentsLoadingMore.value) return
+  momentsLoadingMore.value = true
+  try {
+    const data = await fetchMyMomentPosts({ cursor: momentsCursor.value, limit: 10 })
+    momentPosts.value = [...momentPosts.value, ...(data?.items || [])]
+    momentsCursor.value = data?.nextCursor || null
+    momentsHasMore.value = !!data?.hasMore
+  } finally {
+    momentsLoadingMore.value = false
+  }
+}
+
+async function onCommunityLike(post) {
+  try {
+    const res = await toggleCommunityLike(post.id)
+    post.likedByMe = !!res?.liked
+    post.likeCount = res?.likeCount ?? post.likeCount
+  } catch (e) {
+    ElMessage.error(e?.message || '操作失败')
+  }
+}
+
+function toggleComments(post) {
+  openCommentsId.value = openCommentsId.value === post.id ? null : post.id
+}
+
+async function onCommunityDelete(post) {
+  try {
+    await ElMessageBox.confirm('确定删除这条社区动态？', '删除确认', { type: 'warning' })
+    await deleteCommunityPost(post.id)
+    communityPosts.value = communityPosts.value.filter((p) => p.id !== post.id)
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(e?.message || '删除失败')
+  }
+}
 
 onDeactivated(() => {
   passwordForm.oldPassword = ''
@@ -417,6 +643,39 @@ async function handleChangePassword() {
 
 .password-card {
   margin-top: $space-5;
+}
+
+.privacy-card {
+  margin-top: $space-5;
+  display: block;
+  padding: $space-5;
+}
+
+.privacy-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $space-4;
+  color: var(--ly-text-primary);
+}
+
+.moment-archive-card {
+  padding: $space-4;
+  border-radius: $radius-lg;
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+}
+
+.moment-archive-card__content {
+  margin: 0;
+  color: var(--ly-text-primary);
+  white-space: pre-wrap;
+}
+
+.moment-archive-card__time {
+  font-size: $font-size-sm;
+  color: var(--ly-text-muted);
 }
 
 .password-card__head {

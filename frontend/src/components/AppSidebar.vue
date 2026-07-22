@@ -44,7 +44,7 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useSettingsStore } from '@/stores/settings'
-import { Setting, UserFilled } from '@element-plus/icons-vue'
+import { Setting, UserFilled, HomeFilled, Grid, User, ChatDotRound, PictureRounded, ChatLineSquare, Notebook, Collection } from '@element-plus/icons-vue'
 import { APP_LOGO } from '@/constants/brand.js'
 
 const route = useRoute()
@@ -52,13 +52,14 @@ const settingsStore = useSettingsStore()
 const { t } = useI18n()
 
 const navItems = computed(() => [
-  { path: '/app', label: t('nav.home'), icon: 'HomeFilled' },
-  { path: '/app/character-square', label: t('nav.characterSquare'), icon: 'Grid' },
-  { path: '/app/characters', label: t('nav.characters'), icon: 'User' },
-  { path: '/app/group-chat', label: t('nav.groupChat'), icon: 'ChatDotRound' },
-  { path: '/app/moments', label: t('nav.moments'), icon: 'PictureRounded' },
-  { path: '/app/diary', label: t('nav.diary'), icon: 'Notebook' },
-  { path: '/app/memory', label: t('nav.memory'), icon: 'Collection' }
+  { path: '/app', label: t('nav.home'), icon: HomeFilled },
+  { path: '/app/character-square', label: t('nav.characterSquare'), icon: Grid },
+  { path: '/app/characters', label: t('nav.characters'), icon: User },
+  { path: '/app/group-chat', label: t('nav.groupChat'), icon: ChatDotRound },
+  { path: '/app/moments', label: t('nav.moments'), icon: PictureRounded },
+  { path: '/app/community', label: t('nav.community'), icon: ChatLineSquare },
+  { path: '/app/diary', label: t('nav.diary'), icon: Notebook },
+  { path: '/app/memory', label: t('nav.memory'), icon: Collection }
 ])
 
 function isActive(path) {

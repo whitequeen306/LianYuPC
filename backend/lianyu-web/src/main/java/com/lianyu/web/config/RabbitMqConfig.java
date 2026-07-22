@@ -23,12 +23,14 @@ public class RabbitMqConfig {
     public static final String QUEUE_MEMORY_SUMMARY_DLX = "memory.summary.dlq";
     public static final String QUEUE_MESSAGE_ARCHIVE = "message.archive.queue";
     public static final String QUEUE_EVENT_BROADCAST = "event.broadcast.queue";
+    public static final String QUEUE_COMMUNITY_MODERATION = "community.moderation.queue";
 
     // Routing keys
     public static final String RK_MEMORY_SUMMARY = "memory.summary";
     public static final String RK_MEMORY_SUMMARY_DLX = "memory.summary.dlq";
     public static final String RK_MESSAGE_ARCHIVE = "message.archive";
     public static final String RK_EVENT_BROADCAST = "event.broadcast";
+    public static final String RK_COMMUNITY_MODERATION = "community.moderation";
 
     @Value("${lianyu.mq.memory.prefetch:20}")
     private int memoryPrefetch;
@@ -68,6 +70,11 @@ public class RabbitMqConfig {
     }
 
     @Bean
+    public Queue communityModerationQueue() {
+        return QueueBuilder.durable(QUEUE_COMMUNITY_MODERATION).build();
+    }
+
+    @Bean
     public Binding memorySummaryBinding() {
         return BindingBuilder.bind(memorySummaryQueue()).to(lianyuExchange()).with(RK_MEMORY_SUMMARY);
     }
@@ -85,6 +92,11 @@ public class RabbitMqConfig {
     @Bean
     public Binding eventBroadcastBinding() {
         return BindingBuilder.bind(eventBroadcastQueue()).to(lianyuExchange()).with(RK_EVENT_BROADCAST);
+    }
+
+    @Bean
+    public Binding communityModerationBinding() {
+        return BindingBuilder.bind(communityModerationQueue()).to(lianyuExchange()).with(RK_COMMUNITY_MODERATION);
     }
 
     @Bean

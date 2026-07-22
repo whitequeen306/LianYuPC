@@ -143,6 +143,36 @@ public class MomentsService {
                 .build();
     }
 
+    /** Owner-only archive of user-authored moments posts (not community). */
+    public MomentFeedResponse listMyUserPosts(Long userId, Long cursor, int limit) {
+        int realLimit = Math.min(Math.max(1, limit), 50);
+        LambdaQueryWrapper<MomentsPost> qw = new LambdaQueryWrapper<MomentsPost>()
+                .eq(MomentsPost::getUserId, userId)
+                .eq(MomentsPost::getAuthorType, AUTHOR_USER)
+                .orderByDesc(MomentsPost::getId);
+        if (cursor != null && cursor > 0) {
+            qw.lt(MomentsPost::getId, cursor);
+        }
+        qw.last("LIMIT " + (realLimit + 1));
+
+        List<MomentsPost> rows = momentsPostMapper.selectList(qw);
+        boolean hasMore = rows.size() > realLimit;
+        if (hasMore) {
+            rows = new ArrayList<>(rows.subList(0, realLimit));
+        }
+
+        User me = userMapper.selectById(userId);
+        List<MomentPostResponse> items = rows.stream()
+                .map(row -> toResponse(row, null, me))
+                .toList();
+        Long nextCursor = hasMore && !rows.isEmpty() ? rows.get(rows.size() - 1).getId() : null;
+        return MomentFeedResponse.builder()
+                .items(items)
+                .nextCursor(nextCursor)
+                .hasMore(hasMore)
+                .build();
+    }
+
     public MomentUnreadCountResponse getUnreadCount(Long userId) {
         LocalDateTime seenAt = getFeedSeenAt(userId);
         LambdaQueryWrapper<MomentsPost> qw = new LambdaQueryWrapper<MomentsPost>()

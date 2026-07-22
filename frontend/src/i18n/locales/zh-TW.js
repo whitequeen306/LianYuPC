@@ -15,6 +15,7 @@ export default {
     characters: '羈絆',
     groupChat: '群聊',
     moments: '動態',
+    community: '社區',
     diary: '日記',
     memory: '記憶',
     profile: '我的',
@@ -31,6 +32,8 @@ export default {
     chat: '對話',
     groupChat: '群聊',
     moments: '朋友圈',
+    community: '用戶社區',
+    userPublic: '用戶主頁',
     diary: '日記',
     memory: '記憶',
     profile: '個人資料',
@@ -378,5 +381,12 @@ export default {
     nickname: '暱稱',
     avatar: '頭像',
     save: '儲存修改'
+  },
+  community: {
+    title: '用戶社區',
+    desc: '分享人設、趣事與日常，和別的旅人相遇。',
+    composePlaceholder: '說點什麼吧…也可以配圖',
+    publish: '發布',
+    empty: '還沒有人發動態，來做第一個吧'
   }
 }

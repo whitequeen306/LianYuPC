@@ -396,6 +396,9 @@ lianyu:
       reconcile-min-age-minutes: 4
       reconcile-batch-size: 20
 
+  community:
+    post-rate-per-minute: 6
+
   # ─── QQ 桥接（NapCat 正向 WebSocket，单人模式）────────────────────────
   # 总开关默认关闭。开启前请先阅读 docs/qq-bridge-zh.md
   # enabled=true 时，本进程内启动 OneBot WS 客户端，把 QQ 私聊/群@消息

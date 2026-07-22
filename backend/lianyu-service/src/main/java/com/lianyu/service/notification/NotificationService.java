@@ -105,6 +105,24 @@ public class NotificationService {
         return createAndPushNotification(userId, conversationId, characterId, title, preview, type);
     }
 
+    /**
+     * Community like. {@code postId} is stored in conversationId for deep-link routing.
+     */
+    public NotificationResponse notifyCommunityLike(Long userId, Long postId, String actorName, String preview) {
+        String speaker = (actorName == null || actorName.isBlank()) ? "有人" : actorName;
+        return createAndPushNotification(userId, postId, null,
+                speaker + " 赞了你的社区动态", preview, "COMMUNITY_LIKE");
+    }
+
+    /**
+     * Community comment. {@code postId} is stored in conversationId for deep-link routing.
+     */
+    public NotificationResponse notifyCommunityComment(Long userId, Long postId, String actorName, String preview) {
+        String speaker = (actorName == null || actorName.isBlank()) ? "有人" : actorName;
+        return createAndPushNotification(userId, postId, null,
+                speaker + " 评论了你的社区动态", preview, "COMMUNITY_COMMENT");
+    }
+
     private NotificationResponse createAndPushNotification(Long userId,
                                                          Long conversationId,
                                                          Long characterId,

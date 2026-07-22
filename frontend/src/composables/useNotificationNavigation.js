@@ -43,6 +43,10 @@ export function buildNotificationHash(notification) {
     return `#/app/moments${query}`
   }
 
+  if (type === 'COMMUNITY_LIKE' || type === 'COMMUNITY_COMMENT') {
+    return '#/app/community'
+  }
+
   if (type.startsWith('DIARY')) {
     const query = characterId ? `?characterId=${characterId}` : ''
     return `#/app/diary${query}`
@@ -69,6 +73,8 @@ export async function navigateToNotification(notification) {
   const isFeedNotification =
     type === 'MOMENT_NEW' ||
     type === 'MOMENT_COMMENT' ||
+    type === 'COMMUNITY_LIKE' ||
+    type === 'COMMUNITY_COMMENT' ||
     type.startsWith('DIARY')
   if (isFeedNotification && notification.id != null) {
     await notificationsStore.markNotificationsByIds([notification.id])
@@ -81,6 +87,11 @@ export async function navigateToNotification(notification) {
       path: '/app/moments',
       query: characterId ? { characterId: String(characterId) } : {}
     })
+    return
+  }
+
+  if (type === 'COMMUNITY_LIKE' || type === 'COMMUNITY_COMMENT') {
+    await router.push('/app/community')
     return
   }
 

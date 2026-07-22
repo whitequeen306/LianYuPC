@@ -37,6 +37,16 @@ public class MomentsController {
         return Result.ok(momentsService.listFeed(userId, characterId, cursor, limit));
     }
 
+    @Operation(summary = "我发布的角色动态归档（仅本人）")
+    @GetMapping("/mine")
+    public Result<MomentFeedResponse> mine(
+            @RequestParam(value = "cursor", required = false) Long cursor,
+            @RequestParam(value = "limit", defaultValue = "5") int limit
+    ) {
+        long userId = StpUtil.getLoginIdAsLong();
+        return Result.ok(momentsService.listMyUserPosts(userId, cursor, limit));
+    }
+
     @Operation(summary = "未读动态数")
     @GetMapping("/unread-count")
     public Result<MomentUnreadCountResponse> unreadCount() {

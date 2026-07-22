@@ -116,6 +116,18 @@ const routes = [
         meta: { titleKey: 'routes.moments' }
       },
       {
+        path: 'community',
+        name: 'Community',
+        component: () => import('@/pages/CommunityPage.vue'),
+        meta: { titleKey: 'routes.community' }
+      },
+      {
+        path: 'users/:userId',
+        name: 'UserPublic',
+        component: () => import('@/pages/UserPublicPage.vue'),
+        meta: { titleKey: 'routes.userPublic' }
+      },
+      {
         path: 'profile',
         name: 'Profile',
         component: () => import('@/pages/ProfilePage.vue'),

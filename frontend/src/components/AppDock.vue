@@ -122,7 +122,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { gsap } from 'gsap'
-import { Compass, HomeFilled, ChatLineRound, Grid, PictureRounded, ChatDotRound, Notebook, Collection, UserFilled, Setting } from '@element-plus/icons-vue'
+import { Compass, HomeFilled, ChatLineRound, Grid, PictureRounded, ChatDotRound, Notebook, Collection, UserFilled, Setting, ChatLineSquare } from '@element-plus/icons-vue'
 import OnboardingHintBubble from '@/components/OnboardingHintBubble.vue'
 import { useOnboardingHint } from '@/composables/useOnboardingHint'
 
@@ -159,6 +159,7 @@ const primaryRight = computed(() => [
 ])
 
 const wheelItems = computed(() => [
+  { path: '/app/community', label: t('nav.community'), icon: ChatLineSquare },
   { path: '/app/group-chat', label: t('nav.groupChat'), icon: ChatDotRound },
   { path: '/app/diary', label: t('nav.diary'), icon: Notebook },
   { path: '/app/memory', label: t('nav.memory'), icon: Collection },
