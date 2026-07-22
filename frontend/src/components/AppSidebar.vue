@@ -53,11 +53,11 @@ const { t } = useI18n()
 
 const navItems = computed(() => [
   { path: '/app', label: t('nav.home'), icon: HomeFilled },
-  { path: '/app/character-square', label: t('nav.characterSquare'), icon: Grid },
   { path: '/app/characters', label: t('nav.characters'), icon: User },
-  { path: '/app/group-chat', label: t('nav.groupChat'), icon: ChatDotRound },
-  { path: '/app/moments', label: t('nav.moments'), icon: PictureRounded },
+  { path: '/app/character-square', label: t('nav.characterSquare'), icon: Grid },
   { path: '/app/community', label: t('nav.community'), icon: ChatLineSquare },
+  { path: '/app/moments', label: t('nav.moments'), icon: PictureRounded },
+  { path: '/app/group-chat', label: t('nav.groupChat'), icon: ChatDotRound },
   { path: '/app/diary', label: t('nav.diary'), icon: Notebook },
   { path: '/app/memory', label: t('nav.memory'), icon: Collection }
 ])

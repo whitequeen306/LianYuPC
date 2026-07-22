@@ -155,11 +155,11 @@ const primaryLeft = computed(() => [
 
 const primaryRight = computed(() => [
   { path: '/app/character-square', label: t('nav.characterSquare'), icon: Grid },
-  { path: '/app/moments', label: t('nav.moments'), icon: PictureRounded }
+  { path: '/app/community', label: t('nav.community'), icon: ChatLineSquare }
 ])
 
 const wheelItems = computed(() => [
-  { path: '/app/community', label: t('nav.community'), icon: ChatLineSquare },
+  { path: '/app/moments', label: t('nav.moments'), icon: PictureRounded },
   { path: '/app/group-chat', label: t('nav.groupChat'), icon: ChatDotRound },
   { path: '/app/diary', label: t('nav.diary'), icon: Notebook },
   { path: '/app/memory', label: t('nav.memory'), icon: Collection },
