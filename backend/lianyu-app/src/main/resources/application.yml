@@ -258,7 +258,7 @@ lianyu:
 
   tools:
     chat:
-      # 角色对话是否启用 Spring AI Tool（时间/天气/记忆等，由 ToolManager 统一注册）
+      # 角色对话是否启用 Spring AI Tool（时间/天气/记忆/近况等，由 ToolManager 统一注册）
       enabled: true
     # ToolManager 默认城市（角色 settings 无 city/location 时使用）
     default-city: 上海
@@ -272,6 +272,9 @@ lianyu:
       base-url: https://wttr.in
       # 天气缓存时长（分钟）
       cache-minutes: 15
+    recent-activity:
+      # 角色近况（日记/动态）按需 Tool；关闭后模型无法主动查询近况
+      enabled: true
 
   group:
     # 单个群聊最多角色数（不含用户本人）

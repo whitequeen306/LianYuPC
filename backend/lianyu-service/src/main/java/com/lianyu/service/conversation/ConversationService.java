@@ -30,7 +30,6 @@ import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
 import com.lianyu.service.ai.InnerThoughtFilter;
 import com.lianyu.service.character.CharacterPreferenceResolver;
-import com.lianyu.service.character.CharacterRecentActivityService;
 import com.lianyu.service.character.CharacterStateService;
 import com.lianyu.service.character.UserAddressingResolver;
 import com.lianyu.service.dto.*;
@@ -109,7 +108,6 @@ public class ConversationService {
     private final ProactiveUnrepliedThrottle proactiveUnrepliedThrottle;
     private final TimeTool timeTool;
     private final SessionSummaryService sessionSummaryService;
-    private final CharacterRecentActivityService characterRecentActivityService;
 
     @Lazy
     @Autowired

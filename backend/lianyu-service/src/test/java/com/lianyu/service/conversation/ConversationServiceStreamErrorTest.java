@@ -27,7 +27,6 @@ import com.lianyu.common.exception.BusinessException;
 import com.lianyu.common.base.ErrorCode;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
 import com.lianyu.service.character.CharacterChatBehavior;
-import com.lianyu.service.character.CharacterRecentActivityService;
 import com.lianyu.service.character.CharacterStateService;
 import com.lianyu.service.dto.SendMessageRequest;
 import com.lianyu.service.memory.MemoryRetriever;
@@ -81,7 +80,6 @@ class ConversationServiceStreamErrorTest {
     @Mock private ProactiveUnrepliedThrottle proactiveUnrepliedThrottle;
     @Mock private com.lianyu.service.tools.TimeTool timeTool;
     @Mock private SessionSummaryService sessionSummaryService;
-    @Mock private CharacterRecentActivityService characterRecentActivityService;
 
     private ConversationService service;
 
@@ -113,8 +111,7 @@ class ConversationServiceStreamErrorTest {
                 relationshipStateService,
                 proactiveUnrepliedThrottle,
                 timeTool,
-                sessionSummaryService,
-                characterRecentActivityService);
+                sessionSummaryService);
         ReflectionTestUtils.setField(service, "contextWindow", 20);
     }
 

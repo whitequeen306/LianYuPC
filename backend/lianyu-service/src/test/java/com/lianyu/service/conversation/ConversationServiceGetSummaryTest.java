@@ -20,7 +20,6 @@ import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.AssistantReplyService;
 import com.lianyu.service.ai.CharacterPromptBuilder;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
-import com.lianyu.service.character.CharacterRecentActivityService;
 import com.lianyu.service.character.CharacterStateService;
 import com.lianyu.service.dto.ConversationResponse;
 import com.lianyu.service.memory.MemoryRetriever;
@@ -63,7 +62,6 @@ class ConversationServiceGetSummaryTest {
     @Mock private ProactiveUnrepliedThrottle proactiveUnrepliedThrottle;
     @Mock private com.lianyu.service.tools.TimeTool timeTool;
     @Mock private SessionSummaryService sessionSummaryService;
-    @Mock private CharacterRecentActivityService characterRecentActivityService;
 
     private ConversationService service;
 
@@ -95,8 +93,7 @@ class ConversationServiceGetSummaryTest {
                 relationshipStateService,
                 proactiveUnrepliedThrottle,
                 timeTool,
-                sessionSummaryService,
-                characterRecentActivityService);
+                sessionSummaryService);
         ReflectionTestUtils.setField(service, "contextWindow", 20);
     }
 

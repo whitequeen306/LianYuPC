@@ -1,5 +1,6 @@
 package com.lianyu.service.graph;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -10,7 +11,6 @@ import com.lianyu.ai.graph.ChatTurnScene;
 import com.lianyu.dao.entity.Character;
 import com.lianyu.service.ai.CharacterPromptBuilder;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
-import com.lianyu.service.character.CharacterRecentActivityService;
 import com.lianyu.service.conversation.ProactiveRealWorldContextService;
 import com.lianyu.service.conversation.SessionSummaryService;
 import com.lianyu.service.memory.MemoryRetriever;
@@ -24,7 +24,6 @@ class ChatTurnPromptAssemblerTest {
 
     private ChatTurnPromptAssembler assembler;
     private CharacterPromptBuilder promptBuilder;
-    private CharacterRecentActivityService activityService;
     private OutputLanguageService outputLanguageService;
     private TimeTool timeTool;
     private MemoryRetriever memoryRetriever;
@@ -34,7 +33,6 @@ class ChatTurnPromptAssemblerTest {
     @BeforeEach
     void setUp() {
         promptBuilder = mock(CharacterPromptBuilder.class);
-        activityService = mock(CharacterRecentActivityService.class);
         outputLanguageService = mock(OutputLanguageService.class);
         timeTool = mock(TimeTool.class);
         memoryRetriever = mock(MemoryRetriever.class);
@@ -48,15 +46,12 @@ class ChatTurnPromptAssemblerTest {
                 sessionSummaryService,
                 outputLanguageService,
                 timeTool,
-                activityService,
                 mock(CharacterChatBehaviorResolver.class),
                 mock(ProactiveRealWorldContextService.class));
 
         when(memoryRetriever.retrieveProfileContext(eq(8L), eq(9L), eq("你好"))).thenReturn("");
         when(relationshipStateService.buildPromptContext(9L, 8L)).thenReturn("");
         when(sessionSummaryService.formatForPrompt(any())).thenReturn("");
-        when(activityService.formatForPrompt(eq(9L), eq(8L), eq("zh")))
-                .thenReturn("=== 你最近的生活动态（背景记忆，勿逐条复述） ===\n- 6月22日：写了日记《测试》");
         when(outputLanguageService.resolveForRequest(9L, "你好")).thenReturn("zh");
         when(outputLanguageService.buildNaturalStyleBlock(eq("zh"), eq(true))).thenReturn("");
         when(promptBuilder.buildSystemPrompt(any(Character.class), eq(""), eq("zh"), eq(true)))
@@ -65,7 +60,7 @@ class ChatTurnPromptAssemblerTest {
     }
 
     @Test
-    void assemble_single_includesRecentActivityBlock() {
+    void assemble_single_includesTimeButNotRecentActivityBlock() {
         Character character = new Character();
         character.setId(8L);
         character.setSettings(null);
@@ -80,7 +75,8 @@ class ChatTurnPromptAssemblerTest {
                 null,
                 null);
 
-        assertTrue(prompt.systemPrompt().contains("=== 你最近的生活动态"));
-        assertTrue(prompt.systemPrompt().contains("写了日记"));
+        assertTrue(prompt.systemPrompt().contains("当前真实环境"));
+        assertFalse(prompt.systemPrompt().contains("你最近的生活动态"));
+        assertFalse(prompt.systemPrompt().contains("写了日记"));
     }
 }

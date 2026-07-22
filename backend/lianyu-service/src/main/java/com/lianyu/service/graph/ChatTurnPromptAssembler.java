@@ -8,7 +8,6 @@ import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
 import com.lianyu.service.character.CharacterCitySettingsService;
 import com.lianyu.service.character.CharacterPreferenceResolver;
-import com.lianyu.service.character.CharacterRecentActivityService;
 import com.lianyu.service.conversation.ProactiveRealWorldContextService;
 import com.lianyu.service.conversation.SessionSummaryService;
 import com.lianyu.service.memory.MemoryRetriever;
@@ -40,7 +39,6 @@ public class ChatTurnPromptAssembler {
     private final SessionSummaryService sessionSummaryService;
     private final OutputLanguageService outputLanguageService;
     private final TimeTool timeTool;
-    private final CharacterRecentActivityService characterRecentActivityService;
     private final CharacterChatBehaviorResolver chatBehaviorResolver;
     private final ProactiveRealWorldContextService proactiveRealWorldContext;
 
@@ -92,7 +90,6 @@ public class ChatTurnPromptAssembler {
 
         if (scene.includeTimeCityGoodnight()) {
             base = appendCurrentTimeContext(base);
-            base = appendRecentActivityContext(base, userId, character.getId(), lang);
             base = appendCurrentRealCityContext(base, character);
             base = appendGoodnightContextIfApplicable(base, userInputForLang, lang);
             base = enforceNaturalChatStyle(base, lang, character);
@@ -162,14 +159,6 @@ public class ChatTurnPromptAssembler {
                 2. 历史里出现过的「早上好 / 晚安 / 午安」等只代表当时，绝不代表现在；即使早上聊过「早上好」，晚上也绝不能再说早上好。
                 3. 涉及时间的词语（早上好、晚上好、今天、昨晚、现在几点等）必须与本条时段一致；不确定就不要主动用时段问候。
                 4. 不要为了接续旧话题而复读过时问候；可自然提起「早上聊过的事」，但措辞必须符合现在的时段。""";
-    }
-
-    private String appendRecentActivityContext(String basePrompt, Long userId, Long characterId, String lang) {
-        String block = characterRecentActivityService.formatForPrompt(userId, characterId, lang);
-        if (block == null || block.isBlank()) {
-            return basePrompt;
-        }
-        return basePrompt + "\n\n" + block;
     }
 
     private String appendCurrentRealCityContext(String basePrompt, Character character) {
