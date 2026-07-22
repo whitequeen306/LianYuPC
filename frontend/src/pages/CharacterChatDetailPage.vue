@@ -161,7 +161,7 @@ import { ArrowLeft, Loading, User, WarningFilled } from '@element-plus/icons-vue
 import { getCharacter, updateCharacter, uploadChatBackground } from '@/api/character'
 import { clearConversationMessages, listConversations } from '@/api/conversation'
 import { resolveMediaUrl } from '@/utils/media'
-import { pickCharacterAvatarRaw } from '@/utils/characterAvatar'
+import { resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
 import { normalizeHex } from '@/utils/themeColor'
 
 const { t } = useI18n()
@@ -225,7 +225,9 @@ const chatBgPreviewStyle = computed(() => {
   }
 })
 
-const characterAvatar = computed(() => pickCharacterAvatarRaw(character.value, 'thumb'))
+const characterAvatar = computed(() =>
+  resolveCharacterAvatarSrc({ character: character.value }),
+)
 
 onMounted(loadCharacter)
 

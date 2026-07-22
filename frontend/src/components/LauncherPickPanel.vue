@@ -56,7 +56,7 @@ import { createConversation } from '@/api/conversation'
 import { listNotifications } from '@/api/notification'
 import { useConversationUnread } from '@/composables/useConversationUnread'
 import { resolveMediaUrl } from '@/utils/media'
-import { pickCharacterAvatarRaw } from '@/utils/characterAvatar'
+import { resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
 import { humanizeError } from '@/utils/errorMessage'
 import { getElectronAPI } from '@/utils/electron'
 
@@ -80,7 +80,7 @@ let toastTimer = null
 let unsubscribeLauncherMessage = null
 
 function characterAvatar(char) {
-  return pickCharacterAvatarRaw(char, 'thumb')
+  return resolveCharacterAvatarSrc({ character: char })
 }
 
 function showToast(text, ms = 2600) {

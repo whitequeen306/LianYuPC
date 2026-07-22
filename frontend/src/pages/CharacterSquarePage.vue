@@ -256,7 +256,7 @@ import { useCharactersStore } from '@/stores/characters'
 import { createConversation } from '@/api/conversation'
 import { getSavedUserCity, saveUserCity } from '@/utils/userCity'
 import { resolveMediaUrl } from '@/utils/media'
-import { nextCharacterAvatarTier, pickCharacterAvatarRaw } from '@/utils/characterAvatar'
+import { nextCharacterAvatarTier, resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
 import CharacterCityModeForm from '@/components/CharacterCityModeForm.vue'
 import SquareCommentInput from '@/components/SquareCommentInput.vue'
 import SquareDanmakuLayer from '@/components/SquareDanmakuLayer.vue'
@@ -301,7 +301,7 @@ let catalogRequestSeq = 0
 function avatarSrc(item) {
   if (!item) return ''
   const tier = avatarLoadTier.value[item.id] || 'thumb'
-  return pickCharacterAvatarRaw(item, tier)
+  return resolveCharacterAvatarSrc({ character: item, tier })
 }
 
 function isAvatarBroken(templateId) {

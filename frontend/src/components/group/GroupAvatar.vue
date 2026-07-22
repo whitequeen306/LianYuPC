@@ -65,7 +65,7 @@
 import { computed } from 'vue'
 import { User } from '@element-plus/icons-vue'
 import { resolveMediaUrl } from '@/utils/media'
-import { pickCharacterAvatarRaw } from '@/utils/characterAvatar'
+import { resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
 
 const props = defineProps({
   members: {
@@ -86,7 +86,7 @@ const tinyIconSize = computed(() => Math.round(props.size * 0.26))
 const displayMembers = computed(() => (props.members || []).filter(Boolean))
 
 function memberAvatarSrc(member) {
-  return pickCharacterAvatarRaw(member, 'thumb')
+  return resolveCharacterAvatarSrc({ character: member })
 }
 
 const layout = computed(() => {

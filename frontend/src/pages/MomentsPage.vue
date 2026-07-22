@@ -278,7 +278,11 @@
               class="moments-active-chip"
               @click="setFilter(c.id)"
             >
-              <img v-if="characterChipAvatar(c)" :src="resolveMediaUrl(characterChipAvatar(c))" :alt="c.name" />
+              <img
+                v-if="resolveCharacterAvatarSrc({ character: c })"
+                :src="resolveMediaUrl(resolveCharacterAvatarSrc({ character: c }))"
+                :alt="c.name"
+              />
               <span>{{ c.name }}</span>
             </button>
           </div>
@@ -338,7 +342,7 @@ import {
   markMomentsSeen
 } from '@/api/moments'
 import { resolveMediaUrl } from '@/utils/media'
-import { pickCharacterAvatarRaw } from '@/utils/characterAvatar'
+import { resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
 import { sanitizeHtml } from '@/utils/sanitize'
 import { feedDateKey, formatFeedDateLabel, formatFeedTime } from '@/utils/feedTime'
 import { truncateText } from '@/utils/text'
@@ -417,16 +421,6 @@ const activeInFeed = computed(() => {
   return charactersStore.list.filter(c => ids.has(c.id)).slice(0, 8)
 })
 
-function resolveCharacterAvatar(characterId, fallbackUrl = '', fallbackThumbUrl = '') {
-  const char = charactersStore.list.find(c => c.id === characterId)
-  if (char) return pickCharacterAvatarRaw(char, 'thumb') || fallbackThumbUrl || fallbackUrl || ''
-  return fallbackThumbUrl || fallbackUrl || ''
-}
-
-function characterChipAvatar(character) {
-  return pickCharacterAvatarRaw(character, 'thumb')
-}
-
 const firstCharacterPost = computed(() =>
   posts.value.find(p => p.authorType === 'CHARACTER' && p.characterId)
 )
@@ -442,11 +436,12 @@ const sidebarCompanion = computed(() => {
     return {
       characterId: filterCharId.value,
       name: char?.name || latestPost?.characterName || emotion?.characterName,
-      avatarUrl: resolveCharacterAvatar(
-        filterCharId.value,
-        latestPost?.characterAvatarUrl || emotion?.avatarUrl,
-        latestPost?.characterAvatarThumbUrl || emotion?.avatarThumbUrl
-      ),
+      avatarUrl: resolveCharacterAvatarSrc({
+        characterId: filterCharId.value,
+        characters: charactersStore.list,
+        avatarUrl: latestPost?.characterAvatarUrl || emotion?.avatarUrl,
+        avatarThumbUrl: latestPost?.characterAvatarThumbUrl || emotion?.avatarThumbUrl,
+      }),
       emotion
     }
   }
@@ -457,22 +452,27 @@ const sidebarCompanion = computed(() => {
     return {
       characterId: post.characterId,
       name: post.characterName,
-      avatarUrl: resolveCharacterAvatar(post.characterId, post.characterAvatarUrl, post.characterAvatarThumbUrl),
+      avatarUrl: resolveCharacterAvatarSrc({
+        characterId: post.characterId,
+        characters: charactersStore.list,
+        characterAvatarUrl: post.characterAvatarUrl,
+        characterAvatarThumbUrl: post.characterAvatarThumbUrl,
+      }),
       emotion
     }
   }
 
   const state = emotionStates.value[0]
   if (state) {
-    const char = charactersStore.list.find(c => c.id === state.characterId)
     return {
       characterId: state.characterId,
       name: state.characterName,
-      avatarUrl: resolveCharacterAvatar(
-        state.characterId,
-        state.avatarUrl || char?.avatarUrl,
-        state.avatarThumbUrl || char?.avatarThumbUrl
-      ),
+      avatarUrl: resolveCharacterAvatarSrc({
+        characterId: state.characterId,
+        characters: charactersStore.list,
+        avatarUrl: state.avatarUrl,
+        avatarThumbUrl: state.avatarThumbUrl,
+      }),
       emotion: state
     }
   }
@@ -784,7 +784,12 @@ function postAuthorAvatar(post) {
   if (post.authorType === 'USER') {
     return post.userAvatarUrl || userStore.avatarUrl || null
   }
-  return resolveCharacterAvatar(post.characterId, post.characterAvatarUrl, post.characterAvatarThumbUrl)
+  return resolveCharacterAvatarSrc({
+    characterId: post.characterId,
+    characters: charactersStore.list,
+    characterAvatarUrl: post.characterAvatarUrl,
+    characterAvatarThumbUrl: post.characterAvatarThumbUrl,
+  })
 }
 
 async function submitUserPost() {

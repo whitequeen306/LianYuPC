@@ -108,7 +108,7 @@ import { listMemories, getMemory, deleteMemory } from '@/api/memory'
 import { Loading, Collection, ArrowDown, ArrowRight, RefreshRight, Delete, User } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { resolveMediaUrl } from '@/utils/media'
-import { pickCharacterAvatarRaw } from '@/utils/characterAvatar'
+import { resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
 import { formatSmartTime } from '@/utils/feedTime'
 
 const { t, locale } = useI18n()
@@ -129,7 +129,7 @@ const groupedMemories = computed(() => {
       groups.set(charId, {
         charId,
         charName: mem.characterName || char?.name || t('memory.roleIndex', { id: charId }),
-        avatarUrl: pickCharacterAvatarRaw(char, 'thumb') || null,
+        avatarUrl: resolveCharacterAvatarSrc({ character: char }) || null,
         items: []
       })
     }

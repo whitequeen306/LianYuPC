@@ -36,7 +36,7 @@ PC 端桌面/Web 复刻版，独立于安卓端项目。
 1. **先读** `local/ship-release.ps1` 与 `local/README.md`（`local/` 已 gitignore，只在本机）
 2. **用脚本跑**，不要手写拆开 `git push` + `python scripts/_cloud_deploy_pull.py` + `npm run electron:release`
 3. 按改动选参数：`-BackendOnly` / `-ElectronOnly` / 无参数全量（见下方「发布发版」表）
-4.如果遇到错误无法正常执行必须要明确要告诉用户脚本的问题是什么
+4. 如果遇到错误无法正常执行，必须明确告诉用户脚本的问题是什么
 
 缺 `local/ship-release.ps1` 时按 `local/README.md` 重建，不要另发明流程。
 
@@ -51,8 +51,8 @@ PC 端桌面/Web 复刻版，独立于安卓端项目。
 
 | 层 | 技术 |
 |---|---|
-| 前端 | Vue 3.5 + Vite 5 + Element Plus 2.8 + Pinia 2.2 + Vue Router 4.4 + Axios 1.7 + @stomp/stompjs 7 |
-| 后端 | Spring Boot 3.3.5 (Servlet/MVC) + Maven 3.9 多模块 + JDK 17 |
+| 前端 | Vue 3.5 + Vite 6 + Element Plus 2.8 + Pinia 2.2 + Vue Router 4.4 + Vue I18n 9 + Axios 1.7 + @stomp/stompjs 7 + Electron 42（桌面客户端主交付） |
+| 后端 | Spring Boot 3.5.5 (Servlet/MVC) + Maven 3.9 多模块 + JDK 17 |
 | ORM | MyBatis-Plus 3.5.9 |
 | DB | MySQL 8.4 + Flyway 10.20.1 (schema 迁移) |
 | 缓存/会话 | Redis 7 + Lettuce + commons-pool2 2.12 |
@@ -60,26 +60,27 @@ PC 端桌面/Web 复刻版，独立于安卓端项目。
 | 向量库 | Milvus 2.4.x Standalone（Docker 镜像 `v2.4.15`，SDK 2.4.5） |
 | 对象存储 | MinIO (SDK 8.5.13) |
 | 鉴权 | Sa-Token 1.39.0 (Redis 持久化) |
-| 密码哈希 | BCrypt (spring-security-crypto 6.3.4, cost=10) |
+| 密码哈希 | BCrypt (spring-security-crypto 6.5.3, cost=10) |
 | API Key 加密 | Jasypt 3.0.5 (AES-GCM) |
-| AI 抽象 | Spring AI 1.0.0 GA (ChatClient + EmbeddingClient) |
+| AI 抽象 | Spring AI 1.1.2（ChatClient + Embedding 等 model starter：OpenAI / Ollama）+ Spring AI Alibaba Graph `1.1.2.2`（`spring-ai-alibaba-graph-core` 回合编排） |
 | 熔断限流 | Resilience4j 2.2.0 |
 | API 文档 | Knife4j 4.5.0 (OpenAPI 3) |
 | 测试 | JUnit 5 + Mockito + Testcontainers 1.20.3 |
-| 前端测试 | Vitest 2.x |
+| 前端测试 | Vitest 3.x |
 
 ## 后端模块结构
 
 ```
 backend/
-├── pom.xml                  # parent BOM + 版本锁定
+├── pom.xml                  # parent BOM + 版本锁定（含 spring-ai / spring-ai-alibaba BOM）
 ├── lianyu-common/           # 工具类、基类、统一异常、Result<T>、JacksonTypeHandler
 ├── lianyu-dao/              # MySQL：Entity / Mapper / Flyway migration
 ├── lianyu-storage/          # MinIO client + Milvus client（无事务外部存储）
 ├── lianyu-security/         # Sa-Token、Jasypt、BCrypt 封装、密钥版本管理
-├── lianyu-ai/               # Spring AI 集成、ChatTurn Graph 契约（Keys/State/Scene）
+├── lianyu-ai/               # Spring AI 集成、Spring AI Alibaba Graph、ChatTurn 契约（Keys/State/Scene）
 ├── lianyu-service/          # 业务逻辑（角色/对话/群聊/记忆）
 ├── lianyu-web/              # Controller、SSE、WebSocket、CORS、全局异常处理
+├── lianyu-qq-bridge/        # QQ 桥（NapCat/OneBot 11；默认关闭，直连 ConversationService）
 └── lianyu-app/              # 启动类、application.yml、Docker 打包
 ```
 
@@ -88,11 +89,12 @@ backend/
 lianyu-app → lianyu-web → lianyu-service → lianyu-ai / lianyu-dao / lianyu-security
                                                ↓              ↓
                                           lianyu-storage    lianyu-common (所有模块可依赖)
+lianyu-app → lianyu-qq-bridge → lianyu-service
 ```
 
 ## 关键设计决策
 
-- **AI 回合编排**：Spring AI Alibaba Graph（`CompiledGraph chatTurn`）。`OverAllState` + `ChatTurnKeys` 承载上下文；`ChatTurnFacade` 为外层入口。SSE / 配额 / Resilience4j / 落库回调留在 ConversationService 等适配层。
+- **AI 回合编排**：Spring AI Alibaba Graph（版本见上表 `spring-ai-alibaba.version`；`CompiledGraph chatTurn`）。`OverAllState` + `ChatTurnKeys` 承载上下文；`ChatTurnFacade` 为外层入口。模型调用走 Spring AI 1.1.x starter。SSE / 配额 / Resilience4j / 落库回调留在 ConversationService 等适配层。
 - **Web 容器**：Servlet（Spring MVC），不用 WebFlux。SSE 用 `SseEmitter` + Tomcat NIO。
 - **dao 与 storage 分离**：`lianyu-dao` 只管 MySQL；MinIO/Milvus 走 `lianyu-storage`。事务边界清晰。
 - **API Key 加密**：Jasypt AES-GCM 字段级加密；主密钥来自环境变量 `LIANYU_MASTER_KEY`，支持多版本轮换（`v1=...,v2=...,current=v2`）。

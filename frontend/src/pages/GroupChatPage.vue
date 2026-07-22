@@ -309,7 +309,7 @@ import { useOnboardingHint } from '@/composables/useOnboardingHint'
 import { Plus, ChatDotRound, ArrowLeft, ArrowDown, User, UserFilled, Promotion, Delete, Edit, Check, Close } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { resolveMediaUrl } from '@/utils/media'
-import { pickCharacterAvatarRaw } from '@/utils/characterAvatar'
+import { resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
 import { humanizeError } from '@/utils/errorMessage'
 import { formatSmartTime } from '@/utils/feedTime'
 import { resolveGroupDisplayTitle } from '@/utils/groupTitle'
@@ -382,7 +382,7 @@ const groupMembersCache = ref({})
 let msgCounter = 0
 
 function memberAvatar(member) {
-  return pickCharacterAvatarRaw(member, 'thumb')
+  return resolveCharacterAvatarSrc({ character: member })
 }
 
 function groupTitleLabel(title) {

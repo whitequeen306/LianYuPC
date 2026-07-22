@@ -248,7 +248,7 @@ import { fetchModels } from '@/api/ai'
 import { ArrowLeft, ArrowDown, ChatDotRound, Promotion, Picture, Close, User, UserFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { resolveMediaUrl } from '@/utils/media'
-import { nextCharacterAvatarTier, pickCharacterAvatarRaw } from '@/utils/characterAvatar'
+import { nextCharacterAvatarTier, resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
 import { PLATFORM_PROVIDER, PLATFORM_MODEL, PLATFORM_PROVIDER_LABEL } from '@/constants/ai'
 import { normalizeHex } from '@/utils/themeColor'
 import EmotionBadge from '@/components/EmotionBadge.vue'
@@ -433,7 +433,10 @@ const headerTitle = computed(() => {
 })
 
 const characterAvatarUrl = computed(() =>
-  pickCharacterAvatarRaw(activeCharacter.value, activeCharacterAvatarTier.value),
+  resolveCharacterAvatarSrc({
+    character: activeCharacter.value,
+    tier: activeCharacterAvatarTier.value,
+  }),
 )
 
 function onActiveCharacterAvatarError() {

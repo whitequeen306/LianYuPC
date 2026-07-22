@@ -54,7 +54,7 @@ import { computed } from 'vue'
 import { User } from '@element-plus/icons-vue'
 import EmotionBadge from '@/components/EmotionBadge.vue'
 import { resolveMediaUrl } from '@/utils/media'
-import { pickCharacterAvatarRaw } from '@/utils/characterAvatar'
+import { resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
 
 const props = defineProps({
   companion: { type: Object, default: null },
@@ -68,5 +68,7 @@ const props = defineProps({
 
 defineEmits(['chat', 'explore'])
 
-const portraitSrc = computed(() => pickCharacterAvatarRaw(props.companion, 'thumb'))
+const portraitSrc = computed(() =>
+  resolveCharacterAvatarSrc({ character: props.companion }),
+)
 </script>

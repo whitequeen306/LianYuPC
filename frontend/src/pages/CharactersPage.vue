@@ -290,7 +290,7 @@ import { useNotificationsStore } from '@/stores/notifications'
 import { Plus, Delete, User, Loading, ChatDotRound, UploadFilled, Setting } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { resolveMediaUrl } from '@/utils/media'
-import { nextCharacterAvatarTier, pickCharacterAvatarRaw } from '@/utils/characterAvatar'
+import { nextCharacterAvatarTier, resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
 import { fixUtf8Mojibake } from '@/utils/textEncoding'
 import { listCharacterStates } from '@/api/characterState'
 import { getSavedUserCity, saveUserCity } from '@/utils/userCity'
@@ -446,7 +446,7 @@ function lastMessageForCharacter(characterId) {
 function characterAvatarSrc(character) {
   if (!character?.id) return ''
   const tier = characterAvatarTier.value[character.id] || 'thumb'
-  return pickCharacterAvatarRaw(character, tier)
+  return resolveCharacterAvatarSrc({ character, tier })
 }
 
 function onCharacterAvatarError(character) {

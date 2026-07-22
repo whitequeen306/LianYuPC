@@ -56,7 +56,7 @@ import { useRoute } from 'vue-router'
 import { Loading, Notebook, User } from '@element-plus/icons-vue'
 import { listAllDiaries } from '@/api/characterState'
 import { resolveMediaUrl } from '@/utils/media'
-import { pickCharacterAvatarRaw } from '@/utils/characterAvatar'
+import { resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
 import { feedDateKey, formatFeedDateLabel, formatFeedTime } from '@/utils/feedTime'
 
 const { t, locale } = useI18n()
@@ -127,10 +127,10 @@ watch(
 )
 
 function diaryAvatarUrl(diary) {
-  return pickCharacterAvatarRaw(
-    { avatarUrl: diary.avatarUrl, avatarThumbUrl: diary.avatarThumbUrl },
-    'thumb',
-  )
+  return resolveCharacterAvatarSrc({
+    avatarUrl: diary.avatarUrl,
+    avatarThumbUrl: diary.avatarThumbUrl,
+  })
 }
 
 </script>
