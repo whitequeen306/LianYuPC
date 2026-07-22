@@ -37,6 +37,7 @@
         :src="resolveMediaUrl(src)"
         alt=""
         loading="lazy"
+        @click="openImagePreview(idx)"
       />
     </div>
 
@@ -75,6 +76,16 @@
         </el-button>
       </div>
     </div>
+
+    <el-image-viewer
+      v-if="imageViewerVisible"
+      :url-list="imageViewerUrlList"
+      :initial-index="imageViewerInitialIndex"
+      :z-index="10000"
+      teleported
+      hide-on-click-modal
+      @close="imageViewerVisible = false"
+    />
   </article>
 </template>
 
@@ -84,6 +95,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { User, Star, StarFilled, ChatDotRound } from '@element-plus/icons-vue'
 import { resolveMediaUrl } from '@/utils/media'
+import { getElectronAPI } from '@/utils/electron'
 import { sanitizeHtml } from '@/utils/sanitize'
 import { formatFeedTime } from '@/utils/feedTime'
 import { addCommunityComment, fetchCommunityComments } from '@/api/community'
@@ -106,8 +118,12 @@ const comments = ref([])
 const draft = ref('')
 const commentSending = ref(false)
 const deleting = ref(false)
+const imageViewerVisible = ref(false)
+const imageViewerUrlList = ref([])
+const imageViewerInitialIndex = ref(0)
 
 const images = computed(() => props.post.imageUrls || [])
+const resolvedImages = computed(() => images.value.map(src => resolveMediaUrl(src)))
 const timeLabel = computed(() => formatFeedTime(props.post.createdAt, t, locale.value))
 const canDelete = computed(() =>
   props.allowDelete && props.post.authorUserId === userStore.userId
@@ -145,6 +161,22 @@ async function submitComment() {
   } finally {
     commentSending.value = false
   }
+}
+
+function openImagePreview(index) {
+  const urls = resolvedImages.value
+  if (!urls.length) return
+  const initialIndex = Math.min(Math.max(index, 0), urls.length - 1)
+
+  const ea = getElectronAPI()
+  if (ea && typeof ea.openImageViewer === 'function') {
+    ea.openImageViewer({ urls, initialIndex })
+    return
+  }
+
+  imageViewerUrlList.value = urls
+  imageViewerInitialIndex.value = initialIndex
+  imageViewerVisible.value = true
 }
 
 function goAuthor() {
@@ -259,26 +291,39 @@ function goUser(userId) {
   display: grid;
   gap: $space-2;
 
-  &.count-1 { grid-template-columns: 1fr; }
+  &.count-1 {
+    grid-template-columns: minmax(0, max-content);
+    justify-items: start;
+  }
+
   &.count-2 { grid-template-columns: repeat(2, 1fr); }
   &.count-3 { grid-template-columns: repeat(3, 1fr); }
 
   img {
-    width: 100%;
     border-radius: $radius-md;
-    object-fit: cover;
+    cursor: pointer;
+    transition: opacity 0.22s cubic-bezier(0.23, 1, 0.32, 1);
+
+    &:hover {
+      opacity: 0.92;
+    }
   }
 
-  // 单图：保留自然比例，限制高度，不铺满整行
+  // 单图：按原比例完整展示，不裁切
   &.count-1 img {
-    max-height: 400px;
+    display: block;
+    width: auto;
     max-width: 100%;
-    justify-self: start;
+    height: auto;
+    max-height: min(400px, 70vh);
+    object-fit: contain;
   }
 
   // 多图：统一方形瓦片，网格整齐不参差
   &.is-multi img {
+    width: 100%;
     aspect-ratio: 1;
+    object-fit: cover;
   }
 }
 
