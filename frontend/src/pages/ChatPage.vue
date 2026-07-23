@@ -307,7 +307,6 @@ import {
   buildChatShareDraft,
   COMMUNITY_SHARE_MAX_MESSAGES
 } from '@/utils/communityShareDraft'
-import { resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
 import { stripInnerThoughts, resolveShowInnerThoughts } from '@/utils/innerThoughtFilter'
 
 function petIdFromAudioUrl(audioUrl) {
