@@ -2668,6 +2668,46 @@ function registerIpcHandlers() {
     if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     return openImageViewer(payload || {})
   })
+
+  /** 截取当前窗口指定区域（CSS 像素，与 getBoundingClientRect 一致） */
+  ipcMain.handle('desktop:capture-page-region', async (event, rect = {}) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return { ok: false, reason: 'no_window' }
+
+    const x = Math.round(Number(rect.x))
+    const y = Math.round(Number(rect.y))
+    const width = Math.round(Number(rect.width))
+    const height = Math.round(Number(rect.height))
+    if (!Number.isFinite(x) || !Number.isFinite(y) || width <= 0 || height <= 0) {
+      return { ok: false, reason: 'invalid_rect' }
+    }
+
+    const [contentW, contentH] = win.getContentSize()
+    const clampedX = Math.max(0, Math.min(x, Math.max(0, contentW - 1)))
+    const clampedY = Math.max(0, Math.min(y, Math.max(0, contentH - 1)))
+    const clampedW = Math.max(1, Math.min(width, contentW - clampedX))
+    const clampedH = Math.max(1, Math.min(height, contentH - clampedY))
+
+    try {
+      const image = await win.webContents.capturePage({
+        x: clampedX,
+        y: clampedY,
+        width: clampedW,
+        height: clampedH,
+      })
+      const png = image.toPNG()
+      return {
+        ok: true,
+        dataUrl: `data:image/png;base64,${png.toString('base64')}`,
+        width: image.getSize().width,
+        height: image.getSize().height,
+      }
+    } catch (err) {
+      log('capture-page-region failed', err?.message || err)
+      return { ok: false, reason: 'capture_failed' }
+    }
+  })
 }
 
 async function runMainStartupSmokeTest() {

@@ -64,6 +64,7 @@
           <div
             v-else
             class="gal-log__item"
+            :data-msg-id="item.id"
             :class="[
               item.role === 'user' ? 'gal-log__item--user' : 'gal-log__item--hero',
               { 'is-group-start': item._firstOfGroup, 'is-share-selectable': shareSelectable(item), 'is-share-selected': isMessageSelected(item) }
@@ -163,6 +164,7 @@
           <el-button
             type="primary"
             :disabled="selectedMessageIds.size === 0"
+            :loading="shareCapturing"
             @click="confirmShareToCommunity"
           >
             分享到社区
@@ -304,9 +306,12 @@ import { getPetVoiceRate, getPetVoiceVolume } from '@/constants/petCatalog'
 import {
   isShareSelectableMessage,
   saveCommunityShareDraft,
-  buildChatShareDraft,
+  buildChatImageShareDraft,
   COMMUNITY_SHARE_MAX_MESSAGES
 } from '@/utils/communityShareDraft'
+import { captureChatShareScreenshot } from '@/utils/captureChatShareScreenshot'
+import { uploadCommunityImage } from '@/api/community'
+import { isElectronApp } from '@/utils/electron'
 import { stripInnerThoughts, resolveShowInnerThoughts } from '@/utils/innerThoughtFilter'
 
 function petIdFromAudioUrl(audioUrl) {
@@ -334,6 +339,7 @@ const imageViewerUrlList = ref([])
 const imageViewerInitialIndex = ref(0)
 const selectionMode = ref(false)
 const selectedMessageIds = ref(new Set())
+const shareCapturing = ref(false)
 
 function shareSelectable(item) {
   return isShareSelectableMessage(item)
@@ -369,24 +375,37 @@ function toggleShareSelection(item) {
   selectedMessageIds.value = next
 }
 
-function confirmShareToCommunity() {
-  if (!selectedMessageIds.value.size) return
-  const selected = messages.value.filter((msg) => selectedMessageIds.value.has(Number(msg.id)))
-  const shareOptions = {
-    characterName: activeCharacter.value?.name || '角色',
-    characterAvatarUrl: resolveCharacterAvatarSrc({ character: activeCharacter.value, tier: 'orig' }),
-    userLabel: userStore.nickname || '我',
-    userAvatarUrl: userStore.avatarUrl || '',
-    linkedCharacterId: activeCharacter.value?.id || null
-  }
-  const draft = buildChatShareDraft(selected, shareOptions)
-  if (!draft.messages.length) {
-    ElMessage.warning('所选消息没有可分享的内容')
+async function confirmShareToCommunity() {
+  if (!selectedMessageIds.value.size || shareCapturing.value) return
+  if (!isElectronApp()) {
+    ElMessage.warning('请在桌面客户端分享对话')
     return
   }
-  saveCommunityShareDraft(draft)
-  exitShareMode()
-  router.push('/app/community')
+  if (!msgListRef.value) {
+    ElMessage.warning('聊天区域未就绪，请稍后再试')
+    return
+  }
+
+  shareCapturing.value = true
+  try {
+    const blob = await captureChatShareScreenshot(msgListRef.value, selectedMessageIds.value)
+    const file = new File([blob], `chat-share-${Date.now()}.png`, { type: 'image/png' })
+    const res = await uploadCommunityImage(file)
+    if (!res?.imageUrl) {
+      throw new Error('上传失败')
+    }
+
+    saveCommunityShareDraft(buildChatImageShareDraft({
+      imageUrl: res.imageUrl,
+      linkedCharacterId: activeCharacter.value?.id || null
+    }))
+    exitShareMode()
+    router.push('/app/community')
+  } catch (e) {
+    ElMessage.error(e?.message || '对话截屏失败')
+  } finally {
+    shareCapturing.value = false
+  }
 }
 
 function openImagePreview(imageUrl) {
@@ -1855,6 +1874,16 @@ function formatTime(ts) {
 
   .gal-bubble {
     max-width: 88%;
+  }
+}
+</style>
+
+<style lang="scss">
+html.is-capturing-share {
+  .gal-share-check,
+  .gal-share-bar {
+    visibility: hidden !important;
+    pointer-events: none !important;
   }
 }
 </style>

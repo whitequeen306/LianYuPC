@@ -24,9 +24,6 @@
           <button type="button" class="compose-images__remove" @click="pendingImages.splice(idx, 1)">×</button>
         </div>
       </div>
-      <div v-if="shareSnapshotLoading" class="compose-share-loading">
-        正在生成对话截图…
-      </div>
       <div class="compose-character">
         <el-select
           v-model="linkedCharacterId"
@@ -60,8 +57,8 @@
         <el-button
           v-bubble-btn
           type="primary"
-          :loading="sending || shareSnapshotLoading"
-          :disabled="!canPublish || shareSnapshotLoading"
+          :loading="sending"
+          :disabled="!canPublish"
           @click="publish"
         >
           {{ t('community.publish') }}
@@ -115,7 +112,6 @@ import {
   consumeCommunityShareDraft,
   COMMUNITY_SHARE_DRAFT_KIND_CHAT
 } from '@/utils/communityShareDraft'
-import { renderChatShareSnapshot } from '@/utils/renderChatShareSnapshot'
 import {
   nextCharacterAvatarTier,
   resolveCharacterAvatarSrc
@@ -135,7 +131,6 @@ const pendingImages = ref([])
 const linkedCharacterId = ref(null)
 const uploading = ref(false)
 const sending = ref(false)
-const shareSnapshotLoading = ref(false)
 const openCommentsId = ref(null)
 const fileInput = ref(null)
 const selectedCharacterAvatarTier = ref('thumb')
@@ -180,7 +175,7 @@ function onSelectedCharacterAvatarError() {
   selectedCharacterAvatarTier.value = nextTier
 }
 
-async function applyShareDraft() {
+function applyShareDraft() {
   const shareDraft = consumeCommunityShareDraft()
   if (!shareDraft) return
 
@@ -188,26 +183,9 @@ async function applyShareDraft() {
     linkedCharacterId.value = shareDraft.linkedCharacterId
   }
 
-  if (shareDraft.kind === COMMUNITY_SHARE_DRAFT_KIND_CHAT && shareDraft.messages?.length) {
-    shareSnapshotLoading.value = true
-    try {
-      const blob = await renderChatShareSnapshot(shareDraft)
-      const file = new File([blob], `chat-share-${Date.now()}.png`, { type: 'image/png' })
-      const res = await uploadCommunityImage(file)
-      if (res?.imageUrl) {
-        pendingImages.value = [res.imageUrl]
-        draft.value = ''
-      } else {
-        throw new Error('upload failed')
-      }
-    } catch (e) {
-      if (shareDraft.fallbackContent) {
-        draft.value = shareDraft.fallbackContent
-      }
-      ElMessage.warning(e?.message || '对话截图生成失败，已改为文字分享')
-    } finally {
-      shareSnapshotLoading.value = false
-    }
+  if (shareDraft.kind === COMMUNITY_SHARE_DRAFT_KIND_CHAT && shareDraft.imageUrl) {
+    pendingImages.value = [shareDraft.imageUrl]
+    draft.value = ''
     return
   }
 
@@ -427,14 +405,6 @@ async function onDelete(post) {
     height: 100%;
     object-fit: cover;
   }
-}
-
-.compose-share-loading {
-  padding: $space-3 $space-4;
-  border-radius: $radius-md;
-  background: color-mix(in srgb, var(--ly-accent) 8%, transparent);
-  color: var(--ly-text-secondary);
-  font-size: $font-size-sm;
 }
 
 .feed-empty {
