@@ -30,7 +30,7 @@
           v-if="linkedAvatarSrc && !linkedAvatarBroken"
           :src="linkedAvatarSrc"
           alt=""
-          @error="linkedAvatarBroken = true"
+          @error="onLinkedAvatarError"
         />
         <el-icon v-else :size="14"><User /></el-icon>
       </span>
@@ -113,6 +113,11 @@ import { sanitizeHtml } from '@/utils/sanitize'
 import { formatFeedTime } from '@/utils/feedTime'
 import { addCommunityComment, fetchCommunityComments } from '@/api/community'
 import { useUserStore } from '@/stores/user'
+import { useCharactersStore } from '@/stores/characters'
+import {
+  nextCharacterAvatarTier,
+  resolveCharacterAvatarSrc
+} from '@/utils/characterAvatar'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps({
@@ -126,6 +131,7 @@ defineEmits(['like', 'toggle-comments', 'delete', 'commented'])
 const router = useRouter()
 const { t, locale } = useI18n()
 const userStore = useUserStore()
+const charactersStore = useCharactersStore()
 
 const comments = ref([])
 const draft = ref('')
@@ -135,12 +141,32 @@ const imageViewerVisible = ref(false)
 const imageViewerUrlList = ref([])
 const imageViewerInitialIndex = ref(0)
 const linkedAvatarBroken = ref(false)
+const linkedAvatarTier = ref('thumb')
 
 const images = computed(() => props.post.imageUrls || [])
 const linkedAvatarSrc = computed(() => {
-  const raw = props.post.linkedCharacterAvatarUrl
+  const character = charactersStore.list.find((c) => c.id === props.post.linkedCharacterId)
+  const raw = resolveCharacterAvatarSrc({
+    character,
+    characterAvatarUrl: props.post.linkedCharacterAvatarUrl || '',
+    tier: linkedAvatarBroken.value ? 'broken' : linkedAvatarTier.value
+  })
   return raw ? resolveMediaUrl(raw) : ''
 })
+
+function onLinkedAvatarError() {
+  const character = charactersStore.list.find((c) => c.id === props.post.linkedCharacterId)
+  if (!character) {
+    linkedAvatarBroken.value = true
+    return
+  }
+  const nextTier = nextCharacterAvatarTier(character, linkedAvatarTier.value)
+  if (nextTier === 'broken') {
+    linkedAvatarBroken.value = true
+    return
+  }
+  linkedAvatarTier.value = nextTier
+}
 const resolvedImages = computed(() => images.value.map(src => resolveMediaUrl(src)))
 const timeLabel = computed(() => formatFeedTime(props.post.createdAt, t, locale.value))
 const canDelete = computed(() =>
@@ -154,6 +180,12 @@ const statusLabel = computed(() => {
 
 watch(() => props.post.linkedCharacterAvatarUrl, () => {
   linkedAvatarBroken.value = false
+  linkedAvatarTier.value = 'thumb'
+})
+
+watch(() => props.post.linkedCharacterId, () => {
+  linkedAvatarBroken.value = false
+  linkedAvatarTier.value = 'thumb'
 })
 
 watch(() => props.showComments, async (open) => {

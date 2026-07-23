@@ -1,5 +1,5 @@
 <template>
-  <div class="chat-share-snapshot" :class="{ 'is-light': theme === 'light' }">
+  <div class="chat-share-snapshot">
     <header v-if="title" class="chat-share-snapshot__head">
       <span class="chat-share-snapshot__eyebrow">Chat Share</span>
       <h2 class="chat-share-snapshot__title">{{ title }}</h2>
@@ -65,8 +65,7 @@ const props = defineProps({
   characterAvatarUrl: { type: String, default: '' },
   userLabel: { type: String, default: '我' },
   userAvatarUrl: { type: String, default: '' },
-  title: { type: String, default: '对话分享' },
-  theme: { type: String, default: 'dark' }
+  title: { type: String, default: '对话分享' }
 })
 
 const timeline = computed(() => buildChatShareTimeline(props.messages, {
@@ -84,58 +83,59 @@ const heroInitial = computed(() => (props.characterName || '角').slice(0, 1))
 const userInitial = computed(() => (props.userLabel || '我').slice(0, 1))
 </script>
 
-<style lang="scss" scoped>
+<!-- html2canvas 不支持 color-mix()/linear-gradient()/CSS 变量，此处只用静态 rgba/hex -->
+<style scoped>
 .chat-share-snapshot {
   width: 420px;
-  padding: $space-5;
-  border-radius: $radius-lg;
-  background: var(--ly-chat-scene-bg, #0a0a12);
-  border: 1px solid color-mix(in srgb, var(--ly-accent) 16%, transparent);
+  padding: 20px;
+  border-radius: 24px;
+  background: #0a0a12;
+  border: 1px solid rgba(244, 166, 181, 0.16);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
-  color: var(--ly-text-primary);
-  font-family: inherit;
+  color: #e8edf2;
+  font-family: 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
 }
 
 .chat-share-snapshot__head {
-  margin-bottom: $space-4;
-  padding-bottom: $space-3;
-  border-bottom: 1px solid color-mix(in srgb, var(--ly-accent) 12%, transparent);
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(244, 166, 181, 0.12);
 }
 
 .chat-share-snapshot__eyebrow {
   display: block;
-  font-size: $font-size-xs;
+  font-size: 12px;
   letter-spacing: 0.16em;
-  color: var(--ly-accent);
-  opacity: 0.9;
-  margin-bottom: $space-1;
+  color: #f4a6b5;
+  margin-bottom: 4px;
 }
 
 .chat-share-snapshot__title {
   margin: 0;
-  font-size: $font-size-lg;
-  font-weight: $font-weight-semibold;
+  font-size: 18px;
+  font-weight: 600;
   line-height: 1.3;
+  color: #e8edf2;
 }
 
 .chat-share-snapshot__log {
   display: flex;
   flex-direction: column;
-  gap: $space-3;
+  gap: 12px;
 }
 
 .chat-share-snapshot__row {
   display: flex;
   align-items: flex-end;
-  gap: $space-2;
+  gap: 8px;
+}
 
-  &.is-user {
-    justify-content: flex-end;
-  }
+.chat-share-snapshot__row.is-user {
+  justify-content: flex-end;
+}
 
-  &.is-hero {
-    justify-content: flex-start;
-  }
+.chat-share-snapshot__row.is-hero {
+  justify-content: flex-start;
 }
 
 .chat-share-snapshot__avatar,
@@ -146,69 +146,68 @@ const userInitial = computed(() => (props.userLabel || '我').slice(0, 1))
 }
 
 .chat-share-snapshot__avatar {
-  border-radius: $radius-full;
+  border-radius: 9999px;
   overflow: hidden;
   display: grid;
   place-items: center;
-  background: color-mix(in srgb, var(--ly-accent) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--ly-accent) 20%, transparent);
-  color: var(--ly-accent);
+  background: rgba(244, 166, 181, 0.12);
+  border: 1px solid rgba(244, 166, 181, 0.2);
+  color: #f4a6b5;
+}
 
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
+.chat-share-snapshot__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .chat-share-snapshot__avatar-fallback {
-  font-size: $font-size-sm;
-  font-weight: $font-weight-semibold;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .chat-share-snapshot__bubble {
   max-width: 72%;
-  padding: $space-3 $space-4;
-  border-radius: $radius-md;
+  padding: 12px 16px;
+  border-radius: 14px;
   min-width: 0;
+}
 
-  &.is-hero {
-    background: var(--ly-chat-hero-bubble-bg);
-    border: 1px solid var(--ly-chat-hero-bubble-border);
-    border-bottom-left-radius: $radius-sm;
-    box-shadow: var(--ly-chat-hero-bubble-shadow);
-  }
+.chat-share-snapshot__bubble.is-hero {
+  background: rgba(16, 16, 24, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom-left-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.26);
+}
 
-  &.is-user {
-    background: var(--ly-chat-user-bubble-bg);
-    border: 1px solid var(--ly-chat-user-bubble-border);
-    border-bottom-right-radius: $radius-sm;
-    box-shadow: 0 2px 12px rgba($color-pink-rgb, 0.16);
-  }
+.chat-share-snapshot__bubble.is-user {
+  background: rgba(244, 166, 181, 0.26);
+  border: 1px solid rgba(244, 166, 181, 0.34);
+  border-bottom-right-radius: 8px;
+  box-shadow: 0 2px 12px rgba(244, 166, 181, 0.16);
 }
 
 .chat-share-snapshot__name {
   display: block;
   margin-bottom: 4px;
-  font-size: $font-size-xs;
-  font-weight: $font-weight-semibold;
-  color: var(--ly-accent);
+  font-size: 12px;
+  font-weight: 600;
+  color: #f8c8d8;
 }
 
 .chat-share-snapshot__text {
   margin: 0;
-  font-size: $font-size-base;
-  line-height: $line-height-normal;
+  font-size: 15px;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
-  color: inherit;
 }
 
 .chat-share-snapshot__bubble.is-hero .chat-share-snapshot__text {
-  color: var(--ly-chat-hero-bubble-text);
+  color: rgba(255, 255, 255, 0.94);
 }
 
 .chat-share-snapshot__bubble.is-user .chat-share-snapshot__text {
-  color: var(--ly-chat-user-bubble-text);
+  color: #e8edf2;
 }
 </style>

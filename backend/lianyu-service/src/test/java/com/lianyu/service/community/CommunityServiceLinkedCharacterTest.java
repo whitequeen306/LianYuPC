@@ -104,7 +104,9 @@ class CommunityServiceLinkedCharacterTest {
         author.setId(1L);
         author.setNickname("小明");
         when(userMapper.selectById(1L)).thenReturn(author);
-        when(fileStorageService.resolvePublicUrl("avatars/alice.png")).thenReturn("/files/avatars/alice.png");
+        when(fileStorageService.resolvePublicUrl(null)).thenReturn(null);
+        when(fileStorageService.resolveSquareAvatarThumbPublicUrl("avatars/alice.png"))
+                .thenReturn("/files/avatars/alice.png");
 
         when(communityPostMapper.insert(any(CommunityPost.class))).thenAnswer(invocation -> {
             CommunityPost post = invocation.getArgument(0);

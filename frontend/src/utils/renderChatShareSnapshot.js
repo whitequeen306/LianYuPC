@@ -70,10 +70,11 @@ export async function renderChatShareSnapshot(draft = {}) {
     }
 
     const canvas = await html2canvas(target, {
-      backgroundColor: null,
+      backgroundColor: '#0a0a12',
       scale: Math.min(2, window.devicePixelRatio || 1.5),
       useCORS: true,
-      logging: false
+      logging: false,
+      ignoreElements: (element) => element.tagName === 'LINK' || element.tagName === 'STYLE'
     })
 
     return await new Promise((resolve, reject) => {

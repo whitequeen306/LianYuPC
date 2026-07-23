@@ -266,9 +266,7 @@ public class CommunityService {
         String reject = includeStatus ? post.getRejectReason() : null;
         Long linkedId = post.getLinkedCharacterId();
         String linkedName = linkedCharacter != null ? linkedCharacter.getName() : null;
-        String linkedAvatar = linkedCharacter != null
-                ? fileStorageService.resolvePublicUrl(linkedCharacter.getAvatarUrl())
-                : null;
+        String linkedAvatar = resolveLinkedCharacterAvatarUrl(linkedCharacter);
         return CommunityPostResponse.builder()
                 .id(post.getId())
                 .authorUserId(post.getAuthorUserId())
@@ -377,6 +375,17 @@ public class CommunityService {
             throw new BusinessException(ErrorCode.CHARACTER_NOT_FOUND);
         }
         return entity;
+    }
+
+    private String resolveLinkedCharacterAvatarUrl(Character linkedCharacter) {
+        if (linkedCharacter == null) {
+            return null;
+        }
+        String stored = linkedCharacter.getAvatarUrl();
+        if (stored == null || stored.isBlank()) {
+            return null;
+        }
+        return fileStorageService.resolveSquareAvatarThumbPublicUrl(stored);
     }
 
     private Map<Long, Character> loadCharacters(List<Long> ids) {

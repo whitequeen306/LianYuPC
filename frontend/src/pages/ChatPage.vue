@@ -374,7 +374,7 @@ function confirmShareToCommunity() {
   const selected = messages.value.filter((msg) => selectedMessageIds.value.has(Number(msg.id)))
   const shareOptions = {
     characterName: activeCharacter.value?.name || '角色',
-    characterAvatarUrl: resolveCharacterAvatarSrc({ character: activeCharacter.value }),
+    characterAvatarUrl: resolveCharacterAvatarSrc({ character: activeCharacter.value, tier: 'orig' }),
     userLabel: userStore.nickname || '我',
     userAvatarUrl: userStore.avatarUrl || '',
     linkedCharacterId: activeCharacter.value?.id || null
