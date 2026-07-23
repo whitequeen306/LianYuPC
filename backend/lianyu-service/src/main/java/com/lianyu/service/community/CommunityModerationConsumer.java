@@ -5,6 +5,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 
+/**
+ * Drains legacy moderation queue messages with fast sync rules (no AI).
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -17,12 +20,12 @@ public class CommunityModerationConsumer {
         if (task == null || task.postId() == null) {
             return;
         }
-        log.info("Received community moderation task: postId={}", task.postId());
+        log.info("Received legacy community moderation task: postId={}", task.postId());
         try {
-            communityModerationService.moderatePost(task.postId());
+            communityModerationService.finalizePendingPost(task.postId());
         } catch (Exception e) {
-            log.warn("Community moderation failed: postId={}, reason={}", task.postId(), e.getMessage());
-            throw e;
+            log.warn("Community moderation finalize failed: postId={}, reason={}",
+                    task.postId(), e.getMessage());
         }
     }
 }

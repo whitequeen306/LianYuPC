@@ -398,6 +398,10 @@ lianyu:
 
   community:
     post-rate-per-minute: 6
+    reconcile-enabled: true
+    reconcile-min-age-minutes: 1
+    reconcile-batch-size: 50
+    reconcile-interval-ms: 120000
 
   # ─── QQ 桥接（NapCat 正向 WebSocket，单人模式）────────────────────────
   # 总开关默认关闭。开启前请先阅读 docs/qq-bridge-zh.md

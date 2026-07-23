@@ -30,7 +30,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -44,7 +43,6 @@ class CommunityServiceLinkedCharacterTest {
     @Mock private CharacterMapper characterMapper;
     @Mock private UserMapper userMapper;
     @Mock private FileStorageService fileStorageService;
-    @Mock private RabbitTemplate rabbitTemplate;
     @Mock private StringRedisTemplate redisTemplate;
     @Mock private ValueOperations<String, String> valueOperations;
     @Mock private NotificationService notificationService;
@@ -60,7 +58,6 @@ class CommunityServiceLinkedCharacterTest {
                 characterMapper,
                 userMapper,
                 fileStorageService,
-                rabbitTemplate,
                 redisTemplate,
                 notificationService
         );
@@ -119,6 +116,7 @@ class CommunityServiceLinkedCharacterTest {
         ArgumentCaptor<CommunityPost> captor = ArgumentCaptor.forClass(CommunityPost.class);
         verify(communityPostMapper).insert(captor.capture());
         assertThat(captor.getValue().getLinkedCharacterId()).isEqualTo(7L);
+        assertThat(captor.getValue().getStatus()).isEqualTo(CommunityModerationService.STATUS_PUBLISHED);
         assertThat(response.getLinkedCharacterId()).isEqualTo(7L);
         assertThat(response.getLinkedCharacterName()).isEqualTo("艾丽西亚");
         assertThat(response.getLinkedCharacterAvatarUrl()).isEqualTo("/files/avatars/alice.png");

@@ -9,7 +9,7 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
- * Sync rule layer for community UGC (before async model moderation).
+ * Sync rule layer for community UGC. Posts publish immediately after these checks pass.
  */
 public final class CommunityContentRules {
 

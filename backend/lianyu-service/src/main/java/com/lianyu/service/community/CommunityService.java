@@ -29,7 +29,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -41,8 +40,6 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 public class CommunityService {
 
-    private static final String EXCHANGE = "lianyu.exchange";
-    private static final String RK_COMMUNITY_MODERATION = "community.moderation";
     private static final String RATE_KEY_PREFIX = "community:post-rate:";
 
     private final CommunityPostMapper communityPostMapper;
@@ -51,7 +48,6 @@ public class CommunityService {
     private final CharacterMapper characterMapper;
     private final UserMapper userMapper;
     private final FileStorageService fileStorageService;
-    private final RabbitTemplate rabbitTemplate;
     private final StringRedisTemplate redisTemplate;
     private final NotificationService notificationService;
 
@@ -75,13 +71,10 @@ public class CommunityService {
         post.setLinkedCharacterId(linkedCharacter != null ? linkedCharacter.getId() : null);
         post.setContent(content.isBlank() ? "" : content);
         post.setImageUrls(images.isEmpty() ? null : images);
-        post.setStatus(CommunityModerationService.STATUS_PENDING);
+        post.setStatus(CommunityModerationService.STATUS_PUBLISHED);
         post.setLikeCount(0);
         post.setCommentCount(0);
         communityPostMapper.insert(post);
-
-        rabbitTemplate.convertAndSend(EXCHANGE, RK_COMMUNITY_MODERATION,
-                new CommunityModerationTask(post.getId(), userId));
 
         return toPostResponse(post, loadUser(userId), linkedCharacter, false, true);
     }
