@@ -1,6 +1,6 @@
 {
   "name": "lianyu-pc",
-  "version": "0.2.309",
+  "version": "0.2.310",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.js",
