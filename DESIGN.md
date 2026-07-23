@@ -47,6 +47,18 @@ colors:
   auth-ink: "#06080f"
   on-primary: "#141a22"
   on-primary-light: "#ffffff"
+  # ── In-app message toast (inverse of app chrome) ──
+  # dark mode → light bar; light mode → dark bar
+  toast-bg-dark: "rgba(247, 247, 249, 0.96)"
+  toast-text-dark: "#1a1a1e"
+  toast-secondary-dark: "#4a4a52"
+  toast-muted-dark: "#8a8a96"
+  toast-border-dark: "rgba(26, 26, 30, 0.1)"
+  toast-bg-light: "rgba(26, 18, 22, 0.94)"
+  toast-text-light: "#f5e6eb"
+  toast-secondary-light: "#b8a0a8"
+  toast-muted-light: "#8a727c"
+  toast-border-light: "rgba(245, 230, 235, 0.14)"
 typography:
   body:
     fontFamily: "'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', system-ui, sans-serif"
@@ -186,6 +198,11 @@ soft neutrals in light mode.
   `#1a1a1e` / `#4a4a52` / `#8a8a96` in light. Inverse text on pink = `#141a22`.
 - **Status:** success `#7EB99F` (mint), warning `#FFA500`, error `#FA5151`,
   info `#8BA4C8`. Use these for toasts/badges only — never as decorative color.
+- **In-app message toast (inverse chrome):** Dark theme uses a light bar
+  (`toast-bg-dark` / `toast-text-dark`); light theme uses a dark bar
+  (`toast-bg-light` / `toast-text-light`). CSS: `--ly-toast-bg`,
+  `--ly-toast-text`, `--ly-toast-secondary`, `--ly-toast-muted`,
+  `--ly-toast-border`, `--ly-toast-avatar-*`. Do not reuse `--ly-bg-glass-strong`.
 - **Chat scene:** Immersive `#0a0a12` background with translucent bubbles.
   User bubble = pink-tinted; assistant bubble = surface-tinted.
 

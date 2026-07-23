@@ -7,6 +7,7 @@ import { ref } from 'vue'
  *   timeLabel: string,
  *   conversationId: number|null,
  *   characterId: number|null,
+ *   avatarUrl: string|null,
  *   raw: object,
  * }} ChatMessageToast */
 
@@ -34,10 +35,11 @@ function sanitizePreview(text) {
 
 /**
  * Push a WeChat/QQ-style top banner for an out-of-focus character message.
- * @param {{ characterName?: string, preview?: string, createdAt?: string, conversationId?: number|null, characterId?: number|null, raw?: object }} payload
+ * @param {{ characterName?: string, preview?: string, createdAt?: string, conversationId?: number|null, characterId?: number|null, avatarUrl?: string|null, raw?: object }} payload
  */
 export function pushChatMessageToast(payload = {}) {
   const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const avatarRaw = payload.avatarUrl != null ? String(payload.avatarUrl).trim() : ''
   const item = {
     id,
     characterName: String(payload.characterName || '角色').trim() || '角色',
@@ -45,6 +47,7 @@ export function pushChatMessageToast(payload = {}) {
     timeLabel: formatToastTime(payload.createdAt),
     conversationId: payload.conversationId != null ? Number(payload.conversationId) : null,
     characterId: payload.characterId != null ? Number(payload.characterId) : null,
+    avatarUrl: avatarRaw || null,
     raw: payload.raw || payload,
   }
   toasts.value = [item, ...toasts.value].slice(0, MAX_TOASTS)

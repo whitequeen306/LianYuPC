@@ -183,7 +183,11 @@ public class CommunityService {
                 User actor = loadUser(userId);
                 String name = actor.getNickname() != null ? actor.getNickname() : "有人";
                 notificationService.notifyCommunityLike(
-                        post.getAuthorUserId(), postId, name, trimPreview(post.getContent()));
+                        post.getAuthorUserId(),
+                        postId,
+                        name,
+                        trimPreview(post.getContent()),
+                        notificationService.resolveUserAvatarUrl(actor));
             }
         }
         CommunityPost fresh = communityPostMapper.selectById(postId);
@@ -240,7 +244,11 @@ public class CommunityService {
             User actor = loadUser(userId);
             String name = actor.getNickname() != null ? actor.getNickname() : "有人";
             notificationService.notifyCommunityComment(
-                    post.getAuthorUserId(), postId, name, content);
+                    post.getAuthorUserId(),
+                    postId,
+                    name,
+                    content,
+                    notificationService.resolveUserAvatarUrl(actor));
         }
         return toCommentResponse(comment, loadUser(userId));
     }

@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -43,7 +44,8 @@ class CommunityPushServiceTest {
         service.catchUpOnOnline(1L);
 
         verify(communityPostMapper, never()).selectOne(any());
-        verify(notificationService, never()).notifyCommunityPostNew(anyLong(), anyLong(), anyString(), anyString());
+        verify(notificationService, never()).notifyCommunityPostNew(
+                anyLong(), anyLong(), anyString(), anyString(), any());
     }
 
     @Test
@@ -66,11 +68,14 @@ class CommunityPushServiceTest {
         User author = new User();
         author.setId(2L);
         author.setNickname("小明");
+        author.setAvatarUrl("avatars/ming.png");
         when(userMapper.selectById(2L)).thenReturn(author);
+        when(notificationService.resolveUserAvatarUrl(author)).thenReturn("https://cdn/ming.png");
 
         service.catchUpOnOnline(1L);
 
-        verify(notificationService).notifyCommunityPostNew(eq(1L), eq(12L), eq("小明"), eq("哈喽"));
+        verify(notificationService).notifyCommunityPostNew(
+                eq(1L), eq(12L), eq("小明"), eq("哈喽"), eq("https://cdn/ming.png"));
         verify(valueOperations).set(eq("community:last-seen-post:1"), eq("12"), any());
     }
 
@@ -90,6 +95,7 @@ class CommunityPushServiceTest {
         author.setId(1L);
         author.setNickname("作者");
         when(userMapper.selectById(1L)).thenReturn(author);
+        when(notificationService.resolveUserAvatarUrl(author)).thenReturn(null);
 
         User optedIn = new User();
         optedIn.setId(2L);
@@ -101,7 +107,9 @@ class CommunityPushServiceTest {
 
         service.broadcastNewPost(9L, 1L);
 
-        verify(notificationService).notifyCommunityPostNew(eq(2L), eq(9L), eq("作者"), eq("新动态"));
-        verify(notificationService, never()).notifyCommunityPostNew(eq(3L), anyLong(), anyString(), anyString());
+        verify(notificationService).notifyCommunityPostNew(
+                eq(2L), eq(9L), eq("作者"), eq("新动态"), isNull());
+        verify(notificationService, never()).notifyCommunityPostNew(
+                eq(3L), anyLong(), anyString(), anyString(), any());
     }
 }

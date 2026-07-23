@@ -42,6 +42,7 @@ public class CommunityPushService {
         String authorName = author != null && author.getNickname() != null && !author.getNickname().isBlank()
                 ? author.getNickname().trim()
                 : "有人";
+        String authorAvatar = notificationService.resolveUserAvatarUrl(author);
         String preview = buildPreview(post);
 
         List<User> users = userMapper.selectList(new LambdaQueryWrapper<User>()
@@ -55,7 +56,8 @@ public class CommunityPushService {
                 continue;
             }
             try {
-                notificationService.notifyCommunityPostNew(user.getId(), postId, authorName, preview);
+                notificationService.notifyCommunityPostNew(
+                        user.getId(), postId, authorName, preview, authorAvatar);
                 markSeenAtLeast(user.getId(), postId);
                 sent += 1;
             } catch (Exception e) {
@@ -93,7 +95,11 @@ public class CommunityPushService {
                 ? author.getNickname().trim()
                 : "有人";
         notificationService.notifyCommunityPostNew(
-                userId, latest.getId(), authorName, buildPreview(latest));
+                userId,
+                latest.getId(),
+                authorName,
+                buildPreview(latest),
+                notificationService.resolveUserAvatarUrl(author));
         markSeenAtLeast(userId, latest.getId());
         log.info("Community push catch-up: userId={}, postId={}", userId, latest.getId());
     }

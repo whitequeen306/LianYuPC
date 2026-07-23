@@ -18,12 +18,14 @@ describe('useInAppMessageToast', () => {
       preview: '你也要与我为敌吗？',
       createdAt: '2026-07-19T12:34:00',
       conversationId: 9,
+      avatarUrl: 'https://cdn.example/raiden.png',
     })
     const { toasts } = useInAppMessageToast()
     expect(toasts.value).toHaveLength(1)
     expect(toasts.value[0].characterName).toBe('雷电将军')
     expect(toasts.value[0].preview).toBe('你也要与我为敌吗？')
     expect(toasts.value[0].timeLabel).toMatch(/^\d{2}:\d{2}$/)
+    expect(toasts.value[0].avatarUrl).toBe('https://cdn.example/raiden.png')
   })
 
   it('caps stack size and auto-dismisses', () => {

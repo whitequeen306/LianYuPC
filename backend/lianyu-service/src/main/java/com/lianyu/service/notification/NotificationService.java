@@ -2,8 +2,11 @@ package com.lianyu.service.notification;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.lianyu.dao.entity.Character;
+import com.lianyu.dao.entity.User;
 import com.lianyu.dao.entity.UserNotification;
 import com.lianyu.dao.entity.WebPushSubscription;
+import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.UserNotificationMapper;
 import com.lianyu.dao.mapper.WebPushSubscriptionMapper;
 import com.lianyu.service.dto.MarkNotificationReadRequest;
@@ -11,6 +14,7 @@ import com.lianyu.service.dto.NotificationResponse;
 import com.lianyu.service.dto.PushNotifyTask;
 import com.lianyu.service.dto.PushSubscriptionRequest;
 import com.lianyu.service.dto.UnreadCountResponse;
+import com.lianyu.service.storage.FileStorageService;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +35,8 @@ public class NotificationService {
 
     private final UserNotificationMapper notificationMapper;
     private final WebPushSubscriptionMapper subscriptionMapper;
+    private final CharacterMapper characterMapper;
+    private final FileStorageService fileStorageService;
     private final SimpMessagingTemplate messagingTemplate;
     private final RabbitTemplate rabbitTemplate;
 
@@ -51,9 +57,6 @@ public class NotificationService {
         return notifyAssistantMessage(userId, conversationId, characterId, characterName, preview, "PROACTIVE_MESSAGE");
     }
 
-    /**
-     * 群聊内角色发言（含主动冒泡、自动回复）；未读应落在群会话上，而非单聊角色卡片。
-     */
     public NotificationResponse notifyMomentPost(Long userId,
                                                  Long conversationId,
                                                  Long characterId,
@@ -61,7 +64,8 @@ public class NotificationService {
                                                  String preview) {
         String speaker = (characterName == null || characterName.isBlank()) ? "角色" : characterName;
         String title = speaker + " 发布了新动态";
-        return createAndPushNotification(userId, conversationId, characterId, title, preview, "MOMENT_NEW");
+        return createAndPushNotification(userId, conversationId, characterId, title, preview, "MOMENT_NEW",
+                resolveCharacterAvatarUrl(characterId));
     }
 
     public NotificationResponse notifyMomentComment(Long userId,
@@ -72,7 +76,8 @@ public class NotificationService {
                                                     Long postId) {
         String speaker = (characterName == null || characterName.isBlank()) ? "角色" : characterName;
         String title = speaker + " 评论了朋友圈";
-        return createAndPushNotification(userId, conversationId, characterId, title, preview, "MOMENT_COMMENT");
+        return createAndPushNotification(userId, conversationId, characterId, title, preview, "MOMENT_COMMENT",
+                resolveCharacterAvatarUrl(characterId));
     }
 
     public NotificationResponse notifyDiaryNew(Long userId,
@@ -82,7 +87,8 @@ public class NotificationService {
                                              String preview) {
         String speaker = (characterName == null || characterName.isBlank()) ? "角色" : characterName;
         String title = speaker + " 写了一篇新日记";
-        return createAndPushNotification(userId, conversationId, characterId, title, preview, "DIARY_NEW");
+        return createAndPushNotification(userId, conversationId, characterId, title, preview, "DIARY_NEW",
+                resolveCharacterAvatarUrl(characterId));
     }
 
     public NotificationResponse notifyGroupMessage(Long userId,
@@ -92,7 +98,8 @@ public class NotificationService {
                                                    String preview) {
         String speaker = (characterName == null || characterName.isBlank()) ? "角色" : characterName;
         String title = speaker + " 在群聊中发言";
-        return createAndPushNotification(userId, conversationId, characterId, title, preview, "GROUP_MESSAGE");
+        return createAndPushNotification(userId, conversationId, characterId, title, preview, "GROUP_MESSAGE",
+                resolveCharacterAvatarUrl(characterId));
     }
 
     public NotificationResponse notifyAssistantMessage(Long userId,
@@ -102,35 +109,32 @@ public class NotificationService {
                                                        String preview,
                                                        String type) {
         String title = (characterName == null || characterName.isBlank() ? "角色" : characterName) + " 给你发来消息";
-        return createAndPushNotification(userId, conversationId, characterId, title, preview, type);
+        return createAndPushNotification(userId, conversationId, characterId, title, preview, type,
+                resolveCharacterAvatarUrl(characterId));
     }
 
     /**
      * Other users' community posts. {@code postId} is stored in conversationId for deep-link routing.
-     * Frontend shows the same top toast as character chat messages.
      */
-    public NotificationResponse notifyCommunityPostNew(Long userId, Long postId, String actorName, String preview) {
+    public NotificationResponse notifyCommunityPostNew(Long userId, Long postId, String actorName,
+                                                       String preview, String actorAvatarUrl) {
         String speaker = (actorName == null || actorName.isBlank()) ? "有人" : actorName;
         return createAndPushNotification(userId, postId, null,
-                speaker + " 发布了社区动态", preview, "COMMUNITY_POST_NEW");
+                speaker + " 发布了社区动态", preview, "COMMUNITY_POST_NEW", actorAvatarUrl);
     }
 
-    /**
-     * Community like. {@code postId} is stored in conversationId for deep-link routing.
-     */
-    public NotificationResponse notifyCommunityLike(Long userId, Long postId, String actorName, String preview) {
+    public NotificationResponse notifyCommunityLike(Long userId, Long postId, String actorName,
+                                                    String preview, String actorAvatarUrl) {
         String speaker = (actorName == null || actorName.isBlank()) ? "有人" : actorName;
         return createAndPushNotification(userId, postId, null,
-                speaker + " 赞了你的社区动态", preview, "COMMUNITY_LIKE");
+                speaker + " 赞了你的社区动态", preview, "COMMUNITY_LIKE", actorAvatarUrl);
     }
 
-    /**
-     * Community comment. {@code postId} is stored in conversationId for deep-link routing.
-     */
-    public NotificationResponse notifyCommunityComment(Long userId, Long postId, String actorName, String preview) {
+    public NotificationResponse notifyCommunityComment(Long userId, Long postId, String actorName,
+                                                       String preview, String actorAvatarUrl) {
         String speaker = (actorName == null || actorName.isBlank()) ? "有人" : actorName;
         return createAndPushNotification(userId, postId, null,
-                speaker + " 评论了你的社区动态", preview, "COMMUNITY_COMMENT");
+                speaker + " 评论了你的社区动态", preview, "COMMUNITY_COMMENT", actorAvatarUrl);
     }
 
     private NotificationResponse createAndPushNotification(Long userId,
@@ -138,11 +142,13 @@ public class NotificationService {
                                                          Long characterId,
                                                          String title,
                                                          String preview,
-                                                         String type) {
+                                                         String type,
+                                                         String actorAvatarUrl) {
         UserNotification notification = new UserNotification();
         notification.setUserId(userId);
         notification.setConversationId(conversationId);
         notification.setCharacterId(characterId);
+        notification.setActorAvatarUrl(trimUrl(actorAvatarUrl));
         notification.setType(type == null || type.isBlank() ? "MESSAGE" : type);
         notification.setTitle(title == null || title.isBlank() ? "新消息" : title);
         notification.setContentPreview(trimPreview(preview));
@@ -293,6 +299,13 @@ public class NotificationService {
         return hasAnySubscription(userId);
     }
 
+    public String resolveUserAvatarUrl(User user) {
+        if (user == null) {
+            return null;
+        }
+        return trimUrl(fileStorageService.resolvePublicUrl(user.getAvatarUrl()));
+    }
+
     private boolean hasAnySubscription(Long userId) {
         Long count = subscriptionMapper.selectCount(new LambdaQueryWrapper<WebPushSubscription>()
                 .eq(WebPushSubscription::getUserId, userId)
@@ -307,12 +320,28 @@ public class NotificationService {
         return count == null ? 0L : count;
     }
 
+    private String resolveCharacterAvatarUrl(Long characterId) {
+        if (characterId == null) {
+            return null;
+        }
+        Character character = characterMapper.selectById(characterId);
+        if (character == null) {
+            return null;
+        }
+        String thumb = fileStorageService.resolveSquareAvatarThumbPublicUrl(character.getAvatarUrl());
+        if (thumb != null && !thumb.isBlank()) {
+            return trimUrl(thumb);
+        }
+        return trimUrl(fileStorageService.resolvePublicUrl(character.getAvatarUrl()));
+    }
+
     private NotificationResponse toResponse(UserNotification row) {
         return NotificationResponse.builder()
                 .id(row.getId())
                 .type(row.getType())
                 .conversationId(row.getConversationId())
                 .characterId(row.getCharacterId())
+                .actorAvatarUrl(row.getActorAvatarUrl())
                 .title(row.getTitle())
                 .contentPreview(row.getContentPreview())
                 .read(row.getIsRead() != null && row.getIsRead() == 1)
@@ -329,5 +358,13 @@ public class NotificationService {
             return t;
         }
         return t.substring(0, 100) + "...";
+    }
+
+    private static String trimUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return null;
+        }
+        String t = url.trim();
+        return t.length() > 512 ? t.substring(0, 512) : t;
     }
 }

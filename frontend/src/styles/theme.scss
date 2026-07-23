@@ -21,6 +21,16 @@
   --ly-text-muted: #8a727c;
   --ly-text-inverse: #2d1f24;
 
+  /* In-app message toast — inverse of app chrome for high contrast */
+  --ly-toast-bg: rgba(247, 247, 249, 0.96);
+  --ly-toast-bg-hover: #ffffff;
+  --ly-toast-border: rgba(26, 26, 30, 0.1);
+  --ly-toast-text: #1a1a1e;
+  --ly-toast-secondary: #4a4a52;
+  --ly-toast-muted: #8a8a96;
+  --ly-toast-avatar-bg: #e0e0e3;
+  --ly-toast-avatar-text: #1a1a1e;
+
   /* Chat (单聊 / 群聊气泡与场景) */
   --ly-chat-scene-bg: #0a0a12;
   --ly-chat-ambient-base: linear-gradient(180deg, #14141f 0%, #0a0a12 52%, #07070e 100%);
@@ -80,6 +90,16 @@ html.light {
   --ly-text-secondary: #4a4a52;
   --ly-text-muted: #8a8a96;
   --ly-text-inverse: #ffffff;
+
+  /* In-app message toast — inverse of app chrome for high contrast */
+  --ly-toast-bg: rgba(26, 18, 22, 0.94);
+  --ly-toast-bg-hover: #241b20;
+  --ly-toast-border: rgba(245, 230, 235, 0.14);
+  --ly-toast-text: #f5e6eb;
+  --ly-toast-secondary: #b8a0a8;
+  --ly-toast-muted: #8a727c;
+  --ly-toast-avatar-bg: #35282e;
+  --ly-toast-avatar-text: #f5e6eb;
 
   --ly-chat-scene-bg: #f4f4f7;
   --ly-chat-ambient-base: linear-gradient(180deg, #eceef2 0%, #f6f6f9 52%, #ffffff 100%);
