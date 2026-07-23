@@ -24,6 +24,9 @@
           <button type="button" class="compose-images__remove" @click="pendingImages.splice(idx, 1)">×</button>
         </div>
       </div>
+      <div v-if="shareSnapshotLoading" class="compose-share-loading">
+        正在生成对话截图…
+      </div>
       <div class="compose-character">
         <el-select
           v-model="linkedCharacterId"
@@ -41,7 +44,12 @@
         </el-select>
         <div v-if="selectedCharacter" class="compose-character__chip">
           <span class="compose-character__chip-avatar">
-            <img v-if="selectedCharacter.avatarUrl" :src="resolveMediaUrl(selectedCharacter.avatarUrl)" alt="" />
+            <img
+              v-if="selectedCharacterAvatarSrc && !selectedCharacterAvatarBroken"
+              :src="selectedCharacterAvatarSrc"
+              alt=""
+              @error="onSelectedCharacterAvatarError"
+            />
             <el-icon v-else :size="14"><User /></el-icon>
           </span>
           <span>{{ selectedCharacter.name }}</span>
@@ -52,8 +60,8 @@
         <el-button
           v-bubble-btn
           type="primary"
-          :loading="sending"
-          :disabled="!canPublish"
+          :loading="sending || shareSnapshotLoading"
+          :disabled="!canPublish || shareSnapshotLoading"
           @click="publish"
         >
           {{ t('community.publish') }}
@@ -90,7 +98,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { User } from '@element-plus/icons-vue'
@@ -103,7 +111,15 @@ import {
   uploadCommunityImage
 } from '@/api/community'
 import { resolveMediaUrl } from '@/utils/media'
-import { consumeCommunityShareDraft } from '@/utils/communityShareDraft'
+import {
+  consumeCommunityShareDraft,
+  COMMUNITY_SHARE_DRAFT_KIND_CHAT
+} from '@/utils/communityShareDraft'
+import { renderChatShareSnapshot } from '@/utils/renderChatShareSnapshot'
+import {
+  nextCharacterAvatarTier,
+  resolveCharacterAvatarSrc
+} from '@/utils/characterAvatar'
 import { useCharactersStore } from '@/stores/characters'
 
 const { t } = useI18n()
@@ -119,30 +135,84 @@ const pendingImages = ref([])
 const linkedCharacterId = ref(null)
 const uploading = ref(false)
 const sending = ref(false)
+const shareSnapshotLoading = ref(false)
 const openCommentsId = ref(null)
 const fileInput = ref(null)
+const selectedCharacterAvatarTier = ref('thumb')
+const selectedCharacterAvatarBroken = ref(false)
 
 const characterOptions = computed(() => charactersStore.list || [])
 const selectedCharacter = computed(() =>
   characterOptions.value.find((c) => c.id === linkedCharacterId.value) || null
 )
+const selectedCharacterAvatarSrc = computed(() => {
+  const raw = resolveCharacterAvatarSrc({
+    character: selectedCharacter.value,
+    tier: selectedCharacterAvatarTier.value
+  })
+  return raw ? resolveMediaUrl(raw) : ''
+})
 
 const canPublish = computed(() => draft.value.trim() || pendingImages.value.length)
 
 onMounted(async () => {
   await charactersStore.fetchList()
-  applyShareDraft()
+  await applyShareDraft()
   reload()
 })
 
-function applyShareDraft() {
+watch(linkedCharacterId, () => {
+  selectedCharacterAvatarTier.value = 'thumb'
+  selectedCharacterAvatarBroken.value = false
+})
+
+function onSelectedCharacterAvatarError() {
+  const character = selectedCharacter.value
+  if (!character) {
+    selectedCharacterAvatarBroken.value = true
+    return
+  }
+  const nextTier = nextCharacterAvatarTier(character, selectedCharacterAvatarTier.value)
+  if (nextTier === 'broken') {
+    selectedCharacterAvatarBroken.value = true
+    return
+  }
+  selectedCharacterAvatarTier.value = nextTier
+}
+
+async function applyShareDraft() {
   const shareDraft = consumeCommunityShareDraft()
   if (!shareDraft) return
-  if (shareDraft.content) {
-    draft.value = shareDraft.content
-  }
+
   if (shareDraft.linkedCharacterId) {
     linkedCharacterId.value = shareDraft.linkedCharacterId
+  }
+
+  if (shareDraft.kind === COMMUNITY_SHARE_DRAFT_KIND_CHAT && shareDraft.messages?.length) {
+    shareSnapshotLoading.value = true
+    try {
+      const blob = await renderChatShareSnapshot(shareDraft)
+      const file = new File([blob], `chat-share-${Date.now()}.png`, { type: 'image/png' })
+      const res = await uploadCommunityImage(file)
+      if (res?.imageUrl) {
+        pendingImages.value = [res.imageUrl]
+        draft.value = ''
+      } else {
+        throw new Error('upload failed')
+      }
+    } catch (e) {
+      if (shareDraft.fallbackContent) {
+        draft.value = shareDraft.fallbackContent
+      }
+      ElMessage.warning(e?.message || '对话截图生成失败，已改为文字分享')
+    } finally {
+      shareSnapshotLoading.value = false
+    }
+    return
+  }
+
+  if (shareDraft.content) {
+    draft.value = shareDraft.content
   }
 }
 
@@ -357,6 +427,14 @@ async function onDelete(post) {
     height: 100%;
     object-fit: cover;
   }
+}
+
+.compose-share-loading {
+  padding: $space-3 $space-4;
+  border-radius: $radius-md;
+  background: color-mix(in srgb, var(--ly-accent) 8%, transparent);
+  color: var(--ly-text-secondary);
+  font-size: $font-size-sm;
 }
 
 .feed-empty {

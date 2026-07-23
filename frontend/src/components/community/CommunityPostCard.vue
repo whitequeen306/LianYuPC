@@ -27,9 +27,10 @@
     <div v-if="post.linkedCharacterId && post.linkedCharacterName" class="community-post-card__linked">
       <span class="community-post-card__linked-avatar">
         <img
-          v-if="post.linkedCharacterAvatarUrl"
-          :src="resolveMediaUrl(post.linkedCharacterAvatarUrl)"
+          v-if="linkedAvatarSrc && !linkedAvatarBroken"
+          :src="linkedAvatarSrc"
           alt=""
+          @error="linkedAvatarBroken = true"
         />
         <el-icon v-else :size="14"><User /></el-icon>
       </span>
@@ -133,8 +134,13 @@ const deleting = ref(false)
 const imageViewerVisible = ref(false)
 const imageViewerUrlList = ref([])
 const imageViewerInitialIndex = ref(0)
+const linkedAvatarBroken = ref(false)
 
 const images = computed(() => props.post.imageUrls || [])
+const linkedAvatarSrc = computed(() => {
+  const raw = props.post.linkedCharacterAvatarUrl
+  return raw ? resolveMediaUrl(raw) : ''
+})
 const resolvedImages = computed(() => images.value.map(src => resolveMediaUrl(src)))
 const timeLabel = computed(() => formatFeedTime(props.post.createdAt, t, locale.value))
 const canDelete = computed(() =>
@@ -144,6 +150,10 @@ const statusLabel = computed(() => {
   if (props.post.status === 'pending') return '审核中'
   if (props.post.status === 'rejected') return '未通过'
   return ''
+})
+
+watch(() => props.post.linkedCharacterAvatarUrl, () => {
+  linkedAvatarBroken.value = false
 })
 
 watch(() => props.showComments, async (open) => {

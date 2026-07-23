@@ -302,11 +302,12 @@ import AssistantMessageContent from '@/components/AssistantMessageContent.vue'
 import VoiceMessageBubble from '@/components/VoiceMessageBubble.vue'
 import { getPetVoiceRate, getPetVoiceVolume } from '@/constants/petCatalog'
 import {
-  formatChatMessagesForCommunityShare,
   isShareSelectableMessage,
   saveCommunityShareDraft,
+  buildChatShareDraft,
   COMMUNITY_SHARE_MAX_MESSAGES
 } from '@/utils/communityShareDraft'
+import { resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
 import { stripInnerThoughts, resolveShowInnerThoughts } from '@/utils/innerThoughtFilter'
 
 function petIdFromAudioUrl(audioUrl) {
@@ -372,18 +373,19 @@ function toggleShareSelection(item) {
 function confirmShareToCommunity() {
   if (!selectedMessageIds.value.size) return
   const selected = messages.value.filter((msg) => selectedMessageIds.value.has(Number(msg.id)))
-  const content = formatChatMessagesForCommunityShare(selected, {
+  const shareOptions = {
     characterName: activeCharacter.value?.name || '角色',
-    userLabel: userStore.nickname || '我'
-  })
-  if (!content.trim()) {
-    ElMessage.warning('所选消息没有可分享的文字内容')
+    characterAvatarUrl: resolveCharacterAvatarSrc({ character: activeCharacter.value }),
+    userLabel: userStore.nickname || '我',
+    userAvatarUrl: userStore.avatarUrl || '',
+    linkedCharacterId: activeCharacter.value?.id || null
+  }
+  const draft = buildChatShareDraft(selected, shareOptions)
+  if (!draft.messages.length) {
+    ElMessage.warning('所选消息没有可分享的内容')
     return
   }
-  saveCommunityShareDraft({
-    content,
-    linkedCharacterId: activeCharacter.value?.id || null
-  })
+  saveCommunityShareDraft(draft)
   exitShareMode()
   router.push('/app/community')
 }
