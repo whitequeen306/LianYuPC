@@ -57,19 +57,38 @@ async function captureRegion(rect) {
     throw new Error('请在桌面客户端分享对话')
   }
   const res = await ea.capturePageRegion(roundRect(rect))
-  if (!res?.ok || !res.dataUrl) {
+  if (!res?.ok || !res.buffer) {
     throw new Error('截屏失败，请稍后再试')
   }
   return res
 }
 
-function loadImage(dataUrl) {
+function shotToBlob(shot) {
+  const bytes = shot.buffer instanceof Uint8Array
+    ? shot.buffer
+    : new Uint8Array(shot.buffer || [])
+  if (!bytes.length) {
+    throw new Error('截屏编码失败')
+  }
+  return new Blob([bytes], { type: 'image/png' })
+}
+
+function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.onload = () => resolve(img)
     img.onerror = () => reject(new Error('截屏图片解码失败'))
-    img.src = dataUrl
+    img.src = src
   })
+}
+
+async function loadImageFromShot(shot) {
+  const url = URL.createObjectURL(shotToBlob(shot))
+  try {
+    return await loadImage(url)
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }
 
 async function stitchImages(images) {
@@ -130,8 +149,7 @@ export async function captureChatShareScreenshot(container, selectedIds) {
       await waitForPaint()
       const rect = unionElementRects(elements)
       const shot = await captureRegion(rect)
-      const res = await fetch(shot.dataUrl)
-      return res.blob()
+      return shotToBlob(shot)
     }
 
     const containerRect = container.getBoundingClientRect()
@@ -162,7 +180,7 @@ export async function captureChatShareScreenshot(container, selectedIds) {
       const sourceY = Math.max(0, Math.round((sliceTop - visibleTop) * dpr))
       const sourceHeight = Math.max(1, Math.round((sliceBottom - sliceTop) * dpr))
 
-      slices.push(await loadImage(shot.dataUrl).then((img) => {
+      slices.push(await loadImageFromShot(shot).then((img) => {
         const canvas = document.createElement('canvas')
         canvas.width = img.width
         canvas.height = sourceHeight

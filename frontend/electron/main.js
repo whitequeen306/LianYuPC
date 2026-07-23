@@ -2699,7 +2699,7 @@ function registerIpcHandlers() {
       const png = image.toPNG()
       return {
         ok: true,
-        dataUrl: `data:image/png;base64,${png.toString('base64')}`,
+        buffer: png,
         width: image.getSize().width,
         height: image.getSize().height,
       }

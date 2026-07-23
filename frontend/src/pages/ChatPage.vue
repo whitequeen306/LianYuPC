@@ -390,7 +390,13 @@ async function confirmShareToCommunity() {
   try {
     const blob = await captureChatShareScreenshot(msgListRef.value, selectedMessageIds.value)
     const file = new File([blob], `chat-share-${Date.now()}.png`, { type: 'image/png' })
-    const res = await uploadCommunityImage(file)
+    let res
+    try {
+      res = await uploadCommunityImage(file)
+    } catch (uploadErr) {
+      uploadErr.stage = 'upload'
+      throw uploadErr
+    }
     if (!res?.imageUrl) {
       throw new Error('上传失败')
     }
@@ -402,7 +408,8 @@ async function confirmShareToCommunity() {
     exitShareMode()
     router.push('/app/community')
   } catch (e) {
-    ElMessage.error(e?.message || '对话截屏失败')
+    const stage = e?.stage === 'upload' ? '上传失败' : '对话截屏失败'
+    ElMessage.error(e?.message ? `${stage}：${e.message}` : stage)
   } finally {
     shareCapturing.value = false
   }
