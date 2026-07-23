@@ -31,3 +31,8 @@ export function uploadCommunityImage(file) {
     headers: { 'Content-Type': 'multipart/form-data' }
   })
 }
+
+/** Online catch-up: push latest unseen community post toast if user opted in. */
+export function catchUpCommunityPush() {
+  return http.post('/community/push-catchup')
+}

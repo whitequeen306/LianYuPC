@@ -9,6 +9,8 @@ import java.util.Map;
 public final class UserSettingsResolver {
 
     public static final String KEY_SHOW_CHARACTERS_ON_PROFILE = "showCharactersOnProfile";
+    /** Default ON: missing key means the user still accepts community post toasts. */
+    public static final String KEY_COMMUNITY_PUSH_ENABLED = "communityPushEnabled";
 
     private UserSettingsResolver() {
     }
@@ -17,9 +19,19 @@ public final class UserSettingsResolver {
         return resolveBoolean(settings, KEY_SHOW_CHARACTERS_ON_PROFILE, false);
     }
 
+    public static boolean communityPushEnabled(Map<String, Object> settings) {
+        return resolveBoolean(settings, KEY_COMMUNITY_PUSH_ENABLED, true);
+    }
+
     public static Map<String, Object> withShowCharacters(Map<String, Object> existing, boolean value) {
         Map<String, Object> next = existing == null ? new HashMap<>() : new HashMap<>(existing);
         next.put(KEY_SHOW_CHARACTERS_ON_PROFILE, value);
+        return next;
+    }
+
+    public static Map<String, Object> withCommunityPushEnabled(Map<String, Object> existing, boolean value) {
+        Map<String, Object> next = existing == null ? new HashMap<>() : new HashMap<>(existing);
+        next.put(KEY_COMMUNITY_PUSH_ENABLED, value);
         return next;
     }
 

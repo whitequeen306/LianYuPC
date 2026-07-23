@@ -29,11 +29,13 @@ describe('community notification deep links', () => {
     vi.resetModules()
   })
 
-  it('routes community like/comment to community page', async () => {
+  it('routes community like/comment/post to community page', async () => {
     const { buildNotificationHash } = await import('@/composables/useNotificationNavigation')
     expect(buildNotificationHash({ type: 'COMMUNITY_LIKE', conversationId: 12 }))
       .toBe('#/app/community')
     expect(buildNotificationHash({ type: 'COMMUNITY_COMMENT', conversationId: 12 }))
+      .toBe('#/app/community')
+    expect(buildNotificationHash({ type: 'COMMUNITY_POST_NEW', conversationId: 12 }))
       .toBe('#/app/community')
   })
 })

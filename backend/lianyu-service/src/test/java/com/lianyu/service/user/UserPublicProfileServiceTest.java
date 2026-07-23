@@ -25,4 +25,13 @@ class UserPublicProfileServiceTest {
         assertTrue(UserSettingsResolver.showCharactersOnProfile(
                 UserSettingsResolver.withShowCharacters(null, true)));
     }
+
+    @Test
+    void communityPushDefaultsTrueUntilExplicitlyDisabled() {
+        assertTrue(UserSettingsResolver.communityPushEnabled(null));
+        assertTrue(UserSettingsResolver.communityPushEnabled(
+                UserSettingsResolver.withCommunityPushEnabled(null, true)));
+        assertFalse(UserSettingsResolver.communityPushEnabled(
+                UserSettingsResolver.withCommunityPushEnabled(null, false)));
+    }
 }

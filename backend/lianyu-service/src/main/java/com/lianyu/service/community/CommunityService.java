@@ -29,6 +29,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -40,6 +41,8 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 public class CommunityService {
 
+    private static final String EXCHANGE = "lianyu.exchange";
+    private static final String RK_COMMUNITY_POST_NOTIFY = "community.post.notify";
     private static final String RATE_KEY_PREFIX = "community:post-rate:";
 
     private final CommunityPostMapper communityPostMapper;
@@ -50,6 +53,8 @@ public class CommunityService {
     private final FileStorageService fileStorageService;
     private final StringRedisTemplate redisTemplate;
     private final NotificationService notificationService;
+    private final RabbitTemplate rabbitTemplate;
+    private final CommunityPushService communityPushService;
 
     @Value("${lianyu.community.post-rate-per-minute:6}")
     private int postRatePerMinute;
@@ -76,7 +81,19 @@ public class CommunityService {
         post.setCommentCount(0);
         communityPostMapper.insert(post);
 
+        try {
+            rabbitTemplate.convertAndSend(EXCHANGE, RK_COMMUNITY_POST_NOTIFY,
+                    new CommunityPostNotifyTask(post.getId(), userId));
+        } catch (Exception e) {
+            log.warn("Failed to enqueue community post notify: postId={}, reason={}",
+                    post.getId(), e.getMessage());
+        }
+
         return toPostResponse(post, loadUser(userId), linkedCharacter, false, true);
+    }
+
+    public void catchUpPushOnOnline(Long userId) {
+        communityPushService.catchUpOnOnline(userId);
     }
 
     @Transactional
@@ -102,6 +119,10 @@ public class CommunityService {
             qw.lt(CommunityPost::getId, cursor);
         }
         List<CommunityPost> rows = communityPostMapper.selectList(qw);
+        // First page visit marks posts as seen so online catch-up won't re-toast them.
+        if ((cursor == null || cursor <= 0) && !rows.isEmpty()) {
+            communityPushService.markFeedSeen(viewerId, rows.get(0).getId());
+        }
         return toFeed(viewerId, rows, pageSize, false);
     }
 

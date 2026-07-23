@@ -24,6 +24,7 @@ public class RabbitMqConfig {
     public static final String QUEUE_MESSAGE_ARCHIVE = "message.archive.queue";
     public static final String QUEUE_EVENT_BROADCAST = "event.broadcast.queue";
     public static final String QUEUE_COMMUNITY_MODERATION = "community.moderation.queue";
+    public static final String QUEUE_COMMUNITY_POST_NOTIFY = "community.post.notify.queue";
 
     // Routing keys
     public static final String RK_MEMORY_SUMMARY = "memory.summary";
@@ -31,6 +32,7 @@ public class RabbitMqConfig {
     public static final String RK_MESSAGE_ARCHIVE = "message.archive";
     public static final String RK_EVENT_BROADCAST = "event.broadcast";
     public static final String RK_COMMUNITY_MODERATION = "community.moderation";
+    public static final String RK_COMMUNITY_POST_NOTIFY = "community.post.notify";
 
     @Value("${lianyu.mq.memory.prefetch:20}")
     private int memoryPrefetch;
@@ -75,6 +77,11 @@ public class RabbitMqConfig {
     }
 
     @Bean
+    public Queue communityPostNotifyQueue() {
+        return QueueBuilder.durable(QUEUE_COMMUNITY_POST_NOTIFY).build();
+    }
+
+    @Bean
     public Binding memorySummaryBinding() {
         return BindingBuilder.bind(memorySummaryQueue()).to(lianyuExchange()).with(RK_MEMORY_SUMMARY);
     }
@@ -97,6 +104,11 @@ public class RabbitMqConfig {
     @Bean
     public Binding communityModerationBinding() {
         return BindingBuilder.bind(communityModerationQueue()).to(lianyuExchange()).with(RK_COMMUNITY_MODERATION);
+    }
+
+    @Bean
+    public Binding communityPostNotifyBinding() {
+        return BindingBuilder.bind(communityPostNotifyQueue()).to(lianyuExchange()).with(RK_COMMUNITY_POST_NOTIFY);
     }
 
     @Bean

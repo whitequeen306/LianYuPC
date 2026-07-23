@@ -57,15 +57,25 @@ public class UserPublicProfileService {
         User user = requireUser(userId);
         return UserSettingsResponse.builder()
                 .showCharactersOnProfile(UserSettingsResolver.showCharactersOnProfile(user.getSettingsJson()))
+                .communityPushEnabled(UserSettingsResolver.communityPushEnabled(user.getSettingsJson()))
                 .build();
     }
 
     @Transactional
     public UserSettingsResponse updateMySettings(Long userId, UpdateUserSettingsRequest request) {
         User user = requireUser(userId);
+        boolean dirty = false;
         if (request.getShowCharactersOnProfile() != null) {
             user.setSettingsJson(UserSettingsResolver.withShowCharacters(
                     user.getSettingsJson(), request.getShowCharactersOnProfile()));
+            dirty = true;
+        }
+        if (request.getCommunityPushEnabled() != null) {
+            user.setSettingsJson(UserSettingsResolver.withCommunityPushEnabled(
+                    user.getSettingsJson(), request.getCommunityPushEnabled()));
+            dirty = true;
+        }
+        if (dirty) {
             userMapper.updateById(user);
         }
         return getMySettings(userId);

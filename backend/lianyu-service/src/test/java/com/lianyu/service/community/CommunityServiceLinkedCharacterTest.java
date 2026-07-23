@@ -30,6 +30,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -46,6 +47,8 @@ class CommunityServiceLinkedCharacterTest {
     @Mock private StringRedisTemplate redisTemplate;
     @Mock private ValueOperations<String, String> valueOperations;
     @Mock private NotificationService notificationService;
+    @Mock private RabbitTemplate rabbitTemplate;
+    @Mock private CommunityPushService communityPushService;
 
     private CommunityService service;
 
@@ -59,7 +62,9 @@ class CommunityServiceLinkedCharacterTest {
                 userMapper,
                 fileStorageService,
                 redisTemplate,
-                notificationService
+                notificationService,
+                rabbitTemplate,
+                communityPushService
         );
         ReflectionTestUtils.setField(service, "postRatePerMinute", 6);
     }

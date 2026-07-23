@@ -43,7 +43,7 @@ export function buildNotificationHash(notification) {
     return `#/app/moments${query}`
   }
 
-  if (type === 'COMMUNITY_LIKE' || type === 'COMMUNITY_COMMENT') {
+  if (type === 'COMMUNITY_LIKE' || type === 'COMMUNITY_COMMENT' || type === 'COMMUNITY_POST_NEW') {
     return '#/app/community'
   }
 
@@ -75,10 +75,11 @@ export async function navigateToNotification(notification) {
     type === 'MOMENT_COMMENT' ||
     type === 'COMMUNITY_LIKE' ||
     type === 'COMMUNITY_COMMENT' ||
+    type === 'COMMUNITY_POST_NEW' ||
     type.startsWith('DIARY')
   if (isFeedNotification && notification.id != null) {
     await notificationsStore.markNotificationsByIds([notification.id])
-  } else if (conversationId) {
+  } else if (conversationId && type !== 'COMMUNITY_POST_NEW') {
     await notificationsStore.markConversationRead(conversationId)
   }
 
@@ -90,7 +91,7 @@ export async function navigateToNotification(notification) {
     return
   }
 
-  if (type === 'COMMUNITY_LIKE' || type === 'COMMUNITY_COMMENT') {
+  if (type === 'COMMUNITY_LIKE' || type === 'COMMUNITY_COMMENT' || type === 'COMMUNITY_POST_NEW') {
     await router.push('/app/community')
     return
   }

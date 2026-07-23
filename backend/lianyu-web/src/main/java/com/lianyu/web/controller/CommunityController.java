@@ -31,6 +31,14 @@ public class CommunityController {
         return Result.ok(communityService.listFeed(userId, cursor, limit));
     }
 
+    @Operation(summary = "上线补推：最新一条未看过的社区动态（需开启社区推送）")
+    @PostMapping("/push-catchup")
+    public Result<Void> pushCatchup() {
+        long userId = StpUtil.getLoginIdAsLong();
+        communityService.catchUpPushOnOnline(userId);
+        return Result.ok();
+    }
+
     @Operation(summary = "发表社区动态")
     @PostMapping("/posts")
     public Result<CommunityPostResponse> createPost(@Valid @RequestBody CreateCommunityPostRequest request) {

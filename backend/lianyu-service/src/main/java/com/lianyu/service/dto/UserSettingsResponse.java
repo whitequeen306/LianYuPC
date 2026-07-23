@@ -7,4 +7,6 @@ import lombok.Data;
 @Builder
 public class UserSettingsResponse {
     private boolean showCharactersOnProfile;
+    /** Whether to receive community post toasts; default true when unset. */
+    private boolean communityPushEnabled;
 }

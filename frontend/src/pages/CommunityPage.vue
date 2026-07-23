@@ -4,6 +4,17 @@
       <span class="companion-eyebrow">Community</span>
       <h1 class="companion-title">{{ t('community.title') }}</h1>
       <p class="companion-lead">{{ t('community.desc') }}</p>
+      <div class="community-push-row">
+        <div class="community-push-row__text">
+          <span class="community-push-row__title">社区动态推送</span>
+          <span class="community-push-row__hint">开启后，其它用户发动态时会弹消息提醒（默认开启）</span>
+        </div>
+        <el-switch
+          v-model="communityPushEnabled"
+          :loading="pushSettingsSaving"
+          @change="saveCommunityPushSettings"
+        />
+      </div>
     </header>
 
     <section v-tilt class="feed-compose-card glass stagger-item">
@@ -117,6 +128,7 @@ import {
   resolveCharacterAvatarSrc
 } from '@/utils/characterAvatar'
 import { useCharactersStore } from '@/stores/characters'
+import { getMyUserSettings, updateMyUserSettings } from '@/api/users'
 
 const { t } = useI18n()
 const charactersStore = useCharactersStore()
@@ -135,6 +147,8 @@ const openCommentsId = ref(null)
 const fileInput = ref(null)
 const selectedCharacterAvatarTier = ref('thumb')
 const selectedCharacterAvatarBroken = ref(false)
+const communityPushEnabled = ref(true)
+const pushSettingsSaving = ref(false)
 
 const characterOptions = computed(() => charactersStore.list || [])
 const selectedCharacter = computed(() =>
@@ -151,10 +165,33 @@ const selectedCharacterAvatarSrc = computed(() => {
 const canPublish = computed(() => draft.value.trim() || pendingImages.value.length)
 
 onMounted(async () => {
-  await charactersStore.fetchList()
+  await Promise.all([charactersStore.fetchList(), loadCommunityPushSettings()])
   await applyShareDraft()
   reload()
 })
+
+async function loadCommunityPushSettings() {
+  try {
+    const data = await getMyUserSettings()
+    communityPushEnabled.value = data?.communityPushEnabled !== false
+  } catch {
+    communityPushEnabled.value = true
+  }
+}
+
+async function saveCommunityPushSettings(value) {
+  pushSettingsSaving.value = true
+  try {
+    const data = await updateMyUserSettings({ communityPushEnabled: !!value })
+    communityPushEnabled.value = data?.communityPushEnabled !== false
+    ElMessage.success(communityPushEnabled.value ? '已开启社区动态推送' : '已关闭社区动态推送')
+  } catch (e) {
+    communityPushEnabled.value = !value
+    ElMessage.error(e?.message || '设置保存失败')
+  } finally {
+    pushSettingsSaving.value = false
+  }
+}
 
 watch(linkedCharacterId, () => {
   selectedCharacterAvatarTier.value = 'thumb'
@@ -313,6 +350,36 @@ async function onDelete(post) {
   display: flex;
   flex-direction: column;
   gap: $space-5;
+}
+
+.community-push-row {
+  margin-top: $space-4;
+  padding: $space-3 $space-4;
+  border-radius: $radius-lg;
+  background: color-mix(in srgb, var(--ly-accent) 8%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $space-4;
+}
+
+.community-push-row__text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: $space-1;
+}
+
+.community-push-row__title {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: var(--ly-text-primary);
+}
+
+.community-push-row__hint {
+  font-size: $font-size-xs;
+  color: var(--ly-text-secondary);
+  line-height: 1.4;
 }
 
 .feed-compose-card {

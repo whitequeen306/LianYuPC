@@ -106,6 +106,16 @@ public class NotificationService {
     }
 
     /**
+     * Other users' community posts. {@code postId} is stored in conversationId for deep-link routing.
+     * Frontend shows the same top toast as character chat messages.
+     */
+    public NotificationResponse notifyCommunityPostNew(Long userId, Long postId, String actorName, String preview) {
+        String speaker = (actorName == null || actorName.isBlank()) ? "有人" : actorName;
+        return createAndPushNotification(userId, postId, null,
+                speaker + " 发布了社区动态", preview, "COMMUNITY_POST_NEW");
+    }
+
+    /**
      * Community like. {@code postId} is stored in conversationId for deep-link routing.
      */
     public NotificationResponse notifyCommunityLike(Long userId, Long postId, String actorName, String preview) {

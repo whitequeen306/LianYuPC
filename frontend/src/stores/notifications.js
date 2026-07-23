@@ -8,17 +8,24 @@ import {
   markNotificationsRead,
 } from '@/api/notification'
 import { buildWsUrl, isElectronRuntime } from '@/utils/runtime'
-import { isViewingConversation, requestActiveChatRefresh } from '@/composables/useActiveChatContext'
+import { isViewingCommunityPage, isViewingConversation, requestActiveChatRefresh } from '@/composables/useActiveChatContext'
 import { pushChatMessageToast } from '@/composables/useInAppMessageToast'
 import { getElectronAPI } from '@/utils/electron'
 import { navigateToNotification } from '@/composables/useNotificationNavigation'
 import { BELL_UNREAD_TYPES, countUnreadByTypes } from '@/constants/notificationTypes'
+import { catchUpCommunityPush } from '@/api/community'
 
 /** 动态 / 日记仍用 Element 站内通知 */
 const FEED_POPUP_TYPES = new Set(['MOMENT_NEW', 'MOMENT_COMMENT', 'DIARY_NEW'])
 
-/** 角色消息：微信/QQ 式顶栏条（当前会话不弹） */
-const CHAT_TOAST_TYPES = new Set(['PROACTIVE_MESSAGE', 'MESSAGE'])
+/** 角色消息 + 社区动态：微信/QQ 式顶栏条 */
+const CHAT_TOAST_TYPES = new Set(['PROACTIVE_MESSAGE', 'MESSAGE', 'COMMUNITY_POST_NEW'])
+
+const COMMUNITY_NOTIFY_TYPES = new Set([
+  'COMMUNITY_POST_NEW',
+  'COMMUNITY_LIKE',
+  'COMMUNITY_COMMENT',
+])
 
 function shouldShowFeedPopup(type) {
   return FEED_POPUP_TYPES.has(type || '')
@@ -239,6 +246,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
           }
         })
         resubscribeGroupChat()
+        void runCommunityPushCatchup()
       },
       onDisconnect: () => {
         wsStatus.value = 'disconnected'
@@ -254,13 +262,28 @@ export const useNotificationsStore = defineStore('notifications', () => {
     stompClient.activate()
   }
 
+  async function runCommunityPushCatchup() {
+    try {
+      await catchUpCommunityPush()
+    } catch (e) {
+      console.warn('[notifications] community push catch-up', e)
+    }
+  }
+
   function onIncomingNotification(data) {
     if (!data) return
     const convId = data.conversationId != null ? Number(data.conversationId) : null
     const type = data.type || ''
 
-    // 正在看该会话（含广场刚加入后的破冰消息）→ 不弹窗，只静默刷新
-    if (convId != null && isViewingConversation(convId)) {
+    // 社区通知：postId 复用 conversationId 字段，不能走单聊会话匹配
+    if (COMMUNITY_NOTIFY_TYPES.has(type)) {
+      if (type === 'COMMUNITY_POST_NEW' && isViewingCommunityPage()) {
+        latest.value = [{ ...data, read: true }, ...latest.value].slice(0, 50)
+        if (data.id != null) void markNotificationsByIds([data.id])
+        return
+      }
+    } else if (convId != null && isViewingConversation(convId)) {
+      // 正在看该会话（含广场刚加入后的破冰消息）→ 不弹窗，只静默刷新
       latest.value = [{ ...data, read: true }, ...latest.value].slice(0, 50)
       void markConversationRead(convId)
       requestActiveChatRefresh(convId)

@@ -47,3 +47,15 @@ export function isViewingConversation(conversationId) {
 
   return false
 }
+
+/** True when the user is already on the community feed page. */
+export function isViewingCommunityPage() {
+  try {
+    const path = String(router.currentRoute.value?.path || '')
+    if (path.includes('/community')) return true
+  } catch {
+    // ignore
+  }
+  const hash = typeof window !== 'undefined' ? String(window.location.hash || '') : ''
+  return /#\/(?:app\/)?community/.test(hash)
+}
