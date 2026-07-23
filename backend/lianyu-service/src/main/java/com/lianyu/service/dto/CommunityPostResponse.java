@@ -15,6 +15,9 @@ public class CommunityPostResponse {
     private String avatarUrl;
     private String content;
     private List<String> imageUrls;
+    private Long linkedCharacterId;
+    private String linkedCharacterName;
+    private String linkedCharacterAvatarUrl;
     private String status;
     private String rejectReason;
     private int likeCount;

@@ -24,6 +24,18 @@
       </el-button>
     </header>
 
+    <div v-if="post.linkedCharacterId && post.linkedCharacterName" class="community-post-card__linked">
+      <span class="community-post-card__linked-avatar">
+        <img
+          v-if="post.linkedCharacterAvatarUrl"
+          :src="resolveMediaUrl(post.linkedCharacterAvatarUrl)"
+          alt=""
+        />
+        <el-icon v-else :size="14"><User /></el-icon>
+      </span>
+      <span class="community-post-card__linked-name">{{ post.linkedCharacterName }}</span>
+    </div>
+
     <p v-if="post.content" class="community-post-card__body" v-html="sanitizeHtml(post.content)" />
 
     <div
@@ -276,6 +288,41 @@ function goUser(userId) {
   background: color-mix(in srgb, var(--ly-accent) 12%, transparent);
   color: var(--ly-accent);
   font-weight: $font-weight-medium;
+}
+
+.community-post-card__linked {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-2;
+  align-self: flex-start;
+  padding: $space-1 $space-3 $space-1 $space-1;
+  border-radius: $radius-full;
+  background: color-mix(in srgb, var(--ly-accent) 10%, transparent);
+  color: var(--ly-accent);
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+}
+
+.community-post-card__linked-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: $radius-full;
+  overflow: hidden;
+  background: var(--ly-bg-elevated);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.community-post-card__linked-name {
+  line-height: 1.2;
+  padding-right: $space-1;
 }
 
 .community-post-card__body {

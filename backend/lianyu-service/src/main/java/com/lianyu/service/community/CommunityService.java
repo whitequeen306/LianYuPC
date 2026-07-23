@@ -7,10 +7,12 @@ import com.lianyu.common.exception.BusinessException;
 import com.lianyu.dao.entity.CommunityComment;
 import com.lianyu.dao.entity.CommunityLike;
 import com.lianyu.dao.entity.CommunityPost;
+import com.lianyu.dao.entity.Character;
 import com.lianyu.dao.entity.User;
 import com.lianyu.dao.mapper.CommunityCommentMapper;
 import com.lianyu.dao.mapper.CommunityLikeMapper;
 import com.lianyu.dao.mapper.CommunityPostMapper;
+import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.UserMapper;
 import com.lianyu.service.dto.*;
 import com.lianyu.service.notification.NotificationService;
@@ -45,6 +47,7 @@ public class CommunityService {
     private final CommunityPostMapper communityPostMapper;
     private final CommunityCommentMapper communityCommentMapper;
     private final CommunityLikeMapper communityLikeMapper;
+    private final CharacterMapper characterMapper;
     private final UserMapper userMapper;
     private final FileStorageService fileStorageService;
     private final RabbitTemplate rabbitTemplate;
@@ -64,9 +67,11 @@ public class CommunityService {
         String content = CommunityContentRules.sanitizePostContent(request.getContent());
         List<String> images = normalizeImageUrls(request.getImageUrls());
         CommunityContentRules.assertPostAllowed(content, images);
+        Character linkedCharacter = resolveLinkedCharacter(userId, request.getLinkedCharacterId());
 
         CommunityPost post = new CommunityPost();
         post.setAuthorUserId(userId);
+        post.setLinkedCharacterId(linkedCharacter != null ? linkedCharacter.getId() : null);
         post.setContent(content.isBlank() ? "" : content);
         post.setImageUrls(images.isEmpty() ? null : images);
         post.setStatus(CommunityModerationService.STATUS_PENDING);
@@ -77,7 +82,7 @@ public class CommunityService {
         rabbitTemplate.convertAndSend(EXCHANGE, RK_COMMUNITY_MODERATION,
                 new CommunityModerationTask(post.getId(), userId));
 
-        return toPostResponse(post, loadUser(userId), false, true);
+        return toPostResponse(post, loadUser(userId), linkedCharacter, false, true);
     }
 
     @Transactional
@@ -107,6 +112,11 @@ public class CommunityService {
     }
 
     public CommunityFeedResponse listUserPosts(Long viewerId, Long authorUserId, Long cursor, int limit) {
+        return listUserPosts(viewerId, authorUserId, cursor, limit, null);
+    }
+
+    public CommunityFeedResponse listUserPosts(
+            Long viewerId, Long authorUserId, Long cursor, int limit, Long characterId) {
         if (userMapper.selectById(authorUserId) == null) {
             throw new BusinessException(ErrorCode.USER_NOT_FOUND);
         }
@@ -116,6 +126,10 @@ public class CommunityService {
                 .eq(CommunityPost::getAuthorUserId, authorUserId)
                 .orderByDesc(CommunityPost::getId)
                 .last("LIMIT " + (pageSize + 1));
+        if (characterId != null) {
+            assertCharacterOwnedBy(authorUserId, characterId);
+            qw.eq(CommunityPost::getLinkedCharacterId, characterId);
+        }
         if (isSelf) {
             qw.in(CommunityPost::getStatus,
                     CommunityModerationService.STATUS_PUBLISHED,
@@ -222,10 +236,16 @@ public class CommunityService {
             rows = new ArrayList<>(rows.subList(0, pageSize));
         }
         Map<Long, User> authors = loadUsers(rows.stream().map(CommunityPost::getAuthorUserId).toList());
+        Map<Long, Character> linkedCharacters = loadCharacters(
+                rows.stream().map(CommunityPost::getLinkedCharacterId).toList());
         Set<Long> likedIds = loadLikedPostIds(viewerId, rows.stream().map(CommunityPost::getId).toList());
         List<CommunityPostResponse> items = rows.stream()
-                .map(p -> toPostResponse(p, authors.get(p.getAuthorUserId()),
-                        likedIds.contains(p.getId()), includeStatus))
+                .map(p -> toPostResponse(
+                        p,
+                        authors.get(p.getAuthorUserId()),
+                        linkedCharacters.get(p.getLinkedCharacterId()),
+                        likedIds.contains(p.getId()),
+                        includeStatus))
                 .toList();
         Long next = items.isEmpty() ? null : items.get(items.size() - 1).getId();
         return CommunityFeedResponse.builder()
@@ -235,13 +255,19 @@ public class CommunityService {
                 .build();
     }
 
-    private CommunityPostResponse toPostResponse(CommunityPost post, User author, boolean likedByMe, boolean includeStatus) {
+    private CommunityPostResponse toPostResponse(
+            CommunityPost post, User author, Character linkedCharacter, boolean likedByMe, boolean includeStatus) {
         List<String> images = post.getImageUrls() == null ? List.of() : post.getImageUrls().stream()
                 .map(fileStorageService::resolvePublicUrl)
                 .filter(Objects::nonNull)
                 .toList();
         String status = includeStatus ? post.getStatus() : null;
         String reject = includeStatus ? post.getRejectReason() : null;
+        Long linkedId = post.getLinkedCharacterId();
+        String linkedName = linkedCharacter != null ? linkedCharacter.getName() : null;
+        String linkedAvatar = linkedCharacter != null
+                ? fileStorageService.resolvePublicUrl(linkedCharacter.getAvatarUrl())
+                : null;
         return CommunityPostResponse.builder()
                 .id(post.getId())
                 .authorUserId(post.getAuthorUserId())
@@ -249,6 +275,9 @@ public class CommunityService {
                 .avatarUrl(author != null ? fileStorageService.resolvePublicUrl(author.getAvatarUrl()) : null)
                 .content(post.getContent())
                 .imageUrls(images)
+                .linkedCharacterId(linkedId)
+                .linkedCharacterName(linkedName)
+                .linkedCharacterAvatarUrl(linkedAvatar)
                 .status(status)
                 .rejectReason(reject)
                 .likeCount(post.getLikeCount() == null ? 0 : Math.max(0, post.getLikeCount()))
@@ -332,6 +361,37 @@ public class CommunityService {
         communityPostMapper.update(null, new LambdaUpdateWrapper<CommunityPost>()
                 .eq(CommunityPost::getId, postId)
                 .setSql(sql));
+    }
+
+    private Character resolveLinkedCharacter(Long userId, Long characterId) {
+        if (characterId == null) {
+            return null;
+        }
+        return assertCharacterOwnedBy(userId, characterId);
+    }
+
+    private Character assertCharacterOwnedBy(Long ownerUserId, Long characterId) {
+        Character entity = characterMapper.selectById(characterId);
+        if (entity == null || !Objects.equals(entity.getOwnerUserId(), ownerUserId)) {
+            throw new BusinessException(ErrorCode.CHARACTER_NOT_FOUND);
+        }
+        return entity;
+    }
+
+    private Map<Long, Character> loadCharacters(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> distinct = ids.stream().filter(Objects::nonNull).distinct().toList();
+        if (distinct.isEmpty()) {
+            return Map.of();
+        }
+        List<Character> characters = characterMapper.selectBatchIds(distinct);
+        Map<Long, Character> map = new HashMap<>();
+        for (Character c : characters) {
+            map.put(c.getId(), c);
+        }
+        return map;
     }
 
     private User loadUser(Long userId) {

@@ -4,7 +4,15 @@
     <p v-if="hidden" class="character-showcase__hidden">该用户隐藏了他的宝宝们哦~</p>
     <div v-else-if="!characters.length" class="character-showcase__empty">还没有角色</div>
     <div v-else class="character-showcase__grid">
-      <article v-for="c in characters" :key="c.characterId" class="character-showcase__card glass">
+      <button
+        v-for="c in characters"
+        :key="c.characterId"
+        type="button"
+        class="character-showcase__card glass"
+        :class="{ 'is-selected': selectable && selectedId === c.characterId }"
+        :disabled="!selectable"
+        @click="onSelect(c.characterId)"
+      >
         <div class="character-showcase__avatar">
           <img v-if="c.avatarUrl" :src="resolveMediaUrl(c.avatarUrl)" :alt="c.name" />
           <el-icon v-else :size="22"><User /></el-icon>
@@ -13,7 +21,7 @@
           <span class="character-showcase__name">{{ c.name }}</span>
           <span class="character-showcase__days">已陪伴 {{ c.companionshipDays }} 天</span>
         </div>
-      </article>
+      </button>
     </div>
   </section>
 </template>
@@ -22,11 +30,20 @@
 import { User } from '@element-plus/icons-vue'
 import { resolveMediaUrl } from '@/utils/media'
 
-defineProps({
+const props = defineProps({
   title: { type: String, default: '角色橱窗' },
   characters: { type: Array, default: () => [] },
-  hidden: { type: Boolean, default: false }
+  hidden: { type: Boolean, default: false },
+  selectable: { type: Boolean, default: false },
+  selectedId: { type: [Number, String], default: null }
 })
+
+const emit = defineEmits(['select'])
+
+function onSelect(characterId) {
+  if (!props.selectable || props.hidden) return
+  emit('select', props.selectedId === characterId ? null : characterId)
+}
 </script>
 
 <style lang="scss" scoped>
@@ -66,20 +83,34 @@ defineProps({
   gap: $space-4;
   padding: $space-4;
   border-radius: $radius-lg;
+  border: 1px solid transparent;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: default;
   transition:
     transform 0.24s cubic-bezier(0.23, 1, 0.32, 1),
     border-color 0.24s cubic-bezier(0.23, 1, 0.32, 1);
 
-  &:hover {
+  &:not(:disabled) {
+    cursor: pointer;
+  }
+
+  &:not(:disabled):hover {
     transform: translateY(-2px);
     border-color: color-mix(in srgb, var(--ly-accent) 22%, transparent);
+  }
+
+  &.is-selected {
+    border-color: color-mix(in srgb, var(--ly-accent) 45%, transparent);
+    box-shadow: $shadow-glow-pink;
   }
 }
 
 .character-showcase__avatar {
   width: 52px;
   height: 52px;
-  border-radius: 9999px;
+  border-radius: $radius-full;
   overflow: hidden;
   background: var(--ly-bg-elevated);
   display: grid;
@@ -102,15 +133,14 @@ defineProps({
 }
 
 .character-showcase__name {
-  font-weight: $font-weight-medium;
+  font-weight: $font-weight-semibold;
   color: var(--ly-text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.2;
 }
 
 .character-showcase__days {
-  font-size: $font-size-sm;
+  font-size: $font-size-xs;
   color: var(--ly-text-muted);
+  line-height: 1.2;
 }
 </style>

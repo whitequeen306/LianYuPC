@@ -12,4 +12,6 @@ public class CreateCommunityPostRequest {
 
     @Size(max = 9, message = "最多上传 9 张图片")
     private List<@Size(max = 512) String> imageUrls;
+
+    private Long linkedCharacterId;
 }

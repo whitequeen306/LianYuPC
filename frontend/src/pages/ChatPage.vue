@@ -16,18 +16,28 @@
       </div>
 
       <header v-if="activeCharacter && !isCompact" class="gal-header">
-        <button type="button" class="gal-header__back" @click="goBack">
+        <button type="button" class="gal-header__back" @click="selectionMode ? exitShareMode() : goBack()">
           <el-icon :size="18"><ArrowLeft /></el-icon>
         </button>
         <div class="gal-header__meta">
-          <h2 class="gal-header__name" :class="{ 'is-typing': showHeaderTyping }">{{ headerTitle }}</h2>
+          <h2 class="gal-header__name" :class="{ 'is-typing': showHeaderTyping && !selectionMode }">
+            {{ selectionMode ? `已选 ${selectedMessageIds.size} 条` : headerTitle }}
+          </h2>
           <EmotionBadge
-            v-if="emotionState"
+            v-if="emotionState && !selectionMode"
             :current-emotion="emotionState.currentEmotion"
             :emotion-intensity="emotionState.emotionIntensity"
             :status-text="emotionState.statusText"
           />
         </div>
+        <button
+          v-if="!selectionMode"
+          type="button"
+          class="gal-header__share"
+          @click="enterShareMode"
+        >
+          分享
+        </button>
         <div class="gal-header__drag-region" aria-hidden="true" />
       </header>
 
@@ -56,9 +66,20 @@
             class="gal-log__item"
             :class="[
               item.role === 'user' ? 'gal-log__item--user' : 'gal-log__item--hero',
-              { 'is-group-start': item._firstOfGroup }
+              { 'is-group-start': item._firstOfGroup, 'is-share-selectable': shareSelectable(item), 'is-share-selected': isMessageSelected(item) }
             ]"
+            @click="selectionMode && shareSelectable(item) ? toggleShareSelection(item) : undefined"
           >
+          <button
+            v-if="selectionMode && shareSelectable(item)"
+            type="button"
+            class="gal-share-check"
+            :class="{ 'is-checked': isMessageSelected(item) }"
+            :aria-pressed="isMessageSelected(item)"
+            @click.stop="toggleShareSelection(item)"
+          >
+            <span class="gal-share-check__mark" />
+          </button>
           <template v-if="item.role !== 'user'">
             <div
               v-if="item._firstOfGroup"
@@ -135,7 +156,21 @@
         <div ref="scrollAnchor" />
       </div>
 
-      <div class="gal-input glass-strong">
+      <div v-if="selectionMode" class="gal-share-bar glass-strong">
+        <span class="gal-share-bar__hint">将公开到社区，请确认所选内容</span>
+        <div class="gal-share-bar__actions">
+          <el-button @click="exitShareMode">取消</el-button>
+          <el-button
+            type="primary"
+            :disabled="selectedMessageIds.size === 0"
+            @click="confirmShareToCommunity"
+          >
+            分享到社区
+          </el-button>
+        </div>
+      </div>
+
+      <div v-else class="gal-input glass-strong">
         <div v-if="pendingImageUrl" class="image-preview-row">
           <div class="image-preview">
             <img :src="resolveMediaUrl(pendingImageUrl)" alt="" />
@@ -266,6 +301,12 @@ import { formatSmartTime } from '@/utils/feedTime'
 import AssistantMessageContent from '@/components/AssistantMessageContent.vue'
 import VoiceMessageBubble from '@/components/VoiceMessageBubble.vue'
 import { getPetVoiceRate, getPetVoiceVolume } from '@/constants/petCatalog'
+import {
+  formatChatMessagesForCommunityShare,
+  isShareSelectableMessage,
+  saveCommunityShareDraft,
+  COMMUNITY_SHARE_MAX_MESSAGES
+} from '@/utils/communityShareDraft'
 import { stripInnerThoughts, resolveShowInnerThoughts } from '@/utils/innerThoughtFilter'
 
 function petIdFromAudioUrl(audioUrl) {
@@ -291,6 +332,65 @@ const messages = ref([])
 const imageViewerVisible = ref(false)
 const imageViewerUrlList = ref([])
 const imageViewerInitialIndex = ref(0)
+const imageViewerVisible = ref(false)
+const imageViewerUrlList = ref([])
+const imageViewerInitialIndex = ref(0)
+const selectionMode = ref(false)
+const selectedMessageIds = ref(new Set())
+
+function shareSelectable(item) {
+  return isShareSelectableMessage(item)
+}
+
+function isMessageSelected(item) {
+  return selectedMessageIds.value.has(Number(item.id))
+}
+
+function enterShareMode() {
+  selectionMode.value = true
+  selectedMessageIds.value = new Set()
+}
+
+function exitShareMode() {
+  selectionMode.value = false
+  selectedMessageIds.value = new Set()
+}
+
+function toggleShareSelection(item) {
+  if (!shareSelectable(item)) return
+  const next = new Set(selectedMessageIds.value)
+  const id = Number(item.id)
+  if (next.has(id)) {
+    next.delete(id)
+  } else {
+    if (next.size >= COMMUNITY_SHARE_MAX_MESSAGES) {
+      ElMessage.warning(`最多选择 ${COMMUNITY_SHARE_MAX_MESSAGES} 条消息`)
+      return
+    }
+    next.add(id)
+  }
+  selectedMessageIds.value = next
+}
+
+function confirmShareToCommunity() {
+  if (!selectedMessageIds.value.size) return
+  const selected = messages.value.filter((msg) => selectedMessageIds.value.has(Number(msg.id)))
+  const content = formatChatMessagesForCommunityShare(selected, {
+    characterName: activeCharacter.value?.name || '角色',
+    userLabel: userStore.nickname || '我'
+  })
+  if (!content.trim()) {
+    ElMessage.warning('所选消息没有可分享的文字内容')
+    return
+  }
+  saveCommunityShareDraft({
+    content,
+    linkedCharacterId: activeCharacter.value?.id || null
+  })
+  exitShareMode()
+  router.push('/app/community')
+}
+
 function openImagePreview(imageUrl) {
   if (!imageUrl) return
   const resolved = resolveMediaUrl(imageUrl)
@@ -574,6 +674,7 @@ onMounted(async () => {
 })
 
 watch(() => route.params.id, async (id) => {
+  exitShareMode()
   if (id) {
     setActiveChatConversationId(Number(id))
     skipBounceOnce = true
@@ -1313,6 +1414,33 @@ function formatTime(ts) {
   }
 }
 
+.gal-header__share {
+  flex-shrink: 0;
+  padding: $space-2 $space-3;
+  border-radius: $radius-full;
+  border: 1px solid var(--ly-chat-header-control-border);
+  background: var(--ly-chat-header-control-bg);
+  color: var(--ly-accent);
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  cursor: pointer;
+  transition:
+    color 0.22s cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 0.22s cubic-bezier(0.23, 1, 0.32, 1),
+    background 0.22s cubic-bezier(0.23, 1, 0.32, 1);
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--ly-accent) 35%, transparent);
+    background: color-mix(in srgb, var(--ly-accent) 10%, transparent);
+  }
+}
+
+.gal-header__drag-region {
+  flex: 1;
+  min-width: 24px;
+  align-self: stretch;
+}
+
 .blocked-banner {
   position: relative;
   z-index: 3;
@@ -1401,10 +1529,76 @@ function formatTime(ts) {
   gap: $space-3;
   width: 100%;
 
+  &.is-share-selectable {
+    cursor: pointer;
+  }
+
+  &.is-share-selected {
+    border-radius: $radius-md;
+    background: color-mix(in srgb, var(--ly-accent) 8%, transparent);
+  }
+
   /* 换发言人/跨时间分段时，组首拉开间距；组内连发收紧 */
   &.is-group-start:not(:first-child) {
     margin-top: $space-4;
   }
+}
+
+.gal-share-check {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  margin-bottom: 6px;
+  border-radius: $radius-full;
+  border: 1px solid color-mix(in srgb, var(--ly-accent) 35%, transparent);
+  background: var(--ly-bg-elevated);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+  transition:
+    border-color 0.22s cubic-bezier(0.23, 1, 0.32, 1),
+    background 0.22s cubic-bezier(0.23, 1, 0.32, 1);
+
+  &.is-checked {
+    border-color: var(--ly-accent);
+    background: color-mix(in srgb, var(--ly-accent) 18%, transparent);
+  }
+}
+
+.gal-share-check__mark {
+  width: 10px;
+  height: 10px;
+  border-radius: $radius-full;
+  background: transparent;
+  transition: background 0.22s cubic-bezier(0.23, 1, 0.32, 1);
+
+  .is-checked & {
+    background: var(--ly-accent);
+  }
+}
+
+.gal-share-bar {
+  position: relative;
+  z-index: 4;
+  flex-shrink: 0;
+  margin: 0 $space-4 $space-3;
+  padding: $space-4;
+  border-radius: $radius-lg;
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+}
+
+.gal-share-bar__hint {
+  font-size: $font-size-sm;
+  color: var(--ly-text-secondary);
+}
+
+.gal-share-bar__actions {
+  display: flex;
+  gap: $space-2;
+  justify-content: flex-end;
 }
 
 .gal-log__item--user {

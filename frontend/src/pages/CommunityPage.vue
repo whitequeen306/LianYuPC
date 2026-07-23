@@ -24,6 +24,29 @@
           <button type="button" class="compose-images__remove" @click="pendingImages.splice(idx, 1)">×</button>
         </div>
       </div>
+      <div class="compose-character">
+        <el-select
+          v-model="linkedCharacterId"
+          clearable
+          filterable
+          placeholder="关联角色（可选）"
+          class="compose-character__select"
+        >
+          <el-option
+            v-for="c in characterOptions"
+            :key="c.id"
+            :label="c.name"
+            :value="c.id"
+          />
+        </el-select>
+        <div v-if="selectedCharacter" class="compose-character__chip">
+          <span class="compose-character__chip-avatar">
+            <img v-if="selectedCharacter.avatarUrl" :src="resolveMediaUrl(selectedCharacter.avatarUrl)" alt="" />
+            <el-icon v-else :size="14"><User /></el-icon>
+          </span>
+          <span>{{ selectedCharacter.name }}</span>
+        </div>
+      </div>
       <div class="compose-actions">
         <el-button :loading="uploading" @click="triggerPick">上传图片</el-button>
         <el-button
@@ -70,6 +93,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { User } from '@element-plus/icons-vue'
 import CommunityPostCard from '@/components/community/CommunityPostCard.vue'
 import {
   createCommunityPost,
@@ -79,8 +103,11 @@ import {
   uploadCommunityImage
 } from '@/api/community'
 import { resolveMediaUrl } from '@/utils/media'
+import { consumeCommunityShareDraft } from '@/utils/communityShareDraft'
+import { useCharactersStore } from '@/stores/characters'
 
 const { t } = useI18n()
+const charactersStore = useCharactersStore()
 
 const posts = ref([])
 const cursor = ref(null)
@@ -89,14 +116,35 @@ const loading = ref(false)
 const loadingMore = ref(false)
 const draft = ref('')
 const pendingImages = ref([])
+const linkedCharacterId = ref(null)
 const uploading = ref(false)
 const sending = ref(false)
 const openCommentsId = ref(null)
 const fileInput = ref(null)
 
+const characterOptions = computed(() => charactersStore.list || [])
+const selectedCharacter = computed(() =>
+  characterOptions.value.find((c) => c.id === linkedCharacterId.value) || null
+)
+
 const canPublish = computed(() => draft.value.trim() || pendingImages.value.length)
 
-onMounted(() => reload())
+onMounted(async () => {
+  await charactersStore.fetchList()
+  applyShareDraft()
+  reload()
+})
+
+function applyShareDraft() {
+  const shareDraft = consumeCommunityShareDraft()
+  if (!shareDraft) return
+  if (shareDraft.content) {
+    draft.value = shareDraft.content
+  }
+  if (shareDraft.linkedCharacterId) {
+    linkedCharacterId.value = shareDraft.linkedCharacterId
+  }
+}
 
 async function reload() {
   loading.value = true
@@ -156,10 +204,12 @@ async function publish() {
   try {
     const created = await createCommunityPost({
       content: draft.value.trim(),
-      imageUrls: [...pendingImages.value]
+      imageUrls: [...pendingImages.value],
+      linkedCharacterId: linkedCharacterId.value || undefined
     })
     draft.value = ''
     pendingImages.value = []
+    linkedCharacterId.value = null
     posts.value = [created, ...posts.value]
     ElMessage.success('已提交，审核通过后会出现在广场')
   } catch (e) {
@@ -269,6 +319,44 @@ async function onDelete(post) {
   background: var(--ly-bg-elevated);
   color: var(--ly-text-primary);
   cursor: pointer;
+}
+
+.compose-character {
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+}
+
+.compose-character__select {
+  width: 100%;
+}
+
+.compose-character__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-2;
+  align-self: flex-start;
+  padding: $space-1 $space-3 $space-1 $space-1;
+  border-radius: $radius-full;
+  background: color-mix(in srgb, var(--ly-accent) 10%, transparent);
+  color: var(--ly-accent);
+  font-size: $font-size-sm;
+}
+
+.compose-character__chip-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: $radius-full;
+  overflow: hidden;
+  background: var(--ly-bg-elevated);
+  display: grid;
+  place-items: center;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
 }
 
 .feed-empty {

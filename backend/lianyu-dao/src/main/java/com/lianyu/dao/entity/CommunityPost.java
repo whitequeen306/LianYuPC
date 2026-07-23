@@ -13,6 +13,8 @@ public class CommunityPost {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long authorUserId;
+    /** Optional character owned by author; shown as badge on the post. */
+    private Long linkedCharacterId;
     private String content;
     @TableField(typeHandler = JacksonListTypeHandler.class)
     private List<String> imageUrls;

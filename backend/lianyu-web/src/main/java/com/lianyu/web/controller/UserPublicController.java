@@ -32,9 +32,10 @@ public class UserPublicController {
     public Result<CommunityFeedResponse> communityPosts(
             @PathVariable("id") Long id,
             @RequestParam(value = "cursor", required = false) Long cursor,
-            @RequestParam(value = "limit", defaultValue = "5") int limit
+            @RequestParam(value = "limit", defaultValue = "5") int limit,
+            @RequestParam(value = "characterId", required = false) Long characterId
     ) {
         long viewerId = StpUtil.getLoginIdAsLong();
-        return Result.ok(communityService.listUserPosts(viewerId, id, cursor, limit));
+        return Result.ok(communityService.listUserPosts(viewerId, id, cursor, limit, characterId));
     }
 }

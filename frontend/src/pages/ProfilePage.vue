@@ -89,12 +89,15 @@
       title="我的角色橱窗预览"
       :characters="showcaseCharacters"
       :hidden="!showCharactersOnProfile"
+      :selectable="showCharactersOnProfile"
+      :selected-id="selectedCharacterId"
+      @select="onShowcaseSelect"
     />
 
     <ProfilePostList
       class="stagger-item"
       title="社区动态"
-      desc="你在社区发布的动态（含审核中）"
+      :desc="communityPostsDesc"
       :items="communityPosts"
       :loading="communityLoading"
       :loading-more="communityLoadingMore"
@@ -222,6 +225,7 @@ const communityCursor = ref(null)
 const communityHasMore = ref(false)
 const communityLoading = ref(false)
 const communityLoadingMore = ref(false)
+const selectedCharacterId = ref(null)
 const momentPosts = ref([])
 const momentsCursor = ref(null)
 const momentsHasMore = ref(false)
@@ -237,6 +241,14 @@ const showcaseCharacters = computed(() =>
     companionshipDays: companionshipDays(c.createdAt)
   }))
 )
+
+const communityPostsDesc = computed(() => {
+  if (!selectedCharacterId.value) {
+    return '你在社区发布的动态（含审核中）'
+  }
+  const match = showcaseCharacters.value.find((c) => c.characterId === selectedCharacterId.value)
+  return match ? `筛选：${match.name} 相关动态` : '筛选中的角色相关动态'
+})
 
 function companionshipDays(createdAt) {
   if (!createdAt) return 1
@@ -354,7 +366,11 @@ async function loadCommunityPosts() {
   if (!userStore.userId) return
   communityLoading.value = true
   try {
-    const data = await fetchUserCommunityPosts(userStore.userId, { limit: 5 })
+    const params = { limit: 5 }
+    if (selectedCharacterId.value) {
+      params.characterId = selectedCharacterId.value
+    }
+    const data = await fetchUserCommunityPosts(userStore.userId, params)
     communityPosts.value = data?.items || []
     communityCursor.value = data?.nextCursor || null
     communityHasMore.value = !!data?.hasMore
@@ -369,16 +385,26 @@ async function loadMoreCommunity() {
   if (!communityHasMore.value || communityLoadingMore.value) return
   communityLoadingMore.value = true
   try {
-    const data = await fetchUserCommunityPosts(userStore.userId, {
+    const params = {
       cursor: communityCursor.value,
       limit: 10
-    })
+    }
+    if (selectedCharacterId.value) {
+      params.characterId = selectedCharacterId.value
+    }
+    const data = await fetchUserCommunityPosts(userStore.userId, params)
     communityPosts.value = [...communityPosts.value, ...(data?.items || [])]
     communityCursor.value = data?.nextCursor || null
     communityHasMore.value = !!data?.hasMore
   } finally {
     communityLoadingMore.value = false
   }
+}
+
+function onShowcaseSelect(characterId) {
+  selectedCharacterId.value = characterId
+  communityCursor.value = null
+  loadCommunityPosts()
 }
 
 async function loadMomentPosts() {

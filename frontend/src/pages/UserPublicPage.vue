@@ -22,11 +22,15 @@
       class="stagger-item"
       :characters="profile?.characters || []"
       :hidden="!!profile?.charactersHidden"
+      :selectable="!profile?.charactersHidden"
+      :selected-id="selectedCharacterId"
+      @select="onShowcaseSelect"
     />
 
     <ProfilePostList
       class="stagger-item"
       title="社区动态"
+      :desc="communityPostsDesc"
       :items="posts"
       :loading="loading"
       :loading-more="loadingMore"
@@ -49,7 +53,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { UserFilled } from '@element-plus/icons-vue'
@@ -72,6 +76,13 @@ const hasMore = ref(false)
 const loading = ref(false)
 const loadingMore = ref(false)
 const openCommentsId = ref(null)
+const selectedCharacterId = ref(null)
+
+const communityPostsDesc = computed(() => {
+  if (!selectedCharacterId.value) return ''
+  const match = (profile.value?.characters || []).find((c) => c.characterId === selectedCharacterId.value)
+  return match ? `筛选：${match.name} 相关动态` : '筛选中的角色相关动态'
+})
 
 watch(() => route.params.userId, () => {
   loadAll()
@@ -86,13 +97,11 @@ async function loadAll() {
     await router.replace('/app/profile')
     return
   }
+  selectedCharacterId.value = null
   loading.value = true
   try {
     profile.value = await fetchPublicUserProfile(userId)
-    const data = await fetchUserCommunityPosts(userId, { limit: 5 })
-    posts.value = data?.items || []
-    cursor.value = data?.nextCursor || null
-    hasMore.value = !!data?.hasMore
+    await loadPosts(userId)
   } catch (e) {
     ElMessage.error(e?.message || '加载失败')
   } finally {
@@ -100,18 +109,46 @@ async function loadAll() {
   }
 }
 
+async function loadPosts(userId) {
+  const params = { limit: 5 }
+  if (selectedCharacterId.value) {
+    params.characterId = selectedCharacterId.value
+  }
+  const data = await fetchUserCommunityPosts(userId, params)
+  posts.value = data?.items || []
+  cursor.value = data?.nextCursor || null
+  hasMore.value = !!data?.hasMore
+}
+
 async function loadMore() {
   if (!hasMore.value || loadingMore.value) return
   loadingMore.value = true
   try {
     const userId = Number(route.params.userId)
-    const data = await fetchUserCommunityPosts(userId, { cursor: cursor.value, limit: 10 })
+    const params = { cursor: cursor.value, limit: 10 }
+    if (selectedCharacterId.value) {
+      params.characterId = selectedCharacterId.value
+    }
+    const data = await fetchUserCommunityPosts(userId, params)
     posts.value = [...posts.value, ...(data?.items || [])]
     cursor.value = data?.nextCursor || null
     hasMore.value = !!data?.hasMore
   } finally {
     loadingMore.value = false
   }
+}
+
+function onShowcaseSelect(characterId) {
+  selectedCharacterId.value = characterId
+  cursor.value = null
+  const userId = Number(route.params.userId)
+  if (!userId) return
+  loading.value = true
+  loadPosts(userId)
+    .catch((e) => ElMessage.error(e?.message || '加载失败'))
+    .finally(() => {
+      loading.value = false
+    })
 }
 
 async function onLike(post) {
