@@ -19,6 +19,7 @@ import com.lianyu.service.notification.NotificationService;
 import com.lianyu.service.storage.FileStorageService;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -380,11 +381,11 @@ public class CommunityService {
 
     private Map<Long, Character> loadCharacters(List<Long> ids) {
         if (ids == null || ids.isEmpty()) {
-            return Map.of();
+            return Collections.emptyMap();
         }
         List<Long> distinct = ids.stream().filter(Objects::nonNull).distinct().toList();
         if (distinct.isEmpty()) {
-            return Map.of();
+            return Collections.emptyMap();
         }
         List<Character> characters = characterMapper.selectBatchIds(distinct);
         Map<Long, Character> map = new HashMap<>();
@@ -404,11 +405,11 @@ public class CommunityService {
 
     private Map<Long, User> loadUsers(List<Long> ids) {
         if (ids == null || ids.isEmpty()) {
-            return Map.of();
+            return Collections.emptyMap();
         }
         List<Long> distinct = ids.stream().filter(Objects::nonNull).distinct().toList();
         if (distinct.isEmpty()) {
-            return Map.of();
+            return Collections.emptyMap();
         }
         List<User> users = userMapper.selectBatchIds(distinct);
         Map<Long, User> map = new HashMap<>();

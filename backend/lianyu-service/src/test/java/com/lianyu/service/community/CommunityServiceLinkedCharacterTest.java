@@ -9,8 +9,10 @@ import static org.mockito.Mockito.when;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lianyu.common.exception.BusinessException;
 import com.lianyu.dao.entity.Character;
+import com.lianyu.dao.entity.CommunityLike;
 import com.lianyu.dao.entity.CommunityPost;
 import com.lianyu.dao.entity.User;
+import java.time.LocalDateTime;
 import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.CommunityCommentMapper;
 import com.lianyu.dao.mapper.CommunityLikeMapper;
@@ -118,6 +120,42 @@ class CommunityServiceLinkedCharacterTest {
         assertThat(response.getLinkedCharacterId()).isEqualTo(7L);
         assertThat(response.getLinkedCharacterName()).isEqualTo("艾丽西亚");
         assertThat(response.getLinkedCharacterAvatarUrl()).isEqualTo("/files/avatars/alice.png");
+    }
+
+    @Test
+    void listFeed_mapsPublishedPostWithLikeAndNoLinkedCharacter() {
+        CommunityPost post = new CommunityPost();
+        post.setId(1L);
+        post.setAuthorUserId(60L);
+        post.setLinkedCharacterId(null);
+        post.setContent("hello community");
+        post.setImageUrls(null);
+        post.setStatus(CommunityModerationService.STATUS_PUBLISHED);
+        post.setLikeCount(2);
+        post.setCommentCount(0);
+        post.setCreatedAt(LocalDateTime.now());
+
+        User author = new User();
+        author.setId(60L);
+        author.setNickname("作者");
+        author.setAvatarUrl("avatars/a.png");
+
+        CommunityLike like = new CommunityLike();
+        like.setId(3L);
+        like.setPostId(1L);
+        like.setUserId(145L);
+
+        when(communityPostMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(post));
+        when(userMapper.selectBatchIds(any())).thenReturn(List.of(author));
+        when(communityLikeMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(like));
+        when(fileStorageService.resolvePublicUrl("avatars/a.png")).thenReturn("/files/avatars/a.png");
+
+        CommunityFeedResponse feed = service.listFeed(145L, null, 20);
+
+        assertThat(feed.getItems()).hasSize(1);
+        assertThat(feed.getItems().get(0).getId()).isEqualTo(1L);
+        assertThat(feed.getItems().get(0).isLikedByMe()).isTrue();
+        assertThat(feed.getItems().get(0).getLinkedCharacterId()).isNull();
     }
 
     @Test
