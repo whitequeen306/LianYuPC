@@ -9,13 +9,17 @@
         @click="onClick(item)"
       >
         <div class="chat-toast__avatar" aria-hidden="true">
-          <img
-            v-if="item.avatarUrl && !brokenAvatars[item.id]"
-            :src="item.avatarUrl"
-            alt=""
-            class="chat-toast__avatar-img"
-            @error="brokenAvatars[item.id] = true"
-          >
+          <CharacterAvatarImg
+            v-if="item.characterId || item.avatarUrl"
+            :character-id="item.characterId"
+            :characters="charactersStore.list"
+            :avatar-url="item.avatarUrl || ''"
+            :avatar-thumb-url="item.avatarThumbUrl || ''"
+            :alt="item.characterName"
+            :icon-size="18"
+            img-class="chat-toast__avatar-img"
+            fallback-class="chat-toast__avatar-fallback-icon"
+          />
           <span v-else class="chat-toast__avatar-fallback">{{ avatarInitial(item.characterName) }}</span>
         </div>
         <div class="chat-toast__body">
@@ -31,12 +35,13 @@
 </template>
 
 <script setup>
-import { reactive } from 'vue'
 import { useInAppMessageToast, dismissChatMessageToast } from '@/composables/useInAppMessageToast'
 import { navigateToNotification } from '@/composables/useNotificationNavigation'
+import { useCharactersStore } from '@/stores/characters'
+import CharacterAvatarImg from '@/components/CharacterAvatarImg.vue'
 
 const { toasts } = useInAppMessageToast()
-const brokenAvatars = reactive({})
+const charactersStore = useCharactersStore()
 
 function avatarInitial(name) {
   const t = String(name || '').trim()
@@ -108,13 +113,13 @@ async function onClick(item) {
   display: flex;
   align-items: center;
   justify-content: center;
-}
 
-.chat-toast__avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
+  :deep(.chat-toast__avatar-img) {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
 }
 
 .chat-toast__avatar-fallback {

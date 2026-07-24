@@ -3,7 +3,12 @@
     <header class="quick-chat__head">
       <div class="quick-chat__meta">
         <span class="quick-chat__avatar">
-          <img v-if="characterAvatar" :src="characterAvatar" :alt="characterName" />
+          <CharacterAvatarImg
+            v-if="activeCharacter"
+            :character="activeCharacter"
+            :alt="characterName"
+            :icon-size="18"
+          />
           <span v-else class="quick-chat__avatar-fallback" aria-hidden="true">?</span>
         </span>
         <span class="quick-chat__name">{{ headerLabel }}</span>
@@ -91,8 +96,7 @@ import { useConversationsStore } from '@/stores/conversations'
 import { getConversation, getMessages, sendMessageStream } from '@/api/conversation'
 import { PLATFORM_PROVIDER } from '@/constants/ai'
 import { humanizeError } from '@/utils/errorMessage'
-import { resolveMediaUrl } from '@/utils/media'
-import { resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
+import CharacterAvatarImg from '@/components/CharacterAvatarImg.vue'
 import { getElectronAPI } from '@/utils/electron'
 import { useChatScroll, sleep, MIN_REPLY_DISPLAY_MS } from '@/composables/useChatScroll'
 import { useStreamAbort, isNetworkError } from '@/composables/useStreamAbort'
@@ -138,10 +142,6 @@ const { scrollToBottom, jumpToBottom } = useChatScroll(msgListRef, scrollAnchor)
 const { beginStream, abortStream, isAbortError } = useStreamAbort({ abortOnUnmount: false })
 
 const characterName = computed(() => activeCharacter.value?.name || '聊天')
-const characterAvatar = computed(() => {
-  const url = resolveCharacterAvatarSrc({ character: activeCharacter.value })
-  return url ? resolveMediaUrl(url) : ''
-})
 const showInnerThoughts = computed(() =>
   resolveShowInnerThoughts(activeCharacter.value?.settings || {}),
 )

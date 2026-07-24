@@ -288,7 +288,8 @@ public class CommunityService {
         String reject = includeStatus ? post.getRejectReason() : null;
         Long linkedId = post.getLinkedCharacterId();
         String linkedName = linkedCharacter != null ? linkedCharacter.getName() : null;
-        String linkedAvatar = resolveLinkedCharacterAvatarUrl(linkedCharacter);
+        String linkedAvatarOrig = resolveLinkedCharacterAvatarOrigUrl(linkedCharacter);
+        String linkedAvatarThumb = resolveLinkedCharacterAvatarThumbUrl(linkedCharacter);
         return CommunityPostResponse.builder()
                 .id(post.getId())
                 .authorUserId(post.getAuthorUserId())
@@ -298,7 +299,8 @@ public class CommunityService {
                 .imageUrls(images)
                 .linkedCharacterId(linkedId)
                 .linkedCharacterName(linkedName)
-                .linkedCharacterAvatarUrl(linkedAvatar)
+                .linkedCharacterAvatarUrl(linkedAvatarOrig)
+                .linkedCharacterAvatarThumbUrl(linkedAvatarThumb)
                 .status(status)
                 .rejectReason(reject)
                 .likeCount(post.getLikeCount() == null ? 0 : Math.max(0, post.getLikeCount()))
@@ -399,7 +401,18 @@ public class CommunityService {
         return entity;
     }
 
-    private String resolveLinkedCharacterAvatarUrl(Character linkedCharacter) {
+    private String resolveLinkedCharacterAvatarOrigUrl(Character linkedCharacter) {
+        if (linkedCharacter == null) {
+            return null;
+        }
+        String stored = linkedCharacter.getAvatarUrl();
+        if (stored == null || stored.isBlank()) {
+            return null;
+        }
+        return fileStorageService.resolvePublicUrl(stored);
+    }
+
+    private String resolveLinkedCharacterAvatarThumbUrl(Character linkedCharacter) {
         if (linkedCharacter == null) {
             return null;
         }

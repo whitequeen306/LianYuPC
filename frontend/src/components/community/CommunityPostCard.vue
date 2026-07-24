@@ -26,13 +26,14 @@
 
     <div v-if="post.linkedCharacterId && post.linkedCharacterName" class="community-post-card__linked">
       <span class="community-post-card__linked-avatar">
-        <img
-          v-if="linkedAvatarSrc && !linkedAvatarBroken"
-          :src="linkedAvatarSrc"
+        <CharacterAvatarImg
+          :character-id="post.linkedCharacterId"
+          :characters="charactersStore.list"
+          :character-avatar-url="post.linkedCharacterAvatarUrl || ''"
+          :character-avatar-thumb-url="post.linkedCharacterAvatarThumbUrl || post.linkedCharacterAvatarUrl || ''"
+          :icon-size="14"
           alt=""
-          @error="onLinkedAvatarError"
         />
-        <el-icon v-else :size="14"><User /></el-icon>
       </span>
       <span class="community-post-card__linked-name">{{ post.linkedCharacterName }}</span>
     </div>
@@ -114,10 +115,7 @@ import { formatFeedTime } from '@/utils/feedTime'
 import { addCommunityComment, fetchCommunityComments } from '@/api/community'
 import { useUserStore } from '@/stores/user'
 import { useCharactersStore } from '@/stores/characters'
-import {
-  nextCharacterAvatarTier,
-  resolveCharacterAvatarSrc
-} from '@/utils/characterAvatar'
+import CharacterAvatarImg from '@/components/CharacterAvatarImg.vue'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps({
@@ -140,33 +138,7 @@ const deleting = ref(false)
 const imageViewerVisible = ref(false)
 const imageViewerUrlList = ref([])
 const imageViewerInitialIndex = ref(0)
-const linkedAvatarBroken = ref(false)
-const linkedAvatarTier = ref('thumb')
-
 const images = computed(() => props.post.imageUrls || [])
-const linkedAvatarSrc = computed(() => {
-  const character = charactersStore.list.find((c) => c.id === props.post.linkedCharacterId)
-  const raw = resolveCharacterAvatarSrc({
-    character,
-    characterAvatarUrl: props.post.linkedCharacterAvatarUrl || '',
-    tier: linkedAvatarBroken.value ? 'broken' : linkedAvatarTier.value
-  })
-  return raw ? resolveMediaUrl(raw) : ''
-})
-
-function onLinkedAvatarError() {
-  const character = charactersStore.list.find((c) => c.id === props.post.linkedCharacterId)
-  if (!character) {
-    linkedAvatarBroken.value = true
-    return
-  }
-  const nextTier = nextCharacterAvatarTier(character, linkedAvatarTier.value)
-  if (nextTier === 'broken') {
-    linkedAvatarBroken.value = true
-    return
-  }
-  linkedAvatarTier.value = nextTier
-}
 const resolvedImages = computed(() => images.value.map(src => resolveMediaUrl(src)))
 const timeLabel = computed(() => formatFeedTime(props.post.createdAt, t, locale.value))
 const canDelete = computed(() =>

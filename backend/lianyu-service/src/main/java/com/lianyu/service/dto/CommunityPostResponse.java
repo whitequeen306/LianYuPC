@@ -17,7 +17,10 @@ public class CommunityPostResponse {
     private List<String> imageUrls;
     private Long linkedCharacterId;
     private String linkedCharacterName;
+    /** Original linked-character avatar (public URL). */
     private String linkedCharacterAvatarUrl;
+    /** Thumb when available; may equal linkedCharacterAvatarUrl for user uploads. */
+    private String linkedCharacterAvatarThumbUrl;
     private String status;
     private String rejectReason;
     private int likeCount;

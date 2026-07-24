@@ -14,8 +14,13 @@
         @click="onSelect(c.characterId)"
       >
         <div class="character-showcase__avatar">
-          <img v-if="c.avatarUrl" :src="resolveMediaUrl(c.avatarUrl)" :alt="c.name" />
-          <el-icon v-else :size="22"><User /></el-icon>
+          <CharacterAvatarImg
+            :character-id="c.characterId"
+            :avatar-url="c.avatarUrl || ''"
+            :avatar-thumb-url="c.avatarThumbUrl || ''"
+            :alt="c.name"
+            :icon-size="22"
+          />
         </div>
         <div class="character-showcase__meta">
           <span class="character-showcase__name">{{ c.name }}</span>
@@ -27,8 +32,7 @@
 </template>
 
 <script setup>
-import { User } from '@element-plus/icons-vue'
-import { resolveMediaUrl } from '@/utils/media'
+import CharacterAvatarImg from '@/components/CharacterAvatarImg.vue'
 
 const props = defineProps({
   title: { type: String, default: '角色橱窗' },
@@ -118,7 +122,7 @@ function onSelect(characterId) {
   flex-shrink: 0;
   color: var(--ly-text-muted);
 
-  img {
+  :deep(img) {
     width: 100%;
     height: 100%;
     object-fit: cover;

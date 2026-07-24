@@ -9,15 +9,16 @@
     <div class="atmosphere-panel__orb atmosphere-panel__orb--b" aria-hidden="true" />
 
     <div class="atmosphere-panel__portrait">
-      <img
-        v-if="portraitSrc"
-        :src="resolveMediaUrl(portraitSrc)"
+      <CharacterAvatarImg
+        :character-id="companion.characterId"
+        :characters="characters"
+        :avatar-url="companion.avatarUrl || ''"
+        :avatar-thumb-url="companion.avatarThumbUrl || ''"
         :alt="companion.name"
-        class="atmosphere-panel__img"
+        :icon-size="48"
+        img-class="atmosphere-panel__img"
+        fallback-class="atmosphere-panel__fallback-icon"
       />
-      <div v-else class="atmosphere-panel__fallback">
-        <el-icon :size="48"><User /></el-icon>
-      </div>
       <div class="atmosphere-panel__vignette" aria-hidden="true" />
     </div>
 
@@ -50,14 +51,13 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import { User } from '@element-plus/icons-vue'
 import EmotionBadge from '@/components/EmotionBadge.vue'
-import { resolveMediaUrl } from '@/utils/media'
-import { resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
+import CharacterAvatarImg from '@/components/CharacterAvatarImg.vue'
 
-const props = defineProps({
+defineProps({
   companion: { type: Object, default: null },
+  /** Optional local character list for thumb/orig lookup by characterId */
+  characters: { type: Array, default: () => [] },
   quote: { type: String, default: '' },
   eyebrow: { type: String, required: true },
   continueLabel: { type: String, required: true },
@@ -67,8 +67,4 @@ const props = defineProps({
 })
 
 defineEmits(['chat', 'explore'])
-
-const portraitSrc = computed(() =>
-  resolveCharacterAvatarSrc({ character: props.companion }),
-)
 </script>

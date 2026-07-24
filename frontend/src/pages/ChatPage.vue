@@ -989,7 +989,8 @@ async function resolveActiveCharacter(charId, conv) {
     char = {
       id: charId,
       name: conv.characterName || conv.title || '角色',
-      avatarUrl: conv.characterAvatarUrl
+      avatarUrl: conv.characterAvatarUrl,
+      avatarThumbUrl: conv.characterAvatarThumbUrl,
     }
   }
   activeCharacter.value = char

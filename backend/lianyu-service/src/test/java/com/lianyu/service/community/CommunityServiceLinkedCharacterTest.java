@@ -107,8 +107,10 @@ class CommunityServiceLinkedCharacterTest {
         author.setNickname("小明");
         when(userMapper.selectById(1L)).thenReturn(author);
         when(fileStorageService.resolvePublicUrl(null)).thenReturn(null);
-        when(fileStorageService.resolveSquareAvatarThumbPublicUrl("avatars/alice.png"))
+        when(fileStorageService.resolvePublicUrl("avatars/alice.png"))
                 .thenReturn("/files/avatars/alice.png");
+        when(fileStorageService.resolveSquareAvatarThumbPublicUrl("avatars/alice.png"))
+                .thenReturn("/files/avatars/alice-thumb.png");
 
         when(communityPostMapper.insert(any(CommunityPost.class))).thenAnswer(invocation -> {
             CommunityPost post = invocation.getArgument(0);
@@ -125,6 +127,7 @@ class CommunityServiceLinkedCharacterTest {
         assertThat(response.getLinkedCharacterId()).isEqualTo(7L);
         assertThat(response.getLinkedCharacterName()).isEqualTo("艾丽西亚");
         assertThat(response.getLinkedCharacterAvatarUrl()).isEqualTo("/files/avatars/alice.png");
+        assertThat(response.getLinkedCharacterAvatarThumbUrl()).isEqualTo("/files/avatars/alice-thumb.png");
     }
 
     @Test

@@ -513,6 +513,7 @@
   justify-content: center;
   flex-shrink: 0;
 
+  > img,
   img {
     width: 100%;
     height: 100%;
@@ -829,6 +830,21 @@
     position: relative;
     height: clamp(240px, 36vh, 380px);
     overflow: hidden;
+
+    // CharacterAvatarImg root is img or el-icon
+    > img,
+    > .el-icon {
+      width: 100%;
+      height: 100%;
+    }
+
+    > .el-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--ly-feed-panel-fallback-bg);
+      color: $color-pink-primary;
+    }
   }
 
   &__img {

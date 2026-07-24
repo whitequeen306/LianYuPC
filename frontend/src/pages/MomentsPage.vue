@@ -106,11 +106,20 @@
             >
               <div class="feed-card__head">
                 <div class="feed-card__avatar">
-                  <img
-                    v-if="postAuthorAvatar(item.post)"
-                    :src="resolveMediaUrl(postAuthorAvatar(item.post))"
+                  <CharacterAvatarImg
+                    v-if="item.post.authorType !== 'USER'"
+                    :character-id="item.post.characterId"
+                    :characters="charactersStore.list"
+                    :character-avatar-url="item.post.characterAvatarUrl || ''"
+                    :character-avatar-thumb-url="item.post.characterAvatarThumbUrl || ''"
                     :alt="postAuthorName(item.post)"
+                    :icon-size="18"
                   />
+                  <img
+                    v-else-if="userAuthorAvatar(item.post)"
+                    :src="resolveMediaUrl(userAuthorAvatar(item.post))"
+                    :alt="postAuthorName(item.post)"
+                  >
                   <el-icon v-else :size="18"><User /></el-icon>
                 </div>
                 <div class="feed-card__meta">
@@ -256,6 +265,7 @@
       <aside class="moments-atmosphere stagger-item" aria-label="companion spotlight">
         <AtmospherePanel
           :companion="sidebarCompanion"
+          :characters="charactersStore.list"
           :quote="sidebarQuote"
           :eyebrow="t('home.atmosphereEyebrow')"
           :continue-label="t('home.atmosphereContinue')"
@@ -278,11 +288,7 @@
               class="moments-active-chip"
               @click="setFilter(c.id)"
             >
-              <img
-                v-if="resolveCharacterAvatarSrc({ character: c })"
-                :src="resolveMediaUrl(resolveCharacterAvatarSrc({ character: c }))"
-                :alt="c.name"
-              />
+              <CharacterAvatarImg :character="c" :alt="c.name" :icon-size="16" />
               <span>{{ c.name }}</span>
             </button>
           </div>
@@ -342,12 +348,12 @@ import {
   markMomentsSeen
 } from '@/api/moments'
 import { resolveMediaUrl } from '@/utils/media'
-import { resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
 import { sanitizeHtml } from '@/utils/sanitize'
 import { feedDateKey, formatFeedDateLabel, formatFeedTime } from '@/utils/feedTime'
 import { truncateText } from '@/utils/text'
 import { useOpenSingleChat } from '@/composables/useOpenSingleChat'
 import AtmospherePanel from '@/components/AtmospherePanel.vue'
+import CharacterAvatarImg from '@/components/CharacterAvatarImg.vue'
 import { buildMomentCommentThread, formatMomentCommentAuthorLabel } from './momentsCommentThread'
 
 const { t, locale } = useI18n()
@@ -436,12 +442,8 @@ const sidebarCompanion = computed(() => {
     return {
       characterId: filterCharId.value,
       name: char?.name || latestPost?.characterName || emotion?.characterName,
-      avatarUrl: resolveCharacterAvatarSrc({
-        characterId: filterCharId.value,
-        characters: charactersStore.list,
-        avatarUrl: latestPost?.characterAvatarUrl || emotion?.avatarUrl,
-        avatarThumbUrl: latestPost?.characterAvatarThumbUrl || emotion?.avatarThumbUrl,
-      }),
+      avatarUrl: latestPost?.characterAvatarUrl || emotion?.avatarUrl || char?.avatarUrl || '',
+      avatarThumbUrl: latestPost?.characterAvatarThumbUrl || emotion?.avatarThumbUrl || char?.avatarThumbUrl || '',
       emotion
     }
   }
@@ -452,12 +454,8 @@ const sidebarCompanion = computed(() => {
     return {
       characterId: post.characterId,
       name: post.characterName,
-      avatarUrl: resolveCharacterAvatarSrc({
-        characterId: post.characterId,
-        characters: charactersStore.list,
-        characterAvatarUrl: post.characterAvatarUrl,
-        characterAvatarThumbUrl: post.characterAvatarThumbUrl,
-      }),
+      avatarUrl: post.characterAvatarUrl || '',
+      avatarThumbUrl: post.characterAvatarThumbUrl || '',
       emotion
     }
   }
@@ -467,12 +465,8 @@ const sidebarCompanion = computed(() => {
     return {
       characterId: state.characterId,
       name: state.characterName,
-      avatarUrl: resolveCharacterAvatarSrc({
-        characterId: state.characterId,
-        characters: charactersStore.list,
-        avatarUrl: state.avatarUrl,
-        avatarThumbUrl: state.avatarThumbUrl,
-      }),
+      avatarUrl: state.avatarUrl || '',
+      avatarThumbUrl: state.avatarThumbUrl || '',
       emotion: state
     }
   }
@@ -780,16 +774,8 @@ function postAuthorName(post) {
   return post.authorType === 'USER' ? t('moments.you') : post.characterName
 }
 
-function postAuthorAvatar(post) {
-  if (post.authorType === 'USER') {
-    return post.userAvatarUrl || userStore.avatarUrl || null
-  }
-  return resolveCharacterAvatarSrc({
-    characterId: post.characterId,
-    characters: charactersStore.list,
-    characterAvatarUrl: post.characterAvatarUrl,
-    characterAvatarThumbUrl: post.characterAvatarThumbUrl,
-  })
+function userAuthorAvatar(post) {
+  return post.userAvatarUrl || userStore.avatarUrl || null
 }
 
 async function submitUserPost() {

@@ -296,14 +296,16 @@ export const useNotificationsStore = defineStore('notifications', () => {
     }
 
     if (shouldShowChatToast(type) && isAppSurfaceVisible()) {
-      const avatarUrl = data.actorAvatarUrl || data.avatarUrl || null
+      const actorAvatar = data.actorAvatarUrl || data.avatarUrl || null
       pushChatMessageToast({
         characterName: extractCharacterName(data.title),
         preview: data.contentPreview || '',
         createdAt: data.createdAt,
         conversationId: convId,
         characterId: data.characterId != null ? Number(data.characterId) : null,
-        avatarUrl,
+        // Prefer store lookup via characterId; actorAvatar is thumb-first fallback.
+        avatarUrl: actorAvatar,
+        avatarThumbUrl: actorAvatar,
         raw: data,
       })
       playSound()

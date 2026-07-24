@@ -7,8 +7,7 @@
     </template>
     <template v-else-if="layout === 'single'">
       <div class="group-avatar__cell group-avatar__cell--full">
-        <img v-if="memberAvatarSrc(displayMembers[0])" :src="resolveMediaUrl(memberAvatarSrc(displayMembers[0]))" :alt="displayMembers[0].name" />
-        <el-icon v-else :size="iconSize"><User /></el-icon>
+        <CharacterAvatarImg :character="displayMembers[0]" :alt="displayMembers[0].name" :icon-size="iconSize" />
       </div>
     </template>
     <template v-else-if="layout === 'double'">
@@ -18,14 +17,12 @@
         class="group-avatar__cell"
         :class="i === 0 ? 'group-avatar__cell--left' : 'group-avatar__cell--right'"
       >
-        <img v-if="memberAvatarSrc(m)" :src="resolveMediaUrl(memberAvatarSrc(m))" :alt="m.name" />
-        <el-icon v-else :size="smallIconSize"><User /></el-icon>
+        <CharacterAvatarImg :character="m" :alt="m.name" :icon-size="smallIconSize" />
       </div>
     </template>
     <template v-else-if="layout === 'triple'">
       <div class="group-avatar__cell group-avatar__cell--triple-main">
-        <img v-if="memberAvatarSrc(displayMembers[0])" :src="resolveMediaUrl(memberAvatarSrc(displayMembers[0]))" :alt="displayMembers[0].name" />
-        <el-icon v-else :size="smallIconSize"><User /></el-icon>
+        <CharacterAvatarImg :character="displayMembers[0]" :alt="displayMembers[0].name" :icon-size="smallIconSize" />
       </div>
       <div class="group-avatar__triple-side">
         <div
@@ -33,8 +30,7 @@
           :key="m.id || i"
           class="group-avatar__cell group-avatar__cell--triple-sub"
         >
-          <img v-if="memberAvatarSrc(m)" :src="resolveMediaUrl(memberAvatarSrc(m))" :alt="m.name" />
-          <el-icon v-else :size="tinyIconSize"><User /></el-icon>
+          <CharacterAvatarImg :character="m" :alt="m.name" :icon-size="tinyIconSize" />
         </div>
       </div>
     </template>
@@ -44,8 +40,7 @@
         :key="m.id || i"
         class="group-avatar__cell group-avatar__cell--quad"
       >
-        <img v-if="memberAvatarSrc(m)" :src="resolveMediaUrl(memberAvatarSrc(m))" :alt="m.name" />
-        <el-icon v-else :size="tinyIconSize"><User /></el-icon>
+        <CharacterAvatarImg :character="m" :alt="m.name" :icon-size="tinyIconSize" />
       </div>
     </template>
     <template v-else>
@@ -54,8 +49,7 @@
         :key="m.id || i"
         class="group-avatar__cell group-avatar__cell--grid"
       >
-        <img v-if="memberAvatarSrc(m)" :src="resolveMediaUrl(memberAvatarSrc(m))" :alt="m.name" />
-        <el-icon v-else :size="tinyIconSize"><User /></el-icon>
+        <CharacterAvatarImg :character="m" :alt="m.name" :icon-size="tinyIconSize" />
       </div>
     </template>
   </div>
@@ -64,8 +58,7 @@
 <script setup>
 import { computed } from 'vue'
 import { User } from '@element-plus/icons-vue'
-import { resolveMediaUrl } from '@/utils/media'
-import { resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
+import CharacterAvatarImg from '@/components/CharacterAvatarImg.vue'
 
 const props = defineProps({
   members: {
@@ -84,10 +77,6 @@ const smallIconSize = computed(() => Math.round(props.size * 0.32))
 const tinyIconSize = computed(() => Math.round(props.size * 0.26))
 
 const displayMembers = computed(() => (props.members || []).filter(Boolean))
-
-function memberAvatarSrc(member) {
-  return resolveCharacterAvatarSrc({ character: member })
-}
 
 const layout = computed(() => {
   const n = displayMembers.value.length
@@ -121,8 +110,10 @@ const layout = computed(() => {
 .group-avatar__cell {
   overflow: hidden;
   background: var(--ly-bg-elevated, #252f3c);
+  display: grid;
+  place-items: center;
 
-  img {
+  :deep(img) {
     width: 100%;
     height: 100%;
     object-fit: cover;

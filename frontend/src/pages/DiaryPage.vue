@@ -30,8 +30,13 @@
         >
           <div class="feed-card__head">
             <div class="feed-card__avatar">
-              <img v-if="diaryAvatarUrl(diary)" :src="resolveMediaUrl(diaryAvatarUrl(diary))" :alt="diary.characterName" />
-              <el-icon v-else :size="18"><User /></el-icon>
+              <CharacterAvatarImg
+                :character-id="diary.characterId"
+                :avatar-url="diary.avatarUrl || ''"
+                :avatar-thumb-url="diary.avatarThumbUrl || ''"
+                :alt="diary.characterName"
+                :icon-size="18"
+              />
             </div>
             <div class="feed-card__meta">
               <span class="feed-card__name">{{ diary.characterName }}</span>
@@ -53,10 +58,9 @@ import { computed, ref, onMounted, onActivated, watch } from 'vue'
 defineOptions({ name: 'DiaryPage' })
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
-import { Loading, Notebook, User } from '@element-plus/icons-vue'
+import { Loading, Notebook } from '@element-plus/icons-vue'
 import { listAllDiaries } from '@/api/characterState'
-import { resolveMediaUrl } from '@/utils/media'
-import { resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
+import CharacterAvatarImg from '@/components/CharacterAvatarImg.vue'
 import { feedDateKey, formatFeedDateLabel, formatFeedTime } from '@/utils/feedTime'
 
 const { t, locale } = useI18n()
@@ -125,13 +129,6 @@ watch(
     applyRouteCharacterFilter()
   }
 )
-
-function diaryAvatarUrl(diary) {
-  return resolveCharacterAvatarSrc({
-    avatarUrl: diary.avatarUrl,
-    avatarThumbUrl: diary.avatarThumbUrl,
-  })
-}
 
 </script>
 

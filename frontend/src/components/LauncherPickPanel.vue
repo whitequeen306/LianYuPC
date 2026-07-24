@@ -28,8 +28,7 @@
           @click="startChat(char)"
         >
           <span class="launcher-pick__avatar">
-            <img v-if="characterAvatar(char)" :src="resolveMediaUrl(characterAvatar(char))" :alt="char.name" />
-            <span v-else class="launcher-pick__avatar-fallback" aria-hidden="true">?</span>
+            <CharacterAvatarImg :character="char" :alt="char.name" :icon-size="18" />
           </span>
           <span class="launcher-pick__name">{{ char.name }}</span>
           <span
@@ -55,8 +54,7 @@ import { useConversationsStore } from '@/stores/conversations'
 import { createConversation } from '@/api/conversation'
 import { listNotifications } from '@/api/notification'
 import { useConversationUnread } from '@/composables/useConversationUnread'
-import { resolveMediaUrl } from '@/utils/media'
-import { resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
+import CharacterAvatarImg from '@/components/CharacterAvatarImg.vue'
 import { humanizeError } from '@/utils/errorMessage'
 import { getElectronAPI } from '@/utils/electron'
 
@@ -78,10 +76,6 @@ const openingId = ref(null)
 const toastText = ref('')
 let toastTimer = null
 let unsubscribeLauncherMessage = null
-
-function characterAvatar(char) {
-  return resolveCharacterAvatarSrc({ character: char })
-}
 
 function showToast(text, ms = 2600) {
   toastText.value = text

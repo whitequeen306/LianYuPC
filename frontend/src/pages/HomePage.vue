@@ -30,7 +30,15 @@
             >
               <div class="feed-card__head">
                 <div class="feed-card__avatar">
-                  <img v-if="item.avatarUrl" :src="resolveMediaUrl(item.avatarUrl)" :alt="item.characterName" />
+                  <CharacterAvatarImg
+                    v-if="item.characterId || item.avatarUrl || item.avatarThumbUrl"
+                    :character-id="item.characterId"
+                    :characters="charactersStore.list"
+                    :avatar-url="item.avatarUrl || ''"
+                    :avatar-thumb-url="item.avatarThumbUrl || ''"
+                    :alt="item.characterName"
+                    :icon-size="16"
+                  />
                   <el-icon v-else :size="16"><User /></el-icon>
                 </div>
                 <div class="feed-card__meta">
@@ -59,15 +67,16 @@
               @click="goToChat(state.characterId)"
             >
               <div class="portrait-ring">
-                <img
-                  v-if="stateAvatarSrc(state)"
-                  :src="resolveMediaUrl(stateAvatarSrc(state))"
-                  class="portrait-img"
+                <CharacterAvatarImg
+                  :character-id="state.characterId"
+                  :characters="charactersStore.list"
+                  :avatar-url="state.avatarUrl || ''"
+                  :avatar-thumb-url="state.avatarThumbUrl || ''"
                   :alt="state.characterName"
+                  :icon-size="28"
+                  img-class="portrait-img"
+                  fallback-class="portrait-fallback"
                 />
-                <div v-else class="portrait-fallback">
-                  <el-icon :size="28"><User /></el-icon>
-                </div>
               </div>
               <div class="portrait-name">{{ state.characterName }}</div>
               <div class="portrait-meta">
@@ -124,6 +133,7 @@
       <aside class="moments-atmosphere stagger-item" aria-label="companion spotlight">
         <AtmospherePanel
           :companion="featuredCompanion"
+          :characters="charactersStore.list"
           :quote="atmosphereQuote"
           :eyebrow="t('home.atmosphereEyebrow')"
           :continue-label="t('home.atmosphereContinue')"
@@ -156,12 +166,11 @@ import { useCharactersStore } from '@/stores/characters'
 import { useConversationsStore } from '@/stores/conversations'
 import { listAllDiaries, listCharacterStates } from '@/api/characterState'
 import { fetchMomentsFeed } from '@/api/moments'
-import { resolveMediaUrl } from '@/utils/media'
-import { resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
 import { formatFeedTime, parseFeedDateTime } from '@/utils/feedTime'
 import { truncateText } from '@/utils/text'
 import { useOpenSingleChat } from '@/composables/useOpenSingleChat'
 import AtmospherePanel from '@/components/AtmospherePanel.vue'
+import CharacterAvatarImg from '@/components/CharacterAvatarImg.vue'
 import EmotionBadge from '@/components/EmotionBadge.vue'
 
 const { t, locale } = useI18n()
@@ -173,15 +182,6 @@ const { openSingleChat } = useOpenSingleChat()
 const emotionStates = ref([])
 const feedPreview = ref([])
 const feedLoading = ref(true)
-
-function stateAvatarSrc(state) {
-  return resolveCharacterAvatarSrc({
-    characterId: state.characterId,
-    characters: charactersStore.list,
-    avatarUrl: state.avatarUrl,
-    avatarThumbUrl: state.avatarThumbUrl,
-  })
-}
 
 const greeting = computed(() => {
   const hour = new Date().getHours()
@@ -201,12 +201,9 @@ const featuredCompanion = computed(() => {
     return {
       characterId: latestCharacterMoment.characterId,
       name: latestCharacterMoment.characterName,
-      avatarUrl: resolveCharacterAvatarSrc({
-        characterId: latestCharacterMoment.characterId,
-        characters: charactersStore.list,
-        avatarUrl: latestCharacterMoment.avatarUrl,
-        avatarThumbUrl: latestCharacterMoment.avatarThumbUrl,
-      }),
+      // Keep raw pair — CharacterAvatarImg owns thumb→orig fallback.
+      avatarUrl: latestCharacterMoment.avatarUrl || '',
+      avatarThumbUrl: latestCharacterMoment.avatarThumbUrl || '',
       emotion
     }
   }
@@ -218,12 +215,8 @@ const featuredCompanion = computed(() => {
     return {
       characterId: conv.characterId,
       name: conv.characterName || conv.title,
-      avatarUrl: resolveCharacterAvatarSrc({
-        characterId: conv.characterId,
-        characters: charactersStore.list,
-        characterAvatarUrl: conv.characterAvatarUrl,
-        characterAvatarThumbUrl: conv.characterAvatarThumbUrl,
-      }),
+      avatarUrl: conv.characterAvatarUrl || '',
+      avatarThumbUrl: conv.characterAvatarThumbUrl || '',
       emotion
     }
   }
@@ -233,7 +226,8 @@ const featuredCompanion = computed(() => {
     return {
       characterId: state.characterId,
       name: state.characterName,
-      avatarUrl: stateAvatarSrc(state),
+      avatarUrl: state.avatarUrl || '',
+      avatarThumbUrl: state.avatarThumbUrl || '',
       emotion: state
     }
   }
@@ -293,13 +287,11 @@ async function loadFeedPreview() {
       characterId: p.characterId,
       characterName: p.authorType === 'USER' ? t('moments.you') : p.characterName,
       avatarUrl: p.authorType === 'USER'
-        ? (p.userAvatarUrl || userStore.avatarUrl)
-        : resolveCharacterAvatarSrc({
-            characterId: p.characterId,
-            characters: charactersStore.list,
-            characterAvatarUrl: p.characterAvatarUrl,
-            characterAvatarThumbUrl: p.characterAvatarThumbUrl,
-          }),
+        ? (p.userAvatarUrl || userStore.avatarUrl || '')
+        : (p.characterAvatarUrl || ''),
+      avatarThumbUrl: p.authorType === 'USER'
+        ? (p.userAvatarUrl || userStore.avatarUrl || '')
+        : (p.characterAvatarThumbUrl || ''),
       title: '',
       content: p.content,
       createdAt: p.createdAt,
@@ -311,12 +303,8 @@ async function loadFeedPreview() {
       id: d.id,
       characterId: d.characterId,
       characterName: d.characterName,
-      avatarUrl: resolveCharacterAvatarSrc({
-        characterId: d.characterId,
-        characters: charactersStore.list,
-        avatarUrl: d.avatarUrl,
-        avatarThumbUrl: d.avatarThumbUrl,
-      }),
+      avatarUrl: d.avatarUrl || '',
+      avatarThumbUrl: d.avatarThumbUrl || '',
       title: d.title,
       content: d.content,
       createdAt: d.createdAt,

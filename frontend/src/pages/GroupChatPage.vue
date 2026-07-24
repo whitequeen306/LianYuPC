@@ -99,8 +99,12 @@
             :class="isUserMessage(item) ? 'msg-user' : 'msg-assistant'"
           >
             <div v-if="!isUserMessage(item)" class="gm-avatar">
-              <img v-if="item._charAvatar" :src="resolveMediaUrl(item._charAvatar)" />
-              <el-icon v-else :size="16"><User /></el-icon>
+              <CharacterAvatarImg
+                :character-id="item.characterId"
+                :characters="groupMembers"
+                :alt="item._charName || item.characterName || ''"
+                :icon-size="16"
+              />
             </div>
             <div class="gm-body" :class="isUserMessage(item) ? 'bubble-user' : 'bubble-assistant'">
               <div v-if="!isUserMessage(item)" class="gm-header">
@@ -308,8 +312,7 @@ import OnboardingHintBubble from '@/components/OnboardingHintBubble.vue'
 import { useOnboardingHint } from '@/composables/useOnboardingHint'
 import { Plus, ChatDotRound, ArrowLeft, ArrowDown, User, UserFilled, Promotion, Delete, Edit, Check, Close } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { resolveMediaUrl } from '@/utils/media'
-import { resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
+import CharacterAvatarImg from '@/components/CharacterAvatarImg.vue'
 import { humanizeError } from '@/utils/errorMessage'
 import { formatSmartTime } from '@/utils/feedTime'
 import { resolveGroupDisplayTitle } from '@/utils/groupTitle'
@@ -380,10 +383,6 @@ const groupTitleInputRef = ref(null)
 const groupMembersCache = ref({})
 
 let msgCounter = 0
-
-function memberAvatar(member) {
-  return resolveCharacterAvatarSrc({ character: member })
-}
 
 function groupTitleLabel(title) {
   return resolveGroupDisplayTitle(title, t('group.untitled'))
@@ -491,7 +490,6 @@ async function appendCharacterMessage(body) {
     role: 'assistant',
     characterId: body.characterId,
     _charName: body.characterName || member?.name || '角色',
-    _charAvatar: memberAvatar(member) || null,
     content: body.content,
     _time: new Date().toISOString()
   })
@@ -649,7 +647,6 @@ function mapGroupMessages(msgs, seenChars) {
     ...m,
     _key: 'g' + (++msgCounter),
     _charName: (m.role || '').toLowerCase() === 'user' ? t('group.me') : (seenChars.get(m.characterId)?.name || t('group.roleFallback')),
-    _charAvatar: memberAvatar(seenChars.get(m.characterId)) || null,
     _time: m.createdAt
   }))
 }

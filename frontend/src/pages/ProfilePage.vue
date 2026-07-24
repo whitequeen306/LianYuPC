@@ -238,6 +238,7 @@ const showcaseCharacters = computed(() =>
     characterId: c.id,
     name: c.name,
     avatarUrl: c.avatarUrl,
+    avatarThumbUrl: c.avatarThumbUrl,
     companionshipDays: companionshipDays(c.createdAt)
   }))
 )

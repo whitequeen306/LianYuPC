@@ -45,8 +45,12 @@
         <div class="group-header">
           <div class="group-char-info">
             <div class="group-char-avatar">
-              <img v-if="group.avatarUrl" :src="resolveMediaUrl(group.avatarUrl)" />
-              <el-icon v-else :size="16"><User /></el-icon>
+              <CharacterAvatarImg
+                :character-id="group.charId"
+                :characters="charactersStore.list"
+                :alt="group.charName"
+                :icon-size="16"
+              />
             </div>
             <span class="group-char-name">{{ group.charName }}</span>
             <span class="group-count">{{ t('memory.count', { count: group.items.length }) }}</span>
@@ -105,10 +109,9 @@ defineOptions({ name: 'MemoryPage' })
 import { useI18n } from 'vue-i18n'
 import { useCharactersStore } from '@/stores/characters'
 import { listMemories, getMemory, deleteMemory } from '@/api/memory'
-import { Loading, Collection, ArrowDown, ArrowRight, RefreshRight, Delete, User } from '@element-plus/icons-vue'
+import { Loading, Collection, ArrowDown, ArrowRight, RefreshRight, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { resolveMediaUrl } from '@/utils/media'
-import { resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
+import CharacterAvatarImg from '@/components/CharacterAvatarImg.vue'
 import { formatSmartTime } from '@/utils/feedTime'
 
 const { t, locale } = useI18n()
@@ -129,7 +132,6 @@ const groupedMemories = computed(() => {
       groups.set(charId, {
         charId,
         charName: mem.characterName || char?.name || t('memory.roleIndex', { id: charId }),
-        avatarUrl: resolveCharacterAvatarSrc({ character: char }) || null,
         items: []
       })
     }

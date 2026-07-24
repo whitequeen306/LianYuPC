@@ -90,6 +90,7 @@ public class UserPublicProfileService {
                         .characterId(c.getId())
                         .name(c.getName())
                         .avatarUrl(fileStorageService.resolvePublicUrl(c.getAvatarUrl()))
+                        .avatarThumbUrl(fileStorageService.resolveSquareAvatarThumbPublicUrl(c.getAvatarUrl()))
                         .companionshipDays(companionshipDays(c.getCreatedAt()))
                         .build())
                 .toList();
