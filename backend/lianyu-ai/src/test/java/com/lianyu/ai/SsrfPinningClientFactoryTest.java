@@ -154,6 +154,16 @@ class SsrfPinningClientFactoryTest {
         assertThat(resolver.isResolved(resolved)).isTrue();
     }
 
+    @Test
+    void isTrustedPlatformEndpoint_recognizesDashScopeHosts() {
+        assertThat(OutboundUrlValidator.isTrustedPlatformEndpoint(
+                "https://dashscope.aliyuncs.com/compatible-mode/v1")).isTrue();
+        assertThat(OutboundUrlValidator.isTrustedPlatformEndpoint(
+                "https://gtm-cn-rt54j1mlg03.dashscope.aliyuncs.com/v1")).isTrue();
+        assertThat(OutboundUrlValidator.isTrustedPlatformEndpoint("https://api.openai.com/v1")).isFalse();
+        assertThat(OutboundUrlValidator.isTrustedPlatformEndpoint("http://localhost/v1")).isFalse();
+    }
+
     // ---- 工厂装配：固定端点与非固定端点都能构造出 Builder（不抛、不发请求） ----
 
     @Test

@@ -21,7 +21,30 @@ public final class OutboundUrlValidator {
             "metadata.google.internal"
     );
 
+    private static final int DNS_RESOLVE_ATTEMPTS = 3;
+    private static final long DNS_RETRY_DELAY_MS = 150L;
+
     private OutboundUrlValidator() {
+    }
+
+    /**
+     * 平台受信端点（DashScope 官方域名）：不做 DNS 固定，避免 CDN 轮转与容器 DNS 抖动误伤识图/对话。
+     */
+    public static boolean isTrustedPlatformEndpoint(String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            return false;
+        }
+        try {
+            URI uri = new URI(baseUrl.trim());
+            String host = uri.getHost();
+            if (host == null || host.isBlank()) {
+                return false;
+            }
+            String lower = host.toLowerCase(Locale.ROOT);
+            return "dashscope.aliyuncs.com".equals(lower) || lower.endsWith(".dashscope.aliyuncs.com");
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /**
@@ -65,16 +88,10 @@ public final class OutboundUrlValidator {
         }
         List<InetAddress> resolved;
         try {
-            InetAddress[] addresses = InetAddress.getAllByName(host);
-            for (InetAddress address : addresses) {
-                if (isBlockedAddress(address)) {
-                    throw new BusinessException(ErrorCode.BAD_REQUEST,
-                            "Base URL 解析到内网或保留地址，不允许访问");
-                }
-            }
-            resolved = List.copyOf(Arrays.asList(addresses));
+            resolved = resolveHostSafely(host);
         } catch (UnknownHostException e) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Base URL 主机名无法解析");
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "Base URL 主机名无法解析: " + host);
         }
         return new ValidatedEndpoint(trimmed, lowerHost, port, resolved);
     }
@@ -98,6 +115,33 @@ public final class OutboundUrlValidator {
         public boolean isPinningRequired() {
             return !pinnedIps.isEmpty();
         }
+    }
+
+    private static List<InetAddress> resolveHostSafely(String host) throws UnknownHostException {
+        UnknownHostException last = null;
+        for (int attempt = 1; attempt <= DNS_RESOLVE_ATTEMPTS; attempt++) {
+            try {
+                InetAddress[] addresses = InetAddress.getAllByName(host);
+                for (InetAddress address : addresses) {
+                    if (isBlockedAddress(address)) {
+                        throw new BusinessException(ErrorCode.BAD_REQUEST,
+                                "Base URL 解析到内网或保留地址，不允许访问");
+                    }
+                }
+                return List.copyOf(Arrays.asList(addresses));
+            } catch (UnknownHostException e) {
+                last = e;
+                if (attempt < DNS_RESOLVE_ATTEMPTS) {
+                    try {
+                        Thread.sleep(DNS_RETRY_DELAY_MS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw e;
+                    }
+                }
+            }
+        }
+        throw last != null ? last : new UnknownHostException(host);
     }
 
     public static boolean isOllamaLocalEndpoint(String baseUrl, String lowerHost) {

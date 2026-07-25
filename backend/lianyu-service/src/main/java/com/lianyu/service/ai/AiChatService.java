@@ -615,11 +615,14 @@ public class AiChatService {
         String base = normalizeOpenAiBaseUrl(userSupplied ? vaultBaseUrl : platformBaseUrl);
         String url = base + "/v1/models";
 
-        // 用户自填 base_url 固定已校验 IP 防 DNS 重绑定 SSRF；平台默认 URL 受信不固定（CDN 轮转）
-        RestClient client = userSupplied
+        // 用户自填 base_url 固定已校验 IP 防 DNS 重绑定 SSRF；平台受信 DashScope 与默认 URL 不固定（CDN 轮转）
+        RestClient client = userSupplied && !OutboundUrlValidator.isTrustedPlatformEndpoint(vaultBaseUrl)
                 ? SsrfPinningClientFactory.restClientBuilder(
                         OutboundUrlValidator.validateAndResolve(vaultBaseUrl, false)).build()
                 : RestClient.create();
+        if (userSupplied && OutboundUrlValidator.isTrustedPlatformEndpoint(vaultBaseUrl)) {
+            OutboundUrlValidator.validateAndNormalize(vaultBaseUrl, false);
+        }
         String body = client.get()
                 .uri(url)
                 .header("Authorization", "Bearer " + apiKey)
@@ -1558,7 +1561,11 @@ public class AiChatService {
 
     private String resolveStreamErrorMessage(Throwable e) {
         if (e instanceof BusinessException be) {
-            return be.getMessage();
+            String msg = be.getMessage();
+            if (msg != null && msg.contains("主机名无法解析")) {
+                return "识图服务暂时无法连接（DNS 解析失败），请稍后重试";
+            }
+            return msg;
         }
         String collected = collectThrowableMessages(e);
         String lower = collected.toLowerCase();
@@ -1593,12 +1600,14 @@ public class AiChatService {
         OpenAiApi.Builder openAiBuilder = OpenAiApi.builder()
                 .baseUrl(resolvedUrl)
                 .apiKey(apiKey);
-        if (userSupplied) {
-            // 仅对用户配置的 base_url 固定 IP（平台默认 URL 受信，不固定以支持 CDN 轮转）
+        if (userSupplied && !OutboundUrlValidator.isTrustedPlatformEndpoint(baseUrl)) {
+            // 仅对用户配置的 base_url 固定 IP（平台受信 DashScope / 默认 URL 不固定以支持 CDN 轮转）
             var endpoint = OutboundUrlValidator.validateAndResolve(baseUrl, false);
             openAiBuilder
                     .restClientBuilder(SsrfPinningClientFactory.restClientBuilder(endpoint))
                     .webClientBuilder(SsrfPinningClientFactory.webClientBuilder(endpoint));
+        } else if (userSupplied) {
+            OutboundUrlValidator.validateAndNormalize(baseUrl, false);
         } else {
             // 平台默认 URL 仅做内网封锁校验，不固定
             OutboundUrlValidator.validateAndNormalize(platformBaseUrl, false);
