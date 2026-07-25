@@ -91,7 +91,8 @@ public class ApiKeyVaultService {
         }
 
         log.info("API key vault created: userId={}, provider={}", userId, vault.getProvider());
-        return toResponse(vault, true);
+        // 创建路径用刚写入的明文回填响应，避免「加密→立刻解密→格式启发式」误伤非 sk- Key（如 Gemini AIza…）
+        return toResponse(vault, apiKey.trim(), true);
     }
 
     public List<VaultEntryResponse> list(Long userId) {
@@ -216,33 +217,34 @@ public class ApiKeyVaultService {
     private String decryptApiKeyOrThrow(String ciphertext) {
         try {
             String plain = jasyptUtil.decrypt(ciphertext);
-            if (!JasyptUtil.looksLikeApiKey(plain)) {
-                throw new IllegalStateException("decrypted value does not look like an API key");
+            if (plain == null || plain.isBlank()) {
+                throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "API Key 为空，请重新填写");
             }
             return plain.trim();
         } catch (IllegalStateException e) {
+            // 仅在密码学解密失败时提示 master key；Key「好不好用」由拉取模型 / 实际对话验证
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
                     "API Key 解密失败：LIANYU_MASTER_KEY 与入库时不一致。请用 backend/scripts/seed-default-vault-pool.ps1 重新加密写入 DEFAULT 池");
         }
     }
 
     private VaultEntryResponse toResponse(ApiKeyVault vault) {
-        return toResponse(vault, false);
+        return toResponse(vault, decryptApiKeyOrThrow(vault.getApiKeyEncrypted()), false);
     }
 
     /**
      * 转换为响应 DTO。
      * @param vault    数据库实体
+     * @param plainKey 已解密或创建时已知的明文 Key
      * @param showFull 是否返回完整 API Key（仅 create 时为 true）
      */
-    private VaultEntryResponse toResponse(ApiKeyVault vault, boolean showFull) {
-        String decrypted = decryptApiKeyOrThrow(vault.getApiKeyEncrypted());
+    private VaultEntryResponse toResponse(ApiKeyVault vault, String plainKey, boolean showFull) {
         return VaultEntryResponse.builder()
                 .id(vault.getId())
                 .userId(vault.getUserId())
                 .vaultScope(vault.getVaultScope())
                 .provider(vault.getProvider())
-                .apiKey(showFull ? decrypted : maskApiKey(decrypted))
+                .apiKey(showFull ? plainKey : maskApiKey(plainKey))
                 .baseUrl(vault.getBaseUrl())
                 .modelDefault(vault.getModelDefault())
                 .visionModelDefault(vault.getVisionModelDefault())

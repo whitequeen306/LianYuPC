@@ -93,16 +93,38 @@ public class JasyptUtil {
                 "Failed to decrypt with LIANYU_MASTER_KEY; ciphertext may use a different master key version");
     }
 
-    /** True when value looks like a usable API key (not a Jasypt ciphertext blob). */
+    /**
+     * True when value looks like a usable API key (not a Jasypt ciphertext blob).
+     * Accepts OpenAI {@code sk-*}、Google {@code AIza*}、Ollama {@code local}，
+     * 以及常见第三方 opaque token（字母数字 / -_.:/）。
+     */
     public static boolean looksLikeApiKey(String value) {
         if (value == null || value.isBlank()) {
             return false;
         }
         String trimmed = value.trim();
-        if (trimmed.length() > 200) {
+        if (trimmed.length() < 4 || trimmed.length() > 200) {
             return false;
         }
-        return trimmed.startsWith("sk-") || "local".equals(trimmed);
+        // Jasypt / 失败解密残留
+        if (trimmed.startsWith("ENC(") || trimmed.indexOf('\n') >= 0 || trimmed.indexOf('\0') >= 0) {
+            return false;
+        }
+        if ("local".equals(trimmed)) {
+            return true;
+        }
+        // 常见前缀 + 通用 opaque token（Gemini AIza…、中转站自有格式等）
+        for (int i = 0; i < trimmed.length(); i++) {
+            char c = trimmed.charAt(i);
+            boolean ok = (c >= 'a' && c <= 'z')
+                    || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9')
+                    || c == '-' || c == '_' || c == '.' || c == ':' || c == '/';
+            if (!ok) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public String getCurrentVersion() {
