@@ -32,4 +32,25 @@ class ChatTurnMessageAssemblerTest {
         assertTrue(messages.get(1).getContent().contains("新内容"));
         assertTrue(messages.get(1).getContent().contains("<user_message"));
     }
+
+    @Test
+    void assemble_imageOnlyEmptyXml_rewritesPlaceholderAndKeepsImageUrl() {
+        Message history = new Message();
+        history.setId(11L);
+        history.setRole("USER");
+        history.setContent("（用户发送了一张图片）");
+        history.setImageUrl("/api/public/files/chat-images/demo.jpg");
+
+        List<MessageDto> messages = assembler.assemble(
+                "SYSTEM",
+                List.of(history),
+                11L,
+                "<user_message trusted=\"false\"></user_message>",
+                null);
+
+        assertEquals(2, messages.size());
+        assertEquals("/api/public/files/chat-images/demo.jpg", messages.get(1).getImageUrl());
+        assertTrue(messages.get(1).getContent().contains("用户发送了一张图片"));
+        assertTrue(messages.get(1).getContent().contains("<user_message"));
+    }
 }

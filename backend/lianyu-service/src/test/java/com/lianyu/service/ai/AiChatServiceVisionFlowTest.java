@@ -86,6 +86,36 @@ class AiChatServiceVisionFlowTest {
     }
 
     @Test
+    void buildImageAugmentedTextMessages_imageOnlyEmptyXml_injectsDescriptionIntoUserTurn() {
+        MessageDto system = new MessageDto();
+        system.setRole("system");
+        system.setContent("你是江之岛盾子。");
+
+        MessageDto user = new MessageDto();
+        user.setRole("user");
+        user.setContent("<user_message trusted=\"false\"></user_message>");
+        user.setImageUrl("/api/public/files/chat-images/demo.png");
+
+        VisionAnalysisResult analysis = new VisionAnalysisResult(
+                "分享日常", "high", "夜间户外餐桌上有烤肉、西瓜和几个人");
+
+        @SuppressWarnings("unchecked")
+        List<Message> messages = (List<Message>) ReflectionTestUtils.invokeMethod(
+                service,
+                "buildImageAugmentedTextMessages",
+                List.of(system, user),
+                analysis);
+
+        assertThat(messages).hasSize(2);
+        assertThat(messages.get(0).getText())
+                .contains("禁止当成空消息");
+        assertThat(messages.get(1).getText())
+                .contains("我发了一张图片")
+                .contains("夜间户外餐桌上有烤肉、西瓜和几个人")
+                .contains("不要当成空消息");
+    }
+
+    @Test
     void buildImageAugmentedTextMessages_whenLowConfidence_addsHonestVisibilityRule() {
         MessageDto user = new MessageDto();
         user.setRole("user");

@@ -1043,16 +1043,41 @@ public class AiChatService {
             }
             if (start <= lastIdx) {
                 MessageDto last = dtos.get(lastIdx);
-                String text = (last.getContent() != null && !last.getContent().isBlank())
-                        ? last.getContent()
-                        : "请看看这张图片，并用你的性格自然回应。";
                 MessageDto user = new MessageDto();
                 user.setRole("user");
-                user.setContent(text);
+                user.setContent(resolveImageTurnUserText(last.getContent(), analysis));
                 out.add(user);
             }
         }
         return out;
+    }
+
+    /**
+     * 文本阶段用户句：纯图片/空 user_message 时显式带上识图描述，避免角色当成「空消息」。
+     */
+    private String resolveImageTurnUserText(String rawContent, VisionAnalysisResult analysis) {
+        String description = analysis != null && analysis.imageDescription() != null
+                ? analysis.imageDescription().trim() : "";
+        String stripped = stripUserMessageXml(rawContent);
+        if (stripped == null || stripped.isBlank() || isImagePlaceholderContent(stripped)
+                || isImagePlaceholderContent(rawContent)) {
+            String descLine = description.isBlank()
+                    ? "（识图未给出清晰描述，请自然回应用户发来的图片。）"
+                    : "图片内容：" + description;
+            return UserInputSanitizer.wrapStoredTextForModel(
+                    "我发了一张图片。\n" + descLine + "\n请结合图片内容，用你的性格自然回应，不要当成空消息。");
+        }
+        if (rawContent != null && rawContent.contains("<user_message")) {
+            return rawContent;
+        }
+        return UserInputSanitizer.wrapStoredTextForModel(stripped);
+    }
+
+    private static String stripUserMessageXml(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        return raw.replaceAll("(?s)<user_message[^>]*>|</user_message>", "").trim();
     }
 
     private String buildImageAnalysisAugmentation(VisionAnalysisResult analysis) {
@@ -1064,9 +1089,10 @@ public class AiChatService {
                 + "- 可辨识度: " + confidence + "\n"
                 + "- 客观描述: " + description + "\n\n"
                 + "规则:\n"
-                + "1. 若可辨识度低，必须如实告诉用户这张图看不太清，不要假装看到细节。\n"
-                + "2. 保持角色语气、人设、关系状态。\n"
-                + "3. 不要输出 JSON。";
+                + "1. 用户本轮发送了图片；必须结合上方「客观描述」回应，禁止当成空消息或没发内容。\n"
+                + "2. 若可辨识度低，必须如实告诉用户这张图看不太清，不要假装看到细节。\n"
+                + "3. 保持角色语气、人设、关系状态。\n"
+                + "4. 不要输出 JSON。";
     }
 
     private String buildDesktopGreetingPrompt(String persona, String windowTitle, VisionAnalysisResult analysis) {

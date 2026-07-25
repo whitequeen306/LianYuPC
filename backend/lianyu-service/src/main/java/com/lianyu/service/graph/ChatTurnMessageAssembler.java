@@ -51,16 +51,22 @@ public class ChatTurnMessageAssembler {
         for (Message msg : history) {
             MessageDto dto = new MessageDto();
             dto.setRole(msg.getRole() == null ? "user" : msg.getRole().toLowerCase());
+            boolean hasImage = msg.getImageUrl() != null && !msg.getImageUrl().isBlank();
+            if (hasImage) {
+                dto.setImageUrl(msg.getImageUrl());
+            }
             String content = msg.getContent();
-            if (currentUserMsgId != null
-                    && currentUserMsgId.equals(msg.getId())
-                    && currentAiUserContent != null
-                    && !currentAiUserContent.isBlank()) {
+            boolean isCurrent = currentUserMsgId != null && currentUserMsgId.equals(msg.getId());
+            if (isCurrent && currentAiUserContent != null && !currentAiUserContent.isBlank()) {
                 content = currentAiUserContent.contains("<user_message")
                         ? currentAiUserContent
                         : UserInputSanitizer.wrapStoredTextForModel(currentAiUserContent);
+                // 纯图片时旧客户端可能仍传入空 user_message；用占位文案避免被当空消息
+                if (hasImage && isEmptyUserMessageXml(content)) {
+                    content = UserInputSanitizer.wrapStoredTextForModel("用户发送了一张图片");
+                }
             } else if (content == null || content.isBlank()) {
-                if (msg.getImageUrl() != null && !msg.getImageUrl().isBlank()) {
+                if (hasImage) {
                     content = "（用户发送了一张图片）";
                 } else {
                     continue;
@@ -70,5 +76,13 @@ public class ChatTurnMessageAssembler {
             allMessages.add(dto);
         }
         return allMessages;
+    }
+
+    private static boolean isEmptyUserMessageXml(String content) {
+        if (content == null || content.isBlank()) {
+            return true;
+        }
+        String inner = content.replaceAll("(?s)<user_message[^>]*>|</user_message>", "").trim();
+        return inner.isEmpty();
     }
 }

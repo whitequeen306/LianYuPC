@@ -1106,8 +1106,13 @@ public class ConversationService {
         String imageUrl = normalizeImageUrl(request.getImageUrl());
         UserInputSanitizer.SanitizedUserText sanitized = UserInputSanitizer.sanitizeChatMessage(request.getContent());
         String text = sanitized.storedText();
-        request.setModelContentForAi(sanitized.modelText());
         boolean hasImage = imageUrl != null;
+        // 纯图片：勿把空 <user_message/> 送给模型，否则文本阶段会当「空消息」忽略识图结果
+        if (hasImage && text.isBlank()) {
+            request.setModelContentForAi(UserInputSanitizer.wrapStoredTextForModel("用户发送了一张图片"));
+        } else {
+            request.setModelContentForAi(sanitized.modelText());
+        }
 
         Message userMsg = new Message();
         userMsg.setSeq(seq);
