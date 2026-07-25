@@ -72,6 +72,11 @@ public class ApiKeyVaultService {
         vault.setKeyVersion(jasyptUtil.getCurrentVersion());
         vault.setBaseUrl(baseUrl);
         vault.setModelDefault(request.getModelDefault().trim());
+        String visionDefault = trimToNull(request.getVisionModelDefault());
+        if (visionDefault != null) {
+            validateModelDefault(visionDefault);
+        }
+        vault.setVisionModelDefault(visionDefault);
         vault.setEnabled(1);
         vault.setRemark(trimToNull(request.getRemark()));
         vaultMapper.insert(vault);
@@ -130,6 +135,13 @@ public class ApiKeyVaultService {
             vault.setModelDefault(request.getModelDefault().trim());
         } else if (vault.getModelDefault() == null || vault.getModelDefault().isBlank()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "默认模型不能为空");
+        }
+        if (request.getVisionModelDefault() != null) {
+            String visionDefault = trimToNull(request.getVisionModelDefault());
+            if (visionDefault != null) {
+                validateModelDefault(visionDefault);
+            }
+            vault.setVisionModelDefault(visionDefault);
         }
         if (request.getEnabled() != null) {
             vault.setEnabled(request.getEnabled() != 0 ? 1 : 0);
@@ -233,6 +245,7 @@ public class ApiKeyVaultService {
                 .apiKey(showFull ? decrypted : maskApiKey(decrypted))
                 .baseUrl(vault.getBaseUrl())
                 .modelDefault(vault.getModelDefault())
+                .visionModelDefault(vault.getVisionModelDefault())
                 .enabled(vault.getEnabled())
                 .remark(vault.getRemark())
                 .keyVersion(vault.getKeyVersion())
@@ -251,6 +264,7 @@ public class ApiKeyVaultService {
                 .apiKey(maskApiKey(decrypted))
                 .baseUrl(vault.getBaseUrl())
                 .modelDefault(vault.getModelDefault())
+                .visionModelDefault(vault.getVisionModelDefault())
                 .enabled(vault.getEnabled())
                 .remark(vault.getRemark())
                 .keyVersion(vault.getKeyVersion())

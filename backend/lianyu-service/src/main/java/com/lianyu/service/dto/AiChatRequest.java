@@ -12,6 +12,8 @@ public class AiChatRequest {
     private String provider;
 
     private String model;
+    /** Optional vision/VL model override for image analysis stage */
+    private String visionModel;
     private Double temperature;
 
     @NotEmpty

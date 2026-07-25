@@ -16,6 +16,8 @@ public class ApiKeyVault {
     private String keyVersion;
     private String baseUrl;
     private String modelDefault;
+    /** Optional default vision/VL model for image turns using this vault. */
+    private String visionModelDefault;
     private Integer enabled;
     private String remark;
     @TableField(fill = FieldFill.INSERT)

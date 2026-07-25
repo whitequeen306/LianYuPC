@@ -67,6 +67,7 @@ public class InvokeModelNode implements NodeAction {
         AiChatRequest request = new AiChatRequest();
         request.setProvider(state.value(ChatTurnKeys.PROVIDER, String.class).orElse(null));
         request.setModel(state.value(ChatTurnKeys.MODEL, String.class).orElse(null));
+        request.setVisionModel(state.value(ChatTurnKeys.VISION_MODEL, String.class).orElse(null));
         request.setTemperature(state.value(ChatTurnKeys.TEMPERATURE, Double.class).orElse(null));
         request.setMessages(messages);
         request.setExpectedLanguage(turn.outputLanguage());

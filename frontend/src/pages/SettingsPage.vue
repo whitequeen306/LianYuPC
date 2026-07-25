@@ -144,6 +144,10 @@
               <span class="info-value">{{ vault.modelDefault || '未设置' }}</span>
             </div>
             <div class="info-row">
+              <span class="info-label">识图模型</span>
+              <span class="info-value">{{ vault.visionModelDefault || '平台默认' }}</span>
+            </div>
+            <div class="info-row">
               <span class="info-label">密钥版本</span>
               <span class="info-value mono">{{ vault.keyVersion }}</span>
             </div>
@@ -252,6 +256,35 @@
           </div>
           <p class="field-hint">填写接口地址和密钥后点击「拉取模型」自动获取可用列表，也可手动输入。</p>
         </el-form-item>
+
+        <el-form-item label="默认识图模型（可选）" prop="visionModelDefault">
+          <el-select
+            v-model="form.visionModelDefault"
+            filterable
+            allow-create
+            clearable
+            default-first-option
+            placeholder="留空则走平台默认识图 qwen3-vl-plus"
+            class="model-select"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="m in visionModelSuggestions"
+              :key="m.id || '__platform__'"
+              :label="m.name"
+              :value="m.id"
+            />
+            <el-option
+              v-for="m in dialogModels"
+              :key="'v-' + (m.id || m)"
+              :label="m.name || m.id || m"
+              :value="m.id || m"
+            />
+          </el-select>
+          <p class="field-hint">
+            用于图片消息的多模态识图阶段。填写后，对话页选此 Provider 且未单独指定识图模型时会优先用这里的模型与本配置的 Key。
+          </p>
+        </el-form-item>
       </el-form>
 
       <template #footer>
@@ -274,6 +307,7 @@ import { useDesktopStore } from '@/stores/desktop'
 import { useSettingsStore } from '@/stores/settings'
 import { getElectronAPI, isElectronApp } from '@/utils/electron'
 import { PET_CATALOG, getPetPreviewUrl, petHasInteractiveVoice } from '@/constants/petCatalog'
+import { VISION_MODEL_SUGGESTIONS } from '@/constants/ai'
 
 const { t } = useI18n()
 import { Plus, Edit, Delete, RefreshRight, Loading, Connection, Promotion, ArrowLeft, Download, FolderOpened } from '@element-plus/icons-vue'
@@ -330,10 +364,12 @@ const initialForm = () => ({
   provider: '',
   apiKey: '',
   baseUrl: '',
-  modelDefault: ''
+  modelDefault: '',
+  visionModelDefault: '',
 })
 
 const form = reactive(initialForm())
+const visionModelSuggestions = VISION_MODEL_SUGGESTIONS.filter((m) => m.id)
 
 const isOllamaProvider = computed(() => {
   const url = form.baseUrl.trim().toLowerCase()
@@ -454,6 +490,7 @@ function showEditDialog(vault) {
   form.apiKey = ''
   form.baseUrl = vault.baseUrl || ''
   form.modelDefault = vault.modelDefault || ''
+  form.visionModelDefault = vault.visionModelDefault || ''
   dialogModels.value = []
   dialogVisible.value = true
 }
@@ -470,15 +507,22 @@ async function handleSubmit() {
       submitting.value = false
       return
     }
+    const visionModelDefault = (form.visionModelDefault || '').trim()
     const data = {
       ...(alias ? { provider: alias } : {}),
       apiKey: form.apiKey?.trim() || (isOllamaProvider.value ? 'local' : ''),
       baseUrl: form.baseUrl.trim(),
       modelDefault: form.modelDefault.trim(),
+      visionModelDefault,
     }
 
     if (editingVault.value) {
-      const update = { baseUrl: data.baseUrl, modelDefault: data.modelDefault }
+      const update = {
+        baseUrl: data.baseUrl,
+        modelDefault: data.modelDefault,
+        // 空字符串表示清空 vault 上的识图默认，改走平台
+        visionModelDefault,
+      }
       if (form.apiKey?.trim()) {
         update.apiKey = form.apiKey.trim()
       }

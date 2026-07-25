@@ -24,6 +24,8 @@ export const DEFAULTS = {
     conversationId: '',
     provider: 'platform',
     model: '',
+    // 识图/多模态模型；空 = 平台默认 qwen3-vl-plus
+    visionModel: '',
     // 放行模式：'allowlist'（默认拒绝——私聊须命中 allowUsers、群聊须命中 allowGroups，空表=全拒）
     //           'open'（开放——任何 QQ 用户/群均可驱动宿主 AI，注意配额/prompt 注入风险）
     allowMode: 'allowlist',
@@ -98,6 +100,9 @@ export function normalizeQqBridgeSettings(settings) {
   binding.allowGroups = asStringList(binding.allowGroups)
   // allowMode 二选一；非 'open' 一律归为 'allowlist'（默认拒绝，杜绝空表=静默全放行，issue #11）
   binding.allowMode = binding.allowMode === 'open' ? 'open' : 'allowlist'
+  binding.provider = String(binding.provider || 'platform').trim() || 'platform'
+  binding.model = String(binding.model || '').trim()
+  binding.visionModel = String(binding.visionModel || '').trim()
   // characterId 字符串化（绑定角色缓存，懒建 QQ 用户会话用）
   binding.characterId = String(binding.characterId || '').trim()
   // sessionMap 须为纯对象：{ 'private:<qqUserId>': '<conversationId>' }；值统一字符串化

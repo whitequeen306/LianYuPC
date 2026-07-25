@@ -3,13 +3,18 @@ package com.lianyu.service.dto;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 @Data
 public class SendMessageRequest {
     @NotBlank
     private String provider;
+    @Size(max = 128)
     private String model;
+    /** Optional vision/VL model for image turns; empty → vault/platform default */
+    @Size(max = 128)
+    private String visionModel;
     private Double temperature;
     private String content;
     /** 已通过上传接口获得的公开图片 URL */

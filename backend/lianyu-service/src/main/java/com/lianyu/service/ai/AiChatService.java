@@ -142,6 +142,9 @@ public class AiChatService {
             {"subIntent":"求识图","confidence":"high","imageDescription":"一只橘猫趴在窗台上"}
             """;
 
+    /** Stage-1 VL user hint: neutral, no roleplay (roleplay/placeholder text can trip content filters). */
+    private static final String VISION_ANALYSIS_USER_HINT = "请客观描述这张图片中可见的内容。";
+
     public AiChatService(ApiKeyVaultService vaultService,
                          FileStorageService fileStorageService,
                          ToolManager toolManager,
@@ -725,7 +728,7 @@ public class AiChatService {
                         + "若看不清必须如实说明。")
                 .media(media)
                 .build();
-        VisionAnalysisResult analysis = analyzeImage(visionChatModel, vlMessage, multimodalDescribeMaxTokens);
+        VisionAnalysisResult analysis = analyzeImage(visionChatModel, multimodalModel, vlMessage, multimodalDescribeMaxTokens);
         if (analysis.imageDescription() == null || analysis.imageDescription().isBlank()) {
             log.warn("Desktop observe: vision analysis returned empty description");
             return null;
@@ -820,13 +823,23 @@ public class AiChatService {
         if (!multimodalEnabled) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "图片识别功能未启用");
         }
-        VaultEntryResponse visionVault = buildMultimodalVault();
-        ChatModel visionChatModel = buildChatModel(visionVault, multimodalModel, visionVault.getApiKey());
+        VisionRoute vision = resolveVisionRoute(userId, request);
+        String visionApiKey = resolveApiKeyForProvider(vision.vault());
+        ChatModel visionChatModel = buildChatModel(vision.vault(), vision.model(), visionApiKey);
+        logChatVaultUsage(userId, request.getProvider(), vision.vault(), vision.model(), "image-vision");
         MessageDto imageDto = lastImageMessage(request.getMessages(), request.getImageUrl());
-        VisionAnalysisResult analysis = analyzeImage(
-                visionChatModel,
-                buildVisionUserMessage(imageDto),
-                multimodalMaxTokens);
+        VisionAnalysisResult analysis;
+        try {
+            analysis = analyzeImage(
+                    visionChatModel,
+                    vision.model(),
+                    buildVisionAnalysisUserMessage(imageDto),
+                    multimodalMaxTokens);
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw mapVisionProviderException(e);
+        }
 
         VaultEntryResponse textVault = resolveVaultForGeneration(userId, request.getProvider());
         String textModel = resolveModel(request, textVault);
@@ -846,8 +859,8 @@ public class AiChatService {
                 throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "图片识别失败，请换一张图片再试");
             }
             String reply = enforceExpectedLanguage(userId, request, textVault, textModel, textChatModel, raw, null, textDtos);
-            log.info("Multimodal chat: userId={}, subIntent={}, confidence={}, low={}",
-                    userId, analysis.subIntent(), analysis.confidence(),
+            log.info("Multimodal chat: userId={}, visionModel={}, subIntent={}, confidence={}, low={}",
+                    userId, vision.model(), analysis.subIntent(), analysis.confidence(),
                     VisionAnalysisParser.isLowConfidence(analysis.confidence()));
             ChatResult.ChatResultBuilder builder = ChatResult.builder().content(reply);
             if (response.getMetadata() != null && response.getMetadata().getUsage() != null) {
@@ -856,6 +869,72 @@ public class AiChatService {
             }
             return builder.build();
         });
+    }
+
+    /**
+     * 识图路由：请求显式 visionModel / 用户 vault 的 visionModelDefault 优先；
+     * 自有 Provider 且配置了识图模型时走用户 Key；否则走平台多模态（默认 qwen3-vl-plus）。
+     */
+    private VisionRoute resolveVisionRoute(Long userId, AiChatRequest request) {
+        String requested = trimToNull(request != null ? request.getVisionModel() : null);
+        String provider = request != null ? request.getProvider() : null;
+        if (!isPlatformProvider(provider)) {
+            VaultEntryResponse userVault = resolveVault(userId, provider);
+            String vaultVision = trimToNull(userVault.getVisionModelDefault());
+            if (requested != null || vaultVision != null) {
+                String model = requested != null ? requested : vaultVision;
+                return new VisionRoute(userVault, model);
+            }
+        }
+        String model = requested != null ? requested : multimodalModel;
+        return new VisionRoute(buildMultimodalVault(), model);
+    }
+
+    private record VisionRoute(VaultEntryResponse vault, String model) {}
+
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private BusinessException mapVisionProviderException(Throwable e) {
+        String msg = collectThrowableMessages(e);
+        String lower = msg.toLowerCase();
+        if (lower.contains("data_inspection_failed") || lower.contains("inappropriate content")) {
+            return new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
+                    "图片未能通过内容安全审核，请换一张图片再试");
+        }
+        if (lower.contains("无法连接") || lower.contains("connection") || lower.contains("timed out")
+                || lower.contains("timeout") || lower.contains("connect timed out")
+                || lower.contains("connection refused") || lower.contains("unknown host")) {
+            return new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
+                    "识图服务暂时无法连接，请稍后重试");
+        }
+        if (e instanceof BusinessException be) {
+            return be;
+        }
+        log.warn("Vision provider error: {}", msg);
+        return new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "图片识别失败，请换一张图片再试");
+    }
+
+    private static String collectThrowableMessages(Throwable e) {
+        StringBuilder sb = new StringBuilder();
+        Throwable cur = e;
+        int depth = 0;
+        while (cur != null && depth < 8) {
+            if (cur.getMessage() != null && !cur.getMessage().isBlank()) {
+                if (!sb.isEmpty()) {
+                    sb.append(" | ");
+                }
+                sb.append(cur.getMessage());
+            }
+            cur = cur.getCause();
+            depth++;
+        }
+        return sb.toString();
     }
 
     /**
@@ -880,7 +959,7 @@ public class AiChatService {
             MessageDto last = dtos.get(dtos.size() - 1);
             String text = (last.getContent() != null && !last.getContent().isBlank())
                     ? last.getContent()
-                    : "请看看这张图片，并用你的性格自然回应。";
+                    : VISION_ANALYSIS_USER_HINT;
             MessageDto imageDto = new MessageDto();
             imageDto.setRole("user");
             imageDto.setContent(text);
@@ -890,10 +969,12 @@ public class AiChatService {
         return messages;
     }
 
-    private VisionAnalysisResult analyzeImage(ChatModel chatModel, Message visionUserMessage, int maxTokens) {
+    private VisionAnalysisResult analyzeImage(
+            ChatModel chatModel, String visionModel, Message visionUserMessage, int maxTokens) {
+        String model = (visionModel != null && !visionModel.isBlank()) ? visionModel.trim() : multimodalModel;
         List<Message> messages = List.of(new SystemMessage(VISION_ANALYSIS_JSON_INSTRUCTION), visionUserMessage);
         Prompt prompt = new Prompt(messages, OpenAiChatOptions.builder()
-                .model(multimodalModel)
+                .model(model)
                 .temperature(0.1)
                 .maxTokens(maxTokens)
                 .build());
@@ -1233,6 +1314,36 @@ public class AiChatService {
         return messages;
     }
 
+    /** Stage-1 识图：中立提示，避免把角色扮演/占位文案送进 VL（易触发内容审核）。 */
+    private Message buildVisionAnalysisUserMessage(MessageDto dto) {
+        MessageDto analysisDto = new MessageDto();
+        analysisDto.setRole(dto.getRole());
+        analysisDto.setImageUrl(dto.getImageUrl());
+        String raw = dto.getContent();
+        if (raw == null || raw.isBlank() || isImagePlaceholderContent(raw)) {
+            analysisDto.setContent(VISION_ANALYSIS_USER_HINT);
+        } else {
+            String caption = raw.replaceAll("(?s)<user_message[^>]*>|</user_message>", "").trim();
+            if (caption.isBlank() || isImagePlaceholderContent(caption)) {
+                analysisDto.setContent(VISION_ANALYSIS_USER_HINT);
+            } else {
+                String shortCaption = caption.length() > 200 ? caption.substring(0, 200) : caption;
+                analysisDto.setContent("用户附言：" + shortCaption + "\n" + VISION_ANALYSIS_USER_HINT);
+            }
+        }
+        return buildVisionUserMessage(analysisDto);
+    }
+
+    private static boolean isImagePlaceholderContent(String text) {
+        if (text == null) {
+            return true;
+        }
+        String t = text.trim();
+        return t.isEmpty()
+                || t.contains("用户发送了一张图片")
+                || t.contains("用你的性格自然回应");
+    }
+
     private Message buildVisionUserMessage(MessageDto dto) {
         String objectKey = FileStorageService.extractObjectKey(dto.getImageUrl());
         if (objectKey == null) {
@@ -1242,7 +1353,7 @@ public class AiChatService {
         String contentType = fileStorageService.resolveContentType(objectKey);
         String text = dto.getContent() != null && !dto.getContent().isBlank()
                 ? dto.getContent()
-                : "请看看这张图片，并用你的性格自然回应。";
+                : VISION_ANALYSIS_USER_HINT;
         Media media = Media.builder()
                 .mimeType(MimeTypeUtils.parseMimeType(contentType))
                 .data(new ByteArrayResource(bytes))
@@ -1423,8 +1534,17 @@ public class AiChatService {
         if (e instanceof BusinessException be) {
             return be.getMessage();
         }
-        String msg = e.getMessage();
-        return msg != null && !msg.isBlank() ? msg : "AI 服务调用失败";
+        String collected = collectThrowableMessages(e);
+        String lower = collected.toLowerCase();
+        if (lower.contains("data_inspection_failed") || lower.contains("inappropriate content")) {
+            return "图片未能通过内容安全审核，请换一张图片再试";
+        }
+        if (lower.contains("无法连接") || lower.contains("connection refused")
+                || lower.contains("connect timed out") || lower.contains("timed out")
+                || lower.contains("unknown host")) {
+            return "识图服务暂时无法连接，请稍后重试";
+        }
+        return collected.isBlank() ? "AI 服务调用失败" : collected;
     }
 
     private ChatModel buildChatModel(VaultEntryResponse vault, String model, String apiKey) {

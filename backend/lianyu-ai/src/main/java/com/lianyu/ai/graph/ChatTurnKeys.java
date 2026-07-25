@@ -16,6 +16,8 @@ public final class ChatTurnKeys {
     public static final String MODEL_USER_TEXT = "modelUserText";
     public static final String PROVIDER = "provider";
     public static final String MODEL = "model";
+    /** Optional vision/VL model for image analysis stage */
+    public static final String VISION_MODEL = "visionModel";
     public static final String TEMPERATURE = "temperature";
     public static final String OUTPUT_LANGUAGE = "outputLanguage";
     public static final String SCENE = "scene";

@@ -20,6 +20,7 @@ public class VaultEntryResponse {
     private String apiKey;
     private String baseUrl;
     private String modelDefault;
+    private String visionModelDefault;
     private Integer enabled;
     private String remark;
     private String keyVersion;

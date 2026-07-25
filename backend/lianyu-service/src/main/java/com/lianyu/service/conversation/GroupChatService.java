@@ -510,6 +510,7 @@ public class GroupChatService {
                     .character(character)
                     .provider(request.getProvider())
                     .model(request.getModel())
+                    .visionModel(request.getVisionModel())
                     .temperature(request.getTemperature())
                     .rawUserText(request.getContent())
                     .modelUserText(request.getModelContentForAi())

@@ -150,6 +150,59 @@
               </el-select>
               <p class="field-hint">{{ t('qqBridge.binding.characterHint') }}</p>
             </el-form-item>
+            <el-form-item :label="t('qqBridge.binding.provider')">
+              <el-select
+                v-model="bindingForm.provider"
+                style="width: 100%"
+                @change="onQqProviderChange"
+              >
+                <el-option :label="PLATFORM_PROVIDER_LABEL" :value="PLATFORM_PROVIDER" />
+                <el-option
+                  v-for="v in providersStore.vaults"
+                  :key="v.provider"
+                  :label="v.provider"
+                  :value="v.provider"
+                />
+              </el-select>
+              <p class="field-hint">{{ t('qqBridge.binding.providerHint') }}</p>
+            </el-form-item>
+            <el-form-item :label="t('qqBridge.binding.model')">
+              <el-select
+                v-model="bindingForm.model"
+                filterable
+                allow-create
+                clearable
+                :disabled="bindingForm.provider === PLATFORM_PROVIDER"
+                :placeholder="t('qqBridge.binding.modelPlaceholder')"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="m in qqModelOptions"
+                  :key="m.id || m"
+                  :label="m.name || m.id || m"
+                  :value="m.id || m"
+                />
+              </el-select>
+              <p class="field-hint">{{ t('qqBridge.binding.modelHint') }}</p>
+            </el-form-item>
+            <el-form-item :label="t('qqBridge.binding.visionModel')">
+              <el-select
+                v-model="bindingForm.visionModel"
+                filterable
+                allow-create
+                clearable
+                :placeholder="t('qqBridge.binding.visionModelPlaceholder')"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="m in visionModelOptions"
+                  :key="m.id || '__platform_vision__'"
+                  :label="m.name"
+                  :value="m.id"
+                />
+              </el-select>
+              <p class="field-hint">{{ t('qqBridge.binding.visionModelHint') }}</p>
+            </el-form-item>
             <el-form-item :label="t('qqBridge.binding.allowMode')">
               <el-select v-model="bindingForm.allowMode" style="width: 100%">
                 <el-option :label="t('qqBridge.binding.allowModeAllowlist')" value="allowlist" />
@@ -364,12 +417,23 @@ import { isElectronApp } from '@/utils/electron'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { listCharacters } from '@/api/character'
+import { useProvidersStore } from '@/stores/providers'
+import { fetchModels } from '@/api/ai'
+import {
+  PLATFORM_PROVIDER,
+  PLATFORM_MODEL,
+  PLATFORM_PROVIDER_LABEL,
+  VISION_MODEL_SUGGESTIONS,
+} from '@/constants/ai'
 
 const { t } = useI18n()
 const router = useRouter()
 const store = useQqBridgeStore()
+const providersStore = useProvidersStore()
 const isElectron = isElectronApp()
 const goBack = () => router.push('/app/settings')
+const visionModelOptions = VISION_MODEL_SUGGESTIONS
+const qqModelOptions = ref([])
 
 const hostStatus = computed(() => store.hostStatus || { state: 'stopped' })
 const bridgeStatus = computed(() => store.bridgeStatus || { state: 'stopped' })
@@ -413,7 +477,15 @@ const savingWs = ref(false)
 const savingReply = ref(false)
 
 const autoModeRef = ref(false)
-const bindingForm = reactive({ characterId: '', allowMode: 'allowlist', allowUsers: '', allowGroups: '' })
+const bindingForm = reactive({
+  characterId: '',
+  provider: PLATFORM_PROVIDER,
+  model: '',
+  visionModel: '',
+  allowMode: 'allowlist',
+  allowUsers: '',
+  allowGroups: '',
+})
 const wsForm = reactive({ wsUrl: 'ws://127.0.0.1:3001', accessToken: '' })
 // 回复设置表单：segmentDelayMs（分段逐条发送条间延迟）+ fallbackText（兜底回复）。
 // 保存时须展开当前 settings.reply 以保留 timeoutMs 等未在 UI 暴露的字段
@@ -432,9 +504,13 @@ watch(
     if (!s) return
     autoModeRef.value = s.hosting?.mode === 'auto'
     bindingForm.characterId = s.binding?.characterId || ''
+    bindingForm.provider = s.binding?.provider || PLATFORM_PROVIDER
+    bindingForm.model = s.binding?.model || ''
+    bindingForm.visionModel = s.binding?.visionModel || ''
     bindingForm.allowMode = s.binding?.allowMode === 'open' ? 'open' : 'allowlist'
     bindingForm.allowUsers = joinList(s.binding?.allowUsers)
     bindingForm.allowGroups = joinList(s.binding?.allowGroups)
+    loadQqModels(bindingForm.provider)
     if (s.napcat?.wsUrl) wsForm.wsUrl = s.napcat.wsUrl
     if (s.napcat?.accessToken != null) wsForm.accessToken = s.napcat.accessToken
     // 允许 0（不延迟）：显式取非负有限数，否则回落 500（|| 会把 0 当假值）
@@ -542,6 +618,32 @@ async function loadCharacterOptions() {
 // 下拉展开时刷新（用户可能刚在 App 里建了新角色）
 function onCharDropdownVisible(isOpen) {
   if (isOpen && !characterLoading.value) loadCharacterOptions()
+}
+
+async function loadQqModels(provider) {
+  if (!provider || provider === PLATFORM_PROVIDER) {
+    qqModelOptions.value = [{ id: PLATFORM_MODEL, name: PLATFORM_MODEL }]
+    return
+  }
+  try {
+    const list = await fetchModels(provider)
+    qqModelOptions.value = list || []
+  } catch {
+    qqModelOptions.value = []
+  }
+}
+
+function onQqProviderChange(provider) {
+  if (provider === PLATFORM_PROVIDER) {
+    bindingForm.model = ''
+    bindingForm.visionModel = ''
+    loadQqModels(PLATFORM_PROVIDER)
+    return
+  }
+  const vault = providersStore.vaults.find((v) => v.provider === provider)
+  bindingForm.model = vault?.modelDefault || ''
+  bindingForm.visionModel = vault?.visionModelDefault || ''
+  loadQqModels(provider)
 }
 
 async function onToggleAuto(v) {
@@ -652,10 +754,14 @@ async function onSaveBinding() {
   try {
     // 按角色路由：清空 conversationId，桥接按 characterId 为每个 QQ 用户懒建专属会话，
     // 不再依赖固定会话号（清空上下文后会话失效时 404 自动 re-resolve，不受影响）。
+    const provider = bindingForm.provider || PLATFORM_PROVIDER
     await store.setSettings({
       binding: {
         conversationId: '',
         characterId: bindingForm.characterId.trim(),
+        provider,
+        model: provider === PLATFORM_PROVIDER ? '' : String(bindingForm.model || '').trim(),
+        visionModel: String(bindingForm.visionModel || '').trim(),
         allowMode: bindingForm.allowMode,
         allowUsers: splitList(bindingForm.allowUsers),
         allowGroups: splitList(bindingForm.allowGroups),
@@ -777,6 +883,7 @@ async function refreshLogs() {
 
 onMounted(() => {
   if (isElectron) {
+    providersStore.fetchVaults()
     store.syncFromMain()
     loadCharacterOptions()
     refreshLogs()

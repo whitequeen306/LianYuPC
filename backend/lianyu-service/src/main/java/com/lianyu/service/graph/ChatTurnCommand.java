@@ -22,6 +22,8 @@ public class ChatTurnCommand {
     Character character;
     String provider;
     String model;
+    /** Optional vision/VL model; empty → vault/platform default */
+    String visionModel;
     Double temperature;
     String rawUserText;
     String modelUserText;

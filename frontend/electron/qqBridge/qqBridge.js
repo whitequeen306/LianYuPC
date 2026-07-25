@@ -145,6 +145,7 @@ async function handleOneBotMessage(event) {
     content: text || '',
     ...(backendImageUrl ? { imageUrl: backendImageUrl } : {}),
     ...(settings.binding?.model ? { model: settings.binding.model } : {}),
+    ...(settings.binding?.visionModel ? { visionModel: settings.binding.visionModel } : {}),
   }
 
   // 走流式端点：非流式 POST /messages 只回 replies.get(0) 第一段，QQ 侧无分段；

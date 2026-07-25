@@ -17,6 +17,9 @@ public class CreateVaultRequest {
     @NotBlank(message = "默认模型不能为空")
     private String modelDefault;
 
+    /** 可选：该 Provider 的默认识图/多模态模型；空则走平台 qwen3-vl-plus */
+    private String visionModelDefault;
+
     /** 备注（可选） */
     private String remark;
 }

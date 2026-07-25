@@ -31,6 +31,8 @@ describe('normalizeQqBridgeSettings', () => {
     expect(s.napcat.wsUrl).toBe('ws://127.0.0.1:3001')
     expect(s.napcat.connectTimeoutMs).toBe(10000)
     expect(s.binding.provider).toBe('platform')
+    expect(s.binding.model).toBe('')
+    expect(s.binding.visionModel).toBe('')
     expect(s.binding.allowUsers).toEqual([])
     expect(s.reply.fallbackText).toMatch(/稍后再试/)
     expect(s.hosting.mode).toBe('manual')

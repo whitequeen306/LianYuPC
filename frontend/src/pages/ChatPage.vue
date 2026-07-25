@@ -241,6 +241,22 @@
               :value="m.id || m"
             />
           </el-select>
+          <el-select
+            v-model="currentVisionModel"
+            size="small"
+            placeholder="识图"
+            class="toolbar-select toolbar-select--wide"
+            filterable
+            allow-create
+            clearable
+          >
+            <el-option
+              v-for="m in visionModelOptions"
+              :key="m.id || '__platform_vision__'"
+              :label="m.name"
+              :value="m.id"
+            />
+          </el-select>
         </div>
       </div>
     </div>
@@ -286,7 +302,12 @@ import { ArrowLeft, ArrowDown, ChatDotRound, Promotion, Picture, Close, User, Us
 import { ElMessage } from 'element-plus'
 import { resolveMediaUrl } from '@/utils/media'
 import { nextCharacterAvatarTier, resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
-import { PLATFORM_PROVIDER, PLATFORM_MODEL, PLATFORM_PROVIDER_LABEL } from '@/constants/ai'
+import {
+  PLATFORM_PROVIDER,
+  PLATFORM_MODEL,
+  PLATFORM_PROVIDER_LABEL,
+  VISION_MODEL_SUGGESTIONS,
+} from '@/constants/ai'
 import { normalizeHex } from '@/utils/themeColor'
 import EmotionBadge from '@/components/EmotionBadge.vue'
 import { getCharacterState } from '@/api/characterState'
@@ -463,9 +484,11 @@ const waitingReply = ref(false)
 const awaitingOpening = ref(false)
 const currentProvider = ref('')
 const currentModel = ref('')
+const currentVisionModel = ref('')
 let restoringProviderPref = false
 
 const availableModels = ref([])
+const visionModelOptions = computed(() => VISION_MODEL_SUGGESTIONS)
 let conversationPollTimer = null
 let pollFailureCount = 0
 const POLL_FAILURE_WARN_THRESHOLD = 3
@@ -481,12 +504,17 @@ function loadCharProviderPref(charId) {
     return map[charId] || null
   } catch { return null }
 }
-function saveCharProviderPref(charId, provider, model) {
+function saveCharProviderPref(charId, provider, model, visionModel) {
   if (!charId) return
   try {
     const raw = localStorage.getItem(PER_CHAR_PROVIDER_KEY)
     const map = raw ? JSON.parse(raw) : {}
-    map[charId] = { provider, model }
+    const prev = map[charId] && typeof map[charId] === 'object' ? map[charId] : {}
+    map[charId] = {
+      provider,
+      model,
+      visionModel: visionModel !== undefined ? visionModel : (prev.visionModel || ''),
+    }
     localStorage.setItem(PER_CHAR_PROVIDER_KEY, JSON.stringify(map))
   } catch { /* ignore */ }
 }
@@ -497,6 +525,7 @@ function restoreCharProviderPref() {
   if (!charId) {
     currentProvider.value = PLATFORM_PROVIDER
     currentModel.value = PLATFORM_MODEL
+    currentVisionModel.value = ''
     loadModels(PLATFORM_PROVIDER)
     return
   }
@@ -508,6 +537,7 @@ function restoreCharProviderPref() {
     if (providerStillExists) {
       currentProvider.value = saved.provider
       currentModel.value = saved.model || ''
+      currentVisionModel.value = saved.visionModel || ''
       if (saved.provider !== PLATFORM_PROVIDER) {
         loadModels(saved.provider)
       } else {
@@ -517,12 +547,14 @@ function restoreCharProviderPref() {
     } else {
       currentProvider.value = PLATFORM_PROVIDER
       currentModel.value = PLATFORM_MODEL
-      saveCharProviderPref(charId, PLATFORM_PROVIDER, PLATFORM_MODEL)
+      currentVisionModel.value = ''
+      saveCharProviderPref(charId, PLATFORM_PROVIDER, PLATFORM_MODEL, '')
       loadModels(PLATFORM_PROVIDER)
     }
   } else {
     currentProvider.value = PLATFORM_PROVIDER
     currentModel.value = PLATFORM_MODEL
+    currentVisionModel.value = ''
     loadModels(PLATFORM_PROVIDER)
   }
   // nextTick 后重置 flag，此时 watcher 中的 model 覆盖已执行完毕
@@ -721,21 +753,25 @@ onUnmounted(() => {
 watch(currentProvider, (p) => {
   if (!p) return
   if (p === PLATFORM_PROVIDER) {
-    if (!restoringProviderPref) currentModel.value = PLATFORM_MODEL
+    if (!restoringProviderPref) {
+      currentModel.value = PLATFORM_MODEL
+      currentVisionModel.value = ''
+    }
     loadModels(p)
     return
   }
   const vault = providersStore.vaults.find(v => v.provider === p)
   if (!restoringProviderPref) {
     currentModel.value = vault?.modelDefault || ''
+    currentVisionModel.value = vault?.visionModelDefault || ''
   }
   loadModels(p)
 })
 
-watch(currentModel, (m) => {
+watch([currentModel, currentVisionModel], ([m, vm]) => {
   const charId = activeCharacter.value?.id
   if (charId && currentProvider.value) {
-    saveCharProviderPref(charId, currentProvider.value, m || '')
+    saveCharProviderPref(charId, currentProvider.value, m || '', vm || '')
   }
 })
 
@@ -1159,6 +1195,7 @@ async function handleSend() {
   const streamPayload = {
     provider: currentProvider.value,
     model: currentProvider.value === PLATFORM_PROVIDER ? undefined : (currentModel.value || undefined),
+    visionModel: currentVisionModel.value || undefined,
     content: draftText || undefined,
     imageUrl: draftImageUrl || undefined
   }

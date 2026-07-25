@@ -116,6 +116,7 @@ public class ChatTurnFacade {
         }
         inputs.put(ChatTurnKeys.PROVIDER, command.getProvider());
         inputs.put(ChatTurnKeys.MODEL, command.getModel());
+        inputs.put(ChatTurnKeys.VISION_MODEL, command.getVisionModel());
         inputs.put(ChatTurnKeys.TEMPERATURE, command.getTemperature());
         inputs.put(ChatTurnKeys.RAW_USER_TEXT, command.getRawUserText());
         inputs.put(ChatTurnKeys.MODEL_USER_TEXT, command.getModelUserText());
