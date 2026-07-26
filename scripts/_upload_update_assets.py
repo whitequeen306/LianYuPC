@@ -108,7 +108,7 @@ def release_assets(version: str, token: str) -> dict[str, dict[str, int | str]]:
         matches = [r for r in releases if r.get("tag_name") == f"v{version}"]
         if not matches:
             raise SystemExit(f"missing GitHub release: v{version}")
-        # Prefer non-draft, then most assets â€?but still merge across all matches.
+        # Prefer non-draft, then most assets; merge across all matches.
         matches.sort(key=lambda r: (r.get("draft", True), -len(r.get("assets", []))))
         assets = []
         seen: set[str] = set()
