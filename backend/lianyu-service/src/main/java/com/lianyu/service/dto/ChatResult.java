@@ -10,4 +10,6 @@ public class ChatResult {
     private Integer promptTokens;
     private Integer completionTokens;
     private Integer totalTokens;
+    /** 图片识图阶段的客观描述，供落库历史占位使用 */
+    private String imageDescription;
 }

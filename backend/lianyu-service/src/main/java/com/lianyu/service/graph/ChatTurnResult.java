@@ -12,6 +12,7 @@ public class ChatTurnResult {
     Integer promptTokens;
     Integer completionTokens;
     Integer totalTokens;
+    String imageDescription;
 
     public ChatResult toChatResult() {
         return ChatResult.builder()
@@ -19,6 +20,7 @@ public class ChatTurnResult {
                 .promptTokens(promptTokens)
                 .completionTokens(completionTokens)
                 .totalTokens(totalTokens)
+                .imageDescription(imageDescription)
                 .build();
     }
 }

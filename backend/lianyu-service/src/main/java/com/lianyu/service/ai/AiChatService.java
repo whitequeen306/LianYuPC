@@ -265,6 +265,13 @@ public class AiChatService {
         void onComplete(String fullContent, Throwable error);
 
         /**
+         * 图片消息识图完成后回调（在 SSE 正文下发前），用于落库历史占位文案。
+         */
+        default void onVisionComplete(String imageDescription) {
+            // no-op
+        }
+
+        /**
          * 在发送 [DONE] 之前调用，可向客户端推送规范化后的分片（pieces）等。
          */
         default void beforeStreamComplete(SseEmitter emitter, String fullContent) throws IOException {
@@ -807,6 +814,9 @@ public class AiChatService {
         CompletableFuture.runAsync(() -> {
             try {
                 ChatResult result = circuitBreaker.executeCallable(() -> doImageChat(userId, request));
+                if (callback != null) {
+                    callback.onVisionComplete(result.getImageDescription());
+                }
                 String reply = result.getContent();
                 if (reply != null && !reply.isBlank()) {
                     sendSseChunk(emitter, reply);
@@ -865,7 +875,9 @@ public class AiChatService {
             log.info("Multimodal chat: userId={}, visionModel={}, subIntent={}, confidence={}, low={}",
                     userId, vision.model(), analysis.subIntent(), analysis.confidence(),
                     VisionAnalysisParser.isLowConfidence(analysis.confidence()));
-            ChatResult.ChatResultBuilder builder = ChatResult.builder().content(reply);
+            ChatResult.ChatResultBuilder builder = ChatResult.builder()
+                    .content(reply)
+                    .imageDescription(analysis.imageDescription());
             if (response.getMetadata() != null && response.getMetadata().getUsage() != null) {
                 var usage = response.getMetadata().getUsage();
                 builder.totalTokens(usage.getTotalTokens() != null ? usage.getTotalTokens().intValue() : null);

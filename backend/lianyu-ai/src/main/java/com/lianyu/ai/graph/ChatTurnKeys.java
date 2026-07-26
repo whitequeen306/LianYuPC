@@ -46,5 +46,6 @@ public final class ChatTurnKeys {
     public static final String TOTAL_TOKENS = "totalTokens";
     public static final String PROMPT_TOKENS = "promptTokens";
     public static final String COMPLETION_TOKENS = "completionTokens";
+    public static final String IMAGE_DESCRIPTION = "imageDescription";
     public static final String INVOKE_ERROR = "invokeError";
 }

@@ -51,6 +51,7 @@ public class ChatTurnFacade {
                 .promptTokens(state.value(ChatTurnKeys.PROMPT_TOKENS, Integer.class).orElse(null))
                 .completionTokens(state.value(ChatTurnKeys.COMPLETION_TOKENS, Integer.class).orElse(null))
                 .totalTokens(state.value(ChatTurnKeys.TOTAL_TOKENS, Integer.class).orElse(null))
+                .imageDescription(state.value(ChatTurnKeys.IMAGE_DESCRIPTION, String.class).orElse(null))
                 .build();
     }
 

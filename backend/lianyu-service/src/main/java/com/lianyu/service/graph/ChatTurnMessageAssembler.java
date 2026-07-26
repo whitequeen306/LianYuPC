@@ -25,7 +25,8 @@ public class ChatTurnMessageAssembler {
             for (MessageDto dto : preparedMessages) {
                 MessageDto next = new MessageDto();
                 next.setRole(dto.getRole());
-                next.setContent(dto.getContent());
+                next.setContent(ImageMessageHistoryText.forHistory(dto.getContent(),
+                        dto.getImageUrl() != null && !dto.getImageUrl().isBlank()));
                 copy.add(next);
             }
             if (!copy.isEmpty() && "system".equalsIgnoreCase(copy.get(0).getRole())) {
@@ -52,25 +53,19 @@ public class ChatTurnMessageAssembler {
             MessageDto dto = new MessageDto();
             dto.setRole(msg.getRole() == null ? "user" : msg.getRole().toLowerCase());
             boolean hasImage = msg.getImageUrl() != null && !msg.getImageUrl().isBlank();
-            if (hasImage) {
-                dto.setImageUrl(msg.getImageUrl());
-            }
             String content = msg.getContent();
             boolean isCurrent = currentUserMsgId != null && currentUserMsgId.equals(msg.getId());
             if (isCurrent && currentAiUserContent != null && !currentAiUserContent.isBlank()) {
                 content = currentAiUserContent.contains("<user_message")
                         ? currentAiUserContent
                         : UserInputSanitizer.wrapStoredTextForModel(currentAiUserContent);
-                // 纯图片时旧客户端可能仍传入空 user_message；用占位文案避免被当空消息
                 if (hasImage && isEmptyUserMessageXml(content)) {
                     content = UserInputSanitizer.wrapStoredTextForModel("用户发送了一张图片");
                 }
+            } else if (hasImage) {
+                content = ImageMessageHistoryText.forHistory(content, true);
             } else if (content == null || content.isBlank()) {
-                if (hasImage) {
-                    content = "（用户发送了一张图片）";
-                } else {
-                    continue;
-                }
+                continue;
             }
             dto.setContent(content);
             allMessages.add(dto);

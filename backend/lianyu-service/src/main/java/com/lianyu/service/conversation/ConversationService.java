@@ -26,6 +26,7 @@ import com.lianyu.service.ai.PetVoiceRegistry;
 import com.lianyu.service.graph.ChatTurnCommand;
 import com.lianyu.service.graph.ChatTurnFacade;
 import com.lianyu.service.graph.ChatTurnResult;
+import com.lianyu.service.graph.ImageMessageHistoryText;
 import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
 import com.lianyu.service.ai.InnerThoughtFilter;
@@ -306,6 +307,11 @@ public class ConversationService {
                 .streaming(false)
                 .build());
 
+        if (hasImage) {
+            persistImageUserHistoryContent(
+                    turn.userMsg().getId(), request.getContent(), chatResult.getImageDescription());
+        }
+
         List<MessageResponse> replies = saveAssistantReplies(
                 conversationId, character, chatResult.getContent(), chatResult.getTotalTokens());
         relationshipStateService.recordAssistantTurn(userId, character.getId(), conversationId, replies);
@@ -350,10 +356,19 @@ public class ConversationService {
         characterStateService.afterUserMessage(character.getId(), userId, turn.aiUserContent());
 
         boolean hasImage = turn.userMsg().getImageUrl() != null && !turn.userMsg().getImageUrl().isBlank();
+        final String userCaption = request.getContent();
+        final Long userMessageId = turn.userMsg().getId();
 
         final Character streamCharacter = character;
         final CharacterChatBehavior streamBehavior = chatBehaviorResolver.resolve(character);
         AiChatService.StreamCallback callback = new AiChatService.StreamCallback() {
+            @Override
+            public void onVisionComplete(String imageDescription) {
+                if (hasImage) {
+                    persistImageUserHistoryContent(userMessageId, userCaption, imageDescription);
+                }
+            }
+
             @Override
             public void beforeStreamComplete(SseEmitter emitter, String fullContent) throws IOException {
                 if (fullContent == null || fullContent.isBlank()) {
@@ -1143,7 +1158,17 @@ public class ConversationService {
         if (!text.isBlank()) {
             return text;
         }
-        return hasImage ? "（用户发送了一张图片）" : "";
+        return hasImage ? ImageMessageHistoryText.placeholder(null) : "";
+    }
+
+    private void persistImageUserHistoryContent(Long messageId, String userCaption, String imageDescription) {
+        if (messageId == null) {
+            return;
+        }
+        Message patch = new Message();
+        patch.setId(messageId);
+        patch.setContent(ImageMessageHistoryText.forPersist(userCaption, imageDescription));
+        messageMapper.updateById(patch);
     }
 
     private List<MessageResponse> saveAssistantReplies(Long conversationId,

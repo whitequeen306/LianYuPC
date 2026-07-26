@@ -52,6 +52,9 @@ public class InvokeModelNode implements NodeAction {
         updates.put(ChatTurnKeys.TOTAL_TOKENS, result.getTotalTokens());
         updates.put(ChatTurnKeys.PROMPT_TOKENS, result.getPromptTokens());
         updates.put(ChatTurnKeys.COMPLETION_TOKENS, result.getCompletionTokens());
+        if (result.getImageDescription() != null && !result.getImageDescription().isBlank()) {
+            updates.put(ChatTurnKeys.IMAGE_DESCRIPTION, result.getImageDescription());
+        }
         log.info("node=invokeModel mode=blocking hasImage={} chars={}",
                 hasImage(request),
                 result.getContent() != null ? result.getContent().length() : 0);
