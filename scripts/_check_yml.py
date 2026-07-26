@@ -1,7 +1,7 @@
 import paramiko, os
 c = paramiko.SSHClient()
 c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-c.connect('154.219.111.30', 22, 'root', os.environ['DEPLOY_SSH_PASSWORD'])
+c.connect('156.233.228.18', 22, 'root', os.environ['DEPLOY_SSH_PASSWORD'])
 sftp = c.open_sftp()
 sftp.put(r'C:\Users\hp\Desktop\LianYu-PC\backend\lianyu-app\src\main\resources\application.yml',
          '/opt/lianyu/backend/lianyu-app/src/main/resources/application.yml')

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import paramiko
 
-HOST = "154.219.111.30"
+HOST = "156.233.228.18"
 USER = "root"
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -46,10 +46,10 @@ def main() -> None:
     run(client, "uptime")
     run(client, "docker stats --no-stream --format 'table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}\\t{{.MemPerc}}'")
 
-    # backend JVM 线程总数（含 Tomcat worker），观察是否被打满
+    # backend JVM 线程总数（含 Tomcat worker），观察是否被打�?
     run(client, "echo backend_threads=$(docker exec lianyu-backend sh -c 'ls /proc/1/task 2>/dev/null | wc -l')")
 
-    # 取一个真实广场头像 key
+    # 取一个真实广场头�?key
     listing = run(
         client,
         "docker exec lianyu-minio sh -c 'ls /data/lianyu/square-avatars 2>/dev/null | head -3'",
@@ -89,7 +89,7 @@ def main() -> None:
     run(client, "docker logs --since 30m lianyu-backend 2>&1 | grep -iE 'public file|stream object|OutOfMemory|GC overhead|timeout' | tail -20 || true")
     run(client, "docker exec lianyu-minio sh -c 'ls /data/lianyu/square-avatars 2>/dev/null | wc -l'")
 
-    # MySQL 模板数 vs MinIO 对象数；列出 DB 有 avatar_url 但 MinIO 缺文件的 slug
+    # MySQL 模板�?vs MinIO 对象数；列出 DB �?avatar_url �?MinIO 缺文件的 slug
     run(
         client,
         "cd /opt/lianyu && MYSQL_PWD=$(grep '^MYSQL_PASSWORD=' .env | cut -d= -f2-) && "

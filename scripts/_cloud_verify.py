@@ -26,7 +26,7 @@ def main() -> None:
 
     c = paramiko.SSHClient()
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    c.connect("154.219.111.30", username="root", password=password, timeout=30)
+    c.connect("156.233.228.18", username="root", password=password, timeout=30)
 
     for cmd in [
         "cd /opt/lianyu && docker compose ps",

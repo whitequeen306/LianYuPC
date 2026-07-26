@@ -1,7 +1,7 @@
 """
 LianYu-PC end-to-end smoke + flow tests (Playwright).
 
-Default target: deployed cloud stack at https://154.219.111.30
+Default target: deployed cloud stack at https://156.233.228.18
 Override: set LIANYU_E2E_BASE_URL=http://localhost:5173 (needs backend on :8080)
 """
 from __future__ import annotations
@@ -20,7 +20,7 @@ from typing import Callable
 
 from playwright.sync_api import Page, sync_playwright, expect
 
-BASE_URL = os.environ.get("LIANYU_E2E_BASE_URL", "https://154.219.111.30").rstrip("/")
+BASE_URL = os.environ.get("LIANYU_E2E_BASE_URL", "https://156.233.228.18").rstrip("/")
 SCREENSHOT_DIR = os.path.join(os.path.dirname(__file__), "artifacts")
 PASSWORD = "TestPass1a"
 SSL_CTX = ssl.create_default_context()
@@ -111,8 +111,8 @@ def register_user_via_api(username: str) -> dict:
 
 def wait_for_captcha(page: Page) -> str:
     expr = page.locator(".captcha-expr")
-    expect(expr).not_to_have_text("加载中...", timeout=15000)
-    expect(expr).not_to_have_text("获取失败，点击刷新", timeout=15000)
+    expect(expr).not_to_have_text("加载�?..", timeout=15000)
+    expect(expr).not_to_have_text("获取失败，点击刷�?, timeout=15000)
     text = expr.inner_text().strip()
     if not re.search(r"=\s*\?", text):
         raise AssertionError(f"Captcha not ready: {text!r}")
@@ -226,7 +226,7 @@ def run_tests() -> TestRun:
         def test_register_ui_form() -> None:
             goto_hash(page, "/register")
             page.locator('input[autocomplete="username"]').fill(f"{username}_ui")
-            page.locator('input[placeholder="昵称（选填）"]').fill("UI Form")
+            page.locator('input[placeholder="昵称（选填�?]').fill("UI Form")
             page.locator('input[autocomplete="new-password"]').first.fill(PASSWORD)
             page.locator('input[placeholder="确认密码"]').fill(PASSWORD)
             fill_captcha(page)
@@ -249,7 +249,7 @@ def run_tests() -> TestRun:
             if resp.get("code") != 200:
                 raise AssertionError(
                     f"GET /api/characters failed: code={resp.get('code')} msg={resp.get('message')} "
-                    "(cloud backend may be degraded — UI steps will still run)"
+                    "(cloud backend may be degraded �?UI steps will still run)"
                 )
 
         def test_home() -> None:
@@ -371,10 +371,10 @@ def run_tests() -> TestRun:
         def test_logout() -> None:
             goto_hash(page, "/app")
             page.locator("button.header-avatar").click()
-            page.locator(".el-dropdown-menu__item").filter(has_text="退出登录").click()
+            page.locator(".el-dropdown-menu__item").filter(has_text="退出登�?).click()
             confirm = page.locator(".el-message-box")
             expect(confirm).to_be_visible(timeout=5000)
-            confirm.locator("button").filter(has_text="退出登录").click()
+            confirm.locator("button").filter(has_text="退出登�?).click()
             page.wait_for_url(re.compile(r"#/$|#/login"), timeout=15000)
             token = page.evaluate("() => localStorage.getItem('lianyu-token')")
             assert not token, "Token should be cleared after logout"
@@ -415,7 +415,7 @@ def run_tests() -> TestRun:
             ("Register UI form (secondary)", test_register_ui_form),
         ]
 
-        print(f"\nLianYu E2E — base URL: {BASE_URL}")
+        print(f"\nLianYu E2E �?base URL: {BASE_URL}")
         print(f"Test user: {username}\n")
         for name, fn in steps:
             run.record(name, fn)

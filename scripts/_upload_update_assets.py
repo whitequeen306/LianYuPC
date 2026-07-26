@@ -15,7 +15,7 @@ from pathlib import Path
 
 import paramiko
 
-HOST = "154.219.111.30"
+HOST = "156.233.228.18"
 USER = "root"
 ROOT = Path(__file__).resolve().parents[1]
 BUCKET = "lianyu"
@@ -108,7 +108,7 @@ def release_assets(version: str, token: str) -> dict[str, dict[str, int | str]]:
         matches = [r for r in releases if r.get("tag_name") == f"v{version}"]
         if not matches:
             raise SystemExit(f"missing GitHub release: v{version}")
-        # Prefer non-draft, then most assets â€” but still merge across all matches.
+        # Prefer non-draft, then most assets â€?but still merge across all matches.
         matches.sort(key=lambda r: (r.get("draft", True), -len(r.get("assets", []))))
         assets = []
         seen: set[str] = set()
@@ -254,7 +254,7 @@ def main() -> None:
     run(client, f"rm -rf {remote_tmp}")
     configure_update_assets_public_read(client)
     cleanup_old_update_assets(client)
-    run(client, "curl -k -fsS -o /dev/null -w 'latest=%{http_code}' https://154.219.111.30/api/public/files/updates/latest.yml")
+    run(client, "curl -k -fsS -o /dev/null -w 'latest=%{http_code}' https://156.233.228.18/api/public/files/updates/latest.yml")
     client.close()
     print("UPDATE_ASSETS_UPLOADED")
 

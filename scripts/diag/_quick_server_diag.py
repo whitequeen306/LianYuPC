@@ -28,7 +28,7 @@ def run(client: paramiko.SSHClient, cmd: str) -> None:
 load_dotenv(ROOT / ".env")
 c = paramiko.SSHClient()
 c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-c.connect("154.219.111.30", username="root", password=os.environ["DEPLOY_SSH_PASSWORD"], timeout=30)
+c.connect("156.233.228.18", username="root", password=os.environ["DEPLOY_SSH_PASSWORD"], timeout=30)
 run(c, "docker ps -a --format 'table {{.Names}}\t{{.Status}}' | head -12")
 run(c, "docker logs lianyu-backend --tail 100 2>&1")
 run(c, "curl -s -o /dev/null -w 'backend=%{http_code}' http://127.0.0.1:8080/api/auth/captcha")

@@ -5,7 +5,7 @@ import sys
 
 import paramiko
 
-HOST = "154.219.111.30"
+HOST = "156.233.228.18"
 USER = "root"
 
 
@@ -46,7 +46,7 @@ def main() -> None:
     )
     run(client, "docker rmi $(docker images 'lianyu-pc/frontend' -q) 2>/dev/null || true")
 
-    # 2) Docker build cache â€” does not affect running containers
+    # 2) Docker build cache â€?does not affect running containers
     run(client, "docker builder prune -af", timeout=600)
 
     # 3) Dangling images from old backend builds

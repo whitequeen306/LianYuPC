@@ -24,7 +24,7 @@ def run(client, cmd):
 load_dotenv(ROOT / ".env")
 c = paramiko.SSHClient()
 c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-c.connect("154.219.111.30", username="root", password=os.environ["DEPLOY_SSH_PASSWORD"], timeout=30)
+c.connect("156.233.228.18", username="root", password=os.environ["DEPLOY_SSH_PASSWORD"], timeout=30)
 
 print("Waiting 45s...")
 time.sleep(45)

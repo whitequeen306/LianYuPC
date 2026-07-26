@@ -6,7 +6,7 @@ import urllib.request
 
 from playwright.sync_api import sync_playwright
 
-CAPTCHA_URL = "https://154.219.111.30/api/auth/captcha"
+CAPTCHA_URL = "https://156.233.228.18/api/auth/captcha"
 LOGIN_URL = "http://localhost:5173/#/login"
 
 

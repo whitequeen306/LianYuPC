@@ -24,7 +24,7 @@ def run(client, cmd):
 load_dotenv(ROOT / ".env")
 c = paramiko.SSHClient()
 c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-c.connect("154.219.111.30", username="root", password=os.environ["DEPLOY_SSH_PASSWORD"], timeout=30)
+c.connect("156.233.228.18", username="root", password=os.environ["DEPLOY_SSH_PASSWORD"], timeout=30)
 run(c, "docker exec lianyu-minio sh -c 'find /data/lianyu/square-avatars -iname \"*zero*\" -o -iname \"*yuno*\" 2>/dev/null'")
 run(c, "docker logs lianyu-backend 2>&1 | grep -i 'Square avatar sync failed' | tail -20")
 run(c, "curl -s -o /dev/null -w 'zero_two=%{http_code}\\n' http://127.0.0.1:8080/api/public/files/square-avatars/zero_two.png")

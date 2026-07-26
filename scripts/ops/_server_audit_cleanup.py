@@ -6,7 +6,7 @@ from pathlib import Path
 
 import paramiko
 
-HOST = "154.219.111.30"
+HOST = "156.233.228.18"
 USER = "root"
 ROOT = Path(__file__).resolve().parents[1]
 APPLY_CLEANUP = "--apply" in sys.argv
@@ -47,7 +47,7 @@ def main() -> None:
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     client.connect(HOST, username=USER, password=password, timeout=30)
 
-    section = "=== 服务状态 ==="
+    section = "=== 服务状�?==="
     print(section)
     run(client, "uptime")
     run(client, "df -h / /opt /var/lib/docker 2>/dev/null | head -5")
@@ -62,7 +62,7 @@ def main() -> None:
     print("=== 镜像列表 ===")
     run(client, "docker images --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.ID}}'")
 
-    print("=== 悬空/未使用资源统计 ===")
+    print("=== 悬空/未使用资源统�?===")
     run(client, "docker images -f dangling=true -q | wc -l | xargs -I{} echo dangling_images={}")
     run(client, "docker ps -a --filter status=exited -q | wc -l | xargs -I{} echo stopped_containers={}")
     run(client, "docker volume ls -f dangling=true -q | wc -l | xargs -I{} echo dangling_volumes={}")
@@ -70,7 +70,7 @@ def main() -> None:
     print("=== /opt/lianyu 目录大小 ===")
     run(client, "du -sh /opt/lianyu /opt/lianyu/.git 2>/dev/null; du -sh /opt/lianyu/*/ 2>/dev/null | sort -hr | head -15")
 
-    print("=== 大日志 / tmp（可安全清理候选） ===")
+    print("=== 大日�?/ tmp（可安全清理候选） ===")
     run(client, "journalctl --disk-usage 2>/dev/null || true")
     run(client, "du -sh /var/log/journal 2>/dev/null || true")
     run(client, "find /var/log -type f -size +50M 2>/dev/null | head -10")
@@ -81,8 +81,8 @@ def main() -> None:
         client.close()
         return
 
-    print("=== 安全清理（保留 build cache + 在用的镜像） ===")
-    # dangling images only — not docker builder prune
+    print("=== 安全清理（保�?build cache + 在用的镜像） ===")
+    # dangling images only �?not docker builder prune
     run(client, "docker image prune -f")
     # stopped containers (not running stack)
     run(client, "docker container prune -f")
@@ -91,7 +91,7 @@ def main() -> None:
   # apt cache if present
     run(client, "apt-get clean 2>/dev/null; rm -rf /var/lib/apt/lists/* 2>/dev/null; true")
 
-    print("=== 清理后 ===")
+    print("=== 清理�?===")
     run(client, "df -h / /var/lib/docker")
     run(client, "docker system df")
 

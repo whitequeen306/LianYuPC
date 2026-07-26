@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""为 MinIO 中已有 square-avatars 原图补生成 square-avatars-thumb 缩略图。
+"""�?MinIO 中已�?square-avatars 原图补生�?square-avatars-thumb 缩略图�?
 
-依赖后端 CharacterSquareAvatarSync 启动回填；本脚本通过重启 backend 触发同步，
-或直接调用 MinIO + 与 Java 相同的裁切逻辑（需 Pillow）。
+依赖后端 CharacterSquareAvatarSync 启动回填；本脚本通过重启 backend 触发同步�?
+或直接调�?MinIO + �?Java 相同的裁切逻辑（需 Pillow）�?
 
 用法:
   python scripts/_generate_square_thumbs.py
-  python scripts/_generate_square_thumbs.py --api https://154.219.111.30 --token <lianyu-token>
+  python scripts/_generate_square_thumbs.py --api https://156.233.228.18 --token <lianyu-token>
 """
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ def crop_square_thumb(source: bytes, size: int = THUMB_SIZE) -> bytes:
 
 
 def backfill_via_minio_env() -> int:
-    """使用 MINIO_* 环境变量直连 MinIO（与 docker-compose 一致）。"""
+    """使用 MINIO_* 环境变量直连 MinIO（与 docker-compose 一致）�?""
     try:
         from minio import Minio
     except ImportError as exc:

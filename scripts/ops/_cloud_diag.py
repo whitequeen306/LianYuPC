@@ -6,7 +6,7 @@ from pathlib import Path
 
 import paramiko
 
-HOST = "154.219.111.30"
+HOST = "156.233.228.18"
 USER = "root"
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -51,7 +51,7 @@ def main() -> None:
     run(client, "curl -sk -o /dev/null -w 'gw_captcha=%{http_code}\\n' https://127.0.0.1/api/auth/captcha")
     run(
         client,
-        "curl -sk -D - -o /dev/null -H 'Origin: https://154.219.111.30' "
+        "curl -sk -D - -o /dev/null -H 'Origin: https://156.233.228.18' "
         "https://127.0.0.1/api/auth/captcha 2>/dev/null | grep -i access-control || true",
     )
     run(client, "curl -sk -o /dev/null -w 'chars_noauth=%{http_code}\\n' https://127.0.0.1/api/characters")

@@ -6,7 +6,7 @@ from pathlib import Path
 import paramiko
 
 ROOT = Path(__file__).resolve().parents[1]
-HOST = "154.219.111.30"
+HOST = "156.233.228.18"
 
 
 def load_dotenv(path: Path) -> None:
@@ -54,8 +54,8 @@ def main() -> None:
     run(client, "docker logs lianyu-api-gateway 2>&1 | grep '0.2.128' | grep character | tail -20")
     run(client, "docker logs lianyu-api-gateway 2>&1 | grep '117.159.17.215' | grep -E 'captcha|square|character|login|register' | tail -40")
     run(client, "docker logs lianyu-api-gateway 2>&1 | grep '117.159.17.215' | tail -15")
-    run(client, "curl -sk -o /dev/null -w 'https_captcha=%{http_code}\\n' https://154.219.111.30/api/auth/captcha")
-    run(client, "echo | openssl s_client -connect 154.219.111.30:443 -servername 154.219.111.30 2>/dev/null | openssl x509 -noout -fingerprint -sha256")
+    run(client, "curl -sk -o /dev/null -w 'https_captcha=%{http_code}\\n' https://156.233.228.18/api/auth/captcha")
+    run(client, "echo | openssl s_client -connect 156.233.228.18:443 -servername 156.233.228.18 2>/dev/null | openssl x509 -noout -fingerprint -sha256")
     run(client, "docker logs lianyu-backend 2>&1 | grep -iE 'ERROR|Exception' | tail -30")
 
     client.close()

@@ -12,7 +12,7 @@ def load_dotenv(p):
 load_dotenv(ROOT/'.env')
 pw=os.environ.get('DEPLOY_SSH_PASSWORD')
 c=paramiko.SSHClient(); c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-c.connect('154.219.111.30', username='root', password=pw, timeout=30)
+c.connect('156.233.228.18', username='root', password=pw, timeout=30)
 for cmd in [
     "docker exec lianyu-backend printenv | grep -iE 'LIANYU_PET_TTS|LIANYU_AI_TTS|tts' || true",
     "docker logs lianyu-backend 2>&1 | grep -F '9dff5ac35f2046babbbcdf6b5ad66a6d' | head -20",

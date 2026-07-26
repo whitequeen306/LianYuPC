@@ -7,7 +7,7 @@ from pathlib import Path
 import paramiko
 
 ROOT = Path(__file__).resolve().parents[1]
-HOST = "154.219.111.30"
+HOST = "156.233.228.18"
 USER_IP = os.environ.get("LIANYU_USER_IP", "117.159.17.215")
 
 

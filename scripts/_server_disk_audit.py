@@ -5,7 +5,7 @@ import sys
 
 import paramiko
 
-HOST = "154.219.111.30"
+HOST = "156.233.228.18"
 USER = "root"
 
 
