@@ -49,6 +49,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class VoiceCallService {
 
     private static final String SEQ_KEY_PREFIX = "msg_seq:";
+    private static final String VOICE_CALL_TURN_MARKER = "system/voice-call-turn";
     /** V1: only Raiden voice call for testing. */
     private static final Set<String> VOICE_CALL_PET_IDS = Set.of("raiden");
 
@@ -114,8 +115,8 @@ public class VoiceCallService {
         userMsg.setAudioUrl("system/voice-call-turn");
         messageMapper.insert(userMsg);
 
-        int histLimit = Math.max(4, Math.min(historyLimit, 16));
-        List<Message> history = recentMessages(conversationId, histLimit);
+        int roundLimit = Math.max(2, Math.min(historyLimit, 16));
+        List<Message> history = recentVoiceCallTurns(conversationId, roundLimit);
         relationshipStateService.recordUserTurn(userId, character.getId(), conversationId, userMsg, history);
         characterStateService.afterUserMessage(character.getId(), userId, userText);
 
@@ -191,8 +192,8 @@ public class VoiceCallService {
         userMsg.setAudioUrl("system/voice-call-turn");
         messageMapper.insert(userMsg);
 
-        int histLimit = Math.max(4, Math.min(historyLimit, 16));
-        List<Message> history = recentMessages(conversationId, histLimit);
+        int roundLimit = Math.max(2, Math.min(historyLimit, 16));
+        List<Message> history = recentVoiceCallTurns(conversationId, roundLimit);
         relationshipStateService.recordUserTurn(userId, character.getId(), conversationId, userMsg, history);
         characterStateService.afterUserMessage(character.getId(), userId, userText);
     }
@@ -222,8 +223,9 @@ public class VoiceCallService {
         if (character == null) {
             throw new BusinessException(ErrorCode.CHARACTER_NOT_FOUND);
         }
-        int histLimit = Math.max(4, Math.min(historyLimit, 16));
-        List<Message> history = recentMessages(conversationId, histLimit);
+        int roundLimit = Math.max(2, Math.min(historyLimit, 16));
+        List<Message> history = recentVoiceCallTurns(conversationId, roundLimit);
+        history = trimCurrentUserTurn(history, userText);
         return buildVoiceAiRequest(userId, conversationId, character, history, userText);
     }
 
@@ -334,6 +336,7 @@ public class VoiceCallService {
                                               Character character,
                                               List<Message> history,
                                               String userText) {
+        history = trimCurrentUserTurn(history, userText);
         String voiceSuffix = "\n\n=== 语音通话（强制） ===\n"
                 + "你正在与用户进行实时语音通话，回复会被直接朗读。\n"
                 + "硬性要求：\n"
@@ -499,6 +502,29 @@ public class VoiceCallService {
     private long nextSeq(Long conversationId) {
         Long lastSeq = redisTemplate.opsForValue().increment(SEQ_KEY_PREFIX + conversationId, 1);
         return lastSeq != null ? lastSeq : 1L;
+    }
+
+    private List<Message> recentVoiceCallTurns(Long conversationId, int roundLimit) {
+        int msgLimit = Math.max(2, Math.min(roundLimit * 2, 32));
+        List<Message> messages = messageMapper.selectList(new LambdaQueryWrapper<Message>()
+                .eq(Message::getConversationId, conversationId)
+                .eq(Message::getAudioUrl, VOICE_CALL_TURN_MARKER)
+                .orderByDesc(Message::getSeq)
+                .last("LIMIT " + msgLimit));
+        Collections.reverse(messages);
+        return messages;
+    }
+
+    /** Duplex persists the user turn before building AI request — drop duplicate trailing user line. */
+    private static List<Message> trimCurrentUserTurn(List<Message> history, String userText) {
+        if (history == null || history.isEmpty() || userText == null) {
+            return history == null ? List.of() : history;
+        }
+        Message last = history.get(history.size() - 1);
+        if ("USER".equalsIgnoreCase(last.getRole()) && userText.equals(last.getContent())) {
+            return history.subList(0, history.size() - 1);
+        }
+        return history;
     }
 
     private List<Message> recentMessages(Long conversationId, int limit) {

@@ -24,6 +24,11 @@ public enum ChatTurnScene {
         return this == SINGLE || this == PROACTIVE;
     }
 
+    /** 语音通话仅注入当前时间锚点，不含城市/晚安块以保持 prompt 精简。 */
+    public boolean includeTime() {
+        return includeTimeCityGoodnight() || this == VOICE_CALL;
+    }
+
     public boolean includeProactiveRealWorld() {
         return this == PROACTIVE;
     }

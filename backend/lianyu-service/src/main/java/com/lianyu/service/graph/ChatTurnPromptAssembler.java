@@ -94,8 +94,10 @@ public class ChatTurnPromptAssembler {
         String base = promptBuilder.buildSystemPrompt(
                 character, memoryContext, lang, scene.enableChatTools(), showInnerThoughts);
 
-        if (scene.includeTimeCityGoodnight()) {
+        if (scene.includeTime()) {
             base = appendCurrentTimeContext(base);
+        }
+        if (scene.includeTimeCityGoodnight()) {
             base = appendCurrentRealCityContext(base, character);
             base = appendGoodnightContextIfApplicable(base, userInputForLang, lang);
             base = enforceNaturalChatStyle(base, lang, showInnerThoughts);

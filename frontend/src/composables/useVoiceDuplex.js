@@ -27,6 +27,40 @@ export function useVoiceDuplex() {
   /** @type {((ev: any) => void) | null} */
   let onEvent = null
   let bargeArmed = false
+  /** ms after first TTS chunk before barge-in is allowed (echo guard) */
+  let bargeGraceUntil = 0
+  let bargeHotFrames = 0
+  const BARGE_GRACE_MS = 900
+  const BARGE_PEAK_THRESHOLD = 0.28
+  const BARGE_HOT_FRAMES_REQUIRED = 4
+
+  function resetBargeState() {
+    bargeArmed = false
+    bargeGraceUntil = 0
+    bargeHotFrames = 0
+  }
+
+  function noteSpeakingStarted() {
+    bargeArmed = true
+    bargeGraceUntil = Date.now() + BARGE_GRACE_MS
+    bargeHotFrames = 0
+  }
+
+  function maybeBargeIn(meta) {
+    if (!bargeArmed || phase.value !== 'speaking') return
+    if (Date.now() < bargeGraceUntil) return
+    const peak = meta?.peak || 0
+    if (peak <= BARGE_PEAK_THRESHOLD) {
+      bargeHotFrames = 0
+      return
+    }
+    bargeHotFrames += 1
+    if (bargeHotFrames < BARGE_HOT_FRAMES_REQUIRED) return
+    resetBargeState()
+    playback?.clear()
+    sendJson({ type: 'barge_in' })
+    phase.value = 'listening'
+  }
 
   function sendJson(obj) {
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -58,16 +92,16 @@ export function useVoiceDuplex() {
         mime: msg.mime || 'audio/pcm',
         sampleRate: msg.sampleRate || 24000,
       })
-      bargeArmed = true
+      noteSpeakingStarted()
     } else if (type === 'tts.done' || type === 'turn.done') {
       if (type === 'turn.done') {
         phase.value = 'idle'
-        bargeArmed = false
+        resetBargeState()
       }
     } else if (type === 'turn.cancelled') {
       playback?.clear()
       phase.value = 'idle'
-      bargeArmed = false
+      resetBargeState()
     } else if (type === 'error') {
       lastError.value = String(msg.message || '语音会话错误')
     }
@@ -140,13 +174,7 @@ export function useVoiceDuplex() {
       vadProfile,
       onFrame: (pcm, meta) => {
         if (ws?.readyState === WebSocket.OPEN) ws.send(pcm)
-        // Barge-in while character is speaking.
-        if (bargeArmed && phase.value === 'speaking' && (meta?.peak || 0) > 0.16) {
-          bargeArmed = false
-          playback?.clear()
-          sendJson({ type: 'barge_in' })
-          phase.value = 'listening'
-        }
+        maybeBargeIn(meta)
       },
       onEndpoint: () => sendJson({ type: 'endpoint' }),
     })
@@ -157,7 +185,7 @@ export function useVoiceDuplex() {
     await stopPcmStream()
     playback?.clear()
     playback = null
-    bargeArmed = false
+    resetBargeState()
     phase.value = 'idle'
     partialText.value = ''
     mode.value = ''
@@ -173,7 +201,7 @@ export function useVoiceDuplex() {
     playback?.clear()
     sendJson({ type: 'barge_in' })
     phase.value = 'listening'
-    bargeArmed = false
+    resetBargeState()
   }
 
   return {

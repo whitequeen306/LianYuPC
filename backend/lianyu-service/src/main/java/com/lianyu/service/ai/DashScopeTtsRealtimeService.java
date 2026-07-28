@@ -121,6 +121,7 @@ public class DashScopeTtsRealtimeService {
         private final AtomicBoolean closed = new AtomicBoolean(false);
         private final StringBuilder textBuf = new StringBuilder();
         private final CountDownLatch readyLatch = new CountDownLatch(1);
+        private final CountDownLatch finishedLatch = new CountDownLatch(1);
         private volatile WebSocket socket;
         private volatile boolean sessionReady;
 
@@ -137,7 +138,7 @@ public class DashScopeTtsRealtimeService {
             ObjectNode session = objectMapper.createObjectNode();
             session.put("voice", voice);
             session.put("language_type", languageType);
-            session.put("mode", "server_commit");
+            session.put("mode", "commit");
             session.put("response_format", "pcm");
             session.put("sample_rate", 24000);
 
@@ -203,11 +204,25 @@ public class DashScopeTtsRealtimeService {
             sendJson(root);
         }
 
+        /** Wait for {@code session.finished} after {@link #finish()}. */
+        public boolean awaitFinished(long timeoutMs) {
+            if (closed.get() && finishedLatch.getCount() == 0) {
+                return true;
+            }
+            try {
+                return finishedLatch.await(Math.max(500, timeoutMs), TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+
         public void close() {
             if (!closed.compareAndSet(false, true)) {
                 return;
             }
             readyLatch.countDown();
+            finishedLatch.countDown();
             WebSocket ws = socket;
             if (ws != null) {
                 try {
@@ -254,6 +269,7 @@ public class DashScopeTtsRealtimeService {
         public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
             if (closed.compareAndSet(false, true)) {
                 readyLatch.countDown();
+                finishedLatch.countDown();
                 listener.onDone();
             }
             return null;
@@ -263,6 +279,7 @@ public class DashScopeTtsRealtimeService {
         public void onError(WebSocket webSocket, Throwable error) {
             if (closed.compareAndSet(false, true)) {
                 readyLatch.countDown();
+                finishedLatch.countDown();
                 log.warn("TTS realtime socket error: {}", error == null ? "null" : error.toString());
                 listener.onError(error == null ? "tts error" : String.valueOf(error.getMessage()));
             }
@@ -286,7 +303,11 @@ public class DashScopeTtsRealtimeService {
                             listener.onAudio(Base64.getDecoder().decode(b64), "audio/pcm");
                         }
                     }
-                    case "response.audio.done", "response.done", "session.finished" -> listener.onDone();
+                    case "response.audio.done", "response.done" -> listener.onDone();
+                    case "session.finished" -> {
+                        finishedLatch.countDown();
+                        listener.onDone();
+                    }
                     case "error" -> {
                         String msg = root.path("error").path("message").asText(
                                 root.path("message").asText("tts error"));
@@ -354,8 +375,10 @@ public class DashScopeTtsRealtimeService {
         }
         try {
             session.appendText(text);
+            session.commit();
             session.finish();
             byte[] bytes = done.orTimeout(45, java.util.concurrent.TimeUnit.SECONDS).join();
+            session.awaitFinished(45_000);
             session.close();
             return bytes;
         } catch (Exception e) {

@@ -79,4 +79,27 @@ class ChatTurnPromptAssemblerTest {
         assertFalse(prompt.systemPrompt().contains("你最近的生活动态"));
         assertFalse(prompt.systemPrompt().contains("写了日记"));
     }
+
+    @Test
+    void assemble_voiceCall_includesTimeOnly() {
+        Character character = new Character();
+        character.setId(8L);
+        character.setSettings(null);
+        when(promptBuilder.buildSystemPrompt(any(Character.class), eq(""), eq("zh"), eq(false)))
+                .thenReturn("BASE_PROMPT");
+
+        ChatTurnPromptAssembler.AssembledPrompt prompt = assembler.assemble(
+                ChatTurnScene.VOICE_CALL,
+                9L,
+                1L,
+                character,
+                "你好",
+                "你好",
+                "\nVOICE_SUFFIX",
+                null);
+
+        assertTrue(prompt.systemPrompt().contains("当前真实环境"));
+        assertTrue(prompt.systemPrompt().contains("VOICE_SUFFIX"));
+        assertFalse(prompt.systemPrompt().contains("用户当前所在现实城市"));
+    }
 }

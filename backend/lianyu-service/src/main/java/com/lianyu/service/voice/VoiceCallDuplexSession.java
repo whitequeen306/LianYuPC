@@ -204,6 +204,7 @@ public class VoiceCallDuplexSession {
                 if (useRealtime && !ttsFailed.get()) {
                     flushRealtimeTts(tts);
                     tts.finish();
+                    tts.awaitFinished(45_000);
                 } else if (!audioSent.get()) {
                     // No realtime voice / realtime failed before any audio → HTTP voiceId
                     log.info("Voice duplex TTS HTTP fallback pet={} conv={} realtimeStarted={}",
@@ -234,7 +235,11 @@ public class VoiceCallDuplexSession {
             } finally {
                 DashScopeTtsRealtimeService.Session tts = ttsSession.getAndSet(null);
                 if (tts != null) {
-                    tts.close();
+                    try {
+                        tts.close();
+                    } catch (Exception ignored) {
+                        // ignore
+                    }
                 }
                 llmFuture.set(null);
                 turnBusy.set(false);
@@ -256,6 +261,7 @@ public class VoiceCallDuplexSession {
             buf = buf.substring(cut);
             if (!piece.isBlank()) {
                 tts.appendText(piece);
+                tts.commit();
             }
             cut = findSentenceCut(buf);
         }
@@ -266,6 +272,7 @@ public class VoiceCallDuplexSession {
             sentenceBuf.setLength(0);
             if (!piece.isBlank()) {
                 tts.appendText(piece);
+                tts.commit();
             }
         }
     }
@@ -278,6 +285,7 @@ public class VoiceCallDuplexSession {
         sentenceBuf.setLength(0);
         if (!rest.isBlank()) {
             tts.appendText(rest);
+            tts.commit();
         }
     }
 
