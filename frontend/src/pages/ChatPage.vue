@@ -1252,7 +1252,9 @@ async function commitVoiceFinal(text) {
   if (!text || !voiceInputListening.value || voiceFinalConsumed) return
   voiceFinalConsumed = true
   const epoch = ++voiceTypewriteEpoch
-  const base = voiceCommittedBase || (inputText.value ? `${inputText.value.trimEnd()} ` : '')
+  // Always replace the live partial span; never fall back to inputText
+  // (inputText already contains voiceCommittedBase + partial).
+  const base = voiceCommittedBase
   voiceLivePreview.value = text
   await typewriteText(text, {
     charDelayMs: 10,

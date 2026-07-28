@@ -5,6 +5,7 @@ describe('createPcmPlayback', () => {
   it('exposes enqueue/clear without throwing when AudioContext is unavailable-ish', () => {
     const pb = createPcmPlayback({ sampleRate: 24000 })
     expect(typeof pb.enqueueBase64Pcm).toBe('function')
+    expect(typeof pb.enqueueBase64Audio).toBe('function')
     expect(typeof pb.clear).toBe('function')
     pb.clear()
     expect(pb.isPlaying()).toBe(false)

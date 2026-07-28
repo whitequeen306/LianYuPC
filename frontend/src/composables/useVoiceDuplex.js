@@ -54,7 +54,10 @@ export function useVoiceDuplex() {
     } else if (type === 'tts.audio') {
       phase.value = 'speaking'
       if (!playback) playback = createPcmPlayback({ sampleRate: msg.sampleRate || 24000 })
-      playback.enqueueBase64Pcm(msg.base64, msg.sampleRate || 24000)
+      playback.enqueueBase64Audio(msg.base64, {
+        mime: msg.mime || 'audio/pcm',
+        sampleRate: msg.sampleRate || 24000,
+      })
       bargeArmed = true
     } else if (type === 'tts.done' || type === 'turn.done') {
       if (type === 'turn.done') {

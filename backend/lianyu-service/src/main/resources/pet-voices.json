@@ -1,6 +1,7 @@
 {
   "model": "qwen3-tts-vc-2026-01-22",
   "realtimeModel": "qwen3-tts-vc-realtime-2026-01-15",
+  "_comment": "同一角色两套 voiceId，勿混用。voices/model = HTTP（桌宠开场/短语音/通话回退）；realtimeVoices/realtimeModel = 语音通话流式。源 clip 同一份可登记两次。",
   "voices": {
     "klee": "qwen-tts-vc-klee-voice-20260616133001848-5f9b",
     "ganyu": "qwen-tts-vc-ganyu-voice-20260616133005161-bc51",
@@ -8,5 +9,8 @@
     "raiden": "qwen-tts-vc-raiden-voice-20260616133012759-26cf",
     "elysia": "qwen-tts-vc-elysia-voice-20260714121404767-1982",
     "erii_uesugi": "qwen-tts-vc-eriri-voice-20260720205936884-cd40"
+  },
+  "realtimeVoices": {
+    "raiden": "qwen-tts-vc-raiden_rt-voice-20260729051221572-94e4"
   }
 }

@@ -69,9 +69,9 @@ public class DashScopeTtsRealtimeService {
             listener.onError("TTS disabled");
             return null;
         }
-        String voice = petVoiceRegistry.resolveVoiceId(petId);
+        String voice = petVoiceRegistry.resolveRealtimeVoiceId(petId);
         if (voice == null) {
-            listener.onError("no voice mapping");
+            listener.onError("no realtime voice mapping");
             return null;
         }
         String key = resolveApiKey();

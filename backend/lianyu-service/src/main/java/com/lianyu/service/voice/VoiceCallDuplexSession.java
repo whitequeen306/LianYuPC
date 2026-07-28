@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.lianyu.common.util.UserInputSanitizer;
 import com.lianyu.service.ai.AsrStreamClient;
 import com.lianyu.service.ai.DashScopeTtsRealtimeService;
+import com.lianyu.service.ai.DashScopeTtsService;
 import com.lianyu.service.ai.InnerThoughtFilter;
 import com.lianyu.service.conversation.VoiceCallService;
 import com.lianyu.service.dto.AiChatRequest;
@@ -14,7 +15,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Voice call duplex: PCM → Zipformer endpoint → LLM token stream → TTS realtime → client.
+ * Voice call duplex: PCM → Zipformer → LLM token stream → realtime VC TTS (HTTP fallback).
+ *
+ * <p>Realtime uses {@code realtimeVoices}; HTTP fallback uses {@code voices}. Never mix IDs.
  */
 @Slf4j
 public class VoiceCallDuplexSession {
@@ -25,9 +28,12 @@ public class VoiceCallDuplexSession {
     private final long conversationId;
     private final VoiceCallService voiceCallService;
     private final DashScopeTtsRealtimeService ttsRealtimeService;
+    private final DashScopeTtsService ttsHttpService;
     private final AsrStreamClient.Session asr;
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicBoolean turnBusy = new AtomicBoolean(false);
+    private final AtomicBoolean ttsFailed = new AtomicBoolean(false);
+    private final AtomicBoolean audioSent = new AtomicBoolean(false);
     private final AtomicReference<DashScopeTtsRealtimeService.Session> ttsSession = new AtomicReference<>();
     private final AtomicReference<java.util.concurrent.CompletableFuture<?>> llmFuture = new AtomicReference<>();
     private final StringBuilder sentenceBuf = new StringBuilder();
@@ -41,13 +47,15 @@ public class VoiceCallDuplexSession {
             long conversationId,
             VoiceCallService voiceCallService,
             AsrStreamClient asrStreamClient,
-            DashScopeTtsRealtimeService ttsRealtimeService) {
+            DashScopeTtsRealtimeService ttsRealtimeService,
+            DashScopeTtsService ttsHttpService) {
         this.sink = sink;
         this.objectMapper = objectMapper;
         this.userId = userId;
         this.conversationId = conversationId;
         this.voiceCallService = voiceCallService;
         this.ttsRealtimeService = ttsRealtimeService;
+        this.ttsHttpService = ttsHttpService;
         this.petId = voiceCallService.resolveAndAssertCallPet(userId, conversationId);
         this.asr = asrStreamClient.open(new AsrStreamClient.Listener() {
             @Override
@@ -99,7 +107,6 @@ public class VoiceCallDuplexSession {
         triggerTurnFromAsr();
     }
 
-    /** Engine endpoint and client VAD may both fire — take lastPartial once. */
     private void triggerTurnFromAsr() {
         String text;
         synchronized (this) {
@@ -144,12 +151,15 @@ public class VoiceCallDuplexSession {
                         userId, conversationId, userText);
                 StringBuilder full = new StringBuilder();
                 sentenceBuf.setLength(0);
+                ttsFailed.set(false);
+                audioSent.set(false);
 
                 DashScopeTtsRealtimeService.Session tts = ttsRealtimeService.startForPet(petId,
                         new DashScopeTtsRealtimeService.AudioListener() {
                             @Override
                             public void onAudio(byte[] pcmOrEncoded, String mimeHint) {
-                                sendAudio(pcmOrEncoded, mimeHint);
+                                audioSent.set(true);
+                                sendAudio(pcmOrEncoded, mimeHint == null ? "audio/pcm" : mimeHint);
                             }
 
                             @Override
@@ -160,12 +170,13 @@ public class VoiceCallDuplexSession {
 
                             @Override
                             public void onError(String message) {
-                                log.warn("Voice duplex TTS error pet={} conv={}: {}",
+                                log.warn("Voice duplex realtime TTS error pet={} conv={}: {}",
                                         petId, conversationId, message);
-                                emitError("TTS_ERROR", "语音合成失败，请稍后再试");
+                                ttsFailed.set(true);
                             }
                         });
                 ttsSession.set(tts);
+                boolean useRealtime = tts != null;
 
                 var future = voiceCallService.streamVoiceReply(userId, aiRequest, delta -> {
                     if (delta == null || delta.isEmpty() || closed.get()) {
@@ -173,13 +184,14 @@ public class VoiceCallDuplexSession {
                     }
                     full.append(delta);
                     emitJson("llm.delta", n -> n.put("text", delta));
-                    feedTts(tts, delta);
+                    if (useRealtime && !ttsFailed.get()) {
+                        feedRealtimeTts(tts, delta);
+                    }
                 });
                 llmFuture.set(future);
                 String rawReply = future.join();
-                flushTts(tts);
-                if (tts != null) {
-                    tts.finish();
+                if (closed.get() || Thread.currentThread().isInterrupted()) {
+                    return;
                 }
 
                 String spoken = InnerThoughtFilter.strip(rawReply == null ? "" : rawReply.trim());
@@ -188,6 +200,29 @@ public class VoiceCallDuplexSession {
                 }
                 spoken = voiceCallService.clampReply(spoken);
                 voiceCallService.persistAssistantTurn(userId, conversationId, spoken);
+
+                if (useRealtime && !ttsFailed.get()) {
+                    flushRealtimeTts(tts);
+                    tts.finish();
+                } else if (!audioSent.get()) {
+                    // No realtime voice / realtime failed before any audio → HTTP voiceId
+                    log.info("Voice duplex TTS HTTP fallback pet={} conv={} realtimeStarted={}",
+                            petId, conversationId, useRealtime);
+                    DashScopeTtsService.SynthesizedAudio audio =
+                            ttsHttpService.synthesizeForPet(petId, spoken);
+                    if (audio == null || audio.bytes() == null || audio.bytes().length == 0) {
+                        emitError("TTS_ERROR", "语音合成失败，请稍后再试");
+                    } else {
+                        sendAudio(audio.bytes(),
+                                audio.mimeType() == null ? "audio/mpeg" : audio.mimeType());
+                        emitJson("tts.done", n -> {
+                        });
+                    }
+                } else {
+                    log.warn("Voice duplex realtime TTS failed after audio started pet={} conv={}",
+                            petId, conversationId);
+                }
+
                 String reply = spoken;
                 emitJson("turn.done", n -> {
                     n.put("userText", userText);
@@ -209,8 +244,8 @@ public class VoiceCallDuplexSession {
         worker.start();
     }
 
-    private void feedTts(DashScopeTtsRealtimeService.Session tts, String delta) {
-        if (tts == null) {
+    private void feedRealtimeTts(DashScopeTtsRealtimeService.Session tts, String delta) {
+        if (tts == null || ttsFailed.get()) {
             return;
         }
         sentenceBuf.append(delta);
@@ -235,8 +270,8 @@ public class VoiceCallDuplexSession {
         }
     }
 
-    private void flushTts(DashScopeTtsRealtimeService.Session tts) {
-        if (tts == null) {
+    private void flushRealtimeTts(DashScopeTtsRealtimeService.Session tts) {
+        if (tts == null || ttsFailed.get()) {
             return;
         }
         String rest = sentenceBuf.toString().trim();
@@ -279,7 +314,7 @@ public class VoiceCallDuplexSession {
         try {
             ObjectNode n = objectMapper.createObjectNode();
             n.put("type", "tts.audio");
-            n.put("mime", mimeHint == null ? "audio/pcm" : mimeHint);
+            n.put("mime", mimeHint == null || mimeHint.isBlank() ? "audio/pcm" : mimeHint);
             n.put("sampleRate", 24000);
             n.put("base64", Base64.getEncoder().encodeToString(audio));
             sink.sendText(objectMapper.writeValueAsString(n));

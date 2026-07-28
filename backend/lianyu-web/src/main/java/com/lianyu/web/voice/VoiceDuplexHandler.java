@@ -7,6 +7,7 @@ import com.lianyu.common.exception.BusinessException;
 import com.lianyu.service.ai.AsrService;
 import com.lianyu.service.ai.AsrStreamClient;
 import com.lianyu.service.ai.DashScopeTtsRealtimeService;
+import com.lianyu.service.ai.DashScopeTtsService;
 import com.lianyu.service.auth.AuthRateLimiter;
 import com.lianyu.service.conversation.VoiceCallService;
 import com.lianyu.service.voice.VoiceCallDuplexSession;
@@ -37,6 +38,7 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
     private final AsrStreamClient asrStreamClient;
     private final VoiceCallService voiceCallService;
     private final DashScopeTtsRealtimeService ttsRealtimeService;
+    private final DashScopeTtsService ttsHttpService;
     private final AuthRateLimiter authRateLimiter;
 
     @Value("${lianyu.voice.duplex.enabled:true}")
@@ -149,7 +151,7 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
                     120, Duration.ofMinutes(1), "语音通话过于频繁，请稍后再试");
             state.call = new VoiceCallDuplexSession(
                     sink, objectMapper, state.userId, conversationId,
-                    voiceCallService, asrStreamClient, ttsRealtimeService);
+                    voiceCallService, asrStreamClient, ttsRealtimeService, ttsHttpService);
             send(session, event("session.started", n -> {
                 n.put("mode", "call");
                 n.put("conversationId", conversationId);
