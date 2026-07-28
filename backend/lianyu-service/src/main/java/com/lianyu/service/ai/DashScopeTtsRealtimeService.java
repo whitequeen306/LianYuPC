@@ -1,0 +1,316 @@
+package com.lianyu.service.ai;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.WebSocket;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.Base64;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.atomic.AtomicBoolean;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+/**
+ * DashScope Qwen3-TTS-VC Realtime WebSocket — stream text in, stream audio out.
+ */
+@Slf4j
+@Service
+public class DashScopeTtsRealtimeService {
+
+    public interface AudioListener {
+        void onAudio(byte[] pcmOrEncoded, String mimeHint);
+
+        void onDone();
+
+        void onError(String message);
+    }
+
+    private final ObjectMapper objectMapper;
+    private final PetVoiceRegistry petVoiceRegistry;
+    private final HttpClient httpClient;
+
+    @Value("${lianyu.ai.tts.enabled:true}")
+    private boolean enabled;
+
+    @Value("${lianyu.ai.tts.api-key:${lianyu.ai.vision.api-key:}}")
+    private String apiKey;
+
+    @Value("${lianyu.ai.tts.realtime-ws-url:wss://dashscope.aliyuncs.com/api-ws/v1/realtime}")
+    private String realtimeWsUrl;
+
+    @Value("${lianyu.ai.tts.realtime-model:}")
+    private String realtimeModelOverride;
+
+    @Value("${lianyu.ai.tts.language-type:Chinese}")
+    private String languageType;
+
+    @Value("${lianyu.ai.tts.connect-timeout-ms:8000}")
+    private int connectTimeoutMs;
+
+    public DashScopeTtsRealtimeService(ObjectMapper objectMapper, PetVoiceRegistry petVoiceRegistry) {
+        this.objectMapper = objectMapper;
+        this.petVoiceRegistry = petVoiceRegistry;
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(Math.max(1000, connectTimeoutMs)))
+                .build();
+    }
+
+    public Session startForPet(String petId, AudioListener listener) {
+        if (!enabled) {
+            listener.onError("TTS disabled");
+            return null;
+        }
+        String voice = petVoiceRegistry.resolveVoiceId(petId);
+        if (voice == null) {
+            listener.onError("no voice mapping");
+            return null;
+        }
+        String key = resolveApiKey();
+        if (key == null || key.isBlank()) {
+            listener.onError("missing API key");
+            return null;
+        }
+        String model = resolveRealtimeModel();
+        String url = realtimeWsUrl.replaceAll("/+$", "") + "?model=" + model;
+        Session session = new Session(listener, voice);
+        try {
+            WebSocket ws = httpClient.newWebSocketBuilder()
+                    .header("Authorization", "Bearer " + key)
+                    .buildAsync(URI.create(url), session)
+                    .join();
+            session.attach(ws);
+            session.sendSessionUpdate();
+            return session;
+        } catch (Exception e) {
+            log.warn("TTS realtime connect failed: {}", e.toString());
+            listener.onError("语音合成连接失败");
+            return null;
+        }
+    }
+
+    private String resolveRealtimeModel() {
+        if (realtimeModelOverride != null && !realtimeModelOverride.isBlank()) {
+            return realtimeModelOverride.trim();
+        }
+        String fromRegistry = petVoiceRegistry.getRealtimeModel();
+        if (fromRegistry != null && !fromRegistry.isBlank()) {
+            return fromRegistry;
+        }
+        return "qwen3-tts-vc-realtime-2025-11-27";
+    }
+
+    private String resolveApiKey() {
+        if (apiKey != null && !apiKey.isBlank()) {
+            return apiKey;
+        }
+        return System.getenv("DASHSCOPE_API_KEY");
+    }
+
+    public final class Session implements WebSocket.Listener {
+        private final AudioListener listener;
+        private final String voice;
+        private final AtomicBoolean closed = new AtomicBoolean(false);
+        private final StringBuilder textBuf = new StringBuilder();
+        private volatile WebSocket socket;
+        private volatile boolean sessionReady;
+
+        Session(AudioListener listener, String voice) {
+            this.listener = listener;
+            this.voice = voice;
+        }
+
+        void attach(WebSocket socket) {
+            this.socket = socket;
+        }
+
+        void sendSessionUpdate() {
+            ObjectNode session = objectMapper.createObjectNode();
+            session.put("voice", voice);
+            session.put("language_type", languageType);
+            session.put("mode", "server_commit");
+            session.put("response_format", "pcm");
+            session.put("sample_rate", 24000);
+
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("event_id", eventId());
+            root.put("type", "session.update");
+            root.set("session", session);
+            sendJson(root);
+        }
+
+        public void appendText(String text) {
+            if (text == null || text.isBlank() || closed.get()) {
+                return;
+            }
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("event_id", eventId());
+            root.put("type", "input_text_buffer.append");
+            root.put("text", text);
+            sendJson(root);
+        }
+
+        public void commit() {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("event_id", eventId());
+            root.put("type", "input_text_buffer.commit");
+            sendJson(root);
+        }
+
+        public void finish() {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("event_id", eventId());
+            root.put("type", "session.finish");
+            sendJson(root);
+        }
+
+        public void close() {
+            if (!closed.compareAndSet(false, true)) {
+                return;
+            }
+            WebSocket ws = socket;
+            if (ws != null) {
+                try {
+                    ws.sendClose(WebSocket.NORMAL_CLOSURE, "done");
+                } catch (Exception ignored) {
+                    // ignore
+                }
+            }
+        }
+
+        private void sendJson(ObjectNode root) {
+            WebSocket ws = socket;
+            if (ws == null || closed.get()) {
+                return;
+            }
+            try {
+                ws.sendText(objectMapper.writeValueAsString(root), true);
+            } catch (Exception e) {
+                log.debug("TTS realtime send failed: {}", e.toString());
+            }
+        }
+
+        private static String eventId() {
+            return "evt_" + UUID.randomUUID().toString().replace("-", "");
+        }
+
+        @Override
+        public void onOpen(WebSocket webSocket) {
+            webSocket.request(1);
+        }
+
+        @Override
+        public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+            textBuf.append(data);
+            if (last) {
+                handleEvent(textBuf.toString());
+                textBuf.setLength(0);
+            }
+            webSocket.request(1);
+            return null;
+        }
+
+        @Override
+        public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+            if (closed.compareAndSet(false, true)) {
+                listener.onDone();
+            }
+            return null;
+        }
+
+        @Override
+        public void onError(WebSocket webSocket, Throwable error) {
+            if (closed.compareAndSet(false, true)) {
+                listener.onError(error == null ? "tts error" : String.valueOf(error.getMessage()));
+            }
+        }
+
+        private void handleEvent(String payload) {
+            try {
+                JsonNode root = objectMapper.readTree(payload);
+                String type = root.path("type").asText("");
+                switch (type) {
+                    case "session.created", "session.updated" -> sessionReady = true;
+                    case "response.audio.delta", "response.output_audio.delta" -> {
+                        String b64 = firstAudioB64(root);
+                        if (b64 != null && !b64.isBlank()) {
+                            listener.onAudio(Base64.getDecoder().decode(b64), "audio/pcm");
+                        }
+                    }
+                    case "response.audio.done", "response.done", "session.finished" -> listener.onDone();
+                    case "error" -> {
+                        String msg = root.path("error").path("message").asText(
+                                root.path("message").asText("tts error"));
+                        listener.onError(msg);
+                    }
+                    default -> {
+                        // ignore other events
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("Bad TTS realtime event: {}", e.toString());
+            }
+        }
+
+        private static String firstAudioB64(JsonNode root) {
+            if (root.hasNonNull("delta")) {
+                return root.get("delta").asText();
+            }
+            if (root.hasNonNull("audio")) {
+                return root.get("audio").asText();
+            }
+            JsonNode delta = root.path("delta");
+            if (delta.isObject() && delta.hasNonNull("audio")) {
+                return delta.get("audio").asText();
+            }
+            return null;
+        }
+    }
+
+    /** Synthesize a full phrase via realtime and collect bytes (fallback helper). */
+    public byte[] synthesizeCollect(String petId, String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        CompletableFuture<byte[]> done = new CompletableFuture<>();
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        Session session = startForPet(petId, new AudioListener() {
+            @Override
+            public void onAudio(byte[] pcmOrEncoded, String mimeHint) {
+                if (pcmOrEncoded != null) {
+                    out.writeBytes(pcmOrEncoded);
+                }
+            }
+
+            @Override
+            public void onDone() {
+                done.complete(out.toByteArray());
+            }
+
+            @Override
+            public void onError(String message) {
+                done.completeExceptionally(new IllegalStateException(message));
+            }
+        });
+        if (session == null) {
+            return null;
+        }
+        try {
+            session.appendText(text);
+            session.finish();
+            byte[] bytes = done.orTimeout(45, java.util.concurrent.TimeUnit.SECONDS).join();
+            session.close();
+            return bytes;
+        } catch (Exception e) {
+            session.close();
+            log.warn("TTS realtime collect failed: {}", e.toString());
+            return null;
+        }
+    }
+}

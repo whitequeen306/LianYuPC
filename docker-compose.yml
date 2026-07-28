@@ -69,7 +69,7 @@ services:
       asr:
         condition: service_healthy
 
-  # 中文 ASR（sherpa-onnx SenseVoice，仅内网供 backend 调用）
+  # 中文 ASR（SenseVoice final + Zipformer stream，仅内网供 backend 调用）
   asr:
     build:
       context: ./deploy/asr
@@ -79,9 +79,11 @@ services:
     restart: unless-stopped
     environment:
       ASR_THREADS: "2"
+      ASR_STREAM_THREADS: "2"
+      ASR_STREAM_ENABLED: "true"
       ASR_PORT: "8080"
-    mem_limit: 1536m
-    cpus: "2.0"
+    mem_limit: 2560m
+    cpus: "2.5"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
       interval: 30s

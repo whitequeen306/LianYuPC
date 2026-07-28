@@ -260,6 +260,72 @@ public class AiChatService {
         return emitter;
     }
 
+    /**
+     * Internal streaming path without SSE — used by voice-call duplex (token → TTS).
+     */
+    public CompletableFuture<String> streamTokens(
+            Long userId,
+            AiChatRequest request,
+            java.util.function.Consumer<String> onDelta) {
+        CompletableFuture<String> future = new CompletableFuture<>();
+        if (!bulkhead.tryAcquirePermission()) {
+            future.completeExceptionally(
+                    new BusinessException(ErrorCode.AI_RATE_LIMITED, "对话服务繁忙，请稍后再试"));
+            return future;
+        }
+        final VaultEntryResponse vault;
+        final String model;
+        final ChatModel chatModel;
+        try {
+            vault = resolveVault(userId, request.getProvider());
+            model = resolveModel(request, vault);
+            logChatVaultUsage(userId, request.getProvider(), vault, model, "stream-tokens");
+            chatModel = buildChatModel(vault, model, vaultService.decryptKeyForChat(vault.getId()));
+        } catch (RuntimeException e) {
+            bulkhead.releasePermission();
+            future.completeExceptionally(e);
+            return future;
+        }
+
+        CompletableFuture.runAsync(() -> {
+            StringBuilder contentBuffer = new StringBuilder();
+            try {
+                runWithChatToolScope(userId, request, () -> {
+                    List<Message> messages = toSpringMessages(request.getMessages());
+                    Prompt prompt = buildPrompt(request, vault, messages);
+                    chatModel.stream(prompt)
+                            .doOnNext(response -> {
+                                String text = extractStreamDelta(response);
+                                if (text != null && !text.isEmpty()) {
+                                    contentBuffer.append(text);
+                                    if (onDelta != null) {
+                                        try {
+                                            onDelta.accept(text);
+                                        } catch (Exception e) {
+                                            log.debug("streamTokens onDelta failed: {}", e.toString());
+                                        }
+                                    }
+                                }
+                            })
+                            .doOnComplete(() -> future.complete(contentBuffer.toString()))
+                            .onErrorResume(e -> {
+                                future.completeExceptionally(e);
+                                return reactor.core.publisher.Mono.empty();
+                            })
+                            .blockLast();
+                });
+            } catch (Exception e) {
+                if (!future.isDone()) {
+                    future.completeExceptionally(e);
+                }
+            } finally {
+                bulkhead.releasePermission();
+            }
+        }, aiStreamExecutor);
+
+        return future;
+    }
+
     @FunctionalInterface
     public interface StreamCallback {
         void onComplete(String fullContent, Throwable error);

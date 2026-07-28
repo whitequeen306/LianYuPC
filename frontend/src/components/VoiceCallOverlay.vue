@@ -83,7 +83,7 @@
             type="button"
             class="voice-call__ptt"
             :disabled="busy"
-            @click="startCall"
+            @click="startCallSession"
           >
             开始通话
           </button>
@@ -97,12 +97,10 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useVoiceRecorder } from '@/composables/useVoiceRecorder'
-import { voiceCallTurn, voiceCallEnd } from '@/api/voiceCall'
-import { applyPetVoiceGain } from '@/utils/petVoiceGain'
-import { getPetVoiceRate, getPetVoiceVolume } from '@/constants/petCatalog'
+import { useVoiceDuplex } from '@/composables/useVoiceDuplex'
+import { voiceCallEnd } from '@/api/voiceCall'
 import { humanizeError } from '@/utils/errorMessage'
-import { pickVoiceCallPayload, typewriteText } from '@/utils/voiceResponse'
+import { typewriteText } from '@/utils/voiceResponse'
 import { resolveMediaUrl } from '@/utils/media'
 import { useUserStore } from '@/stores/user'
 
@@ -119,12 +117,13 @@ const emit = defineEmits(['hangup', 'turnComplete', 'callEnded'])
 const userStore = useUserStore()
 const {
   recording,
-  startChunked,
-  stopChunked,
-  cancel,
   audioLevel,
   speaking,
-} = useVoiceRecorder()
+  phase: duplexPhase,
+  partialText,
+  startCall,
+  stop: stopDuplex,
+} = useVoiceDuplex()
 
 const live = ref(false)
 const busy = ref(false)
@@ -133,34 +132,31 @@ const phase = ref('idle')
 const displayCaption = ref('')
 const captionSpeaker = ref('char')
 const elapsedSeconds = ref(0)
-let audioEl = null
-let turnGeneration = 0
 let captionEpoch = 0
-let listenLoopPromise = null
-let turnAbort = null
 let elapsedTimer = null
 let callStartedAt = 0
 /** @type {Array<{ userText: string, replyText: string }>} */
 const sessionTurns = []
-
-const BARGE_IN_LEVEL = 0.16
+let pendingUserText = ''
+let pendingReply = ''
 
 const userAvatarUrl = computed(() => (
   userStore.avatarUrl ? resolveMediaUrl(userStore.avatarUrl) : ''
 ))
 
-const characterSpeaking = computed(() => phase.value === 'speaking')
+const characterSpeaking = computed(() => phase.value === 'speaking' || duplexPhase.value === 'speaking')
 const userSpeakingVisual = computed(() => (
-  live.value && (speaking.value || phase.value === 'transcribing')
+  live.value && (speaking.value || phase.value === 'transcribing' || duplexPhase.value === 'listening')
 ))
 
 const elapsedLabel = computed(() => formatElapsed(elapsedSeconds.value))
 
 const statusLabel = computed(() => {
   if (!live.value) return '点击开始，建立持续语音通话'
-  if (phase.value === 'speaking') return `${props.characterName || '角色'} 说话中（可打断）`
-  if (phase.value === 'thinking') return '思考中…'
-  if (phase.value === 'transcribing') return '识别中…'
+  if (phase.value === 'speaking' || duplexPhase.value === 'speaking') {
+    return `${props.characterName || '角色'} 说话中（可打断）`
+  }
+  if (phase.value === 'thinking' || duplexPhase.value === 'thinking') return '思考中…'
   if (recording.value && speaking.value) return '已听到你的声音…'
   if (recording.value) return '正在听…'
   return '通话中'
@@ -189,168 +185,87 @@ function stopElapsedTimer() {
   }
 }
 
-function isAbortError(err) {
-  return err?.name === 'CanceledError'
-    || err?.name === 'AbortError'
-    || /abort|cancel/i.test(String(err?.message || ''))
-}
-
-function stopPlayback() {
-  if (!audioEl) return
-  try {
-    audioEl.pause()
-    audioEl.currentTime = 0
-  } catch { /* ignore */ }
-  audioEl = null
-}
-
-function abortInFlightTurn() {
-  if (turnAbort) {
-    try { turnAbort.abort() } catch { /* ignore */ }
-    turnAbort = null
-  }
-  stopPlayback()
-  captionEpoch += 1
-}
-
-async function revealCaption(speaker, text, generation) {
+async function revealCaption(speaker, text) {
   const epoch = ++captionEpoch
   captionSpeaker.value = speaker
   displayCaption.value = ''
   await typewriteText(text, {
     charDelayMs: 24,
     onUpdate: (partial) => {
-      if (epoch !== captionEpoch || generation !== turnGeneration) return
+      if (epoch !== captionEpoch) return
       displayCaption.value = partial
     },
   })
-  if (epoch === captionEpoch && generation === turnGeneration) {
+  if (epoch === captionEpoch) {
     displayCaption.value = text
   }
 }
 
-async function playReply(base64, mimeType, generation) {
-  stopPlayback()
-  if (!live.value || generation !== turnGeneration) return
-  const src = `data:${mimeType || 'audio/wav'};base64,${base64}`
-  audioEl = new Audio(src)
-  applyPetVoiceGain(audioEl, getPetVoiceVolume(props.voicePetId))
-  const rate = getPetVoiceRate(props.voicePetId)
-  audioEl.playbackRate = Number.isFinite(rate) && rate > 0 ? Math.min(rate, 1.1) : 1
-  phase.value = 'speaking'
-  try {
-    await audioEl.play()
-  } catch {
-    return
-  }
-  await new Promise((resolve) => {
-    if (!audioEl || generation !== turnGeneration) {
-      resolve()
-      return
-    }
-    audioEl.onended = resolve
-    audioEl.onerror = resolve
-  })
-  if (generation === turnGeneration && phase.value === 'speaking') {
-    phase.value = 'idle'
-  }
-}
-
-/**
- * Mic loop runs in parallel (awaitChunk:false). Each chunk may:
- * - be ignored (silence / echo while TTS)
- * - barge-in and cancel current TTS/API turn
- * - start a new ASR→LLM→TTS turn
- */
-async function handleChunk(blob) {
-  if (!live.value || !blob || blob.size < 16) return
-
-  const playing = phase.value === 'speaking' && !!audioEl
-  const inTurn = phase.value === 'thinking' || phase.value === 'transcribing'
-  if (playing || inTurn) {
-    // 角色播报 / 思考中：只有检测到明显人声才打断，避免扬声器回灌误触发
-    if (!(speaking.value || audioLevel.value >= BARGE_IN_LEVEL)) return
-    abortInFlightTurn()
-  } else if (busy.value) {
-    return
-  }
-
-  const generation = ++turnGeneration
-  turnAbort = typeof AbortController !== 'undefined' ? new AbortController() : null
-  const signal = turnAbort?.signal
-  busy.value = true
-  phase.value = 'transcribing'
-  try {
+function handleDuplexEvent(msg) {
+  if (!live.value) return
+  if (msg.type === 'asr.partial' && msg.text) {
+    captionSpeaker.value = 'user'
+    displayCaption.value = String(msg.text)
+  } else if (msg.type === 'asr.final' && msg.text) {
+    pendingUserText = String(msg.text)
     phase.value = 'thinking'
-    const data = pickVoiceCallPayload(
-      await voiceCallTurn(props.conversationId, blob, 'voice.webm', { signal }),
-    )
-    if (generation !== turnGeneration || !live.value) return
-    if (!data.replyText) {
-      phase.value = 'idle'
-      return
+    void revealCaption('user', pendingUserText)
+  } else if (msg.type === 'turn.start') {
+    phase.value = 'thinking'
+    busy.value = true
+  } else if (msg.type === 'llm.delta' && msg.text) {
+    pendingReply += String(msg.text)
+    captionSpeaker.value = 'char'
+    displayCaption.value = pendingReply
+  } else if (msg.type === 'tts.audio') {
+    phase.value = 'speaking'
+  } else if (msg.type === 'turn.done') {
+    const userText = String(msg.userText || pendingUserText || '')
+    const replyText = String(msg.replyText || pendingReply || '')
+    pendingUserText = ''
+    pendingReply = ''
+    busy.value = false
+    phase.value = 'idle'
+    if (userText || replyText) {
+      sessionTurns.push({ userText, replyText })
+      emit('turnComplete', { userText, replyText })
     }
-    if (data.userText) {
-      await revealCaption('user', data.userText, generation)
+    if (replyText) {
+      void revealCaption('char', replyText)
     }
-    if (generation !== turnGeneration || !live.value) return
-    sessionTurns.push({
-      userText: data.userText || '',
-      replyText: data.replyText || '',
-    })
-    emit('turnComplete', data)
-    const replyReveal = revealCaption('char', data.replyText, generation)
-    if (data.audioBase64) {
-      await playReply(data.audioBase64, data.audioMimeType, generation)
-    } else {
-      phase.value = 'speaking'
-      await replyReveal
-      if (generation === turnGeneration) phase.value = 'idle'
-    }
-    await replyReveal
-  } catch (err) {
-    if (isAbortError(err) || generation !== turnGeneration) return
-    ElMessage.error(humanizeError(err, '语音通话失败，请稍后再试'))
-  } finally {
-    if (generation === turnGeneration) {
-      busy.value = false
-      if (phase.value !== 'speaking') phase.value = 'idle'
-      turnAbort = null
-    }
+  } else if (msg.type === 'turn.cancelled') {
+    busy.value = false
+    phase.value = 'idle'
+    pendingReply = ''
+  } else if (msg.type === 'error') {
+    busy.value = false
+    phase.value = 'idle'
+    ElMessage.error(msg.message || '语音通话失败，请稍后再试')
   }
 }
 
-async function ensureListening() {
-  if (listenLoopPromise) return
-  listenLoopPromise = startChunked({
-    intervalMs: 1800,
-    awaitChunk: false,
-    vadProfile: 'strict',
-    onChunk: handleChunk,
-  }).finally(() => {
-    listenLoopPromise = null
-  })
-  // 不 await 整段循环：循环要一直跑到挂断
-  void listenLoopPromise.catch(() => {})
-}
-
-async function startCall() {
+async function startCallSession() {
   if (live.value || busy.value || ending.value) return
   displayCaption.value = ''
   captionSpeaker.value = 'char'
   captionEpoch += 1
-  turnGeneration = 0
   sessionTurns.length = 0
+  pendingUserText = ''
+  pendingReply = ''
   phase.value = 'idle'
   try {
     live.value = true
     startElapsedTimer()
     ElMessage.info('通话已开始，请直接说话，可随时打断')
-    await ensureListening()
-  } catch {
+    await startCall({
+      conversationId: props.conversationId,
+      vadProfile: 'strict',
+      onEvent: handleDuplexEvent,
+    })
+  } catch (err) {
     live.value = false
     stopElapsedTimer()
-    ElMessage.error('无法访问麦克风')
+    ElMessage.error(humanizeError(err, '无法开始语音通话'))
   }
 }
 
@@ -365,11 +280,8 @@ async function finalizeCallAndClose({ withSummary }) {
   live.value = false
   busy.value = false
   phase.value = 'idle'
-  turnGeneration += 1
-  abortInFlightTurn()
   stopElapsedTimer()
-  await stopChunked()
-  cancel()
+  await stopDuplex()
 
   let summaryMsg = null
   if (withSummary && wasLive) {
@@ -403,22 +315,30 @@ async function goBack() {
 watch(() => props.visible, async (v) => {
   if (!v) {
     live.value = false
-    turnGeneration += 1
-    abortInFlightTurn()
     stopElapsedTimer()
-    await stopChunked()
-    cancel()
+    await stopDuplex()
     ending.value = false
+  }
+})
+
+watch(duplexPhase, (p) => {
+  if (!live.value) return
+  if (p === 'speaking') phase.value = 'speaking'
+  else if (p === 'thinking') phase.value = 'thinking'
+  else if (p === 'idle' && !busy.value) phase.value = 'idle'
+})
+
+watch(partialText, (t) => {
+  if (live.value && t && phase.value !== 'speaking') {
+    captionSpeaker.value = 'user'
+    displayCaption.value = t
   }
 })
 
 onUnmounted(() => {
   live.value = false
-  turnGeneration += 1
-  abortInFlightTurn()
   stopElapsedTimer()
-  cancel()
-  stopPlayback()
+  void stopDuplex()
 })
 </script>
 

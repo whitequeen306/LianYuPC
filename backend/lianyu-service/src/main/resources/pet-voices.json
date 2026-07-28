@@ -1,5 +1,6 @@
 {
   "model": "qwen3-tts-vc-2026-01-22",
+  "realtimeModel": "qwen3-tts-vc-realtime-2025-11-27",
   "voices": {
     "klee": "qwen-tts-vc-klee-voice-20260616133001848-5f9b",
     "ganyu": "qwen-tts-vc-ganyu-voice-20260616133005161-bc51",

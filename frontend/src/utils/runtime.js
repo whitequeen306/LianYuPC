@@ -84,3 +84,8 @@ export function buildWsUrl() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${protocol}//${window.location.host}/ws`
 }
+
+/** Native voice duplex WebSocket (`/ws/voice`) */
+export function buildVoiceWsUrl() {
+  return `${buildWsUrl()}/voice`
+}

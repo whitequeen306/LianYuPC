@@ -2,17 +2,20 @@ import { ref } from 'vue'
 
 /**
  * Browser/Electron microphone capture via MediaRecorder.
- * Supports one-shot record, continuous sentence-chunk capture, live level metering, and VAD.
+ *
+ * Two listen modes (intentionally different):
+ * - startChunked: fixed-interval slices → chat mic streaming dictation (Cursor-like)
+ * - startUtteranceLoop: speech→silence endpointing → one whole utterance (voice call)
  *
  * vadProfile:
- * - 'off'    — always send chunks (chat mic: complete speech > silence filter)
- * - 'loose'  — soft energy gate
- * - 'strict' — voice-call / barge-in (reject echo & noise)
+ * - 'off'    — always send chunks
+ * - 'loose'  — soft gate for chat dictation
+ * - 'strict' — reject echo/noise for call
  */
 const VAD_PROFILES = {
   off: null,
-  loose: { speechLevel: 0.06, minSpeechRatio: 0.06, minPeakLevel: 0.07, minFrames: 4 },
-  strict: { speechLevel: 0.12, minSpeechRatio: 0.18, minPeakLevel: 0.15, minFrames: 8 },
+  loose: { speechLevel: 0.055, minSpeechRatio: 0.05, minPeakLevel: 0.06, minFrames: 3 },
+  strict: { speechLevel: 0.12, minSpeechRatio: 0.16, minPeakLevel: 0.14, minFrames: 8 },
 }
 
 export function useVoiceRecorder() {
@@ -23,8 +26,10 @@ export function useVoiceRecorder() {
   let mediaRecorder = null
   let chunks = []
   let chunkLoopActive = false
+  let utteranceLoopActive = false
   let chunkTimer = null
   let chunkSession = 0
+  let utteranceSession = 0
   let audioCtx = null
   let analyser = null
   let meterSource = null
@@ -60,6 +65,10 @@ export function useVoiceRecorder() {
     if (chunkTotalFrames < activeVad.minFrames) return false
     const ratio = chunkSpeechFrames / chunkTotalFrames
     return ratio >= activeVad.minSpeechRatio && chunkPeakLevel >= activeVad.minPeakLevel
+  }
+
+  function speechThreshold() {
+    return activeVad?.speechLevel ?? 0.1
   }
 
   function stopMeter() {
@@ -106,7 +115,7 @@ export function useVoiceRecorder() {
         const rms = Math.sqrt(sum / data.length)
         const level = Math.min(1, rms * 5.5)
         audioLevel.value = level
-        const speechCut = activeVad?.speechLevel ?? 0.1
+        const speechCut = speechThreshold()
         speaking.value = level > speechCut
         chunkTotalFrames += 1
         if (level > speechCut) chunkSpeechFrames += 1
@@ -140,6 +149,10 @@ export function useVoiceRecorder() {
     return mime
       ? new MediaRecorder(mediaStream, { mimeType: mime })
       : new MediaRecorder(mediaStream)
+  }
+
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms))
   }
 
   async function start() {
@@ -199,29 +212,24 @@ export function useVoiceRecorder() {
   }
 
   /**
-   * Continuous listen: every intervalMs cut a blob and invoke onChunk when VAD passes.
-   * @param {boolean} [awaitChunk=true] when false, start next chunk without waiting for onChunk
-   * @param {boolean|string} [requireSpeech=true] legacy; prefer vadProfile
-   * @param {'off'|'loose'|'strict'|boolean} [vadProfile] VAD strictness
+   * Chat dictation: fixed-interval slices, append ASR text into composer.
    */
   async function startChunked({
-    intervalMs = 2200,
+    intervalMs = 1400,
     onChunk,
     awaitChunk = true,
     requireSpeech,
     vadProfile,
   } = {}) {
-    if (chunkLoopActive) return
+    if (chunkLoopActive || utteranceLoopActive) return
     chunkLoopActive = true
     const session = ++chunkSession
     if (vadProfile !== undefined) {
       activeVad = resolveVadProfile(vadProfile)
     } else if (requireSpeech === false) {
       activeVad = null
-    } else if (requireSpeech === true) {
-      activeVad = VAD_PROFILES.strict
     } else {
-      activeVad = VAD_PROFILES.strict
+      activeVad = VAD_PROFILES.loose
     }
     await ensureStream()
     recording.value = true
@@ -252,7 +260,7 @@ export function useVoiceRecorder() {
           } catch {
             resolve(null)
           }
-        }, Math.max(1100, intervalMs))
+        }, Math.max(900, intervalMs))
       })
       mediaRecorder = null
       chunks = []
@@ -264,7 +272,7 @@ export function useVoiceRecorder() {
             speechRatio: chunkTotalFrames ? chunkSpeechFrames / chunkTotalFrames : 0,
             peakLevel: chunkPeakLevel,
           }))
-          .catch(() => { /* caller handles toast; keep listening */ })
+          .catch(() => {})
         if (awaitChunk) await task
       }
       if (chunkLoopActive && session === chunkSession) {
@@ -302,14 +310,140 @@ export function useVoiceRecorder() {
     stopTracks()
   }
 
+  /**
+   * Voice call: wait for speech, record until trailing silence (whole utterance), then onUtterance.
+   */
+  async function startUtteranceLoop({
+    onUtterance,
+    vadProfile = 'strict',
+    silenceMs = 750,
+    minSpeechMs = 300,
+    maxUtteranceMs = 12000,
+    pollMs = 40,
+  } = {}) {
+    if (utteranceLoopActive || chunkLoopActive) return
+    utteranceLoopActive = true
+    const session = ++utteranceSession
+    activeVad = resolveVadProfile(vadProfile)
+    await ensureStream()
+    recording.value = true
+
+    const isLive = () => utteranceLoopActive && session === utteranceSession
+
+    const waitForSpeech = async () => {
+      let voicedMs = 0
+      while (isLive()) {
+        if (speaking.value || audioLevel.value >= speechThreshold()) {
+          voicedMs += pollMs
+          if (voicedMs >= minSpeechMs) return true
+        } else {
+          voicedMs = 0
+        }
+        await sleep(pollMs)
+      }
+      return false
+    }
+
+    const recordUntilSilence = async () => {
+      chunks = []
+      resetChunkVad()
+      mediaRecorder = createRecorder()
+      const recorder = mediaRecorder
+      const startedAt = Date.now()
+      let silentMs = 0
+      let hadSpeech = false
+
+      const blobPromise = new Promise((resolve, reject) => {
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) chunks.push(e.data)
+        }
+        recorder.onerror = () => reject(new Error('录音失败'))
+        recorder.onstop = () => {
+          const type = (recorder.mimeType || 'audio/webm').split(';')[0].trim() || 'audio/webm'
+          resolve(chunks.length ? new Blob(chunks, { type }) : null)
+        }
+        try {
+          recorder.start()
+        } catch (err) {
+          reject(err)
+        }
+      })
+
+      while (isLive() && recorder.state !== 'inactive') {
+        const level = audioLevel.value
+        const isSpeech = speaking.value || level >= speechThreshold()
+        if (isSpeech) {
+          hadSpeech = true
+          silentMs = 0
+        } else if (hadSpeech) {
+          silentMs += pollMs
+          if (silentMs >= silenceMs) break
+        }
+        if (Date.now() - startedAt >= maxUtteranceMs) break
+        await sleep(pollMs)
+      }
+
+      try {
+        if (recorder.state !== 'inactive') recorder.stop()
+      } catch {
+        // ignore
+      }
+      mediaRecorder = null
+      const blob = await blobPromise
+      chunks = []
+      return hadSpeech ? blob : null
+    }
+
+    try {
+      while (isLive()) {
+        const gotSpeech = await waitForSpeech()
+        if (!gotSpeech || !isLive()) break
+        const blob = await recordUntilSilence()
+        if (!isLive()) break
+        if (blob && blob.size >= 16 && typeof onUtterance === 'function') {
+          try {
+            await onUtterance(blob, {
+              peakLevel: chunkPeakLevel,
+              speechRatio: chunkTotalFrames ? chunkSpeechFrames / chunkTotalFrames : 0,
+            })
+          } catch {
+            // keep listening
+          }
+        }
+      }
+    } catch (err) {
+      utteranceLoopActive = false
+      recording.value = false
+      stopTracks()
+      throw err
+    }
+  }
+
+  async function stopUtteranceLoop() {
+    utteranceLoopActive = false
+    utteranceSession += 1
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      try {
+        mediaRecorder.stop()
+      } catch {
+        // ignore
+      }
+    }
+    recording.value = false
+    chunks = []
+    stopTracks()
+  }
+
   function cancel() {
     chunkLoopActive = false
+    utteranceLoopActive = false
     chunkSession += 1
+    utteranceSession += 1
     if (chunkTimer) {
       clearTimeout(chunkTimer)
       chunkTimer = null
     }
-    if (mediaRecorder && recording.value) {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
       try { mediaRecorder.stop() } catch { /* ignore */ }
     }
     chunks = []
@@ -326,5 +460,7 @@ export function useVoiceRecorder() {
     cancel,
     startChunked,
     stopChunked,
+    startUtteranceLoop,
+    stopUtteranceLoop,
   }
 }

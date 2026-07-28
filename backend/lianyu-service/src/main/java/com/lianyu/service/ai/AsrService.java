@@ -59,24 +59,59 @@ public class AsrService {
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "语音识别服务未启用");
         }
         validateUpload(file);
-        String url = baseUrl.replaceAll("/+$", "") + "/transcribe";
         String originalName = file.getOriginalFilename() == null ? "audio.webm" : file.getOriginalFilename();
         try {
-            byte[] bytes = file.getBytes();
-            ByteArrayResource resource = new ByteArrayResource(bytes) {
-                @Override
-                public String getFilename() {
-                    return originalName;
-                }
-            };
-            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-            HttpHeaders partHeaders = new HttpHeaders();
-            partHeaders.setContentType(MediaType.APPLICATION_OCTET_STREAM);
-            body.add("file", new HttpEntity<>(resource, partHeaders));
+            return postMultipart("/transcribe", file.getBytes(), originalName);
+        } catch (BusinessException e) {
+            throw e;
+        } catch (IOException e) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "音频读取失败");
+        } catch (Exception e) {
+            log.warn("ASR transcribe failed: {}", e.getMessage());
+            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "语音识别失败，请稍后再试");
+        }
+    }
 
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+    /**
+     * SenseVoice final on raw int16 LE PCM @ 16 kHz mono (skips ffmpeg when already PCM).
+     */
+    public String transcribePcm(byte[] pcm16leMono16k) {
+        if (!enabled) {
+            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "语音识别服务未启用");
+        }
+        if (pcm16leMono16k == null || pcm16leMono16k.length == 0) {
+            return "";
+        }
+        if (pcm16leMono16k.length > maxBytes) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "音频文件过大");
+        }
+        try {
+            return postMultipart("/transcribe/pcm", pcm16leMono16k, "audio.pcm");
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("ASR PCM transcribe failed: {}", e.getMessage());
+            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "语音识别失败，请稍后再试");
+        }
+    }
 
+    private String postMultipart(String path, byte[] bytes, String filename) {
+        String url = baseUrl.replaceAll("/+$", "") + path;
+        ByteArrayResource resource = new ByteArrayResource(bytes) {
+            @Override
+            public String getFilename() {
+                return filename;
+            }
+        };
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        HttpHeaders partHeaders = new HttpHeaders();
+        partHeaders.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+        body.add("file", new HttpEntity<>(resource, partHeaders));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+        try {
             RestClient client = restClientBuilder.build();
             ResponseEntity<String> response = client.post()
                     .uri(url)
@@ -84,7 +119,6 @@ public class AsrService {
                     .body(body)
                     .retrieve()
                     .toEntity(String.class);
-
             JsonNode root = objectMapper.readTree(response.getBody() == null ? "{}" : response.getBody());
             return root.path("text").asText("").trim();
         } catch (RestClientResponseException e) {
@@ -92,10 +126,8 @@ public class AsrService {
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "语音识别失败，请稍后再试");
         } catch (BusinessException e) {
             throw e;
-        } catch (IOException e) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "音频读取失败");
         } catch (Exception e) {
-            log.warn("ASR transcribe failed: {}", e.getMessage());
+            log.warn("ASR upload failed: {}", e.getMessage());
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "语音识别失败，请稍后再试");
         }
     }

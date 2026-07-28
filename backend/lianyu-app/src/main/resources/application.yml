@@ -211,6 +211,8 @@ lianyu:
       language-type: Chinese
       connect-timeout-ms: 8000
       socket-timeout-ms: 30000
+      realtime-ws-url: ${LIANYU_TTS_REALTIME_WS:wss://dashscope.aliyuncs.com/api-ws/v1/realtime}
+      realtime-model: ${LIANYU_TTS_REALTIME_MODEL:}
     reranker:
       model: gte-rerank-v2
       # 未单独配置时与 embedding 共用同一 DashScope Key
@@ -220,8 +222,13 @@ lianyu:
     enabled: ${LIANYU_ASR_ENABLED:true}
     base-url: ${LIANYU_ASR_BASE_URL:http://localhost:8081}
     max-bytes: 8388608
+  voice:
+    duplex:
+      enabled: ${LIANYU_VOICE_DUPLEX_ENABLED:true}
   voice-call:
     max-reply-chars: 48
+    history-limit: 8
+    max-tokens: 512
   session:
     summary:
       enabled: true

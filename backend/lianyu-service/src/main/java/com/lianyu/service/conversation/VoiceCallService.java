@@ -72,7 +72,7 @@ public class VoiceCallService {
     @Value("${lianyu.voice-call.history-limit:8}")
     private int historyLimit;
 
-    @Value("${lianyu.voice-call.max-tokens:96}")
+    @Value("${lianyu.voice-call.max-tokens:512}")
     private int maxTokens;
 
     @Transactional
@@ -156,6 +156,94 @@ public class VoiceCallService {
                 .build();
     }
 
+    /** Duplex: assert ownership + supported pet, return petId. */
+    public String resolveAndAssertCallPet(Long userId, Long conversationId) {
+        Conversation conversation = findOwned(userId, conversationId);
+        if (!"SINGLE".equalsIgnoreCase(conversation.getMode())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "仅支持单聊语音通话");
+        }
+        Character character = characterMapper.selectById(conversation.getCharacterId());
+        if (character == null) {
+            throw new BusinessException(ErrorCode.CHARACTER_NOT_FOUND);
+        }
+        ensureCharacterNotBlocked(character);
+        String petId = resolveVoicePetId(character);
+        if (petId == null || !VOICE_CALL_PET_IDS.contains(petId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "当前角色暂不支持语音通话");
+        }
+        return petId;
+    }
+
+    @Transactional
+    public void persistUserTurn(Long userId, Long conversationId, String userText) {
+        Conversation conversation = findOwned(userId, conversationId);
+        Character character = characterMapper.selectById(conversation.getCharacterId());
+        if (character == null) {
+            throw new BusinessException(ErrorCode.CHARACTER_NOT_FOUND);
+        }
+        long userSeq = nextSeq(conversationId);
+        Message userMsg = new Message();
+        userMsg.setSeq(userSeq);
+        userMsg.setConversationId(conversationId);
+        userMsg.setRole("USER");
+        userMsg.setCharacterId(character.getId());
+        userMsg.setContent(userText);
+        userMsg.setAudioUrl("system/voice-call-turn");
+        messageMapper.insert(userMsg);
+
+        int histLimit = Math.max(4, Math.min(historyLimit, 16));
+        List<Message> history = recentMessages(conversationId, histLimit);
+        relationshipStateService.recordUserTurn(userId, character.getId(), conversationId, userMsg, history);
+        characterStateService.afterUserMessage(character.getId(), userId, userText);
+    }
+
+    @Transactional
+    public void persistAssistantTurn(Long userId, Long conversationId, String replyText) {
+        Conversation conversation = findOwned(userId, conversationId);
+        Character character = characterMapper.selectById(conversation.getCharacterId());
+        if (character == null) {
+            throw new BusinessException(ErrorCode.CHARACTER_NOT_FOUND);
+        }
+        long assistantSeq = nextSeq(conversationId);
+        Message assistantMsg = new Message();
+        assistantMsg.setSeq(assistantSeq);
+        assistantMsg.setConversationId(conversationId);
+        assistantMsg.setRole("ASSISTANT");
+        assistantMsg.setCharacterId(character.getId());
+        assistantMsg.setContent(replyText);
+        assistantMsg.setAudioUrl("system/voice-call-turn");
+        messageMapper.insert(assistantMsg);
+        memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
+    }
+
+    public AiChatRequest buildVoiceCallAiRequest(Long userId, Long conversationId, String userText) {
+        Conversation conversation = findOwned(userId, conversationId);
+        Character character = characterMapper.selectById(conversation.getCharacterId());
+        if (character == null) {
+            throw new BusinessException(ErrorCode.CHARACTER_NOT_FOUND);
+        }
+        int histLimit = Math.max(4, Math.min(historyLimit, 16));
+        List<Message> history = recentMessages(conversationId, histLimit);
+        return buildVoiceAiRequest(userId, conversationId, character, history, userText);
+    }
+
+    public java.util.concurrent.CompletableFuture<String> streamVoiceReply(
+            Long userId,
+            AiChatRequest aiRequest,
+            java.util.function.Consumer<String> onDelta) {
+        return aiChatService.streamTokens(userId, aiRequest, onDelta);
+    }
+
+    public String clampReply(String spoken) {
+        if (spoken == null) {
+            return "";
+        }
+        if (spoken.length() > maxReplyChars) {
+            return spoken.substring(0, maxReplyChars).trim();
+        }
+        return spoken;
+    }
+
     /**
      * Hang up: insert a WeChat-style duration bubble for UI, with a model-facing summary in context_content.
      */
@@ -227,6 +315,25 @@ public class VoiceCallService {
                                            Character character,
                                            List<Message> history,
                                            String userText) {
+        AiChatRequest aiRequest = buildVoiceAiRequest(userId, conversationId, character, history, userText);
+        ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
+        String raw = chatResult.getContent() == null ? "" : chatResult.getContent().trim();
+        String spoken = InnerThoughtFilter.strip(raw);
+        if (spoken.isBlank() && !raw.isBlank()) {
+            log.warn("Voice call reply became empty after stripping inner thoughts, rawLen={}", raw.length());
+        }
+        if (spoken.isBlank()) {
+            log.warn("Voice call empty spoken reply, falling back; rawBlank={}", raw.isBlank());
+            spoken = "我在听，你再说一遍。";
+        }
+        return clampReply(spoken);
+    }
+
+    private AiChatRequest buildVoiceAiRequest(Long userId,
+                                              Long conversationId,
+                                              Character character,
+                                              List<Message> history,
+                                              String userText) {
         String voiceSuffix = "\n\n=== 语音通话（强制） ===\n"
                 + "你正在与用户进行实时语音通话，回复会被直接朗读。\n"
                 + "硬性要求：\n"
@@ -244,10 +351,9 @@ public class VoiceCallService {
                 null);
 
         AiChatRequest aiRequest = new AiChatRequest();
-        // 通话不挂工具：避免多轮 function-call 拉长延迟
         aiRequest.setProvider(AiConstants.PLATFORM_PROVIDER);
         aiRequest.setTemperature(0.7);
-        aiRequest.setMaxTokens(Math.max(32, maxTokens));
+        aiRequest.setMaxTokens(Math.max(256, maxTokens));
         List<MessageDto> allMessages = new ArrayList<>();
         allMessages.add(messageDto("system", systemPrompt));
         for (Message msg : history) {
@@ -258,7 +364,6 @@ public class VoiceCallService {
             if (!"user".equals(role) && !"assistant".equals(role)) {
                 continue;
             }
-            // 历史也去掉括号，避免模型跟风写心理活动
             String content = InnerThoughtFilter.strip(MessageModelContent.forModel(msg));
             if (content.isBlank()) {
                 continue;
@@ -267,14 +372,7 @@ public class VoiceCallService {
         }
         allMessages.add(messageDto("user", userText));
         aiRequest.setMessages(allMessages);
-
-        ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
-        String raw = chatResult.getContent() == null ? "" : chatResult.getContent().trim();
-        raw = InnerThoughtFilter.strip(raw);
-        if (raw.length() > maxReplyChars) {
-            raw = raw.substring(0, maxReplyChars).trim();
-        }
-        return raw;
+        return aiRequest;
     }
 
     private String summarizeCall(Long userId, List<VoiceCallEndRequest.VoiceCallTurnSnippet> turns) {

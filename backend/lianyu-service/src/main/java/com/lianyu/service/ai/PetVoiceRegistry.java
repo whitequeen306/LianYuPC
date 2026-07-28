@@ -22,6 +22,9 @@ public class PetVoiceRegistry {
     @Getter
     private String model = "qwen3-tts-vc-2026-01-22";
 
+    @Getter
+    private String realtimeModel = "qwen3-tts-vc-realtime-2025-11-27";
+
     private Map<String, String> voices = Collections.emptyMap();
 
     public PetVoiceRegistry(ObjectMapper objectMapper) {
@@ -35,6 +38,9 @@ public class PetVoiceRegistry {
             if (root.hasNonNull("model")) {
                 model = root.get("model").asText(model);
             }
+            if (root.hasNonNull("realtimeModel")) {
+                realtimeModel = root.get("realtimeModel").asText(realtimeModel);
+            }
             Map<String, String> loaded = new HashMap<>();
             JsonNode voiceNode = root.get("voices");
             if (voiceNode != null && voiceNode.isObject()) {
@@ -42,7 +48,8 @@ public class PetVoiceRegistry {
                         loaded.put(entry.getKey(), entry.getValue().asText()));
             }
             voices = Collections.unmodifiableMap(loaded);
-            log.info("Loaded {} pet voice mappings for model {}", voices.size(), model);
+            log.info("Loaded {} pet voice mappings for model {} realtime={}",
+                    voices.size(), model, realtimeModel);
         } catch (Exception e) {
             log.warn("pet-voices.json not loaded, pet TTS disabled: {}", e.getMessage());
             voices = Collections.emptyMap();

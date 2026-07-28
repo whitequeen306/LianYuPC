@@ -249,7 +249,7 @@
             type="textarea"
             :rows="1"
             :autosize="{ minRows: 1, maxRows: 3 }"
-            :placeholder="voiceInputListening ? '正在收听语音…（再说一句，点麦克风结束）' : t('chat.placeholder')"
+            :placeholder="voiceInputListening ? '正在听写…点麦克风结束' : t('chat.placeholder')"
             @keydown.enter.exact.prevent="handleSend"
             :disabled="isBlocked"
           />
@@ -380,9 +380,8 @@ import { formatSmartTime } from '@/utils/feedTime'
 import AssistantMessageContent from '@/components/AssistantMessageContent.vue'
 import VoiceMessageBubble from '@/components/VoiceMessageBubble.vue'
 import VoiceCallOverlay from '@/components/VoiceCallOverlay.vue'
-import { useVoiceRecorder } from '@/composables/useVoiceRecorder'
-import { transcribeAudio } from '@/api/asr'
-import { pickAsrText, typewriteText } from '@/utils/voiceResponse'
+import { useVoiceDuplex } from '@/composables/useVoiceDuplex'
+import { typewriteText } from '@/utils/voiceResponse'
 import { getPetVoiceRate, getPetVoiceVolume } from '@/constants/petCatalog'
 import {
   isShareSelectableMessage,
@@ -544,16 +543,17 @@ const uploadingImage = ref(false)
 const waitingReply = ref(false)
 const voiceCallOpen = ref(false)
 const {
-  startChunked: startVoiceChunked,
-  stopChunked: stopVoiceChunked,
-  cancel: cancelVoiceInput,
+  startDictation,
+  stop: stopVoiceDuplex,
   audioLevel: voiceAudioLevel,
   speaking: voiceSpeaking,
-} = useVoiceRecorder()
+  partialText: voicePartialText,
+} = useVoiceDuplex()
 const voiceInputListening = ref(false)
 const voiceInputBusy = ref(false)
 const voiceLivePreview = ref('')
 let voiceTypewriteEpoch = 0
+let voiceCommittedBase = ''
 const awaitingOpening = ref(false)
 const currentProvider = ref('')
 const currentModel = ref('')
@@ -844,8 +844,7 @@ onUnmounted(() => {
   setActiveChatConversationId(null)
   setActiveChatRefreshHandler(null)
   stopConversationPolling()
-  cancelVoiceInput()
-  void stopVoiceChunked()
+  void stopVoiceDuplex()
   bounceTween?.kill()
 })
 
@@ -1247,35 +1246,26 @@ function focusChatInput() {
   ta?.focus()
 }
 
-async function appendVoiceTranscript(blob) {
-  if (!blob || blob.size < 16) return
-  voiceInputBusy.value = true
-  try {
-    // httpCore 已解包 Result.data，这里必须读 res.text（兼容 res.data.text）
-    const text = pickAsrText(await transcribeAudio(blob))
-    if (!text || !voiceInputListening.value) return
-    const epoch = ++voiceTypewriteEpoch
-    const base = inputText.value ? `${inputText.value.trimEnd()} ` : ''
+async function commitVoiceFinal(text) {
+  if (!text || !voiceInputListening.value) return
+  const epoch = ++voiceTypewriteEpoch
+  const base = voiceCommittedBase || (inputText.value ? `${inputText.value.trimEnd()} ` : '')
+  voiceLivePreview.value = text
+  await typewriteText(text, {
+    charDelayMs: 10,
+    onUpdate: (partial) => {
+      if (epoch !== voiceTypewriteEpoch || !voiceInputListening.value) return
+      inputText.value = base + partial
+      voiceLivePreview.value = partial
+    },
+  })
+  if (epoch === voiceTypewriteEpoch && voiceInputListening.value) {
+    inputText.value = base + text
+    voiceCommittedBase = `${inputText.value.trimEnd()} `
     voiceLivePreview.value = text
-    await typewriteText(text, {
-      charDelayMs: 22,
-      onUpdate: (partial) => {
-        if (epoch !== voiceTypewriteEpoch || !voiceInputListening.value) return
-        inputText.value = base + partial
-        voiceLivePreview.value = partial
-      },
-    })
-    if (epoch === voiceTypewriteEpoch) {
-      inputText.value = base + text
-      voiceLivePreview.value = text
-    }
-    await nextTick()
-    focusChatInput()
-  } catch (err) {
-    ElMessage.error(humanizeError(err, '语音识别失败，请稍后再试'))
-  } finally {
-    voiceInputBusy.value = false
   }
+  await nextTick()
+  focusChatInput()
 }
 
 async function toggleVoiceInput() {
@@ -1284,27 +1274,38 @@ async function toggleVoiceInput() {
     voiceInputListening.value = false
     voiceTypewriteEpoch += 1
     voiceLivePreview.value = ''
-    await stopVoiceChunked()
-    ElMessage.success('已结束语音输入')
+    voiceCommittedBase = ''
+    await stopVoiceDuplex()
+    ElMessage.success('已结束听写')
     return
   }
   try {
     voiceInputListening.value = true
     voiceLivePreview.value = ''
-    ElMessage.info('正在收听语音')
-    await startVoiceChunked({
-      intervalMs: 2600,
-      vadProfile: 'off',
-      onChunk: async (blob) => {
+    voiceCommittedBase = inputText.value ? `${inputText.value.trimEnd()} ` : ''
+    ElMessage.info('开始听写，边说边出字')
+    await startDictation({
+      vadProfile: 'loose',
+      onEvent: (msg) => {
         if (!voiceInputListening.value) return
-        await appendVoiceTranscript(blob)
+        if (msg.type === 'asr.partial') {
+          const base = voiceCommittedBase
+          const partial = String(msg.text || '')
+          voiceLivePreview.value = partial
+          inputText.value = base + partial
+        } else if (msg.type === 'asr.final') {
+          void commitVoiceFinal(String(msg.text || '').trim())
+        } else if (msg.type === 'error') {
+          ElMessage.error(msg.message || '语音识别失败，请稍后再试')
+        }
       },
     })
   } catch {
     voiceInputListening.value = false
     voiceLivePreview.value = ''
-    await stopVoiceChunked()
-    ElMessage.error('无法访问麦克风')
+    voiceCommittedBase = ''
+    await stopVoiceDuplex()
+    ElMessage.error('无法访问麦克风或语音通道')
   }
 }
 
@@ -1312,7 +1313,7 @@ function openVoiceCall() {
   if (!voiceCallEnabled.value || !currentConvId.value) return
   if (voiceInputListening.value) {
     voiceInputListening.value = false
-    void stopVoiceChunked()
+    void stopVoiceDuplex()
   }
   voiceCallOpen.value = true
 }
