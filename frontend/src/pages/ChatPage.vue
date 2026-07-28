@@ -554,6 +554,8 @@ const voiceInputBusy = ref(false)
 const voiceLivePreview = ref('')
 let voiceTypewriteEpoch = 0
 let voiceCommittedBase = ''
+/** After asr.final, ignore further finals until a new asr.partial (next utterance). */
+let voiceFinalConsumed = false
 const awaitingOpening = ref(false)
 const currentProvider = ref('')
 const currentModel = ref('')
@@ -1247,7 +1249,8 @@ function focusChatInput() {
 }
 
 async function commitVoiceFinal(text) {
-  if (!text || !voiceInputListening.value) return
+  if (!text || !voiceInputListening.value || voiceFinalConsumed) return
+  voiceFinalConsumed = true
   const epoch = ++voiceTypewriteEpoch
   const base = voiceCommittedBase || (inputText.value ? `${inputText.value.trimEnd()} ` : '')
   voiceLivePreview.value = text
@@ -1275,6 +1278,7 @@ async function toggleVoiceInput() {
     voiceTypewriteEpoch += 1
     voiceLivePreview.value = ''
     voiceCommittedBase = ''
+    voiceFinalConsumed = false
     await stopVoiceDuplex()
     ElMessage.success('已结束听写')
     return
@@ -1283,14 +1287,18 @@ async function toggleVoiceInput() {
     voiceInputListening.value = true
     voiceLivePreview.value = ''
     voiceCommittedBase = inputText.value ? `${inputText.value.trimEnd()} ` : ''
+    voiceFinalConsumed = false
     ElMessage.info('开始听写，边说边出字')
     await startDictation({
       vadProfile: 'loose',
       onEvent: (msg) => {
         if (!voiceInputListening.value) return
         if (msg.type === 'asr.partial') {
-          const base = voiceCommittedBase
           const partial = String(msg.text || '')
+          if (partial) {
+            voiceFinalConsumed = false
+          }
+          const base = voiceCommittedBase
           voiceLivePreview.value = partial
           inputText.value = base + partial
         } else if (msg.type === 'asr.final') {
@@ -1304,6 +1312,7 @@ async function toggleVoiceInput() {
     voiceInputListening.value = false
     voiceLivePreview.value = ''
     voiceCommittedBase = ''
+    voiceFinalConsumed = false
     await stopVoiceDuplex()
     ElMessage.error('无法访问麦克风或语音通道')
   }

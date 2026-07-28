@@ -20,6 +20,8 @@ public class VoiceDictationSession {
     private final AsrService asrService;
     private final AsrStreamClient.Session asr;
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    /** Single-flight: Zipformer endpoint and client VAD both may fire. */
+    private final AtomicBoolean finalizing = new AtomicBoolean(false);
     private final List<byte[]> pcmChunks = new ArrayList<>();
     private final Object pcmLock = new Object();
     private volatile String lastPartial = "";
@@ -66,7 +68,7 @@ public class VoiceDictationSession {
     }
 
     public void onPcm(byte[] pcm) {
-        if (closed.get() || pcm == null || pcm.length == 0) {
+        if (closed.get() || pcm == null || pcm.length == 0 || finalizing.get()) {
             return;
         }
         synchronized (pcmLock) {
@@ -82,7 +84,6 @@ public class VoiceDictationSession {
 
     public void clientEndpoint() {
         finalizeUtterance();
-        asr.reset();
     }
 
     public void close() {
@@ -93,39 +94,55 @@ public class VoiceDictationSession {
     }
 
     private void finalizeUtterance() {
-        byte[] pcm;
-        synchronized (pcmLock) {
-            if (pcmChunks.isEmpty()) {
-                return;
-            }
-            int total = 0;
-            for (byte[] c : pcmChunks) {
-                total += c.length;
-            }
-            pcm = new byte[total];
-            int off = 0;
-            for (byte[] c : pcmChunks) {
-                System.arraycopy(c, 0, pcm, off, c.length);
-                off += c.length;
-            }
-            pcmChunks.clear();
-            pcmBytes = 0;
+        if (closed.get() || !finalizing.compareAndSet(false, true)) {
+            return;
         }
-        String finalText;
         try {
-            finalText = asrService.transcribePcm(pcm);
-        } catch (Exception e) {
-            log.warn("SenseVoice final failed, falling back to partial: {}", e.toString());
-            finalText = lastPartial;
+            byte[] pcm;
+            String fallbackPartial;
+            synchronized (pcmLock) {
+                if (pcmChunks.isEmpty()) {
+                    return;
+                }
+                int total = 0;
+                for (byte[] c : pcmChunks) {
+                    total += c.length;
+                }
+                pcm = new byte[total];
+                int off = 0;
+                for (byte[] c : pcmChunks) {
+                    System.arraycopy(c, 0, pcm, off, c.length);
+                    off += c.length;
+                }
+                pcmChunks.clear();
+                pcmBytes = 0;
+                fallbackPartial = lastPartial;
+                lastPartial = "";
+            }
+            // Reset streaming engine so a late client/engine endpoint cannot re-fire
+            // on the same utterance while SenseVoice is still running.
+            try {
+                asr.reset();
+            } catch (Exception e) {
+                log.debug("ASR reset after endpoint failed: {}", e.toString());
+            }
+            String finalText;
+            try {
+                finalText = asrService.transcribePcm(pcm);
+            } catch (Exception e) {
+                log.warn("SenseVoice final failed, falling back to partial: {}", e.toString());
+                finalText = fallbackPartial;
+            }
+            if (finalText == null) {
+                finalText = "";
+            }
+            finalText = finalText.trim();
+            if (!finalText.isBlank()) {
+                emit("asr.final", finalText);
+            }
+        } finally {
+            finalizing.set(false);
         }
-        if (finalText == null) {
-            finalText = "";
-        }
-        finalText = finalText.trim();
-        if (!finalText.isBlank()) {
-            emit("asr.final", finalText);
-        }
-        lastPartial = "";
     }
 
     private void emit(String type, String text) {

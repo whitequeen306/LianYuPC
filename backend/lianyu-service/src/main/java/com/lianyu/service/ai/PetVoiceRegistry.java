@@ -23,7 +23,7 @@ public class PetVoiceRegistry {
     private String model = "qwen3-tts-vc-2026-01-22";
 
     @Getter
-    private String realtimeModel = "qwen3-tts-vc-realtime-2025-11-27";
+    private String realtimeModel = "qwen3-tts-vc-realtime-2026-01-15";
 
     private Map<String, String> voices = Collections.emptyMap();
 

@@ -67,10 +67,7 @@ public class VoiceCallDuplexSession {
 
             @Override
             public void onEndpoint() {
-                String text = lastPartial;
-                lastPartial = "";
-                asr.reset();
-                startTurn(text);
+                triggerTurnFromAsr();
             }
 
             @Override
@@ -99,9 +96,21 @@ public class VoiceCallDuplexSession {
     }
 
     public void clientEndpoint() {
-        String text = lastPartial;
-        lastPartial = "";
-        asr.reset();
+        triggerTurnFromAsr();
+    }
+
+    /** Engine endpoint and client VAD may both fire — take lastPartial once. */
+    private void triggerTurnFromAsr() {
+        String text;
+        synchronized (this) {
+            text = lastPartial;
+            lastPartial = "";
+        }
+        try {
+            asr.reset();
+        } catch (Exception e) {
+            log.debug("ASR reset after call endpoint failed: {}", e.toString());
+        }
         startTurn(text);
     }
 
@@ -151,6 +160,8 @@ public class VoiceCallDuplexSession {
 
                             @Override
                             public void onError(String message) {
+                                log.warn("Voice duplex TTS error pet={} conv={}: {}",
+                                        petId, conversationId, message);
                                 emitError("TTS_ERROR", "语音合成失败，请稍后再试");
                             }
                         });

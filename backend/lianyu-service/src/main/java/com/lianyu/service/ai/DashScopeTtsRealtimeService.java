@@ -12,6 +12,8 @@ import java.util.Base64;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -103,7 +105,7 @@ public class DashScopeTtsRealtimeService {
         if (fromRegistry != null && !fromRegistry.isBlank()) {
             return fromRegistry;
         }
-        return "qwen3-tts-vc-realtime-2025-11-27";
+        return "qwen3-tts-vc-realtime-2026-01-15";
     }
 
     private String resolveApiKey() {
@@ -118,6 +120,7 @@ public class DashScopeTtsRealtimeService {
         private final String voice;
         private final AtomicBoolean closed = new AtomicBoolean(false);
         private final StringBuilder textBuf = new StringBuilder();
+        private final CountDownLatch readyLatch = new CountDownLatch(1);
         private volatile WebSocket socket;
         private volatile boolean sessionReady;
 
@@ -145,8 +148,32 @@ public class DashScopeTtsRealtimeService {
             sendJson(root);
         }
 
+        private boolean awaitReady() {
+            if (sessionReady || closed.get()) {
+                return sessionReady && !closed.get();
+            }
+            try {
+                if (!readyLatch.await(Math.max(1000, connectTimeoutMs), TimeUnit.MILLISECONDS)) {
+                    log.warn("TTS realtime session.updated timeout voice={}", voice);
+                    return false;
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+            return sessionReady && !closed.get();
+        }
+
         public void appendText(String text) {
             if (text == null || text.isBlank() || closed.get()) {
+                return;
+            }
+            if (!awaitReady()) {
+                if (!closed.get()) {
+                    log.warn("TTS realtime append skipped — session not ready voice={}", voice);
+                    listener.onError("语音合成未就绪");
+                    closed.set(true);
+                }
                 return;
             }
             ObjectNode root = objectMapper.createObjectNode();
@@ -157,6 +184,9 @@ public class DashScopeTtsRealtimeService {
         }
 
         public void commit() {
+            if (!awaitReady()) {
+                return;
+            }
             ObjectNode root = objectMapper.createObjectNode();
             root.put("event_id", eventId());
             root.put("type", "input_text_buffer.commit");
@@ -164,6 +194,9 @@ public class DashScopeTtsRealtimeService {
         }
 
         public void finish() {
+            if (!awaitReady()) {
+                return;
+            }
             ObjectNode root = objectMapper.createObjectNode();
             root.put("event_id", eventId());
             root.put("type", "session.finish");
@@ -174,6 +207,7 @@ public class DashScopeTtsRealtimeService {
             if (!closed.compareAndSet(false, true)) {
                 return;
             }
+            readyLatch.countDown();
             WebSocket ws = socket;
             if (ws != null) {
                 try {
@@ -192,7 +226,7 @@ public class DashScopeTtsRealtimeService {
             try {
                 ws.sendText(objectMapper.writeValueAsString(root), true);
             } catch (Exception e) {
-                log.debug("TTS realtime send failed: {}", e.toString());
+                log.warn("TTS realtime send failed: {}", e.toString());
             }
         }
 
@@ -219,6 +253,7 @@ public class DashScopeTtsRealtimeService {
         @Override
         public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
             if (closed.compareAndSet(false, true)) {
+                readyLatch.countDown();
                 listener.onDone();
             }
             return null;
@@ -227,6 +262,8 @@ public class DashScopeTtsRealtimeService {
         @Override
         public void onError(WebSocket webSocket, Throwable error) {
             if (closed.compareAndSet(false, true)) {
+                readyLatch.countDown();
+                log.warn("TTS realtime socket error: {}", error == null ? "null" : error.toString());
                 listener.onError(error == null ? "tts error" : String.valueOf(error.getMessage()));
             }
         }
@@ -236,7 +273,13 @@ public class DashScopeTtsRealtimeService {
                 JsonNode root = objectMapper.readTree(payload);
                 String type = root.path("type").asText("");
                 switch (type) {
-                    case "session.created", "session.updated" -> sessionReady = true;
+                    case "session.updated" -> {
+                        sessionReady = true;
+                        readyLatch.countDown();
+                    }
+                    case "session.created" -> {
+                        // Wait for session.updated after our session.update (voice applied).
+                    }
                     case "response.audio.delta", "response.output_audio.delta" -> {
                         String b64 = firstAudioB64(root);
                         if (b64 != null && !b64.isBlank()) {
@@ -247,6 +290,7 @@ public class DashScopeTtsRealtimeService {
                     case "error" -> {
                         String msg = root.path("error").path("message").asText(
                                 root.path("message").asText("tts error"));
+                        log.warn("TTS realtime API error: {} payload={}", msg, truncate(payload, 400));
                         listener.onError(msg);
                     }
                     default -> {
@@ -254,8 +298,15 @@ public class DashScopeTtsRealtimeService {
                     }
                 }
             } catch (Exception e) {
-                log.debug("Bad TTS realtime event: {}", e.toString());
+                log.warn("Bad TTS realtime event: {}", e.toString());
             }
+        }
+
+        private static String truncate(String s, int max) {
+            if (s == null) {
+                return "";
+            }
+            return s.length() <= max ? s : s.substring(0, max) + "...";
         }
 
         private static String firstAudioB64(JsonNode root) {
