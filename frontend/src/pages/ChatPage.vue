@@ -1919,12 +1919,12 @@ function formatTime(ts) {
   }
 }
 
-.gal-bubble__text--voice-call {
-  color: var(--ly-text-secondary);
-  font-size: $font-size-sm;
-  text-align: center;
-  width: 100%;
-}
+.gal-bubble--hero {
+  background: var(--ly-chat-hero-bubble-bg);
+  border: 1px solid var(--ly-chat-hero-bubble-border);
+  border-bottom-left-radius: $radius-sm;
+  box-shadow: var(--ly-chat-hero-bubble-shadow);
+  backdrop-filter: blur(10px);
 
   .gal-bubble__text,
   :deep(.gal-bubble__text) {
@@ -1935,6 +1935,13 @@ function formatTime(ts) {
     color: var(--ly-chat-hero-bubble-time);
     text-align: left;
   }
+}
+
+.gal-bubble__text--voice-call {
+  color: var(--ly-text-secondary);
+  font-size: $font-size-sm;
+  text-align: center;
+  width: 100%;
 }
 
 .gal-bubble--user {
