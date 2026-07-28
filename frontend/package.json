@@ -53,7 +53,8 @@
     "publish": {
       "provider": "github",
       "owner": "whitequeen306",
-      "repo": "LianYuPC"
+      "repo": "LianYuPC",
+      "releaseType": "draft"
     },
     "files": [
       "dist-electron/**/*",

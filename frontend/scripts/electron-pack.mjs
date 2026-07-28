@@ -222,6 +222,23 @@ const outputArg = `--config.directories.output=${outDir.replace(/\\/g, '/')}`
 const publishArg = process.env.GH_TOKEN ? '--publish always' : '--publish never'
 if (process.env.GH_TOKEN) {
   console.log('GH_TOKEN detected -> will publish to GitHub Releases')
+  // electron-builder 会并行上传 exe / blockmap / latest.yml；若 Release 尚不存在，
+  // 三者会竞态各自 create draft，只留下部分资产（常见：只有 .blockmap）。
+  // 先预建空 draft，再让所有上传落到同一 Release。
+  const tag = `v${pkg.version}`
+  try {
+    execSync(`gh release view ${tag}`, {
+      stdio: 'pipe',
+      env: process.env,
+    })
+    console.log(`GitHub release ${tag} already exists — reuse`)
+  } catch {
+    execSync(
+      `gh release create ${tag} --draft --title "${tag}" --notes "LianYu PC ${tag}"`,
+      { stdio: 'inherit', env: process.env },
+    )
+    console.log(`Pre-created draft release ${tag} (avoids dual-draft race)`)
+  }
 } else {
   console.log('GH_TOKEN not set -> local build only (no upload)')
 }
