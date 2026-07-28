@@ -22,8 +22,11 @@ import com.lianyu.service.character.CharacterStateService;
 import com.lianyu.service.dto.AiChatRequest;
 import com.lianyu.service.dto.ChatResult;
 import com.lianyu.service.dto.MessageDto;
+import com.lianyu.service.dto.MessageResponse;
+import com.lianyu.service.dto.VoiceCallEndRequest;
 import com.lianyu.service.dto.VoiceCallTurnResponse;
 import com.lianyu.service.graph.ChatTurnFacade;
+import com.lianyu.service.graph.MessageModelContent;
 import com.lianyu.service.memory.MemoryWriter;
 import com.lianyu.service.relationship.RelationshipStateService;
 import com.lianyu.service.tools.ChatToolContext;
@@ -139,6 +142,60 @@ public class VoiceCallService {
                 .build();
     }
 
+    /**
+     * Hang up: insert a WeChat-style duration bubble for UI, with a model-facing summary in context_content.
+     */
+    @Transactional
+    public MessageResponse endCall(Long userId, Long conversationId, VoiceCallEndRequest request) {
+        Conversation conversation = findOwned(userId, conversationId);
+        if (!"SINGLE".equalsIgnoreCase(conversation.getMode())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "仅支持单聊语音通话");
+        }
+        Character character = characterMapper.selectById(conversation.getCharacterId());
+        if (character == null) {
+            throw new BusinessException(ErrorCode.CHARACTER_NOT_FOUND);
+        }
+        ensureCharacterNotBlocked(character);
+        String petId = resolveVoicePetId(character);
+        if (petId == null || !VOICE_CALL_PET_IDS.contains(petId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "当前角色暂不支持语音通话");
+        }
+
+        int durationSeconds = request == null ? 0 : Math.max(0, request.getDurationSeconds());
+        List<VoiceCallEndRequest.VoiceCallTurnSnippet> turns =
+                request == null || request.getTurns() == null ? List.of() : request.getTurns();
+
+        String display = "我们进行了" + formatDurationZh(durationSeconds) + "的语音通话";
+        String summary = summarizeCall(userId, turns);
+        String contextContent = "（用户和角色进行了语音通话（" + summary + "））";
+
+        long seq = nextSeq(conversationId);
+        Message assistantMsg = new Message();
+        assistantMsg.setSeq(seq);
+        assistantMsg.setConversationId(conversationId);
+        assistantMsg.setRole("ASSISTANT");
+        assistantMsg.setCharacterId(character.getId());
+        assistantMsg.setContent(display);
+        assistantMsg.setContextContent(contextContent);
+        assistantMsg.setAudioUrl("system/voice-call-summary");
+        messageMapper.insert(assistantMsg);
+
+        memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
+        log.info("Voice call ended: convId={}, durationSec={}, summaryLen={}",
+                conversationId, durationSeconds, summary.length());
+
+        return MessageResponse.builder()
+                .id(assistantMsg.getId())
+                .seq(assistantMsg.getSeq())
+                .conversationId(conversationId)
+                .role(assistantMsg.getRole())
+                .characterId(character.getId())
+                .content(display)
+                .audioUrl("system/voice-call-summary")
+                .createdAt(assistantMsg.getCreatedAt())
+                .build();
+    }
+
     public String resolveVoicePetId(Character character) {
         if (character == null || character.getSourceTemplateId() == null) {
             return null;
@@ -182,7 +239,7 @@ public class VoiceCallService {
             if (!"user".equals(role) && !"assistant".equals(role)) {
                 continue;
             }
-            allMessages.add(messageDto(role, msg.getContent()));
+            allMessages.add(messageDto(role, MessageModelContent.forModel(msg)));
         }
         allMessages.add(messageDto("user", userText));
         aiRequest.setMessages(allMessages);
@@ -193,6 +250,100 @@ public class VoiceCallService {
             raw = raw.substring(0, maxReplyChars).trim();
         }
         return raw;
+    }
+
+    private String summarizeCall(Long userId, List<VoiceCallEndRequest.VoiceCallTurnSnippet> turns) {
+        String transcript = buildTranscript(turns);
+        if (transcript.isBlank()) {
+            return "短暂寒暄";
+        }
+        try {
+            AiChatRequest aiRequest = new AiChatRequest();
+            aiRequest.setProvider(AiConstants.PLATFORM_PROVIDER);
+            List<MessageDto> messages = new ArrayList<>();
+            messages.add(messageDto("system",
+                    "你是通话摘要助手。根据语音通话片段，用一句中文概括双方大概聊了什么。"
+                            + "要求：不超过36字；不要引号；不要换行；不要出现「摘要」「总结」字样；只输出概括正文。"));
+            messages.add(messageDto("user", transcript));
+            aiRequest.setMessages(messages);
+            ChatResult result = aiChatService.chatBlocking(userId, aiRequest);
+            String raw = result.getContent() == null ? "" : result.getContent().trim()
+                    .replace('\n', ' ')
+                    .replace("\"", "")
+                    .replace("「", "")
+                    .replace("」", "");
+            if (raw.length() > 40) {
+                raw = raw.substring(0, 40).trim();
+            }
+            if (!raw.isBlank()) {
+                return raw;
+            }
+        } catch (Exception e) {
+            log.warn("Voice call summary LLM failed, using fallback: {}", e.toString());
+        }
+        return fallbackSummary(turns);
+    }
+
+    private static String buildTranscript(List<VoiceCallEndRequest.VoiceCallTurnSnippet> turns) {
+        if (turns == null || turns.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        int n = 0;
+        for (VoiceCallEndRequest.VoiceCallTurnSnippet turn : turns) {
+            if (turn == null) {
+                continue;
+            }
+            String user = turn.getUserText() == null ? "" : turn.getUserText().trim();
+            String reply = turn.getReplyText() == null ? "" : turn.getReplyText().trim();
+            if (user.isBlank() && reply.isBlank()) {
+                continue;
+            }
+            n += 1;
+            if (n > 24) {
+                break;
+            }
+            if (!user.isBlank()) {
+                sb.append("用户：").append(UserInputSanitizer.sanitizeChatMessage(user).storedText()).append('\n');
+            }
+            if (!reply.isBlank()) {
+                sb.append("角色：").append(reply).append('\n');
+            }
+        }
+        return sb.toString().trim();
+    }
+
+    private static String fallbackSummary(List<VoiceCallEndRequest.VoiceCallTurnSnippet> turns) {
+        if (turns == null || turns.isEmpty()) {
+            return "短暂寒暄";
+        }
+        for (VoiceCallEndRequest.VoiceCallTurnSnippet turn : turns) {
+            if (turn == null) {
+                continue;
+            }
+            String user = turn.getUserText() == null ? "" : turn.getUserText().trim();
+            if (!user.isBlank()) {
+                String cleaned = UserInputSanitizer.sanitizeChatMessage(user).storedText();
+                if (cleaned.length() > 28) {
+                    return cleaned.substring(0, 28) + "…";
+                }
+                return cleaned.isBlank() ? "日常闲聊" : cleaned;
+            }
+        }
+        return "日常闲聊";
+    }
+
+    static String formatDurationZh(int totalSeconds) {
+        int seconds = Math.max(0, totalSeconds);
+        if (seconds < 60) {
+            return seconds + "秒";
+        }
+        int minutes = seconds / 60;
+        int rem = seconds % 60;
+        if (rem == 0) {
+            return minutes + "分钟";
+        }
+        return minutes + "分" + rem + "秒";
     }
 
     private static MessageDto messageDto(String role, String content) {

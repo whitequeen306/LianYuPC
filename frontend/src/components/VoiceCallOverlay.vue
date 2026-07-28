@@ -4,11 +4,22 @@
       <div class="voice-call__backdrop" />
       <div class="voice-call__panel glass-strong">
         <header class="voice-call__head">
+          <button type="button" class="voice-call__back" @click="goBack">返回</button>
           <div class="voice-call__meta">
             <h2 class="voice-call__name">{{ characterName }}</h2>
             <p class="voice-call__status">{{ statusLabel }}</p>
+            <p v-if="live" class="voice-call__timer" aria-live="polite">{{ elapsedLabel }}</p>
           </div>
-          <button type="button" class="voice-call__hangup" @click="hangup">挂断</button>
+          <button
+            v-if="live"
+            type="button"
+            class="voice-call__hangup"
+            :disabled="ending"
+            @click="hangup"
+          >
+            挂断
+          </button>
+          <span v-else class="voice-call__head-spacer" aria-hidden="true" />
         </header>
 
         <div class="voice-call__stage">
@@ -37,7 +48,7 @@
             <div
               class="voice-call__avatar-wrap voice-call__avatar-wrap--user"
               :class="{
-                'is-live': live && !listeningPaused,
+                'is-live': live,
                 'is-speaking': userSpeakingVisual,
               }"
             >
@@ -76,15 +87,7 @@
           >
             开始通话
           </button>
-          <button
-            v-else
-            type="button"
-            class="voice-call__ptt is-active"
-            :disabled="busy && phase === 'speaking'"
-            @click="pauseOrResume"
-          >
-            {{ listeningPaused ? '继续收听' : '暂停收听' }}
-          </button>
+          <p v-else class="voice-call__live-hint">通话中 · 直接说话即可，可打断对方</p>
         </div>
       </div>
     </div>
@@ -95,7 +98,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useVoiceRecorder } from '@/composables/useVoiceRecorder'
-import { voiceCallTurn } from '@/api/voiceCall'
+import { voiceCallTurn, voiceCallEnd } from '@/api/voiceCall'
 import { applyPetVoiceGain } from '@/utils/petVoiceGain'
 import { getPetVoiceRate, getPetVoiceVolume } from '@/constants/petCatalog'
 import { humanizeError } from '@/utils/errorMessage'
@@ -111,7 +114,7 @@ const props = defineProps({
   voicePetId: { type: String, default: 'raiden' },
 })
 
-const emit = defineEmits(['hangup', 'turnComplete'])
+const emit = defineEmits(['hangup', 'turnComplete', 'callEnded'])
 
 const userStore = useUserStore()
 const {
@@ -124,14 +127,23 @@ const {
 } = useVoiceRecorder()
 
 const live = ref(false)
-const listeningPaused = ref(false)
 const busy = ref(false)
+const ending = ref(false)
 const phase = ref('idle')
 const displayCaption = ref('')
 const captionSpeaker = ref('char')
+const elapsedSeconds = ref(0)
 let audioEl = null
-let turnInFlight = false
+let turnGeneration = 0
 let captionEpoch = 0
+let listenLoopPromise = null
+let turnAbort = null
+let elapsedTimer = null
+let callStartedAt = 0
+/** @type {Array<{ userText: string, replyText: string }>} */
+const sessionTurns = []
+
+const BARGE_IN_LEVEL = 0.14
 
 const userAvatarUrl = computed(() => (
   userStore.avatarUrl ? resolveMediaUrl(userStore.avatarUrl) : ''
@@ -139,22 +151,49 @@ const userAvatarUrl = computed(() => (
 
 const characterSpeaking = computed(() => phase.value === 'speaking')
 const userSpeakingVisual = computed(() => (
-  live.value
-  && !listeningPaused.value
-  && phase.value !== 'speaking'
-  && (speaking.value || phase.value === 'transcribing')
+  live.value && (speaking.value || phase.value === 'transcribing')
 ))
+
+const elapsedLabel = computed(() => formatElapsed(elapsedSeconds.value))
 
 const statusLabel = computed(() => {
   if (!live.value) return '点击开始，建立持续语音通话'
-  if (listeningPaused.value) return '已暂停收听'
-  if (phase.value === 'speaking') return `${props.characterName || '角色'} 说话中…`
+  if (phase.value === 'speaking') return `${props.characterName || '角色'} 说话中（可打断）`
   if (phase.value === 'thinking') return '思考中…'
   if (phase.value === 'transcribing') return '识别中…'
   if (recording.value && speaking.value) return '已听到你的声音…'
   if (recording.value) return '正在听…'
-  return '通话中，持续收听'
+  return '通话中'
 })
+
+function formatElapsed(totalSec) {
+  const sec = Math.max(0, Math.floor(totalSec || 0))
+  const m = Math.floor(sec / 60)
+  const s = sec % 60
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+function startElapsedTimer() {
+  stopElapsedTimer()
+  callStartedAt = Date.now()
+  elapsedSeconds.value = 0
+  elapsedTimer = setInterval(() => {
+    elapsedSeconds.value = Math.floor((Date.now() - callStartedAt) / 1000)
+  }, 1000)
+}
+
+function stopElapsedTimer() {
+  if (elapsedTimer) {
+    clearInterval(elapsedTimer)
+    elapsedTimer = null
+  }
+}
+
+function isAbortError(err) {
+  return err?.name === 'CanceledError'
+    || err?.name === 'AbortError'
+    || /abort|cancel/i.test(String(err?.message || ''))
+}
 
 function stopPlayback() {
   if (!audioEl) return
@@ -165,142 +204,221 @@ function stopPlayback() {
   audioEl = null
 }
 
-async function revealCaption(speaker, text) {
+function abortInFlightTurn() {
+  if (turnAbort) {
+    try { turnAbort.abort() } catch { /* ignore */ }
+    turnAbort = null
+  }
+  stopPlayback()
+  captionEpoch += 1
+}
+
+async function revealCaption(speaker, text, generation) {
   const epoch = ++captionEpoch
   captionSpeaker.value = speaker
   displayCaption.value = ''
   await typewriteText(text, {
     charDelayMs: 24,
     onUpdate: (partial) => {
-      if (epoch !== captionEpoch) return
+      if (epoch !== captionEpoch || generation !== turnGeneration) return
       displayCaption.value = partial
     },
   })
-  if (epoch === captionEpoch) {
+  if (epoch === captionEpoch && generation === turnGeneration) {
     displayCaption.value = text
   }
 }
 
-async function playReply(base64, mimeType) {
+async function playReply(base64, mimeType, generation) {
   stopPlayback()
+  if (!live.value || generation !== turnGeneration) return
   const src = `data:${mimeType || 'audio/wav'};base64,${base64}`
   audioEl = new Audio(src)
   applyPetVoiceGain(audioEl, getPetVoiceVolume(props.voicePetId))
   const rate = getPetVoiceRate(props.voicePetId)
   audioEl.playbackRate = Number.isFinite(rate) && rate > 0 ? Math.min(rate, 1.1) : 1
   phase.value = 'speaking'
-  await audioEl.play()
+  try {
+    await audioEl.play()
+  } catch {
+    return
+  }
   await new Promise((resolve) => {
+    if (!audioEl || generation !== turnGeneration) {
+      resolve()
+      return
+    }
     audioEl.onended = resolve
     audioEl.onerror = resolve
   })
+  if (generation === turnGeneration && phase.value === 'speaking') {
+    phase.value = 'idle'
+  }
 }
 
+/**
+ * Mic loop runs in parallel (awaitChunk:false). Each chunk may:
+ * - be ignored (silence / echo while TTS)
+ * - barge-in and cancel current TTS/API turn
+ * - start a new ASR→LLM→TTS turn
+ */
 async function handleChunk(blob) {
-  if (!live.value || listeningPaused.value || turnInFlight) return
-  if (!blob || blob.size < 16) return
-  turnInFlight = true
+  if (!live.value || !blob || blob.size < 16) return
+
+  const playing = phase.value === 'speaking' && !!audioEl
+  const inTurn = phase.value === 'thinking' || phase.value === 'transcribing'
+  if (playing || inTurn) {
+    // 角色播报 / 思考中：只有检测到明显人声才打断，避免扬声器回灌误触发
+    if (!(speaking.value || audioLevel.value >= BARGE_IN_LEVEL)) return
+    abortInFlightTurn()
+  } else if (busy.value) {
+    return
+  } else if (!(speaking.value || audioLevel.value >= 0.05)) {
+    // 空闲静音片段不打 ASR
+    return
+  }
+
+  const generation = ++turnGeneration
+  turnAbort = typeof AbortController !== 'undefined' ? new AbortController() : null
+  const signal = turnAbort?.signal
   busy.value = true
   phase.value = 'transcribing'
   try {
     phase.value = 'thinking'
-    // httpCore 已解包 Result.data，这里不要再读 res.data
-    const data = pickVoiceCallPayload(await voiceCallTurn(props.conversationId, blob))
+    const data = pickVoiceCallPayload(
+      await voiceCallTurn(props.conversationId, blob, 'voice.webm', { signal }),
+    )
+    if (generation !== turnGeneration || !live.value) return
     if (!data.replyText) {
-      // 静音/未听清：继续收听，不打断循环
+      phase.value = 'idle'
       return
     }
     if (data.userText) {
-      await revealCaption('user', data.userText)
+      await revealCaption('user', data.userText, generation)
     }
+    if (generation !== turnGeneration || !live.value) return
+    sessionTurns.push({
+      userText: data.userText || '',
+      replyText: data.replyText || '',
+    })
     emit('turnComplete', data)
-    await stopChunked()
-    const replyReveal = revealCaption('char', data.replyText)
+    const replyReveal = revealCaption('char', data.replyText, generation)
     if (data.audioBase64) {
-      await playReply(data.audioBase64, data.audioMimeType)
+      await playReply(data.audioBase64, data.audioMimeType, generation)
     } else {
       phase.value = 'speaking'
+      await replyReveal
+      if (generation === turnGeneration) phase.value = 'idle'
     }
     await replyReveal
-    if (live.value && !listeningPaused.value) {
-      await resumeListening()
-    }
   } catch (err) {
+    if (isAbortError(err) || generation !== turnGeneration) return
     ElMessage.error(humanizeError(err, '语音通话失败，请稍后再试'))
   } finally {
-    turnInFlight = false
-    busy.value = false
-    phase.value = 'idle'
+    if (generation === turnGeneration) {
+      busy.value = false
+      if (phase.value !== 'speaking') phase.value = 'idle'
+      turnAbort = null
+    }
   }
 }
 
-async function resumeListening() {
-  await startChunked({
-    intervalMs: 2200,
+async function ensureListening() {
+  if (listenLoopPromise) return
+  listenLoopPromise = startChunked({
+    intervalMs: 1800,
+    awaitChunk: false,
     onChunk: handleChunk,
+  }).finally(() => {
+    listenLoopPromise = null
   })
+  // 不 await 整段循环：循环要一直跑到挂断
+  void listenLoopPromise.catch(() => {})
 }
 
 async function startCall() {
-  if (live.value || busy.value) return
+  if (live.value || busy.value || ending.value) return
   displayCaption.value = ''
   captionSpeaker.value = 'char'
   captionEpoch += 1
-  listeningPaused.value = false
+  turnGeneration = 0
+  sessionTurns.length = 0
   phase.value = 'idle'
   try {
     live.value = true
-    ElMessage.info('通话已开始，请直接说话')
-    await resumeListening()
+    startElapsedTimer()
+    ElMessage.info('通话已开始，请直接说话，可随时打断')
+    await ensureListening()
   } catch {
     live.value = false
+    stopElapsedTimer()
     ElMessage.error('无法访问麦克风')
   }
 }
 
-async function pauseOrResume() {
-  if (!live.value) return
-  if (!listeningPaused.value) {
-    listeningPaused.value = true
-    await stopChunked()
-    phase.value = 'idle'
-    return
+async function finalizeCallAndClose({ withSummary }) {
+  if (ending.value) return
+  ending.value = true
+  const wasLive = live.value
+  const durationSeconds = wasLive
+    ? Math.max(elapsedSeconds.value, callStartedAt ? Math.floor((Date.now() - callStartedAt) / 1000) : 0)
+    : 0
+  const turns = sessionTurns.slice(-40)
+  live.value = false
+  busy.value = false
+  phase.value = 'idle'
+  turnGeneration += 1
+  abortInFlightTurn()
+  stopElapsedTimer()
+  await stopChunked()
+  cancel()
+
+  let summaryMsg = null
+  if (withSummary && wasLive) {
+    try {
+      summaryMsg = await voiceCallEnd(props.conversationId, { durationSeconds, turns })
+    } catch (err) {
+      ElMessage.error(humanizeError(err, '通话记录保存失败'))
+    }
   }
-  listeningPaused.value = false
-  try {
-    await resumeListening()
-  } catch {
-    ElMessage.error('无法恢复麦克风')
+  ending.value = false
+  elapsedSeconds.value = 0
+  sessionTurns.length = 0
+  if (summaryMsg) {
+    emit('callEnded', summaryMsg)
   }
+  emit('hangup')
 }
 
 async function hangup() {
-  live.value = false
-  listeningPaused.value = false
-  busy.value = false
-  phase.value = 'idle'
-  turnInFlight = false
-  captionEpoch += 1
-  stopPlayback()
-  await stopChunked()
-  cancel()
+  await finalizeCallAndClose({ withSummary: true })
+}
+
+async function goBack() {
+  if (live.value) {
+    await finalizeCallAndClose({ withSummary: true })
+    return
+  }
   emit('hangup')
 }
 
 watch(() => props.visible, async (v) => {
   if (!v) {
     live.value = false
-    listeningPaused.value = false
-    captionEpoch += 1
-    stopPlayback()
+    turnGeneration += 1
+    abortInFlightTurn()
+    stopElapsedTimer()
     await stopChunked()
     cancel()
+    ending.value = false
   }
 })
 
 onUnmounted(() => {
   live.value = false
-  captionEpoch += 1
+  turnGeneration += 1
+  abortInFlightTurn()
+  stopElapsedTimer()
   cancel()
   stopPlayback()
 })
@@ -343,6 +461,40 @@ onUnmounted(() => {
   gap: $space-3;
 }
 
+.voice-call__meta {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+
+.voice-call__back,
+.voice-call__hangup {
+  flex-shrink: 0;
+  border: 1px solid rgba($color-pink-rgb, 0.35);
+  background: rgba($color-pink-rgb, 0.12);
+  color: var(--ly-text-primary);
+  border-radius: $radius-pill;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: background 0.22s cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 0.22s cubic-bezier(0.23, 1, 0.32, 1);
+
+  &:hover:not(:disabled) {
+    background: rgba($color-pink-rgb, 0.2);
+    border-color: rgba($color-pink-rgb, 0.55);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.voice-call__head-spacer {
+  width: 64px;
+  flex-shrink: 0;
+}
+
 .voice-call__name {
   margin: 0;
   font-family: $font-display-serif;
@@ -356,20 +508,13 @@ onUnmounted(() => {
   color: var(--ly-text-secondary);
 }
 
-.voice-call__hangup {
-  border: 1px solid rgba($color-pink-rgb, 0.35);
-  background: rgba($color-pink-rgb, 0.12);
-  color: var(--ly-text-primary);
-  border-radius: $radius-pill;
-  padding: 8px 16px;
-  cursor: pointer;
-  transition: background 0.22s cubic-bezier(0.23, 1, 0.32, 1),
-    border-color 0.22s cubic-bezier(0.23, 1, 0.32, 1);
-
-  &:hover {
-    background: rgba($color-pink-rgb, 0.2);
-    border-color: rgba($color-pink-rgb, 0.55);
-  }
+.voice-call__timer {
+  margin: $space-2 0 0;
+  font-variant-numeric: tabular-nums;
+  font-size: 1.125rem;
+  letter-spacing: 0.06em;
+  color: var(--ly-accent);
+  font-weight: 600;
 }
 
 .voice-call__stage {
@@ -475,6 +620,13 @@ onUnmounted(() => {
   padding-bottom: $space-2;
 }
 
+.voice-call__live-hint {
+  margin: 0;
+  font-size: $font-size-sm;
+  color: var(--ly-text-secondary);
+  text-align: center;
+}
+
 .voice-call__ptt {
   min-width: 180px;
   padding: 14px 28px;
@@ -492,11 +644,6 @@ onUnmounted(() => {
   &:hover:not(:disabled) {
     background: rgba($color-pink-rgb, 0.24);
     border-color: rgba($color-pink-rgb, 0.55);
-  }
-
-  &.is-active {
-    background: rgba($color-pink-rgb, 0.32);
-    border-color: rgba($color-pink-rgb, 0.65);
   }
 
   &:disabled {

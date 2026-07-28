@@ -123,7 +123,7 @@
               <img :src="resolveMediaUrl(item.imageUrl)" alt="" @click="openImagePreview(item.imageUrl)" />
             </div>
             <VoiceMessageBubble
-              v-if="item.audioUrl"
+              v-if="item.audioUrl && item.audioUrl !== 'system/voice-call-summary'"
               class="gal-bubble__voice"
               :audio-url="item.audioUrl"
               :transcript="item.content || ''"
@@ -131,6 +131,10 @@
               :playback-rate="getPetVoiceRate(petIdFromAudioUrl(item.audioUrl))"
               :volume-gain="getPetVoiceVolume(petIdFromAudioUrl(item.audioUrl))"
             />
+            <p
+              v-else-if="item.audioUrl === 'system/voice-call-summary'"
+              class="gal-bubble__text gal-bubble__text--voice-call"
+            >{{ item.content }}</p>
             <AssistantMessageContent
               v-else-if="item.content"
               :content="item.content"
@@ -327,6 +331,7 @@
       :voice-pet-id="activeCharacter?.voicePetId || 'raiden'"
       @hangup="closeVoiceCall"
       @turn-complete="onVoiceCallTurnComplete"
+      @call-ended="onVoiceCallEnded"
     />
   </div>
 </template>
@@ -1293,6 +1298,22 @@ async function onVoiceCallTurnComplete() {
   await pollCurrentConversationMessages(true)
 }
 
+async function onVoiceCallEnded(summaryMsg) {
+  if (summaryMsg && typeof summaryMsg === 'object') {
+    const exists = messages.value.some((m) => m.id && summaryMsg.id && m.id === summaryMsg.id)
+    if (!exists) {
+      messages.value.push({
+        ...summaryMsg,
+        role: String(summaryMsg.role || 'assistant').toLowerCase(),
+      })
+      sortMessagesInTimelineOrder()
+      await nextTick()
+      scrollToBottom({ force: true })
+    }
+  }
+  await pollCurrentConversationMessages(true)
+}
+
 async function handleSend() {
   const text = inputText.value.trim()
   const imageUrl = pendingImageUrl.value
@@ -1898,12 +1919,12 @@ function formatTime(ts) {
   }
 }
 
-.gal-bubble--hero {
-  background: var(--ly-chat-hero-bubble-bg);
-  border: 1px solid var(--ly-chat-hero-bubble-border);
-  border-bottom-left-radius: $radius-sm;
-  box-shadow: var(--ly-chat-hero-bubble-shadow);
-  backdrop-filter: blur(10px);
+.gal-bubble__text--voice-call {
+  color: var(--ly-text-secondary);
+  font-size: $font-size-sm;
+  text-align: center;
+  width: 100%;
+}
 
   .gal-bubble__text,
   :deep(.gal-bubble__text) {

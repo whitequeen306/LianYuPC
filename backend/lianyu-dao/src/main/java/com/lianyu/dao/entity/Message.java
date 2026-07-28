@@ -14,6 +14,8 @@ public class Message {
     private String role;   // USER / ASSISTANT / SYSTEM / TOOL
     private Long characterId;
     private String content;
+    /** When non-blank, used instead of content when building LLM history. */
+    private String contextContent;
     private String imageUrl;
     /** Client asset path (pet/voice/...) or future object-storage URL */
     private String audioUrl;

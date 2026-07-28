@@ -84,7 +84,13 @@ export function useVoiceRecorder() {
 
   async function ensureStream() {
     if (mediaStream) return mediaStream
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    })
     startMeter()
     return mediaStream
   }
@@ -154,8 +160,10 @@ export function useVoiceRecorder() {
   /**
    * Continuous listen: every intervalMs cut a blob and invoke onChunk.
    * Does not stop the mic stream between chunks (reuses getUserMedia).
+   * @param {boolean} [awaitChunk=true] when false, start next chunk without waiting
+   *   for onChunk (needed for voice-call barge-in while TTS plays).
    */
-  async function startChunked({ intervalMs = 2200, onChunk } = {}) {
+  async function startChunked({ intervalMs = 2200, onChunk, awaitChunk = true } = {}) {
     if (chunkLoopActive) return
     chunkLoopActive = true
     const session = ++chunkSession
@@ -193,11 +201,10 @@ export function useVoiceRecorder() {
       chunks = []
       if (!chunkLoopActive || session !== chunkSession) return
       if (blob && blob.size >= 16 && typeof onChunk === 'function') {
-        try {
-          await onChunk(blob)
-        } catch {
-          // caller handles toast; keep listening
-        }
+        const task = Promise.resolve()
+          .then(() => onChunk(blob))
+          .catch(() => { /* caller handles toast; keep listening */ })
+        if (awaitChunk) await task
       }
       if (chunkLoopActive && session === chunkSession) {
         await Promise.resolve()

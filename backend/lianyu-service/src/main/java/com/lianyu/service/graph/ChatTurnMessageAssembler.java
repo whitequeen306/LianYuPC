@@ -53,7 +53,7 @@ public class ChatTurnMessageAssembler {
             MessageDto dto = new MessageDto();
             dto.setRole(msg.getRole() == null ? "user" : msg.getRole().toLowerCase());
             boolean hasImage = msg.getImageUrl() != null && !msg.getImageUrl().isBlank();
-            String content = msg.getContent();
+            String content = MessageModelContent.forModel(msg);
             boolean isCurrent = currentUserMsgId != null && currentUserMsgId.equals(msg.getId());
             if (isCurrent && currentAiUserContent != null && !currentAiUserContent.isBlank()) {
                 content = currentAiUserContent.contains("<user_message")
@@ -63,7 +63,7 @@ public class ChatTurnMessageAssembler {
                     content = UserInputSanitizer.wrapStoredTextForModel("用户发送了一张图片");
                 }
             } else if (hasImage) {
-                content = ImageMessageHistoryText.forHistory(content, true);
+                content = ImageMessageHistoryText.forHistory(msg.getContent(), true);
             } else if (content == null || content.isBlank()) {
                 continue;
             }

@@ -131,4 +131,14 @@ public class ConversationController {
                 20, java.time.Duration.ofMinutes(1), "语音通话过于频繁，请稍后再试");
         return Result.ok(voiceCallService.processTurn(userId, id, file));
     }
+
+    @Operation(summary = "结束语音通话", description = "写入通话时长气泡，并为模型上下文生成摘要")
+    @PostMapping("/{id}/voice-call/end")
+    public Result<MessageResponse> voiceCallEnd(@PathVariable("id") Long id,
+                                                @Valid @RequestBody VoiceCallEndRequest request) {
+        long userId = StpUtil.getLoginIdAsLong();
+        authRateLimiter.checkRateLimit("rate:voice-call-end:", String.valueOf(userId),
+                10, java.time.Duration.ofMinutes(1), "操作过于频繁，请稍后再试");
+        return Result.ok(voiceCallService.endCall(userId, id, request));
+    }
 }
