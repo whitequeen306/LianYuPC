@@ -2,16 +2,22 @@ import { ref } from 'vue'
 
 /**
  * Browser/Electron microphone capture via MediaRecorder.
- * Supports one-shot record and continuous sentence-chunk capture.
+ * Supports one-shot record, continuous sentence-chunk capture, and live level metering.
  */
 export function useVoiceRecorder() {
   const recording = ref(false)
+  const audioLevel = ref(0)
+  const speaking = ref(false)
   let mediaStream = null
   let mediaRecorder = null
   let chunks = []
   let chunkLoopActive = false
   let chunkTimer = null
   let chunkSession = 0
+  let audioCtx = null
+  let analyser = null
+  let meterSource = null
+  let levelRaf = null
 
   function pickMime() {
     if (typeof MediaRecorder === 'undefined') return ''
@@ -20,9 +26,66 @@ export function useVoiceRecorder() {
     return ''
   }
 
+  function stopMeter() {
+    if (levelRaf != null) {
+      cancelAnimationFrame(levelRaf)
+      levelRaf = null
+    }
+    audioLevel.value = 0
+    speaking.value = false
+    try {
+      meterSource?.disconnect()
+    } catch { /* ignore */ }
+    meterSource = null
+    analyser = null
+    if (audioCtx) {
+      const ctx = audioCtx
+      audioCtx = null
+      void ctx.close().catch(() => {})
+    }
+  }
+
+  function startMeter() {
+    if (!mediaStream || levelRaf != null) return
+    const Ctx = typeof window !== 'undefined'
+      ? (window.AudioContext || window.webkitAudioContext)
+      : null
+    if (!Ctx) return
+    try {
+      audioCtx = new Ctx()
+      analyser = audioCtx.createAnalyser()
+      analyser.fftSize = 256
+      analyser.smoothingTimeConstant = 0.72
+      meterSource = audioCtx.createMediaStreamSource(mediaStream)
+      meterSource.connect(analyser)
+      const data = new Uint8Array(analyser.fftSize)
+      const tick = () => {
+        if (!analyser) return
+        analyser.getByteTimeDomainData(data)
+        let sum = 0
+        for (let i = 0; i < data.length; i += 1) {
+          const v = (data[i] - 128) / 128
+          sum += v * v
+        }
+        const rms = Math.sqrt(sum / data.length)
+        const level = Math.min(1, rms * 5.2)
+        audioLevel.value = level
+        speaking.value = level > 0.06
+        levelRaf = requestAnimationFrame(tick)
+      }
+      if (audioCtx.state === 'suspended') {
+        void audioCtx.resume().catch(() => {})
+      }
+      tick()
+    } catch {
+      stopMeter()
+    }
+  }
+
   async function ensureStream() {
     if (mediaStream) return mediaStream
     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    startMeter()
     return mediaStream
   }
 
@@ -46,6 +109,7 @@ export function useVoiceRecorder() {
   }
 
   function stopTracks() {
+    stopMeter()
     if (mediaStream) {
       mediaStream.getTracks().forEach((t) => t.stop())
     }
@@ -91,7 +155,7 @@ export function useVoiceRecorder() {
    * Continuous listen: every intervalMs cut a blob and invoke onChunk.
    * Does not stop the mic stream between chunks (reuses getUserMedia).
    */
-  async function startChunked({ intervalMs = 2800, onChunk } = {}) {
+  async function startChunked({ intervalMs = 2200, onChunk } = {}) {
     if (chunkLoopActive) return
     chunkLoopActive = true
     const session = ++chunkSession
@@ -123,7 +187,7 @@ export function useVoiceRecorder() {
           } catch {
             resolve(null)
           }
-        }, Math.max(1200, intervalMs))
+        }, Math.max(1100, intervalMs))
       })
       mediaRecorder = null
       chunks = []
@@ -136,7 +200,6 @@ export function useVoiceRecorder() {
         }
       }
       if (chunkLoopActive && session === chunkSession) {
-        // yield a tick then continue
         await Promise.resolve()
         return runOne()
       }
@@ -161,7 +224,6 @@ export function useVoiceRecorder() {
     }
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
       try {
-        // Trigger existing onstop from the active chunk promise (do not overwrite it)
         mediaRecorder.stop()
       } catch {
         // ignore
@@ -187,5 +249,14 @@ export function useVoiceRecorder() {
     stopTracks()
   }
 
-  return { recording, start, stop, cancel, startChunked, stopChunked }
+  return {
+    recording,
+    audioLevel,
+    speaking,
+    start,
+    stop,
+    cancel,
+    startChunked,
+    stopChunked,
+  }
 }

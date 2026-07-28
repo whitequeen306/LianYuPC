@@ -12,17 +12,58 @@
         </header>
 
         <div class="voice-call__stage">
-          <div class="voice-call__avatar-wrap" :class="{ 'is-live': live }">
-            <img
-              v-if="avatarUrl"
-              :src="avatarUrl"
-              class="voice-call__avatar"
-              :alt="characterName"
-            />
-            <div v-else class="voice-call__avatar voice-call__avatar--placeholder" aria-hidden="true" />
+          <div class="voice-call__avatars">
+            <div
+              class="voice-call__avatar-wrap voice-call__avatar-wrap--char"
+              :class="{
+                'is-live': live,
+                'is-speaking': characterSpeaking,
+              }"
+            >
+              <span
+                class="voice-call__ripple"
+                :style="{ '--voice-level': String(characterSpeaking ? 0.65 : 0) }"
+                aria-hidden="true"
+              />
+              <img
+                v-if="avatarUrl"
+                :src="avatarUrl"
+                class="voice-call__avatar"
+                :alt="characterName"
+              />
+              <div v-else class="voice-call__avatar voice-call__avatar--placeholder" aria-hidden="true" />
+            </div>
+
+            <div
+              class="voice-call__avatar-wrap voice-call__avatar-wrap--user"
+              :class="{
+                'is-live': live && !listeningPaused,
+                'is-speaking': userSpeakingVisual,
+              }"
+            >
+              <span
+                class="voice-call__ripple"
+                :style="{ '--voice-level': String(audioLevel) }"
+                aria-hidden="true"
+              />
+              <img
+                v-if="userAvatarUrl"
+                :src="userAvatarUrl"
+                class="voice-call__avatar"
+                alt="我"
+              />
+              <div v-else class="voice-call__avatar voice-call__avatar--placeholder" aria-hidden="true" />
+            </div>
           </div>
-          <p v-if="userCaption" class="voice-call__caption voice-call__caption--user">你：{{ userCaption }}</p>
-          <p v-if="caption" class="voice-call__caption">{{ caption }}</p>
+
+          <p
+            v-if="displayCaption"
+            class="voice-call__caption"
+            :class="captionSpeaker === 'user' ? 'voice-call__caption--user' : 'voice-call__caption--char'"
+          >
+            <span class="voice-call__caption-label">{{ captionSpeaker === 'user' ? '你' : characterName }}</span>
+            {{ displayCaption }}
+          </p>
         </div>
 
         <div class="voice-call__controls">
@@ -58,6 +99,9 @@ import { voiceCallTurn } from '@/api/voiceCall'
 import { applyPetVoiceGain } from '@/utils/petVoiceGain'
 import { getPetVoiceRate, getPetVoiceVolume } from '@/constants/petCatalog'
 import { humanizeError } from '@/utils/errorMessage'
+import { pickVoiceCallPayload, typewriteText } from '@/utils/voiceResponse'
+import { resolveMediaUrl } from '@/utils/media'
+import { useUserStore } from '@/stores/user'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -69,26 +113,47 @@ const props = defineProps({
 
 const emit = defineEmits(['hangup', 'turnComplete'])
 
-const { recording, startChunked, stopChunked, cancel } = useVoiceRecorder()
+const userStore = useUserStore()
+const {
+  recording,
+  startChunked,
+  stopChunked,
+  cancel,
+  audioLevel,
+  speaking,
+} = useVoiceRecorder()
+
 const live = ref(false)
 const listeningPaused = ref(false)
 const busy = ref(false)
 const phase = ref('idle')
-const caption = ref('')
-const userCaption = ref('')
+const displayCaption = ref('')
+const captionSpeaker = ref('char')
 let audioEl = null
 let turnInFlight = false
+let captionEpoch = 0
+
+const userAvatarUrl = computed(() => (
+  userStore.avatarUrl ? resolveMediaUrl(userStore.avatarUrl) : ''
+))
+
+const characterSpeaking = computed(() => phase.value === 'speaking')
+const userSpeakingVisual = computed(() => (
+  live.value
+  && !listeningPaused.value
+  && phase.value !== 'speaking'
+  && (speaking.value || phase.value === 'transcribing')
+))
 
 const statusLabel = computed(() => {
   if (!live.value) return '点击开始，建立持续语音通话'
   if (listeningPaused.value) return '已暂停收听'
-  if (recording.value && phase.value === 'idle') return '正在听…'
-  switch (phase.value) {
-    case 'transcribing': return '识别中…'
-    case 'thinking': return '思考中…'
-    case 'speaking': return '说话中…'
-    default: return '通话中，持续收听'
-  }
+  if (phase.value === 'speaking') return `${props.characterName || '角色'} 说话中…`
+  if (phase.value === 'thinking') return '思考中…'
+  if (phase.value === 'transcribing') return '识别中…'
+  if (recording.value && speaking.value) return '已听到你的声音…'
+  if (recording.value) return '正在听…'
+  return '通话中，持续收听'
 })
 
 function stopPlayback() {
@@ -98,6 +163,22 @@ function stopPlayback() {
     audioEl.currentTime = 0
   } catch { /* ignore */ }
   audioEl = null
+}
+
+async function revealCaption(speaker, text) {
+  const epoch = ++captionEpoch
+  captionSpeaker.value = speaker
+  displayCaption.value = ''
+  await typewriteText(text, {
+    charDelayMs: 24,
+    onUpdate: (partial) => {
+      if (epoch !== captionEpoch) return
+      displayCaption.value = partial
+    },
+  })
+  if (epoch === captionEpoch) {
+    displayCaption.value = text
+  }
 }
 
 async function playReply(base64, mimeType) {
@@ -123,20 +204,24 @@ async function handleChunk(blob) {
   phase.value = 'transcribing'
   try {
     phase.value = 'thinking'
-    const res = await voiceCallTurn(props.conversationId, blob)
-    const data = res?.data
-    if (!data?.replyText) {
+    // httpCore 已解包 Result.data，这里不要再读 res.data
+    const data = pickVoiceCallPayload(await voiceCallTurn(props.conversationId, blob))
+    if (!data.replyText) {
       // 静音/未听清：继续收听，不打断循环
       return
     }
-    if (data.userText) userCaption.value = data.userText
-    caption.value = data.replyText
+    if (data.userText) {
+      await revealCaption('user', data.userText)
+    }
     emit('turnComplete', data)
-    // 播 TTS 前暂停麦克风，避免回灌
     await stopChunked()
+    const replyReveal = revealCaption('char', data.replyText)
     if (data.audioBase64) {
       await playReply(data.audioBase64, data.audioMimeType)
+    } else {
+      phase.value = 'speaking'
     }
+    await replyReveal
     if (live.value && !listeningPaused.value) {
       await resumeListening()
     }
@@ -151,15 +236,16 @@ async function handleChunk(blob) {
 
 async function resumeListening() {
   await startChunked({
-    intervalMs: 2800,
+    intervalMs: 2200,
     onChunk: handleChunk,
   })
 }
 
 async function startCall() {
   if (live.value || busy.value) return
-  caption.value = ''
-  userCaption.value = ''
+  displayCaption.value = ''
+  captionSpeaker.value = 'char'
+  captionEpoch += 1
   listeningPaused.value = false
   phase.value = 'idle'
   try {
@@ -194,6 +280,7 @@ async function hangup() {
   busy.value = false
   phase.value = 'idle'
   turnInFlight = false
+  captionEpoch += 1
   stopPlayback()
   await stopChunked()
   cancel()
@@ -204,6 +291,7 @@ watch(() => props.visible, async (v) => {
   if (!v) {
     live.value = false
     listeningPaused.value = false
+    captionEpoch += 1
     stopPlayback()
     await stopChunked()
     cancel()
@@ -212,6 +300,7 @@ watch(() => props.visible, async (v) => {
 
 onUnmounted(() => {
   live.value = false
+  captionEpoch += 1
   cancel()
   stopPlayback()
 })
@@ -289,22 +378,56 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: $space-4;
+  gap: $space-5;
   padding: $space-6 0;
 }
 
+.voice-call__avatars {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: $space-5;
+}
+
 .voice-call__avatar-wrap {
-  width: 168px;
-  height: 168px;
+  position: relative;
   border-radius: $radius-full;
   padding: 4px;
   background: rgba($color-pink-rgb, 0.18);
   transition: box-shadow 0.28s cubic-bezier(0.23, 1, 0.32, 1);
 
-  &.is-live {
-    box-shadow: 0 0 0 3px rgba($color-pink-rgb, 0.35),
-      0 0 28px rgba($color-pink-rgb, 0.25);
+  &--char {
+    width: 168px;
+    height: 168px;
   }
+
+  &--user {
+    width: 88px;
+    height: 88px;
+  }
+
+  &.is-live {
+    box-shadow: 0 0 0 3px rgba($color-pink-rgb, 0.28),
+      0 0 22px rgba($color-pink-rgb, 0.18);
+  }
+
+  &.is-speaking .voice-call__ripple {
+    opacity: 1;
+    transform: scale(calc(1.08 + var(--voice-level, 0) * 0.55));
+  }
+}
+
+.voice-call__ripple {
+  position: absolute;
+  inset: -10px;
+  border-radius: $radius-full;
+  border: 2px solid rgba($color-pink-rgb, 0.42);
+  box-shadow: 0 0 0 8px rgba($color-pink-rgb, 0.1);
+  opacity: 0;
+  transform: scale(1);
+  pointer-events: none;
+  transition: opacity 0.2s cubic-bezier(0.23, 1, 0.32, 1),
+    transform 0.2s cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .voice-call__avatar {
@@ -331,11 +454,19 @@ onUnmounted(() => {
   border-radius: $radius-lg;
   background: rgba($color-pink-rgb, 0.1);
   border: 1px solid rgba($color-pink-rgb, 0.18);
+  min-height: 3.2em;
 
   &--user {
     color: var(--ly-text-secondary);
     background: rgba($color-pink-rgb, 0.06);
   }
+}
+
+.voice-call__caption-label {
+  display: inline-block;
+  margin-right: $space-2;
+  color: var(--ly-accent);
+  font-weight: 600;
 }
 
 .voice-call__controls {

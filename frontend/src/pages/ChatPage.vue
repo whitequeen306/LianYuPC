@@ -193,6 +193,18 @@
             />
           </div>
         </div>
+        <div
+          v-if="voiceInputListening"
+          class="voice-live-bar"
+          :class="{ 'is-speaking': voiceSpeaking }"
+        >
+          <span class="voice-live-bar__waves" aria-hidden="true">
+            <i /><i /><i /><i />
+          </span>
+          <span class="voice-live-bar__text">
+            {{ voiceLivePreview || (voiceSpeaking ? '已听到声音，正在转写…' : '正在收听…再说一句，点麦克风结束') }}
+          </span>
+        </div>
         <div class="input-row">
           <input
             ref="fileInputRef"
@@ -206,13 +218,25 @@
             :disabled="waitingReply || isBlocked || uploadingImage || voiceInputBusy"
             @click="triggerImageSelect"
           />
-          <el-button
-            :icon="Microphone"
-            :type="voiceInputListening ? 'primary' : 'default'"
+          <button
+            type="button"
+            class="voice-mic-btn"
+            :class="{
+              'is-listening': voiceInputListening,
+              'is-speaking': voiceInputListening && voiceSpeaking,
+            }"
             :disabled="waitingReply || isBlocked || uploadingImage"
             :title="voiceInputListening ? '结束语音输入' : '语音输入'"
+            :aria-pressed="voiceInputListening"
             @click="toggleVoiceInput"
-          />
+          >
+            <span
+              class="voice-mic-btn__ripple"
+              :style="{ '--voice-level': String(voiceAudioLevel) }"
+              aria-hidden="true"
+            />
+            <el-icon :size="18"><Microphone /></el-icon>
+          </button>
           <el-input
             v-model="inputText"
             ref="inputTextRef"
@@ -351,6 +375,7 @@ import VoiceMessageBubble from '@/components/VoiceMessageBubble.vue'
 import VoiceCallOverlay from '@/components/VoiceCallOverlay.vue'
 import { useVoiceRecorder } from '@/composables/useVoiceRecorder'
 import { transcribeAudio } from '@/api/asr'
+import { pickAsrText, typewriteText } from '@/utils/voiceResponse'
 import { getPetVoiceRate, getPetVoiceVolume } from '@/constants/petCatalog'
 import {
   isShareSelectableMessage,
@@ -514,9 +539,13 @@ const {
   startChunked: startVoiceChunked,
   stopChunked: stopVoiceChunked,
   cancel: cancelVoiceInput,
+  audioLevel: voiceAudioLevel,
+  speaking: voiceSpeaking,
 } = useVoiceRecorder()
 const voiceInputListening = ref(false)
 const voiceInputBusy = ref(false)
+const voiceLivePreview = ref('')
+let voiceTypewriteEpoch = 0
 const awaitingOpening = ref(false)
 const currentProvider = ref('')
 const currentModel = ref('')
@@ -1191,12 +1220,26 @@ async function appendVoiceTranscript(blob) {
   if (!blob || blob.size < 16) return
   voiceInputBusy.value = true
   try {
-    const res = await transcribeAudio(blob)
-    const text = String(res?.data?.text || '').trim()
-    if (!text) return
-    inputText.value = inputText.value ? `${inputText.value.trimEnd()} ${text}` : text
+    // httpCore 已解包 Result.data，这里必须读 res.text（兼容 res.data.text）
+    const text = pickAsrText(await transcribeAudio(blob))
+    if (!text || !voiceInputListening.value) return
+    const epoch = ++voiceTypewriteEpoch
+    const base = inputText.value ? `${inputText.value.trimEnd()} ` : ''
+    voiceLivePreview.value = text
+    await typewriteText(text, {
+      charDelayMs: 22,
+      onUpdate: (partial) => {
+        if (epoch !== voiceTypewriteEpoch || !voiceInputListening.value) return
+        inputText.value = base + partial
+        voiceLivePreview.value = partial
+      },
+    })
+    if (epoch === voiceTypewriteEpoch) {
+      inputText.value = base + text
+      voiceLivePreview.value = text
+    }
     await nextTick()
-    inputTextRef.value?.focus?.()
+    focusChatInput()
   } catch (err) {
     ElMessage.error(humanizeError(err, '语音识别失败，请稍后再试'))
   } finally {
@@ -1208,15 +1251,18 @@ async function toggleVoiceInput() {
   if (waitingReply.value || isBlocked.value || uploadingImage.value) return
   if (voiceInputListening.value) {
     voiceInputListening.value = false
+    voiceTypewriteEpoch += 1
+    voiceLivePreview.value = ''
     await stopVoiceChunked()
     ElMessage.success('已结束语音输入')
     return
   }
   try {
     voiceInputListening.value = true
+    voiceLivePreview.value = ''
     ElMessage.info('正在收听语音')
     await startVoiceChunked({
-      intervalMs: 2800,
+      intervalMs: 2200,
       onChunk: async (blob) => {
         if (!voiceInputListening.value) return
         await appendVoiceTranscript(blob)
@@ -1224,6 +1270,7 @@ async function toggleVoiceInput() {
     })
   } catch {
     voiceInputListening.value = false
+    voiceLivePreview.value = ''
     await stopVoiceChunked()
     ElMessage.error('无法访问麦克风')
   }
@@ -1904,6 +1951,113 @@ function formatTime(ts) {
   padding: $space-3 $space-4 calc(#{$space-3} + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--ly-chat-input-border);
   background: var(--ly-chat-input-bg) !important;
+}
+
+.voice-live-bar {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  margin-bottom: $space-2;
+  padding: $space-2 $space-3;
+  border-radius: $radius-lg;
+  background: rgba($color-pink-rgb, 0.1);
+  border: 1px solid rgba($color-pink-rgb, 0.18);
+  color: var(--ly-text-secondary);
+  font-size: $font-size-sm;
+  transition: border-color 0.22s cubic-bezier(0.23, 1, 0.32, 1),
+    background 0.22s cubic-bezier(0.23, 1, 0.32, 1);
+
+  &.is-speaking {
+    color: var(--ly-text-primary);
+    background: rgba($color-pink-rgb, 0.16);
+    border-color: rgba($color-pink-rgb, 0.4);
+  }
+}
+
+.voice-live-bar__waves {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 14px;
+
+  i {
+    display: block;
+    width: 3px;
+    height: 4px;
+    border-radius: $radius-full;
+    background: rgba($color-pink-rgb, 0.75);
+    animation: voiceWave 0.9s cubic-bezier(0.23, 1, 0.32, 1) infinite;
+
+    &:nth-child(2) { animation-delay: 0.12s; }
+    &:nth-child(3) { animation-delay: 0.24s; }
+    &:nth-child(4) { animation-delay: 0.36s; }
+  }
+
+  .voice-live-bar:not(.is-speaking) & i {
+    animation: none;
+    opacity: 0.45;
+  }
+}
+
+.voice-live-bar__text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-mic-btn {
+  position: relative;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba($color-pink-rgb, 0.22);
+  border-radius: $radius-pill;
+  background: var(--ly-bg-elevated);
+  color: var(--ly-text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  overflow: visible;
+  transition: background 0.22s cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 0.22s cubic-bezier(0.23, 1, 0.32, 1),
+    color 0.22s cubic-bezier(0.23, 1, 0.32, 1);
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  &.is-listening {
+    background: rgba($color-pink-rgb, 0.22);
+    border-color: rgba($color-pink-rgb, 0.55);
+    color: var(--ly-accent);
+  }
+
+  &.is-speaking .voice-mic-btn__ripple {
+    opacity: 1;
+    transform: scale(calc(1.15 + var(--voice-level, 0) * 0.9));
+  }
+}
+
+.voice-mic-btn__ripple {
+  position: absolute;
+  inset: -6px;
+  border-radius: $radius-full;
+  border: 2px solid rgba($color-pink-rgb, 0.45);
+  box-shadow: 0 0 0 6px rgba($color-pink-rgb, 0.12);
+  opacity: 0;
+  transform: scale(1);
+  pointer-events: none;
+  transition: opacity 0.2s cubic-bezier(0.23, 1, 0.32, 1),
+    transform 0.2s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@keyframes voiceWave {
+  0%, 100% { height: 4px; }
+  50% { height: 14px; }
 }
 
 .input-row {
