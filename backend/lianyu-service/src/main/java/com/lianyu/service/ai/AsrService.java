@@ -107,14 +107,29 @@ public class AsrService {
         if (file.getSize() > maxBytes) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "音频文件过大");
         }
-        String contentType = file.getContentType() == null ? "" : file.getContentType().toLowerCase(Locale.ROOT);
+        // MediaRecorder 常见 Content-Type: audio/webm;codecs=opus —— 必须去掉 ; 后参数再比对
+        String contentType = normalizeContentType(file.getContentType());
         if (!contentType.isBlank() && !ALLOWED_CONTENT_TYPES.contains(contentType)) {
+            log.warn("Rejected ASR upload contentType={} filename={}",
+                    file.getContentType(), file.getOriginalFilename());
             throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的音频格式");
         }
         String name = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().toLowerCase(Locale.ROOT);
         boolean extOk = ALLOWED_EXTENSIONS.stream().anyMatch(name::endsWith);
-        if (!extOk && !contentType.startsWith("audio/")) {
+        if (!extOk && !(contentType.startsWith("audio/") || "application/octet-stream".equals(contentType))) {
+            log.warn("Rejected ASR upload extension/contentType filename={} contentType={}",
+                    file.getOriginalFilename(), file.getContentType());
             throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的音频格式");
         }
+    }
+
+    /** Strip MIME parameters such as ";codecs=opus". Visible for unit tests. */
+    static String normalizeContentType(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        String lower = raw.toLowerCase(Locale.ROOT).trim();
+        int semi = lower.indexOf(';');
+        return (semi >= 0 ? lower.substring(0, semi) : lower).trim();
     }
 }

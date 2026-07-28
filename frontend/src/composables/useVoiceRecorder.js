@@ -64,7 +64,7 @@ export function useVoiceRecorder() {
       const recorder = mediaRecorder
       recorder.onstop = () => {
         recording.value = false
-        const type = recorder.mimeType || 'audio/webm'
+        const type = (recorder.mimeType || 'audio/webm').split(';')[0].trim() || 'audio/webm'
         const blob = chunks.length ? new Blob(chunks, { type }) : null
         chunks = []
         mediaRecorder = null
@@ -109,7 +109,7 @@ export function useVoiceRecorder() {
         }
         recorder.onerror = () => reject(new Error('录音失败'))
         recorder.onstop = () => {
-          const type = recorder.mimeType || 'audio/webm'
+          const type = (recorder.mimeType || 'audio/webm').split(';')[0].trim() || 'audio/webm'
           resolve(chunks.length ? new Blob(chunks, { type }) : null)
         }
         try {
