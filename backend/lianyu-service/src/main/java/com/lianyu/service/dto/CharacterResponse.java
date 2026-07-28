@@ -18,4 +18,6 @@ public class CharacterResponse {
     private String promptTemplate;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    /** Square slug with VC voice mapping, e.g. raiden; null when unavailable. */
+    private String voicePetId;
 }

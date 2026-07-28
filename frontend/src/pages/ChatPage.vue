@@ -31,6 +31,14 @@
           />
         </div>
         <button
+          v-if="!selectionMode && voiceCallEnabled"
+          type="button"
+          class="gal-header__call"
+          @click="openVoiceCall"
+        >
+          通话
+        </button>
+        <button
           v-if="!selectionMode"
           type="button"
           class="gal-header__share"
@@ -195,8 +203,17 @@
           />
           <el-button
             :icon="Picture"
-            :disabled="waitingReply || isBlocked || uploadingImage"
+            :disabled="waitingReply || isBlocked || uploadingImage || voiceInputBusy"
             @click="triggerImageSelect"
+          />
+          <el-button
+            :icon="Microphone"
+            :type="voiceInputRecording ? 'primary' : 'default'"
+            :disabled="waitingReply || isBlocked || uploadingImage || voiceInputBusy"
+            @pointerdown.prevent="onVoiceInputDown"
+            @pointerup.prevent="onVoiceInputUp"
+            @pointercancel.prevent="onVoiceInputCancel"
+            @contextmenu.prevent
           />
           <el-input
             v-model="inputText"
@@ -279,6 +296,16 @@
       hide-on-click-modal
       @close="imageViewerVisible = false"
     />
+
+    <VoiceCallOverlay
+      :visible="voiceCallOpen"
+      :conversation-id="Number(currentConvId) || 0"
+      :character-name="activeCharacter?.name || ''"
+      :avatar-url="characterAvatarUrl ? resolveMediaUrl(characterAvatarUrl) : ''"
+      :voice-pet-id="activeCharacter?.voicePetId || 'raiden'"
+      @hangup="closeVoiceCall"
+      @turn-complete="onVoiceCallTurnComplete"
+    />
   </div>
 </template>
 
@@ -298,7 +325,7 @@ import { useConversationsStore } from '@/stores/conversations'
 import { humanizeError } from '@/utils/errorMessage'
 import { getConversation, getMessages, notifyConversationOpened, sendMessageStream, uploadChatImage } from '@/api/conversation'
 import { fetchModels } from '@/api/ai'
-import { ArrowLeft, ArrowDown, ChatDotRound, Promotion, Picture, Close, User, UserFilled } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowDown, ChatDotRound, Promotion, Picture, Close, User, UserFilled, Microphone } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { resolveMediaUrl } from '@/utils/media'
 import { nextCharacterAvatarTier, resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
@@ -323,6 +350,9 @@ import { drainAssistantStream } from '@/utils/assistantStreamDrain'
 import { formatSmartTime } from '@/utils/feedTime'
 import AssistantMessageContent from '@/components/AssistantMessageContent.vue'
 import VoiceMessageBubble from '@/components/VoiceMessageBubble.vue'
+import VoiceCallOverlay from '@/components/VoiceCallOverlay.vue'
+import { useVoiceRecorder } from '@/composables/useVoiceRecorder'
+import { transcribeAudio } from '@/api/asr'
 import { getPetVoiceRate, getPetVoiceVolume } from '@/constants/petCatalog'
 import {
   isShareSelectableMessage,
@@ -481,6 +511,15 @@ const galBgRef = ref(null)
     const pendingImageUrl = ref('')
 const uploadingImage = ref(false)
 const waitingReply = ref(false)
+const voiceCallOpen = ref(false)
+const {
+  recording: voiceInputRecording,
+  start: startVoiceInput,
+  stop: stopVoiceInput,
+  cancel: cancelVoiceInput,
+} = useVoiceRecorder()
+const voiceInputBusy = ref(false)
+let voiceInputPointerDown = false
 const awaitingOpening = ref(false)
 const currentProvider = ref('')
 const currentModel = ref('')
@@ -575,6 +614,7 @@ const isPlatformSelected = computed(() => currentProvider.value === PLATFORM_PRO
 const isCompact = computed(() => route.meta.compact === true)
 const activeSettings = computed(() => activeCharacter.value?.settings || {})
 const isBlocked = computed(() => activeSettings.value.blocked === true)
+const voiceCallEnabled = computed(() => activeCharacter.value?.voicePetId === 'raiden')
 const showInnerThoughts = computed(() => resolveShowInnerThoughts(activeSettings.value))
 
 const showHeaderTyping = computed(() => awaitingOpening.value || waitingReply.value)
@@ -747,6 +787,7 @@ onUnmounted(() => {
   setActiveChatConversationId(null)
   setActiveChatRefreshHandler(null)
   stopConversationPolling()
+  cancelVoiceInput()
   bounceTween?.kill()
 })
 
@@ -1013,12 +1054,12 @@ async function resolveActiveCharacter(charId, conv) {
     return
   }
   let char = charactersStore.list.find(c => c.id === charId)
-  if (!char) {
+  if (!char || char.voicePetId === undefined) {
     try {
       const { getCharacter } = await import('@/api/character')
       char = await getCharacter(charId)
     } catch {
-      char = null
+      if (!char) char = null
     }
   }
   if (!char && conv) {
@@ -1146,6 +1187,64 @@ function focusChatInput() {
   const ta = el.$el?.querySelector?.('textarea')
     || el.$el?.getElementsByTagName?.('textarea')?.[0]
   ta?.focus()
+}
+
+async function onVoiceInputDown() {
+  if (voiceInputBusy.value || voiceInputRecording.value || isBlocked.value) return
+  voiceInputPointerDown = true
+  try {
+    await startVoiceInput()
+  } catch {
+    voiceInputPointerDown = false
+    ElMessage.error('无法访问麦克风')
+  }
+}
+
+async function onVoiceInputUp() {
+  if (!voiceInputPointerDown) return
+  voiceInputPointerDown = false
+  if (!voiceInputRecording.value) return
+  voiceInputBusy.value = true
+  try {
+    const blob = await stopVoiceInput()
+    if (!blob || blob.size < 16) {
+      ElMessage.warning('录音太短，请再说一次')
+      return
+    }
+    const res = await transcribeAudio(blob)
+    const text = String(res?.data?.text || '').trim()
+    if (!text) {
+      ElMessage.warning('没有听清，请再说一次')
+      return
+    }
+    inputText.value = inputText.value ? `${inputText.value.trimEnd()} ${text}` : text
+    await nextTick()
+    inputTextRef.value?.focus?.()
+  } catch (err) {
+    ElMessage.error(humanizeError(err, '语音识别失败，请稍后再试'))
+  } finally {
+    voiceInputBusy.value = false
+  }
+}
+
+function onVoiceInputCancel() {
+  voiceInputPointerDown = false
+  if (voiceInputRecording.value) cancelVoiceInput()
+  voiceInputBusy.value = false
+}
+
+function openVoiceCall() {
+  if (!voiceCallEnabled.value || !currentConvId.value) return
+  voiceCallOpen.value = true
+}
+
+function closeVoiceCall() {
+  voiceCallOpen.value = false
+  cancelVoiceInput()
+}
+
+async function onVoiceCallTurnComplete() {
+  await pollCurrentConversationMessages(true)
 }
 
 async function handleSend() {
@@ -1476,6 +1575,7 @@ function formatTime(ts) {
   }
 }
 
+.gal-header__call,
 .gal-header__share {
   flex-shrink: 0;
   padding: $space-2 $space-3;

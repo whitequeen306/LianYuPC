@@ -6,6 +6,7 @@ import com.lianyu.common.base.Result;
 import com.lianyu.common.exception.BusinessException;
 import com.lianyu.service.auth.AuthRateLimiter;
 import com.lianyu.service.conversation.ConversationService;
+import com.lianyu.service.conversation.VoiceCallService;
 import com.lianyu.service.storage.FileStorageService;
 import com.lianyu.service.dto.*;
 import io.swagger.v3.oas.annotations.Operation;
@@ -28,6 +29,7 @@ import java.util.Map;
 public class ConversationController {
 
     private final ConversationService conversationService;
+    private final VoiceCallService voiceCallService;
     private final FileStorageService fileStorageService;
     private final AuthRateLimiter authRateLimiter;
     @Value("${lianyu.auth.rate-limit.messages-per-user-per-minute:60}")
@@ -118,5 +120,15 @@ public class ConversationController {
         authRateLimiter.checkRateLimit("rate:opened:", String.valueOf(userId),
                 30, java.time.Duration.ofMinutes(1), "操作过于频繁，请稍后再试");
         return Result.ok(conversationService.onSingleChatOpened(userId, id));
+    }
+
+    @Operation(summary = "语音通话回合（V1 仅雷神）", description = "上传用户语音 → ASR → 短回复 LLM → TTS")
+    @PostMapping("/{id}/voice-call/turn")
+    public Result<VoiceCallTurnResponse> voiceCallTurn(@PathVariable("id") Long id,
+                                                       @RequestParam("file") MultipartFile file) {
+        long userId = StpUtil.getLoginIdAsLong();
+        authRateLimiter.checkRateLimit("rate:voice-call:", String.valueOf(userId),
+                20, java.time.Duration.ofMinutes(1), "语音通话过于频繁，请稍后再试");
+        return Result.ok(voiceCallService.processTurn(userId, id, file));
     }
 }

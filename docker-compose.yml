@@ -49,6 +49,7 @@ services:
       RABBITMQ_HOST: rabbitmq
       MINIO_ENDPOINT: http://minio:9000
       MILVUS_HOST: milvus
+      LIANYU_ASR_BASE_URL: http://asr:8080
       SERVER_PORT: 8080
       TZ: Asia/Shanghai
     # 仅绑定本机，避免公网明文 HTTP 绕过 TLS 网关（云端经 api-gateway:443 反代 backend:8080）
@@ -65,6 +66,30 @@ services:
         condition: service_healthy
       milvus:
         condition: service_healthy
+      asr:
+        condition: service_healthy
+
+  # 中文 ASR（sherpa-onnx SenseVoice，仅内网供 backend 调用）
+  asr:
+    build:
+      context: ./deploy/asr
+      dockerfile: Dockerfile
+    image: lianyu-pc/asr:${APP_REVISION:-dev}
+    container_name: lianyu-asr
+    restart: unless-stopped
+    environment:
+      ASR_THREADS: "2"
+      ASR_PORT: "8080"
+    mem_limit: 1536m
+    cpus: "2.0"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+    ports:
+      - "127.0.0.1:18081:8080"
 
   # API 网关（仅 TLS + /api /ws 反代，不托管前端静态资源；桌面端走 Electron）
   api-gateway:

@@ -29,6 +29,7 @@ import com.lianyu.dao.mapper.MomentsPostMapper;
 import com.lianyu.service.dto.CharacterResponse;
 import com.lianyu.service.dto.CreateCharacterRequest;
 import com.lianyu.service.dto.UpdateCharacterRequest;
+import com.lianyu.service.ai.PetVoiceRegistry;
 import com.lianyu.service.conversation.CityChangeFollowUpScheduler;
 import com.lianyu.service.conversation.SessionSummaryService;
 import com.lianyu.service.memory.MemoryCacheService;
@@ -73,6 +74,7 @@ public class CharacterService {
     private final CharacterCitySettingsService characterCitySettingsService;
     private final CityChangeFollowUpScheduler cityChangeFollowUpScheduler;
     private final SessionSummaryService sessionSummaryService;
+    private final PetVoiceRegistry petVoiceRegistry;
 
     @Value("${lianyu.character.max-per-user:80}")
     private int maxCharactersPerUser;
@@ -321,7 +323,20 @@ public class CharacterService {
                 .promptTemplate(entity.getPromptTemplate())
                 .createdAt(entity.getCreatedAt())
                 .updatedAt(entity.getUpdatedAt())
+                .voicePetId(resolveVoicePetId(entity))
                 .build();
+    }
+
+    private String resolveVoicePetId(Character entity) {
+        if (entity == null || entity.getSourceTemplateId() == null) {
+            return null;
+        }
+        CharacterSquareTemplate template = squareTemplateMapper.selectById(entity.getSourceTemplateId());
+        if (template == null || template.getSlug() == null) {
+            return null;
+        }
+        String slug = template.getSlug().trim().toLowerCase(java.util.Locale.ROOT);
+        return petVoiceRegistry.hasVoice(slug) ? slug : null;
     }
 
     private static boolean isBlank(String value) {

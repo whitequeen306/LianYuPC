@@ -216,6 +216,12 @@ lianyu:
       # 未单独配置时与 embedding 共用同一 DashScope Key
       api-key: ${RERANKER_API_KEY:${EMBEDDING_API_KEY:}}
       url: https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank
+  asr:
+    enabled: ${LIANYU_ASR_ENABLED:true}
+    base-url: ${LIANYU_ASR_BASE_URL:http://localhost:8081}
+    max-bytes: 8388608
+  voice-call:
+    max-reply-chars: 48
   session:
     summary:
       enabled: true

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pull latest main on cloud server and rebuild backend + api-gateway."""
+"""Pull latest main on cloud server and rebuild asr + backend + api-gateway."""
 import os
 import sys
 from pathlib import Path
@@ -52,7 +52,7 @@ def main() -> None:
     client.connect(HOST, username=USER, password=password, timeout=30)
 
     run(client, "cd /opt/lianyu && git pull origin main")
-    run(client, "cd /opt/lianyu && docker compose up -d --build backend api-gateway", timeout=1200)
+    run(client, "cd /opt/lianyu && docker compose up -d --build asr backend api-gateway", timeout=1800)
     run(
         client,
         "cd /opt/lianyu && set -a && . ./.env && set +a && "
