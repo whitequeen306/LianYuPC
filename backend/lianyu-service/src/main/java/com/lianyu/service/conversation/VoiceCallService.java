@@ -85,11 +85,12 @@ public class VoiceCallService {
 
         String userText = asrService.transcribe(audio);
         if (userText == null || userText.isBlank()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "没有听清，请再说一次");
+            // 持续通话会切静音片段；空识别不算错误，由前端跳过本轮
+            return VoiceCallTurnResponse.builder().userText("").replyText("").build();
         }
         userText = UserInputSanitizer.sanitizeChatMessage(userText).storedText();
         if (userText.isBlank()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "没有听清，请再说一次");
+            return VoiceCallTurnResponse.builder().userText("").replyText("").build();
         }
 
         long userSeq = nextSeq(conversationId);

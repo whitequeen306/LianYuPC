@@ -8,11 +8,11 @@
             <h2 class="voice-call__name">{{ characterName }}</h2>
             <p class="voice-call__status">{{ statusLabel }}</p>
           </div>
-          <button type="button" class="voice-call__hangup" @click="emit('hangup')">挂断</button>
+          <button type="button" class="voice-call__hangup" @click="hangup">挂断</button>
         </header>
 
         <div class="voice-call__stage">
-          <div class="voice-call__avatar-wrap">
+          <div class="voice-call__avatar-wrap" :class="{ 'is-live': live }">
             <img
               v-if="avatarUrl"
               :src="avatarUrl"
@@ -21,21 +21,28 @@
             />
             <div v-else class="voice-call__avatar voice-call__avatar--placeholder" aria-hidden="true" />
           </div>
+          <p v-if="userCaption" class="voice-call__caption voice-call__caption--user">你：{{ userCaption }}</p>
           <p v-if="caption" class="voice-call__caption">{{ caption }}</p>
         </div>
 
         <div class="voice-call__controls">
           <button
+            v-if="!live"
             type="button"
             class="voice-call__ptt"
-            :class="{ 'is-active': recording || busy }"
-            :disabled="busy && !recording"
-            @pointerdown.prevent="onPttDown"
-            @pointerup.prevent="onPttUp"
-            @pointercancel.prevent="onPttCancel"
-            @contextmenu.prevent
+            :disabled="busy"
+            @click="startCall"
           >
-            {{ pttLabel }}
+            开始通话
+          </button>
+          <button
+            v-else
+            type="button"
+            class="voice-call__ptt is-active"
+            :disabled="busy && phase === 'speaking'"
+            @click="pauseOrResume"
+          >
+            {{ listeningPaused ? '继续收听' : '暂停收听' }}
           </button>
         </div>
       </div>
@@ -44,7 +51,7 @@
 </template>
 
 <script setup>
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useVoiceRecorder } from '@/composables/useVoiceRecorder'
 import { voiceCallTurn } from '@/api/voiceCall'
@@ -62,27 +69,26 @@ const props = defineProps({
 
 const emit = defineEmits(['hangup', 'turnComplete'])
 
-const { recording, start, stop, cancel } = useVoiceRecorder()
+const { recording, startChunked, stopChunked, cancel } = useVoiceRecorder()
+const live = ref(false)
+const listeningPaused = ref(false)
 const busy = ref(false)
 const phase = ref('idle')
 const caption = ref('')
+const userCaption = ref('')
 let audioEl = null
-let pointerDown = false
+let turnInFlight = false
 
 const statusLabel = computed(() => {
-  if (recording.value) return '正在听…'
+  if (!live.value) return '点击开始，建立持续语音通话'
+  if (listeningPaused.value) return '已暂停收听'
+  if (recording.value && phase.value === 'idle') return '正在听…'
   switch (phase.value) {
     case 'transcribing': return '识别中…'
     case 'thinking': return '思考中…'
     case 'speaking': return '说话中…'
-    default: return '准备就绪，按住说话'
+    default: return '通话中，持续收听'
   }
-})
-
-const pttLabel = computed(() => {
-  if (recording.value) return '松手发送'
-  if (busy.value) return '请稍候…'
-  return '按住说话'
 })
 
 function stopPlayback() {
@@ -109,60 +115,103 @@ async function playReply(base64, mimeType) {
   })
 }
 
-async function onPttDown() {
-  if (busy.value || recording.value) return
-  pointerDown = true
-  stopPlayback()
-  caption.value = ''
-  phase.value = 'idle'
-  try {
-    await start()
-  } catch {
-    ElMessage.error('无法访问麦克风')
-    pointerDown = false
-  }
-}
-
-async function onPttUp() {
-  if (!pointerDown) return
-  pointerDown = false
-  if (!recording.value) return
+async function handleChunk(blob) {
+  if (!live.value || listeningPaused.value || turnInFlight) return
+  if (!blob || blob.size < 16) return
+  turnInFlight = true
   busy.value = true
   phase.value = 'transcribing'
   try {
-    const blob = await stop()
-    if (!blob || blob.size < 16) {
-      ElMessage.warning('录音太短，请再说一次')
-      return
-    }
     phase.value = 'thinking'
     const res = await voiceCallTurn(props.conversationId, blob)
     const data = res?.data
     if (!data?.replyText) {
-      ElMessage.warning('没有收到回复，请重试')
+      // 静音/未听清：继续收听，不打断循环
       return
     }
+    if (data.userText) userCaption.value = data.userText
     caption.value = data.replyText
     emit('turnComplete', data)
+    // 播 TTS 前暂停麦克风，避免回灌
+    await stopChunked()
     if (data.audioBase64) {
       await playReply(data.audioBase64, data.audioMimeType)
+    }
+    if (live.value && !listeningPaused.value) {
+      await resumeListening()
     }
   } catch (err) {
     ElMessage.error(humanizeError(err, '语音通话失败，请稍后再试'))
   } finally {
+    turnInFlight = false
     busy.value = false
     phase.value = 'idle'
   }
 }
 
-function onPttCancel() {
-  pointerDown = false
-  if (recording.value) cancel()
-  busy.value = false
-  phase.value = 'idle'
+async function resumeListening() {
+  await startChunked({
+    intervalMs: 2800,
+    onChunk: handleChunk,
+  })
 }
 
+async function startCall() {
+  if (live.value || busy.value) return
+  caption.value = ''
+  userCaption.value = ''
+  listeningPaused.value = false
+  phase.value = 'idle'
+  try {
+    live.value = true
+    ElMessage.info('通话已开始，请直接说话')
+    await resumeListening()
+  } catch {
+    live.value = false
+    ElMessage.error('无法访问麦克风')
+  }
+}
+
+async function pauseOrResume() {
+  if (!live.value) return
+  if (!listeningPaused.value) {
+    listeningPaused.value = true
+    await stopChunked()
+    phase.value = 'idle'
+    return
+  }
+  listeningPaused.value = false
+  try {
+    await resumeListening()
+  } catch {
+    ElMessage.error('无法恢复麦克风')
+  }
+}
+
+async function hangup() {
+  live.value = false
+  listeningPaused.value = false
+  busy.value = false
+  phase.value = 'idle'
+  turnInFlight = false
+  stopPlayback()
+  await stopChunked()
+  cancel()
+  emit('hangup')
+}
+
+watch(() => props.visible, async (v) => {
+  if (!v) {
+    live.value = false
+    listeningPaused.value = false
+    stopPlayback()
+    await stopChunked()
+    cancel()
+  }
+})
+
 onUnmounted(() => {
+  live.value = false
   cancel()
   stopPlayback()
 })
@@ -250,6 +299,12 @@ onUnmounted(() => {
   border-radius: $radius-full;
   padding: 4px;
   background: rgba($color-pink-rgb, 0.18);
+  transition: box-shadow 0.28s cubic-bezier(0.23, 1, 0.32, 1);
+
+  &.is-live {
+    box-shadow: 0 0 0 3px rgba($color-pink-rgb, 0.35),
+      0 0 28px rgba($color-pink-rgb, 0.25);
+  }
 }
 
 .voice-call__avatar {
@@ -276,6 +331,11 @@ onUnmounted(() => {
   border-radius: $radius-lg;
   background: rgba($color-pink-rgb, 0.1);
   border: 1px solid rgba($color-pink-rgb, 0.18);
+
+  &--user {
+    color: var(--ly-text-secondary);
+    background: rgba($color-pink-rgb, 0.06);
+  }
 }
 
 .voice-call__controls {
@@ -304,7 +364,6 @@ onUnmounted(() => {
   }
 
   &.is-active {
-    transform: scale(0.98);
     background: rgba($color-pink-rgb, 0.32);
     border-color: rgba($color-pink-rgb, 0.65);
   }

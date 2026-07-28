@@ -7,14 +7,16 @@ describe('useVoiceRecorder', () => {
       constructor(stream, opts) {
         this.stream = stream
         this.mimeType = opts?.mimeType || 'audio/webm'
+        this.state = 'inactive'
         this.ondataavailable = null
         this.onstop = null
         this.onerror = null
       }
       start() {
-        // no-op; data emitted on stop for deterministic tests
+        this.state = 'recording'
       }
       stop() {
+        this.state = 'inactive'
         this.ondataavailable?.({ data: new Blob(['abc'], { type: this.mimeType }) })
         this.onstop?.()
       }
@@ -43,5 +45,19 @@ describe('useVoiceRecorder', () => {
     expect(recording.value).toBe(false)
     expect(blob).toBeInstanceOf(Blob)
     expect(blob.size).toBeGreaterThan(0)
+  })
+
+  it('starts and stops continuous chunked listening', async () => {
+    const { recording, startChunked, stopChunked } = useVoiceRecorder()
+    const loop = startChunked({
+      intervalMs: 5000,
+      onChunk: async () => {},
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(recording.value).toBe(true)
+    await stopChunked()
+    await loop
+    expect(recording.value).toBe(false)
   })
 })

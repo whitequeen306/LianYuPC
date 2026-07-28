@@ -515,10 +515,9 @@ public class ConversationService {
             log.debug("Cold open skipped (proactive disabled): convId={}", conversationId);
             return;
         }
-        try {
-            ensureCharacterAvailableForProactive(character);
-        } catch (BusinessException e) {
-            log.debug("Cold open skipped (character unavailable): convId={}, reason={}", conversationId, e.getMessage());
+        // 用户新建会话触发的破冰/meet：不受夜间免打扰拦截（DND 只挡主动推送）
+        if (isBlocked(character)) {
+            log.debug("Cold open skipped (blocked): convId={}", conversationId);
             return;
         }
         String lockKey = COLD_OPEN_LOCK_PREFIX + conversationId;
@@ -608,14 +607,14 @@ public class ConversationService {
         if (character == null) {
             return List.of();
         }
-        try {
-            ensureCharacterAvailableForProactive(character);
-        } catch (BusinessException e) {
+        // 用户主动打开聊天页：不受夜间免打扰拦截
+        if (isBlocked(character)) {
             return List.of();
         }
         Message last = findLastMessage(conversationId);
         if (last == null) {
-            // First open: cold-open / meet voice owns the empty session.
+            // 空会话：若创建时因免打扰错过破冰/meet，打开时再补一次
+            singleChatOpeningScheduler.startSequence(userId, conversationId);
             return List.of();
         }
         if (last.getCreatedAt() != null

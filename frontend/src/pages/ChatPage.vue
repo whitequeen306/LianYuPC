@@ -208,12 +208,10 @@
           />
           <el-button
             :icon="Microphone"
-            :type="voiceInputRecording ? 'primary' : 'default'"
-            :disabled="waitingReply || isBlocked || uploadingImage || voiceInputBusy"
-            @pointerdown.prevent="onVoiceInputDown"
-            @pointerup.prevent="onVoiceInputUp"
-            @pointercancel.prevent="onVoiceInputCancel"
-            @contextmenu.prevent
+            :type="voiceInputListening ? 'primary' : 'default'"
+            :disabled="waitingReply || isBlocked || uploadingImage"
+            :title="voiceInputListening ? '结束语音输入' : '语音输入'"
+            @click="toggleVoiceInput"
           />
           <el-input
             v-model="inputText"
@@ -221,7 +219,7 @@
             type="textarea"
             :rows="1"
             :autosize="{ minRows: 1, maxRows: 3 }"
-            :placeholder="t('chat.placeholder')"
+            :placeholder="voiceInputListening ? '正在收听语音…（再说一句，点麦克风结束）' : t('chat.placeholder')"
             @keydown.enter.exact.prevent="handleSend"
             :disabled="isBlocked"
           />
@@ -513,13 +511,12 @@ const uploadingImage = ref(false)
 const waitingReply = ref(false)
 const voiceCallOpen = ref(false)
 const {
-  recording: voiceInputRecording,
-  start: startVoiceInput,
-  stop: stopVoiceInput,
+  startChunked: startVoiceChunked,
+  stopChunked: stopVoiceChunked,
   cancel: cancelVoiceInput,
 } = useVoiceRecorder()
+const voiceInputListening = ref(false)
 const voiceInputBusy = ref(false)
-let voiceInputPointerDown = false
 const awaitingOpening = ref(false)
 const currentProvider = ref('')
 const currentModel = ref('')
@@ -788,6 +785,7 @@ onUnmounted(() => {
   setActiveChatRefreshHandler(null)
   stopConversationPolling()
   cancelVoiceInput()
+  void stopVoiceChunked()
   bounceTween?.kill()
 })
 
@@ -1189,34 +1187,13 @@ function focusChatInput() {
   ta?.focus()
 }
 
-async function onVoiceInputDown() {
-  if (voiceInputBusy.value || voiceInputRecording.value || isBlocked.value) return
-  voiceInputPointerDown = true
-  try {
-    await startVoiceInput()
-  } catch {
-    voiceInputPointerDown = false
-    ElMessage.error('无法访问麦克风')
-  }
-}
-
-async function onVoiceInputUp() {
-  if (!voiceInputPointerDown) return
-  voiceInputPointerDown = false
-  if (!voiceInputRecording.value) return
+async function appendVoiceTranscript(blob) {
+  if (!blob || blob.size < 16) return
   voiceInputBusy.value = true
   try {
-    const blob = await stopVoiceInput()
-    if (!blob || blob.size < 16) {
-      ElMessage.warning('录音太短，请再说一次')
-      return
-    }
     const res = await transcribeAudio(blob)
     const text = String(res?.data?.text || '').trim()
-    if (!text) {
-      ElMessage.warning('没有听清，请再说一次')
-      return
-    }
+    if (!text) return
     inputText.value = inputText.value ? `${inputText.value.trimEnd()} ${text}` : text
     await nextTick()
     inputTextRef.value?.focus?.()
@@ -1227,20 +1204,42 @@ async function onVoiceInputUp() {
   }
 }
 
-function onVoiceInputCancel() {
-  voiceInputPointerDown = false
-  if (voiceInputRecording.value) cancelVoiceInput()
-  voiceInputBusy.value = false
+async function toggleVoiceInput() {
+  if (waitingReply.value || isBlocked.value || uploadingImage.value) return
+  if (voiceInputListening.value) {
+    voiceInputListening.value = false
+    await stopVoiceChunked()
+    ElMessage.success('已结束语音输入')
+    return
+  }
+  try {
+    voiceInputListening.value = true
+    ElMessage.info('正在收听语音')
+    await startVoiceChunked({
+      intervalMs: 2800,
+      onChunk: async (blob) => {
+        if (!voiceInputListening.value) return
+        await appendVoiceTranscript(blob)
+      },
+    })
+  } catch {
+    voiceInputListening.value = false
+    await stopVoiceChunked()
+    ElMessage.error('无法访问麦克风')
+  }
 }
 
 function openVoiceCall() {
   if (!voiceCallEnabled.value || !currentConvId.value) return
+  if (voiceInputListening.value) {
+    voiceInputListening.value = false
+    void stopVoiceChunked()
+  }
   voiceCallOpen.value = true
 }
 
 function closeVoiceCall() {
   voiceCallOpen.value = false
-  cancelVoiceInput()
 }
 
 async function onVoiceCallTurnComplete() {

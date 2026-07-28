@@ -2,24 +2,42 @@ import { ref } from 'vue'
 
 /**
  * Browser/Electron microphone capture via MediaRecorder.
- * Returns webm/opus blob on stop().
+ * Supports one-shot record and continuous sentence-chunk capture.
  */
 export function useVoiceRecorder() {
   const recording = ref(false)
   let mediaStream = null
   let mediaRecorder = null
   let chunks = []
+  let chunkLoopActive = false
+  let chunkTimer = null
+  let chunkSession = 0
+
+  function pickMime() {
+    if (typeof MediaRecorder === 'undefined') return ''
+    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) return 'audio/webm;codecs=opus'
+    if (MediaRecorder.isTypeSupported('audio/webm')) return 'audio/webm'
+    return ''
+  }
+
+  async function ensureStream() {
+    if (mediaStream) return mediaStream
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    return mediaStream
+  }
+
+  function createRecorder() {
+    const mime = pickMime()
+    return mime
+      ? new MediaRecorder(mediaStream, { mimeType: mime })
+      : new MediaRecorder(mediaStream)
+  }
 
   async function start() {
     if (recording.value) return
     chunks = []
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-      ? 'audio/webm;codecs=opus'
-      : (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '')
-    mediaRecorder = mime
-      ? new MediaRecorder(mediaStream, { mimeType: mime })
-      : new MediaRecorder(mediaStream)
+    await ensureStream()
+    mediaRecorder = createRecorder()
     mediaRecorder.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) chunks.push(e.data)
     }
@@ -46,30 +64,121 @@ export function useVoiceRecorder() {
       const recorder = mediaRecorder
       recorder.onstop = () => {
         recording.value = false
-        stopTracks()
-        if (!chunks.length) {
-          resolve(null)
-          return
-        }
         const type = recorder.mimeType || 'audio/webm'
-        resolve(new Blob(chunks, { type }))
+        const blob = chunks.length ? new Blob(chunks, { type }) : null
+        chunks = []
+        mediaRecorder = null
+        resolve(blob)
       }
       recorder.onerror = () => {
         recording.value = false
-        stopTracks()
+        mediaRecorder = null
+        chunks = []
         reject(new Error('录音失败'))
       }
       try {
         recorder.stop()
       } catch (err) {
         recording.value = false
-        stopTracks()
+        mediaRecorder = null
+        chunks = []
         reject(err)
       }
     })
   }
 
+  /**
+   * Continuous listen: every intervalMs cut a blob and invoke onChunk.
+   * Does not stop the mic stream between chunks (reuses getUserMedia).
+   */
+  async function startChunked({ intervalMs = 2800, onChunk } = {}) {
+    if (chunkLoopActive) return
+    chunkLoopActive = true
+    const session = ++chunkSession
+    await ensureStream()
+    recording.value = true
+
+    const runOne = async () => {
+      if (!chunkLoopActive || session !== chunkSession) return
+      chunks = []
+      mediaRecorder = createRecorder()
+      const recorder = mediaRecorder
+      const blob = await new Promise((resolve, reject) => {
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) chunks.push(e.data)
+        }
+        recorder.onerror = () => reject(new Error('录音失败'))
+        recorder.onstop = () => {
+          const type = recorder.mimeType || 'audio/webm'
+          resolve(chunks.length ? new Blob(chunks, { type }) : null)
+        }
+        try {
+          recorder.start()
+        } catch (err) {
+          reject(err)
+        }
+        chunkTimer = setTimeout(() => {
+          try {
+            if (recorder.state !== 'inactive') recorder.stop()
+          } catch {
+            resolve(null)
+          }
+        }, Math.max(1200, intervalMs))
+      })
+      mediaRecorder = null
+      chunks = []
+      if (!chunkLoopActive || session !== chunkSession) return
+      if (blob && blob.size >= 16 && typeof onChunk === 'function') {
+        try {
+          await onChunk(blob)
+        } catch {
+          // caller handles toast; keep listening
+        }
+      }
+      if (chunkLoopActive && session === chunkSession) {
+        // yield a tick then continue
+        await Promise.resolve()
+        return runOne()
+      }
+    }
+
+    try {
+      await runOne()
+    } catch (err) {
+      chunkLoopActive = false
+      recording.value = false
+      stopTracks()
+      throw err
+    }
+  }
+
+  async function stopChunked() {
+    chunkLoopActive = false
+    chunkSession += 1
+    if (chunkTimer) {
+      clearTimeout(chunkTimer)
+      chunkTimer = null
+    }
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      try {
+        // Trigger existing onstop from the active chunk promise (do not overwrite it)
+        mediaRecorder.stop()
+      } catch {
+        // ignore
+      }
+    }
+    recording.value = false
+    chunks = []
+    stopTracks()
+  }
+
   function cancel() {
+    chunkLoopActive = false
+    chunkSession += 1
+    if (chunkTimer) {
+      clearTimeout(chunkTimer)
+      chunkTimer = null
+    }
     if (mediaRecorder && recording.value) {
       try { mediaRecorder.stop() } catch { /* ignore */ }
     }
@@ -78,5 +187,5 @@ export function useVoiceRecorder() {
     stopTracks()
   }
 
-  return { recording, start, stop, cancel }
+  return { recording, start, stop, cancel, startChunked, stopChunked }
 }
