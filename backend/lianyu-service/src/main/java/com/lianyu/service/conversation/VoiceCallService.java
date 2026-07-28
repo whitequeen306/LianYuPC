@@ -103,6 +103,7 @@ public class VoiceCallService {
         userMsg.setRole("USER");
         userMsg.setCharacterId(character.getId());
         userMsg.setContent(userText);
+        userMsg.setAudioUrl("system/voice-call-turn");
         messageMapper.insert(userMsg);
 
         List<Message> history = recentMessages(conversationId, 24);
@@ -126,6 +127,7 @@ public class VoiceCallService {
         assistantMsg.setRole("ASSISTANT");
         assistantMsg.setCharacterId(character.getId());
         assistantMsg.setContent(replyText);
+        assistantMsg.setAudioUrl("system/voice-call-turn");
         messageMapper.insert(assistantMsg);
 
         memoryWriter.enqueueSummary(conversationId, character.getId(), userId);

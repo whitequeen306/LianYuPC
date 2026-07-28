@@ -69,6 +69,12 @@
           <div v-if="item.type === 'time'" class="msg-time-divider">
             <span>{{ item.label }}</span>
           </div>
+          <div v-else-if="item.type === 'voice-call'" class="msg-voice-call-record" :data-msg-id="item.id">
+            <span>
+              <el-icon :size="14"><Phone /></el-icon>
+              {{ item.content }}
+            </span>
+          </div>
           <div
             v-else
             class="gal-log__item"
@@ -123,7 +129,7 @@
               <img :src="resolveMediaUrl(item.imageUrl)" alt="" @click="openImagePreview(item.imageUrl)" />
             </div>
             <VoiceMessageBubble
-              v-if="item.audioUrl && item.audioUrl !== 'system/voice-call-summary'"
+              v-if="item.audioUrl"
               class="gal-bubble__voice"
               :audio-url="item.audioUrl"
               :transcript="item.content || ''"
@@ -131,10 +137,6 @@
               :playback-rate="getPetVoiceRate(petIdFromAudioUrl(item.audioUrl))"
               :volume-gain="getPetVoiceVolume(petIdFromAudioUrl(item.audioUrl))"
             />
-            <p
-              v-else-if="item.audioUrl === 'system/voice-call-summary'"
-              class="gal-bubble__text gal-bubble__text--voice-call"
-            >{{ item.content }}</p>
             <AssistantMessageContent
               v-else-if="item.content"
               :content="item.content"
@@ -352,7 +354,7 @@ import { useConversationsStore } from '@/stores/conversations'
 import { humanizeError } from '@/utils/errorMessage'
 import { getConversation, getMessages, notifyConversationOpened, sendMessageStream, uploadChatImage } from '@/api/conversation'
 import { fetchModels } from '@/api/ai'
-import { ArrowLeft, ArrowDown, ChatDotRound, Promotion, Picture, Close, User, UserFilled, Microphone } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowDown, ChatDotRound, Promotion, Picture, Close, User, UserFilled, Microphone, Phone } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { resolveMediaUrl } from '@/utils/media'
 import { nextCharacterAvatarTier, resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
@@ -392,6 +394,7 @@ import { captureChatShareScreenshot } from '@/utils/captureChatShareScreenshot'
 import { uploadCommunityImage } from '@/api/community'
 import { isElectronApp } from '@/utils/electron'
 import { stripInnerThoughts, resolveShowInnerThoughts } from '@/utils/innerThoughtFilter'
+import { isVoiceCallTurnMessage, isVoiceCallSummaryMessage } from '@/constants/voiceCallMarkers'
 
 function petIdFromAudioUrl(audioUrl) {
   const m = String(audioUrl || '').match(/(?:pet\/voice|chat-voice)\/([a-z0-9-]+)\//i)
@@ -686,6 +689,29 @@ const messageTimeline = computed(() => {
   const items = []
   let prevMs = null
   for (const msg of messages.value) {
+    // 语音通话回合只入库，不在聊天页渲染
+    if (isVoiceCallTurnMessage(msg)) continue
+
+    if (isVoiceCallSummaryMessage(msg)) {
+      const ms = parseMessageTime(msg)
+      if (prevMs != null && ms - prevMs > TIME_GAP_MS) {
+        items.push({
+          type: 'time',
+          _key: `time-${ms}`,
+          label: formatTimeDivider(ms)
+        })
+      }
+      items.push({
+        type: 'voice-call',
+        id: msg.id,
+        content: msg.content || '语音通话',
+        createdAt: msg.createdAt,
+        _key: `voice-call-${msg.id || msg._tempId || ms}`
+      })
+      prevMs = ms
+      continue
+    }
+
     const parts = msg.role === 'assistant'
       ? expandAssistantForDisplay(msg)
       : [{ ...msg, _key: msg.id || msg._tempId }]
@@ -1268,6 +1294,7 @@ async function toggleVoiceInput() {
     ElMessage.info('正在收听语音')
     await startVoiceChunked({
       intervalMs: 2200,
+      requireSpeech: true,
       onChunk: async (blob) => {
         if (!voiceInputListening.value) return
         await appendVoiceTranscript(blob)
@@ -1295,7 +1322,7 @@ function closeVoiceCall() {
 }
 
 async function onVoiceCallTurnComplete() {
-  await pollCurrentConversationMessages(true)
+  // 通话回合仅入库不展示；挂断后再拉摘要即可
 }
 
 async function onVoiceCallEnded(summaryMsg) {
@@ -1714,6 +1741,33 @@ function formatTime(ts) {
   }
 }
 
+.msg-voice-call-record {
+  align-self: center;
+  text-align: center;
+  margin: $space-2 0;
+  flex-shrink: 0;
+
+  span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: $font-size-sm;
+    color: var(--ly-text-secondary);
+    padding: 6px 14px;
+    border-radius: $radius-full;
+    background: rgba($color-bg-surface, 0.88);
+    border: 1px solid rgba($color-pink-rgb, 0.28);
+    backdrop-filter: blur(8px);
+    transition: border-color 0.22s cubic-bezier(0.23, 1, 0.32, 1),
+      color 0.22s cubic-bezier(0.23, 1, 0.32, 1);
+  }
+}
+
+.gal-chat--compact .msg-voice-call-record span {
+  font-size: 12px;
+  padding: 5px 12px;
+}
+
 .gal-load-more {
   align-self: center;
   padding: $space-2 $space-4;
@@ -1935,13 +1989,6 @@ function formatTime(ts) {
     color: var(--ly-chat-hero-bubble-time);
     text-align: left;
   }
-}
-
-.gal-bubble__text--voice-call {
-  color: var(--ly-text-secondary);
-  font-size: $font-size-sm;
-  text-align: center;
-  width: 100%;
 }
 
 .gal-bubble--user {

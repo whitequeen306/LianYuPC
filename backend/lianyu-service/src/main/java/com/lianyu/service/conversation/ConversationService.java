@@ -1046,9 +1046,13 @@ public class ConversationService {
         }
         String audioUrl = message.getAudioUrl();
         if (audioUrl != null && !audioUrl.isBlank()) {
-            if ("system/voice-call-summary".equals(audioUrl.trim())) {
+            String trimmed = audioUrl.trim();
+            if ("system/voice-call-summary".equals(trimmed)) {
                 String content = message.getContent();
                 return content == null || content.isBlank() ? "语音通话" : content;
+            }
+            if ("system/voice-call-turn".equals(trimmed)) {
+                return "语音通话";
             }
             int seconds = estimateVoicePreviewSeconds(message.getContent());
             return "语音 " + seconds + "″";
@@ -1319,7 +1323,7 @@ public class ConversationService {
         if (PetMeetVoiceCatalog.isSafeClientAudioPath(trimmed)) {
             return trimmed;
         }
-        if ("system/voice-call-summary".equals(trimmed)) {
+        if ("system/voice-call-summary".equals(trimmed) || "system/voice-call-turn".equals(trimmed)) {
             return trimmed;
         }
         return fileStorageService.resolvePublicUrl(trimmed);

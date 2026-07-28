@@ -143,7 +143,7 @@ let callStartedAt = 0
 /** @type {Array<{ userText: string, replyText: string }>} */
 const sessionTurns = []
 
-const BARGE_IN_LEVEL = 0.14
+const BARGE_IN_LEVEL = 0.16
 
 const userAvatarUrl = computed(() => (
   userStore.avatarUrl ? resolveMediaUrl(userStore.avatarUrl) : ''
@@ -273,9 +273,6 @@ async function handleChunk(blob) {
     abortInFlightTurn()
   } else if (busy.value) {
     return
-  } else if (!(speaking.value || audioLevel.value >= 0.05)) {
-    // 空闲静音片段不打 ASR
-    return
   }
 
   const generation = ++turnGeneration
@@ -328,6 +325,7 @@ async function ensureListening() {
   listenLoopPromise = startChunked({
     intervalMs: 1800,
     awaitChunk: false,
+    requireSpeech: true,
     onChunk: handleChunk,
   }).finally(() => {
     listenLoopPromise = null

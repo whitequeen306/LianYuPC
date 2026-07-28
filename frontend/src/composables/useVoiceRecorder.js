@@ -1,8 +1,15 @@
 import { ref } from 'vue'
 
+/** RMS above this counts as speech frame (VAD). */
+const SPEECH_LEVEL = 0.12
+/** Minimum share of frames in a chunk that must be speech before ASR. */
+const MIN_SPEECH_RATIO = 0.18
+/** Absolute peak required so brief spikes alone don't pass. */
+const MIN_PEAK_LEVEL = 0.15
+
 /**
  * Browser/Electron microphone capture via MediaRecorder.
- * Supports one-shot record, continuous sentence-chunk capture, and live level metering.
+ * Supports one-shot record, continuous sentence-chunk capture, live level metering, and VAD.
  */
 export function useVoiceRecorder() {
   const recording = ref(false)
@@ -18,12 +25,27 @@ export function useVoiceRecorder() {
   let analyser = null
   let meterSource = null
   let levelRaf = null
+  let chunkSpeechFrames = 0
+  let chunkTotalFrames = 0
+  let chunkPeakLevel = 0
 
   function pickMime() {
     if (typeof MediaRecorder === 'undefined') return ''
     if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) return 'audio/webm;codecs=opus'
     if (MediaRecorder.isTypeSupported('audio/webm')) return 'audio/webm'
     return ''
+  }
+
+  function resetChunkVad() {
+    chunkSpeechFrames = 0
+    chunkTotalFrames = 0
+    chunkPeakLevel = 0
+  }
+
+  function chunkVadPassed() {
+    if (chunkTotalFrames < 8) return false
+    const ratio = chunkSpeechFrames / chunkTotalFrames
+    return ratio >= MIN_SPEECH_RATIO && chunkPeakLevel >= MIN_PEAK_LEVEL
   }
 
   function stopMeter() {
@@ -54,8 +76,8 @@ export function useVoiceRecorder() {
     try {
       audioCtx = new Ctx()
       analyser = audioCtx.createAnalyser()
-      analyser.fftSize = 256
-      analyser.smoothingTimeConstant = 0.72
+      analyser.fftSize = 512
+      analyser.smoothingTimeConstant = 0.55
       meterSource = audioCtx.createMediaStreamSource(mediaStream)
       meterSource.connect(analyser)
       const data = new Uint8Array(analyser.fftSize)
@@ -68,9 +90,12 @@ export function useVoiceRecorder() {
           sum += v * v
         }
         const rms = Math.sqrt(sum / data.length)
-        const level = Math.min(1, rms * 5.2)
+        const level = Math.min(1, rms * 5.5)
         audioLevel.value = level
-        speaking.value = level > 0.06
+        speaking.value = level > SPEECH_LEVEL
+        chunkTotalFrames += 1
+        if (level > SPEECH_LEVEL) chunkSpeechFrames += 1
+        if (level > chunkPeakLevel) chunkPeakLevel = level
         levelRaf = requestAnimationFrame(tick)
       }
       if (audioCtx.state === 'suspended') {
@@ -105,6 +130,7 @@ export function useVoiceRecorder() {
   async function start() {
     if (recording.value) return
     chunks = []
+    resetChunkVad()
     await ensureStream()
     mediaRecorder = createRecorder()
     mediaRecorder.ondataavailable = (e) => {
@@ -158,12 +184,16 @@ export function useVoiceRecorder() {
   }
 
   /**
-   * Continuous listen: every intervalMs cut a blob and invoke onChunk.
-   * Does not stop the mic stream between chunks (reuses getUserMedia).
-   * @param {boolean} [awaitChunk=true] when false, start next chunk without waiting
-   *   for onChunk (needed for voice-call barge-in while TTS plays).
+   * Continuous listen: every intervalMs cut a blob and invoke onChunk when VAD passes.
+   * @param {boolean} [awaitChunk=true] when false, start next chunk without waiting for onChunk
+   * @param {boolean} [requireSpeech=true] drop silent / noise-only chunks (VAD)
    */
-  async function startChunked({ intervalMs = 2200, onChunk, awaitChunk = true } = {}) {
+  async function startChunked({
+    intervalMs = 2200,
+    onChunk,
+    awaitChunk = true,
+    requireSpeech = true,
+  } = {}) {
     if (chunkLoopActive) return
     chunkLoopActive = true
     const session = ++chunkSession
@@ -173,6 +203,7 @@ export function useVoiceRecorder() {
     const runOne = async () => {
       if (!chunkLoopActive || session !== chunkSession) return
       chunks = []
+      resetChunkVad()
       mediaRecorder = createRecorder()
       const recorder = mediaRecorder
       const blob = await new Promise((resolve, reject) => {
@@ -200,9 +231,13 @@ export function useVoiceRecorder() {
       mediaRecorder = null
       chunks = []
       if (!chunkLoopActive || session !== chunkSession) return
-      if (blob && blob.size >= 16 && typeof onChunk === 'function') {
+      const vadOk = !requireSpeech || chunkVadPassed()
+      if (blob && blob.size >= 16 && vadOk && typeof onChunk === 'function') {
         const task = Promise.resolve()
-          .then(() => onChunk(blob))
+          .then(() => onChunk(blob, {
+            speechRatio: chunkTotalFrames ? chunkSpeechFrames / chunkTotalFrames : 0,
+            peakLevel: chunkPeakLevel,
+          }))
           .catch(() => { /* caller handles toast; keep listening */ })
         if (awaitChunk) await task
       }
