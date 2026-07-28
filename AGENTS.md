@@ -133,6 +133,8 @@ lianyu-app → lianyu-qq-bridge → lianyu-service
 
 脚本启动会打印 `SHIP PLAN`（push/deploy/electron 各 YES/no），对不上就 Ctrl+C。
 
+**GitHub Release 双 Draft / 只有 blockmap：** electron-builder 并行上传会竞态建多个 draft。入仓侧已在 `electron-pack.mjs` 预建 draft + `publish.releaseType=draft`；`local/ship-release.ps1` 发版后强制校验并补传 `LianYu-Setup-*.exe`，缺 exe 则失败而非静默成功。
+
 | 场景 | 命令 | 会触发 |
 |---|---|---|
 | **只改后端**（Java / Flyway / `pet-voices.json` 等） | `.\local\ship-release.ps1 -BackendOnly` | push + 云端 rebuild；**绝不**打 Electron / Releases / MinIO 更新包 |
