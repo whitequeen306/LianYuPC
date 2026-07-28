@@ -65,8 +65,11 @@ public class ChatTurnPromptAssembler {
             GroupExtras groupExtras
     ) {
         String lang = outputLanguageService.resolveForRequest(userId, userInputForLang);
-        String memoryBlock = memoryRetriever.retrieveProfileContext(
-                character.getId(), userId, lastUserMessageForMemory);
+        String memoryBlock = "";
+        if (scene.includeMemory()) {
+            memoryBlock = memoryRetriever.retrieveProfileContext(
+                    character.getId(), userId, lastUserMessageForMemory);
+        }
 
         String relationshipBlock = "";
         if (scene.includeRelationship()) {
@@ -85,16 +88,21 @@ public class ChatTurnPromptAssembler {
         }
 
         String memoryContext = joinBlocks(memoryBlock, relationshipBlock, sessionBlock);
+        // 语音通话强制关闭心理活动规则，避免 TTS 朗读括号内容
+        boolean showInnerThoughts = scene != ChatTurnScene.VOICE_CALL
+                && CharacterPreferenceResolver.showInnerThoughts(character);
         String base = promptBuilder.buildSystemPrompt(
-                character, memoryContext, lang, scene.enableChatTools());
+                character, memoryContext, lang, scene.enableChatTools(), showInnerThoughts);
 
         if (scene.includeTimeCityGoodnight()) {
             base = appendCurrentTimeContext(base);
             base = appendCurrentRealCityContext(base, character);
             base = appendGoodnightContextIfApplicable(base, userInputForLang, lang);
-            base = enforceNaturalChatStyle(base, lang, character);
+            base = enforceNaturalChatStyle(base, lang, showInnerThoughts);
         } else if (scene == ChatTurnScene.MOMENTS || scene == ChatTurnScene.DIARY) {
-            base = enforceNaturalChatStyle(base, lang, character);
+            base = enforceNaturalChatStyle(base, lang, showInnerThoughts);
+        } else if (scene == ChatTurnScene.VOICE_CALL) {
+            // 不附加「可用括号写心理活动」的自然口语块
         }
 
         if (scene == ChatTurnScene.GROUP && groupExtras != null) {
@@ -227,9 +235,8 @@ public class ChatTurnPromptAssembler {
         return GOODNIGHT_KEYWORDS.matcher(text.toLowerCase()).find();
     }
 
-    private String enforceNaturalChatStyle(String basePrompt, String languageCode, Character character) {
+    private String enforceNaturalChatStyle(String basePrompt, String languageCode, boolean showInnerThoughts) {
         String prompt = basePrompt == null ? "" : basePrompt;
-        boolean showInnerThoughts = CharacterPreferenceResolver.showInnerThoughts(character);
         return prompt + outputLanguageService.buildNaturalStyleBlock(languageCode, showInnerThoughts);
     }
 }

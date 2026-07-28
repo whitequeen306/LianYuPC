@@ -1,16 +1,20 @@
 import { ref } from 'vue'
 
-/** RMS above this counts as speech frame (VAD). */
-const SPEECH_LEVEL = 0.12
-/** Minimum share of frames in a chunk that must be speech before ASR. */
-const MIN_SPEECH_RATIO = 0.18
-/** Absolute peak required so brief spikes alone don't pass. */
-const MIN_PEAK_LEVEL = 0.15
-
 /**
  * Browser/Electron microphone capture via MediaRecorder.
  * Supports one-shot record, continuous sentence-chunk capture, live level metering, and VAD.
+ *
+ * vadProfile:
+ * - 'off'    — always send chunks (chat mic: complete speech > silence filter)
+ * - 'loose'  — soft energy gate
+ * - 'strict' — voice-call / barge-in (reject echo & noise)
  */
+const VAD_PROFILES = {
+  off: null,
+  loose: { speechLevel: 0.06, minSpeechRatio: 0.06, minPeakLevel: 0.07, minFrames: 4 },
+  strict: { speechLevel: 0.12, minSpeechRatio: 0.18, minPeakLevel: 0.15, minFrames: 8 },
+}
+
 export function useVoiceRecorder() {
   const recording = ref(false)
   const audioLevel = ref(0)
@@ -28,12 +32,21 @@ export function useVoiceRecorder() {
   let chunkSpeechFrames = 0
   let chunkTotalFrames = 0
   let chunkPeakLevel = 0
+  /** @type {{ speechLevel: number, minSpeechRatio: number, minPeakLevel: number, minFrames: number } | null} */
+  let activeVad = VAD_PROFILES.strict
 
   function pickMime() {
     if (typeof MediaRecorder === 'undefined') return ''
     if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) return 'audio/webm;codecs=opus'
     if (MediaRecorder.isTypeSupported('audio/webm')) return 'audio/webm'
     return ''
+  }
+
+  function resolveVadProfile(name) {
+    if (name === false || name === 'off') return null
+    if (name === true || name === 'strict') return VAD_PROFILES.strict
+    if (name === 'loose') return VAD_PROFILES.loose
+    return VAD_PROFILES.strict
   }
 
   function resetChunkVad() {
@@ -43,9 +56,10 @@ export function useVoiceRecorder() {
   }
 
   function chunkVadPassed() {
-    if (chunkTotalFrames < 8) return false
+    if (!activeVad) return true
+    if (chunkTotalFrames < activeVad.minFrames) return false
     const ratio = chunkSpeechFrames / chunkTotalFrames
-    return ratio >= MIN_SPEECH_RATIO && chunkPeakLevel >= MIN_PEAK_LEVEL
+    return ratio >= activeVad.minSpeechRatio && chunkPeakLevel >= activeVad.minPeakLevel
   }
 
   function stopMeter() {
@@ -92,9 +106,10 @@ export function useVoiceRecorder() {
         const rms = Math.sqrt(sum / data.length)
         const level = Math.min(1, rms * 5.5)
         audioLevel.value = level
-        speaking.value = level > SPEECH_LEVEL
+        const speechCut = activeVad?.speechLevel ?? 0.1
+        speaking.value = level > speechCut
         chunkTotalFrames += 1
-        if (level > SPEECH_LEVEL) chunkSpeechFrames += 1
+        if (level > speechCut) chunkSpeechFrames += 1
         if (level > chunkPeakLevel) chunkPeakLevel = level
         levelRaf = requestAnimationFrame(tick)
       }
@@ -186,17 +201,28 @@ export function useVoiceRecorder() {
   /**
    * Continuous listen: every intervalMs cut a blob and invoke onChunk when VAD passes.
    * @param {boolean} [awaitChunk=true] when false, start next chunk without waiting for onChunk
-   * @param {boolean} [requireSpeech=true] drop silent / noise-only chunks (VAD)
+   * @param {boolean|string} [requireSpeech=true] legacy; prefer vadProfile
+   * @param {'off'|'loose'|'strict'|boolean} [vadProfile] VAD strictness
    */
   async function startChunked({
     intervalMs = 2200,
     onChunk,
     awaitChunk = true,
-    requireSpeech = true,
+    requireSpeech,
+    vadProfile,
   } = {}) {
     if (chunkLoopActive) return
     chunkLoopActive = true
     const session = ++chunkSession
+    if (vadProfile !== undefined) {
+      activeVad = resolveVadProfile(vadProfile)
+    } else if (requireSpeech === false) {
+      activeVad = null
+    } else if (requireSpeech === true) {
+      activeVad = VAD_PROFILES.strict
+    } else {
+      activeVad = VAD_PROFILES.strict
+    }
     await ensureStream()
     recording.value = true
 
@@ -231,7 +257,7 @@ export function useVoiceRecorder() {
       mediaRecorder = null
       chunks = []
       if (!chunkLoopActive || session !== chunkSession) return
-      const vadOk = !requireSpeech || chunkVadPassed()
+      const vadOk = chunkVadPassed()
       if (blob && blob.size >= 16 && vadOk && typeof onChunk === 'function') {
         const task = Promise.resolve()
           .then(() => onChunk(blob, {

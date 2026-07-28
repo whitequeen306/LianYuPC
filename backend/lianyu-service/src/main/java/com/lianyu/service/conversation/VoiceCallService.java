@@ -17,6 +17,7 @@ import com.lianyu.dao.mapper.MessageMapper;
 import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.AsrService;
 import com.lianyu.service.ai.DashScopeTtsService;
+import com.lianyu.service.ai.InnerThoughtFilter;
 import com.lianyu.service.ai.PetVoiceRegistry;
 import com.lianyu.service.character.CharacterStateService;
 import com.lianyu.service.dto.AiChatRequest;
@@ -29,7 +30,6 @@ import com.lianyu.service.graph.ChatTurnFacade;
 import com.lianyu.service.graph.MessageModelContent;
 import com.lianyu.service.memory.MemoryWriter;
 import com.lianyu.service.relationship.RelationshipStateService;
-import com.lianyu.service.tools.ChatToolContext;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -69,6 +69,12 @@ public class VoiceCallService {
     @Value("${lianyu.voice-call.max-reply-chars:48}")
     private int maxReplyChars;
 
+    @Value("${lianyu.voice-call.history-limit:8}")
+    private int historyLimit;
+
+    @Value("${lianyu.voice-call.max-tokens:96}")
+    private int maxTokens;
+
     @Transactional
     public VoiceCallTurnResponse processTurn(Long userId, Long conversationId, MultipartFile audio) {
         Conversation conversation = findOwned(userId, conversationId);
@@ -86,7 +92,9 @@ public class VoiceCallService {
             throw new BusinessException(ErrorCode.FORBIDDEN, "当前角色暂不支持语音通话");
         }
 
+        long t0 = System.nanoTime();
         String userText = asrService.transcribe(audio);
+        long tAsr = System.nanoTime();
         if (userText == null || userText.isBlank()) {
             // 持续通话会切静音片段；空识别不算错误，由前端跳过本轮
             return VoiceCallTurnResponse.builder().userText("").replyText("").build();
@@ -106,16 +114,19 @@ public class VoiceCallService {
         userMsg.setAudioUrl("system/voice-call-turn");
         messageMapper.insert(userMsg);
 
-        List<Message> history = recentMessages(conversationId, 24);
+        int histLimit = Math.max(4, Math.min(historyLimit, 16));
+        List<Message> history = recentMessages(conversationId, histLimit);
         relationshipStateService.recordUserTurn(userId, character.getId(), conversationId, userMsg, history);
         characterStateService.afterUserMessage(character.getId(), userId, userText);
 
         String replyText = generateShortVoiceReply(userId, conversationId, character, history, userText);
+        long tLlm = System.nanoTime();
         if (replyText.isBlank()) {
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "角色暂时无法回复，请稍后再试");
         }
 
         DashScopeTtsService.SynthesizedAudio audioOut = dashScopeTtsService.synthesizeForPet(petId, replyText);
+        long tTts = System.nanoTime();
         if (audioOut == null || audioOut.base64() == null || audioOut.base64().isBlank()) {
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "语音合成失败，请稍后再试");
         }
@@ -131,8 +142,9 @@ public class VoiceCallService {
         messageMapper.insert(assistantMsg);
 
         memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
-        log.info("Voice call turn: convId={}, petId={}, userLen={}, replyLen={}",
-                conversationId, petId, userText.length(), replyText.length());
+        log.info("Voice call turn: convId={}, petId={}, userLen={}, replyLen={}, asrMs={}, llmMs={}, ttsMs={}",
+                conversationId, petId, userText.length(), replyText.length(),
+                (tAsr - t0) / 1_000_000L, (tLlm - tAsr) / 1_000_000L, (tTts - tLlm) / 1_000_000L);
 
         return VoiceCallTurnResponse.builder()
                 .userText(userText)
@@ -215,11 +227,14 @@ public class VoiceCallService {
                                            Character character,
                                            List<Message> history,
                                            String userText) {
-        String voiceSuffix = "\n\n=== 语音通话 ===\n"
-                + "你正在与用户进行实时语音通话。请用口语化中文回复，"
-                + "总字数不超过 " + maxReplyChars + " 字，1～2 句即可，不要列表、不要 markdown。";
+        String voiceSuffix = "\n\n=== 语音通话（强制） ===\n"
+                + "你正在与用户进行实时语音通话，回复会被直接朗读。\n"
+                + "硬性要求：\n"
+                + "1. 只用口语化中文，1～2 句，总字数不超过 " + maxReplyChars + " 字；\n"
+                + "2. 禁止任何括号（）() 及其中内容：不准写心理活动、内心独白、旁白、动作/表情描写；\n"
+                + "3. 只输出可直接说出口的台词，不要列表、不要 markdown、不要引号包裹全文。";
         String systemPrompt = chatTurnFacade.assembleSystemPrompt(
-                ChatTurnScene.SINGLE,
+                ChatTurnScene.VOICE_CALL,
                 userId,
                 conversationId,
                 character,
@@ -229,8 +244,10 @@ public class VoiceCallService {
                 null);
 
         AiChatRequest aiRequest = new AiChatRequest();
-        ChatToolContext.bindTo(aiRequest, character);
+        // 通话不挂工具：避免多轮 function-call 拉长延迟
         aiRequest.setProvider(AiConstants.PLATFORM_PROVIDER);
+        aiRequest.setTemperature(0.7);
+        aiRequest.setMaxTokens(Math.max(32, maxTokens));
         List<MessageDto> allMessages = new ArrayList<>();
         allMessages.add(messageDto("system", systemPrompt));
         for (Message msg : history) {
@@ -241,13 +258,19 @@ public class VoiceCallService {
             if (!"user".equals(role) && !"assistant".equals(role)) {
                 continue;
             }
-            allMessages.add(messageDto(role, MessageModelContent.forModel(msg)));
+            // 历史也去掉括号，避免模型跟风写心理活动
+            String content = InnerThoughtFilter.strip(MessageModelContent.forModel(msg));
+            if (content.isBlank()) {
+                continue;
+            }
+            allMessages.add(messageDto(role, content));
         }
         allMessages.add(messageDto("user", userText));
         aiRequest.setMessages(allMessages);
 
         ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
         String raw = chatResult.getContent() == null ? "" : chatResult.getContent().trim();
+        raw = InnerThoughtFilter.strip(raw);
         if (raw.length() > maxReplyChars) {
             raw = raw.substring(0, maxReplyChars).trim();
         }

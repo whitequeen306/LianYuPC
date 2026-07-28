@@ -30,6 +30,9 @@ public class AiChatRequest {
     /** 期望的回复语言（zh / zh-TW / ja / en）；非空时启用输出语言门控 */
     private String expectedLanguage;
 
+    /** 可选：限制生成长度（语音通话等短回复场景） */
+    private Integer maxTokens;
+
     /** 当前轮用户消息附带图片时填充（MinIO objectKey 或公开路径），仅图片消息走多模态链路时使用 */
     private String imageUrl;
 }

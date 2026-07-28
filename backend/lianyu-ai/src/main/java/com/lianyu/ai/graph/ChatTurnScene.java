@@ -8,10 +8,12 @@ public enum ChatTurnScene {
     GROUP,
     MOMENTS,
     DIARY,
-    PROACTIVE;
+    PROACTIVE,
+    /** 实时语音通话：短回复、禁心理活动括号；跳过记忆检索/会话摘要/工具以降低首包延迟。 */
+    VOICE_CALL;
 
     public boolean includeRelationship() {
-        return this == SINGLE || this == PROACTIVE || this == MOMENTS || this == DIARY;
+        return this == SINGLE || this == PROACTIVE || this == MOMENTS || this == DIARY || this == VOICE_CALL;
     }
 
     public boolean includeSessionSummary() {
@@ -28,5 +30,10 @@ public enum ChatTurnScene {
 
     public boolean enableChatTools() {
         return this == SINGLE || this == GROUP || this == DIARY || this == PROACTIVE;
+    }
+
+    /** 向量记忆检索（Milvus）较慢；语音通话跳过以提速。 */
+    public boolean includeMemory() {
+        return this != VOICE_CALL;
     }
 }

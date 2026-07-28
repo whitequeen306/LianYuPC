@@ -1232,12 +1232,18 @@ public class AiChatService {
             OllamaChatOptions.Builder builder = OllamaChatOptions.builder()
                     .model(model)
                     .temperature(temperature);
+            if (request.getMaxTokens() != null && request.getMaxTokens() > 0) {
+                builder.numPredict(request.getMaxTokens());
+            }
             applyToolCallbacks(builder, toolCallbacks);
             return new Prompt(messages, builder.build());
         }
         OpenAiChatOptions.Builder builder = OpenAiChatOptions.builder()
                 .model(model)
                 .temperature(temperature);
+        if (request.getMaxTokens() != null && request.getMaxTokens() > 0) {
+            builder.maxTokens(request.getMaxTokens());
+        }
         applyToolCallbacks(builder, toolCallbacks);
         return new Prompt(messages, builder.build());
     }

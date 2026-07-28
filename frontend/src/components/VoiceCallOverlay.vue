@@ -325,7 +325,7 @@ async function ensureListening() {
   listenLoopPromise = startChunked({
     intervalMs: 1800,
     awaitChunk: false,
-    requireSpeech: true,
+    vadProfile: 'strict',
     onChunk: handleChunk,
   }).finally(() => {
     listenLoopPromise = null

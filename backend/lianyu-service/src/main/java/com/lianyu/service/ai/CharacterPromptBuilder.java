@@ -37,6 +37,12 @@ public class CharacterPromptBuilder {
 
     public String buildSystemPrompt(Character character, String memoryContext, String outputLanguage,
                                     boolean enableChatTools) {
+        boolean showInnerThoughts = CharacterPreferenceResolver.showInnerThoughts(character);
+        return buildSystemPrompt(character, memoryContext, outputLanguage, enableChatTools, showInnerThoughts);
+    }
+
+    public String buildSystemPrompt(Character character, String memoryContext, String outputLanguage,
+                                    boolean enableChatTools, boolean showInnerThoughts) {
         Map<String, Object> settings = character.getSettings();
         String persona = extractPersona(character.getName(), settings);
 
@@ -66,7 +72,6 @@ public class CharacterPromptBuilder {
         }
 
         CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
-        boolean showInnerThoughts = CharacterPreferenceResolver.showInnerThoughts(character);
         String replyRules = promptRuleEngine.render(
                 PromptRuleSlot.REPLY_BEHAVIOR,
                 PromptRuleContext.forReply(outputLanguage, persona, behavior, showInnerThoughts)

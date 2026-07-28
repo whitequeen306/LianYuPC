@@ -1293,8 +1293,8 @@ async function toggleVoiceInput() {
     voiceLivePreview.value = ''
     ElMessage.info('正在收听语音')
     await startVoiceChunked({
-      intervalMs: 2200,
-      requireSpeech: true,
+      intervalMs: 2600,
+      vadProfile: 'off',
       onChunk: async (blob) => {
         if (!voiceInputListening.value) return
         await appendVoiceTranscript(blob)
