@@ -50,6 +50,7 @@ public class VoiceCallDuplexSession {
             new AtomicReference<>();
     private final AtomicReference<java.util.concurrent.CompletableFuture<?>> llmFuture = new AtomicReference<>();
     private final AtomicLong ttsGeneration = new AtomicLong();
+    private final AtomicLong commitSeq = new AtomicLong();
     private final Object sentenceLock = new Object();
     private final StringBuilder sentenceBuf = new StringBuilder();
     /** LLM delta 展示缓冲：marker 不泄露到前端字幕。guarded by {@link #sentenceLock} */
@@ -182,6 +183,7 @@ public class VoiceCallDuplexSession {
                     llmEmitBuf.setLength(0);
                     firstCommitSent = false;
                 }
+                commitSeq.set(0);
                 ttsFailed.set(false);
                 audioSent.set(false);
 
@@ -399,6 +401,8 @@ public class VoiceCallDuplexSession {
             sentenceBuf.setLength(0);
             DashScopeTtsRealtimeService.Session tts = ttsSession.get();
             if (!rest.isBlank() && tts != null && !ttsFailed.get() && tts.isReady()) {
+                log.debug("Voice duplex TTS commit conv={} seq={} len={} text=[{}]",
+                        conversationId, commitSeq.incrementAndGet(), rest.length(), rest);
                 tts.appendText(rest);
                 tts.commit();
             }
@@ -454,6 +458,8 @@ public class VoiceCallDuplexSession {
             String piece = buf.substring(0, cut).trim();
             buf = buf.substring(cut);
             if (!piece.isBlank()) {
+                log.debug("Voice duplex TTS commit conv={} seq={} len={} text=[{}]",
+                        conversationId, commitSeq.incrementAndGet(), piece.length(), piece);
                 tts.appendText(piece);
                 tts.commit();
                 firstCommitSent = true;
@@ -469,10 +475,9 @@ public class VoiceCallDuplexSession {
     private static final String WEAK_PAUSES = "，,、；;";
 
     /**
-     * 合成边界决策（commit 模式下每次 commit 都是一次独立合成，边界即听感停顿点）：
-     * 1. 模型显式 {@link #PAUSE_TOKEN} 最高优先 —— 角色按性格/语义自己决定停顿；
-     * 2. 否则首段在 ≥4 字的句末强标点切（保首音），后续每句一个合成（保连贯）；
-     * 3. 逗号类弱标点不再当边界；缓冲过长才兜底切；未完整 marker 前缀永不被切开。
+     * 合成边界决策（完全状态化）：只认两种停顿 —— 模型显式 {@link #PAUSE_TOKEN} 和句末强标点。
+     * 取消字数硬切 / 逗号兜底；长句（≥2 句）按句界切，短句（≤20 字）整句一次合成。
+     * 未完整 marker 前缀永不被切开。
      */
     static int nextCommitEnd(String buf, boolean firstCommitSent) {
         if (buf == null || buf.isEmpty()) {
@@ -486,39 +491,21 @@ public class VoiceCallDuplexSession {
             return -1;
         }
         int partial = buf.indexOf("<|");
-        int floor = firstCommitSent ? 0 : 4;
-        int limit = firstCommitSent ? 24 : 12;
-        int strong = indexOfAnyFrom(buf, STRONG_ENDERS, floor);
-        if (strong >= 0 && (partial < 0 || partial > strong)) {
-            return strong + 1;
-        }
         if (partial > 0) {
             return partial;
         }
         if (partial == 0) {
             return -1;
         }
-        if (buf.length() >= limit) {
-            if (!firstCommitSent) {
-                return limit;
-            }
-            int weak = lastIndexOfAny(buf, WEAK_PAUSES);
-            return weak >= 9 ? weak + 1 : limit;
+        int strong = indexOfAnyFrom(buf, STRONG_ENDERS, firstCommitSent ? 0 : 4);
+        if (strong >= 0) {
+            return strong + 1;
         }
         return -1;
     }
 
     private static int indexOfAnyFrom(String buf, String chars, int fromIndex) {
         for (int i = Math.max(0, fromIndex); i < buf.length(); i++) {
-            if (chars.indexOf(buf.charAt(i)) >= 0) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private static int lastIndexOfAny(String buf, String chars) {
-        for (int i = buf.length() - 1; i >= 0; i--) {
             if (chars.indexOf(buf.charAt(i)) >= 0) {
                 return i;
             }

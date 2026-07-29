@@ -15,27 +15,25 @@ class VoiceCallDuplexSessionTest {
 
     @Test
     void firstCommitMergesTinyLeadingSentence() {
-        // 首段："好。"太短不单独成段，并到后文像样的边界，一次合成更连贯
         assertEquals(9, VoiceCallDuplexSession.nextCommitEnd("好。今晚想吃什么？", false));
         assertEquals(5, VoiceCallDuplexSession.nextCommitEnd("我在听呢。后面还有", false));
         assertEquals(-1, VoiceCallDuplexSession.nextCommitEnd("好。今", false));
     }
 
     @Test
-    void firstCommitHardCutKeepsLatency() {
-        assertEquals(12, VoiceCallDuplexSession.nextCommitEnd("哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈", false));
+    void shortSingleSentenceWaitsForFlush() {
+        // 短句整句等 flush，不在中途合成
+        assertEquals(-1, VoiceCallDuplexSession.nextCommitEnd("嗯，我在听", false));
+        assertEquals(-1, VoiceCallDuplexSession.nextCommitEnd("嗯，我在听呢", false));
     }
 
     @Test
     void laterCommitsCutAtSentenceEndOnly() {
         assertEquals(2, VoiceCallDuplexSession.nextCommitEnd("嗯。走", true));
         assertEquals(-1, VoiceCallDuplexSession.nextCommitEnd("今天天气不错", true));
-    }
-
-    @Test
-    void laterCommitsFallbackOnLongBuffer() {
-        assertEquals(11, VoiceCallDuplexSession.nextCommitEnd("aaaaaaaaaa，bbbbbbbbbbbbbbbbbbb", true));
-        assertEquals(24, VoiceCallDuplexSession.nextCommitEnd("a".repeat(30), true));
+        // 逗号 / 字数不再作为切分依据
+        assertEquals(-1, VoiceCallDuplexSession.nextCommitEnd("今天天气不错，想出去走走", true));
+        assertEquals(-1, VoiceCallDuplexSession.nextCommitEnd("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", true));
     }
 
     @Test
