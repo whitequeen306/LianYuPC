@@ -43,7 +43,7 @@ public final class ImageMessageHistoryText {
     }
 
     /**
-     * 识图完成后写回 DB 的展示/历史文案。
+     * 识图完成后写回 DB 的<strong>模型历史</strong>文案（进 contextContent，不直接展示给用户）。
      */
     public static String forPersist(String userCaption, String imageDescription) {
         String caption = userCaption != null ? userCaption.trim() : "";
@@ -55,6 +55,32 @@ public final class ImageMessageHistoryText {
             return caption;
         }
         return caption + "\n" + placeholder;
+    }
+
+    /**
+     * 用户气泡可见文案：仅保留用户原话；纯图用通用占位（前端有图时会隐藏）。
+     */
+    public static String forUserVisible(String userCaption) {
+        String caption = userCaption != null ? userCaption.trim() : "";
+        if (caption.isEmpty() || isGenericStoredPlaceholder(caption)) {
+            return GENERIC_STORED;
+        }
+        return forDisplay(caption);
+    }
+
+    /**
+     * 从已污染的 content 里剥掉内部识图占位，只留用户说的话。
+     */
+    public static String forDisplay(String storedContent) {
+        if (storedContent == null || storedContent.isBlank()) {
+            return "";
+        }
+        String s = storedContent;
+        s = s.replaceAll("\\n?（用户发了一张图片（[^）]*））", "");
+        s = s.replace(GENERIC_SHORT, "");
+        s = s.replace(GENERIC_STORED, "");
+        s = s.replace("用户发送了一张图片", "");
+        return s.trim();
     }
 
     public static boolean isGenericStoredPlaceholder(String content) {

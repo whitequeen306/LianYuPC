@@ -146,14 +146,12 @@ public class VoiceCallDuplexSession {
 
         Thread worker = new Thread(() -> {
             try {
-                voiceCallService.persistUserTurn(userId, conversationId, userText);
-                AiChatRequest aiRequest = voiceCallService.buildVoiceCallAiRequest(
-                        userId, conversationId, userText);
                 StringBuilder full = new StringBuilder();
                 sentenceBuf.setLength(0);
                 ttsFailed.set(false);
                 audioSent.set(false);
 
+                // 先开 realtime TTS WS（与落库/组 prompt 并行等 session.updated），缩短首音延迟
                 DashScopeTtsRealtimeService.Session tts = ttsRealtimeService.startForPet(petId,
                         new DashScopeTtsRealtimeService.AudioListener() {
                             @Override
@@ -177,6 +175,10 @@ public class VoiceCallDuplexSession {
                         });
                 ttsSession.set(tts);
                 boolean useRealtime = tts != null;
+
+                voiceCallService.persistUserTurn(userId, conversationId, userText);
+                AiChatRequest aiRequest = voiceCallService.buildVoiceCallAiRequest(
+                        userId, conversationId, userText);
 
                 var future = voiceCallService.streamVoiceReply(userId, aiRequest, delta -> {
                     if (delta == null || delta.isEmpty() || closed.get()) {
@@ -267,7 +269,8 @@ public class VoiceCallDuplexSession {
         }
         sentenceBuf.setLength(0);
         sentenceBuf.append(buf);
-        if (sentenceBuf.length() >= 24) {
+        // 短句无标点时尽早 commit，避免等整段 LLM 结束才出声（听感像 HTTP 整句）
+        if (sentenceBuf.length() >= 8) {
             String piece = sentenceBuf.toString().trim();
             sentenceBuf.setLength(0);
             if (!piece.isBlank()) {
@@ -292,7 +295,8 @@ public class VoiceCallDuplexSession {
     private static int findSentenceCut(String buf) {
         for (int i = 0; i < buf.length(); i++) {
             char c = buf.charAt(i);
-            if (c == '。' || c == '！' || c == '？' || c == '!' || c == '?' || c == '\n' || c == '；') {
+            if (c == '。' || c == '！' || c == '？' || c == '!' || c == '?' || c == '\n'
+                    || c == '；' || c == '，' || c == ',' || c == '、') {
                 return i + 1;
             }
         }

@@ -70,7 +70,8 @@ public class VoiceCallService {
     @Value("${lianyu.voice-call.max-reply-chars:48}")
     private int maxReplyChars;
 
-    @Value("${lianyu.voice-call.history-limit:8}")
+    /** 通话内保留的「轮」数（每轮 user+assistant ≈ 2 条）；默认 4 轮压延迟。 */
+    @Value("${lianyu.voice-call.history-limit:4}")
     private int historyLimit;
 
     @Value("${lianyu.voice-call.max-tokens:512}")

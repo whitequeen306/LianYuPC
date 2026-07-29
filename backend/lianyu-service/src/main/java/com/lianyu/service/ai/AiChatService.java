@@ -688,14 +688,11 @@ public class AiChatService {
         String base = normalizeOpenAiBaseUrl(userSupplied ? vaultBaseUrl : platformBaseUrl);
         String url = base + "/v1/models";
 
-        // 用户自填 base_url 固定已校验 IP 防 DNS 重绑定 SSRF；平台受信 DashScope 与默认 URL 不固定（CDN 轮转）
+        // 用户自填非受信 base_url 固定已校验 IP 防 DNS 重绑定 SSRF；平台受信 DashScope / 默认 URL 不固定、不强制 DNS
         RestClient client = userSupplied && !OutboundUrlValidator.isTrustedPlatformEndpoint(vaultBaseUrl)
                 ? SsrfPinningClientFactory.restClientBuilder(
                         OutboundUrlValidator.validateAndResolve(vaultBaseUrl, false)).build()
                 : RestClient.create();
-        if (userSupplied && OutboundUrlValidator.isTrustedPlatformEndpoint(vaultBaseUrl)) {
-            OutboundUrlValidator.validateAndNormalize(vaultBaseUrl, false);
-        }
         String body = client.get()
                 .uri(url)
                 .header("Authorization", "Bearer " + apiKey)
@@ -1690,12 +1687,10 @@ public class AiChatService {
             openAiBuilder
                     .restClientBuilder(SsrfPinningClientFactory.restClientBuilder(endpoint))
                     .webClientBuilder(SsrfPinningClientFactory.webClientBuilder(endpoint));
-        } else if (userSupplied) {
-            OutboundUrlValidator.validateAndNormalize(baseUrl, false);
-        } else {
-            // 平台默认 URL 仅做内网封锁校验，不固定
-            OutboundUrlValidator.validateAndNormalize(platformBaseUrl, false);
         }
+        // 受信 DashScope / 平台默认：不做 DNS 解析与 IP 固定。
+        // 容器 DNS 抖动时 validateAndNormalize→resolve 会误报「主机名无法解析」，拖垮 QQ/聊天识图。
+        // 平台默认 URL 已在配置侧约束；受信域名由 isTrustedPlatformEndpoint 白名单覆盖。
         OpenAiApi openAiApi = openAiBuilder.build();
         return OpenAiChatModel.builder()
                 .openAiApi(openAiApi)

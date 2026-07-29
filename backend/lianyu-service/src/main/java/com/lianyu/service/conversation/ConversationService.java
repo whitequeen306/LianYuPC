@@ -1172,9 +1172,11 @@ public class ConversationService {
         if (messageId == null) {
             return;
         }
+        // content = 用户可见文案（仅用户原话/通用占位）；contextContent = 模型历史（含识图描述）
         Message patch = new Message();
         patch.setId(messageId);
-        patch.setContent(ImageMessageHistoryText.forPersist(userCaption, imageDescription));
+        patch.setContent(ImageMessageHistoryText.forUserVisible(userCaption));
+        patch.setContextContent(ImageMessageHistoryText.forPersist(userCaption, imageDescription));
         messageMapper.updateById(patch);
     }
 
@@ -1300,13 +1302,19 @@ public class ConversationService {
     }
 
     private MessageResponse toMessageResponse(Message msg) {
+        String content = msg.getContent();
+        // 带图用户消息：API 不回传内部识图占位，避免气泡里泄漏「（用户发了一张图片（…））」
+        if (msg.getImageUrl() != null && !msg.getImageUrl().isBlank()
+                && msg.getRole() != null && "USER".equalsIgnoreCase(msg.getRole())) {
+            content = ImageMessageHistoryText.forDisplay(content);
+        }
         return MessageResponse.builder()
                 .id(msg.getId())
                 .seq(msg.getSeq())
                 .conversationId(msg.getConversationId())
                 .role(msg.getRole())
                 .characterId(msg.getCharacterId())
-                .content(msg.getContent())
+                .content(content)
                 .imageUrl(fileStorageService.resolvePublicUrl(msg.getImageUrl()))
                 .audioUrl(resolveMessageAudioUrl(msg.getAudioUrl()))
                 .tokens(msg.getTokens())

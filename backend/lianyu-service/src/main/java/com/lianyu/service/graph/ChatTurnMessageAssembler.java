@@ -63,7 +63,8 @@ public class ChatTurnMessageAssembler {
                     content = UserInputSanitizer.wrapStoredTextForModel("用户发送了一张图片");
                 }
             } else if (hasImage) {
-                content = ImageMessageHistoryText.forHistory(msg.getContent(), true);
+                // 优先 contextContent（识图描述），再归一成历史占位；勿只用可见 content 丢掉描述
+                content = ImageMessageHistoryText.forHistory(content, true);
             } else if (content == null || content.isBlank()) {
                 continue;
             }

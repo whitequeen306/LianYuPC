@@ -118,8 +118,10 @@
             <div v-if="item.imageUrl" class="gal-bubble__image">
               <img :src="resolveMediaUrl(item.imageUrl)" alt="" @click="openImagePreview(item.imageUrl)" />
             </div>
-            <!-- 有图且 content 仅为"（用户发送了一张图片）"占位文案时不显示文字，避免图片下方重复出现该提示 -->
-            <p v-if="item.content && !(item.imageUrl && item.content === IMAGE_ONLY_PLACEHOLDER)" class="gal-bubble__text">{{ item.content }}</p>
+            <p
+              v-if="userBubbleText(item)"
+              class="gal-bubble__text"
+            >{{ userBubbleText(item) }}</p>
             <span v-if="item._lastOfGroup" class="gal-bubble__time">{{ formatTime(item.createdAt) }}</span>
           </div>
 
@@ -403,6 +405,26 @@ function petIdFromAudioUrl(audioUrl) {
 const TIME_GAP_MS = 5 * 60 * 1000
 // 用户仅发图时填入 content 的占位文案；模板里据此隐藏重复文字（见 :85 与 :958 两处引用，改这里即同步）
 const IMAGE_ONLY_PLACEHOLDER = '（用户发送了一张图片）'
+
+/** 剥掉内部识图占位，气泡只留用户原话（历史脏数据兜底；新消息后端已分 content/contextContent） */
+function displayUserImageCaption(content) {
+  if (!content) return ''
+  let s = String(content)
+  s = s.replace(/\n?（用户发了一张图片（[^）]*））/g, '')
+  s = s.replace(/（用户发了一张图片）/g, '')
+  s = s.replace(/（用户发送了一张图片）/g, '')
+  s = s.replace(/用户发送了一张图片/g, '')
+  return s.trim()
+}
+
+function userBubbleText(item) {
+  if (!item?.content) return ''
+  if (item.imageUrl) {
+    const caption = displayUserImageCaption(item.content)
+    return caption
+  }
+  return item.content
+}
 
 const route = useRoute()
 const router = useRouter()

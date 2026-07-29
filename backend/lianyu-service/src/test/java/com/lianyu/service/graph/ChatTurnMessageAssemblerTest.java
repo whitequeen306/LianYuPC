@@ -55,6 +55,27 @@ class ChatTurnMessageAssemblerTest {
     }
 
     @Test
+    void assemble_imageHistoryUsesContextContentWhenPresent() {
+        Message history = new Message();
+        history.setId(12L);
+        history.setRole("USER");
+        history.setContent("你认识她吗");
+        history.setContextContent("你认识她吗\n（用户发了一张图片（一只橘猫））");
+        history.setImageUrl("/api/public/files/chat-images/demo.jpg");
+
+        List<MessageDto> messages = assembler.assemble(
+                "SYSTEM",
+                List.of(history),
+                null,
+                null,
+                null);
+
+        assertEquals(2, messages.size());
+        assertNull(messages.get(1).getImageUrl());
+        assertEquals("（用户发了一张图片（一只橘猫））", messages.get(1).getContent());
+    }
+
+    @Test
     void assemble_imageOnlyCurrentTurn_rewritesPlaceholderWithoutImageUrl() {
         Message history = new Message();
         history.setId(11L);
