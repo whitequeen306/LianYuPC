@@ -1688,8 +1688,8 @@ public class AiChatService {
                     .restClientBuilder(SsrfPinningClientFactory.restClientBuilder(endpoint))
                     .webClientBuilder(SsrfPinningClientFactory.webClientBuilder(endpoint));
         }
-        // 受信 DashScope / 平台默认：不做 DNS 解析与 IP 固定。
-        // 容器 DNS 抖动时 validateAndNormalize→resolve 会误报「主机名无法解析」，拖垮 QQ/聊天识图。
+        // 受信 DashScope/DeepSeek / 平台默认：不做 DNS 预解析与 IP 固定。
+        // 容器 DNS 抖动时预解析会误报「主机名无法解析」，拖垮识图第二阶段文本调用并误开全局熔断。
         // 平台默认 URL 已在配置侧约束；受信域名由 isTrustedPlatformEndpoint 白名单覆盖。
         OpenAiApi openAiApi = openAiBuilder.build();
         return OpenAiChatModel.builder()

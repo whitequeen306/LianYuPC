@@ -496,6 +496,9 @@ resilience4j:
         failure-rate-threshold: 50                           # 失败率超此值则熔断（%）
         wait-duration-in-open-state: 30s                     # 熔断打开后等待多久半开
         permitted-number-of-calls-in-half-open-state: 3      # 半开状态试探调用次数
+        # 业务可预期失败（DNS/审核/参数等）不计入熔断；否则容器 DNS 抖动会把全局 AI 一锅端
+        ignoreExceptions:
+          - com.lianyu.common.exception.BusinessException
 
 logging:
   level:

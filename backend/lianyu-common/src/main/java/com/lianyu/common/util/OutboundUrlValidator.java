@@ -28,7 +28,8 @@ public final class OutboundUrlValidator {
     }
 
     /**
-     * 平台受信端点（DashScope 官方域名）：不做 DNS 固定，避免 CDN 轮转与容器 DNS 抖动误伤识图/对话。
+     * 平台受信端点（DashScope / DeepSeek 官方域名）：不做 DNS 固定，
+     * 避免 CDN 轮转与容器 DNS 抖动误伤识图/对话；也不因预解析失败误开熔断。
      */
     public static boolean isTrustedPlatformEndpoint(String baseUrl) {
         if (baseUrl == null || baseUrl.isBlank()) {
@@ -41,7 +42,10 @@ public final class OutboundUrlValidator {
                 return false;
             }
             String lower = host.toLowerCase(Locale.ROOT);
-            return "dashscope.aliyuncs.com".equals(lower) || lower.endsWith(".dashscope.aliyuncs.com");
+            return "dashscope.aliyuncs.com".equals(lower)
+                    || lower.endsWith(".dashscope.aliyuncs.com")
+                    || "api.deepseek.com".equals(lower)
+                    || lower.endsWith(".deepseek.com");
         } catch (Exception e) {
             return false;
         }

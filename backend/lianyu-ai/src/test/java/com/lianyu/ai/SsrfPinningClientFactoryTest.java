@@ -160,6 +160,10 @@ class SsrfPinningClientFactoryTest {
                 "https://dashscope.aliyuncs.com/compatible-mode/v1")).isTrue();
         assertThat(OutboundUrlValidator.isTrustedPlatformEndpoint(
                 "https://gtm-cn-rt54j1mlg03.dashscope.aliyuncs.com/v1")).isTrue();
+        assertThat(OutboundUrlValidator.isTrustedPlatformEndpoint(
+                "https://api.deepseek.com")).isTrue();
+        assertThat(OutboundUrlValidator.isTrustedPlatformEndpoint(
+                "https://api.deepseek.com/v1")).isTrue();
         assertThat(OutboundUrlValidator.isTrustedPlatformEndpoint("https://api.openai.com/v1")).isFalse();
         assertThat(OutboundUrlValidator.isTrustedPlatformEndpoint("http://localhost/v1")).isFalse();
     }
