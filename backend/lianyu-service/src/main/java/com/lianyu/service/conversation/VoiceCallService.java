@@ -337,7 +337,10 @@ public class VoiceCallService {
                 + "硬性要求：\n"
                 + "1. 只用口语化中文，1～2 句，总字数不超过 " + maxReplyChars + " 字；\n"
                 + "2. 禁止任何括号（）() 及其中内容：不准写心理活动、内心独白、旁白、动作/表情描写；\n"
-                + "3. 只输出可直接说出口的台词，不要列表、不要 markdown、不要引号包裹全文。";
+                + "3. 只输出可直接说出口的台词，不要列表、不要 markdown、不要引号包裹全文；\n"
+                + "4. 停顿由你控制：如果你希望两句话之间有明显的停顿或换气（如反问前、情绪转折、强调前），"
+                + "在该处插入 <|pause|>；每条回复最多 2 处，不要连用，不要放在整段开头或结尾；"
+                + "该标记不会被朗读，也不会显示给用户。";
         String systemPrompt = chatTurnFacade.assembleSystemPrompt(
                 ChatTurnScene.VOICE_CALL,
                 userId,

@@ -52,6 +52,8 @@ public class VoiceCallDuplexSession {
     private final AtomicLong ttsGeneration = new AtomicLong();
     private final Object sentenceLock = new Object();
     private final StringBuilder sentenceBuf = new StringBuilder();
+    /** LLM delta 展示缓冲：marker 不泄露到前端字幕。guarded by {@link #sentenceLock} */
+    private final StringBuilder llmEmitBuf = new StringBuilder();
     /** guarded by {@link #sentenceLock} */
     private boolean firstCommitSent;
     private volatile String lastPartial = "";
@@ -177,6 +179,7 @@ public class VoiceCallDuplexSession {
                 StringBuilder full = new StringBuilder();
                 synchronized (sentenceLock) {
                     sentenceBuf.setLength(0);
+                    llmEmitBuf.setLength(0);
                     firstCommitSent = false;
                 }
                 ttsFailed.set(false);
@@ -203,7 +206,10 @@ public class VoiceCallDuplexSession {
                     }
                     markLlmFirstDelta();
                     full.append(delta);
-                    emitJson("llm.delta", n -> n.put("text", delta));
+                    String visible = sanitizeDeltaForEmit(delta);
+                    if (!visible.isEmpty()) {
+                        emitJson("llm.delta", n -> n.put("text", visible));
+                    }
                     feedRealtimeTts(delta);
                 });
                 llmFuture.set(future);
@@ -212,7 +218,8 @@ public class VoiceCallDuplexSession {
                     return;
                 }
 
-                String spoken = InnerThoughtFilter.strip(rawReply == null ? "" : rawReply.trim());
+                String spoken = InnerThoughtFilter.strip(
+                        stripPauseMarkers(rawReply == null ? "" : rawReply.trim()));
                 if (spoken.isBlank()) {
                     spoken = "我在听，你再说一遍。";
                 }
@@ -388,7 +395,7 @@ public class VoiceCallDuplexSession {
     private void flushRealtimeTts() {
         synchronized (sentenceLock) {
             drainSentenceBufLocked();
-            String rest = sentenceBuf.toString().trim();
+            String rest = stripPauseMarkers(sentenceBuf.toString()).trim();
             sentenceBuf.setLength(0);
             DashScopeTtsRealtimeService.Session tts = ttsSession.get();
             if (!rest.isBlank() && tts != null && !ttsFailed.get() && tts.isReady()) {
@@ -396,6 +403,31 @@ public class VoiceCallDuplexSession {
                 tts.commit();
             }
         }
+    }
+
+    /** 字幕展示用：剥掉完整 marker；尾部疑似未完整 marker 前缀的部分留到下一个 delta 再定。 */
+    private String sanitizeDeltaForEmit(String delta) {
+        synchronized (sentenceLock) {
+            llmEmitBuf.append(delta);
+            String s = llmEmitBuf.toString().replace(PAUSE_TOKEN, "");
+            int idx = s.lastIndexOf("<|");
+            if (idx >= 0 && s.length() - idx < PAUSE_TOKEN.length()) {
+                String out = s.substring(0, idx);
+                llmEmitBuf.setLength(0);
+                llmEmitBuf.append(s.substring(idx));
+                return out;
+            }
+            llmEmitBuf.setLength(0);
+            return s;
+        }
+    }
+
+    /** marker 及残片不进 TTS、不进聊天记录。 */
+    static String stripPauseMarkers(String s) {
+        if (s == null || s.isEmpty()) {
+            return "";
+        }
+        return s.replace(PAUSE_TOKEN, "").replace("<|", "");
     }
 
     private void drainSentenceBuf() {
@@ -411,7 +443,11 @@ public class VoiceCallDuplexSession {
         }
         String buf = sentenceBuf.toString();
         while (true) {
-            int cut = chooseCommitCut(buf, firstCommitSent);
+            if (buf.startsWith(PAUSE_TOKEN)) {
+                buf = buf.substring(PAUSE_TOKEN.length());
+                continue;
+            }
+            int cut = nextCommitEnd(buf, firstCommitSent);
             if (cut <= 0) {
                 break;
             }
@@ -427,35 +463,47 @@ public class VoiceCallDuplexSession {
         sentenceBuf.append(buf);
     }
 
+    /** 角色模型自主标记的停顿点：语音 prompt 指示其在需要换气/停顿处输出。 */
+    static final String PAUSE_TOKEN = "<|pause|>";
     private static final String STRONG_ENDERS = "。！？!?\n";
     private static final String WEAK_PAUSES = "，,、；;";
 
     /**
-     * 切块策略（commit 模式下每次 commit 都是一次独立合成，切太碎会让语调在句中断裂）：
-     * 首段尽快出声 —— ≥6 字的首个标点，或 12 字硬切；
-     * 之后只在句末强标点切，让 TTS 一次合成完整句子；缓冲过长才退到逗号/硬切。
+     * 合成边界决策（commit 模式下每次 commit 都是一次独立合成，边界即听感停顿点）：
+     * 1. 模型显式 {@link #PAUSE_TOKEN} 最高优先 —— 角色按性格/语义自己决定停顿；
+     * 2. 否则首段在 ≥4 字的句末强标点切（保首音），后续每句一个合成（保连贯）；
+     * 3. 逗号类弱标点不再当边界；缓冲过长才兜底切；未完整 marker 前缀永不被切开。
      */
-    private static int chooseCommitCut(String buf, boolean firstCommitSent) {
+    static int nextCommitEnd(String buf, boolean firstCommitSent) {
         if (buf == null || buf.isEmpty()) {
             return -1;
         }
-        if (!firstCommitSent) {
-            int punct = indexOfAnyFrom(buf, STRONG_ENDERS + WEAK_PAUSES, 5);
-            if (punct >= 0) {
-                return punct + 1;
-            }
-            return buf.length() >= 12 ? 12 : -1;
+        int marker = buf.indexOf(PAUSE_TOKEN);
+        if (marker > 0) {
+            return marker;
         }
-        int strong = indexOfAnyFrom(buf, STRONG_ENDERS, 0);
-        if (strong >= 0) {
+        if (marker == 0) {
+            return -1;
+        }
+        int partial = buf.indexOf("<|");
+        int floor = firstCommitSent ? 0 : 4;
+        int limit = firstCommitSent ? 24 : 12;
+        int strong = indexOfAnyFrom(buf, STRONG_ENDERS, floor);
+        if (strong >= 0 && (partial < 0 || partial > strong)) {
             return strong + 1;
         }
-        if (buf.length() >= 24) {
-            int weak = lastIndexOfAny(buf, WEAK_PAUSES);
-            if (weak >= 9) {
-                return weak + 1;
+        if (partial > 0) {
+            return partial;
+        }
+        if (partial == 0) {
+            return -1;
+        }
+        if (buf.length() >= limit) {
+            if (!firstCommitSent) {
+                return limit;
             }
-            return 24;
+            int weak = lastIndexOfAny(buf, WEAK_PAUSES);
+            return weak >= 9 ? weak + 1 : limit;
         }
         return -1;
     }
