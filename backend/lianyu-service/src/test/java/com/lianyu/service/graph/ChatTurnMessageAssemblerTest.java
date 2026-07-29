@@ -76,6 +76,40 @@ class ChatTurnMessageAssemblerTest {
     }
 
     @Test
+    void assemble_skipsVoiceCallTurnMessagesButKeepsSummary() {
+        Message turn = new Message();
+        turn.setId(20L);
+        turn.setRole("ASSISTANT");
+        turn.setContent("嗯，我在听。");
+        turn.setAudioUrl("system/voice-call-turn");
+
+        Message summary = new Message();
+        summary.setId(21L);
+        summary.setRole("ASSISTANT");
+        summary.setContent("我们进行了1分钟的语音通话");
+        summary.setContextContent("（用户和角色进行了语音通话（闲聊近况））");
+        summary.setAudioUrl("system/voice-call-summary");
+
+        Message normal = new Message();
+        normal.setId(22L);
+        normal.setRole("USER");
+        normal.setContent("你好呀");
+
+        List<MessageDto> messages = assembler.assemble(
+                "SYSTEM",
+                List.of(turn, summary, normal),
+                null,
+                null,
+                null);
+
+        assertEquals(3, messages.size());
+        assertEquals("system", messages.get(0).getRole());
+        assertEquals("（用户和角色进行了语音通话（闲聊近况））", messages.get(1).getContent());
+        assertTrue(messages.get(2).getContent().contains("你好呀")
+                || "你好呀".equals(messages.get(2).getContent()));
+    }
+
+    @Test
     void assemble_imageOnlyCurrentTurn_rewritesPlaceholderWithoutImageUrl() {
         Message history = new Message();
         history.setId(11L);

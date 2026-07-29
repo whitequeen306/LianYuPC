@@ -50,6 +50,10 @@ public class ChatTurnMessageAssembler {
             return allMessages;
         }
         for (Message msg : history) {
+            // 通话逐轮文本只服务「本通」；结束后仅摘要可进文字聊上下文，turn 不再喂模型
+            if (isVoiceCallTurnMessage(msg)) {
+                continue;
+            }
             MessageDto dto = new MessageDto();
             dto.setRole(msg.getRole() == null ? "user" : msg.getRole().toLowerCase());
             boolean hasImage = msg.getImageUrl() != null && !msg.getImageUrl().isBlank();
@@ -72,6 +76,13 @@ public class ChatTurnMessageAssembler {
             allMessages.add(dto);
         }
         return allMessages;
+    }
+
+    private static boolean isVoiceCallTurnMessage(Message msg) {
+        if (msg == null || msg.getAudioUrl() == null) {
+            return false;
+        }
+        return "system/voice-call-turn".equals(msg.getAudioUrl().trim());
     }
 
     private static boolean isEmptyUserMessageXml(String content) {

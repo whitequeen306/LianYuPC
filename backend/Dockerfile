@@ -44,4 +44,5 @@ LABEL org.opencontainers.image.revision="${APP_REVISION}"
 COPY --from=build /build/lianyu-app/target/lianyu-app-*.jar app.jar
 
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# preferIPv4Addresses：DashScope 等域名常先解析到 AAAA；容器无可用 IPv6 时 TTS/WS 会 ConnectException
+ENTRYPOINT ["java", "-Djava.net.preferIPv4Addresses=true", "-jar", "app.jar"]

@@ -50,6 +50,7 @@ public class VoiceCallService {
 
     private static final String SEQ_KEY_PREFIX = "msg_seq:";
     private static final String VOICE_CALL_TURN_MARKER = "system/voice-call-turn";
+    private static final String VOICE_CALL_SUMMARY_MARKER = "system/voice-call-summary";
     /** V1: only Raiden voice call for testing. */
     private static final Set<String> VOICE_CALL_PET_IDS = Set.of("raiden");
 
@@ -70,8 +71,8 @@ public class VoiceCallService {
     @Value("${lianyu.voice-call.max-reply-chars:48}")
     private int maxReplyChars;
 
-    /** 通话内保留的「轮」数（每轮 user+assistant ≈ 2 条）；默认 4 轮压延迟。 */
-    @Value("${lianyu.voice-call.history-limit:4}")
+    /** 本通内保留的「轮」数（每轮 user+assistant ≈ 2 条）；挂断后上一通不再计入。 */
+    @Value("${lianyu.voice-call.history-limit:8}")
     private int historyLimit;
 
     @Value("${lianyu.voice-call.max-tokens:512}")
@@ -505,15 +506,36 @@ public class VoiceCallService {
         return lastSeq != null ? lastSeq : 1L;
     }
 
+    /**
+     * 仅本通会话内的通话回合：取最近一次 hangup 摘要之后的 turn；无摘要则从会话头开始。
+     * 上一通的 turn 只用于当时摘要，之后永不进入新通话 LLM 上下文。
+     */
     private List<Message> recentVoiceCallTurns(Long conversationId, int roundLimit) {
         int msgLimit = Math.max(2, Math.min(roundLimit * 2, 32));
-        List<Message> messages = messageMapper.selectList(new LambdaQueryWrapper<Message>()
+        Long afterSeq = lastVoiceCallSummarySeq(conversationId);
+        LambdaQueryWrapper<Message> q = new LambdaQueryWrapper<Message>()
                 .eq(Message::getConversationId, conversationId)
                 .eq(Message::getAudioUrl, VOICE_CALL_TURN_MARKER)
                 .orderByDesc(Message::getSeq)
-                .last("LIMIT " + msgLimit));
+                .last("LIMIT " + msgLimit);
+        if (afterSeq != null) {
+            q.gt(Message::getSeq, afterSeq);
+        }
+        List<Message> messages = messageMapper.selectList(q);
         Collections.reverse(messages);
         return messages;
+    }
+
+    private Long lastVoiceCallSummarySeq(Long conversationId) {
+        List<Message> summaries = messageMapper.selectList(new LambdaQueryWrapper<Message>()
+                .eq(Message::getConversationId, conversationId)
+                .eq(Message::getAudioUrl, VOICE_CALL_SUMMARY_MARKER)
+                .orderByDesc(Message::getSeq)
+                .last("LIMIT 1"));
+        if (summaries == null || summaries.isEmpty()) {
+            return null;
+        }
+        return summaries.get(0).getSeq();
     }
 
     /** Duplex persists the user turn before building AI request — drop duplicate trailing user line. */
