@@ -300,6 +300,12 @@ public class AiChatService {
                     List<Message> messages = toSpringMessages(request.getMessages());
                     Prompt prompt = buildPrompt(request, vault, messages);
                     chatModel.stream(prompt)
+                            .retryWhen(reactor.util.retry.Retry.fixedDelay(1, Duration.ofMillis(300))
+                                    .filter(error -> contentBuffer.isEmpty()
+                                            && isTransientStreamFailure(error))
+                                    .doBeforeRetry(signal -> log.warn(
+                                            "AI stream-tokens transient connect failure, retrying once: {}",
+                                            signal.failure().toString())))
                             .doOnNext(response -> {
                                 String text = extractStreamDelta(response);
                                 if (text != null && !text.isEmpty()) {
