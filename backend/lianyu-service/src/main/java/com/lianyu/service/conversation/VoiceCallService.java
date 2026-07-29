@@ -19,7 +19,6 @@ import com.lianyu.service.ai.AsrService;
 import com.lianyu.service.ai.DashScopeTtsService;
 import com.lianyu.service.ai.InnerThoughtFilter;
 import com.lianyu.service.ai.PetVoiceRegistry;
-import com.lianyu.service.character.CharacterStateService;
 import com.lianyu.service.dto.AiChatRequest;
 import com.lianyu.service.dto.ChatResult;
 import com.lianyu.service.dto.MessageDto;
@@ -29,7 +28,6 @@ import com.lianyu.service.dto.VoiceCallTurnResponse;
 import com.lianyu.service.graph.ChatTurnFacade;
 import com.lianyu.service.graph.MessageModelContent;
 import com.lianyu.service.memory.MemoryWriter;
-import com.lianyu.service.relationship.RelationshipStateService;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -64,14 +62,15 @@ public class VoiceCallService {
     private final AiChatService aiChatService;
     private final ChatTurnFacade chatTurnFacade;
     private final MemoryWriter memoryWriter;
-    private final CharacterStateService characterStateService;
-    private final RelationshipStateService relationshipStateService;
     private final StringRedisTemplate redisTemplate;
 
     @Value("${lianyu.voice-call.max-reply-chars:48}")
     private int maxReplyChars;
 
-    /** 本通内保留的「轮」数（每轮 user+assistant ≈ 2 条）；挂断后上一通不再计入。 */
+    /**
+     * 本通通话内最多带入 LLM 的历史句数（user+assistant 各算一句）。
+     * 仅当前通话有效；挂断摘要写入后，旧 turn 不再参与任何上下文。
+     */
     @Value("${lianyu.voice-call.history-limit:8}")
     private int historyLimit;
 
@@ -117,10 +116,10 @@ public class VoiceCallService {
         userMsg.setAudioUrl("system/voice-call-turn");
         messageMapper.insert(userMsg);
 
-        int roundLimit = Math.max(2, Math.min(historyLimit, 16));
-        List<Message> history = recentVoiceCallTurns(conversationId, roundLimit);
-        relationshipStateService.recordUserTurn(userId, character.getId(), conversationId, userMsg, history);
-        characterStateService.afterUserMessage(character.getId(), userId, userText);
+        // 通话内容不进关系/情绪/记忆；唯一持久作用是挂断时摘要进文字聊
+        int msgLimit = clampHistoryMessageLimit(historyLimit);
+        List<Message> history = recentVoiceCallTurnsInCurrentCall(conversationId, msgLimit);
+        history = trimCurrentUserTurn(history, userText);
 
         String replyText = generateShortVoiceReply(userId, conversationId, character, history, userText);
         long tLlm = System.nanoTime();
@@ -144,7 +143,6 @@ public class VoiceCallService {
         assistantMsg.setAudioUrl("system/voice-call-turn");
         messageMapper.insert(assistantMsg);
 
-        memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
         log.info("Voice call turn: convId={}, petId={}, userLen={}, replyLen={}, asrMs={}, llmMs={}, ttsMs={}",
                 conversationId, petId, userText.length(), replyText.length(),
                 (tAsr - t0) / 1_000_000L, (tLlm - tAsr) / 1_000_000L, (tTts - tLlm) / 1_000_000L);
@@ -193,11 +191,7 @@ public class VoiceCallService {
         userMsg.setContent(userText);
         userMsg.setAudioUrl("system/voice-call-turn");
         messageMapper.insert(userMsg);
-
-        int roundLimit = Math.max(2, Math.min(historyLimit, 16));
-        List<Message> history = recentVoiceCallTurns(conversationId, roundLimit);
-        relationshipStateService.recordUserTurn(userId, character.getId(), conversationId, userMsg, history);
-        characterStateService.afterUserMessage(character.getId(), userId, userText);
+        // 不写关系/情绪/记忆：通话句只服务本通 LLM，挂断摘要才进文字聊
     }
 
     @Transactional
@@ -216,7 +210,7 @@ public class VoiceCallService {
         assistantMsg.setContent(replyText);
         assistantMsg.setAudioUrl("system/voice-call-turn");
         messageMapper.insert(assistantMsg);
-        memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
+        // 不 enqueue 会话记忆；挂断 endCall 时再写摘要进文字聊
     }
 
     public AiChatRequest buildVoiceCallAiRequest(Long userId, Long conversationId, String userText) {
@@ -225,8 +219,8 @@ public class VoiceCallService {
         if (character == null) {
             throw new BusinessException(ErrorCode.CHARACTER_NOT_FOUND);
         }
-        int roundLimit = Math.max(2, Math.min(historyLimit, 16));
-        List<Message> history = recentVoiceCallTurns(conversationId, roundLimit);
+        int msgLimit = clampHistoryMessageLimit(historyLimit);
+        List<Message> history = recentVoiceCallTurnsInCurrentCall(conversationId, msgLimit);
         history = trimCurrentUserTurn(history, userText);
         return buildVoiceAiRequest(userId, conversationId, character, history, userText);
     }
@@ -338,7 +332,6 @@ public class VoiceCallService {
                                               Character character,
                                               List<Message> history,
                                               String userText) {
-        history = trimCurrentUserTurn(history, userText);
         String voiceSuffix = "\n\n=== 语音通话（强制） ===\n"
                 + "你正在与用户进行实时语音通话，回复会被直接朗读。\n"
                 + "硬性要求：\n"
@@ -507,11 +500,12 @@ public class VoiceCallService {
     }
 
     /**
-     * 仅本通会话内的通话回合：取最近一次 hangup 摘要之后的 turn；无摘要则从会话头开始。
-     * 上一通的 turn 只用于当时摘要，之后永不进入新通话 LLM 上下文。
+     * 仅「当前通话」内的 turn：最近一次 hangup 摘要之后的消息；无摘要则从会话头开始。
+     * {@code messageLimit} 为本通最多带入 LLM 的句数（不是轮数）。
+     * 上一通 turn 挂断后只以摘要形式进文字聊，新通话与之完全无关。
      */
-    private List<Message> recentVoiceCallTurns(Long conversationId, int roundLimit) {
-        int msgLimit = Math.max(2, Math.min(roundLimit * 2, 32));
+    private List<Message> recentVoiceCallTurnsInCurrentCall(Long conversationId, int messageLimit) {
+        int msgLimit = clampHistoryMessageLimit(messageLimit);
         Long afterSeq = lastVoiceCallSummarySeq(conversationId);
         LambdaQueryWrapper<Message> q = new LambdaQueryWrapper<Message>()
                 .eq(Message::getConversationId, conversationId)
@@ -524,6 +518,10 @@ public class VoiceCallService {
         List<Message> messages = messageMapper.selectList(q);
         Collections.reverse(messages);
         return messages;
+    }
+
+    private static int clampHistoryMessageLimit(int configured) {
+        return Math.max(1, Math.min(configured, 16));
     }
 
     private Long lastVoiceCallSummarySeq(Long conversationId) {
@@ -548,14 +546,5 @@ public class VoiceCallService {
             return history.subList(0, history.size() - 1);
         }
         return history;
-    }
-
-    private List<Message> recentMessages(Long conversationId, int limit) {
-        List<Message> messages = messageMapper.selectList(new LambdaQueryWrapper<Message>()
-                .eq(Message::getConversationId, conversationId)
-                .orderByDesc(Message::getSeq)
-                .last("LIMIT " + limit));
-        Collections.reverse(messages);
-        return messages;
     }
 }

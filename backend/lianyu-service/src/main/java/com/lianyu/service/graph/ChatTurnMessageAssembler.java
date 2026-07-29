@@ -50,7 +50,7 @@ public class ChatTurnMessageAssembler {
             return allMessages;
         }
         for (Message msg : history) {
-            // 通话逐轮文本只服务「本通」；结束后仅摘要可进文字聊上下文，turn 不再喂模型
+            // 通话逐轮只服务本通 LLM；挂断后仅摘要进文字聊，turn 永不喂模型
             if (isVoiceCallTurnMessage(msg)) {
                 continue;
             }
