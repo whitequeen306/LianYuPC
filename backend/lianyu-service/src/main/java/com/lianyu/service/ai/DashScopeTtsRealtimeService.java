@@ -31,6 +31,9 @@ public class DashScopeTtsRealtimeService {
         void onDone();
 
         void onError(String message);
+
+        default void onReady() {
+        }
     }
 
     private final ObjectMapper objectMapper;
@@ -227,6 +230,14 @@ public class DashScopeTtsRealtimeService {
             }
         }
 
+        public boolean isReady() {
+            return sessionReady && !closed.get();
+        }
+
+        public boolean isClosed() {
+            return closed.get();
+        }
+
         public void close() {
             if (!closed.compareAndSet(false, true)) {
                 return;
@@ -303,6 +314,7 @@ public class DashScopeTtsRealtimeService {
                     case "session.updated" -> {
                         sessionReady = true;
                         readyLatch.countDown();
+                        listener.onReady();
                     }
                     case "session.created" -> {
                         // Wait for session.updated after our session.update (voice applied).
