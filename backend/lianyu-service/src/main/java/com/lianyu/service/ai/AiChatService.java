@@ -207,6 +207,12 @@ public class AiChatService {
                     List<Message> messages = toSpringMessages(request.getMessages());
                     Prompt prompt = buildPrompt(request, vault, messages);
                     chatModel.stream(prompt)
+                            .retryWhen(reactor.util.retry.Retry.fixedDelay(1, Duration.ofMillis(300))
+                                    .filter(error -> contentBuffer.isEmpty()
+                                            && isTransientStreamFailure(error))
+                                    .doBeforeRetry(signal -> log.warn(
+                                            "AI chat stream transient connect failure, retrying once: {}",
+                                            signal.failure().toString())))
                             .doOnNext(response -> {
                                 try {
                                     String text = extractStreamDelta(response);
@@ -324,6 +330,28 @@ public class AiChatService {
         }, aiStreamExecutor);
 
         return future;
+    }
+
+    static boolean isTransientStreamFailure(Throwable error) {
+        for (Throwable current = error; current != null; current = current.getCause()) {
+            if (current instanceof java.net.UnknownHostException
+                    || current instanceof java.net.ConnectException
+                    || current instanceof java.net.http.HttpConnectTimeoutException
+                    || current instanceof java.nio.channels.UnresolvedAddressException) {
+                return true;
+            }
+            String message = current.getMessage();
+            if (message != null) {
+                String lower = message.toLowerCase(java.util.Locale.ROOT);
+                if (lower.contains("failed to resolve")
+                        || lower.contains("temporary failure in name resolution")
+                        || lower.contains("connection refused")
+                        || lower.contains("connect timed out")) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     @FunctionalInterface

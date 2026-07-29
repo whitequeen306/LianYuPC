@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.UUID;
@@ -37,6 +36,7 @@ public class DashScopeTtsRealtimeService {
     private final ObjectMapper objectMapper;
     private final PetVoiceRegistry petVoiceRegistry;
     private final HttpClient httpClient;
+    private final int connectTimeoutMs;
 
     @Value("${lianyu.ai.tts.enabled:true}")
     private boolean enabled;
@@ -53,14 +53,16 @@ public class DashScopeTtsRealtimeService {
     @Value("${lianyu.ai.tts.language-type:Chinese}")
     private String languageType;
 
-    @Value("${lianyu.ai.tts.connect-timeout-ms:8000}")
-    private int connectTimeoutMs;
-
-    public DashScopeTtsRealtimeService(ObjectMapper objectMapper, PetVoiceRegistry petVoiceRegistry) {
+    public DashScopeTtsRealtimeService(
+            ObjectMapper objectMapper,
+            PetVoiceRegistry petVoiceRegistry,
+            @Value("${lianyu.ai.tts.realtime-connect-timeout-ms:2500}") int connectTimeoutMs) {
         this.objectMapper = objectMapper;
         this.petVoiceRegistry = petVoiceRegistry;
+        // 构造期注入：避免字段 @Value 尚未写入时 HttpClient 用到 0ms
+        this.connectTimeoutMs = Math.max(1000, Math.min(connectTimeoutMs, 8000));
         this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofMillis(Math.max(1000, connectTimeoutMs)))
+                .connectTimeout(Duration.ofMillis(this.connectTimeoutMs))
                 .build();
     }
 
@@ -82,15 +84,23 @@ public class DashScopeTtsRealtimeService {
         String model = resolveRealtimeModel();
         String url = realtimeWsUrl.replaceAll("/+$", "") + "?model=" + model;
         Session session = new Session(listener, voice);
+        CompletableFuture<WebSocket> connectFuture = httpClient.newWebSocketBuilder()
+                .header("Authorization", "Bearer " + key)
+                .buildAsync(URI.create(url), session);
         try {
-            WebSocket ws = httpClient.newWebSocketBuilder()
-                    .header("Authorization", "Bearer " + key)
-                    .buildAsync(URI.create(url), session)
-                    .join();
+            WebSocket ws = connectFuture.get(connectTimeoutMs, TimeUnit.MILLISECONDS);
             session.attach(ws);
             session.sendSessionUpdate();
             return session;
+        } catch (InterruptedException e) {
+            connectFuture.cancel(true);
+            session.close();
+            Thread.currentThread().interrupt();
+            listener.onError("语音合成连接失败");
+            return null;
         } catch (Exception e) {
+            connectFuture.cancel(true);
+            session.close();
             log.warn("TTS realtime connect failed: {}", e.toString());
             listener.onError("语音合成连接失败");
             return null;

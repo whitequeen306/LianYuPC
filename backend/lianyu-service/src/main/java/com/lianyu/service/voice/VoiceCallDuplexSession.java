@@ -151,7 +151,7 @@ public class VoiceCallDuplexSession {
                 ttsFailed.set(false);
                 audioSent.set(false);
 
-                // 先开 realtime TTS WS（与落库/组 prompt 并行等 session.updated），缩短首音延迟
+                // Realtime 握手快失败，避免网络抖动长时间阻塞后续 LLM。
                 DashScopeTtsRealtimeService.Session tts = ttsRealtimeService.startForPet(petId,
                         new DashScopeTtsRealtimeService.AudioListener() {
                             @Override
@@ -175,7 +175,6 @@ public class VoiceCallDuplexSession {
                         });
                 ttsSession.set(tts);
                 boolean useRealtime = tts != null;
-
                 voiceCallService.persistUserTurn(userId, conversationId, userText);
                 AiChatRequest aiRequest = voiceCallService.buildVoiceCallAiRequest(
                         userId, conversationId, userText);

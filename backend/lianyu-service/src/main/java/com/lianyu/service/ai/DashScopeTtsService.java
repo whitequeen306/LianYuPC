@@ -84,22 +84,93 @@ public class DashScopeTtsService {
             log.warn("Pet TTS skipped: missing DASHSCOPE API key");
             return null;
         }
-        try {
-            String audioUrl = requestAudioUrl(key, petVoiceRegistry.getModel(), voice, text.trim());
-            if (audioUrl == null || audioUrl.isBlank()) {
+        Exception last = null;
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                String audioUrl = requestAudioUrl(key, petVoiceRegistry.getModel(), voice, text.trim());
+                if (audioUrl == null || audioUrl.isBlank()) {
+                    return null;
+                }
+                if (!isAllowedTtsAudioHost(audioUrl)) {
+                    log.warn("Pet TTS rejected audio url host for petId={}", petId);
+                    return null;
+                }
+                byte[] bytes = downloadAudio(audioUrl);
+                if (bytes == null || bytes.length == 0) {
+                    log.warn("Pet TTS audio download empty for petId={} attempt={}", petId, attempt);
+                    if (attempt < 2) {
+                        Thread.sleep(200L * attempt);
+                        continue;
+                    }
+                    return null;
+                }
+                log.info("Pet TTS ok: petId={}, bytes={}, attempt={}", petId, bytes.length, attempt);
+                return bytes;
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
                 return null;
+            } catch (Exception e) {
+                last = e;
+                if (!isTransientNetworkFailure(e) || attempt >= 2) {
+                    log.warn("Pet TTS synthesis failed for pet {}: {}", petId, e.getMessage());
+                    return null;
+                }
+                log.warn("Pet TTS transient failure pet={} attempt={}/2: {}",
+                        petId, attempt, e.getMessage());
+                try {
+                    Thread.sleep(200L * attempt);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return null;
+                }
             }
-            byte[] bytes = downloadAudio(audioUrl);
-            if (bytes == null || bytes.length == 0) {
-                log.warn("Pet TTS audio download empty for petId={}", petId);
-                return null;
-            }
-            log.info("Pet TTS ok: petId={}, bytes={}", petId, bytes.length);
-            return bytes;
-        } catch (Exception e) {
-            log.warn("Pet TTS synthesis failed for pet {}: {}", petId, e.getMessage());
-            return null;
         }
+        if (last != null) {
+            log.warn("Pet TTS synthesis failed for pet {}: {}", petId, last.getMessage());
+        }
+        return null;
+    }
+
+    /** DashScope 合成结果只允许官方域名 / OSS 回源，防任意 URL 下载（SSRF）。 */
+    static boolean isAllowedTtsAudioHost(String audioUrl) {
+        try {
+            URI uri = URI.create(audioUrl.trim());
+            if (!"https".equalsIgnoreCase(uri.getScheme())) {
+                return false;
+            }
+            String host = uri.getHost();
+            if (host == null || host.isBlank()) {
+                return false;
+            }
+            String lower = host.toLowerCase(java.util.Locale.ROOT);
+            return "dashscope.aliyuncs.com".equals(lower)
+                    || lower.endsWith(".dashscope.aliyuncs.com")
+                    || (lower.endsWith(".aliyuncs.com") && lower.contains(".oss-"));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    static boolean isTransientNetworkFailure(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof java.net.UnknownHostException
+                    || t instanceof java.net.ConnectException
+                    || t instanceof java.net.http.HttpConnectTimeoutException) {
+                return true;
+            }
+            String msg = t.getMessage();
+            if (msg != null) {
+                String m = msg.toLowerCase(java.util.Locale.ROOT);
+                if (m.contains("try again")
+                        || m.contains("timed out")
+                        || m.contains("connection reset")
+                        || m.contains("failed to resolve")
+                        || m.contains("transient http")) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private String resolveApiKey() {
@@ -134,6 +205,9 @@ public class DashScopeTtsService {
                 String body = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
                 if (status < 200 || status >= 300) {
                     log.warn("Pet TTS synth HTTP {}: {}", status, body);
+                    if (status == 429 || status >= 500) {
+                        throw new java.io.IOException("DashScope TTS transient HTTP " + status);
+                    }
                     return null;
                 }
                 JsonNode root = objectMapper.readTree(body);
@@ -158,6 +232,9 @@ public class DashScopeTtsService {
                 int status = response.getStatusLine().getStatusCode();
                 if (status < 200 || status >= 300) {
                     log.warn("Pet TTS audio download HTTP {} for url={}", status, audioUrl);
+                    if (status == 429 || status >= 500) {
+                        throw new java.io.IOException("DashScope TTS audio transient HTTP " + status);
+                    }
                     return null;
                 }
                 try (InputStream in = response.getEntity().getContent()) {

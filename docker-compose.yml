@@ -54,6 +54,12 @@ services:
       TZ: Asia/Shanghai
       # 与 Dockerfile ENTRYPOINT 双保险：出站优先 IPv4，避免 DashScope AAAA 不通导致 TTS 失败
       JAVA_TOOL_OPTIONS: "-Djava.net.preferIPv4Addresses=true"
+    # 绕过宿主机 systemd-resolved 抖动：embedded 127.0.0.11 仍解析 mysql/redis，
+    # 出站 DeepSeek/DashScope 走公共 DNS（实测偶发 UnknownHost / connect timeout）
+    dns:
+      - ${LIANYU_DNS_PRIMARY:-223.5.5.5}
+      - ${LIANYU_DNS_SECONDARY:-119.29.29.29}
+      - ${LIANYU_DNS_FALLBACK:-8.8.8.8}
     # 仅绑定本机，避免公网明文 HTTP 绕过 TLS 网关（云端经 api-gateway:443 反代 backend:8080）
     ports:
       - "127.0.0.1:${SERVER_PORT:-8080}:8080"

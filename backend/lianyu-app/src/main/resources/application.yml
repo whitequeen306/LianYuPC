@@ -211,6 +211,8 @@ lianyu:
       language-type: Chinese
       connect-timeout-ms: 8000
       socket-timeout-ms: 30000
+      # Realtime 握手快失败→HTTP 回退，避免网络抖动拖慢整轮。
+      realtime-connect-timeout-ms: ${LIANYU_TTS_REALTIME_CONNECT_TIMEOUT_MS:2500}
       realtime-ws-url: ${LIANYU_TTS_REALTIME_WS:wss://dashscope.aliyuncs.com/api-ws/v1/realtime}
       realtime-model: ${LIANYU_TTS_REALTIME_MODEL:}
     reranker:
