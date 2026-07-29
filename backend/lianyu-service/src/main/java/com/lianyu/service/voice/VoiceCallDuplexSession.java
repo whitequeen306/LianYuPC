@@ -52,6 +52,8 @@ public class VoiceCallDuplexSession {
     private final AtomicLong ttsGeneration = new AtomicLong();
     private final Object sentenceLock = new Object();
     private final StringBuilder sentenceBuf = new StringBuilder();
+    /** guarded by {@link #sentenceLock} */
+    private boolean firstCommitSent;
     private volatile String lastPartial = "";
     private volatile long turnStartedAtMs;
     private volatile long ttsReadyAtMs;
@@ -175,6 +177,7 @@ public class VoiceCallDuplexSession {
                 StringBuilder full = new StringBuilder();
                 synchronized (sentenceLock) {
                     sentenceBuf.setLength(0);
+                    firstCommitSent = false;
                 }
                 ttsFailed.set(false);
                 audioSent.set(false);
@@ -385,6 +388,13 @@ public class VoiceCallDuplexSession {
     private void flushRealtimeTts() {
         synchronized (sentenceLock) {
             drainSentenceBufLocked();
+            String rest = sentenceBuf.toString().trim();
+            sentenceBuf.setLength(0);
+            DashScopeTtsRealtimeService.Session tts = ttsSession.get();
+            if (!rest.isBlank() && tts != null && !ttsFailed.get() && tts.isReady()) {
+                tts.appendText(rest);
+                tts.commit();
+            }
         }
     }
 
@@ -400,34 +410,69 @@ public class VoiceCallDuplexSession {
             return;
         }
         String buf = sentenceBuf.toString();
-        int cut = findSentenceCut(buf);
-        while (cut > 0) {
+        while (true) {
+            int cut = chooseCommitCut(buf, firstCommitSent);
+            if (cut <= 0) {
+                break;
+            }
             String piece = buf.substring(0, cut).trim();
             buf = buf.substring(cut);
             if (!piece.isBlank()) {
                 tts.appendText(piece);
                 tts.commit();
+                firstCommitSent = true;
             }
-            cut = findSentenceCut(buf);
         }
         sentenceBuf.setLength(0);
         sentenceBuf.append(buf);
-        if (sentenceBuf.length() >= 4) {
-            String piece = sentenceBuf.toString().trim();
-            sentenceBuf.setLength(0);
-            if (!piece.isBlank()) {
-                tts.appendText(piece);
-                tts.commit();
-            }
-        }
     }
 
-    private static int findSentenceCut(String buf) {
-        for (int i = 0; i < buf.length(); i++) {
-            char c = buf.charAt(i);
-            if (c == '。' || c == '！' || c == '？' || c == '!' || c == '?' || c == '\n'
-                    || c == '；' || c == '，' || c == ',' || c == '、') {
-                return i + 1;
+    private static final String STRONG_ENDERS = "。！？!?\n";
+    private static final String WEAK_PAUSES = "，,、；;";
+
+    /**
+     * 切块策略（commit 模式下每次 commit 都是一次独立合成，切太碎会让语调在句中断裂）：
+     * 首段尽快出声 —— ≥6 字的首个标点，或 12 字硬切；
+     * 之后只在句末强标点切，让 TTS 一次合成完整句子；缓冲过长才退到逗号/硬切。
+     */
+    private static int chooseCommitCut(String buf, boolean firstCommitSent) {
+        if (buf == null || buf.isEmpty()) {
+            return -1;
+        }
+        if (!firstCommitSent) {
+            int punct = indexOfAnyFrom(buf, STRONG_ENDERS + WEAK_PAUSES, 5);
+            if (punct >= 0) {
+                return punct + 1;
+            }
+            return buf.length() >= 12 ? 12 : -1;
+        }
+        int strong = indexOfAnyFrom(buf, STRONG_ENDERS, 0);
+        if (strong >= 0) {
+            return strong + 1;
+        }
+        if (buf.length() >= 24) {
+            int weak = lastIndexOfAny(buf, WEAK_PAUSES);
+            if (weak >= 9) {
+                return weak + 1;
+            }
+            return 24;
+        }
+        return -1;
+    }
+
+    private static int indexOfAnyFrom(String buf, String chars, int fromIndex) {
+        for (int i = Math.max(0, fromIndex); i < buf.length(); i++) {
+            if (chars.indexOf(buf.charAt(i)) >= 0) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int lastIndexOfAny(String buf, String chars) {
+        for (int i = buf.length() - 1; i >= 0; i--) {
+            if (chars.indexOf(buf.charAt(i)) >= 0) {
+                return i;
             }
         }
         return -1;
