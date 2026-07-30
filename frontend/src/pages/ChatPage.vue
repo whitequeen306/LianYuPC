@@ -396,6 +396,7 @@ import { uploadCommunityImage } from '@/api/community'
 import { isElectronApp } from '@/utils/electron'
 import { stripInnerThoughts, resolveShowInnerThoughts } from '@/utils/innerThoughtFilter'
 import { isVoiceCallTurnMessage, isVoiceCallSummaryMessage } from '@/constants/voiceCallMarkers'
+import { isVoiceCallPet } from '@/constants/voiceCallPets'
 
 function petIdFromAudioUrl(audioUrl) {
   const m = String(audioUrl || '').match(/(?:pet\/voice|chat-voice)\/([a-z0-9-]+)\//i)
@@ -672,7 +673,7 @@ const isPlatformSelected = computed(() => currentProvider.value === PLATFORM_PRO
 const isCompact = computed(() => route.meta.compact === true)
 const activeSettings = computed(() => activeCharacter.value?.settings || {})
 const isBlocked = computed(() => activeSettings.value.blocked === true)
-const voiceCallEnabled = computed(() => activeCharacter.value?.voicePetId === 'raiden')
+const voiceCallEnabled = computed(() => isVoiceCallPet(activeCharacter.value?.voicePetId))
 const showInnerThoughts = computed(() => resolveShowInnerThoughts(activeSettings.value))
 
 const showHeaderTyping = computed(() => awaitingOpening.value || waitingReply.value)

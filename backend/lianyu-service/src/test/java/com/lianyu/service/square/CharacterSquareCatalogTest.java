@@ -36,6 +36,7 @@ class CharacterSquareCatalogTest {
         assertEquals("ayaka", CharacterSquareCatalog.slugForSortOrder(520));
         assertEquals("elysia", CharacterSquareCatalog.slugForSortOrder(530));
         assertEquals("erii_uesugi", CharacterSquareCatalog.slugForSortOrder(540));
+        // noelle DB row uses sort_order=550 with explicit slug; roster index 550 is unused
         assertNull(CharacterSquareCatalog.slugForSortOrder(550));
         assertNull(CharacterSquareCatalog.slugForSortOrder(0));
     }

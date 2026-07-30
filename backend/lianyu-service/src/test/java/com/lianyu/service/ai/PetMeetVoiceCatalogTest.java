@@ -31,7 +31,10 @@ class PetMeetVoiceCatalogTest {
 
     @Test
     void fixedLinesAreNonBlank() {
-        for (String slug : new String[]{"raiden", "ayaka", "ganyu", "klee", "elysia", "erii_uesugi"}) {
+        for (String slug : new String[]{
+                "raiden", "ayaka", "ganyu", "klee", "elysia", "erii_uesugi",
+                "yae_miko", "kokomi", "shenhe", "nahida", "hu_tao", "furina", "noelle", "kurumi"
+        }) {
             for (PetMeetVoiceCatalog.Kind kind : PetMeetVoiceCatalog.Kind.values()) {
                 String text = catalog.find(slug, kind).text().replaceAll("\\s+", "");
                 assertThat(text)
@@ -61,6 +64,12 @@ class PetMeetVoiceCatalogTest {
                 .isEqualTo("你是外来的人吗？外面的世界是什么样子的？我很少见到陌生人。");
         assertThat(catalog.find("erii_uesugi", PetMeetVoiceCatalog.Kind.ENTER).audioPath())
                 .isEqualTo("pet/voice/erii_uesugi/enter.wav");
+        assertThat(catalog.find("yae_miko", PetMeetVoiceCatalog.Kind.MEET).text())
+                .contains("八重神子");
+        assertThat(catalog.find("kurumi", PetMeetVoiceCatalog.Kind.MEET).text())
+                .contains("时崎狂三");
+        assertThat(catalog.find("noelle", PetMeetVoiceCatalog.Kind.ENTER).audioPath())
+                .isEqualTo("pet/voice/noelle/enter.wav");
     }
 
     @Test

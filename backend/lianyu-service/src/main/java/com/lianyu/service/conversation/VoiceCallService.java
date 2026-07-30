@@ -49,8 +49,21 @@ public class VoiceCallService {
     private static final String SEQ_KEY_PREFIX = "msg_seq:";
     private static final String VOICE_CALL_TURN_MARKER = "system/voice-call-turn";
     private static final String VOICE_CALL_SUMMARY_MARKER = "system/voice-call-summary";
-    /** V1: only Raiden voice call for testing. */
-    private static final Set<String> VOICE_CALL_PET_IDS = Set.of("raiden");
+    /**
+     * Voice-call allowlist: must have realtimeVoices mapping (HTTP fallback uses voices).
+     * Keep in sync with frontend {@code voiceCallPets.js}.
+     */
+    private static final Set<String> VOICE_CALL_PET_IDS = Set.of(
+            "raiden",
+            "yae_miko",
+            "kokomi",
+            "shenhe",
+            "nahida",
+            "hu_tao",
+            "furina",
+            "noelle",
+            "kurumi"
+    );
 
     private final ConversationMapper conversationMapper;
     private final MessageMapper messageMapper;
