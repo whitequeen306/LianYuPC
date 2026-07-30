@@ -25,6 +25,7 @@
     "nahida": "qwen-tts-vc-nahida_rt-voice-20260730202857080-f338",
     "hu_tao": "qwen-tts-vc-hu_tao_rt-voice-20260730202901352-ab2a",
     "furina": "qwen-tts-vc-furina_rt-voice-20260730202905511-2d03",
-    "noelle": "qwen-tts-vc-noelle_rt-voice-20260730202909351-ee80"
+    "noelle": "qwen-tts-vc-noelle_rt-voice-20260730202909351-ee80",
+    "elysia": "qwen-tts-vc-elysia_rt-voice-20260730224949832-f3df"
   }
 }

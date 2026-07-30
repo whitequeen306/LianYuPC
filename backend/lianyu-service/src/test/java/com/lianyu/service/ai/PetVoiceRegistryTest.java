@@ -26,6 +26,7 @@ class PetVoiceRegistryTest {
         assertTrue(registry.hasVoice("furina"));
         assertTrue(registry.hasVoice("noelle"));
         assertTrue(registry.hasRealtimeVoice("raiden"));
+        assertTrue(registry.hasRealtimeVoice("elysia"));
         assertTrue(registry.hasRealtimeVoice("yae_miko"));
         assertEquals("qwen3-tts-vc-2026-01-22", registry.getModel());
         assertEquals("qwen3-tts-vc-realtime-2026-01-15", registry.getRealtimeModel());
@@ -35,11 +36,15 @@ class PetVoiceRegistryTest {
         assertNull(registry.resolveHttpVoiceId("kurumi"));
         assertEquals("qwen-tts-vc-raiden_rt-voice-20260729051221572-94e4",
                 registry.resolveRealtimeVoiceId("raiden"));
+        assertEquals("qwen-tts-vc-elysia_rt-voice-20260730224949832-f3df",
+                registry.resolveRealtimeVoiceId("elysia"));
         assertNull(registry.resolveRealtimeVoiceId("kurumi"));
         assertNull(registry.resolveRealtimeVoiceId("klee"));
         assertNull(registry.resolveVoiceId("unknown-pet"));
         // HTTP and realtime IDs must stay distinct for the same pet
         assertTrue(!registry.resolveHttpVoiceId("raiden")
                 .equals(registry.resolveRealtimeVoiceId("raiden")));
+        assertTrue(!registry.resolveHttpVoiceId("elysia")
+                .equals(registry.resolveRealtimeVoiceId("elysia")));
     }
 }

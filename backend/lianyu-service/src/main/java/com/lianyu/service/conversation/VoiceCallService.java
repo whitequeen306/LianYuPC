@@ -55,6 +55,7 @@ public class VoiceCallService {
      */
     private static final Set<String> VOICE_CALL_PET_IDS = Set.of(
             "raiden",
+            "elysia",
             "yae_miko",
             "kokomi",
             "shenhe",

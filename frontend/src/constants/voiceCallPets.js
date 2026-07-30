@@ -1,6 +1,7 @@
 /** Pet ids allowed for duplex voice call (must match VoiceCallService.VOICE_CALL_PET_IDS). */
 export const VOICE_CALL_PET_IDS = Object.freeze([
   'raiden',
+  'elysia',
   'yae_miko',
   'kokomi',
   'shenhe',
