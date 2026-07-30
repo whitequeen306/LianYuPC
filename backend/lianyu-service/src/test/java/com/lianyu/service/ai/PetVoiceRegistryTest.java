@@ -21,7 +21,7 @@ class PetVoiceRegistryTest {
         assertTrue(registry.hasRealtimeVoice("raiden"));
         assertEquals("qwen3-tts-vc-2026-01-22", registry.getModel());
         assertEquals("qwen3-tts-vc-realtime-2026-01-15", registry.getRealtimeModel());
-        assertEquals("qwen-tts-vc-elysia-voice-20260714121404767-1982", registry.resolveHttpVoiceId("elysia"));
+        assertEquals("qwen-tts-vc-elysia-voice-20260730113705231-3dac", registry.resolveHttpVoiceId("elysia"));
         assertEquals("qwen-tts-vc-eriri-voice-20260720205936884-cd40", registry.resolveHttpVoiceId("erii_uesugi"));
         assertEquals("qwen-tts-vc-raiden-voice-20260616133012759-26cf", registry.resolveHttpVoiceId("raiden"));
         assertEquals("qwen-tts-vc-raiden_rt-voice-20260729051221572-94e4",
