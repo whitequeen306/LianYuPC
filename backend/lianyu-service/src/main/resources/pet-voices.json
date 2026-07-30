@@ -15,8 +15,7 @@
     "nahida": "qwen-tts-vc-nahida-voice-20260730202219495-2a69",
     "hu_tao": "qwen-tts-vc-hu_tao-voice-20260730202222738-0771",
     "furina": "qwen-tts-vc-furina-voice-20260730202225886-c676",
-    "noelle": "qwen-tts-vc-noelle-voice-20260730202229030-44f4",
-    "kurumi": "qwen-tts-vc-kurumi-voice-20260730202232102-d557"
+    "noelle": "qwen-tts-vc-noelle-voice-20260730202229030-44f4"
   },
   "realtimeVoices": {
     "raiden": "qwen-tts-vc-raiden_rt-voice-20260729051221572-94e4",
@@ -26,7 +25,6 @@
     "nahida": "qwen-tts-vc-nahida_rt-voice-20260730202857080-f338",
     "hu_tao": "qwen-tts-vc-hu_tao_rt-voice-20260730202901352-ab2a",
     "furina": "qwen-tts-vc-furina_rt-voice-20260730202905511-2d03",
-    "noelle": "qwen-tts-vc-noelle_rt-voice-20260730202909351-ee80",
-    "kurumi": "qwen-tts-vc-kurumi_rt-voice-20260730202914798-1cdd"
+    "noelle": "qwen-tts-vc-noelle_rt-voice-20260730202909351-ee80"
   }
 }

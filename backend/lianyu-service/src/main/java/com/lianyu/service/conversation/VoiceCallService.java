@@ -61,8 +61,7 @@ public class VoiceCallService {
             "nahida",
             "hu_tao",
             "furina",
-            "noelle",
-            "kurumi"
+            "noelle"
     );
 
     private final ConversationMapper conversationMapper;

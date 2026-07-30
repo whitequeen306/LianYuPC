@@ -8,7 +8,6 @@ export const VOICE_CALL_PET_IDS = Object.freeze([
   'hu_tao',
   'furina',
   'noelle',
-  'kurumi',
 ])
 
 export function isVoiceCallPet(petId) {
