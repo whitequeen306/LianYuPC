@@ -7,6 +7,7 @@ import {
   updateCharacter as apiUpdateCharacter
 } from '@/api/character'
 import { sanitizeCharacter, sanitizeCharacterSettings } from '@/utils/textEncoding'
+import { useNotificationsStore } from '@/stores/notifications'
 
 /** 会话内列表缓存 TTL（毫秒），写操作会立即失效 */
 const STALE_MS = 60_000
@@ -55,6 +56,7 @@ export const useCharactersStore = defineStore('characters', () => {
     await apiDeleteCharacter(id)
     list.value = list.value.filter(c => c.id !== id)
     lastFetchedAt = Date.now()
+    useNotificationsStore().purgeForCharacter(id)
   }
 
   async function update(id, data) {

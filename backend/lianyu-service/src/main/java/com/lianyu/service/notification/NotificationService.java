@@ -16,7 +16,9 @@ import com.lianyu.service.dto.PushSubscriptionRequest;
 import com.lianyu.service.dto.UnreadCountResponse;
 import com.lianyu.service.storage.FileStorageService;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -144,6 +146,14 @@ public class NotificationService {
                                                          String preview,
                                                          String type,
                                                          String actorAvatarUrl) {
+        // Character-linked alerts must not accumulate after the character is deleted
+        // (race with proactive/moments/diary jobs that already held conversation ids).
+        if (characterId != null && characterMapper.selectById(characterId) == null) {
+            log.debug("Skip notification for missing character: userId={}, characterId={}, type={}",
+                    userId, characterId, type);
+            return null;
+        }
+
         UserNotification notification = new UserNotification();
         notification.setUserId(userId);
         notification.setConversationId(conversationId);
@@ -173,6 +183,48 @@ public class NotificationService {
         return response;
     }
 
+    /**
+     * Remove notifications tied to a deleted character (and optionally its conversations).
+     * Pushes an updated unread count so open clients drop the backlog immediately.
+     */
+    public int deleteForCharacter(Long userId, Long characterId, Collection<Long> conversationIds) {
+        if (userId == null || characterId == null) {
+            return 0;
+        }
+        List<Long> convIds = conversationIds == null
+                ? List.of()
+                : conversationIds.stream().filter(Objects::nonNull).distinct().toList();
+        LambdaQueryWrapper<UserNotification> qw = new LambdaQueryWrapper<UserNotification>()
+                .eq(UserNotification::getUserId, userId)
+                .and(w -> {
+                    w.eq(UserNotification::getCharacterId, characterId);
+                    if (!convIds.isEmpty()) {
+                        w.or().in(UserNotification::getConversationId, convIds);
+                    }
+                });
+        int deleted = notificationMapper.delete(qw);
+        if (deleted > 0) {
+            pushUnreadCount(userId);
+            log.info("Cleared notifications for deleted character: userId={}, characterId={}, deleted={}",
+                    userId, characterId, deleted);
+        }
+        return deleted;
+    }
+
+    /** Remove notifications for a single conversation (e.g. conversation hard-delete). */
+    public int deleteForConversation(Long userId, Long conversationId) {
+        if (userId == null || conversationId == null) {
+            return 0;
+        }
+        int deleted = notificationMapper.delete(new LambdaQueryWrapper<UserNotification>()
+                .eq(UserNotification::getUserId, userId)
+                .eq(UserNotification::getConversationId, conversationId));
+        if (deleted > 0) {
+            pushUnreadCount(userId);
+        }
+        return deleted;
+    }
+
     public List<NotificationResponse> list(Long userId, boolean unreadOnly, int limit) {
         int realLimit = Math.min(Math.max(1, limit), 100);
         LambdaQueryWrapper<UserNotification> qw = new LambdaQueryWrapper<UserNotification>()
@@ -182,6 +234,7 @@ public class NotificationService {
         if (unreadOnly) {
             qw.eq(UserNotification::getIsRead, 0);
         }
+        excludeOrphanedCharacterNotifications(qw);
         return notificationMapper.selectList(qw).stream().map(this::toResponse).toList();
     }
 
@@ -314,10 +367,29 @@ public class NotificationService {
     }
 
     private Long getUnreadCountRaw(Long userId) {
-        Long count = notificationMapper.selectCount(new LambdaQueryWrapper<UserNotification>()
+        LambdaQueryWrapper<UserNotification> qw = new LambdaQueryWrapper<UserNotification>()
                 .eq(UserNotification::getUserId, userId)
-                .eq(UserNotification::getIsRead, 0));
+                .eq(UserNotification::getIsRead, 0);
+        excludeOrphanedCharacterNotifications(qw);
+        Long count = notificationMapper.selectCount(qw);
         return count == null ? 0L : count;
+    }
+
+    /**
+     * Community notifications keep {@code characterId = null}; character-linked rows whose
+     * character was deleted (pre-fix orphans) must not stay in the actionable backlog.
+     */
+    private void excludeOrphanedCharacterNotifications(LambdaQueryWrapper<UserNotification> qw) {
+        qw.and(w -> w.isNull(UserNotification::getCharacterId)
+                .or()
+                .inSql(UserNotification::getCharacterId, "SELECT id FROM `character`"));
+    }
+
+    private void pushUnreadCount(Long userId) {
+        messagingTemplate.convertAndSendToUser(
+                userId.toString(),
+                "/queue/notification-unread",
+                new UnreadCountResponse(getUnreadCountRaw(userId)));
     }
 
     private String resolveCharacterAvatarUrl(Long characterId) {

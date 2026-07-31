@@ -34,7 +34,9 @@ import com.lianyu.service.conversation.CityChangeFollowUpScheduler;
 import com.lianyu.service.conversation.SessionSummaryService;
 import com.lianyu.service.memory.MemoryCacheService;
 import com.lianyu.service.memory.MemoryWriter;
+import com.lianyu.service.notification.NotificationService;
 import com.lianyu.service.storage.FileStorageService;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -75,6 +77,7 @@ public class CharacterService {
     private final CityChangeFollowUpScheduler cityChangeFollowUpScheduler;
     private final SessionSummaryService sessionSummaryService;
     private final PetVoiceRegistry petVoiceRegistry;
+    private final NotificationService notificationService;
 
     @Value("${lianyu.character.max-per-user:80}")
     private int maxCharactersPerUser;
@@ -177,13 +180,24 @@ public class CharacterService {
         List<Conversation> directConversations = conversationMapper.selectList(new LambdaQueryWrapper<Conversation>()
                 .eq(Conversation::getUserId, userId)
                 .eq(Conversation::getCharacterId, characterId));
-        deleteConversations(directConversations);
-
         List<Conversation> groupConversations = conversationMapper.selectList(new LambdaQueryWrapper<Conversation>()
                 .eq(Conversation::getUserId, userId)
                 .eq(Conversation::getMode, "GROUP")
                 .inSql(Conversation::getId,
                         "select conversation_id from group_member where character_id = " + characterId));
+        List<Long> relatedConversationIds = new ArrayList<>();
+        for (Conversation c : directConversations) {
+            if (c.getId() != null) {
+                relatedConversationIds.add(c.getId());
+            }
+        }
+        for (Conversation c : groupConversations) {
+            if (c.getId() != null) {
+                relatedConversationIds.add(c.getId());
+            }
+        }
+        // Remove conversations first so schedulers stop selecting this character.
+        deleteConversations(directConversations);
         deleteConversations(groupConversations);
 
         List<MemoryMeta> memories = memoryMetaMapper.selectList(new LambdaQueryWrapper<MemoryMeta>()
@@ -211,6 +225,10 @@ public class CharacterService {
         messageMapper.delete(new LambdaQueryWrapper<Message>()
                 .eq(Message::getCharacterId, characterId));
         characterMapper.deleteById(characterId);
+
+        // After the character row is gone: wipe inbox backlog (and any in-flight race inserts).
+        // createAndPushNotification also refuses characterId that no longer exists.
+        notificationService.deleteForCharacter(userId, characterId, relatedConversationIds);
 
         if (avatarKey != null) {
             fileStorageService.deleteObjectQuietly(avatarKey);

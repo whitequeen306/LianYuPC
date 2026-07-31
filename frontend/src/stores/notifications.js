@@ -12,7 +12,11 @@ import { isViewingCommunityPage, isViewingConversation, requestActiveChatRefresh
 import { pushChatMessageToast } from '@/composables/useInAppMessageToast'
 import { getElectronAPI } from '@/utils/electron'
 import { navigateToNotification } from '@/composables/useNotificationNavigation'
-import { BELL_UNREAD_TYPES, countUnreadByTypes } from '@/constants/notificationTypes'
+import {
+  BELL_UNREAD_TYPES,
+  countUnreadByTypes,
+  filterOutCharacterNotifications,
+} from '@/constants/notificationTypes'
 import { catchUpCommunityPush } from '@/api/community'
 
 /** 动态 / 日记仍用 Element 站内通知 */
@@ -201,6 +205,12 @@ export const useNotificationsStore = defineStore('notifications', () => {
       lastSyncError.value = e
       console.warn('[notifications] markNotificationsByIds', e)
     }
+  }
+
+  /** Drop local backlog for a deleted character, then resync with server. */
+  function purgeForCharacter(characterId) {
+    latest.value = filterOutCharacterNotifications(latest.value, characterId)
+    void Promise.all([refreshUnreadCount(), refreshLatest()])
   }
 
   function connectWebSocket() {
@@ -424,6 +434,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
     markAllRead,
     markConversationRead,
     markNotificationsByIds,
+    purgeForCharacter,
     subscribeGroupChat,
     unsubscribeGroupChat,
     reconnectWebSocket,

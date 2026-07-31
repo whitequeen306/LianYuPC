@@ -99,6 +99,9 @@ public class ProactiveChatScheduler {
         List<ScoredCandidate> scored = new ArrayList<>();
         for (Conversation conv : candidates) {
             Character character = characterMap.get(conv.getCharacterId());
+            if (character == null) {
+                continue;
+            }
             CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
             Message lastMessage = latestMessageMap.get(conv.getId());
             Message lastUser = latestUserMessageMap.get(conv.getId());
@@ -185,6 +188,9 @@ public class ProactiveChatScheduler {
                 continue;
             }
             Character character = characterMap.get(conv.getCharacterId());
+            if (character == null) {
+                continue;
+            }
             CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
             if (!behavior.proactiveEnabled()) {
                 continue;
@@ -232,6 +238,9 @@ public class ProactiveChatScheduler {
                 continue;
             }
             Character character = characterMap.get(conv.getCharacterId());
+            if (character == null) {
+                continue;
+            }
             CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
             if (!behavior.proactiveEnabled()) {
                 continue;

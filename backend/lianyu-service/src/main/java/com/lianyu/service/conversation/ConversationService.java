@@ -240,6 +240,7 @@ public class ConversationService {
             groupMemberMapper.delete(new LambdaQueryWrapper<GroupMember>()
                     .eq(GroupMember::getConversationId, conversationId));
         }
+        notificationService.deleteForConversation(userId, conversationId);
         conversationMapper.deleteById(conversationId);
         redisTemplate.delete(List.of(
                 SEQ_KEY_PREFIX + conversationId,
