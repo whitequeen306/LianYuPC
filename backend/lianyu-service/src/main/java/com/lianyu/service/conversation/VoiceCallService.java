@@ -234,10 +234,15 @@ public class VoiceCallService {
         if (character == null) {
             throw new BusinessException(ErrorCode.CHARACTER_NOT_FOUND);
         }
+        VaultEntryResponse userVault = apiKeyVaultService.resolvePreferredUserVault(userId);
+        if (userVault == null) {
+            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
+                    "未配置文本模型，请在设置中添加");
+        }
         int msgLimit = clampHistoryMessageLimit(historyLimit);
         List<Message> history = recentVoiceCallTurnsInCurrentCall(conversationId, msgLimit);
         history = trimCurrentUserTurn(history, userText);
-        return buildVoiceAiRequest(userId, conversationId, character, history, userText);
+        return buildVoiceAiRequest(userId, conversationId, character, history, userText, userVault);
     }
 
     public java.util.concurrent.CompletableFuture<String> streamVoiceReply(
