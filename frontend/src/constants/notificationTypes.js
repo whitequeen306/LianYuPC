@@ -15,3 +15,14 @@ export function countUnreadByTypes(list, types) {
   }
   return count
 }
+
+/** Drop character-linked notifications after a character is deleted. */
+export function filterOutCharacterNotifications(list, characterId) {
+  if (characterId == null) return Array.isArray(list) ? list : []
+  const id = Number(characterId)
+  if (!Number.isFinite(id)) return Array.isArray(list) ? list : []
+  return (list || []).filter((n) => {
+    if (n?.characterId == null) return true
+    return Number(n.characterId) !== id
+  })
+}
