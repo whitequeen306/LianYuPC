@@ -165,6 +165,7 @@ public class SessionSummaryMerger {
     private String callModel(Long userId, String systemPrompt, String userContent) {
         AiChatRequest request = new AiChatRequest();
         request.setProvider(AiConstants.PLATFORM_PROVIDER);
+        request.setPlatformLogic(true);
         request.setModel(properties.getModel());
         request.setTemperature(0.1);
         List<MessageDto> dtos = new ArrayList<>();

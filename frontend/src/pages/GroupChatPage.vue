@@ -301,7 +301,6 @@ import {
 import { useCharactersStore } from '@/stores/characters'
 import { useConversationsStore } from '@/stores/conversations'
 import { listNotifications } from '@/api/notification'
-import { PLATFORM_PROVIDER } from '@/constants/ai'
 import { useProvidersStore } from '@/stores/providers'
 import { useNotificationsStore } from '@/stores/notifications'
 import { useLayoutStore } from '@/stores/layout'
@@ -540,14 +539,20 @@ async function sendGroupMessage() {
   const text = groupInput.value.trim()
   if (!text || wsStatus.value !== 'connected' || !activeGroup.value) return
 
+  const vault = providersStore.vaults[0]
+  if (!vault?.provider) {
+    ElMessage.warning('请先在设置中配置文本模型后再群聊')
+    return
+  }
+
   const userStore = await (async () => {
     const { useUserStore } = await import('@/stores/user')
     return useUserStore()
   })()
 
   const sent = notificationsStore.publishGroupMessage(activeGroup.value.id, {
-    provider: providersStore.vaults[0]?.provider || PLATFORM_PROVIDER,
-    model: providersStore.vaults[0]?.modelDefault || undefined,
+    provider: vault.provider,
+    model: vault.modelDefault || undefined,
     content: text
   })
   if (!sent) return

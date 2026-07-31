@@ -1,7 +1,6 @@
 package com.lianyu.service.moments;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.lianyu.common.constant.AiConstants;
 import com.lianyu.dao.entity.Character;
 import com.lianyu.dao.entity.MomentsComment;
 import com.lianyu.dao.entity.MomentsInteractionState;
@@ -11,11 +10,13 @@ import com.lianyu.dao.mapper.MomentsCommentMapper;
 import com.lianyu.dao.mapper.MomentsInteractionStateMapper;
 import com.lianyu.dao.mapper.MomentsPostMapper;
 import com.lianyu.service.ai.AiChatService;
+import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.ai.CharacterPromptBuilder;
 import com.lianyu.service.character.CharacterPreferenceResolver;
 import com.lianyu.service.dto.AiChatRequest;
 import com.lianyu.service.dto.ChatResult;
 import com.lianyu.service.dto.MessageDto;
+import com.lianyu.service.dto.VaultEntryResponse;
 import com.lianyu.service.memory.MemoryRetriever;
 import com.lianyu.service.support.OutputLanguageService;
 import com.lianyu.service.tools.ChatToolContext;
@@ -46,6 +47,7 @@ public class MomentsCommentOrchestrator {
     private final CharacterMapper characterMapper;
     private final MomentsCommentService momentsCommentService;
     private final AiChatService aiChatService;
+    private final ApiKeyVaultService apiKeyVaultService;
     private final com.lianyu.service.graph.ChatTurnFacade chatTurnFacade;
     private final CharacterPromptBuilder promptBuilder;
     private final MemoryRetriever memoryRetriever;
@@ -59,6 +61,7 @@ public class MomentsCommentOrchestrator {
                                       CharacterMapper characterMapper,
                                       @Lazy MomentsCommentService momentsCommentService,
                                       AiChatService aiChatService,
+                                      ApiKeyVaultService apiKeyVaultService,
                                       com.lianyu.service.graph.ChatTurnFacade chatTurnFacade,
                                       CharacterPromptBuilder promptBuilder,
                                       MemoryRetriever memoryRetriever,
@@ -71,6 +74,7 @@ public class MomentsCommentOrchestrator {
         this.characterMapper = characterMapper;
         this.momentsCommentService = momentsCommentService;
         this.aiChatService = aiChatService;
+        this.apiKeyVaultService = apiKeyVaultService;
         this.chatTurnFacade = chatTurnFacade;
         this.promptBuilder = promptBuilder;
         this.memoryRetriever = memoryRetriever;
@@ -561,8 +565,14 @@ public class MomentsCommentOrchestrator {
                 buildMomentsSceneGuard(audience, lang),
                 null);
 
+        VaultEntryResponse userVault = apiKeyVaultService.resolvePreferredUserVault(userId);
+        if (userVault == null) {
+            log.debug("Moments comment AI skipped: no user text model, userId={}", userId);
+            return null;
+        }
         AiChatRequest req = new AiChatRequest();
-        req.setProvider(AiConstants.PLATFORM_PROVIDER);
+        req.setProvider(userVault.getProvider());
+        req.setModel(userVault.getModelDefault());
         ChatToolContext.bindTo(req, character);
         List<MessageDto> messages = new ArrayList<>();
         MessageDto sys = new MessageDto();

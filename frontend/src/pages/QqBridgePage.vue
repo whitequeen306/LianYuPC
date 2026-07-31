@@ -154,9 +154,9 @@
               <el-select
                 v-model="bindingForm.provider"
                 style="width: 100%"
+                :placeholder="t('qqBridge.binding.providerPlaceholder')"
                 @change="onQqProviderChange"
               >
-                <el-option :label="PLATFORM_PROVIDER_LABEL" :value="PLATFORM_PROVIDER" />
                 <el-option
                   v-for="v in providersStore.vaults"
                   :key="v.provider"
@@ -172,7 +172,7 @@
                 filterable
                 allow-create
                 clearable
-                :disabled="bindingForm.provider === PLATFORM_PROVIDER"
+                :disabled="!bindingForm.provider"
                 :placeholder="t('qqBridge.binding.modelPlaceholder')"
                 style="width: 100%"
               >
@@ -421,8 +421,6 @@ import { useProvidersStore } from '@/stores/providers'
 import { fetchModels } from '@/api/ai'
 import {
   PLATFORM_PROVIDER,
-  PLATFORM_MODEL,
-  PLATFORM_PROVIDER_LABEL,
   VISION_MODEL_SUGGESTIONS,
 } from '@/constants/ai'
 
@@ -479,7 +477,7 @@ const savingReply = ref(false)
 const autoModeRef = ref(false)
 const bindingForm = reactive({
   characterId: '',
-  provider: PLATFORM_PROVIDER,
+  provider: '',
   model: '',
   visionModel: '',
   allowMode: 'allowlist',
@@ -504,7 +502,8 @@ watch(
     if (!s) return
     autoModeRef.value = s.hosting?.mode === 'auto'
     bindingForm.characterId = s.binding?.characterId || ''
-    bindingForm.provider = s.binding?.provider || PLATFORM_PROVIDER
+    const savedProvider = s.binding?.provider || ''
+    bindingForm.provider = savedProvider === PLATFORM_PROVIDER ? '' : savedProvider
     bindingForm.model = s.binding?.model || ''
     bindingForm.visionModel = s.binding?.visionModel || ''
     bindingForm.allowMode = s.binding?.allowMode === 'open' ? 'open' : 'allowlist'
@@ -622,7 +621,7 @@ function onCharDropdownVisible(isOpen) {
 
 async function loadQqModels(provider) {
   if (!provider || provider === PLATFORM_PROVIDER) {
-    qqModelOptions.value = [{ id: PLATFORM_MODEL, name: PLATFORM_MODEL }]
+    qqModelOptions.value = []
     return
   }
   try {
@@ -634,10 +633,11 @@ async function loadQqModels(provider) {
 }
 
 function onQqProviderChange(provider) {
-  if (provider === PLATFORM_PROVIDER) {
+  if (!provider || provider === PLATFORM_PROVIDER) {
+    bindingForm.provider = ''
     bindingForm.model = ''
     bindingForm.visionModel = ''
-    loadQqModels(PLATFORM_PROVIDER)
+    qqModelOptions.value = []
     return
   }
   const vault = providersStore.vaults.find((v) => v.provider === provider)
@@ -754,13 +754,17 @@ async function onSaveBinding() {
   try {
     // 按角色路由：清空 conversationId，桥接按 characterId 为每个 QQ 用户懒建专属会话，
     // 不再依赖固定会话号（清空上下文后会话失效时 404 自动 re-resolve，不受影响）。
-    const provider = bindingForm.provider || PLATFORM_PROVIDER
+    const provider = String(bindingForm.provider || '').trim()
+    if (!provider || provider === PLATFORM_PROVIDER) {
+      ElMessage.warning(t('qqBridge.binding.providerRequired'))
+      return
+    }
     await store.setSettings({
       binding: {
         conversationId: '',
         characterId: bindingForm.characterId.trim(),
         provider,
-        model: provider === PLATFORM_PROVIDER ? '' : String(bindingForm.model || '').trim(),
+        model: String(bindingForm.model || '').trim(),
         visionModel: String(bindingForm.visionModel || '').trim(),
         allowMode: bindingForm.allowMode,
         allowUsers: splitList(bindingForm.allowUsers),

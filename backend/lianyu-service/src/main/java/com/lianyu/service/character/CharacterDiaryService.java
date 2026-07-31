@@ -3,7 +3,6 @@ package com.lianyu.service.character;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lianyu.common.constant.AiConstants;
 import com.lianyu.common.i18n.OutputLanguage;
 import com.lianyu.dao.entity.Character;
 import com.lianyu.dao.entity.CharacterDiary;
@@ -14,10 +13,12 @@ import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.MessageMapper;
 import com.lianyu.service.ai.AiChatService;
+import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.ai.CharacterPromptBuilder;
 import com.lianyu.service.dto.AiChatRequest;
 import com.lianyu.service.dto.ChatResult;
 import com.lianyu.service.dto.MessageDto;
+import com.lianyu.service.dto.VaultEntryResponse;
 import com.lianyu.service.memory.MemoryRetriever;
 import com.lianyu.service.relationship.RelationshipStateService;
 import com.lianyu.service.notification.NotificationService;
@@ -61,6 +62,7 @@ public class CharacterDiaryService {
     private final ConversationMapper conversationMapper;
     private final MessageMapper messageMapper;
     private final AiChatService aiChatService;
+    private final ApiKeyVaultService apiKeyVaultService;
     private final com.lianyu.service.graph.ChatTurnFacade chatTurnFacade;
     private final CharacterPromptBuilder promptBuilder;
     private final MemoryRetriever memoryRetriever;
@@ -285,8 +287,16 @@ public class CharacterDiaryService {
             chatSummary.append(roleLabel).append(": ").append(trimmed).append("\n");
         }
 
+        VaultEntryResponse userVault = apiKeyVaultService.resolvePreferredUserVault(userId);
+        if (userVault == null) {
+            log.debug("Diary generation skipped: no user text model, userId={}, characterId={}",
+                    userId, character.getId());
+            return null;
+        }
+
         AiChatRequest aiReq = new AiChatRequest();
-        aiReq.setProvider(AiConstants.PLATFORM_PROVIDER);
+        aiReq.setProvider(userVault.getProvider());
+        aiReq.setModel(userVault.getModelDefault());
         aiReq.setTemperature(0.85);
         ChatToolContext.bindTo(aiReq, character);
 

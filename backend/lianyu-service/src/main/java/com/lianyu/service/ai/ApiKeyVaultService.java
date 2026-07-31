@@ -167,10 +167,9 @@ public class ApiKeyVaultService {
     }
 
     /**
-     * 对话时解析可用 Vault：
+     * 对话时解析可用 Vault（用户可见聊天路径）：
      * 1) provider 指定且非 platform：仅查用户私有配置；
-     * 2) provider 为空或 platform：仅走平台默认池（DEFAULT + provider=platform，轮询），
-     *    不再回退到用户最近更新的私有 Vault，避免 UI 选「平台默认」仍走自定义 Key。
+     * 2) provider 为空或 platform：不再返回平台 DEFAULT 池（须用户自有文本模型）。
      */
     public VaultEntryResponse resolveForChat(Long userId, String provider) {
         String target = trimToNull(provider);
@@ -189,25 +188,71 @@ public class ApiKeyVaultService {
             return toInternalResponse(userVault);
         }
 
+        log.info("AI vault resolve: branch=PLATFORM_CHAT_DISABLED, userId={}, provider={}",
+                userId, provider);
+        return null;
+    }
+
+    /**
+     * 内部逻辑处理专用：记忆抽取 / 会话摘要 / 群聊@裁决等，仍走平台 DEFAULT 池轮询。
+     */
+    public VaultEntryResponse resolveForLogic(Long userId) {
         List<ApiKeyVault> defaults = vaultMapper.selectList(new LambdaQueryWrapper<ApiKeyVault>()
                 .eq(ApiKeyVault::getVaultScope, DEFAULT_SCOPE)
                 .eq(ApiKeyVault::getEnabled, 1)
                 .eq(ApiKeyVault::getProvider, AiConstants.PLATFORM_PROVIDER)
                 .orderByAsc(ApiKeyVault::getId));
         if (defaults == null || defaults.isEmpty()) {
-            log.info("AI vault resolve: branch=DEFAULT_POOL_EMPTY, userId={}, provider={}",
-                    userId, provider);
+            log.info("AI vault resolve: branch=LOGIC_POOL_EMPTY, userId={}", userId);
             return null;
         }
         Long cursor = redisTemplate.opsForValue().increment(DEFAULT_POOL_CURSOR_KEY);
         int idx = Math.floorMod((cursor != null ? cursor.intValue() : 1) - 1, defaults.size());
         ApiKeyVault picked = defaults.get(idx);
         VaultEntryResponse response = toInternalResponse(picked);
-        log.info("AI vault resolve: branch=DEFAULT_POOL, userId={}, poolSize={}, index={}, vaultId={}, "
+        log.info("AI vault resolve: branch=LOGIC_DEFAULT_POOL, userId={}, poolSize={}, index={}, vaultId={}, "
                         + "baseUrl={}, modelDefault={}, key={}",
                 userId, defaults.size(), idx, picked.getId(), picked.getBaseUrl(), picked.getModelDefault(),
                 maskApiKey(response.getApiKey()));
         return response;
+    }
+
+    /** 用户是否已配置至少一套启用的自有文本模型（用于主动消息等静默跳过判断）。 */
+    public boolean hasEnabledUserVault(Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        return vaultMapper.exists(new LambdaQueryWrapper<ApiKeyVault>()
+                .eq(ApiKeyVault::getUserId, userId)
+                .eq(ApiKeyVault::getVaultScope, USER_SCOPE)
+                .eq(ApiKeyVault::getEnabled, 1)
+                .last("LIMIT 1"));
+    }
+
+    /**
+     * 取用户最近更新的启用 vault（主动消息 / 冷启动等无显式 provider 时选用）。
+     * 无配置时返回 null。
+     */
+    public VaultEntryResponse resolvePreferredUserVault(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        ApiKeyVault vault = vaultMapper.selectOne(new LambdaQueryWrapper<ApiKeyVault>()
+                .eq(ApiKeyVault::getUserId, userId)
+                .eq(ApiKeyVault::getVaultScope, USER_SCOPE)
+                .eq(ApiKeyVault::getEnabled, 1)
+                .orderByDesc(ApiKeyVault::getUpdatedAt)
+                .last("LIMIT 1"));
+        if (vault == null) {
+            return null;
+        }
+        return toInternalResponse(vault);
+    }
+
+    /** 请求 provider 是否为空或平台内置（不可再用于用户可见聊天）。 */
+    public static boolean isPlatformOrBlank(String provider) {
+        String target = trimToNull(provider);
+        return target == null || AiConstants.PLATFORM_PROVIDER.equalsIgnoreCase(target);
     }
 
     public String decryptKey(ApiKeyVault vault) {

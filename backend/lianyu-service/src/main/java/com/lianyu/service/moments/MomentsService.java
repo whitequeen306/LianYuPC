@@ -2,7 +2,6 @@ package com.lianyu.service.moments;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lianyu.common.base.ErrorCode;
-import com.lianyu.common.constant.AiConstants;
 import com.lianyu.common.exception.BusinessException;
 import com.lianyu.dao.entity.Character;
 import com.lianyu.dao.entity.Conversation;
@@ -15,6 +14,7 @@ import com.lianyu.dao.mapper.MessageMapper;
 import com.lianyu.dao.mapper.MomentsPostMapper;
 import com.lianyu.dao.mapper.UserMapper;
 import com.lianyu.service.ai.AiChatService;
+import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.ai.CharacterPromptBuilder;
 import com.lianyu.service.character.CharacterPreferenceResolver;
 import com.lianyu.service.character.CharacterRecentActivityService;
@@ -63,6 +63,7 @@ public class MomentsService {
     private final CharacterMapper characterMapper;
     private final UserMapper userMapper;
     private final AiChatService aiChatService;
+    private final ApiKeyVaultService apiKeyVaultService;
     private final com.lianyu.service.graph.ChatTurnFacade chatTurnFacade;
     private final CharacterPromptBuilder promptBuilder;
     private final MemoryRetriever memoryRetriever;
@@ -401,8 +402,14 @@ public class MomentsService {
                                    String systemPrompt,
                                    List<MessageDto> history,
                                    String userInstruction) {
+        VaultEntryResponse userVault = apiKeyVaultService.resolvePreferredUserVault(userId);
+        if (userVault == null) {
+            log.debug("Moments AI generation skipped: no user text model, userId={}", userId);
+            return null;
+        }
         AiChatRequest aiRequest = new AiChatRequest();
-        aiRequest.setProvider(AiConstants.PLATFORM_PROVIDER);
+        aiRequest.setProvider(userVault.getProvider());
+        aiRequest.setModel(userVault.getModelDefault());
         ChatToolContext.bindTo(aiRequest, character);
         List<MessageDto> messages = new ArrayList<>();
         messages.add(messageDto("system", systemPrompt));

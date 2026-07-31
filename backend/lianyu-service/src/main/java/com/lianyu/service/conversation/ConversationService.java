@@ -2,7 +2,6 @@ package com.lianyu.service.conversation;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lianyu.common.base.ErrorCode;
-import com.lianyu.common.constant.AiConstants;
 import com.lianyu.common.exception.BusinessException;
 import com.lianyu.common.util.UserInputSanitizer;
 import com.lianyu.dao.entity.Character;
@@ -19,6 +18,7 @@ import com.lianyu.dao.mapper.MessageMapper;
 import com.lianyu.dao.mapper.UserMapper;
 import com.lianyu.ai.graph.ChatTurnScene;
 import com.lianyu.service.ai.AiChatService;
+import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.ai.AssistantReplyService;
 import com.lianyu.service.ai.CharacterPromptBuilder;
 import com.lianyu.service.ai.PetMeetVoiceCatalog;
@@ -90,6 +90,7 @@ public class ConversationService {
     private final CharacterSquareTemplateMapper squareTemplateMapper;
     private final UserMapper userMapper;
     private final AiChatService aiChatService;
+    private final ApiKeyVaultService apiKeyVaultService;
     private final PetMeetVoiceCatalog petMeetVoiceCatalog;
     private final PetVoiceRegistry petVoiceRegistry;
     private final ChatTurnFacade chatTurnFacade;
@@ -267,6 +268,7 @@ public class ConversationService {
     }
 
     public MessageResponse sendMessage(Long userId, Long conversationId, SendMessageRequest request) {
+        requireUserTextProvider(request);
         Conversation conversation = findOwned(userId, conversationId);
         Character character = characterMapper.selectById(conversation.getCharacterId());
         if (character == null) {
@@ -333,6 +335,7 @@ public class ConversationService {
     }
 
     public SseEmitter sendMessageStream(Long userId, Long conversationId, SendMessageRequest request) {
+        requireUserTextProvider(request);
         Conversation conversation = findOwned(userId, conversationId);
         Character character = characterMapper.selectById(conversation.getCharacterId());
         if (character == null) {
@@ -444,6 +447,12 @@ public class ConversationService {
 
     @Transactional
     public List<MessageResponse> sendProactiveMessage(Long userId, Long conversationId, String hint) {
+        VaultEntryResponse userVault = resolveUserTextVaultOrNull(userId);
+        if (userVault == null) {
+            log.debug("Proactive message skipped: no user text model, userId={}, convId={}",
+                    userId, conversationId);
+            return List.of();
+        }
         Conversation conversation = findOwned(userId, conversationId);
         Character character = characterMapper.selectById(conversation.getCharacterId());
         if (character == null) {
@@ -476,6 +485,8 @@ public class ConversationService {
                 .userId(userId)
                 .conversationId(conversationId)
                 .character(character)
+                .provider(userVault.getProvider())
+                .model(userVault.getModelDefault())
                 .rawUserText(null)
                 .modelUserText(null)
                 .preparedMessages(prepared)
@@ -542,6 +553,12 @@ public class ConversationService {
                         character.getId());
             }
 
+            VaultEntryResponse userVault = resolveUserTextVaultOrNull(userId);
+            if (userVault == null) {
+                log.debug("Cold open text skipped: no user text model, convId={}", conversationId);
+                return;
+            }
+
             CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
             // Cold-open text: 1–2 short lines (not the full chat burst budget).
             int maxPieces = Math.min(2, Math.max(1, behavior.maxRepliesPerTurn()));
@@ -550,7 +567,8 @@ public class ConversationService {
 
             AiChatRequest aiRequest = new AiChatRequest();
             ChatToolContext.bindTo(aiRequest, character);
-            aiRequest.setProvider(AiConstants.PLATFORM_PROVIDER);
+            aiRequest.setProvider(userVault.getProvider());
+            aiRequest.setModel(userVault.getModelDefault());
             List<MessageDto> allMessages = new ArrayList<>();
             allMessages.add(buildSystemMessage(systemPrompt));
             allMessages.add(buildUserMessage(String.format("""
@@ -807,13 +825,20 @@ public class ConversationService {
             return;
         }
 
+        VaultEntryResponse userVault = resolveUserTextVaultOrNull(userId);
+        if (userVault == null) {
+            log.debug("Cold open follow-up skipped: no user text model, convId={}", conversationId);
+            return;
+        }
+
         String memoryContext = memoryRetriever.retrieveProfileContext(character.getId(), userId);
         String systemPrompt = proactiveSystemPrompt(userId, character, memoryContext, null);
         List<Message> history = getRecentMessages(conversationId, contextWindow);
 
         AiChatRequest aiRequest = new AiChatRequest();
         ChatToolContext.bindTo(aiRequest, character);
-        aiRequest.setProvider(AiConstants.PLATFORM_PROVIDER);
+        aiRequest.setProvider(userVault.getProvider());
+        aiRequest.setModel(userVault.getModelDefault());
         List<MessageDto> allMessages = new ArrayList<>();
         allMessages.add(buildSystemMessage(systemPrompt));
         for (Message msg : history) {
@@ -871,6 +896,11 @@ public class ConversationService {
             log.debug("City change follow-up skipped: convId={}, reason={}", conversationId, e.getMessage());
             return;
         }
+        VaultEntryResponse userVault = resolveUserTextVaultOrNull(userId);
+        if (userVault == null) {
+            log.debug("City change follow-up skipped: no user text model, convId={}", conversationId);
+            return;
+        }
 
         String memoryContext = memoryRetriever.retrieveProfileContext(character.getId(), userId);
         String relationshipContext = relationshipStateService.buildPromptContext(userId, character.getId());
@@ -884,7 +914,8 @@ public class ConversationService {
         List<Message> history = getRecentMessages(conversationId, contextWindow);
         AiChatRequest aiRequest = new AiChatRequest();
         ChatToolContext.bindTo(aiRequest, character);
-        aiRequest.setProvider(AiConstants.PLATFORM_PROVIDER);
+        aiRequest.setProvider(userVault.getProvider());
+        aiRequest.setModel(userVault.getModelDefault());
         List<MessageDto> allMessages = new ArrayList<>();
         allMessages.add(buildSystemMessage(systemPrompt));
         for (Message msg : history) {
@@ -1088,6 +1119,21 @@ public class ConversationService {
         if (isBlocked(character)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "该角色已被拉黑，无法发送消息");
         }
+    }
+
+    /** 用户可见聊天必须指定非 platform 的自有文本模型。 */
+    private void requireUserTextProvider(SendMessageRequest request) {
+        if (request == null || ApiKeyVaultService.isPlatformOrBlank(request.getProvider())) {
+            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
+                    "未配置文本模型，请在设置中添加");
+        }
+    }
+
+    /**
+     * 主动/冷启动等无显式 provider 时解析用户自有模型；无配置返回 null（调用方应静默跳过）。
+     */
+    private VaultEntryResponse resolveUserTextVaultOrNull(Long userId) {
+        return apiKeyVaultService.resolvePreferredUserVault(userId);
     }
 
     private void ensureCharacterAvailableForProactive(Character character) {

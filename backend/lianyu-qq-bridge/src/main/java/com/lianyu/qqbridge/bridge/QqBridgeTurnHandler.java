@@ -99,9 +99,15 @@ public class QqBridgeTurnHandler {
         long conversationId = b.getConversationId();
         long prevMaxSeq = currentMaxSeq(lianyuUserId, conversationId);
 
+        String provider = b.getProvider() == null ? "" : b.getProvider().trim();
+        if (provider.isEmpty() || AiConstants.PLATFORM_PROVIDER.equalsIgnoreCase(provider)) {
+            log.warn("QQ bridge skip: text provider not configured (must be user vault, not platform)");
+            sendFallback(ev, isPrivate, "请先在恋语 App 设置中配置文本模型，再使用 QQ 桥接聊天");
+            return;
+        }
+
         SendMessageRequest req = new SendMessageRequest();
-        req.setProvider((b.getProvider() == null || b.getProvider().isBlank())
-                ? AiConstants.PLATFORM_PROVIDER : b.getProvider());
+        req.setProvider(provider);
         if (b.getModel() != null && !b.getModel().isBlank()) {
             req.setModel(b.getModel());
         }

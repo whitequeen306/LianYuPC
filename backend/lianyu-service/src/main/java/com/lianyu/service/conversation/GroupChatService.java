@@ -17,6 +17,7 @@ import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.GroupMemberMapper;
 import com.lianyu.dao.mapper.MessageMapper;
 import com.lianyu.service.ai.AiChatService;
+import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.ai.AssistantReplyService;
 import com.lianyu.service.ai.AssistantReplySplitter;
 import com.lianyu.service.ai.CharacterPromptBuilder;
@@ -65,6 +66,7 @@ public class GroupChatService {
     private final CharacterMapper characterMapper;
     private final MessageMapper messageMapper;
     private final AiChatService aiChatService;
+    private final ApiKeyVaultService apiKeyVaultService;
     private final com.lianyu.service.graph.ChatTurnFacade chatTurnFacade;
     private final CharacterPromptBuilder promptBuilder;
     private final OutputLanguageService outputLanguageService;
@@ -185,6 +187,12 @@ public class GroupChatService {
                                              Long conversationId,
                                              Long characterId,
                                              String contextHint) {
+        VaultEntryResponse userVault = apiKeyVaultService.resolvePreferredUserVault(userId);
+        if (userVault == null) {
+            log.debug("Proactive group chat skipped: no user text model, userId={}, convId={}",
+                    userId, conversationId);
+            return false;
+        }
         Conversation conversation = findOwned(userId, conversationId);
         if (!"GROUP".equalsIgnoreCase(conversation.getMode())) {
             return false;
@@ -271,7 +279,8 @@ public class GroupChatService {
                     .scene(com.lianyu.ai.graph.ChatTurnScene.GROUP)
                     .userId(userId)
                     .character(character)
-                    .provider(AiConstants.PLATFORM_PROVIDER)
+                    .provider(userVault.getProvider())
+                    .model(userVault.getModelDefault())
                     .temperature(0.85)
                     .rawUserText(warmHint)
                     .preparedMessages(allMsgs)
@@ -286,9 +295,10 @@ public class GroupChatService {
             CharacterReply reply = new CharacterReply(
                     character.getId(), character.getName(), cleanedContent, result.getTotalTokens());
 
-            SendMessageRequest platformReq = new SendMessageRequest();
-            platformReq.setProvider(AiConstants.PLATFORM_PROVIDER);
-            persistProactiveGroupReplies(userId, conversationId, reply, members, mentionTarget, platformReq);
+            SendMessageRequest userReq = new SendMessageRequest();
+            userReq.setProvider(userVault.getProvider());
+            userReq.setModel(userVault.getModelDefault());
+            persistProactiveGroupReplies(userId, conversationId, reply, members, mentionTarget, userReq);
             return true;
         } catch (Exception e) {
             log.debug("Proactive group chat skipped: convId={}, characterId={}, reason={}",
@@ -324,6 +334,10 @@ public class GroupChatService {
     }
 
     public void handleGroupMessage(Long userId, Long conversationId, SendMessageRequest request) {
+        if (request == null || ApiKeyVaultService.isPlatformOrBlank(request.getProvider())) {
+            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
+                    "未配置文本模型，请在设置中添加");
+        }
         Conversation conversation = findOwned(userId, conversationId);
         if (!"GROUP".equalsIgnoreCase(conversation.getMode())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "该会话不是群聊");
@@ -957,6 +971,7 @@ public class GroupChatService {
 
             AiChatRequest judgeReq = new AiChatRequest();
             judgeReq.setProvider(AiConstants.PLATFORM_PROVIDER);
+            judgeReq.setPlatformLogic(true);
             judgeReq.setModel(mentionJudgeModel);
             judgeReq.setTemperature(0.1);
             judgeReq.setMessages(List.of(

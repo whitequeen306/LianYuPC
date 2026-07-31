@@ -1,6 +1,5 @@
 package com.lianyu.qqbridge.config;
 
-import com.lianyu.common.constant.AiConstants;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
@@ -11,7 +10,7 @@ import java.util.List;
  * QQ 桥配置（前缀 {@code lianyu.qq-bridge}）。默认 {@code enabled=false}。
  * <p>
  * 单人模式（Phase 1）：{@code binding} 把一个 QQ 号路由到一个已有的 LianYu 用户/会话。
- * provider 默认 {@link AiConstants#PLATFORM_PROVIDER}，即走运营者平台共享 AI key，QQ 用户无需自有 vault。
+ * provider 须为用户自有 vault 别名；空或 {@code platform} 时 QQ 聊天不可用。
  */
 @Data
 @Component
@@ -45,8 +44,8 @@ public class QqBridgeProperties {
         private long lianyuUserId = 0L;
         /** 路由到的 LianYu 会话 ID。 */
         private long conversationId = 0L;
-        /** AI provider，默认平台共享 key。 */
-        private String provider = AiConstants.PLATFORM_PROVIDER;
+        /** AI provider：须为用户自有 vault 别名；空或 platform 时 QQ 聊天不可用。 */
+        private String provider = "";
         /** 可选模型覆盖；留空则用会话/角色默认。 */
         private String model = "";
         /** 允许响应的群号；为空则不响应任何群消息。 */

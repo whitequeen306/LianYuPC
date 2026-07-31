@@ -186,8 +186,10 @@ lianyu:
     # 是否开放 /api/ai/chat 直连（默认关闭，走会话接口）
     direct-chat-enabled: ${LIANYU_AI_DIRECT_CHAT:false}
     direct-chat-daily-limit: 50
+    # 用户可见聊天不再走平台 DEFAULT 池；须用户自有文本模型。逻辑（记忆/摘要/@裁决）仍可用 DEFAULT 池
+    platform-chat-enabled: false
     platform:
-      # 平台聊天 key 仅走 MySQL api_key_vault DEFAULT 池（10 槽位 + Redis 轮询），勿在 .env 配置单 key
+      # 平台逻辑 key 仅走 MySQL api_key_vault DEFAULT 池（10 槽位 + Redis 轮询），勿在 .env 配置单 key
       api-keys: ""
     # 拼进 Prompt 的最近历史消息条数
     context-window: 32
@@ -441,8 +443,8 @@ lianyu:
       lianyu-user-id: ${LIANYU_QQ_BINDING_LIANYU_USER_ID:0}
       # 复用的会话 ID（单人模式固定一个会话；请填一个已存在的会话 ID）
       conversation-id: ${LIANYU_QQ_BINDING_CONVERSATION_ID:0}
-      # AI 提供方：固定 platform（复用运营方共享平台 key，QQ 用户无需个人 key）
-      provider: platform
+      # AI 提供方：须为用户自有 vault 别名（不再支持 platform）
+      provider: ${LIANYU_QQ_BINDING_PROVIDER:}
       # 指定模型（为空则走 provider 默认模型）
       model: ${LIANYU_QQ_BINDING_MODEL:}
       # 允许接管的群号列表（逗号分隔，如 111,222；留空 = 不处理任何群消息）

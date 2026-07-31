@@ -258,13 +258,16 @@
           <el-button
             type="primary"
             :icon="Promotion"
-            :disabled="(!inputText.trim() && !pendingImageUrl) || waitingReply || isBlocked || uploadingImage"
+            :disabled="(!inputText.trim() && !pendingImageUrl) || waitingReply || isBlocked || uploadingImage || !hasUserTextProvider"
             @click="handleSend"
           />
         </div>
-        <div v-if="!isCompact" class="input-toolbar">
+        <div v-if="!hasUserTextProvider" class="input-toolbar provider-gate">
+          <span class="provider-gate-text">聊天前请先配置自有文本模型</span>
+          <el-button type="primary" size="small" class="btn-cta" @click="goToAiSettings">去设置</el-button>
+        </div>
+        <div v-else-if="!isCompact" class="input-toolbar">
           <el-select v-model="currentProvider" size="small" placeholder="Provider" class="toolbar-select">
-            <el-option :label="PLATFORM_PROVIDER_LABEL" :value="PLATFORM_PROVIDER" />
             <el-option
               v-for="v in providersStore.vaults"
               :key="v.provider"
@@ -277,9 +280,8 @@
             size="small"
             placeholder="Model"
             class="toolbar-select toolbar-select--wide"
-            :allow-create="!isPlatformSelected"
+            allow-create
             filterable
-            :disabled="isPlatformSelected"
           >
             <el-option
               v-for="m in availableModels"
@@ -362,8 +364,6 @@ import { resolveMediaUrl } from '@/utils/media'
 import { nextCharacterAvatarTier, resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
 import {
   PLATFORM_PROVIDER,
-  PLATFORM_MODEL,
-  PLATFORM_PROVIDER_LABEL,
   VISION_MODEL_SUGGESTIONS,
 } from '@/constants/ai'
 import { normalizeHex } from '@/utils/themeColor'
@@ -617,43 +617,46 @@ function saveCharProviderPref(charId, provider, model, visionModel) {
   } catch { /* ignore */ }
 }
 
+function firstUserVault() {
+  return providersStore.vaults[0] || null
+}
+
+function applyUserVaultDefaults(vault) {
+  if (!vault) {
+    currentProvider.value = ''
+    currentModel.value = ''
+    currentVisionModel.value = ''
+    return
+  }
+  currentProvider.value = vault.provider
+  currentModel.value = vault.modelDefault || ''
+  currentVisionModel.value = vault.visionModelDefault || ''
+  loadModels(vault.provider)
+}
+
 /** 根据 activeCharacter 恢复该角色的 API Provider 选择记忆 */
 function restoreCharProviderPref() {
   const charId = activeCharacter.value?.id
+  const fallback = firstUserVault()
   if (!charId) {
-    currentProvider.value = PLATFORM_PROVIDER
-    currentModel.value = PLATFORM_MODEL
-    currentVisionModel.value = ''
-    loadModels(PLATFORM_PROVIDER)
+    applyUserVaultDefaults(fallback)
     return
   }
   const saved = loadCharProviderPref(charId)
   restoringProviderPref = true
-  if (saved && saved.provider) {
-    const providerStillExists = saved.provider === PLATFORM_PROVIDER
-      || providersStore.vaults.some(v => v.provider === saved.provider)
-    if (providerStillExists) {
-      currentProvider.value = saved.provider
-      currentModel.value = saved.model || ''
-      currentVisionModel.value = saved.visionModel || ''
-      if (saved.provider !== PLATFORM_PROVIDER) {
-        loadModels(saved.provider)
-      } else {
-        currentModel.value = PLATFORM_MODEL
-        loadModels(PLATFORM_PROVIDER)
-      }
-    } else {
-      currentProvider.value = PLATFORM_PROVIDER
-      currentModel.value = PLATFORM_MODEL
-      currentVisionModel.value = ''
-      saveCharProviderPref(charId, PLATFORM_PROVIDER, PLATFORM_MODEL, '')
-      loadModels(PLATFORM_PROVIDER)
-    }
+  if (saved && saved.provider && saved.provider !== PLATFORM_PROVIDER
+      && providersStore.vaults.some(v => v.provider === saved.provider)) {
+    currentProvider.value = saved.provider
+    currentModel.value = saved.model || ''
+    currentVisionModel.value = saved.visionModel || ''
+    loadModels(saved.provider)
+  } else if (fallback) {
+    applyUserVaultDefaults(fallback)
+    saveCharProviderPref(charId, fallback.provider, fallback.modelDefault || '', fallback.visionModelDefault || '')
   } else {
-    currentProvider.value = PLATFORM_PROVIDER
-    currentModel.value = PLATFORM_MODEL
+    currentProvider.value = ''
+    currentModel.value = ''
     currentVisionModel.value = ''
-    loadModels(PLATFORM_PROVIDER)
   }
   // nextTick 后重置 flag，此时 watcher 中的 model 覆盖已执行完毕
   nextTick(() => { restoringProviderPref = false })
@@ -669,8 +672,14 @@ let bounceTween = null
 let isUnmounted = false         // 卸载标志：流 finally 守卫，避免对已卸载实例写状态
 const burstTimers = []          // scheduleOpeningPollBurst 的 setTimeout 句柄，卸载时清理
 
-const isPlatformSelected = computed(() => currentProvider.value === PLATFORM_PROVIDER)
+const hasUserTextProvider = computed(() => providersStore.vaults.length > 0
+  && !!currentProvider.value
+  && currentProvider.value !== PLATFORM_PROVIDER)
 const isCompact = computed(() => route.meta.compact === true)
+
+function goToAiSettings() {
+  router.push({ name: 'Settings' })
+}
 const activeSettings = computed(() => activeCharacter.value?.settings || {})
 const isBlocked = computed(() => activeSettings.value.blocked === true)
 const voiceCallEnabled = computed(() => isVoiceCallPet(activeCharacter.value?.voicePetId))
@@ -874,13 +883,16 @@ onUnmounted(() => {
 })
 
 watch(currentProvider, (p) => {
-  if (!p) return
-  if (p === PLATFORM_PROVIDER) {
+  if (!p || p === PLATFORM_PROVIDER) {
     if (!restoringProviderPref) {
-      currentModel.value = PLATFORM_MODEL
-      currentVisionModel.value = ''
+      const fallback = firstUserVault()
+      if (fallback) applyUserVaultDefaults(fallback)
+      else {
+        currentProvider.value = ''
+        currentModel.value = ''
+        currentVisionModel.value = ''
+      }
     }
-    loadModels(p)
     return
   }
   const vault = providersStore.vaults.find(v => v.provider === p)
@@ -1381,11 +1393,12 @@ async function handleSend() {
   const imageUrl = pendingImageUrl.value
   if ((!text && !imageUrl) || waitingReply.value || isBlocked.value) return
 
-  if (!currentProvider.value) {
-    currentProvider.value = PLATFORM_PROVIDER
+  if (!hasUserTextProvider.value) {
+    ElMessage.warning('请先在设置中配置文本模型后再聊天')
+    return
   }
-  if (currentProvider.value !== PLATFORM_PROVIDER && !currentModel.value) {
-    ElMessage.warning('使用自定义 AI 配置时必须选择或填写模型名称')
+  if (!currentModel.value) {
+    ElMessage.warning('请选择或填写模型名称')
     return
   }
 
@@ -1422,7 +1435,7 @@ async function handleSend() {
 
   const streamPayload = {
     provider: currentProvider.value,
-    model: currentProvider.value === PLATFORM_PROVIDER ? undefined : (currentModel.value || undefined),
+    model: currentModel.value || undefined,
     visionModel: currentVisionModel.value || undefined,
     content: draftText || undefined,
     imageUrl: draftImageUrl || undefined
@@ -1432,7 +1445,7 @@ async function handleSend() {
   try {
     getElectronAPI()?.setLastChatModel?.({
       provider: currentProvider.value,
-      model: currentProvider.value === PLATFORM_PROVIDER ? '' : (currentModel.value || ''),
+      model: currentModel.value || '',
     })
   } catch { /* ignore */ }
 
@@ -2210,6 +2223,19 @@ function formatTime(ts) {
   margin-top: $space-2;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.provider-gate {
+  justify-content: space-between;
+  padding: $space-2 $space-3;
+  border-radius: $radius-lg;
+  background: var(--ly-bg-elevated);
+  backdrop-filter: blur(12px);
+}
+
+.provider-gate-text {
+  color: var(--ly-text-secondary);
+  font-size: 0.875rem;
 }
 
 .toolbar-select {

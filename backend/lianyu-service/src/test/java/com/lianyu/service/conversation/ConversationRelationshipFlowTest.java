@@ -82,6 +82,7 @@ class ConversationRelationshipFlowTest {
                 mock(com.lianyu.dao.mapper.CharacterSquareTemplateMapper.class),
                 userMapper,
                 aiChatService,
+                mock(com.lianyu.service.ai.ApiKeyVaultService.class),
                 mock(com.lianyu.service.ai.PetMeetVoiceCatalog.class),
                 mock(com.lianyu.service.ai.PetVoiceRegistry.class),
                 chatTurnFacade,

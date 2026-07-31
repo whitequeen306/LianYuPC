@@ -3,7 +3,6 @@ package com.lianyu.service.conversation;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lianyu.ai.graph.ChatTurnScene;
 import com.lianyu.common.base.ErrorCode;
-import com.lianyu.common.constant.AiConstants;
 import com.lianyu.common.exception.BusinessException;
 import com.lianyu.common.util.UserInputSanitizer;
 import com.lianyu.dao.entity.Character;
@@ -15,6 +14,7 @@ import com.lianyu.dao.mapper.CharacterSquareTemplateMapper;
 import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.MessageMapper;
 import com.lianyu.service.ai.AiChatService;
+import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.ai.AsrService;
 import com.lianyu.service.ai.DashScopeTtsService;
 import com.lianyu.service.ai.InnerThoughtFilter;
@@ -23,6 +23,7 @@ import com.lianyu.service.dto.AiChatRequest;
 import com.lianyu.service.dto.ChatResult;
 import com.lianyu.service.dto.MessageDto;
 import com.lianyu.service.dto.MessageResponse;
+import com.lianyu.service.dto.VaultEntryResponse;
 import com.lianyu.service.dto.VoiceCallEndRequest;
 import com.lianyu.service.dto.VoiceCallTurnResponse;
 import com.lianyu.service.graph.ChatTurnFacade;
@@ -73,6 +74,7 @@ public class VoiceCallService {
     private final PetVoiceRegistry petVoiceRegistry;
     private final DashScopeTtsService dashScopeTtsService;
     private final AiChatService aiChatService;
+    private final ApiKeyVaultService apiKeyVaultService;
     private final ChatTurnFacade chatTurnFacade;
     private final MemoryWriter memoryWriter;
     private final StringRedisTemplate redisTemplate;
@@ -326,7 +328,13 @@ public class VoiceCallService {
                                            Character character,
                                            List<Message> history,
                                            String userText) {
-        AiChatRequest aiRequest = buildVoiceAiRequest(userId, conversationId, character, history, userText);
+        VaultEntryResponse userVault = apiKeyVaultService.resolvePreferredUserVault(userId);
+        if (userVault == null) {
+            log.debug("Voice call reply skipped AI: no user text model, userId={}", userId);
+            return "我在听，你再说一遍。";
+        }
+        AiChatRequest aiRequest = buildVoiceAiRequest(
+                userId, conversationId, character, history, userText, userVault);
         ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
         String raw = chatResult.getContent() == null ? "" : chatResult.getContent().trim();
         String spoken = InnerThoughtFilter.strip(raw);
@@ -344,7 +352,8 @@ public class VoiceCallService {
                                               Long conversationId,
                                               Character character,
                                               List<Message> history,
-                                              String userText) {
+                                              String userText,
+                                              VaultEntryResponse userVault) {
         String voiceSuffix = "\n\n=== 语音通话（强制） ===\n"
                 + "你正在与用户进行实时语音通话，回复会被直接朗读。\n"
                 + "硬性要求：\n"
@@ -365,7 +374,8 @@ public class VoiceCallService {
                 null);
 
         AiChatRequest aiRequest = new AiChatRequest();
-        aiRequest.setProvider(AiConstants.PLATFORM_PROVIDER);
+        aiRequest.setProvider(userVault.getProvider());
+        aiRequest.setModel(userVault.getModelDefault());
         aiRequest.setTemperature(0.7);
         aiRequest.setMaxTokens(Math.max(256, maxTokens));
         List<MessageDto> allMessages = new ArrayList<>();
@@ -394,9 +404,15 @@ public class VoiceCallService {
         if (transcript.isBlank()) {
             return "短暂寒暄";
         }
+        VaultEntryResponse userVault = apiKeyVaultService.resolvePreferredUserVault(userId);
+        if (userVault == null) {
+            log.debug("Voice call summary skipped AI: no user text model, userId={}", userId);
+            return "短暂通话";
+        }
         try {
             AiChatRequest aiRequest = new AiChatRequest();
-            aiRequest.setProvider(AiConstants.PLATFORM_PROVIDER);
+            aiRequest.setProvider(userVault.getProvider());
+            aiRequest.setModel(userVault.getModelDefault());
             List<MessageDto> messages = new ArrayList<>();
             messages.add(messageDto("system",
                     "你是通话摘要助手。根据语音通话片段，用一句中文概括双方大概聊了什么。"

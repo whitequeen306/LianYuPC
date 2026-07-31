@@ -35,4 +35,10 @@ public class AiChatRequest {
 
     /** 当前轮用户消息附带图片时填充（MinIO objectKey 或公开路径），仅图片消息走多模态链路时使用 */
     private String imageUrl;
+
+    /**
+     * 为 true 时允许走平台 DEFAULT 池（仅记忆抽取 / 会话摘要 / 群聊@裁决等内部逻辑）。
+     * 用户可见的聊天、主动消息、角色生成等不得置 true。
+     */
+    private boolean platformLogic;
 }

@@ -47,7 +47,7 @@ class QqBridgeTurnHandlerTest {
         props = new QqBridgeProperties();
         props.getBinding().setLianyuUserId(1L);
         props.getBinding().setConversationId(42L);
-        props.getBinding().setProvider("platform");
+        props.getBinding().setProvider("my-deepseek");
         props.getReply().setMaxPieceGapMs(0L);
         props.getReply().setFallbackText("兜底");
         napCat = mock(NapCatClient.class);
@@ -107,7 +107,7 @@ class QqBridgeTurnHandlerTest {
         ArgumentCaptor<SendMessageRequest> req = ArgumentCaptor.forClass(SendMessageRequest.class);
         verify(conversationService).sendMessage(eq(1L), eq(42L), req.capture());
         assertEquals("你好", req.getValue().getContent());
-        assertEquals("platform", req.getValue().getProvider());
+        assertEquals("my-deepseek", req.getValue().getProvider());
 
         // 多段按 seq 升序逐条发回，首段不重复
         verify(napCat).sendPrivateMsg(10001L, "回复1");

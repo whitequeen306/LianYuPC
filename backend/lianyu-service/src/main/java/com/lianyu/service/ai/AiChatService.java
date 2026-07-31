@@ -189,10 +189,10 @@ public class AiChatService {
         final String model;
         final ChatModel chatModel;
         try {
-            vault = resolveVault(userId, request.getProvider());
+            vault = resolveVaultForRequest(userId, request);
             model = resolveModel(request, vault);
             logChatVaultUsage(userId, request.getProvider(), vault, model, "stream");
-            chatModel = buildChatModel(vault, model, vaultService.decryptKeyForChat(vault.getId()));
+            chatModel = buildChatModel(vault, model, resolveApiKeyForProvider(vault));
         } catch (RuntimeException e) {
             bulkhead.releasePermission();
             throw e;
@@ -283,10 +283,10 @@ public class AiChatService {
         final String model;
         final ChatModel chatModel;
         try {
-            vault = resolveVault(userId, request.getProvider());
+            vault = resolveVaultForRequest(userId, request);
             model = resolveModel(request, vault);
             logChatVaultUsage(userId, request.getProvider(), vault, model, "stream-tokens");
-            chatModel = buildChatModel(vault, model, vaultService.decryptKeyForChat(vault.getId()));
+            chatModel = buildChatModel(vault, model, resolveApiKeyForProvider(vault));
         } catch (RuntimeException e) {
             bulkhead.releasePermission();
             future.completeExceptionally(e);
@@ -386,9 +386,9 @@ public class AiChatService {
                         try {
                             return bulkhead.executeCallable(() ->
                                     circuitBreaker.executeCallable(() -> {
-                                        VaultEntryResponse vault = resolveVault(userId, request.getProvider());
+                                        VaultEntryResponse vault = resolveVaultForRequest(userId, request);
                                         String model = resolveModel(request, vault);
-                                        ChatModel chatModel = buildChatModel(vault, model, vaultService.decryptKeyForChat(vault.getId()));
+                                        ChatModel chatModel = buildChatModel(vault, model, resolveApiKeyForProvider(vault));
 
                                         return withChatToolScope(userId, request, () -> {
                                         List<Message> messages = toSpringMessages(request.getMessages());
@@ -770,18 +770,29 @@ public class AiChatService {
     }
 
     private VaultEntryResponse resolveVault(Long userId, String provider) {
+        return resolveVault(userId, provider, false);
+    }
+
+    /**
+     * @param allowPlatformLogic true 时允许走平台 DEFAULT 池（仅内部逻辑：记忆/摘要/@裁决）
+     */
+    private VaultEntryResponse resolveVault(Long userId, String provider, boolean allowPlatformLogic) {
         if (isPlatformProvider(provider)) {
-            VaultEntryResponse dbVault = vaultService.resolveForChat(userId, provider);
-            if (dbVault != null) {
-                log.info("AI chat vault: source=DB, userId={}, scope={}, vaultId={}, provider={}, baseUrl={}, "
-                                + "modelDefault={}, key={}",
-                        userId, dbVault.getVaultScope(), dbVault.getId(), dbVault.getProvider(),
-                        dbVault.getBaseUrl(), dbVault.getModelDefault(),
-                        ApiKeyVaultService.maskApiKey(dbVault.getApiKey()));
-                return dbVault;
+            if (!allowPlatformLogic) {
+                throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
+                        "未配置文本模型，请在设置中添加");
+            }
+            VaultEntryResponse logicVault = vaultService.resolveForLogic(userId);
+            if (logicVault != null) {
+                log.info("AI chat vault: source=LOGIC_POOL, userId={}, scope={}, vaultId={}, provider={}, "
+                                + "baseUrl={}, modelDefault={}, key={}",
+                        userId, logicVault.getVaultScope(), logicVault.getId(), logicVault.getProvider(),
+                        logicVault.getBaseUrl(), logicVault.getModelDefault(),
+                        ApiKeyVaultService.maskApiKey(logicVault.getApiKey()));
+                return logicVault;
             }
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
-                    "平台对话服务未就绪，请稍后再试");
+                    "平台逻辑服务未就绪，请稍后再试");
         }
         VaultEntryResponse userVault = vaultService.resolveForChat(userId, provider);
         if (userVault == null) {
@@ -803,7 +814,13 @@ public class AiChatService {
     }
 
     private VaultEntryResponse resolveVaultForGeneration(Long userId, String provider) {
-        return resolveVault(userId, provider);
+        return resolveVault(userId, provider, false);
+    }
+
+    private VaultEntryResponse resolveVaultForRequest(Long userId, AiChatRequest request) {
+        boolean allowLogic = request != null && request.isPlatformLogic();
+        String provider = request != null ? request.getProvider() : null;
+        return resolveVault(userId, provider, allowLogic);
     }
 
     /**
@@ -951,7 +968,7 @@ public class AiChatService {
             throw mapVisionProviderException(e);
         }
 
-        VaultEntryResponse textVault = resolveVaultForGeneration(userId, request.getProvider());
+        VaultEntryResponse textVault = resolveVaultForRequest(userId, request);
         String textModel = resolveModel(request, textVault);
         String textApiKey = resolveApiKeyForProvider(textVault);
         logChatVaultUsage(userId, request.getProvider(), textVault, textModel, "image-text");

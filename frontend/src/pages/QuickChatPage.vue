@@ -94,7 +94,8 @@ import { useCharactersStore } from '@/stores/characters'
 import { useNotificationsStore } from '@/stores/notifications'
 import { useConversationsStore } from '@/stores/conversations'
 import { getConversation, getMessages, sendMessageStream } from '@/api/conversation'
-import { PLATFORM_PROVIDER } from '@/constants/ai'
+import { useProvidersStore } from '@/stores/providers'
+import { ElMessage } from 'element-plus'
 import { humanizeError } from '@/utils/errorMessage'
 import CharacterAvatarImg from '@/components/CharacterAvatarImg.vue'
 import { getElectronAPI } from '@/utils/electron'
@@ -119,6 +120,7 @@ const { t, locale } = useI18n()
 const charactersStore = useCharactersStore()
 const notificationsStore = useNotificationsStore()
 const conversationsStore = useConversationsStore()
+const providersStore = useProvidersStore()
 
 const loading = ref(true)
 const waitingReply = ref(false)
@@ -265,6 +267,12 @@ async function handleSend() {
   const convId = currentConvId.value
   if (!text || !convId || waitingReply.value) return
 
+  const vault = providersStore.vaults[0]
+  if (!vault?.provider) {
+    ElMessage.warning('请先在设置中配置文本模型后再聊天')
+    return
+  }
+
   const draftText = text
   const userMsg = {
     _tempId: `u-${Date.now()}`,
@@ -285,7 +293,8 @@ async function handleSend() {
   const startedAt = Date.now()
   const signal = beginStream()
   const streamPayload = {
-    provider: PLATFORM_PROVIDER,
+    provider: vault.provider,
+    model: vault.modelDefault || undefined,
     content: draftText,
   }
 
@@ -375,6 +384,7 @@ watch(
 )
 
 onMounted(async () => {
+  await providersStore.fetchVaults().catch(() => {})
   const convId = route.params.id
   if (convId) await loadConversation(Number(convId))
   startPolling()
