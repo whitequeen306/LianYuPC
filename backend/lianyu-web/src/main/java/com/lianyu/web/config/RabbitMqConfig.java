@@ -25,6 +25,8 @@ public class RabbitMqConfig {
     public static final String QUEUE_EVENT_BROADCAST = "event.broadcast.queue";
     public static final String QUEUE_COMMUNITY_MODERATION = "community.moderation.queue";
     public static final String QUEUE_COMMUNITY_POST_NOTIFY = "community.post.notify.queue";
+    public static final String QUEUE_AI_BACKGROUND = "ai.background.queue";
+    public static final String QUEUE_AI_BACKGROUND_DLX = "ai.background.dlq";
 
     // Routing keys
     public static final String RK_MEMORY_SUMMARY = "memory.summary";
@@ -33,6 +35,8 @@ public class RabbitMqConfig {
     public static final String RK_EVENT_BROADCAST = "event.broadcast";
     public static final String RK_COMMUNITY_MODERATION = "community.moderation";
     public static final String RK_COMMUNITY_POST_NOTIFY = "community.post.notify";
+    public static final String RK_AI_BACKGROUND = "ai.background";
+    public static final String RK_AI_BACKGROUND_DLX = "ai.background.dlq";
 
     @Value("${lianyu.mq.memory.prefetch:20}")
     private int memoryPrefetch;
@@ -40,6 +44,13 @@ public class RabbitMqConfig {
     private int memoryConcurrentConsumers;
     @Value("${lianyu.mq.memory.max-concurrent-consumers:8}")
     private int memoryMaxConcurrentConsumers;
+
+    @Value("${lianyu.mq.ai-background.prefetch:4}")
+    private int aiBackgroundPrefetch;
+    @Value("${lianyu.mq.ai-background.concurrent-consumers:2}")
+    private int aiBackgroundConcurrentConsumers;
+    @Value("${lianyu.mq.ai-background.max-concurrent-consumers:4}")
+    private int aiBackgroundMaxConcurrentConsumers;
 
     @Bean
     public TopicExchange lianyuExchange() {
@@ -59,6 +70,21 @@ public class RabbitMqConfig {
     @Bean
     public Queue memorySummaryDeadLetterQueue() {
         return QueueBuilder.durable(QUEUE_MEMORY_SUMMARY_DLX).build();
+    }
+
+    @Bean
+    public Queue aiBackgroundQueue() {
+        return QueueBuilder.durable(QUEUE_AI_BACKGROUND)
+                .withArguments(Map.of(
+                        "x-dead-letter-exchange", EXCHANGE_LIANYU,
+                        "x-dead-letter-routing-key", RK_AI_BACKGROUND_DLX
+                ))
+                .build();
+    }
+
+    @Bean
+    public Queue aiBackgroundDeadLetterQueue() {
+        return QueueBuilder.durable(QUEUE_AI_BACKGROUND_DLX).build();
     }
 
     @Bean
@@ -89,6 +115,16 @@ public class RabbitMqConfig {
     @Bean
     public Binding memorySummaryDeadLetterBinding() {
         return BindingBuilder.bind(memorySummaryDeadLetterQueue()).to(lianyuExchange()).with(RK_MEMORY_SUMMARY_DLX);
+    }
+
+    @Bean
+    public Binding aiBackgroundBinding() {
+        return BindingBuilder.bind(aiBackgroundQueue()).to(lianyuExchange()).with(RK_AI_BACKGROUND);
+    }
+
+    @Bean
+    public Binding aiBackgroundDeadLetterBinding() {
+        return BindingBuilder.bind(aiBackgroundDeadLetterQueue()).to(lianyuExchange()).with(RK_AI_BACKGROUND_DLX);
     }
 
     @Bean
@@ -127,6 +163,22 @@ public class RabbitMqConfig {
         factory.setMaxConcurrentConsumers(Math.max(memoryConcurrentConsumers, memoryMaxConcurrentConsumers));
         factory.setPrefetchCount(Math.max(1, memoryPrefetch));
         // 失败后不回队列，交给 DLQ，避免 poison message 无限重试
+        factory.setDefaultRequeueRejected(false);
+        return factory;
+    }
+
+    /** 后台 AI：低 prefetch + 低并发，用队列背压控吞吐。 */
+    @Bean
+    public SimpleRabbitListenerContainerFactory aiBackgroundListenerContainerFactory(
+            ConnectionFactory connectionFactory,
+            Jackson2JsonMessageConverter converter) {
+        SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
+        factory.setConnectionFactory(connectionFactory);
+        factory.setMessageConverter(converter);
+        factory.setConcurrentConsumers(Math.max(1, aiBackgroundConcurrentConsumers));
+        factory.setMaxConcurrentConsumers(
+                Math.max(aiBackgroundConcurrentConsumers, aiBackgroundMaxConcurrentConsumers));
+        factory.setPrefetchCount(Math.max(1, aiBackgroundPrefetch));
         factory.setDefaultRequeueRejected(false);
         return factory;
     }

@@ -16,6 +16,8 @@ import com.lianyu.dao.mapper.UserMapper;
 import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.ai.CharacterPromptBuilder;
+import com.lianyu.service.ai.background.AiBackgroundPublisher;
+import com.lianyu.service.ai.background.AiBackgroundTask;
 import com.lianyu.service.character.CharacterPreferenceResolver;
 import com.lianyu.service.character.CharacterRecentActivityService;
 import com.lianyu.service.dto.*;
@@ -74,6 +76,7 @@ public class MomentsService {
     private final MomentsCommentOrchestrator momentsCommentOrchestrator;
     private final RelationshipStateService relationshipStateService;
     private final CharacterRecentActivityService characterRecentActivityService;
+    private final AiBackgroundPublisher aiBackgroundPublisher;
 
     @Value("${lianyu.moments.content-max-chars:180}")
     private int contentMaxChars;
@@ -219,7 +222,35 @@ public class MomentsService {
     }
 
     /**
-     * 定时任务入口：尝试为一条单聊会话生成朋友圈动态。
+     * 定时任务入口：入队异步生成朋友圈（真正写库在 {@link #processMomentsPostJob}）。
+     *
+     * @return 是否成功入队
+     */
+    public boolean enqueueGenerateForConversation(Conversation conversation, Character character) {
+        if (conversation == null || character == null) {
+            return false;
+        }
+        if (!"SINGLE".equalsIgnoreCase(conversation.getMode())) {
+            return false;
+        }
+        aiBackgroundPublisher.publish(AiBackgroundTask.momentsPost(
+                conversation.getUserId(), conversation.getId(), character.getId()));
+        return true;
+    }
+
+    /** MQ 消费：为会话生成一条朋友圈动态。 */
+    @Transactional
+    public void processMomentsPostJob(AiBackgroundTask task) {
+        if (task == null || task.conversationId() == null || task.characterId() == null) {
+            return;
+        }
+        Conversation conversation = conversationMapper.selectById(task.conversationId());
+        Character character = characterMapper.selectById(task.characterId());
+        tryGenerateForConversation(conversation, character, null, null);
+    }
+
+    /**
+     * 同步生成朋友圈（MQ 消费者 / 测试用）。
      *
      * @return 是否成功写入
      */
@@ -410,6 +441,7 @@ public class MomentsService {
         AiChatRequest aiRequest = new AiChatRequest();
         aiRequest.setProvider(userVault.getProvider());
         aiRequest.setModel(userVault.getModelDefault());
+        aiRequest.setBackground(true);
         ChatToolContext.bindTo(aiRequest, character);
         List<MessageDto> messages = new ArrayList<>();
         messages.add(messageDto("system", systemPrompt));

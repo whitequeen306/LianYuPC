@@ -135,9 +135,9 @@ public class MomentsScheduler {
                 Conversation conv = item.conv();
                 Long todayCount = todayPostCountMap.getOrDefault(
                         key(conv.getUserId(), conv.getCharacterId()), 0L);
-                if (momentsService.tryGenerateForConversation(
-                        conv, item.character(), item.lastUser(), todayCount)) {
+                if (momentsService.enqueueGenerateForConversation(conv, item.character())) {
                     created++;
+                    // 入队即占本轮配额；实际落库由消费者侧 cooldown/日限再校验
                     todayPostCountMap.put(
                             key(conv.getUserId(), conv.getCharacterId()), todayCount + 1);
                 }

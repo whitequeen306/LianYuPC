@@ -41,4 +41,10 @@ public class AiChatRequest {
      * 用户可见的聊天、主动消息、角色生成等不得置 true。
      */
     private boolean platformLogic;
+
+    /**
+     * 为 true 时走 {@code ai-background} bulkhead（朋友圈/日记/主动跟进等），
+     * 与前台交互池隔离，避免后台风暴饿死聊天。{@code platformLogic=true} 亦视作后台。
+     */
+    private boolean background;
 }

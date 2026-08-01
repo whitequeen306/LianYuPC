@@ -12,7 +12,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
  * chatStream 的 blockLast() 与 chatBlocking 的同步 chatModel.call 都是阻塞式 AI HTTP I/O；
  * 若用 CompletableFuture.runAsync/supplyAsync 不传 Executor，会落到 ForkJoinPool.commonPool()
  * （并发 = CPU 核 - 1），高并发流式对话时占满公共池、饿死全 JVM 其它异步任务（issue #12）。
- * bulkhead 已把 AI 并发限制在 16，故该池仅承接已获许可的任务，按 groupChatExecutor 同风格配置。
+ * 前台/后台 bulkhead 先限并发，本池仅承接已获许可的阻塞 AI I/O。
  */
 @Configuration
 public class AiStreamExecutorConfig {

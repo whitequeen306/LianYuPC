@@ -255,6 +255,12 @@ lianyu:
       prefetch: 20
       # @RabbitListener 的并发表达式（min-max）
       listener-concurrency: 2-8
+    ai-background:
+      # 后台 AI（朋友圈/日记/主动跟进等）队列背压；消费并发即主限流
+      concurrent-consumers: 2
+      max-concurrent-consumers: 4
+      prefetch: 4
+      listener-concurrency: 2-4
     push:
       # push 消费并发（用于 event.broadcast.queue）
       listener-concurrency: 1-4
@@ -481,13 +487,19 @@ knife4j:
   setting:
     language: zh_cn
 
-# AI 调用限流 / 熔断（实例名 ai-chat）
+# AI 调用限流 / 熔断
+# 聊天已走用户自有 key，bulkhead 只护本机线程/出站连接，不再为「平台内置额度」设紧上限。
+# ai-chat：交互前台（SSE/语音/破冰等）。
+# 后台 AI 主限流靠 ai.background.queue 背压；ai-background bulkhead 仅作消费线程内兜底。
 resilience4j:
   bulkhead:
     instances:
       ai-chat:
-        max-concurrent-calls: 16   # 全局 AI 并发上限（群聊多角色并行时共享此池）
-        max-wait-duration: 5s      # 排队等待上限
+        max-concurrent-calls: 48   # 前台交互并发（对齐 aiStreamExecutor 量级）
+        max-wait-duration: 5s
+      ai-background:
+        max-concurrent-calls: 6    # 略高于 mq.ai-background max consumers，兜底用
+        max-wait-duration: 2s
   time-limiter:
     instances:
       ai-chat:

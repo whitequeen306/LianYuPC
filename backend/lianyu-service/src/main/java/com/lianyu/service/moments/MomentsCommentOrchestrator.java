@@ -12,6 +12,8 @@ import com.lianyu.dao.mapper.MomentsPostMapper;
 import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.ai.CharacterPromptBuilder;
+import com.lianyu.service.ai.background.AiBackgroundPublisher;
+import com.lianyu.service.ai.background.AiBackgroundTask;
 import com.lianyu.service.character.CharacterPreferenceResolver;
 import com.lianyu.service.dto.AiChatRequest;
 import com.lianyu.service.dto.ChatResult;
@@ -54,6 +56,7 @@ public class MomentsCommentOrchestrator {
     private final OutputLanguageService outputLanguageService;
     private final StringRedisTemplate redisTemplate;
     private final ScheduledExecutorService scheduledExecutorService;
+    private final AiBackgroundPublisher aiBackgroundPublisher;
 
     public MomentsCommentOrchestrator(MomentsPostMapper momentsPostMapper,
                                       MomentsCommentMapper momentsCommentMapper,
@@ -67,7 +70,8 @@ public class MomentsCommentOrchestrator {
                                       MemoryRetriever memoryRetriever,
                                       OutputLanguageService outputLanguageService,
                                       StringRedisTemplate redisTemplate,
-                                      ScheduledExecutorService scheduledExecutorService) {
+                                      ScheduledExecutorService scheduledExecutorService,
+                                      AiBackgroundPublisher aiBackgroundPublisher) {
         this.momentsPostMapper = momentsPostMapper;
         this.momentsCommentMapper = momentsCommentMapper;
         this.interactionStateMapper = interactionStateMapper;
@@ -81,6 +85,7 @@ public class MomentsCommentOrchestrator {
         this.outputLanguageService = outputLanguageService;
         this.redisTemplate = redisTemplate;
         this.scheduledExecutorService = scheduledExecutorService;
+        this.aiBackgroundPublisher = aiBackgroundPublisher;
     }
 
     @Value("${lianyu.moments.comments.peer-pick-count:3}")
@@ -194,7 +199,7 @@ public class MomentsCommentOrchestrator {
     }
 
     /**
-     * 链式调度路人评论：上一位评论完成后再等 {@link #peerStaggerMinSec}~{@link #peerStaggerMaxSec} 秒才安排下一位。
+     * 链式调度路人评论：延迟后入队，AI 在 MQ 消费者里执行；完成后 stagger 再入队下一位。
      */
     private void schedulePeerCommentChain(Long postId, List<Long> peerIds, int index, long delayMs, int successCount) {
         if (index >= peerIds.size()) {
@@ -202,20 +207,64 @@ public class MomentsCommentOrchestrator {
             return;
         }
         Long peerId = peerIds.get(index);
-        scheduledExecutorService.schedule(() -> {
-            int updatedSuccess = successCount;
-            if (executePeerComment(postId, peerId)) {
-                updatedSuccess++;
-            }
-            if (index + 1 < peerIds.size()) {
-                long staggerMs = randomSeconds(peerStaggerMinSec, peerStaggerMaxSec) * 1000L;
-                schedulePeerCommentChain(postId, peerIds, index + 1, staggerMs, updatedSuccess);
-            } else {
-                finalizePeerRound(postId, updatedSuccess, peerIds);
-            }
-        }, delayMs, TimeUnit.MILLISECONDS);
-        log.debug("Moments peer comment scheduled: postId={}, peerIndex={}, delayMs={}",
+        scheduledExecutorService.schedule(() -> aiBackgroundPublisher.publish(
+                        AiBackgroundTask.momentsPeerComment(postId, peerId, index, successCount, peerIds)),
+                delayMs, TimeUnit.MILLISECONDS);
+        log.debug("Moments peer comment enqueued after delay: postId={}, peerIndex={}, delayMs={}",
                 postId, index, delayMs);
+    }
+
+    /**
+     * MQ 消费入口：执行一位路人评论，再推进链式调度。
+     */
+    public void processPeerCommentJob(AiBackgroundTask task) {
+        if (task == null || task.postId() == null || task.peerCharacterId() == null) {
+            return;
+        }
+        List<Long> peerIds = task.peerIds() == null ? List.of() : task.peerIds();
+        int index = task.peerIndex() == null ? 0 : task.peerIndex();
+        int successCount = task.successCount() == null ? 0 : task.successCount();
+
+        int updatedSuccess = successCount;
+        if (executePeerComment(task.postId(), task.peerCharacterId())) {
+            updatedSuccess++;
+        }
+        if (index + 1 < peerIds.size()) {
+            long staggerMs = randomSeconds(peerStaggerMinSec, peerStaggerMaxSec) * 1000L;
+            schedulePeerCommentChain(task.postId(), peerIds, index + 1, staggerMs, updatedSuccess);
+        } else {
+            finalizePeerRound(task.postId(), updatedSuccess, peerIds);
+        }
+    }
+
+    /**
+     * MQ 消费入口：发帖人回复评论。
+     */
+    public void processAuthorReplyJob(AiBackgroundTask task) {
+        if (task == null || task.postId() == null || task.commentId() == null) {
+            return;
+        }
+        Long postId = task.postId();
+        Long triggerCommentId = task.commentId();
+        int attempt = task.attempt() == null ? 0 : task.attempt();
+        if (!tryLock(postId)) {
+            // 锁冲突：稍后重试入队，避免直接丢任务
+            scheduleAuthorReply(postId, triggerCommentId, attempt);
+            return;
+        }
+        try {
+            MomentsPost post = momentsPostMapper.selectById(postId);
+            MomentsComment trigger = momentsCommentMapper.selectById(triggerCommentId);
+            if (post == null || trigger == null) {
+                return;
+            }
+            boolean ok = runAuthorReply(post, trigger);
+            if (!ok && attempt < 1) {
+                scheduleAuthorReply(postId, triggerCommentId, attempt + 1);
+            }
+        } finally {
+            unlock(postId);
+        }
     }
 
     private void finalizePeerRound(Long postId, int successCount, List<Long> pickedIds) {
@@ -332,25 +381,11 @@ public class MomentsCommentOrchestrator {
 
     private void scheduleAuthorReply(Long postId, Long triggerCommentId, int attempt) {
         long delayMs = randomSeconds(authorReplyMinSec, authorReplyMaxSec) * 1000L;
-        scheduledExecutorService.schedule(() -> {
-            if (!tryLock(postId)) {
-                return;
-            }
-            try {
-                MomentsPost post = momentsPostMapper.selectById(postId);
-                MomentsComment trigger = momentsCommentMapper.selectById(triggerCommentId);
-                if (post == null || trigger == null) {
-                    return;
-                }
-                boolean ok = runAuthorReply(post, trigger);
-                if (!ok && attempt < 1) {
-                    scheduleAuthorReply(postId, triggerCommentId, attempt + 1);
-                }
-            } finally {
-                unlock(postId);
-            }
-        }, delayMs, TimeUnit.MILLISECONDS);
-        log.debug("Moments author reply scheduled: postId={}, triggerCommentId={}, delaySec={}, attempt={}",
+        scheduledExecutorService.schedule(
+                () -> aiBackgroundPublisher.publish(
+                        AiBackgroundTask.momentsAuthorReply(postId, triggerCommentId, attempt)),
+                delayMs, TimeUnit.MILLISECONDS);
+        log.debug("Moments author reply enqueued after delay: postId={}, triggerCommentId={}, delaySec={}, attempt={}",
                 postId, triggerCommentId, delayMs / 1000, attempt);
     }
 
@@ -573,6 +608,7 @@ public class MomentsCommentOrchestrator {
         AiChatRequest req = new AiChatRequest();
         req.setProvider(userVault.getProvider());
         req.setModel(userVault.getModelDefault());
+        req.setBackground(true);
         ChatToolContext.bindTo(req, character);
         List<MessageDto> messages = new ArrayList<>();
         MessageDto sys = new MessageDto();

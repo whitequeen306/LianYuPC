@@ -19,6 +19,8 @@ import com.lianyu.service.ai.AsrService;
 import com.lianyu.service.ai.DashScopeTtsService;
 import com.lianyu.service.ai.InnerThoughtFilter;
 import com.lianyu.service.ai.PetVoiceRegistry;
+import com.lianyu.service.ai.background.AiBackgroundPublisher;
+import com.lianyu.service.ai.background.AiBackgroundTask;
 import com.lianyu.service.dto.AiChatRequest;
 import com.lianyu.service.dto.ChatResult;
 import com.lianyu.service.dto.MessageDto;
@@ -78,6 +80,7 @@ public class VoiceCallService {
     private final ChatTurnFacade chatTurnFacade;
     private final MemoryWriter memoryWriter;
     private final StringRedisTemplate redisTemplate;
+    private final AiBackgroundPublisher aiBackgroundPublisher;
 
     @Value("${lianyu.voice-call.max-reply-chars:48}")
     private int maxReplyChars;
@@ -286,7 +289,8 @@ public class VoiceCallService {
                 request == null || request.getTurns() == null ? List.of() : request.getTurns();
 
         String display = "我们进行了" + formatDurationZh(durationSeconds) + "的语音通话";
-        String summary = summarizeCall(userId, turns);
+        // 先用本地兜底摘要落库，AI 精炼摘要异步回填 context_content
+        String summary = fallbackSummary(turns);
         String contextContent = "（用户和角色进行了语音通话（" + summary + "））";
 
         long seq = nextSeq(conversationId);
@@ -299,6 +303,12 @@ public class VoiceCallService {
         assistantMsg.setContextContent(contextContent);
         assistantMsg.setAudioUrl("system/voice-call-summary");
         messageMapper.insert(assistantMsg);
+
+        String transcript = buildTranscript(turns);
+        if (!transcript.isBlank()) {
+            aiBackgroundPublisher.publish(AiBackgroundTask.voiceCallSummary(
+                    userId, conversationId, assistantMsg.getId(), transcript));
+        }
 
         memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
         log.info("Voice call ended: convId={}, durationSec={}, summaryLen={}",
@@ -314,6 +324,29 @@ public class VoiceCallService {
                 .audioUrl("system/voice-call-summary")
                 .createdAt(assistantMsg.getCreatedAt())
                 .build();
+    }
+
+    /** MQ 消费：用模型摘要回填通话气泡的 context_content。 */
+    public void processVoiceCallSummaryJob(AiBackgroundTask task) {
+        if (task == null || task.messageId() == null || task.userId() == null) {
+            return;
+        }
+        Message msg = messageMapper.selectById(task.messageId());
+        if (msg == null || !"ASSISTANT".equalsIgnoreCase(msg.getRole())) {
+            return;
+        }
+        if (msg.getAudioUrl() == null || !msg.getAudioUrl().contains("voice-call-summary")) {
+            return;
+        }
+        String summary = summarizeCallFromTranscript(task.userId(), task.transcript());
+        if (summary == null || summary.isBlank()) {
+            return;
+        }
+        Message patch = new Message();
+        patch.setId(msg.getId());
+        patch.setContextContent("（用户和角色进行了语音通话（" + summary + "））");
+        messageMapper.updateById(patch);
+        log.info("Voice call summary refined: messageId={}, summaryLen={}", msg.getId(), summary.length());
     }
 
     public String resolveVoicePetId(Character character) {
@@ -404,20 +437,20 @@ public class VoiceCallService {
         return aiRequest;
     }
 
-    private String summarizeCall(Long userId, List<VoiceCallEndRequest.VoiceCallTurnSnippet> turns) {
-        String transcript = buildTranscript(turns);
-        if (transcript.isBlank()) {
-            return "短暂寒暄";
+    private String summarizeCallFromTranscript(Long userId, String transcript) {
+        if (transcript == null || transcript.isBlank()) {
+            return null;
         }
         VaultEntryResponse userVault = apiKeyVaultService.resolvePreferredUserVault(userId);
         if (userVault == null) {
             log.debug("Voice call summary skipped AI: no user text model, userId={}", userId);
-            return "短暂通话";
+            return null;
         }
         try {
             AiChatRequest aiRequest = new AiChatRequest();
             aiRequest.setProvider(userVault.getProvider());
             aiRequest.setModel(userVault.getModelDefault());
+            aiRequest.setBackground(true);
             List<MessageDto> messages = new ArrayList<>();
             messages.add(messageDto("system",
                     "你是通话摘要助手。根据语音通话片段，用一句中文概括双方大概聊了什么。"
@@ -433,13 +466,11 @@ public class VoiceCallService {
             if (raw.length() > 40) {
                 raw = raw.substring(0, 40).trim();
             }
-            if (!raw.isBlank()) {
-                return raw;
-            }
+            return raw.isBlank() ? null : raw;
         } catch (Exception e) {
-            log.warn("Voice call summary LLM failed, using fallback: {}", e.toString());
+            log.warn("Voice call summary LLM failed: {}", e.toString());
+            return null;
         }
-        return fallbackSummary(turns);
     }
 
     private static String buildTranscript(List<VoiceCallEndRequest.VoiceCallTurnSnippet> turns) {

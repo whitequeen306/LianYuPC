@@ -854,6 +854,7 @@ public class ConversationService {
                 这是本条场景下系统允许你的**最后一次自动开口**；发完后安静等用户就好。"""));
 
         aiRequest.setMessages(allMessages);
+        aiRequest.setBackground(true);
         ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
         List<MessageResponse> replies = saveAssistantRepliesLimited(
                 conversationId, character, chatResult.getContent(), chatResult.getTotalTokens(), 1);
@@ -934,6 +935,7 @@ public class ConversationService {
                 """, previousCity, newCity, addressing, previousCity, newCity,
                 addressing, previousCity, newCity)));
         aiRequest.setMessages(allMessages);
+        aiRequest.setBackground(true);
 
         ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
         List<MessageResponse> replies = saveAssistantRepliesLimited(

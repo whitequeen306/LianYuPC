@@ -15,6 +15,8 @@ import com.lianyu.dao.mapper.MessageMapper;
 import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.ai.CharacterPromptBuilder;
+import com.lianyu.service.ai.background.AiBackgroundPublisher;
+import com.lianyu.service.ai.background.AiBackgroundTask;
 import com.lianyu.service.dto.AiChatRequest;
 import com.lianyu.service.dto.ChatResult;
 import com.lianyu.service.dto.MessageDto;
@@ -71,6 +73,7 @@ public class CharacterDiaryService {
     private final RelationshipStateService relationshipStateService;
     private final NotificationService notificationService;
     private final CharacterRecentActivityService characterRecentActivityService;
+    private final AiBackgroundPublisher aiBackgroundPublisher;
 
     @Value("${lianyu.diary.enabled:true}")
     private boolean diaryEnabled;
@@ -167,16 +170,25 @@ public class CharacterDiaryService {
                 continue;
             }
             try {
-                CharacterDiary diary = tryGenerateDiary(userId, characterId);
-                if (diary != null) {
-                    created++;
-                    log.info("Diary created: charId={}, title={}", characterId, diary.getTitle());
-                }
+                aiBackgroundPublisher.publish(AiBackgroundTask.characterDiary(userId, characterId));
+                created++;
             } catch (Exception e) {
-                log.debug("Diary generation skipped for charId={}, reason={}", characterId, e.getMessage());
+                log.debug("Diary enqueue skipped for charId={}, reason={}", characterId, e.getMessage());
             }
         }
         return created;
+    }
+
+    /** MQ 消费：生成一篇角色日记。 */
+    @Transactional
+    public void processDiaryJob(AiBackgroundTask task) {
+        if (task == null || task.userId() == null || task.characterId() == null) {
+            return;
+        }
+        CharacterDiary diary = tryGenerateDiary(task.userId(), task.characterId());
+        if (diary != null) {
+            log.info("Diary created: charId={}, title={}", task.characterId(), diary.getTitle());
+        }
     }
 
     @Transactional
@@ -298,6 +310,7 @@ public class CharacterDiaryService {
         aiReq.setProvider(userVault.getProvider());
         aiReq.setModel(userVault.getModelDefault());
         aiReq.setTemperature(0.85);
+        aiReq.setBackground(true);
         ChatToolContext.bindTo(aiReq, character);
 
         List<MessageDto> messages = new ArrayList<>();

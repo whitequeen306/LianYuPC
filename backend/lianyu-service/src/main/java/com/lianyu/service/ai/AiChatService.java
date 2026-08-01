@@ -77,7 +77,10 @@ public class AiChatService {
     private final ToolManager toolManager;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
-    private final Bulkhead bulkhead;
+    /** 前台交互（SSE / 语音 / 用户可见破冰等） */
+    private final Bulkhead interactiveBulkhead;
+    /** 后台任务（朋友圈 / 日记 / 记忆摘要 / platformLogic 等） */
+    private final Bulkhead backgroundBulkhead;
     private final TimeLimiter timeLimiter;
     private final CircuitBreaker circuitBreaker;
     private final ScheduledExecutorService scheduler;
@@ -117,6 +120,7 @@ public class AiChatService {
     private static final Duration EMPTY_CACHE_BASE_TTL = Duration.ofMinutes(2);
     private static final Duration CACHE_LOCK_TTL = Duration.ofSeconds(10);
     private static final String RESILIENCE_NAME = "ai-chat";
+    private static final String BACKGROUND_BULKHEAD_NAME = "ai-background";
     private static final int LANGUAGE_GATE_MAX_RETRIES = 2;
 
     /**
@@ -162,7 +166,8 @@ public class AiChatService {
         this.toolManager = toolManager;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
-        this.bulkhead = bulkheadRegistry.bulkhead(RESILIENCE_NAME);
+        this.interactiveBulkhead = bulkheadRegistry.bulkhead(RESILIENCE_NAME);
+        this.backgroundBulkhead = bulkheadRegistry.bulkhead(BACKGROUND_BULKHEAD_NAME);
         this.timeLimiter = timeLimiterRegistry.timeLimiter(RESILIENCE_NAME);
         this.circuitBreaker = circuitBreakerRegistry.circuitBreaker(RESILIENCE_NAME);
         this.scheduler = scheduler;
@@ -178,12 +183,14 @@ public class AiChatService {
     }
 
     public SseEmitter chatStream(Long userId, AiChatRequest request, StreamCallback callback) {
-        if (!bulkhead.tryAcquirePermission()) {
+        // 流式聊天始终走前台池；后台任务不得占用 SSE 槽位。
+        final Bulkhead lane = interactiveBulkhead;
+        if (!lane.tryAcquirePermission()) {
             throw new BusinessException(ErrorCode.AI_RATE_LIMITED, "对话服务繁忙，请稍后再试");
         }
 
         // 隔舱权限已在上面获取；同步 setup（resolveVault/buildChatModel 等）若抛异常必须释放，
-        // 否则 16 次失败即耗尽全局 AI 并发槽导致全线熔断（issue #4）。用 final 空白局部变量保证
+        // 否则连续失败会耗尽前台并发槽（issue #4）。用 final 局部变量保证
         // 赋值后可被下方异步 lambda 捕获，且 try/catch 覆盖所有同步抛出路径。
         final VaultEntryResponse vault;
         final String model;
@@ -194,7 +201,7 @@ public class AiChatService {
             logChatVaultUsage(userId, request.getProvider(), vault, model, "stream");
             chatModel = buildChatModel(vault, model, resolveApiKeyForProvider(vault));
         } catch (RuntimeException e) {
-            bulkhead.releasePermission();
+            lane.releasePermission();
             throw e;
         }
 
@@ -259,7 +266,7 @@ public class AiChatService {
                 log.error("AI chat stream fatal error", e);
                 finishSseError(emitter, resolveStreamErrorMessage(e), contentBuffer.toString(), callback);
             } finally {
-                bulkhead.releasePermission();
+                lane.releasePermission();
             }
         }, aiStreamExecutor);
 
@@ -274,7 +281,8 @@ public class AiChatService {
             AiChatRequest request,
             java.util.function.Consumer<String> onDelta) {
         CompletableFuture<String> future = new CompletableFuture<>();
-        if (!bulkhead.tryAcquirePermission()) {
+        final Bulkhead lane = interactiveBulkhead;
+        if (!lane.tryAcquirePermission()) {
             future.completeExceptionally(
                     new BusinessException(ErrorCode.AI_RATE_LIMITED, "对话服务繁忙，请稍后再试"));
             return future;
@@ -288,7 +296,7 @@ public class AiChatService {
             logChatVaultUsage(userId, request.getProvider(), vault, model, "stream-tokens");
             chatModel = buildChatModel(vault, model, resolveApiKeyForProvider(vault));
         } catch (RuntimeException e) {
-            bulkhead.releasePermission();
+            lane.releasePermission();
             future.completeExceptionally(e);
             return future;
         }
@@ -331,7 +339,7 @@ public class AiChatService {
                     future.completeExceptionally(e);
                 }
             } finally {
-                bulkhead.releasePermission();
+                lane.releasePermission();
             }
         }, aiStreamExecutor);
 
@@ -380,11 +388,12 @@ public class AiChatService {
     }
 
     public ChatResult chatBlocking(Long userId, AiChatRequest request) {
+        final Bulkhead lane = resolveBulkhead(request);
         try {
             return timeLimiter.executeCompletionStage(scheduler, () ->
                     CompletableFuture.supplyAsync(() -> {
                         try {
-                            return bulkhead.executeCallable(() ->
+                            return lane.executeCallable(() ->
                                     circuitBreaker.executeCallable(() -> {
                                         VaultEntryResponse vault = resolveVaultForRequest(userId, request);
                                         String model = resolveModel(request, vault);
@@ -432,6 +441,16 @@ public class AiChatService {
             log.error("AI chat error", cause);
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "消息发送失败，请稍后再试");
         }
+    }
+
+    /**
+     * 前台交互走 {@code ai-chat}；{@code background=true} 或 {@code platformLogic=true} 走 {@code ai-background}。
+     */
+    private Bulkhead resolveBulkhead(AiChatRequest request) {
+        if (request != null && (request.isBackground() || request.isPlatformLogic())) {
+            return backgroundBulkhead;
+        }
+        return interactiveBulkhead;
     }
 
     public List<ModelEntryDto> previewModels(Long userId, String baseUrl, String apiKey) {
@@ -902,8 +921,9 @@ public class AiChatService {
      * 一次调用内先输出结构化 JSON 再输出角色回复（由 {@link MultimodalOutputParser} 解析）。
      */
     public ChatResult chatImageBlocking(Long userId, AiChatRequest request) {
+        final Bulkhead lane = resolveBulkhead(request);
         try {
-            return bulkhead.executeCallable(() ->
+            return lane.executeCallable(() ->
                     circuitBreaker.executeCallable(() -> doImageChat(userId, request)));
         } catch (Exception e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
@@ -921,7 +941,8 @@ public class AiChatService {
      * 保证后处理（pieces 拆分、落库、关系/情绪更新）与纯文本链路一致。
      */
     public SseEmitter chatImageStream(Long userId, AiChatRequest request, StreamCallback callback) {
-        if (!bulkhead.tryAcquirePermission()) {
+        final Bulkhead lane = interactiveBulkhead;
+        if (!lane.tryAcquirePermission()) {
             throw new BusinessException(ErrorCode.AI_RATE_LIMITED, "对话服务繁忙，请稍后再试");
         }
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
@@ -940,7 +961,7 @@ public class AiChatService {
                 log.error("Multimodal stream error: userId={}", userId, e);
                 finishSseError(emitter, resolveStreamErrorMessage(e), "", callback);
             } finally {
-                bulkhead.releasePermission();
+                lane.releasePermission();
             }
         }, aiStreamExecutor);
         return emitter;
