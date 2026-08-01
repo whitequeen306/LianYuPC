@@ -26,6 +26,10 @@
     "hu_tao": "qwen-tts-vc-hu_tao_rt-voice-20260730202901352-ab2a",
     "furina": "qwen-tts-vc-furina_rt-voice-20260730202905511-2d03",
     "noelle": "qwen-tts-vc-noelle_rt-voice-20260730202909351-ee80",
-    "elysia": "qwen-tts-vc-elysia_rt-voice-20260730224949832-f3df"
+    "elysia": "qwen-tts-vc-elysia_rt-voice-20260730224949832-f3df",
+    "klee": "qwen-tts-vc-klee_rt-voice-20260801194458612-ede2",
+    "ganyu": "qwen-tts-vc-ganyu_rt-voice-20260801194502348-ef20",
+    "ayaka": "qwen-tts-vc-ayaka_rt-voice-20260801194506176-b212",
+    "erii_uesugi": "qwen-tts-vc-erii_uesugi_rt-voice-20260801194509981-21fb"
   }
 }

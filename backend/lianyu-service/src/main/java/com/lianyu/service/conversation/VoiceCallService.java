@@ -57,8 +57,12 @@ public class VoiceCallService {
      * Keep in sync with frontend {@code voiceCallPets.js}.
      */
     private static final Set<String> VOICE_CALL_PET_IDS = Set.of(
+            "klee",
+            "ganyu",
+            "ayaka",
             "raiden",
             "elysia",
+            "erii_uesugi",
             "yae_miko",
             "kokomi",
             "shenhe",
