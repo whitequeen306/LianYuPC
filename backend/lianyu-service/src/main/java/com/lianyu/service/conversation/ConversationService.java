@@ -472,14 +472,9 @@ public class ConversationService {
             dto.setContent(msg.getContent());
             prepared.add(dto);
         }
-        prepared.add(buildUserMessage(String.format("""
-                你现在要主动给用户发一段消息，而不是等待用户先开口。
-                要求：
-                1) 1~%d条短消息（符合你的性格，话多的可多条，话少的可一条）；
-                2) 如果是多条，请用空行分隔；
-                3) 语气自然，围绕最近上下文或角色设定关心用户；
-                4) 不要重复历史原话，不要机械问候。
-                """, maxPieces)));
+        // Providers often require a trailing user turn; keep it a short system trigger only.
+        // Long task text must stay in system — models were treating numbered「要求」as user「指令/乱码」。
+        prepared.add(buildUserMessage(PROACTIVE_USER_TRIGGER));
 
         ChatTurnResult chatResult = chatTurnFacade.invokeBlocking(ChatTurnCommand.builder()
                 .scene(ChatTurnScene.PROACTIVE)
@@ -492,6 +487,7 @@ public class ConversationService {
                 .modelUserText(null)
                 .preparedMessages(prepared)
                 .historyMessages(history)
+                .extraSystemSuffix(buildProactiveTaskSystemSuffix(maxPieces))
                 .streaming(false)
                 .build());
         List<MessageResponse> replies = saveAssistantReplies(
@@ -571,12 +567,16 @@ public class ConversationService {
             aiRequest.setProvider(userVault.getProvider());
             aiRequest.setModel(userVault.getModelDefault());
             List<MessageDto> allMessages = new ArrayList<>();
-            allMessages.add(buildSystemMessage(systemPrompt));
-            allMessages.add(buildUserMessage(String.format("""
-                            这是你和该用户在本会话里的第一次开口（会话中还没有任何历史消息）。
-                            请你主动先发 1～%d 条很短的破冰话，符合你的口吻与设定，自然一点，避免机械客服腔。
-                            若多条请用空行分隔；不要堆砌长段落。
-                            """, maxPieces)));
+            allMessages.add(buildSystemMessage(systemPrompt + String.format("""
+
+
+                    === 破冰任务（系统指令 · 不是用户发来的消息）===
+                    这是你和该用户在本会话里的第一次开口（会话中还没有任何历史消息）。
+                    请主动先发 1～%d 条很短的破冰话，符合口吻与设定，自然一点，避免机械客服腔。
+                    若多条请用空行分隔；不要堆砌长段落。
+                    禁止假装用户发了乱码、指令、报错或任何尚未出现的用户消息。
+                    """, maxPieces)));
+            allMessages.add(buildUserMessage(PROACTIVE_USER_TRIGGER));
             aiRequest.setMessages(allMessages);
 
             ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
@@ -841,17 +841,22 @@ public class ConversationService {
         aiRequest.setProvider(userVault.getProvider());
         aiRequest.setModel(userVault.getModelDefault());
         List<MessageDto> allMessages = new ArrayList<>();
-        allMessages.add(buildSystemMessage(systemPrompt));
+        allMessages.add(buildSystemMessage(systemPrompt + """
+
+
+                === 破冰跟进（系统指令 · 不是用户发来的消息）===
+                用户在你上一条之后仍未回复。请再发**唯一一条**非常简短的关心或轻轻一推（一两句话即可）。
+                不要重复上一句的意思，不要过于啰嗦。
+                这是本条场景下系统允许你的**最后一次自动开口**；发完后安静等用户就好。
+                禁止假装用户刚发了乱码、指令、报错或任何未在历史中真实出现的用户消息。
+                """));
         for (Message msg : history) {
             MessageDto dto = new MessageDto();
             dto.setRole(msg.getRole().toLowerCase());
             dto.setContent(msg.getContent());
             allMessages.add(dto);
         }
-        allMessages.add(buildUserMessage("""
-                用户在你上一条之后仍未回复。请再发**唯一一条**非常简短的关心或轻轻一推（一两句话即可）。
-                不要重复上一句的意思，不要过于啰嗦。
-                这是本条场景下系统允许你的**最后一次自动开口**；发完后安静等用户就好。"""));
+        allMessages.add(buildUserMessage(PROACTIVE_USER_TRIGGER));
 
         aiRequest.setMessages(allMessages);
         aiRequest.setBackground(true);
@@ -919,21 +924,25 @@ public class ConversationService {
         aiRequest.setProvider(userVault.getProvider());
         aiRequest.setModel(userVault.getModelDefault());
         List<MessageDto> allMessages = new ArrayList<>();
-        allMessages.add(buildSystemMessage(systemPrompt));
+        allMessages.add(buildSystemMessage(systemPrompt + String.format("""
+
+
+                === 城市变更关心（系统指令 · 不是用户发来的消息）===
+                系统检测到用户刚刚把自己的现实所在城市从「%s」改成了「%s」。
+                请主动发一条关心用户的消息，核心要问用户是不是搬家/换城市了、发生什么事了。
+                必须用称呼「%s」；必须明确提到从「%s」到「%s」的变化。
+                参考句式（可略作口语化，但不要改城市名、不要否认搬迁）：%s，我看你从%s来到了%s，是发生了什么事情吗？
+                只发 1 条，不要太长；不要重复历史原话。
+                禁止假装用户发了乱码、指令或报错。
+                """, previousCity, newCity, addressing, previousCity, newCity,
+                addressing, previousCity, newCity)));
         for (Message msg : history) {
             MessageDto dto = new MessageDto();
             dto.setRole(msg.getRole().toLowerCase());
             dto.setContent(msg.getContent());
             allMessages.add(dto);
         }
-        allMessages.add(buildUserMessage(String.format("""
-                系统检测到用户刚刚把自己的现实所在城市从「%s」改成了「%s」。
-                请你主动发一条关心用户的消息，核心要问用户是不是搬家/换城市了、发生什么事了。
-                必须用称呼「%s」；必须明确提到从「%s」到「%s」的变化。
-                参考句式（可略作口语化，但不要改城市名、不要否认搬迁）：%s，我看你从%s来到了%s，是发生了什么事情吗？
-                只发 1 条，不要太长；不要重复历史原话。
-                """, previousCity, newCity, addressing, previousCity, newCity,
-                addressing, previousCity, newCity)));
+        allMessages.add(buildUserMessage(PROACTIVE_USER_TRIGGER));
         aiRequest.setMessages(allMessages);
         aiRequest.setBackground(true);
 
@@ -1298,6 +1307,30 @@ public class ConversationService {
                 + "（刚才从 " + previousCity + " 变更而来。）\n\n"
                 + "对话历史里若仍写用户还在 " + previousCity + " 或基于旧城市的天气/地点，一律视为过时信息，必须以本条为准。\n"
                 + "你本次主动开口就是为了关心用户这次换城市，不要假装用户还在旧城市。";
+    }
+
+    /**
+     * Trailing user turn for proactive/cold-open paths that end on assistant history.
+     * Must stay short and clearly non-user; task details belong in system.
+     */
+    private static final String PROACTIVE_USER_TRIGGER = "（系统触发主动发言，用户未发送新消息。）";
+
+    /** System-only task block for scheduled proactive chat. */
+    private static String buildProactiveTaskSystemSuffix(int maxPieces) {
+        int pieces = Math.max(1, maxPieces);
+        return """
+
+
+                === 主动发言任务（系统指令 · 不是用户发来的消息）===
+                用户此刻没有发送任何新消息；你是在定时主动关心用户。
+                请发 1～%d 条短消息（符合性格；多条用空行分隔）。
+                语气自然，可围绕最近上下文或设定关心用户；不要重复历史原话，不要机械问候。
+
+                硬性禁止：
+                1. 禁止假装用户刚刚发了乱码、报错、代码、系统日志、奇怪「指令/要求」，或任何未在历史中真实出现的用户消息。
+                2. 禁止把本系统任务、编号要求、或 prompt 片段当作用户输入来吐槽/复述。
+                3. 历史里提过的旧事件（如设备/服务器故障）除非用户刚刚主动再提，否则不要当成此刻仍在发生，更不要说「又收到乱码」。
+                """.formatted(pieces);
     }
 
     /** 单聊主动开口（含破冰/跟进）：走 PROACTIVE scene（含真实时间/天气块）。 */

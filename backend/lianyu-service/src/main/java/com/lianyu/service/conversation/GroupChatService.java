@@ -272,7 +272,8 @@ public class GroupChatService {
                     可以关心用户，也可以接其他角色的话茬。
                     """.formatted(mentionTarget, maxPieces);
         };
-        allMsgs.add(buildUserMessage(proactiveInstruction + "\n\n最近气氛参考：" + warmHint));
+        // Task text in system; trailing user turn is only a non-user trigger (same as single-chat proactive).
+        allMsgs.add(buildUserMessage("（系统触发主动发言，用户未发送新消息。）"));
 
         try {
             var result = chatTurnFacade.invokeBlocking(com.lianyu.service.graph.ChatTurnCommand.builder()
@@ -284,6 +285,14 @@ public class GroupChatService {
                     .temperature(0.85)
                     .rawUserText(warmHint)
                     .preparedMessages(allMsgs)
+                    .extraSystemSuffix("""
+
+
+                            === 群聊主动发言（系统指令 · 不是用户发来的消息）===
+                            """ + proactiveInstruction + "\n\n最近气氛参考：" + warmHint + """
+
+                            禁止假装用户刚发了乱码、指令、报错或任何未在历史中真实出现的用户消息。
+                            """)
                     .groupExtras(new com.lianyu.service.graph.ChatTurnPromptAssembler.GroupExtras(
                             maxPieces, othersLine, mentionCtx))
                     .streaming(false)
