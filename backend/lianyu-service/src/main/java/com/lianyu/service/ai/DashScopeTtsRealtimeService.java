@@ -75,13 +75,23 @@ public class DashScopeTtsRealtimeService {
             listener.onError("no realtime voice mapping");
             return null;
         }
-        return startWithVoice(voice, resolveApiKey(), listener);
+        return startWithVoice(voice, resolveApiKey(), null, null, listener);
+    }
+
+    /** Start realtime TTS with voice id + API key (uses platform realtime model/WS). */
+    public Session startWithVoice(String voiceId, String apiKeyOverride, AudioListener listener) {
+        return startWithVoice(voiceId, apiKeyOverride, null, null, listener);
     }
 
     /**
-     * Start realtime TTS with an explicit voice id + API key (user custom DashScope VC).
+     * Start realtime TTS with explicit voice / key / model / API base (user custom DashScope VC).
      */
-    public Session startWithVoice(String voiceId, String apiKeyOverride, AudioListener listener) {
+    public Session startWithVoice(
+            String voiceId,
+            String apiKeyOverride,
+            String realtimeModelOverride,
+            String apiBaseUrl,
+            AudioListener listener) {
         if (!enabled) {
             listener.onError("TTS disabled");
             return null;
@@ -95,8 +105,19 @@ public class DashScopeTtsRealtimeService {
             listener.onError("missing API key");
             return null;
         }
-        String model = resolveRealtimeModel();
-        String url = realtimeWsUrl.replaceAll("/+$", "") + "?model=" + model;
+        String model = realtimeModelOverride != null && !realtimeModelOverride.isBlank()
+                ? realtimeModelOverride.trim()
+                : resolveRealtimeModel();
+        String wsBase = realtimeWsUrl;
+        if (apiBaseUrl != null && !apiBaseUrl.isBlank()) {
+            try {
+                wsBase = com.lianyu.service.voice.DashScopeCloudEndpointValidator.realtimeWsUrl(apiBaseUrl);
+            } catch (Exception e) {
+                listener.onError("invalid API base");
+                return null;
+            }
+        }
+        String url = wsBase.replaceAll("/+$", "") + "?model=" + model;
         Session session = new Session(listener, voiceId.trim());
         CompletableFuture<WebSocket> connectFuture = httpClient.newWebSocketBuilder()
                 .header("Authorization", "Bearer " + key)

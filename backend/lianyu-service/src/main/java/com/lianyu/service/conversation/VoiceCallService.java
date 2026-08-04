@@ -231,6 +231,8 @@ public class VoiceCallService {
                     null,
                     null,
                     null,
+                    null,
+                    null,
                     null);
         }
         UserCustomVoice custom = customVoiceService.findReady(userId, character.getId());
@@ -247,7 +249,9 @@ public class VoiceCallService {
                     customVoiceService.decryptApiKey(custom),
                     null,
                     null,
-                    null);
+                    custom.getEndpoint(),
+                    custom.getHttpModel(),
+                    custom.getRealtimeModel());
         }
         if (CustomVoiceProviders.GPTSOVITS_LOCAL.equalsIgnoreCase(custom.getProvider())
                 && custom.getEndpoint() != null && custom.getRefText() != null
@@ -260,7 +264,9 @@ public class VoiceCallService {
                     null,
                     fileStorageService.resolvePublicUrl(custom.getRefAudioObjectKey()),
                     custom.getRefText(),
-                    custom.getEndpoint());
+                    custom.getEndpoint(),
+                    null,
+                    null);
         }
         return null;
     }
@@ -273,7 +279,9 @@ public class VoiceCallService {
             return dashScopeTtsService.synthesizeWithVoice(
                     target.httpVoiceId() != null ? target.httpVoiceId() : target.realtimeVoiceId(),
                     target.apiKey(),
-                    text);
+                    text,
+                    target.httpModel(),
+                    target.endpoint());
         }
         if (target.mode() == VoiceCallTarget.Mode.OFFICIAL_PET) {
             return dashScopeTtsService.synthesizeForPet(target.petId(), text);

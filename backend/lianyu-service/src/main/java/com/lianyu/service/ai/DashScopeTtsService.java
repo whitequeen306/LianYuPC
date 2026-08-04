@@ -66,7 +66,12 @@ public class DashScopeTtsService {
     }
 
     public SynthesizedAudio synthesizeWithVoice(String voiceId, String apiKeyOverride, String text) {
-        byte[] bytes = synthesizeBytesWithVoice(voiceId, apiKeyOverride, text, "custom");
+        return synthesizeWithVoice(voiceId, apiKeyOverride, text, null, null);
+    }
+
+    public SynthesizedAudio synthesizeWithVoice(
+            String voiceId, String apiKeyOverride, String text, String httpModel, String apiBaseUrl) {
+        byte[] bytes = synthesizeBytesWithVoice(voiceId, apiKeyOverride, text, "custom", httpModel, apiBaseUrl);
         if (bytes == null || bytes.length == 0) {
             return null;
         }
@@ -81,10 +86,20 @@ public class DashScopeTtsService {
             log.info("Pet TTS skipped: no voice mapping for petId={}", petId);
             return null;
         }
-        return synthesizeBytesWithVoice(voice, null, text, petId);
+        return synthesizeBytesWithVoice(voice, null, text, petId, null, null);
     }
 
     public byte[] synthesizeBytesWithVoice(String voiceId, String apiKeyOverride, String text, String logLabel) {
+        return synthesizeBytesWithVoice(voiceId, apiKeyOverride, text, logLabel, null, null);
+    }
+
+    public byte[] synthesizeBytesWithVoice(
+            String voiceId,
+            String apiKeyOverride,
+            String text,
+            String logLabel,
+            String httpModelOverride,
+            String apiBaseUrl) {
         if (!enabled) {
             log.info("Pet TTS skipped: disabled");
             return null;
@@ -101,10 +116,22 @@ public class DashScopeTtsService {
             log.warn("Pet TTS skipped: missing DASHSCOPE API key");
             return null;
         }
+        String model = httpModelOverride != null && !httpModelOverride.isBlank()
+                ? httpModelOverride.trim()
+                : petVoiceRegistry.getModel();
+        String synthUrl = SYNTH_URL;
+        if (apiBaseUrl != null && !apiBaseUrl.isBlank()) {
+            try {
+                synthUrl = com.lianyu.service.voice.DashScopeCloudEndpointValidator.synthUrl(apiBaseUrl);
+            } catch (Exception e) {
+                log.warn("Pet TTS invalid api base for label={}", logLabel);
+                return null;
+            }
+        }
         Exception last = null;
         for (int attempt = 1; attempt <= 2; attempt++) {
             try {
-                String audioUrl = requestAudioUrl(key, petVoiceRegistry.getModel(), voiceId.trim(), text.trim());
+                String audioUrl = requestAudioUrl(key, model, voiceId.trim(), text.trim(), synthUrl);
                 if (audioUrl == null || audioUrl.isBlank()) {
                     return null;
                 }
@@ -197,7 +224,8 @@ public class DashScopeTtsService {
         return System.getenv("DASHSCOPE_API_KEY");
     }
 
-    private String requestAudioUrl(String key, String model, String voice, String text) throws Exception {
+    private String requestAudioUrl(String key, String model, String voice, String text, String synthUrl)
+            throws Exception {
         ObjectNode input = objectMapper.createObjectNode();
         input.put("text", text);
         input.put("voice", voice);
@@ -213,7 +241,7 @@ public class DashScopeTtsService {
                 .build();
 
         try (CloseableHttpClient client = HttpClients.custom().setDefaultRequestConfig(config).build()) {
-            HttpPost post = new HttpPost(SYNTH_URL);
+            HttpPost post = new HttpPost(synthUrl != null && !synthUrl.isBlank() ? synthUrl : SYNTH_URL);
             post.setHeader("Authorization", "Bearer " + key);
             post.setEntity(new StringEntity(objectMapper.writeValueAsString(payload), ContentType.APPLICATION_JSON));
 

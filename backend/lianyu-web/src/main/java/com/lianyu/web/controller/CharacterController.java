@@ -202,11 +202,14 @@ public class CharacterController {
             @RequestParam("audio") MultipartFile audio,
             @RequestParam(value = "apiKey", required = false) String apiKey,
             @RequestParam(value = "refText", required = false) String refText,
-            @RequestParam(value = "endpoint", required = false) String endpoint) {
+            @RequestParam(value = "endpoint", required = false) String endpoint,
+            @RequestParam(value = "httpModel", required = false) String httpModel,
+            @RequestParam(value = "realtimeModel", required = false) String realtimeModel) {
         long userId = StpUtil.getLoginIdAsLong();
         authRateLimiter.checkRateLimit("rate:custom-voice:", String.valueOf(userId),
                 10, Duration.ofHours(1), "语音通话配置过于频繁，请稍后再试");
-        return Result.ok(customVoiceService.upsert(userId, id, provider, audio, apiKey, refText, endpoint));
+        return Result.ok(customVoiceService.upsert(
+                userId, id, provider, audio, apiKey, refText, endpoint, httpModel, realtimeModel));
     }
 
     @Operation(summary = "关闭角色语音通话")

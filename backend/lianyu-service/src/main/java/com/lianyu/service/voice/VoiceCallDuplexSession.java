@@ -315,7 +315,8 @@ public class VoiceCallDuplexSession {
     private DashScopeTtsService.SynthesizedAudio synthesizeHttpFallback(String spoken) {
         if (target.isCustomDashScope()) {
             String voice = target.httpVoiceId() != null ? target.httpVoiceId() : target.realtimeVoiceId();
-            return ttsHttpService.synthesizeWithVoice(voice, target.apiKey(), spoken);
+            return ttsHttpService.synthesizeWithVoice(
+                    voice, target.apiKey(), spoken, target.httpModel(), target.endpoint());
         }
         return ttsHttpService.synthesizeForPet(target.petId(), spoken);
     }
@@ -356,7 +357,12 @@ public class VoiceCallDuplexSession {
             }
         };
         if (target.isCustomDashScope()) {
-            return ttsRealtimeService.startWithVoice(target.realtimeVoiceId(), target.apiKey(), listener);
+            return ttsRealtimeService.startWithVoice(
+                    target.realtimeVoiceId(),
+                    target.apiKey(),
+                    target.realtimeModel(),
+                    target.endpoint(),
+                    listener);
         }
         return ttsRealtimeService.startForPet(target.petId(), listener);
     }

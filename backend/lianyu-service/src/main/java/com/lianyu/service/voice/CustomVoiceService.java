@@ -34,13 +34,13 @@ public class CustomVoiceService {
         findOwnedCharacter(userId, characterId);
         UserCustomVoice row = findRow(userId, characterId);
         if (row == null) {
-            return null;
+            return emptyHints();
         }
         return toResponse(row);
     }
 
     /**
-     * Create/replace custom voice for a character. Requires audio + provider (+ key or local config).
+     * Create/replace custom voice. DashScope: apiBase + apiKey + models; Local: endpoint + refText.
      */
     @Transactional
     public CustomVoiceResponse upsert(
@@ -50,7 +50,9 @@ public class CustomVoiceService {
             MultipartFile audio,
             String apiKey,
             String refText,
-            String endpoint) {
+            String endpoint,
+            String httpModel,
+            String realtimeModel) {
         Character character = findOwnedCharacter(userId, characterId);
         String provider = CustomVoiceProviders.normalize(providerRaw);
         if (provider == null) {
@@ -59,7 +61,6 @@ public class CustomVoiceService {
         ValidatedSample sample = CustomVoiceAudioValidator.validate(audio);
 
         UserCustomVoice existing = findRow(userId, characterId);
-        // Delete previous cloud voices / object before replace
         if (existing != null) {
             cleanupRemote(existing);
         }
@@ -76,9 +77,11 @@ public class CustomVoiceService {
         row.setRealtimeVoiceId(null);
         row.setErrorMessage(null);
         row.setStatus(CustomVoiceProviders.STATUS_PENDING);
+        row.setHttpModel(null);
+        row.setRealtimeModel(null);
 
         if (CustomVoiceProviders.DASHSCOPE_VC.equals(provider)) {
-            enrollDashScope(row, character, sample, apiKey);
+            enrollDashScope(row, character, sample, apiKey, endpoint, httpModel, realtimeModel);
         } else if (CustomVoiceProviders.GPTSOVITS_LOCAL.equals(provider)) {
             configureLocal(row, refText, endpoint);
         }
@@ -105,7 +108,6 @@ public class CustomVoiceService {
         log.info("Custom voice deleted userId={} characterId={}", userId, characterId);
     }
 
-    /** READY custom voice for call resolution; null if none. */
     public UserCustomVoice findReady(Long userId, Long characterId) {
         UserCustomVoice row = findRow(userId, characterId);
         if (row == null || !CustomVoiceProviders.STATUS_READY.equalsIgnoreCase(row.getStatus())) {
@@ -114,7 +116,6 @@ public class CustomVoiceService {
         return row;
     }
 
-    /** Character ids with READY custom voice for this user (for list response flags). */
     public java.util.Set<Long> findReadyCharacterIds(Long userId) {
         if (userId == null) {
             return java.util.Set.of();
@@ -140,26 +141,41 @@ public class CustomVoiceService {
         }
     }
 
-    private void enrollDashScope(UserCustomVoice row, Character character, ValidatedSample sample, String apiKey) {
+    private void enrollDashScope(
+            UserCustomVoice row,
+            Character character,
+            ValidatedSample sample,
+            String apiKey,
+            String apiBaseUrl,
+            String httpModelRaw,
+            String realtimeModelRaw) {
         String key = apiKey == null ? "" : apiKey.trim();
         if (key.isBlank()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "DashScope 模式需提供 API Key");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "请提供 API Key");
         }
         if (key.length() < 16 || key.length() > 256) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "API Key 长度无效");
         }
+        String base = DashScopeCloudEndpointValidator.normalizeBaseUrl(apiBaseUrl);
+        String httpModel = DashScopeCloudEndpointValidator.normalizeModel(
+                httpModelRaw, DashScopeCloudEndpointValidator.RECOMMENDED_HTTP_MODEL, "HTTP");
+        String realtimeModel = DashScopeCloudEndpointValidator.normalizeModel(
+                realtimeModelRaw, DashScopeCloudEndpointValidator.RECOMMENDED_REALTIME_MODEL, "Realtime");
+
         row.setApiKeyEncrypted(jasyptUtil.encrypt(key));
         row.setKeyVersion(jasyptUtil.getCurrentVersion());
         row.setRefText(null);
-        row.setEndpoint(null);
+        row.setEndpoint(base);
+        row.setHttpModel(httpModel);
+        row.setRealtimeModel(realtimeModel);
 
         String preferred = "u" + row.getUserId() + "_c" + character.getId();
         try {
             String httpVoice = enrollmentClient.createVoice(
-                    key, DashScopeVoiceEnrollmentClient.HTTP_MODEL, preferred,
+                    key, base, httpModel, preferred,
                     sample.bytes(), sample.contentType(), "zh");
             String rtVoice = enrollmentClient.createVoice(
-                    key, DashScopeVoiceEnrollmentClient.REALTIME_MODEL, preferred + "_rt",
+                    key, base, realtimeModel, preferred + "_rt",
                     sample.bytes(), sample.contentType(), "zh");
             row.setHttpVoiceId(httpVoice);
             row.setRealtimeVoiceId(rtVoice);
@@ -167,14 +183,7 @@ public class CustomVoiceService {
         } catch (BusinessException e) {
             row.setStatus(CustomVoiceProviders.STATUS_FAILED);
             row.setErrorMessage(trimErr(e.getMessage()));
-            // Still persist FAILED row so UI can show reason; rethrow after save happens in caller
-            // Actually we save after this method — throw so transaction can still commit if we want
-            // Prefer: set FAILED and return without throw so user sees status
             log.warn("Custom DashScope enroll failed characterId={}: {}", character.getId(), e.getMessage());
-        }
-        if (CustomVoiceProviders.STATUS_FAILED.equals(row.getStatus())) {
-            // Keep FAILED record for UX; don't throw — caller returns response
-            return;
         }
     }
 
@@ -189,6 +198,8 @@ public class CustomVoiceService {
         String ep = LocalTtsEndpointValidator.normalizeAndValidate(endpoint);
         row.setRefText(text.trim());
         row.setEndpoint(ep);
+        row.setHttpModel(null);
+        row.setRealtimeModel(null);
         row.setApiKeyEncrypted(null);
         row.setKeyVersion(null);
         row.setHttpVoiceId(null);
@@ -202,8 +213,11 @@ public class CustomVoiceService {
         }
         if (CustomVoiceProviders.DASHSCOPE_VC.equalsIgnoreCase(row.getProvider())) {
             String key = decryptApiKey(row);
-            enrollmentClient.deleteVoiceQuietly(key, row.getHttpVoiceId());
-            enrollmentClient.deleteVoiceQuietly(key, row.getRealtimeVoiceId());
+            String base = row.getEndpoint() == null || row.getEndpoint().isBlank()
+                    ? DashScopeCloudEndpointValidator.DEFAULT_BASE
+                    : row.getEndpoint();
+            enrollmentClient.deleteVoiceQuietly(key, base, row.getHttpVoiceId());
+            enrollmentClient.deleteVoiceQuietly(key, base, row.getRealtimeVoiceId());
         }
     }
 
@@ -222,6 +236,14 @@ public class CustomVoiceService {
         return entity;
     }
 
+    private CustomVoiceResponse emptyHints() {
+        return CustomVoiceResponse.builder()
+                .recommendedApiBase(DashScopeCloudEndpointValidator.DEFAULT_BASE)
+                .recommendedHttpModel(DashScopeCloudEndpointValidator.RECOMMENDED_HTTP_MODEL)
+                .recommendedRealtimeModel(DashScopeCloudEndpointValidator.RECOMMENDED_REALTIME_MODEL)
+                .build();
+    }
+
     private CustomVoiceResponse toResponse(UserCustomVoice row) {
         boolean ready = CustomVoiceProviders.STATUS_READY.equalsIgnoreCase(row.getStatus());
         boolean voiceCallReady = ready && (
@@ -238,8 +260,13 @@ public class CustomVoiceService {
                 .refAudioUrl(fileStorageService.resolvePublicUrl(row.getRefAudioObjectKey()))
                 .refText(row.getRefText())
                 .endpoint(row.getEndpoint())
+                .httpModel(row.getHttpModel())
+                .realtimeModel(row.getRealtimeModel())
                 .hasApiKey(row.getApiKeyEncrypted() != null && !row.getApiKeyEncrypted().isBlank())
                 .voiceCallReady(voiceCallReady)
+                .recommendedApiBase(DashScopeCloudEndpointValidator.DEFAULT_BASE)
+                .recommendedHttpModel(DashScopeCloudEndpointValidator.RECOMMENDED_HTTP_MODEL)
+                .recommendedRealtimeModel(DashScopeCloudEndpointValidator.RECOMMENDED_REALTIME_MODEL)
                 .build();
     }
 

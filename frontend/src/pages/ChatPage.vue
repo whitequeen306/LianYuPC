@@ -682,9 +682,14 @@ function goToAiSettings() {
 }
 const activeSettings = computed(() => activeCharacter.value?.settings || {})
 const isBlocked = computed(() => activeSettings.value.blocked === true)
+/** User-created (non-square) characters always show the call button; square pets only if allowlisted. */
+const isUserCreatedCharacter = computed(() => {
+  const c = activeCharacter.value
+  if (!c) return false
+  return c.sourceTemplateId == null || c.sourceTemplateId === undefined
+})
 const voiceCallEnabled = computed(() =>
-  isVoiceCallPet(activeCharacter.value?.voicePetId)
-  || activeCharacter.value?.customVoiceReady === true)
+  isVoiceCallPet(activeCharacter.value?.voicePetId) || isUserCreatedCharacter.value)
 const showInnerThoughts = computed(() => resolveShowInnerThoughts(activeSettings.value))
 
 const showHeaderTyping = computed(() => awaitingOpening.value || waitingReply.value)
@@ -1359,6 +1364,15 @@ async function toggleVoiceInput() {
 
 function openVoiceCall() {
   if (!voiceCallEnabled.value || !currentConvId.value) return
+  // Square/official: already gated by isVoiceCallPet. User-created: must configure first.
+  if (isUserCreatedCharacter.value && activeCharacter.value?.customVoiceReady !== true) {
+    ElMessage.warning('请先在角色设置中启用语音通话（需提供模型与参考音频）')
+    const id = activeCharacter.value?.id
+    if (id) {
+      router.push({ path: `/app/characters/${id}/detail` })
+    }
+    return
+  }
   if (voiceInputListening.value) {
     voiceInputListening.value = false
     void stopVoiceDuplex()

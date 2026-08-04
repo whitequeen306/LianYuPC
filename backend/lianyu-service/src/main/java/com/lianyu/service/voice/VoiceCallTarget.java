@@ -11,7 +11,10 @@ public record VoiceCallTarget(
         String apiKey,
         String refAudioUrl,
         String refText,
-        String endpoint
+        /** Local SoVITS endpoint, or DashScope API origin. */
+        String endpoint,
+        String httpModel,
+        String realtimeModel
 ) {
     public enum Mode {
         OFFICIAL_PET,

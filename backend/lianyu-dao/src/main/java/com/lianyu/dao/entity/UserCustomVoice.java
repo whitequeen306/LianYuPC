@@ -21,7 +21,12 @@ public class UserCustomVoice {
     private String realtimeVoiceId;
     private String refAudioObjectKey;
     private String refText;
+    /** Local SoVITS base, or DashScope API origin (https://dashscope.aliyuncs.com). */
     private String endpoint;
+    /** DashScope HTTP VC model (user-provided; UI shows recommended default). */
+    private String httpModel;
+    /** DashScope realtime VC model (user-provided; UI shows recommended default). */
+    private String realtimeModel;
     private String apiKeyEncrypted;
     private String keyVersion;
     /** PENDING | READY | FAILED */

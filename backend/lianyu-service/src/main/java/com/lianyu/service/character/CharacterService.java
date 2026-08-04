@@ -352,6 +352,7 @@ public class CharacterService {
                 .promptTemplate(entity.getPromptTemplate())
                 .createdAt(entity.getCreatedAt())
                 .updatedAt(entity.getUpdatedAt())
+                .sourceTemplateId(entity.getSourceTemplateId())
                 .voicePetId(resolveVoicePetId(entity))
                 .customVoiceReady(customVoiceReady)
                 .build();

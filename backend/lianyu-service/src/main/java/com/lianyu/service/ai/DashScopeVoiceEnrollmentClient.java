@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.lianyu.common.base.ErrorCode;
 import com.lianyu.common.exception.BusinessException;
+import com.lianyu.service.voice.DashScopeCloudEndpointValidator;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -16,16 +17,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * DashScope custom voice enrollment (create/delete) using the caller's API key.
+ * DashScope custom voice enrollment (create/delete) using the caller's API key + base URL.
  */
 @Slf4j
 @Component
 public class DashScopeVoiceEnrollmentClient {
 
-    public static final String HTTP_MODEL = "qwen3-tts-vc-2026-01-22";
-    public static final String REALTIME_MODEL = "qwen3-tts-vc-realtime-2026-01-15";
-    private static final String ENROLL_URL =
-            "https://dashscope.aliyuncs.com/api/v1/services/audio/tts/customization";
+    /** @deprecated use {@link DashScopeCloudEndpointValidator#RECOMMENDED_HTTP_MODEL} */
+    public static final String HTTP_MODEL = DashScopeCloudEndpointValidator.RECOMMENDED_HTTP_MODEL;
+    /** @deprecated use {@link DashScopeCloudEndpointValidator#RECOMMENDED_REALTIME_MODEL} */
+    public static final String REALTIME_MODEL = DashScopeCloudEndpointValidator.RECOMMENDED_REALTIME_MODEL;
 
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
@@ -37,11 +38,12 @@ public class DashScopeVoiceEnrollmentClient {
                 .build();
     }
 
-    public String createVoice(String apiKey, String targetModel, String preferredName,
+    public String createVoice(String apiKey, String apiBaseUrl, String targetModel, String preferredName,
                               byte[] audioBytes, String mimeType, String language) {
         if (apiKey == null || apiKey.isBlank()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "请提供 DashScope API Key");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "请提供 API Key");
         }
+        String enrollUrl = DashScopeCloudEndpointValidator.enrollUrl(apiBaseUrl);
         String mime = mimeType == null || mimeType.isBlank() ? "audio/wav" : mimeType;
         String dataUri = "data:" + mime + ";base64," + Base64.getEncoder().encodeToString(audioBytes);
         try {
@@ -59,7 +61,7 @@ public class DashScopeVoiceEnrollmentClient {
             body.set("input", input);
 
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(ENROLL_URL))
+                    .uri(URI.create(enrollUrl))
                     .timeout(Duration.ofMinutes(3))
                     .header("Authorization", "Bearer " + apiKey.trim())
                     .header("Content-Type", "application/json")
@@ -82,15 +84,19 @@ public class DashScopeVoiceEnrollmentClient {
             throw e;
         } catch (Exception e) {
             log.warn("DashScope voice enroll error: {}", e.toString());
-            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "语音报名失败，请检查 API Key 与音频后重试");
+            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "语音报名失败，请检查 API Key、地址与音频后重试");
         }
     }
 
-    public void deleteVoiceQuietly(String apiKey, String voiceId) {
+    public void deleteVoiceQuietly(String apiKey, String apiBaseUrl, String voiceId) {
         if (apiKey == null || apiKey.isBlank() || voiceId == null || voiceId.isBlank()) {
             return;
         }
         try {
+            String enrollUrl = DashScopeCloudEndpointValidator.enrollUrl(
+                    apiBaseUrl == null || apiBaseUrl.isBlank()
+                            ? DashScopeCloudEndpointValidator.DEFAULT_BASE
+                            : apiBaseUrl);
             ObjectNode input = objectMapper.createObjectNode();
             input.put("action", "delete");
             input.put("voice", voiceId);
@@ -98,7 +104,7 @@ public class DashScopeVoiceEnrollmentClient {
             body.put("model", "qwen-voice-enrollment");
             body.set("input", input);
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(ENROLL_URL))
+                    .uri(URI.create(enrollUrl))
                     .timeout(Duration.ofSeconds(60))
                     .header("Authorization", "Bearer " + apiKey.trim())
                     .header("Content-Type", "application/json")
@@ -109,6 +115,11 @@ public class DashScopeVoiceEnrollmentClient {
         } catch (Exception e) {
             log.warn("DashScope voice delete ignored: {}", e.toString());
         }
+    }
+
+    /** Backward-compatible delete using default base. */
+    public void deleteVoiceQuietly(String apiKey, String voiceId) {
+        deleteVoiceQuietly(apiKey, DashScopeCloudEndpointValidator.DEFAULT_BASE, voiceId);
     }
 
     private static String sanitizePreferredName(String preferredName) {

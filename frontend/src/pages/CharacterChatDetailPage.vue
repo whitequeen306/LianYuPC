@@ -167,17 +167,44 @@
             />
           </el-form-item>
         </div>
-        <div v-if="voiceForm.provider === 'DASHSCOPE_VC'" class="form-grid">
-          <el-form-item label="DashScope API Key">
-            <el-input
-              v-model="voiceForm.apiKey"
-              type="password"
-              show-password
-              placeholder="sk-..."
-              autocomplete="off"
-            />
-          </el-form-item>
-        </div>
+        <template v-if="voiceForm.provider === 'DASHSCOPE_VC'">
+          <div class="form-grid">
+            <el-form-item label="API 地址">
+              <el-input
+                v-model="voiceForm.endpoint"
+                :placeholder="voiceHints.apiBase"
+              />
+              <div class="field-tip">推荐：{{ voiceHints.apiBase }}</div>
+            </el-form-item>
+          </div>
+          <div class="form-grid">
+            <el-form-item label="API Key">
+              <el-input
+                v-model="voiceForm.apiKey"
+                type="password"
+                show-password
+                placeholder="sk-..."
+                autocomplete="off"
+              />
+            </el-form-item>
+          </div>
+          <div class="form-grid two-col">
+            <el-form-item label="HTTP 音色模型">
+              <el-input
+                v-model="voiceForm.httpModel"
+                :placeholder="voiceHints.httpModel"
+              />
+              <div class="field-tip">推荐：{{ voiceHints.httpModel }}</div>
+            </el-form-item>
+            <el-form-item label="Realtime 通话模型">
+              <el-input
+                v-model="voiceForm.realtimeModel"
+                :placeholder="voiceHints.realtimeModel"
+              />
+              <div class="field-tip">推荐：{{ voiceHints.realtimeModel }}</div>
+            </el-form-item>
+          </div>
+        </template>
         <template v-else>
           <div class="form-grid">
             <el-form-item label="本地服务地址">
@@ -271,11 +298,18 @@ const bgDragMoved = ref(false)
 const customVoice = ref(null)
 const voiceSaving = ref(false)
 const voiceDeleting = ref(false)
+const voiceHints = reactive({
+  apiBase: 'https://dashscope.aliyuncs.com',
+  httpModel: 'qwen3-tts-vc-2026-01-22',
+  realtimeModel: 'qwen3-tts-vc-realtime-2026-01-15',
+})
 const voiceForm = reactive({
   provider: 'DASHSCOPE_VC',
   file: null,
   apiKey: '',
-  endpoint: 'http://127.0.0.1:9880',
+  endpoint: 'https://dashscope.aliyuncs.com',
+  httpModel: 'qwen3-tts-vc-2026-01-22',
+  realtimeModel: 'qwen3-tts-vc-realtime-2026-01-15',
   refText: '',
 })
 
@@ -333,6 +367,21 @@ onMounted(loadCharacter)
 // 路由参数变化时重新加载（从外部导航回同一页面时不依赖 onMounted）
 watch(() => route.params.id, () => { loadCharacter() })
 
+watch(() => voiceForm.provider, (next, prev) => {
+  if (next === prev) return
+  if (next === 'DASHSCOPE_VC') {
+    if (!voiceForm.endpoint || voiceForm.endpoint.includes('127.0.0.1') || voiceForm.endpoint.includes('localhost')) {
+      voiceForm.endpoint = voiceHints.apiBase
+    }
+    if (!voiceForm.httpModel) voiceForm.httpModel = voiceHints.httpModel
+    if (!voiceForm.realtimeModel) voiceForm.realtimeModel = voiceHints.realtimeModel
+  } else if (next === 'GPTSOVITS_LOCAL') {
+    if (!voiceForm.endpoint || voiceForm.endpoint.includes('dashscope')) {
+      voiceForm.endpoint = 'http://127.0.0.1:9880'
+    }
+  }
+})
+
 function populateForm(settings) {
   form.chatBackgroundKey = settings.chatBackgroundKey || ''
   form.chatBackgroundImageUrl = settings.chatBackgroundImageUrl || ''
@@ -353,17 +402,38 @@ function onVoiceFileChange(ev) {
   voiceForm.file = file
 }
 
+function applyVoiceHints(data) {
+  if (data?.recommendedApiBase) voiceHints.apiBase = data.recommendedApiBase
+  if (data?.recommendedHttpModel) voiceHints.httpModel = data.recommendedHttpModel
+  if (data?.recommendedRealtimeModel) voiceHints.realtimeModel = data.recommendedRealtimeModel
+}
+
 async function loadCustomVoice() {
   try {
-    customVoice.value = await getCustomVoice(route.params.id)
-    if (customVoice.value?.provider) {
-      voiceForm.provider = customVoice.value.provider
+    const data = await getCustomVoice(route.params.id)
+    applyVoiceHints(data)
+    if (!data?.provider && !data?.status) {
+      customVoice.value = null
+      voiceForm.endpoint = voiceHints.apiBase
+      voiceForm.httpModel = voiceHints.httpModel
+      voiceForm.realtimeModel = voiceHints.realtimeModel
+      return
     }
-    if (customVoice.value?.endpoint) {
-      voiceForm.endpoint = customVoice.value.endpoint
+    customVoice.value = data
+    if (data?.provider) {
+      voiceForm.provider = data.provider
     }
-    if (customVoice.value?.refText) {
-      voiceForm.refText = customVoice.value.refText
+    if (data?.endpoint) {
+      voiceForm.endpoint = data.endpoint
+    } else if (data?.provider === 'DASHSCOPE_VC') {
+      voiceForm.endpoint = voiceHints.apiBase
+    }
+    if (data?.httpModel) voiceForm.httpModel = data.httpModel
+    else voiceForm.httpModel = voiceHints.httpModel
+    if (data?.realtimeModel) voiceForm.realtimeModel = data.realtimeModel
+    else voiceForm.realtimeModel = voiceHints.realtimeModel
+    if (data?.refText) {
+      voiceForm.refText = data.refText
     }
   } catch {
     customVoice.value = null
@@ -376,7 +446,7 @@ async function handleSaveCustomVoice() {
     return
   }
   if (voiceForm.provider === 'DASHSCOPE_VC' && !String(voiceForm.apiKey || '').trim()) {
-    ElMessage.warning('请填写 DashScope API Key')
+    ElMessage.warning('请填写 API Key')
     return
   }
   if (voiceForm.provider === 'GPTSOVITS_LOCAL' && !String(voiceForm.refText || '').trim()) {
@@ -385,13 +455,19 @@ async function handleSaveCustomVoice() {
   }
   voiceSaving.value = true
   try {
-    customVoice.value = await upsertCustomVoice(route.params.id, {
+    const payload = {
       provider: voiceForm.provider,
       audio: voiceForm.file,
       apiKey: voiceForm.apiKey,
       refText: voiceForm.refText,
-      endpoint: voiceForm.endpoint,
-    })
+      endpoint: voiceForm.endpoint || (
+        voiceForm.provider === 'DASHSCOPE_VC' ? voiceHints.apiBase : 'http://127.0.0.1:9880'
+      ),
+      httpModel: voiceForm.httpModel || voiceHints.httpModel,
+      realtimeModel: voiceForm.realtimeModel || voiceHints.realtimeModel,
+    }
+    customVoice.value = await upsertCustomVoice(route.params.id, payload)
+    applyVoiceHints(customVoice.value)
     if (customVoice.value?.voiceCallReady) {
       ElMessage.success('语音通话已就绪，可在聊天页发起')
     } else if (customVoice.value?.status === 'FAILED') {
@@ -889,6 +965,13 @@ function clampPercentage(value, fallback = 50) {
   width: 100%;
   color: $color-text-secondary;
   font-size: $font-size-sm;
+}
+
+.field-tip {
+  margin-top: $space-1;
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+  line-height: $line-height-relaxed;
 }
 
 .voice-actions {

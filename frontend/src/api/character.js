@@ -46,13 +46,17 @@ export function getCustomVoice(id) {
   return http.get(`/character/${id}/custom-voice`)
 }
 
-export function upsertCustomVoice(id, { provider, audio, apiKey, refText, endpoint }) {
+export function upsertCustomVoice(id, {
+  provider, audio, apiKey, refText, endpoint, httpModel, realtimeModel,
+}) {
   const formData = new FormData()
   formData.append('provider', provider)
   formData.append('audio', audio)
   if (apiKey) formData.append('apiKey', apiKey)
   if (refText) formData.append('refText', refText)
   if (endpoint) formData.append('endpoint', endpoint)
+  if (httpModel) formData.append('httpModel', httpModel)
+  if (realtimeModel) formData.append('realtimeModel', realtimeModel)
   return http.post(`/character/${id}/custom-voice`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 180000,

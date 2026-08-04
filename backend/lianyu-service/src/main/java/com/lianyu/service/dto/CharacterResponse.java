@@ -18,6 +18,8 @@ public class CharacterResponse {
     private String promptTemplate;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    /** Square template id when from square; null for user-created characters. */
+    private Long sourceTemplateId;
     /** Square slug with VC voice mapping, e.g. raiden; null when unavailable. */
     private String voicePetId;
     /** True when this character has a READY user-custom voice (isolated from official pets). */
