@@ -82,7 +82,9 @@ public class AiChatService {
     /** 后台任务（朋友圈 / 日记 / 记忆摘要 / platformLogic 等） */
     private final Bulkhead backgroundBulkhead;
     private final TimeLimiter timeLimiter;
+    /** Fallback/global breaker; per-upstream breakers resolved via {@link #upstreamBreakers}. */
     private final CircuitBreaker circuitBreaker;
+    private final UpstreamCircuitBreakerFactory upstreamBreakers;
     private final ScheduledExecutorService scheduler;
     private final Executor aiStreamExecutor;
     private final PromptRuleEngine promptRuleEngine;
@@ -170,6 +172,7 @@ public class AiChatService {
         this.backgroundBulkhead = bulkheadRegistry.bulkhead(BACKGROUND_BULKHEAD_NAME);
         this.timeLimiter = timeLimiterRegistry.timeLimiter(RESILIENCE_NAME);
         this.circuitBreaker = circuitBreakerRegistry.circuitBreaker(RESILIENCE_NAME);
+        this.upstreamBreakers = new UpstreamCircuitBreakerFactory(circuitBreakerRegistry);
         this.scheduler = scheduler;
         this.aiStreamExecutor = aiStreamExecutor;
         this.promptRuleEngine = promptRuleEngine;
@@ -205,10 +208,15 @@ public class AiChatService {
             throw e;
         }
 
+        final CircuitBreaker upstreamCb = resolveBreaker(vault);
+        acquireUpstreamPermit(upstreamCb, vault);
+
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
         StringBuilder contentBuffer = new StringBuilder();
 
         CompletableFuture.runAsync(() -> {
+            final long upstreamStart = System.nanoTime();
+            Throwable upstreamError = null;
             try {
                 runWithChatToolScope(userId, request, () -> {
                     List<Message> messages = toSpringMessages(request.getMessages());
@@ -263,9 +271,11 @@ public class AiChatService {
                             .blockLast();
                 });
             } catch (Exception e) {
+                upstreamError = e;
                 log.error("AI chat stream fatal error", e);
                 finishSseError(emitter, resolveStreamErrorMessage(e), contentBuffer.toString(), callback);
             } finally {
+                releaseUpstreamPermit(upstreamCb, upstreamStart, upstreamError);
                 lane.releasePermission();
             }
         }, aiStreamExecutor);
@@ -301,7 +311,12 @@ public class AiChatService {
             return future;
         }
 
+        final CircuitBreaker upstreamCb = resolveBreaker(vault);
+        acquireUpstreamPermit(upstreamCb, vault);
+
         CompletableFuture.runAsync(() -> {
+            final long upstreamStart = System.nanoTime();
+            Throwable upstreamError = null;
             StringBuilder contentBuffer = new StringBuilder();
             try {
                 runWithChatToolScope(userId, request, () -> {
@@ -335,10 +350,12 @@ public class AiChatService {
                             .blockLast();
                 });
             } catch (Exception e) {
+                upstreamError = e;
                 if (!future.isDone()) {
                     future.completeExceptionally(e);
                 }
             } finally {
+                releaseUpstreamPermit(upstreamCb, upstreamStart, upstreamError);
                 lane.releasePermission();
             }
         }, aiStreamExecutor);
@@ -393,9 +410,10 @@ public class AiChatService {
             return timeLimiter.executeCompletionStage(scheduler, () ->
                     CompletableFuture.supplyAsync(() -> {
                         try {
-                            return lane.executeCallable(() ->
-                                    circuitBreaker.executeCallable(() -> {
-                                        VaultEntryResponse vault = resolveVaultForRequest(userId, request);
+                            return lane.executeCallable(() -> {
+                                // resolveVault 在熔断外：DB/Redis 查询不参与熔断，避免 DB 抖动误熔上游。
+                                VaultEntryResponse vault = resolveVaultForRequest(userId, request);
+                                return resolveBreaker(vault).executeCallable(() -> {
                                         String model = resolveModel(request, vault);
                                         ChatModel chatModel = buildChatModel(vault, model, resolveApiKeyForProvider(vault));
 
@@ -426,8 +444,8 @@ public class AiChatService {
                                         }
                                         return builder.build();
                                         });
-                                    })
-                            );
+                                    });
+                            });
                         } catch (Exception e) {
                             throw new RuntimeException(e);
                         }
@@ -923,8 +941,10 @@ public class AiChatService {
     public ChatResult chatImageBlocking(Long userId, AiChatRequest request) {
         final Bulkhead lane = resolveBulkhead(request);
         try {
-            return lane.executeCallable(() ->
-                    circuitBreaker.executeCallable(() -> doImageChat(userId, request)));
+            return lane.executeCallable(() -> {
+                VaultEntryResponse vault = resolveVaultForRequest(userId, request);
+                return resolveBreaker(vault).executeCallable(() -> doImageChat(userId, request));
+            });
         } catch (Exception e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             if (cause instanceof BusinessException be) {
@@ -948,7 +968,8 @@ public class AiChatService {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
         CompletableFuture.runAsync(() -> {
             try {
-                ChatResult result = circuitBreaker.executeCallable(() -> doImageChat(userId, request));
+                VaultEntryResponse vault = resolveVaultForRequest(userId, request);
+                ChatResult result = resolveBreaker(vault).executeCallable(() -> doImageChat(userId, request));
                 if (callback != null) {
                     callback.onVisionComplete(result.getImageDescription());
                 }
@@ -1783,5 +1804,44 @@ public class AiChatService {
             return trimmed.substring(0, trimmed.length() - 3);
         }
         return trimmed;
+    }
+
+    /** Per-upstream circuit breaker keyed by (provider + baseUrl); falls back to global when unresolved. */
+    private CircuitBreaker resolveBreaker(VaultEntryResponse vault) {
+        return upstreamBreakers.resolve(vault);
+    }
+
+    /**
+     * Fast-fail stream calls when this upstream's breaker is OPEN. Delegates to
+     * {@code tryAcquirePermission()} (no metrics recorded) so a single user's dead
+     * upstream doesn't drag down every other user's AI calls.
+     */
+    private void acquireUpstreamPermit(CircuitBreaker cb, VaultEntryResponse vault) {
+        if (!cb.tryAcquirePermission()) {
+            String upstream = (vault == null) ? "unknown"
+                    : String.join("|",
+                            vault.getProvider() == null ? "" : vault.getProvider(),
+                            vault.getBaseUrl() == null ? "" : vault.getBaseUrl());
+            log.warn("AI upstream circuit breaker OPEN ({}), fast-fail stream: {}",
+                    cb.getName(), upstream);
+            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "对方模型暂时繁忙，请稍后再试");
+        }
+    }
+
+    private void releaseUpstreamPermit(CircuitBreaker cb, long startNanos, Throwable error) {
+        long duration = System.nanoTime() - startNanos;
+        if (error == null) {
+            cb.onSuccess(duration, java.util.concurrent.TimeUnit.NANOSECONDS);
+            return;
+        }
+        Throwable e = error;
+        for (int depth = 0; depth < 6 && e != null; depth++) {
+            if (e instanceof BusinessException) {
+                cb.onSuccess(duration, java.util.concurrent.TimeUnit.NANOSECONDS);
+                return;
+            }
+            e = e.getCause();
+        }
+        cb.onError(duration, java.util.concurrent.TimeUnit.NANOSECONDS, error);
     }
 }

@@ -507,6 +507,9 @@ resilience4j:
         timeout-duration: 30s      # 单次阻塞调用总超时
   circuit-breaker:
     instances:
+      # 模板实例：实际熔断按上游（provider + baseUrl）隔离，由
+      # UpstreamCircuitBreakerFactory 用此参数模板动态创建 ai-upstream|provider|baseUrl 实例，
+      # 单个上游故障只熔断自己，不再一锅端拖垮全局 AI 调用。此实例兼作 vault 未解析前的兜底。
       ai-chat:
         sliding-window-size: 20                              # 滑动窗口样本数
         minimum-number-of-calls: 5                           # 至少调用次数才统计失败率
