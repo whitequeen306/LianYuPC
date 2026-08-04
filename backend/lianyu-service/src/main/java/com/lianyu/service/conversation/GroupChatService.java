@@ -307,7 +307,8 @@ public class GroupChatService {
             SendMessageRequest userReq = new SendMessageRequest();
             userReq.setProvider(userVault.getProvider());
             userReq.setModel(userVault.getModelDefault());
-            persistProactiveGroupReplies(userId, conversationId, reply, members, mentionTarget, userReq);
+            persistProactiveGroupReplies(userId, conversationId, reply, members, mentionTarget, userReq,
+                    character, nameMap);
             return true;
         } catch (Exception e) {
             log.debug("Proactive group chat skipped: convId={}, characterId={}, reason={}",
@@ -361,7 +362,8 @@ public class GroupChatService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "群聊没有成员");
         }
 
-        Map<Long, String> memberNameMap = loadCharacterNameMap(members);
+        Map<Long, Character> characterMap = loadCharacterMap(members);
+        Map<Long, String> memberNameMap = toNameMap(characterMap);
 
         long userSeq = getNextSeq(conversationId);
 
@@ -418,7 +420,7 @@ public class GroupChatService {
                 for (GroupMember member : roundMembers) {
                     futures.add(CompletableFuture.supplyAsync(
                             () -> generateCharacterReply(member, members, userId, request, historySnapshot,
-                                    currentUserMsgId), taskExecutor));
+                                    currentUserMsgId, characterMap, memberNameMap), taskExecutor));
                 }
 
                 List<CompletableFuture<CharacterReply>> pending = new ArrayList<>(futures);
@@ -449,7 +451,7 @@ public class GroupChatService {
                             return;
                         }
                         persistAndBroadcastReplies(conversationId, reply, members, userId, request, historySnapshot,
-                                turnId, turnKey);
+                                turnId, turnKey, characterMap, memberNameMap);
                         repliedCount++;
                     }
                 }
@@ -484,14 +486,15 @@ public class GroupChatService {
             Long userId,
             SendMessageRequest request,
             List<Message> historySnapshot,
-            Long currentUserMsgId) {
+            Long currentUserMsgId,
+            Map<Long, Character> characterMap,
+            Map<Long, String> nameMap) {
         try {
-            Character character = characterMapper.selectById(member.getCharacterId());
+            Character character = characterMap.get(member.getCharacterId());
             if (character == null) {
                 return null;
             }
 
-            Map<Long, String> nameMap = loadCharacterNameMap(members);
             CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
             int maxPieces = behavior.maxRepliesPerTurn();
             String mentionCtx = buildMentionContext(character, historySnapshot, nameMap);
@@ -555,8 +558,9 @@ public class GroupChatService {
                                               CharacterReply reply,
                                               List<GroupMember> members,
                                               String preferredMentionTarget,
-                                              SendMessageRequest request) {
-        Character character = characterMapper.selectById(reply.characterId());
+                                              SendMessageRequest request,
+                                              Character character,
+                                              Map<Long, String> nameMap) {
         CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
         List<String> pieces = assistantReplyService.process(
                 reply.content(), behavior.maxRepliesPerTurn()).pieces();
@@ -564,7 +568,6 @@ public class GroupChatService {
             return;
         }
 
-        Map<Long, String> nameMap = loadCharacterNameMap(members);
         List<String> ready = new ArrayList<>();
         for (String piece : pieces) {
             if (piece == null || piece.isBlank()) {
@@ -657,8 +660,13 @@ public class GroupChatService {
                                             SendMessageRequest request,
                                             List<Message> historySnapshot,
                                             String turnId,
-                                            String turnKey) {
-        Character character = characterMapper.selectById(reply.characterId());
+                                            String turnKey,
+                                            Map<Long, Character> characterMap,
+                                            Map<Long, String> nameMap) {
+        Character character = characterMap.get(reply.characterId());
+        if (character == null) {
+            return;
+        }
         CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
         List<String> pieces = assistantReplyService.process(
                 reply.content(), behavior.maxRepliesPerTurn()).pieces();
@@ -666,7 +674,6 @@ public class GroupChatService {
             return;
         }
 
-        Map<Long, String> nameMap = loadCharacterNameMap(members);
         List<String> ready = new ArrayList<>();
         for (String piece : pieces) {
             if (piece == null || piece.isBlank()) {
@@ -774,14 +781,36 @@ public class GroupChatService {
         };
     }
 
-    private Map<Long, String> loadCharacterNameMap(List<GroupMember> members) {
+    private Map<Long, Character> loadCharacterMap(List<GroupMember> members) {
         Set<Long> ids = members.stream().map(GroupMember::getCharacterId).collect(Collectors.toSet());
-        List<Character> characters = characterMapper.selectBatchIds(ids);
+        Map<Long, Character> characterMap = new HashMap<>();
+        if (ids.isEmpty()) {
+            return characterMap;
+        }
+        for (Character c : characterMapper.selectBatchIds(ids)) {
+            if (c != null) {
+                characterMap.put(c.getId(), c);
+            }
+        }
+        return characterMap;
+    }
+
+    private static Map<Long, String> toNameMap(Map<Long, Character> characterMap) {
         Map<Long, String> nameMap = new HashMap<>();
-        for (Character c : characters) {
-            if (c != null) nameMap.put(c.getId(), c.getName());
+        if (characterMap == null || characterMap.isEmpty()) {
+            return nameMap;
+        }
+        for (Map.Entry<Long, Character> entry : characterMap.entrySet()) {
+            Character c = entry.getValue();
+            if (c != null) {
+                nameMap.put(entry.getKey(), c.getName());
+            }
         }
         return nameMap;
+    }
+
+    private Map<Long, String> loadCharacterNameMap(List<GroupMember> members) {
+        return toNameMap(loadCharacterMap(members));
     }
 
     private String getCharacterName(Long characterId, Map<Long, String> nameMap) {

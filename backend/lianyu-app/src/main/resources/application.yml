@@ -245,6 +245,7 @@ lianyu:
       hard-max-chars: 1200
       structured: true
       stale-minutes: 30
+      pending-load-limit: 500
 
   mq:
     memory:

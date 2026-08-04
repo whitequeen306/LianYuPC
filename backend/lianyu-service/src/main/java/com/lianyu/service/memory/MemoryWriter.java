@@ -93,24 +93,22 @@ public class MemoryWriter {
                 List<Long> sourceIds = memory.sourceMsgId() != null
                         ? List.of(memory.sourceMsgId())
                         : List.of();
-                MemoryUpsertResult result = upsertTypedMemory(
+                MemoryUpsertOutcome outcome = upsertTypedMemory(
                         task,
                         sourceIds,
                         memory.summary(),
                         memory.memoryType(),
                         memory.importance());
-                switch (result) {
+                switch (outcome.result()) {
                     case CREATED -> created++;
                     case UPDATED -> updated++;
                     case SKIPPED -> skipped++;
                 }
-                String sourceHash = resolveSourceHash(task.userId(), task.characterId(), sourceIds, memory.summary());
-                Long memoryId = findMemoryIdBySourceHash(sourceHash);
-                if (memoryId != null) {
-                    MemoryMeta saved = memoryMetaMapper.selectById(memoryId);
-                    if (saved != null && (saved.getMilvusVecId() == null || saved.getMilvusVecId().isBlank())) {
-                        memoryMilvusSyncService.repairOne(memoryId);
-                    }
+                MemoryMeta saved = outcome.meta();
+                if (saved != null
+                        && saved.getId() != null
+                        && (saved.getMilvusVecId() == null || saved.getMilvusVecId().isBlank())) {
+                    memoryMilvusSyncService.repairOne(saved.getId());
                 }
             }
 
@@ -155,11 +153,11 @@ public class MemoryWriter {
         memoryVectorStore.delete(vectorIds);
     }
 
-    private MemoryUpsertResult upsertTypedMemory(MemorySummaryTask task,
-                                                 List<Long> sourceIds,
-                                                 String summary,
-                                                 MemoryType memoryType,
-                                                 double importance) {
+    private MemoryUpsertOutcome upsertTypedMemory(MemorySummaryTask task,
+                                                  List<Long> sourceIds,
+                                                  String summary,
+                                                  MemoryType memoryType,
+                                                  double importance) {
         String sourceHash = resolveSourceHash(task.userId(), task.characterId(), sourceIds, summary);
         MemoryMeta existing = findExistingMemory(sourceHash, task.userId(), task.characterId(), summary);
         BigDecimal importanceValue = toImportance(importance);
@@ -178,7 +176,7 @@ public class MemoryWriter {
             } catch (DuplicateKeyException e) {
                 MemoryMeta raced = findExistingMemory(sourceHash, task.userId(), task.characterId(), summary);
                 if (raced != null) {
-                    return MemoryUpsertResult.SKIPPED;
+                    return new MemoryUpsertOutcome(MemoryUpsertResult.SKIPPED, raced);
                 }
                 throw e;
             }
@@ -192,7 +190,7 @@ public class MemoryWriter {
                 log.warn("Milvus insert returned null: memoryId={}, convCharacter={}/{}",
                         meta.getId(), task.characterId(), task.userId());
             }
-            return MemoryUpsertResult.CREATED;
+            return new MemoryUpsertOutcome(MemoryUpsertResult.CREATED, meta);
         }
 
         if (summary.equals(existing.getSummary())) {
@@ -204,7 +202,7 @@ public class MemoryWriter {
                 existing.setImportance(importanceValue);
             }
             memoryMetaMapper.updateById(existing);
-            return MemoryUpsertResult.SKIPPED;
+            return new MemoryUpsertOutcome(MemoryUpsertResult.SKIPPED, existing);
         }
 
         String oldVecId = existing.getMilvusVecId();
@@ -226,15 +224,7 @@ public class MemoryWriter {
         } else {
             log.warn("Milvus insert returned null on update: memoryId={}", existing.getId());
         }
-        return MemoryUpsertResult.UPDATED;
-    }
-
-    private Long findMemoryIdBySourceHash(String sourceHash) {
-        MemoryMeta meta = memoryMetaMapper.selectOne(
-                new LambdaQueryWrapper<MemoryMeta>()
-                        .eq(MemoryMeta::getSourceHash, sourceHash)
-                        .last("LIMIT 1"));
-        return meta != null ? meta.getId() : null;
+        return new MemoryUpsertOutcome(MemoryUpsertResult.UPDATED, existing);
     }
 
     private MemoryMeta findExistingMemory(String sourceHash, Long userId, Long characterId, String summary) {
@@ -298,6 +288,8 @@ public class MemoryWriter {
     }
 
     private enum MemoryUpsertResult { CREATED, UPDATED, SKIPPED }
+
+    private record MemoryUpsertOutcome(MemoryUpsertResult result, MemoryMeta meta) {}
 
     public record MemorySummaryTask(Long conversationId, Long characterId,
                                      Long userId) implements Serializable {}

@@ -140,11 +140,13 @@ public class SessionSummaryService {
         if (windowOldestSeq <= lastSummarizedSeq) {
             return List.of();
         }
+        int safeLimit = Math.max(1, properties.getPendingLoadLimit());
         return messageMapper.selectList(new LambdaQueryWrapper<Message>()
                 .eq(Message::getConversationId, conversationId)
                 .gt(Message::getSeq, lastSummarizedSeq)
                 .lt(Message::getSeq, windowOldestSeq)
-                .orderByAsc(Message::getSeq));
+                .orderByAsc(Message::getSeq)
+                .last("LIMIT " + safeLimit));
     }
 
     List<Message> loadRecentMessages(Long conversationId, int limit) {

@@ -9,9 +9,12 @@ import com.lianyu.dao.mapper.RelationshipStateMapper;
 import com.lianyu.service.dto.MessageResponse;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -27,6 +30,33 @@ public class RelationshipStateService {
 
     public RelationshipSnapshot getSnapshot(Long userId, Long characterId) {
         return toSnapshot(loadOrCreateState(userId, characterId));
+    }
+
+    /**
+     * Batch-load existing relationship snapshots for the given character ids.
+     * Key format: {@code userId:characterId}. Missing pairs are omitted —
+     * callers should fall back to {@link #getSnapshot} when create-on-miss is needed.
+     */
+    public Map<String, RelationshipSnapshot> mapExistingByCharacterIds(Collection<Long> characterIds) {
+        if (characterIds == null || characterIds.isEmpty()) {
+            return Map.of();
+        }
+        Set<Long> ids = characterIds.stream()
+                .filter(id -> id != null && id > 0)
+                .collect(Collectors.toSet());
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        List<RelationshipState> states = relationshipStateMapper.selectList(
+                new LambdaQueryWrapper<RelationshipState>()
+                        .in(RelationshipState::getCharacterId, ids));
+        Map<String, RelationshipSnapshot> map = new HashMap<>();
+        for (RelationshipState state : states) {
+            if (state.getUserId() != null && state.getCharacterId() != null) {
+                map.put(state.getUserId() + ":" + state.getCharacterId(), toSnapshot(state));
+            }
+        }
+        return map;
     }
 
     public String buildPromptContext(Long userId, Long characterId) {

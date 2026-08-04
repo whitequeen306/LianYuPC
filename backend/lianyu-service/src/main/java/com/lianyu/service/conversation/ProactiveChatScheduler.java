@@ -90,6 +90,8 @@ public class ProactiveChatScheduler {
         LocalDateTime activitySince = now.minusDays(engagementScorer.proactiveActivityWindowDays());
         Map<Long, Long> userMsgCountMap = loadUserMessageCounts(convIds, activitySince);
         Map<String, CharacterState> stateMap = loadCharacterStates(candidates);
+        Map<String, RelationshipSnapshot> relationshipMap =
+                relationshipStateService.mapExistingByCharacterIds(characterIds);
 
         // Fixed noon/evening voice: shorter idle (15m), once per slot per day — before AI text.
         int timedSent = trySendTimedFixedVoices(candidates, characterMap, latestMessageMap);
@@ -106,7 +108,12 @@ public class ProactiveChatScheduler {
             Message lastMessage = latestMessageMap.get(conv.getId());
             Message lastUser = latestUserMessageMap.get(conv.getId());
             CharacterState state = stateMap.get(stateKey(conv.getUserId(), conv.getCharacterId()));
-            RelationshipSnapshot relationship = relationshipStateService.getSnapshot(conv.getUserId(), conv.getCharacterId());
+            RelationshipSnapshot relationship = relationshipMap.get(
+                    stateKey(conv.getUserId(), conv.getCharacterId()));
+            if (relationship == null) {
+                relationship = relationshipStateService.getSnapshot(
+                        conv.getUserId(), conv.getCharacterId());
+            }
             int effectiveMinIdle = engagementScorer.adjustMinIdleMinutes(
                     behavior.minIdleMinutes(), state, relationship.phase());
             if (!isEligible(conv, behavior, effectiveMinIdle, lastMessage, lastUser, relationship.phase())) {

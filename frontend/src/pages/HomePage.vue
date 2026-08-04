@@ -249,16 +249,16 @@ const atmosphereQuote = computed(() => {
   return t('home.atmosphereFallbackQuote')
 })
 
-onMounted(async () => {
-  await charactersStore.fetchList().catch(() => [])
-  await conversationsStore.fetchList().catch(() => [])
-  try {
-    const states = await listCharacterStates({ silent: true })
+onMounted(() => {
+  // Independent loads: feed preview must not wait on characters / conversations / states.
+  charactersStore.fetchList().catch(() => [])
+  conversationsStore.fetchList().catch(() => [])
+  listCharacterStates({ silent: true }).then((states) => {
     emotionStates.value = Array.isArray(states) ? states : []
-  } catch {
+  }).catch(() => {
     emotionStates.value = []
-  }
-  await loadFeedPreview()
+  })
+  loadFeedPreview()
 })
 
 let firstActivation = true

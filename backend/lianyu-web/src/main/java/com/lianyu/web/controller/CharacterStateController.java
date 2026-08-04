@@ -18,9 +18,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Tag(name = "CharacterState", description = "角色情绪与日记")
 @RestController
@@ -144,22 +148,32 @@ public class CharacterStateController {
         long userId = StpUtil.getLoginIdAsLong();
         List<CharacterDiary> diaries = diaryService.listDiaries(userId, null, page, size);
 
+        Set<Long> characterIds = diaries.stream()
+                .map(CharacterDiary::getCharacterId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, Character> characterMap = new HashMap<>();
+        if (!characterIds.isEmpty()) {
+            characterMapper.selectBatchIds(characterIds).forEach(c -> {
+                if (c != null) {
+                    characterMap.put(c.getId(), c);
+                }
+            });
+        }
+
         List<Map<String, Object>> result = new ArrayList<>();
         for (CharacterDiary diary : diaries) {
-            Character character = characterMapper.selectById(diary.getCharacterId());
+            Character character = characterMap.get(diary.getCharacterId());
             if (character == null || !character.getOwnerUserId().equals(userId)) {
                 continue;
             }
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("id", diary.getId());
             item.put("characterId", diary.getCharacterId());
-            item.put("characterName", character != null ? character.getName() : "角色#" + diary.getCharacterId());
-            item.put("avatarUrl", character != null
-                    ? fileStorageService.resolvePublicUrl(character.getAvatarUrl())
-                    : null);
-            item.put("avatarThumbUrl", character != null
-                    ? fileStorageService.resolveSquareAvatarThumbPublicUrl(character.getAvatarUrl())
-                    : null);
+            item.put("characterName", character.getName());
+            item.put("avatarUrl", fileStorageService.resolvePublicUrl(character.getAvatarUrl()));
+            item.put("avatarThumbUrl",
+                    fileStorageService.resolveSquareAvatarThumbPublicUrl(character.getAvatarUrl()));
             item.put("title", diary.getTitle());
             item.put("content", diary.getContent());
             item.put("mood", diary.getMood());

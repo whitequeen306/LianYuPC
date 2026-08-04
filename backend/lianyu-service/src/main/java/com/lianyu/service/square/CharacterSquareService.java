@@ -117,8 +117,18 @@ public class CharacterSquareService {
     }
 
     private List<CharacterSquareTemplateCardResponse> buildCardList(Long userId, String uiLang) {
+        // Card list never needs prompt_template / settings_json TEXT+JSON payloads.
         List<CharacterSquareTemplate> templates = templateMapper.selectList(
                 new LambdaQueryWrapper<CharacterSquareTemplate>()
+                        .select(
+                                CharacterSquareTemplate::getId,
+                                CharacterSquareTemplate::getSlug,
+                                CharacterSquareTemplate::getName,
+                                CharacterSquareTemplate::getSummary,
+                                CharacterSquareTemplate::getAvatarUrl,
+                                CharacterSquareTemplate::getTagsJson,
+                                CharacterSquareTemplate::getSortOrder,
+                                CharacterSquareTemplate::getIsEnabled)
                         .eq(CharacterSquareTemplate::getIsEnabled, 1)
                         .isNotNull(CharacterSquareTemplate::getSlug));
         if (templates.isEmpty()) {
@@ -248,7 +258,9 @@ public class CharacterSquareService {
     }
 
     private Map<Long, Character> loadAddedCharacters(Long userId) {
+        // Only need id + sourceTemplateId for card "added" flags.
         List<Character> added = characterMapper.selectList(new LambdaQueryWrapper<Character>()
+                .select(Character::getId, Character::getSourceTemplateId)
                 .eq(Character::getOwnerUserId, userId)
                 .isNotNull(Character::getSourceTemplateId));
         if (added.isEmpty()) {

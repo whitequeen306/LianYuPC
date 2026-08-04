@@ -18,14 +18,12 @@ public interface ConversationMapper extends BaseMapper<Conversation> {
     @Select("""
             SELECT c.id, c.user_id, c.character_id, c.mode, c.title, c.created_at
             FROM conversation c
-            LEFT JOIN (
-                SELECT conversation_id, MAX(created_at) AS last_message_at
-                FROM message
-                GROUP BY conversation_id
-            ) m ON c.id = m.conversation_id
             WHERE c.mode = 'SINGLE'
               AND c.character_id IS NOT NULL
-            ORDER BY COALESCE(m.last_message_at, c.created_at) DESC
+            ORDER BY COALESCE(
+                (SELECT MAX(m.created_at) FROM message m WHERE m.conversation_id = c.id),
+                c.created_at
+            ) DESC
             LIMIT #{limit}
             """)
     List<Conversation> selectSingleConversationsOrderByLastMessage(@Param("limit") int limit);

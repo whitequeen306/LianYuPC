@@ -19,4 +19,6 @@ public class SessionSummaryProperties {
     private int hardMaxChars = 1200;
     private boolean structured = true;
     private int staleMinutes = 30;
+    /** Cap for pending-message load before merge; leftover rows wait for the next window. */
+    private int pendingLoadLimit = 500;
 }
