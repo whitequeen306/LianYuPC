@@ -45,6 +45,7 @@ public class CharacterController {
     private final FileStorageService fileStorageService;
     private final AiChatService aiChatService;
     private final AuthRateLimiter authRateLimiter;
+    private final com.lianyu.service.voice.CustomVoiceService customVoiceService;
 
     @Operation(summary = "创建角色")
     @PostMapping
@@ -184,6 +185,36 @@ public class CharacterController {
         settings.put("useGlobalChatBackground", false);
         updateReq.setSettings(settings);
         return Result.ok(characterService.update(userId, id, updateReq));
+    }
+
+    @Operation(summary = "查询角色语音通话配置")
+    @GetMapping("/{id}/custom-voice")
+    public Result<com.lianyu.service.dto.CustomVoiceResponse> getCustomVoice(@PathVariable("id") Long id) {
+        long userId = StpUtil.getLoginIdAsLong();
+        return Result.ok(customVoiceService.get(userId, id));
+    }
+
+    @Operation(summary = "配置角色语音通话（需自备模型 + 音频）")
+    @PostMapping("/{id}/custom-voice")
+    public Result<com.lianyu.service.dto.CustomVoiceResponse> upsertCustomVoice(
+            @PathVariable("id") Long id,
+            @RequestParam("provider") String provider,
+            @RequestParam("audio") MultipartFile audio,
+            @RequestParam(value = "apiKey", required = false) String apiKey,
+            @RequestParam(value = "refText", required = false) String refText,
+            @RequestParam(value = "endpoint", required = false) String endpoint) {
+        long userId = StpUtil.getLoginIdAsLong();
+        authRateLimiter.checkRateLimit("rate:custom-voice:", String.valueOf(userId),
+                10, Duration.ofHours(1), "语音通话配置过于频繁，请稍后再试");
+        return Result.ok(customVoiceService.upsert(userId, id, provider, audio, apiKey, refText, endpoint));
+    }
+
+    @Operation(summary = "关闭角色语音通话")
+    @DeleteMapping("/{id}/custom-voice")
+    public Result<Void> deleteCustomVoice(@PathVariable("id") Long id) {
+        long userId = StpUtil.getLoginIdAsLong();
+        customVoiceService.delete(userId, id);
+        return Result.ok();
     }
 
     @Operation(summary = "AI生成角色设定")

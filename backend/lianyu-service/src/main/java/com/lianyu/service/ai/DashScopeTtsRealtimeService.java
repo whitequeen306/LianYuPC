@@ -70,23 +70,34 @@ public class DashScopeTtsRealtimeService {
     }
 
     public Session startForPet(String petId, AudioListener listener) {
-        if (!enabled) {
-            listener.onError("TTS disabled");
-            return null;
-        }
         String voice = petVoiceRegistry.resolveRealtimeVoiceId(petId);
         if (voice == null) {
             listener.onError("no realtime voice mapping");
             return null;
         }
-        String key = resolveApiKey();
+        return startWithVoice(voice, resolveApiKey(), listener);
+    }
+
+    /**
+     * Start realtime TTS with an explicit voice id + API key (user custom DashScope VC).
+     */
+    public Session startWithVoice(String voiceId, String apiKeyOverride, AudioListener listener) {
+        if (!enabled) {
+            listener.onError("TTS disabled");
+            return null;
+        }
+        if (voiceId == null || voiceId.isBlank()) {
+            listener.onError("no realtime voice mapping");
+            return null;
+        }
+        String key = apiKeyOverride != null && !apiKeyOverride.isBlank() ? apiKeyOverride.trim() : resolveApiKey();
         if (key == null || key.isBlank()) {
             listener.onError("missing API key");
             return null;
         }
         String model = resolveRealtimeModel();
         String url = realtimeWsUrl.replaceAll("/+$", "") + "?model=" + model;
-        Session session = new Session(listener, voice);
+        Session session = new Session(listener, voiceId.trim());
         CompletableFuture<WebSocket> connectFuture = httpClient.newWebSocketBuilder()
                 .header("Authorization", "Bearer " + key)
                 .buildAsync(URI.create(url), session);

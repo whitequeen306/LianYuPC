@@ -152,9 +152,16 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
             state.call = new VoiceCallDuplexSession(
                     sink, objectMapper, state.userId, conversationId,
                     voiceCallService, asrStreamClient, ttsRealtimeService, ttsHttpService);
+            var target = state.call.getTarget();
             send(session, event("session.started", n -> {
                 n.put("mode", "call");
                 n.put("conversationId", conversationId);
+                n.put("ttsMode", target.isLocal() ? "local_sovits" : "realtime");
+                if (target.isLocal()) {
+                    n.put("endpoint", target.endpoint() == null ? "" : target.endpoint());
+                    n.put("refAudioUrl", target.refAudioUrl() == null ? "" : target.refAudioUrl());
+                    n.put("refText", target.refText() == null ? "" : target.refText());
+                }
             }));
             return;
         }

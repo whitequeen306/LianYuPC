@@ -140,6 +140,87 @@
           </el-form-item>
         </div>
 
+        <div class="section-title">语音通话</div>
+        <p class="custom-voice-hint">
+          与官方角色一样可发起语音通话；需自行提供语音模型与参考音频（mp3/wav）。官方内置角色无需配置。
+        </p>
+        <div v-if="customVoice?.voiceCallReady" class="custom-voice-status is-ready">
+          语音通话已就绪 · {{ customVoice.provider === 'GPTSOVITS_LOCAL' ? '本地 GPT-SoVITS' : 'DashScope 音色克隆' }}
+        </div>
+        <div v-else-if="customVoice?.status === 'FAILED'" class="custom-voice-status is-fail">
+          配置失败：{{ customVoice.errorMessage || '请重试' }}
+        </div>
+        <div class="form-grid two-col">
+          <el-form-item label="语音模型">
+            <el-select v-model="voiceForm.provider" style="width: 100%">
+              <el-option label="DashScope 音色克隆（云端，自带 API Key）" value="DASHSCOPE_VC" />
+              <el-option label="GPT-SoVITS（本地开源）" value="GPTSOVITS_LOCAL" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="参考音频（mp3/wav，建议 20–60 秒）">
+            <input
+              ref="voiceFileInput"
+              type="file"
+              accept=".mp3,.wav,audio/mpeg,audio/wav"
+              class="voice-file-input"
+              @change="onVoiceFileChange"
+            />
+          </el-form-item>
+        </div>
+        <div v-if="voiceForm.provider === 'DASHSCOPE_VC'" class="form-grid">
+          <el-form-item label="DashScope API Key">
+            <el-input
+              v-model="voiceForm.apiKey"
+              type="password"
+              show-password
+              placeholder="sk-..."
+              autocomplete="off"
+            />
+          </el-form-item>
+        </div>
+        <template v-else>
+          <div class="form-grid">
+            <el-form-item label="本地服务地址">
+              <el-input
+                v-model="voiceForm.endpoint"
+                placeholder="http://127.0.0.1:9880"
+              />
+            </el-form-item>
+          </div>
+          <div class="form-grid">
+            <el-form-item label="参考文本（须与音频内容一致）">
+              <el-input
+                v-model="voiceForm.refText"
+                type="textarea"
+                :rows="3"
+                maxlength="2000"
+                show-word-limit
+                placeholder="把参考音频里说的话原样填在这里"
+              />
+            </el-form-item>
+          </div>
+        </template>
+        <div class="form-actions voice-actions">
+          <el-button
+            type="primary"
+            class="btn-cta"
+            :loading="voiceSaving"
+            :disabled="!voiceForm.file"
+            @click="handleSaveCustomVoice"
+          >
+            启用语音通话
+          </el-button>
+          <el-button
+            text
+            type="danger"
+            :disabled="!customVoice"
+            :loading="voiceDeleting"
+            @click="handleDeleteCustomVoice"
+          >
+            关闭语音通话
+          </el-button>
+        </div>
+
         <div class="form-actions">
           <el-button type="primary" class="btn-cta" :loading="saving" @click="handleSave">{{ t('characterSettings.save') }}</el-button>
         </div>
@@ -162,7 +243,14 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Loading, User, WarningFilled } from '@element-plus/icons-vue'
-import { getCharacter, updateCharacter, uploadChatBackground } from '@/api/character'
+import {
+  getCharacter,
+  updateCharacter,
+  uploadChatBackground,
+  getCustomVoice,
+  upsertCustomVoice,
+  deleteCustomVoice,
+} from '@/api/character'
 import { clearConversationMessages, listConversations } from '@/api/conversation'
 import { resolveMediaUrl } from '@/utils/media'
 import CharacterAvatarImg from '@/components/CharacterAvatarImg.vue'
@@ -177,8 +265,19 @@ const clearing = ref(false)
 const bgUploading = ref(false)
 const character = ref(null)
 const bgFileInput = ref(null)
+const voiceFileInput = ref(null)
 const draggingBg = ref(false)
 const bgDragMoved = ref(false)
+const customVoice = ref(null)
+const voiceSaving = ref(false)
+const voiceDeleting = ref(false)
+const voiceForm = reactive({
+  provider: 'DASHSCOPE_VC',
+  file: null,
+  apiKey: '',
+  endpoint: 'http://127.0.0.1:9880',
+  refText: '',
+})
 
 const isRealCityMode = computed(() => {
   const settings = character.value?.settings || {}
@@ -249,6 +348,86 @@ function populateForm(settings) {
   form.city = typeof settings.city === 'string' ? settings.city : ''
 }
 
+function onVoiceFileChange(ev) {
+  const file = ev?.target?.files?.[0] || null
+  voiceForm.file = file
+}
+
+async function loadCustomVoice() {
+  try {
+    customVoice.value = await getCustomVoice(route.params.id)
+    if (customVoice.value?.provider) {
+      voiceForm.provider = customVoice.value.provider
+    }
+    if (customVoice.value?.endpoint) {
+      voiceForm.endpoint = customVoice.value.endpoint
+    }
+    if (customVoice.value?.refText) {
+      voiceForm.refText = customVoice.value.refText
+    }
+  } catch {
+    customVoice.value = null
+  }
+}
+
+async function handleSaveCustomVoice() {
+  if (!voiceForm.file) {
+    ElMessage.warning('请先选择音频文件')
+    return
+  }
+  if (voiceForm.provider === 'DASHSCOPE_VC' && !String(voiceForm.apiKey || '').trim()) {
+    ElMessage.warning('请填写 DashScope API Key')
+    return
+  }
+  if (voiceForm.provider === 'GPTSOVITS_LOCAL' && !String(voiceForm.refText || '').trim()) {
+    ElMessage.warning('请填写参考文本')
+    return
+  }
+  voiceSaving.value = true
+  try {
+    customVoice.value = await upsertCustomVoice(route.params.id, {
+      provider: voiceForm.provider,
+      audio: voiceForm.file,
+      apiKey: voiceForm.apiKey,
+      refText: voiceForm.refText,
+      endpoint: voiceForm.endpoint,
+    })
+    if (customVoice.value?.voiceCallReady) {
+      ElMessage.success('语音通话已就绪，可在聊天页发起')
+    } else if (customVoice.value?.status === 'FAILED') {
+      ElMessage.error(customVoice.value.errorMessage || '语音通话配置失败')
+    } else {
+      ElMessage.warning('语音通话尚未就绪，请检查配置')
+    }
+    voiceForm.apiKey = ''
+    voiceForm.file = null
+    if (voiceFileInput.value) voiceFileInput.value.value = ''
+  } catch (e) {
+    ElMessage.error(e?.message || '保存失败')
+  } finally {
+    voiceSaving.value = false
+  }
+}
+
+async function handleDeleteCustomVoice() {
+  try {
+    await ElMessageBox.confirm('确定关闭该角色的语音通话？', '确认', { type: 'warning' })
+  } catch {
+    return
+  }
+  voiceDeleting.value = true
+  try {
+    await deleteCustomVoice(route.params.id)
+    customVoice.value = null
+    voiceForm.file = null
+    ElMessage.success('已关闭语音通话')
+  } catch (e) {
+    ElMessage.error(e?.message || '关闭失败')
+  } finally {
+    voiceDeleting.value = false
+  }
+}
+
 async function loadCharacter() {
   loading.value = true
   try {
@@ -256,6 +435,7 @@ async function loadCharacter() {
     character.value = data
     const settings = data.settings || {}
     populateForm(settings)
+    await loadCustomVoice()
   } catch {
     character.value = null
   } finally {
@@ -678,6 +858,42 @@ function clampPercentage(value, fallback = 50) {
   color: $color-text-secondary;
   font-size: $font-size-sm;
   line-height: $line-height-relaxed;
+}
+
+.custom-voice-hint {
+  margin: 0 0 $space-3;
+  color: $color-text-muted;
+  font-size: $font-size-sm;
+  line-height: $line-height-relaxed;
+}
+
+.custom-voice-status {
+  margin-bottom: $space-3;
+  padding: $space-2 $space-3;
+  border-radius: $radius-md;
+  font-size: $font-size-sm;
+  background: rgba($color-pink-rgb, 0.06);
+  border: 1px solid rgba($color-pink-rgb, 0.12);
+  color: $color-text-secondary;
+
+  &.is-ready {
+    color: $color-success;
+  }
+
+  &.is-fail {
+    color: $color-error;
+  }
+}
+
+.voice-file-input {
+  width: 100%;
+  color: $color-text-secondary;
+  font-size: $font-size-sm;
+}
+
+.voice-actions {
+  margin-bottom: $space-4;
+  gap: $space-3;
 }
 
 @media (max-width: 900px) {

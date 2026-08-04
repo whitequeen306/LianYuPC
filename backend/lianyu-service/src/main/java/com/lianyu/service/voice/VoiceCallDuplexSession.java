@@ -62,7 +62,7 @@ public class VoiceCallDuplexSession {
     private volatile long ttsReadyAtMs;
     private volatile long llmFirstDeltaAtMs;
     private volatile long firstAudioAtMs;
-    private final String petId;
+    private final VoiceCallTarget target;
 
     public VoiceCallDuplexSession(
             VoiceEventSink sink,
@@ -80,7 +80,7 @@ public class VoiceCallDuplexSession {
         this.voiceCallService = voiceCallService;
         this.ttsRealtimeService = ttsRealtimeService;
         this.ttsHttpService = ttsHttpService;
-        this.petId = voiceCallService.resolveAndAssertCallPet(userId, conversationId);
+        this.target = voiceCallService.resolveAndAssertCallTarget(userId, conversationId);
         this.asr = asrStreamClient.open(new AsrStreamClient.Listener() {
             @Override
             public void onPartial(String text) {
@@ -187,15 +187,17 @@ public class VoiceCallDuplexSession {
                 ttsFailed.set(false);
                 audioSent.set(false);
 
-                DashScopeTtsRealtimeService.Session ready = ttsSession.get();
-                if (ready != null && ready.isClosed()) {
-                    ttsSession.compareAndSet(ready, null);
-                    ready = null;
-                }
-                if (ready == null && ttsConnectFuture.get() == null) {
-                    prewarmRealtimeTts("turn-start");
-                } else if (ready != null && ready.isReady()) {
-                    markTtsReady();
+                if (!target.isLocal()) {
+                    DashScopeTtsRealtimeService.Session ready = ttsSession.get();
+                    if (ready != null && ready.isClosed()) {
+                        ttsSession.compareAndSet(ready, null);
+                        ready = null;
+                    }
+                    if (ready == null && ttsConnectFuture.get() == null) {
+                        prewarmRealtimeTts("turn-start");
+                    } else if (ready != null && ready.isReady()) {
+                        markTtsReady();
+                    }
                 }
 
                 voiceCallService.persistUserTurn(userId, conversationId, userText);
@@ -212,7 +214,9 @@ public class VoiceCallDuplexSession {
                     if (!visible.isEmpty()) {
                         emitJson("llm.delta", n -> n.put("text", visible));
                     }
-                    feedRealtimeTts(delta);
+                    if (!target.isLocal()) {
+                        feedRealtimeTts(delta);
+                    }
                 });
                 llmFuture.set(future);
                 String rawReply = future.join();
@@ -228,35 +232,39 @@ public class VoiceCallDuplexSession {
                 spoken = voiceCallService.clampReply(spoken);
                 voiceCallService.persistAssistantTurn(userId, conversationId, spoken);
 
-                DashScopeTtsRealtimeService.Session tts = ttsSession.get();
-                if ((tts == null || !tts.isReady()) && !audioSent.get()) {
-                    awaitRealtimeBriefly();
-                    tts = ttsSession.get();
-                }
-                if (tts != null && !ttsFailed.get()) {
-                    flushRealtimeTts();
-                    tts.finish();
-                    tts.awaitFinished(45_000);
-                } else if (!audioSent.get()) {
-                    ttsFailed.set(true);
-                    synchronized (sentenceLock) {
-                        sentenceBuf.setLength(0);
-                    }
-                    log.info("Voice duplex TTS HTTP fallback pet={} conv={} elapsedMs={}",
-                            petId, conversationId, System.currentTimeMillis() - turnStartedAtMs);
-                    DashScopeTtsService.SynthesizedAudio audio =
-                            ttsHttpService.synthesizeForPet(petId, spoken);
-                    if (audio == null || audio.bytes() == null || audio.bytes().length == 0) {
-                        emitError("TTS_ERROR", "语音合成失败，请稍后再试");
-                    } else {
-                        sendAudio(audio.bytes(),
-                                audio.mimeType() == null ? "audio/mpeg" : audio.mimeType());
-                        emitJson("tts.done", n -> {
-                        });
-                    }
+                if (target.isLocal()) {
+                    emitLocalTts(spoken);
                 } else {
-                    log.warn("Voice duplex realtime TTS failed after audio started pet={} conv={}",
-                            petId, conversationId);
+                    DashScopeTtsRealtimeService.Session tts = ttsSession.get();
+                    if ((tts == null || !tts.isReady()) && !audioSent.get()) {
+                        awaitRealtimeBriefly();
+                        tts = ttsSession.get();
+                    }
+                    if (tts != null && !ttsFailed.get()) {
+                        flushRealtimeTts();
+                        tts.finish();
+                        tts.awaitFinished(45_000);
+                    } else if (!audioSent.get()) {
+                        ttsFailed.set(true);
+                        synchronized (sentenceLock) {
+                            sentenceBuf.setLength(0);
+                        }
+                        log.info("Voice duplex TTS HTTP fallback mode={} pet={} conv={} elapsedMs={}",
+                                target.mode(), target.petId(), conversationId,
+                                System.currentTimeMillis() - turnStartedAtMs);
+                        DashScopeTtsService.SynthesizedAudio audio = synthesizeHttpFallback(spoken);
+                        if (audio == null || audio.bytes() == null || audio.bytes().length == 0) {
+                            emitError("TTS_ERROR", "语音合成失败，请稍后再试");
+                        } else {
+                            sendAudio(audio.bytes(),
+                                    audio.mimeType() == null ? "audio/mpeg" : audio.mimeType());
+                            emitJson("tts.done", n -> {
+                            });
+                        }
+                    } else {
+                        log.warn("Voice duplex realtime TTS failed after audio started mode={} pet={} conv={}",
+                                target.mode(), target.petId(), conversationId);
+                    }
                 }
 
                 String reply = spoken;
@@ -274,15 +282,46 @@ public class VoiceCallDuplexSession {
                 releaseTurnTts();
                 llmFuture.set(null);
                 turnBusy.set(false);
-                prewarmRealtimeTts("after-turn");
+                if (!target.isLocal()) {
+                    prewarmRealtimeTts("after-turn");
+                }
             }
         }, "voice-call-duplex");
         worker.setDaemon(true);
         worker.start();
     }
 
+    public VoiceCallTarget getTarget() {
+        return target;
+    }
+
+    private void emitLocalTts(String spoken) {
+        if (spoken == null || spoken.isBlank()) {
+            return;
+        }
+        markFirstAudio();
+        audioSent.set(true);
+        emitJson("tts.local", n -> {
+            n.put("text", spoken);
+            n.put("endpoint", target.endpoint() == null ? "" : target.endpoint());
+            n.put("refAudioUrl", target.refAudioUrl() == null ? "" : target.refAudioUrl());
+            n.put("refText", target.refText() == null ? "" : target.refText());
+            n.put("provider", CustomVoiceProviders.GPTSOVITS_LOCAL);
+        });
+        emitJson("tts.done", n -> {
+        });
+    }
+
+    private DashScopeTtsService.SynthesizedAudio synthesizeHttpFallback(String spoken) {
+        if (target.isCustomDashScope()) {
+            String voice = target.httpVoiceId() != null ? target.httpVoiceId() : target.realtimeVoiceId();
+            return ttsHttpService.synthesizeWithVoice(voice, target.apiKey(), spoken);
+        }
+        return ttsHttpService.synthesizeForPet(target.petId(), spoken);
+    }
+
     private DashScopeTtsRealtimeService.Session connectRealtimeTts() {
-        return ttsRealtimeService.startForPet(petId, new DashScopeTtsRealtimeService.AudioListener() {
+        DashScopeTtsRealtimeService.AudioListener listener = new DashScopeTtsRealtimeService.AudioListener() {
             @Override
             public void onAudio(byte[] pcmOrEncoded, String mimeHint) {
                 if (!turnBusy.get() && !audioSent.get()) {
@@ -303,8 +342,8 @@ public class VoiceCallDuplexSession {
 
             @Override
             public void onError(String message) {
-                log.warn("Voice duplex realtime TTS error pet={} conv={}: {}",
-                        petId, conversationId, message);
+                log.warn("Voice duplex realtime TTS error mode={} pet={} conv={}: {}",
+                        target.mode(), target.petId(), conversationId, message);
                 if (turnBusy.get()) {
                     ttsFailed.set(true);
                 }
@@ -315,11 +354,15 @@ public class VoiceCallDuplexSession {
                 markTtsReady();
                 drainSentenceBuf();
             }
-        });
+        };
+        if (target.isCustomDashScope()) {
+            return ttsRealtimeService.startWithVoice(target.realtimeVoiceId(), target.apiKey(), listener);
+        }
+        return ttsRealtimeService.startForPet(target.petId(), listener);
     }
 
     private void prewarmRealtimeTts(String reason) {
-        if (closed.get()) {
+        if (closed.get() || target.isLocal()) {
             return;
         }
         DashScopeTtsRealtimeService.Session existing = ttsSession.get();

@@ -65,8 +65,26 @@ public class DashScopeTtsService {
         return new SynthesizedAudio(mime, Base64.getEncoder().encodeToString(bytes), bytes);
     }
 
+    public SynthesizedAudio synthesizeWithVoice(String voiceId, String apiKeyOverride, String text) {
+        byte[] bytes = synthesizeBytesWithVoice(voiceId, apiKeyOverride, text, "custom");
+        if (bytes == null || bytes.length == 0) {
+            return null;
+        }
+        String mime = guessMimeType(null, bytes);
+        return new SynthesizedAudio(mime, Base64.getEncoder().encodeToString(bytes), bytes);
+    }
+
     /** Raw audio bytes for server-side upload (chat cold-open voice). */
     public byte[] synthesizeBytesForPet(String petId, String text) {
+        String voice = petVoiceRegistry.resolveVoiceId(petId);
+        if (voice == null) {
+            log.info("Pet TTS skipped: no voice mapping for petId={}", petId);
+            return null;
+        }
+        return synthesizeBytesWithVoice(voice, null, text, petId);
+    }
+
+    public byte[] synthesizeBytesWithVoice(String voiceId, String apiKeyOverride, String text, String logLabel) {
         if (!enabled) {
             log.info("Pet TTS skipped: disabled");
             return null;
@@ -74,12 +92,11 @@ public class DashScopeTtsService {
         if (text == null || text.isBlank()) {
             return null;
         }
-        String voice = petVoiceRegistry.resolveVoiceId(petId);
-        if (voice == null) {
-            log.info("Pet TTS skipped: no voice mapping for petId={}", petId);
+        if (voiceId == null || voiceId.isBlank()) {
+            log.info("Pet TTS skipped: empty voiceId label={}", logLabel);
             return null;
         }
-        String key = resolveApiKey();
+        String key = apiKeyOverride != null && !apiKeyOverride.isBlank() ? apiKeyOverride.trim() : resolveApiKey();
         if (key == null || key.isBlank()) {
             log.warn("Pet TTS skipped: missing DASHSCOPE API key");
             return null;
@@ -87,24 +104,24 @@ public class DashScopeTtsService {
         Exception last = null;
         for (int attempt = 1; attempt <= 2; attempt++) {
             try {
-                String audioUrl = requestAudioUrl(key, petVoiceRegistry.getModel(), voice, text.trim());
+                String audioUrl = requestAudioUrl(key, petVoiceRegistry.getModel(), voiceId.trim(), text.trim());
                 if (audioUrl == null || audioUrl.isBlank()) {
                     return null;
                 }
                 if (!isAllowedTtsAudioHost(audioUrl)) {
-                    log.warn("Pet TTS rejected audio url host for petId={}", petId);
+                    log.warn("Pet TTS rejected audio url host for label={}", logLabel);
                     return null;
                 }
                 byte[] bytes = downloadAudio(audioUrl);
                 if (bytes == null || bytes.length == 0) {
-                    log.warn("Pet TTS audio download empty for petId={} attempt={}", petId, attempt);
+                    log.warn("Pet TTS audio download empty for label={} attempt={}", logLabel, attempt);
                     if (attempt < 2) {
                         Thread.sleep(200L * attempt);
                         continue;
                     }
                     return null;
                 }
-                log.info("Pet TTS ok: petId={}, bytes={}, attempt={}", petId, bytes.length, attempt);
+                log.info("Pet TTS ok: label={}, bytes={}, attempt={}", logLabel, bytes.length, attempt);
                 return bytes;
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
@@ -112,11 +129,11 @@ public class DashScopeTtsService {
             } catch (Exception e) {
                 last = e;
                 if (!isTransientNetworkFailure(e) || attempt >= 2) {
-                    log.warn("Pet TTS synthesis failed for pet {}: {}", petId, e.getMessage());
+                    log.warn("Pet TTS synthesis failed for {}: {}", logLabel, e.getMessage());
                     return null;
                 }
-                log.warn("Pet TTS transient failure pet={} attempt={}/2: {}",
-                        petId, attempt, e.getMessage());
+                log.warn("Pet TTS transient failure label={} attempt={}/2: {}",
+                        logLabel, attempt, e.getMessage());
                 try {
                     Thread.sleep(200L * attempt);
                 } catch (InterruptedException ie) {
@@ -126,7 +143,7 @@ public class DashScopeTtsService {
             }
         }
         if (last != null) {
-            log.warn("Pet TTS synthesis failed for pet {}: {}", petId, last.getMessage());
+            log.warn("Pet TTS synthesis failed for {}: {}", logLabel, last.getMessage());
         }
         return null;
     }

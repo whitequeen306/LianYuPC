@@ -9,6 +9,7 @@ import com.lianyu.dao.entity.Character;
 import com.lianyu.dao.entity.CharacterSquareTemplate;
 import com.lianyu.dao.entity.Conversation;
 import com.lianyu.dao.entity.Message;
+import com.lianyu.dao.entity.UserCustomVoice;
 import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.CharacterSquareTemplateMapper;
 import com.lianyu.dao.mapper.ConversationMapper;
@@ -31,6 +32,10 @@ import com.lianyu.service.dto.VoiceCallTurnResponse;
 import com.lianyu.service.graph.ChatTurnFacade;
 import com.lianyu.service.graph.MessageModelContent;
 import com.lianyu.service.memory.MemoryWriter;
+import com.lianyu.service.storage.FileStorageService;
+import com.lianyu.service.voice.CustomVoiceProviders;
+import com.lianyu.service.voice.CustomVoiceService;
+import com.lianyu.service.voice.VoiceCallTarget;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -85,6 +90,8 @@ public class VoiceCallService {
     private final MemoryWriter memoryWriter;
     private final StringRedisTemplate redisTemplate;
     private final AiBackgroundPublisher aiBackgroundPublisher;
+    private final CustomVoiceService customVoiceService;
+    private final FileStorageService fileStorageService;
 
     @Value("${lianyu.voice-call.max-reply-chars:48}")
     private int maxReplyChars;
@@ -111,9 +118,12 @@ public class VoiceCallService {
         }
         ensureCharacterNotBlocked(character);
 
-        String petId = resolveVoicePetId(character);
-        if (petId == null || !VOICE_CALL_PET_IDS.contains(petId)) {
+        VoiceCallTarget target = resolveCallTarget(userId, character);
+        if (target == null) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "当前角色暂不支持语音通话");
+        }
+        if (target.isLocal()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "本地语音模型请使用桌面端实时通话");
         }
 
         long t0 = System.nanoTime();
@@ -149,7 +159,7 @@ public class VoiceCallService {
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "角色暂时无法回复，请稍后再试");
         }
 
-        DashScopeTtsService.SynthesizedAudio audioOut = dashScopeTtsService.synthesizeForPet(petId, replyText);
+        DashScopeTtsService.SynthesizedAudio audioOut = synthesizeForTarget(target, replyText);
         long tTts = System.nanoTime();
         if (audioOut == null || audioOut.base64() == null || audioOut.base64().isBlank()) {
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "语音合成失败，请稍后再试");
@@ -165,8 +175,8 @@ public class VoiceCallService {
         assistantMsg.setAudioUrl("system/voice-call-turn");
         messageMapper.insert(assistantMsg);
 
-        log.info("Voice call turn: convId={}, petId={}, userLen={}, replyLen={}, asrMs={}, llmMs={}, ttsMs={}",
-                conversationId, petId, userText.length(), replyText.length(),
+        log.info("Voice call turn: convId={}, mode={}, petId={}, userLen={}, replyLen={}, asrMs={}, llmMs={}, ttsMs={}",
+                conversationId, target.mode(), target.petId(), userText.length(), replyText.length(),
                 (tAsr - t0) / 1_000_000L, (tLlm - tAsr) / 1_000_000L, (tTts - tLlm) / 1_000_000L);
 
         return VoiceCallTurnResponse.builder()
@@ -179,8 +189,8 @@ public class VoiceCallService {
                 .build();
     }
 
-    /** Duplex: assert ownership + supported pet, return petId. */
-    public String resolveAndAssertCallPet(Long userId, Long conversationId) {
+    /** Duplex: assert ownership + supported voice target. */
+    public VoiceCallTarget resolveAndAssertCallTarget(Long userId, Long conversationId) {
         Conversation conversation = findOwned(userId, conversationId);
         if (!"SINGLE".equalsIgnoreCase(conversation.getMode())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "仅支持单聊语音通话");
@@ -190,11 +200,85 @@ public class VoiceCallService {
             throw new BusinessException(ErrorCode.CHARACTER_NOT_FOUND);
         }
         ensureCharacterNotBlocked(character);
-        String petId = resolveVoicePetId(character);
-        if (petId == null || !VOICE_CALL_PET_IDS.contains(petId)) {
+        VoiceCallTarget target = resolveCallTarget(userId, character);
+        if (target == null) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "当前角色暂不支持语音通话");
         }
-        return petId;
+        return target;
+    }
+
+    /** @deprecated prefer {@link #resolveAndAssertCallTarget} */
+    public String resolveAndAssertCallPet(Long userId, Long conversationId) {
+        VoiceCallTarget target = resolveAndAssertCallTarget(userId, conversationId);
+        return target.petId();
+    }
+
+    /**
+     * Official pet allowlist first (never mix with custom storage); else READY custom voice.
+     */
+    public VoiceCallTarget resolveCallTarget(Long userId, Character character) {
+        if (character == null) {
+            return null;
+        }
+        String petId = resolveVoicePetId(character);
+        if (petId != null && VOICE_CALL_PET_IDS.contains(petId)
+                && (petVoiceRegistry.hasRealtimeVoice(petId) || petVoiceRegistry.hasVoice(petId))) {
+            return new VoiceCallTarget(
+                    VoiceCallTarget.Mode.OFFICIAL_PET,
+                    petId,
+                    petVoiceRegistry.resolveHttpVoiceId(petId),
+                    petVoiceRegistry.resolveRealtimeVoiceId(petId),
+                    null,
+                    null,
+                    null,
+                    null);
+        }
+        UserCustomVoice custom = customVoiceService.findReady(userId, character.getId());
+        if (custom == null) {
+            return null;
+        }
+        if (CustomVoiceProviders.DASHSCOPE_VC.equalsIgnoreCase(custom.getProvider())
+                && custom.getRealtimeVoiceId() != null && !custom.getRealtimeVoiceId().isBlank()) {
+            return new VoiceCallTarget(
+                    VoiceCallTarget.Mode.CUSTOM_DASHSCOPE,
+                    null,
+                    custom.getHttpVoiceId(),
+                    custom.getRealtimeVoiceId(),
+                    customVoiceService.decryptApiKey(custom),
+                    null,
+                    null,
+                    null);
+        }
+        if (CustomVoiceProviders.GPTSOVITS_LOCAL.equalsIgnoreCase(custom.getProvider())
+                && custom.getEndpoint() != null && custom.getRefText() != null
+                && custom.getRefAudioObjectKey() != null) {
+            return new VoiceCallTarget(
+                    VoiceCallTarget.Mode.CUSTOM_LOCAL,
+                    null,
+                    null,
+                    null,
+                    null,
+                    fileStorageService.resolvePublicUrl(custom.getRefAudioObjectKey()),
+                    custom.getRefText(),
+                    custom.getEndpoint());
+        }
+        return null;
+    }
+
+    private DashScopeTtsService.SynthesizedAudio synthesizeForTarget(VoiceCallTarget target, String text) {
+        if (target == null) {
+            return null;
+        }
+        if (target.mode() == VoiceCallTarget.Mode.CUSTOM_DASHSCOPE) {
+            return dashScopeTtsService.synthesizeWithVoice(
+                    target.httpVoiceId() != null ? target.httpVoiceId() : target.realtimeVoiceId(),
+                    target.apiKey(),
+                    text);
+        }
+        if (target.mode() == VoiceCallTarget.Mode.OFFICIAL_PET) {
+            return dashScopeTtsService.synthesizeForPet(target.petId(), text);
+        }
+        return null;
     }
 
     @Transactional
@@ -283,8 +367,7 @@ public class VoiceCallService {
             throw new BusinessException(ErrorCode.CHARACTER_NOT_FOUND);
         }
         ensureCharacterNotBlocked(character);
-        String petId = resolveVoicePetId(character);
-        if (petId == null || !VOICE_CALL_PET_IDS.contains(petId)) {
+        if (resolveCallTarget(userId, character) == null) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "当前角色暂不支持语音通话");
         }
 

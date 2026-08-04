@@ -36,11 +36,13 @@ import com.lianyu.service.memory.MemoryCacheService;
 import com.lianyu.service.memory.MemoryWriter;
 import com.lianyu.service.notification.NotificationService;
 import com.lianyu.service.storage.FileStorageService;
+import com.lianyu.service.voice.CustomVoiceService;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -78,6 +80,7 @@ public class CharacterService {
     private final SessionSummaryService sessionSummaryService;
     private final PetVoiceRegistry petVoiceRegistry;
     private final NotificationService notificationService;
+    private final CustomVoiceService customVoiceService;
 
     @Value("${lianyu.character.max-per-user:80}")
     private int maxCharactersPerUser;
@@ -101,24 +104,26 @@ public class CharacterService {
         characterMapper.insert(entity);
 
         log.info("Character created: id={}, name={}, userId={}", entity.getId(), entity.getName(), userId);
-        return toResponse(entity);
+        return toResponse(entity, false);
     }
 
     public List<CharacterResponse> list(Long userId) {
         List<Character> entities = characterMapper.selectList(new LambdaQueryWrapper<Character>()
                 .eq(Character::getOwnerUserId, userId)
                 .orderByDesc(Character::getUpdatedAt));
-        return entities.stream().map(this::toResponse).toList();
+        Set<Long> readyCustom = customVoiceService.findReadyCharacterIds(userId);
+        return entities.stream().map(e -> toResponse(e, readyCustom.contains(e.getId()))).toList();
     }
 
     public CharacterResponse get(Long userId, Long characterId) {
         Character entity = findOwned(userId, characterId);
-        return toResponse(entity);
+        boolean ready = customVoiceService.findReady(userId, characterId) != null;
+        return toResponse(entity, ready);
     }
 
     /** Public avatar/settings mapping (incl. square-template avatar fallback). */
     public CharacterResponse toPublicResponse(Character entity) {
-        return toResponse(entity);
+        return toResponse(entity, false);
     }
 
     @Transactional
@@ -156,7 +161,8 @@ public class CharacterService {
         }
 
         log.info("Character updated: id={}, name={}", characterId, entity.getName());
-        return toResponse(entity);
+        boolean ready = customVoiceService.findReady(userId, characterId) != null;
+        return toResponse(entity, ready);
     }
 
     private void scheduleCityChangeFollowUp(Long userId, String previousCity, String newCity) {
@@ -224,6 +230,11 @@ public class CharacterService {
                 .eq(GroupMember::getCharacterId, characterId));
         messageMapper.delete(new LambdaQueryWrapper<Message>()
                 .eq(Message::getCharacterId, characterId));
+        try {
+            customVoiceService.delete(userId, characterId);
+        } catch (Exception e) {
+            log.warn("Custom voice cleanup on character delete failed id={}: {}", characterId, e.toString());
+        }
         characterMapper.deleteById(characterId);
 
         // After the character row is gone: wipe inbox backlog (and any in-flight race inserts).
@@ -323,7 +334,7 @@ public class CharacterService {
         return entity;
     }
 
-    private CharacterResponse toResponse(Character entity) {
+    private CharacterResponse toResponse(Character entity, boolean customVoiceReady) {
         String storedAvatar = entity.getAvatarUrl();
         if (isBlank(storedAvatar) && entity.getSourceTemplateId() != null) {
             CharacterSquareTemplate template = squareTemplateMapper.selectById(entity.getSourceTemplateId());
@@ -342,6 +353,7 @@ public class CharacterService {
                 .createdAt(entity.getCreatedAt())
                 .updatedAt(entity.getUpdatedAt())
                 .voicePetId(resolveVoicePetId(entity))
+                .customVoiceReady(customVoiceReady)
                 .build();
     }
 

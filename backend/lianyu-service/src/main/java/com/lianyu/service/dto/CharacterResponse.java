@@ -20,4 +20,6 @@ public class CharacterResponse {
     private LocalDateTime updatedAt;
     /** Square slug with VC voice mapping, e.g. raiden; null when unavailable. */
     private String voicePetId;
+    /** True when this character has a READY user-custom voice (isolated from official pets). */
+    private Boolean customVoiceReady;
 }

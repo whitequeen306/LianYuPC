@@ -41,3 +41,24 @@ export function uploadChatBackground(id, file) {
 export function generateCharacter(data) {
   return http.post('/character/generate', data, { timeout: 120000 })
 }
+
+export function getCustomVoice(id) {
+  return http.get(`/character/${id}/custom-voice`)
+}
+
+export function upsertCustomVoice(id, { provider, audio, apiKey, refText, endpoint }) {
+  const formData = new FormData()
+  formData.append('provider', provider)
+  formData.append('audio', audio)
+  if (apiKey) formData.append('apiKey', apiKey)
+  if (refText) formData.append('refText', refText)
+  if (endpoint) formData.append('endpoint', endpoint)
+  return http.post(`/character/${id}/custom-voice`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 180000,
+  })
+}
+
+export function deleteCustomVoice(id) {
+  return http.delete(`/character/${id}/custom-voice`)
+}

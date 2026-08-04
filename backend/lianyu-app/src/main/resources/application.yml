@@ -25,8 +25,8 @@ spring:
 
   servlet:
     multipart:
-      max-file-size: 10MB
-      max-request-size: 20MB
+      max-file-size: 16MB
+      max-request-size: 24MB
 
   datasource:
     url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3307}/lianyu?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai

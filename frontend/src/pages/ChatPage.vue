@@ -682,7 +682,9 @@ function goToAiSettings() {
 }
 const activeSettings = computed(() => activeCharacter.value?.settings || {})
 const isBlocked = computed(() => activeSettings.value.blocked === true)
-const voiceCallEnabled = computed(() => isVoiceCallPet(activeCharacter.value?.voicePetId))
+const voiceCallEnabled = computed(() =>
+  isVoiceCallPet(activeCharacter.value?.voicePetId)
+  || activeCharacter.value?.customVoiceReady === true)
 const showInnerThoughts = computed(() => resolveShowInnerThoughts(activeSettings.value))
 
 const showHeaderTyping = computed(() => awaitingOpening.value || waitingReply.value)

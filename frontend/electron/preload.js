@@ -162,4 +162,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('updater:state', handler)
     return () => ipcRenderer.removeListener('updater:state', handler)
   },
+  /** Local GPT-SoVITS TTS (custom character voice). */
+  synthesizeLocalTts: (payload) => ipcRenderer.invoke('custom-tts:sovits', payload),
 })

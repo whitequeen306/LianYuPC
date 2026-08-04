@@ -32,6 +32,7 @@ import {
   writeAuthSession,
   clearAuthSession,
 } from './authSessionStore.js'
+import { synthesizeSovits } from './customTts.js'
 import {
   readAppearance,
   writeAppearance,
@@ -2507,6 +2508,23 @@ function registerIpcHandlers() {
     } catch (e) {
       return { ok: false, reason: 'open_failed', error: e?.message || String(e) }
     }
+  })
+
+  ipcMain.handle('custom-tts:sovits', async (event, payload) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    const session = readAuthSession()
+    const token = session?.token || ''
+    let refUrl = payload?.refAudioUrl || ''
+    if (typeof refUrl === 'string' && refUrl.startsWith('/')) {
+      refUrl = resolveApiOrigin().replace(/\/+$/, '') + refUrl
+    }
+    return synthesizeSovits({
+      endpoint: payload?.endpoint,
+      text: payload?.text,
+      refAudioUrl: refUrl,
+      refText: payload?.refText,
+      authToken: token,
+    })
   })
 
   ipcMain.handle('desktop:start-qq-host', async (event, override) => {

@@ -68,6 +68,34 @@ export function useVoiceDuplex() {
     }
   }
 
+  async function playLocalTts(msg) {
+    const api = typeof window !== 'undefined' ? window.electronAPI : null
+    if (!api?.synthesizeLocalTts) {
+      lastError.value = '本地语音仅支持桌面客户端'
+      return
+    }
+    try {
+      const result = await api.synthesizeLocalTts({
+        endpoint: msg.endpoint,
+        text: msg.text,
+        refAudioUrl: msg.refAudioUrl,
+        refText: msg.refText,
+      })
+      if (!result?.ok || !result.base64) {
+        lastError.value = '本地语音合成失败，请检查 GPT-SoVITS 是否已启动'
+        return
+      }
+      if (!playback) playback = createPcmPlayback({ sampleRate: 24000 })
+      playback.enqueueBase64Audio(result.base64, {
+        mime: result.mime || 'audio/wav',
+        sampleRate: 24000,
+      })
+      noteSpeakingStarted()
+    } catch (e) {
+      lastError.value = '本地语音合成失败'
+    }
+  }
+
   function handleServerMessage(raw) {
     let msg
     try {
@@ -93,6 +121,9 @@ export function useVoiceDuplex() {
         sampleRate: msg.sampleRate || 24000,
       })
       noteSpeakingStarted()
+    } else if (type === 'tts.local') {
+      phase.value = 'speaking'
+      void playLocalTts(msg)
     } else if (type === 'tts.done' || type === 'turn.done') {
       if (type === 'turn.done') {
         phase.value = 'idle'
