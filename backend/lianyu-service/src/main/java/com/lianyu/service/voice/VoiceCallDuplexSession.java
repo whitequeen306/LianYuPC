@@ -200,9 +200,12 @@ public class VoiceCallDuplexSession {
                     }
                 }
 
+                long persistStart = System.currentTimeMillis();
                 voiceCallService.persistUserTurn(userId, conversationId, userText);
                 AiChatRequest aiRequest = voiceCallService.buildVoiceCallAiRequest(
                         userId, conversationId, userText);
+                log.info("Voice duplex timing conv={} stage=persist_and_build ms={}",
+                        conversationId, System.currentTimeMillis() - persistStart);
 
                 var future = voiceCallService.streamVoiceReply(userId, aiRequest, delta -> {
                     if (delta == null || delta.isEmpty() || closed.get()) {
@@ -575,8 +578,8 @@ public class VoiceCallDuplexSession {
             return;
         }
         llmFirstDeltaAtMs = System.currentTimeMillis();
-        log.info("Voice duplex timing conv={} stage=llm_first_delta ms={}",
-                conversationId, llmFirstDeltaAtMs - turnStartedAtMs);
+        log.info("Voice duplex timing conv={} stage=llm_first_delta ms={} mode={}",
+                conversationId, llmFirstDeltaAtMs - turnStartedAtMs, target.mode());
     }
 
     private void markFirstAudio() {

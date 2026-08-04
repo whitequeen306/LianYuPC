@@ -58,7 +58,10 @@ public class CustomVoiceService {
         if (provider == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的语音模型类型");
         }
-        ValidatedSample sample = CustomVoiceAudioValidator.validate(audio);
+        ValidatedSample raw = CustomVoiceAudioValidator.validate(audio);
+        // Keep only the first N seconds (decoded → 16k mono WAV) for both backup and enroll;
+        // the original upload is never persisted nor sent upstream.
+        ValidatedSample sample = trimOrFallback(raw);
 
         UserCustomVoice existing = findRow(userId, characterId);
         if (existing != null) {
@@ -139,6 +142,19 @@ public class CustomVoiceService {
             log.warn("Custom voice api key decrypt failed id={}", row.getId());
             return null;
         }
+    }
+
+    private static ValidatedSample trimOrFallback(ValidatedSample raw) {
+        try {
+            byte[] trimmed = CustomVoiceAudioTrimmer.trimToWav(raw.bytes(), raw.extension());
+            if (trimmed != null && trimmed.length > 0) {
+                return new ValidatedSample(trimmed, "wav", "audio/wav",
+                        (double) CustomVoiceAudioTrimmer.KEEP_SECONDS);
+            }
+        } catch (Exception e) {
+            log.warn("Custom voice trim fallback to raw: {}", e.getMessage());
+        }
+        return raw;
     }
 
     private void enrollDashScope(

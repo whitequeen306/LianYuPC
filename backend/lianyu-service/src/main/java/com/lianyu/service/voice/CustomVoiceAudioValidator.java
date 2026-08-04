@@ -13,10 +13,11 @@ import org.springframework.web.multipart.MultipartFile;
  */
 public final class CustomVoiceAudioValidator {
 
-    public static final long MAX_BYTES = 15L * 1024 * 1024;
+    /** Upload ceiling; anything longer is decoded & trimmed to {@link CustomVoiceAudioTrimmer#KEEP_SECONDS}. */
+    public static final long MAX_BYTES = 30L * 1024 * 1024;
     public static final long MIN_BYTES = 8L * 1024;
+    /** Min duration of the kept segment (shorter uploads are rejected). */
     public static final double MIN_SECONDS = 5.0;
-    public static final double MAX_SECONDS = 120.0;
 
     private static final Set<String> ALLOWED_EXT = Set.of("mp3", "wav");
 
@@ -52,9 +53,9 @@ public final class CustomVoiceAudioValidator {
         Double duration = null;
         if ("wav".equals(ext)) {
             duration = wavDurationSec(bytes);
-            if (duration != null && (duration < MIN_SECONDS || duration > MAX_SECONDS)) {
+            if (duration != null && duration < MIN_SECONDS) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST,
-                        "音频时长需在 " + (int) MIN_SECONDS + "–" + (int) MAX_SECONDS + " 秒之间");
+                        "音频太短，至少需 " + (int) MIN_SECONDS + " 秒");
             }
         }
         String contentType = "mp3".equals(ext) ? "audio/mpeg" : "audio/wav";

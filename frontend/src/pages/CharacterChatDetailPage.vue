@@ -157,7 +157,7 @@
               <el-option label="本地模型（GPT-SoVITS）" value="GPTSOVITS_LOCAL" />
             </el-select>
           </el-form-item>
-          <el-form-item label="参考音频（mp3/wav，建议 20–60 秒，≤15MB）">
+          <el-form-item label="参考音频（mp3/wav，自动取前 30 秒）">
             <input
               ref="voiceFileInput"
               type="file"
@@ -396,17 +396,8 @@ function populateForm(settings) {
   form.city = typeof settings.city === 'string' ? settings.city : ''
 }
 
-const VOICE_MAX_BYTES = 15 * 1024 * 1024
-
 function onVoiceFileChange(ev) {
-  const file = ev?.target?.files?.[0] || null
-  if (file && file.size > VOICE_MAX_BYTES) {
-    ElMessage.warning('音频不能超过 15MB，请压缩或截短后再试')
-    voiceForm.file = null
-    if (voiceFileInput.value) voiceFileInput.value.value = ''
-    return
-  }
-  voiceForm.file = file
+  voiceForm.file = ev?.target?.files?.[0] || null
 }
 
 function applyVoiceHints(data) {
@@ -482,7 +473,7 @@ async function handleSaveCustomVoice() {
   } catch (e) {
     const status = e?.response?.status ?? e?.status
     if (status === 413) {
-      ElMessage.error('音频过大（上限 15MB），请压缩或截短后再试')
+      ElMessage.error('音频过大（上限约 30MB），请压缩后再试')
     } else {
       ElMessage.error(e?.message || '保存失败')
     }

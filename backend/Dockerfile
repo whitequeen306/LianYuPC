@@ -38,6 +38,9 @@ RUN --mount=type=cache,target=/root/.m2 \
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 
+# ffmpeg: trim custom voice enroll sample to first N seconds (any input format).
+RUN apk add --no-cache ffmpeg
+
 ARG APP_REVISION=dev
 LABEL org.opencontainers.image.revision="${APP_REVISION}"
 
