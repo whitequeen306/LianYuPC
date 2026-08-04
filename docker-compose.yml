@@ -59,7 +59,13 @@ services:
     dns:
       - ${LIANYU_DNS_PRIMARY:-223.5.5.5}
       - ${LIANYU_DNS_SECONDARY:-119.29.29.29}
+      - 114.114.114.114
       - ${LIANYU_DNS_FALLBACK:-8.8.8.8}
+      - 1.1.1.1
+    dns_opt:
+      - timeout:1
+      - attempts:2
+      - rotate
     # 仅绑定本机，避免公网明文 HTTP 绕过 TLS 网关（云端经 api-gateway:443 反代 backend:8080）
     ports:
       - "127.0.0.1:${SERVER_PORT:-8080}:8080"
