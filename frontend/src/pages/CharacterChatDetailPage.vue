@@ -145,7 +145,7 @@
           与官方角色一样可发起语音通话；需自行提供语音模型与参考音频（mp3/wav）。官方内置角色无需配置。
         </p>
         <div v-if="customVoice?.voiceCallReady" class="custom-voice-status is-ready">
-          语音通话已就绪 · {{ customVoice.provider === 'GPTSOVITS_LOCAL' ? '本地 GPT-SoVITS' : 'DashScope 音色克隆' }}
+          语音通话已就绪 · {{ customVoice.provider === 'GPTSOVITS_LOCAL' ? '本地模型（GPT-SoVITS）' : '云端API' }}
         </div>
         <div v-else-if="customVoice?.status === 'FAILED'" class="custom-voice-status is-fail">
           配置失败：{{ customVoice.errorMessage || '请重试' }}
@@ -153,11 +153,11 @@
         <div class="form-grid two-col">
           <el-form-item label="语音模型">
             <el-select v-model="voiceForm.provider" style="width: 100%">
-              <el-option label="DashScope 音色克隆（云端，自带 API Key）" value="DASHSCOPE_VC" />
-              <el-option label="GPT-SoVITS（本地开源）" value="GPTSOVITS_LOCAL" />
+              <el-option label="云端API" value="DASHSCOPE_VC" />
+              <el-option label="本地模型（GPT-SoVITS）" value="GPTSOVITS_LOCAL" />
             </el-select>
           </el-form-item>
-          <el-form-item label="参考音频（mp3/wav，建议 20–60 秒）">
+          <el-form-item label="参考音频（mp3/wav，建议 20–60 秒，≤15MB）">
             <input
               ref="voiceFileInput"
               type="file"
@@ -172,7 +172,7 @@
             <el-form-item label="API 地址">
               <el-input
                 v-model="voiceForm.endpoint"
-                :placeholder="voiceHints.apiBase"
+                placeholder="请填写 API Base URL"
               />
               <div class="field-tip">推荐：{{ voiceHints.apiBase }}</div>
             </el-form-item>
@@ -192,14 +192,14 @@
             <el-form-item label="HTTP 音色模型">
               <el-input
                 v-model="voiceForm.httpModel"
-                :placeholder="voiceHints.httpModel"
+                placeholder="请填写 HTTP 模型名"
               />
               <div class="field-tip">推荐：{{ voiceHints.httpModel }}</div>
             </el-form-item>
             <el-form-item label="Realtime 通话模型">
               <el-input
                 v-model="voiceForm.realtimeModel"
-                :placeholder="voiceHints.realtimeModel"
+                placeholder="请填写 Realtime 模型名"
               />
               <div class="field-tip">推荐：{{ voiceHints.realtimeModel }}</div>
             </el-form-item>
@@ -307,9 +307,9 @@ const voiceForm = reactive({
   provider: 'DASHSCOPE_VC',
   file: null,
   apiKey: '',
-  endpoint: 'https://dashscope.aliyuncs.com',
-  httpModel: 'qwen3-tts-vc-2026-01-22',
-  realtimeModel: 'qwen3-tts-vc-realtime-2026-01-15',
+  endpoint: '',
+  httpModel: '',
+  realtimeModel: '',
   refText: '',
 })
 
@@ -370,13 +370,12 @@ watch(() => route.params.id, () => { loadCharacter() })
 watch(() => voiceForm.provider, (next, prev) => {
   if (next === prev) return
   if (next === 'DASHSCOPE_VC') {
-    if (!voiceForm.endpoint || voiceForm.endpoint.includes('127.0.0.1') || voiceForm.endpoint.includes('localhost')) {
-      voiceForm.endpoint = voiceHints.apiBase
+    // Keep URL empty; recommended value shown under the field.
+    if (voiceForm.endpoint.includes('127.0.0.1') || voiceForm.endpoint.includes('localhost')) {
+      voiceForm.endpoint = ''
     }
-    if (!voiceForm.httpModel) voiceForm.httpModel = voiceHints.httpModel
-    if (!voiceForm.realtimeModel) voiceForm.realtimeModel = voiceHints.realtimeModel
   } else if (next === 'GPTSOVITS_LOCAL') {
-    if (!voiceForm.endpoint || voiceForm.endpoint.includes('dashscope')) {
+    if (!voiceForm.endpoint || voiceForm.endpoint.includes('dashscope') || voiceForm.endpoint.includes('aliyuncs')) {
       voiceForm.endpoint = 'http://127.0.0.1:9880'
     }
   }
@@ -397,8 +396,16 @@ function populateForm(settings) {
   form.city = typeof settings.city === 'string' ? settings.city : ''
 }
 
+const VOICE_MAX_BYTES = 15 * 1024 * 1024
+
 function onVoiceFileChange(ev) {
   const file = ev?.target?.files?.[0] || null
+  if (file && file.size > VOICE_MAX_BYTES) {
+    ElMessage.warning('音频不能超过 15MB，请压缩或截短后再试')
+    voiceForm.file = null
+    if (voiceFileInput.value) voiceFileInput.value.value = ''
+    return
+  }
   voiceForm.file = file
 }
 
@@ -414,24 +421,18 @@ async function loadCustomVoice() {
     applyVoiceHints(data)
     if (!data?.provider && !data?.status) {
       customVoice.value = null
-      voiceForm.endpoint = voiceHints.apiBase
-      voiceForm.httpModel = voiceHints.httpModel
-      voiceForm.realtimeModel = voiceHints.realtimeModel
+      voiceForm.endpoint = ''
+      voiceForm.httpModel = ''
+      voiceForm.realtimeModel = ''
       return
     }
     customVoice.value = data
     if (data?.provider) {
       voiceForm.provider = data.provider
     }
-    if (data?.endpoint) {
-      voiceForm.endpoint = data.endpoint
-    } else if (data?.provider === 'DASHSCOPE_VC') {
-      voiceForm.endpoint = voiceHints.apiBase
-    }
-    if (data?.httpModel) voiceForm.httpModel = data.httpModel
-    else voiceForm.httpModel = voiceHints.httpModel
-    if (data?.realtimeModel) voiceForm.realtimeModel = data.realtimeModel
-    else voiceForm.realtimeModel = voiceHints.realtimeModel
+    voiceForm.endpoint = data?.endpoint || ''
+    voiceForm.httpModel = data?.httpModel || ''
+    voiceForm.realtimeModel = data?.realtimeModel || ''
     if (data?.refText) {
       voiceForm.refText = data.refText
     }
@@ -479,7 +480,12 @@ async function handleSaveCustomVoice() {
     voiceForm.file = null
     if (voiceFileInput.value) voiceFileInput.value.value = ''
   } catch (e) {
-    ElMessage.error(e?.message || '保存失败')
+    const status = e?.response?.status ?? e?.status
+    if (status === 413) {
+      ElMessage.error('音频过大（上限 15MB），请压缩或截短后再试')
+    } else {
+      ElMessage.error(e?.message || '保存失败')
+    }
   } finally {
     voiceSaving.value = false
   }

@@ -130,6 +130,8 @@ http.interceptors.response.use(
     let fallback = '请求失败，请稍后再试'
     if (!error.response) {
       fallback = '无法连接服务器，请检查网络后重试'
+    } else if (error.response.status === 413) {
+      fallback = '上传文件过大，请压缩后重试'
     } else if (error.response.status >= 500) {
       fallback = '服务暂时不可用，请稍后再试'
     } else if (!apiErr?.message) {
