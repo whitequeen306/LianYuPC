@@ -31,6 +31,9 @@ public class MomentsCommentReconciliationScheduler {
     @Value("${lianyu.moments.comments.reconcile-batch-size:20}")
     private int reconcileBatchSize;
 
+    @Value("${lianyu.moments.comments.reconcile-max-age-days:14}")
+    private int reconcileMaxAgeDays;
+
     @EventListener(ApplicationReadyEvent.class)
     public void reconcileOnStartup() {
         reconcileStuckPosts();
@@ -41,9 +44,11 @@ public class MomentsCommentReconciliationScheduler {
         if (!reconcileEnabled) {
             return;
         }
-        LocalDateTime before = LocalDateTime.now().minusMinutes(Math.max(1, reconcileMinAgeMinutes));
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime before = now.minusMinutes(Math.max(1, reconcileMinAgeMinutes));
+        LocalDateTime oldest = now.minusDays(Math.max(1, reconcileMaxAgeDays));
         List<Long> postIds = momentsPostMapper.selectPostIdsNeedingPeerComments(
-                before, Math.max(1, reconcileBatchSize));
+                before, oldest, Math.max(1, reconcileBatchSize));
         if (postIds.isEmpty()) {
             return;
         }

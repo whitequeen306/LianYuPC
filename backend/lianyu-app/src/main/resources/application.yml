@@ -425,11 +425,15 @@ lianyu:
       author-reply-max-seconds: 180
       # 路人评论全部失败后的重试间隔（秒）
       peer-retry-delay-seconds: 300
+      # 路人评论整轮失败最大重试次数；超限标记放弃，不再入 MQ / 不再被 reconcile 捞起
+      peer-max-retries: 3
       # 补偿扫描：修复「已标记完成但无路人评论」的动态
       reconcile-enabled: true
       reconcile-interval-ms: 300000
       reconcile-min-age-minutes: 4
       reconcile-batch-size: 20
+      # 超过此天数的旧帖不再补偿（防止历史死帖永动机）
+      reconcile-max-age-days: 14
 
   community:
     post-rate-per-minute: 6

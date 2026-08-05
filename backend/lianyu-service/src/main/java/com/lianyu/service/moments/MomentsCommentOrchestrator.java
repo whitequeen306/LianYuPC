@@ -42,6 +42,9 @@ import org.springframework.stereotype.Component;
 public class MomentsCommentOrchestrator {
 
     private static final String LOCK_PREFIX = "moments:orchestrate-lock:";
+    private static final String META_RETRY_COUNT = "retryCount";
+    private static final String META_ABANDONED = "abandoned";
+    private static final String META_ABANDON_REASON = "abandonReason";
 
     private final MomentsPostMapper momentsPostMapper;
     private final MomentsCommentMapper momentsCommentMapper;
@@ -123,6 +126,9 @@ public class MomentsCommentOrchestrator {
     @Value("${lianyu.moments.comments.peer-retry-delay-seconds:300}")
     private int peerRetryDelaySec;
 
+    @Value("${lianyu.moments.comments.peer-max-retries:3}")
+    private int peerMaxRetries;
+
     /**
      * 动态发布后：错峰安排路人评论（与用户无关，不瞬间扎堆）。
      */
@@ -132,9 +138,25 @@ public class MomentsCommentOrchestrator {
     }
 
     /**
-     * 补偿入口：重置路人轮次并重新调度（用于 AI 失败或过早标记 done 的动态）。
+     * 补偿入口：仅对未放弃的动态重置并重调度。已放弃 / 无文本模型的帖直接收工，不再入 MQ。
      */
     public void reconcilePeerComments(Long postId) {
+        MomentsPost post = momentsPostMapper.selectById(postId);
+        if (post == null) {
+            return;
+        }
+        MomentsInteractionState state = interactionStateMapper.selectById(postId);
+        if (isAbandoned(state)) {
+            return;
+        }
+        if (apiKeyVaultService.resolvePreferredUserVault(post.getUserId()) == null) {
+            abandonPeerRound(post, "NO_USER_TEXT_MODEL", readRetryCount(state));
+            return;
+        }
+        if (readRetryCount(state) >= Math.max(1, peerMaxRetries)) {
+            abandonPeerRound(post, "MAX_RETRIES", readRetryCount(state));
+            return;
+        }
         resetPeerRoundState(postId);
         schedulePeerRound(postId, true);
     }
@@ -154,11 +176,25 @@ public class MomentsCommentOrchestrator {
         }
 
         if (hasPeerCommentFromOtherCharacter(post)) {
+            markPeerRoundDone(post, List.of());
             return;
         }
 
         MomentsInteractionState state = interactionStateMapper.selectById(post.getId());
+        if (isAbandoned(state)) {
+            return;
+        }
+        // 无文本模型：永久失败，标记放弃，绝不入 MQ。
+        if (apiKeyVaultService.resolvePreferredUserVault(post.getUserId()) == null) {
+            abandonPeerRound(post, "NO_USER_TEXT_MODEL", readRetryCount(state));
+            return;
+        }
+        if (readRetryCount(state) >= Math.max(1, peerMaxRetries)) {
+            abandonPeerRound(post, "MAX_RETRIES", readRetryCount(state));
+            return;
+        }
         if (state != null && state.getPeerRoundDone() != null && state.getPeerRoundDone() == 1) {
+            // 已完成且未放弃：若实际已有评论则收工；否则允许补偿重开（旧逻辑兼容）。
             if (hasPeerCommentFromOtherCharacter(post)) {
                 return;
             }
@@ -276,8 +312,18 @@ public class MomentsCommentOrchestrator {
             markPeerRoundDone(post, pickedIds);
             return;
         }
-        log.warn("Moments peer round produced zero comments: postId={}, will retry", postId);
-        resetPeerRoundState(postId);
+        MomentsInteractionState state = interactionStateMapper.selectById(postId);
+        if (isAbandoned(state)) {
+            return;
+        }
+        int nextRetry = readRetryCount(state) + 1;
+        if (nextRetry >= Math.max(1, peerMaxRetries)) {
+            abandonPeerRound(post, "MAX_RETRIES", nextRetry);
+            return;
+        }
+        log.warn("Moments peer round produced zero comments: postId={}, retry={}/{}, will retry",
+                postId, nextRetry, peerMaxRetries);
+        persistRetryCount(post, nextRetry, pickedIds);
         long retryMs = Math.max(60, peerRetryDelaySec) * 1000L;
         scheduledExecutorService.schedule(
                 () -> schedulePeerRound(postId, true),
@@ -513,14 +559,39 @@ public class MomentsCommentOrchestrator {
         state.setPeerRoundDone(1);
         state.setPeerRoundSeq((state.getPeerRoundSeq() == null ? 0 : state.getPeerRoundSeq()) + 1);
         Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("pickedCharacterIds", pickedIds);
-        meta.put("completedAt", LocalDateTime.now().toString());
-        state.setLastPeerSampleJson(meta);
-        if (interactionStateMapper.selectById(post.getId()) == null) {
-            interactionStateMapper.insert(state);
-        } else {
-            interactionStateMapper.updateById(state);
+        if (state.getLastPeerSampleJson() != null) {
+            meta.putAll(state.getLastPeerSampleJson());
         }
+        meta.put("pickedCharacterIds", pickedIds == null ? List.of() : pickedIds);
+        meta.put("completedAt", LocalDateTime.now().toString());
+        meta.remove(META_ABANDONED);
+        meta.remove(META_ABANDON_REASON);
+        state.setLastPeerSampleJson(meta);
+        upsertInteractionState(state);
+    }
+
+    /** 永久放弃：不再重试、不再被 reconcile 捞起、不再入 MQ。 */
+    private void abandonPeerRound(MomentsPost post, String reason, int retryCount) {
+        MomentsInteractionState state = interactionStateMapper.selectById(post.getId());
+        if (state == null) {
+            state = new MomentsInteractionState();
+            state.setPostId(post.getId());
+            state.setUserId(post.getUserId());
+            state.setPeerRoundSeq(0);
+        }
+        state.setPeerRoundDone(1);
+        Map<String, Object> meta = new LinkedHashMap<>();
+        if (state.getLastPeerSampleJson() != null) {
+            meta.putAll(state.getLastPeerSampleJson());
+        }
+        meta.put(META_ABANDONED, true);
+        meta.put(META_ABANDON_REASON, reason);
+        meta.put(META_RETRY_COUNT, retryCount);
+        meta.put("abandonedAt", LocalDateTime.now().toString());
+        state.setLastPeerSampleJson(meta);
+        upsertInteractionState(state);
+        log.warn("Moments peer round abandoned: postId={}, reason={}, retry={}",
+                post.getId(), reason, retryCount);
     }
 
     private void savePeerRoundPending(MomentsPost post, List<Long> pickedIds) {
@@ -533,23 +604,81 @@ public class MomentsCommentOrchestrator {
             state.setPeerRoundSeq(0);
         }
         Map<String, Object> meta = new LinkedHashMap<>();
+        if (state.getLastPeerSampleJson() != null) {
+            meta.putAll(state.getLastPeerSampleJson());
+        }
         meta.put("pickedCharacterIds", pickedIds);
         meta.put("pendingAt", LocalDateTime.now().toString());
+        meta.remove(META_ABANDONED);
+        meta.remove(META_ABANDON_REASON);
+        state.setPeerRoundDone(0);
         state.setLastPeerSampleJson(meta);
-        if (interactionStateMapper.selectById(post.getId()) == null) {
+        upsertInteractionState(state);
+    }
+
+    private void persistRetryCount(MomentsPost post, int retryCount, List<Long> pickedIds) {
+        MomentsInteractionState state = interactionStateMapper.selectById(post.getId());
+        if (state == null) {
+            state = new MomentsInteractionState();
+            state.setPostId(post.getId());
+            state.setUserId(post.getUserId());
+            state.setPeerRoundSeq(0);
+        }
+        state.setPeerRoundDone(0);
+        Map<String, Object> meta = new LinkedHashMap<>();
+        if (state.getLastPeerSampleJson() != null) {
+            meta.putAll(state.getLastPeerSampleJson());
+        }
+        meta.put(META_RETRY_COUNT, retryCount);
+        meta.put("pickedCharacterIds", pickedIds == null ? List.of() : pickedIds);
+        meta.put("lastFailAt", LocalDateTime.now().toString());
+        meta.remove(META_ABANDONED);
+        meta.remove(META_ABANDON_REASON);
+        state.setLastPeerSampleJson(meta);
+        upsertInteractionState(state);
+    }
+
+    private void resetPeerRoundState(Long postId) {
+        MomentsInteractionState state = interactionStateMapper.selectById(postId);
+        if (state == null || isAbandoned(state)) {
+            return;
+        }
+        state.setPeerRoundDone(0);
+        interactionStateMapper.updateById(state);
+    }
+
+    private void upsertInteractionState(MomentsInteractionState state) {
+        if (interactionStateMapper.selectById(state.getPostId()) == null) {
             interactionStateMapper.insert(state);
         } else {
             interactionStateMapper.updateById(state);
         }
     }
 
-    private void resetPeerRoundState(Long postId) {
-        MomentsInteractionState state = interactionStateMapper.selectById(postId);
-        if (state == null) {
-            return;
+    static boolean isAbandoned(MomentsInteractionState state) {
+        if (state == null || state.getLastPeerSampleJson() == null) {
+            return false;
         }
-        state.setPeerRoundDone(0);
-        interactionStateMapper.updateById(state);
+        Object flag = state.getLastPeerSampleJson().get(META_ABANDONED);
+        return Boolean.TRUE.equals(flag) || "true".equalsIgnoreCase(String.valueOf(flag));
+    }
+
+    static int readRetryCount(MomentsInteractionState state) {
+        if (state == null || state.getLastPeerSampleJson() == null) {
+            return 0;
+        }
+        Object raw = state.getLastPeerSampleJson().get(META_RETRY_COUNT);
+        if (raw instanceof Number n) {
+            return Math.max(0, n.intValue());
+        }
+        if (raw != null) {
+            try {
+                return Math.max(0, Integer.parseInt(String.valueOf(raw)));
+            } catch (NumberFormatException ignored) {
+                return 0;
+            }
+        }
+        return 0;
     }
 
     private boolean hasPeerCommentFromOtherCharacter(MomentsPost post) {
@@ -577,6 +706,20 @@ public class MomentsCommentOrchestrator {
     }
 
     private void schedulePeerRoundRetry(Long postId) {
+        MomentsPost post = momentsPostMapper.selectById(postId);
+        if (post == null) {
+            return;
+        }
+        MomentsInteractionState state = interactionStateMapper.selectById(postId);
+        if (isAbandoned(state)) {
+            return;
+        }
+        int nextRetry = readRetryCount(state) + 1;
+        if (nextRetry >= Math.max(1, peerMaxRetries)) {
+            abandonPeerRound(post, "MAX_RETRIES", nextRetry);
+            return;
+        }
+        persistRetryCount(post, nextRetry, List.of());
         long retryMs = Math.max(60, peerRetryDelaySec) * 1000L;
         scheduledExecutorService.schedule(
                 () -> schedulePeerRound(postId, true),

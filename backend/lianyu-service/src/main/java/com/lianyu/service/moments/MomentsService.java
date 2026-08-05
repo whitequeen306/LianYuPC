@@ -239,7 +239,10 @@ public class MomentsService {
     }
 
     /** MQ 消费：为会话生成一条朋友圈动态。 */
-    @Transactional
+    /**
+     * MQ 消费：为会话生成一条朋友圈动态。
+     * 故意不加 {@code @Transactional}：生成内容会调 AI，长事务会占住 Hikari 连接拖死前台。
+     */
     public void processMomentsPostJob(AiBackgroundTask task) {
         if (task == null || task.conversationId() == null || task.characterId() == null) {
             return;
@@ -254,12 +257,14 @@ public class MomentsService {
      *
      * @return 是否成功写入
      */
-    @Transactional
     public boolean tryGenerateForConversation(Conversation conversation, Character character) {
         return tryGenerateForConversation(conversation, character, null, null);
     }
 
-    @Transactional
+    /**
+     * 角色自动发帖入口。无用户文本模型时一律不发（含 SYSTEM 固定模板）。
+     * 不加长事务：AI 调用不得占用 DB 连接。
+     */
     public boolean tryGenerateForConversation(Conversation conversation,
                                               Character character,
                                               Message latestUserMessageHint,
@@ -272,6 +277,11 @@ public class MomentsService {
         }
         Long userId = conversation.getUserId();
         Long characterId = character.getId();
+        // 未配置文本模型：不发 AI 动态，也不发 SYSTEM 固定模板（否则会触发路人评论永动机）。
+        if (apiKeyVaultService.resolvePreferredUserVault(userId) == null) {
+            log.debug("Moments character post skipped: no user text model, userId={}", userId);
+            return false;
+        }
         if (isBlocked(character) || CharacterPreferenceResolver.isDoNotDisturbActive(character)) {
             return false;
         }

@@ -36,11 +36,21 @@ public interface MomentsPostMapper extends BaseMapper<MomentsPost> {
 
     /**
      * 缺少角色路人评论的动态：角色帖需 ≥2 角色；用户帖只需 ≥1 角色即可由角色跟评。
+     * 排除：已完成/已放弃的 interaction_state、以及超过 maxAgeDays 的旧帖。
      */
     @Select("""
             SELECT p.id
             FROM moments_post p
             WHERE p.created_at < #{before}
+              AND p.created_at >= #{oldest}
+              AND NOT EXISTS (
+                SELECT 1 FROM moments_interaction_state s
+                WHERE s.post_id = p.id
+                  AND (
+                    s.peer_round_done = 1
+                    OR JSON_EXTRACT(s.last_peer_sample_json, '$.abandoned') = true
+                  )
+              )
               AND (
                 (
                   p.author_type = 'CHARACTER'
@@ -68,5 +78,6 @@ public interface MomentsPostMapper extends BaseMapper<MomentsPost> {
             LIMIT #{limit}
             """)
     List<Long> selectPostIdsNeedingPeerComments(@Param("before") LocalDateTime before,
+                                                @Param("oldest") LocalDateTime oldest,
                                                 @Param("limit") int limit);
 }
