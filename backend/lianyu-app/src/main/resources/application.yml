@@ -208,10 +208,11 @@ lianyu:
       max-tokens: 800
       describe-max-tokens: 420
     # 前台 SSE/语音 AI I/O 线程池（与后台隔离，防朋友圈风暴饿死聊天）
+    # 与 resilience4j bulkhead.ai-chat 对齐：bulkhead 卡「同时占槽」，本池卡「真正在跑」
     executor:
-      core-pool-size: 8
-      max-pool-size: 32
-      queue-capacity: 100
+      core-pool-size: 12
+      max-pool-size: 48
+      queue-capacity: 150
     # 后台 AI（朋友圈评论/日记/记忆摘要）专用池；对齐 ai-background bulkhead≈6
     background-executor:
       core-pool-size: 4
@@ -506,7 +507,7 @@ resilience4j:
   bulkhead:
     instances:
       ai-chat:
-        max-concurrent-calls: 48   # 前台交互并发（对齐 aiStreamExecutor 量级）
+        max-concurrent-calls: 80   # 前台同时占槽（对齐 executor max=48 + 队列缓冲）
         max-wait-duration: 5s
       ai-background:
         max-concurrent-calls: 6    # 略高于 mq.ai-background max consumers，兜底用

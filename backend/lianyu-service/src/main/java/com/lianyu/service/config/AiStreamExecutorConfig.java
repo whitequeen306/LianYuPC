@@ -23,9 +23,9 @@ public class AiStreamExecutorConfig {
 
     @Bean(name = "aiStreamExecutor")
     public TaskExecutor aiStreamExecutor(
-            @Value("${lianyu.ai.executor.core-pool-size:8}") int corePoolSize,
-            @Value("${lianyu.ai.executor.max-pool-size:32}") int maxPoolSize,
-            @Value("${lianyu.ai.executor.queue-capacity:100}") int queueCapacity) {
+            @Value("${lianyu.ai.executor.core-pool-size:12}") int corePoolSize,
+            @Value("${lianyu.ai.executor.max-pool-size:48}") int maxPoolSize,
+            @Value("${lianyu.ai.executor.queue-capacity:150}") int queueCapacity) {
         return build("ai-stream-", corePoolSize, maxPoolSize, queueCapacity);
     }
 
