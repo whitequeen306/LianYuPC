@@ -157,7 +157,7 @@
               <el-option label="本地模型（GPT-SoVITS）" value="GPTSOVITS_LOCAL" />
             </el-select>
           </el-form-item>
-          <el-form-item label="参考音频（mp3/wav，自动取前 30 秒）">
+          <el-form-item label="参考音频（mp3/wav，自动取前 55 秒）">
             <input
               ref="voiceFileInput"
               type="file"

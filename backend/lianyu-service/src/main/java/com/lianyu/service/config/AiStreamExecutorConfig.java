@@ -1,5 +1,6 @@
 package com.lianyu.service.config;
 
+import java.util.concurrent.ThreadPoolExecutor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -7,12 +8,15 @@ import org.springframework.core.task.TaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /**
- * AI 流式 / 阻塞调用的专用有界线程池。
+ * AI 调用专用有界线程池（前台 / 后台隔离）。
  *
- * chatStream 的 blockLast() 与 chatBlocking 的同步 chatModel.call 都是阻塞式 AI HTTP I/O；
- * 若用 CompletableFuture.runAsync/supplyAsync 不传 Executor，会落到 ForkJoinPool.commonPool()
- * （并发 = CPU 核 - 1），高并发流式对话时占满公共池、饿死全 JVM 其它异步任务（issue #12）。
- * 前台/后台 bulkhead 先限并发，本池仅承接已获许可的阻塞 AI I/O。
+ * <p>chatStream 的 {@code blockLast()} 与 chatBlocking 的同步 {@code chatModel.call}
+ * 都是阻塞式 AI HTTP I/O。若不传 Executor，会落到 {@code ForkJoinPool.commonPool()}，
+ * 高并发时饿死全 JVM 其它异步任务。
+ *
+ * <p>前台（SSE / 语音）与后台（朋友圈评论 / 日记 / 记忆摘要）必须分池：后台风暴曾把
+ * 共享池打满（32 active + 200 queue）导致前台 {@code RejectedExecutionException}，
+ * 用户侧表现为「发消息角色不回复也不报错」。
  */
 @Configuration
 public class AiStreamExecutorConfig {
@@ -21,12 +25,30 @@ public class AiStreamExecutorConfig {
     public TaskExecutor aiStreamExecutor(
             @Value("${lianyu.ai.executor.core-pool-size:8}") int corePoolSize,
             @Value("${lianyu.ai.executor.max-pool-size:32}") int maxPoolSize,
-            @Value("${lianyu.ai.executor.queue-capacity:200}") int queueCapacity) {
+            @Value("${lianyu.ai.executor.queue-capacity:100}") int queueCapacity) {
+        return build("ai-stream-", corePoolSize, maxPoolSize, queueCapacity);
+    }
+
+    /**
+     * Background AI I/O pool. Sized near {@code resilience4j.bulkhead.ai-background}
+     * so moments/diary storms cannot starve interactive SSE.
+     */
+    @Bean(name = "aiBackgroundExecutor")
+    public TaskExecutor aiBackgroundExecutor(
+            @Value("${lianyu.ai.background-executor.core-pool-size:4}") int corePoolSize,
+            @Value("${lianyu.ai.background-executor.max-pool-size:8}") int maxPoolSize,
+            @Value("${lianyu.ai.background-executor.queue-capacity:32}") int queueCapacity) {
+        return build("ai-bg-", corePoolSize, maxPoolSize, queueCapacity);
+    }
+
+    private static TaskExecutor build(String prefix, int core, int max, int queue) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setThreadNamePrefix("ai-stream-");
-        executor.setCorePoolSize(Math.max(2, corePoolSize));
-        executor.setMaxPoolSize(Math.max(corePoolSize, maxPoolSize));
-        executor.setQueueCapacity(Math.max(50, queueCapacity));
+        executor.setThreadNamePrefix(prefix);
+        executor.setCorePoolSize(Math.max(2, core));
+        executor.setMaxPoolSize(Math.max(core, max));
+        executor.setQueueCapacity(Math.max(8, queue));
+        // Prefer fail-fast over unbounded wait; callers map RejectedExecution → 繁忙提示.
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         executor.initialize();
         return executor;
     }

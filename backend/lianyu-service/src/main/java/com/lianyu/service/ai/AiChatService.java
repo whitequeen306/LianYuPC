@@ -36,6 +36,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.LinkedHashMap;
@@ -43,6 +44,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
@@ -86,7 +88,10 @@ public class AiChatService {
     private final CircuitBreaker circuitBreaker;
     private final UpstreamCircuitBreakerFactory upstreamBreakers;
     private final ScheduledExecutorService scheduler;
+    /** Foreground SSE / voice / interactive blocking. */
     private final Executor aiStreamExecutor;
+    /** Background moments / diary / memory — isolated so storms cannot starve chat. */
+    private final Executor aiBackgroundExecutor;
     private final PromptRuleEngine promptRuleEngine;
     private final OutputLanguageService outputLanguageService;
     private final MultimodalOutputParser multimodalOutputParser;
@@ -160,7 +165,8 @@ public class AiChatService {
                          TimeLimiterRegistry timeLimiterRegistry,
                          CircuitBreakerRegistry circuitBreakerRegistry,
                          ScheduledExecutorService scheduler,
-                         Executor aiStreamExecutor,
+                         @Qualifier("aiStreamExecutor") Executor aiStreamExecutor,
+                         @Qualifier("aiBackgroundExecutor") Executor aiBackgroundExecutor,
                          PromptRuleEngine promptRuleEngine,
                          OutputLanguageService outputLanguageService) {
         this.vaultService = vaultService;
@@ -175,6 +181,7 @@ public class AiChatService {
         this.upstreamBreakers = new UpstreamCircuitBreakerFactory(circuitBreakerRegistry);
         this.scheduler = scheduler;
         this.aiStreamExecutor = aiStreamExecutor;
+        this.aiBackgroundExecutor = aiBackgroundExecutor;
         this.promptRuleEngine = promptRuleEngine;
         this.outputLanguageService = outputLanguageService;
         this.multimodalOutputParser = new MultimodalOutputParser(objectMapper);
@@ -209,76 +216,89 @@ public class AiChatService {
         }
 
         final CircuitBreaker upstreamCb = resolveBreaker(vault);
-        acquireUpstreamPermit(upstreamCb, vault);
+        try {
+            acquireUpstreamPermit(upstreamCb, vault);
+        } catch (RuntimeException e) {
+            lane.releasePermission();
+            throw e;
+        }
 
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
         StringBuilder contentBuffer = new StringBuilder();
 
-        CompletableFuture.runAsync(() -> {
-            final long upstreamStart = System.nanoTime();
-            Throwable upstreamError = null;
-            try {
-                runWithChatToolScope(userId, request, () -> {
-                    List<Message> messages = toSpringMessages(request.getMessages());
-                    Prompt prompt = buildPrompt(request, vault, messages);
-                    chatModel.stream(prompt)
-                            .retryWhen(reactor.util.retry.Retry.fixedDelay(1, Duration.ofMillis(300))
-                                    .filter(error -> contentBuffer.isEmpty()
-                                            && isTransientStreamFailure(error))
-                                    .doBeforeRetry(signal -> log.warn(
-                                            "AI chat stream transient connect failure, retrying once: {}",
-                                            signal.failure().toString())))
-                            .doOnNext(response -> {
-                                try {
-                                    String text = extractStreamDelta(response);
-                                    if (text != null && !text.isEmpty()) {
-                                        contentBuffer.append(text);
-                                        sendSseChunk(emitter, text);
+        try {
+            CompletableFuture.runAsync(() -> {
+                final long upstreamStart = System.nanoTime();
+                Throwable upstreamError = null;
+                try {
+                    runWithChatToolScope(userId, request, () -> {
+                        List<Message> messages = toSpringMessages(request.getMessages());
+                        Prompt prompt = buildPrompt(request, vault, messages);
+                        chatModel.stream(prompt)
+                                .retryWhen(reactor.util.retry.Retry.fixedDelay(1, Duration.ofMillis(300))
+                                        .filter(error -> contentBuffer.isEmpty()
+                                                && isTransientStreamFailure(error))
+                                        .doBeforeRetry(signal -> log.warn(
+                                                "AI chat stream transient connect failure, retrying once: {}",
+                                                signal.failure().toString())))
+                                .doOnNext(response -> {
+                                    try {
+                                        String text = extractStreamDelta(response);
+                                        if (text != null && !text.isEmpty()) {
+                                            contentBuffer.append(text);
+                                            sendSseChunk(emitter, text);
+                                        }
+                                    } catch (IOException e) {
+                                        log.error("SSE send error", e);
                                     }
-                                } catch (IOException e) {
-                                    log.error("SSE send error", e);
-                                }
-                            })
-                            .doOnComplete(() -> {
-                                try {
-                                    String finalContent = contentBuffer.toString();
-                                    String corrected = enforceExpectedLanguage(
-                                            userId,
-                                            request,
-                                            vault,
-                                            model,
-                                            chatModel,
-                                            finalContent,
-                                            () -> sendSseHeartbeat(emitter));
-                                    if (corrected != null
-                                            && !corrected.equals(finalContent)
-                                            && !corrected.isBlank()) {
-                                        sendSseReplace(emitter, corrected);
-                                        finishSseSuccess(emitter, corrected, callback);
-                                        return;
+                                })
+                                .doOnComplete(() -> {
+                                    try {
+                                        String finalContent = contentBuffer.toString();
+                                        String corrected = enforceExpectedLanguage(
+                                                userId,
+                                                request,
+                                                vault,
+                                                model,
+                                                chatModel,
+                                                finalContent,
+                                                () -> sendSseHeartbeat(emitter));
+                                        if (corrected != null
+                                                && !corrected.equals(finalContent)
+                                                && !corrected.isBlank()) {
+                                            sendSseReplace(emitter, corrected);
+                                            finishSseSuccess(emitter, corrected, callback);
+                                            return;
+                                        }
+                                        finishSseSuccess(emitter, finalContent, callback);
+                                    } catch (Exception e) {
+                                        log.error("SSE language correction failed", e);
+                                        finishSseSuccess(emitter, contentBuffer.toString(), callback);
                                     }
-                                    finishSseSuccess(emitter, finalContent, callback);
-                                } catch (Exception e) {
-                                    log.error("SSE language correction failed", e);
-                                    finishSseSuccess(emitter, contentBuffer.toString(), callback);
-                                }
-                            })
-                            .onErrorResume(e -> {
-                                log.error("AI stream error", e);
-                                finishSseError(emitter, resolveStreamErrorMessage(e), contentBuffer.toString(), callback);
-                                return reactor.core.publisher.Mono.empty();
-                            })
-                            .blockLast();
-                });
-            } catch (Exception e) {
-                upstreamError = e;
-                log.error("AI chat stream fatal error", e);
-                finishSseError(emitter, resolveStreamErrorMessage(e), contentBuffer.toString(), callback);
-            } finally {
-                releaseUpstreamPermit(upstreamCb, upstreamStart, upstreamError);
-                lane.releasePermission();
-            }
-        }, aiStreamExecutor);
+                                })
+                                .onErrorResume(e -> {
+                                    log.error("AI stream error", e);
+                                    finishSseError(emitter, resolveStreamErrorMessage(e), contentBuffer.toString(), callback);
+                                    return reactor.core.publisher.Mono.empty();
+                                })
+                                .blockLast();
+                    });
+                } catch (Exception e) {
+                    upstreamError = e;
+                    log.error("AI chat stream fatal error", e);
+                    finishSseError(emitter, resolveStreamErrorMessage(e), contentBuffer.toString(), callback);
+                } finally {
+                    releaseUpstreamPermit(upstreamCb, upstreamStart, upstreamError);
+                    lane.releasePermission();
+                }
+            }, aiStreamExecutor);
+        } catch (RejectedExecutionException e) {
+            // Pool full — release permits acquired above; do not count as upstream failure.
+            releaseUpstreamPermit(upstreamCb, System.nanoTime(), null);
+            lane.releasePermission();
+            log.warn("AI stream executor saturated, reject chatStream userId={}", userId);
+            throw new BusinessException(ErrorCode.AI_RATE_LIMITED, "对话服务繁忙，请稍后再试");
+        }
 
         return emitter;
     }
@@ -312,53 +332,67 @@ public class AiChatService {
         }
 
         final CircuitBreaker upstreamCb = resolveBreaker(vault);
-        acquireUpstreamPermit(upstreamCb, vault);
+        try {
+            acquireUpstreamPermit(upstreamCb, vault);
+        } catch (RuntimeException e) {
+            lane.releasePermission();
+            future.completeExceptionally(e);
+            return future;
+        }
 
-        CompletableFuture.runAsync(() -> {
-            final long upstreamStart = System.nanoTime();
-            Throwable upstreamError = null;
-            StringBuilder contentBuffer = new StringBuilder();
-            try {
-                runWithChatToolScope(userId, request, () -> {
-                    List<Message> messages = toSpringMessages(request.getMessages());
-                    Prompt prompt = buildPrompt(request, vault, messages);
-                    chatModel.stream(prompt)
-                            .retryWhen(reactor.util.retry.Retry.fixedDelay(1, Duration.ofMillis(300))
-                                    .filter(error -> contentBuffer.isEmpty()
-                                            && isTransientStreamFailure(error))
-                                    .doBeforeRetry(signal -> log.warn(
-                                            "AI stream-tokens transient connect failure, retrying once: {}",
-                                            signal.failure().toString())))
-                            .doOnNext(response -> {
-                                String text = extractStreamDelta(response);
-                                if (text != null && !text.isEmpty()) {
-                                    contentBuffer.append(text);
-                                    if (onDelta != null) {
-                                        try {
-                                            onDelta.accept(text);
-                                        } catch (Exception e) {
-                                            log.debug("streamTokens onDelta failed: {}", e.toString());
+        try {
+            CompletableFuture.runAsync(() -> {
+                final long upstreamStart = System.nanoTime();
+                Throwable upstreamError = null;
+                StringBuilder contentBuffer = new StringBuilder();
+                try {
+                    runWithChatToolScope(userId, request, () -> {
+                        List<Message> messages = toSpringMessages(request.getMessages());
+                        Prompt prompt = buildPrompt(request, vault, messages);
+                        chatModel.stream(prompt)
+                                .retryWhen(reactor.util.retry.Retry.fixedDelay(1, Duration.ofMillis(300))
+                                        .filter(error -> contentBuffer.isEmpty()
+                                                && isTransientStreamFailure(error))
+                                        .doBeforeRetry(signal -> log.warn(
+                                                "AI stream-tokens transient connect failure, retrying once: {}",
+                                                signal.failure().toString())))
+                                .doOnNext(response -> {
+                                    String text = extractStreamDelta(response);
+                                    if (text != null && !text.isEmpty()) {
+                                        contentBuffer.append(text);
+                                        if (onDelta != null) {
+                                            try {
+                                                onDelta.accept(text);
+                                            } catch (Exception e) {
+                                                log.debug("streamTokens onDelta failed: {}", e.toString());
+                                            }
                                         }
                                     }
-                                }
-                            })
-                            .doOnComplete(() -> future.complete(contentBuffer.toString()))
-                            .onErrorResume(e -> {
-                                future.completeExceptionally(e);
-                                return reactor.core.publisher.Mono.empty();
-                            })
-                            .blockLast();
-                });
-            } catch (Exception e) {
-                upstreamError = e;
-                if (!future.isDone()) {
-                    future.completeExceptionally(e);
+                                })
+                                .doOnComplete(() -> future.complete(contentBuffer.toString()))
+                                .onErrorResume(e -> {
+                                    future.completeExceptionally(e);
+                                    return reactor.core.publisher.Mono.empty();
+                                })
+                                .blockLast();
+                    });
+                } catch (Exception e) {
+                    upstreamError = e;
+                    if (!future.isDone()) {
+                        future.completeExceptionally(e);
+                    }
+                } finally {
+                    releaseUpstreamPermit(upstreamCb, upstreamStart, upstreamError);
+                    lane.releasePermission();
                 }
-            } finally {
-                releaseUpstreamPermit(upstreamCb, upstreamStart, upstreamError);
-                lane.releasePermission();
-            }
-        }, aiStreamExecutor);
+            }, aiStreamExecutor);
+        } catch (RejectedExecutionException e) {
+            releaseUpstreamPermit(upstreamCb, System.nanoTime(), null);
+            lane.releasePermission();
+            log.warn("AI stream executor saturated, reject streamTokens userId={}", userId);
+            future.completeExceptionally(
+                    new BusinessException(ErrorCode.AI_RATE_LIMITED, "对话服务繁忙，请稍后再试"));
+        }
 
         return future;
     }
@@ -406,55 +440,64 @@ public class AiChatService {
 
     public ChatResult chatBlocking(Long userId, AiChatRequest request) {
         final Bulkhead lane = resolveBulkhead(request);
+        final Executor pool = resolveAiExecutor(request);
         try {
-            return timeLimiter.executeCompletionStage(scheduler, () ->
-                    CompletableFuture.supplyAsync(() -> {
-                        try {
-                            return lane.executeCallable(() -> {
-                                // resolveVault 在熔断外：DB/Redis 查询不参与熔断，避免 DB 抖动误熔上游。
-                                VaultEntryResponse vault = resolveVaultForRequest(userId, request);
-                                return resolveBreaker(vault).executeCallable(() -> {
+            // Hold bulkhead BEFORE enqueueing onto the executor. Previously tasks piled into
+            // the shared pool first, then waited on a 6-slot background bulkhead — moments
+            // storms filled the pool and starved interactive SSE (RejectedExecution).
+            return lane.executeCallable(() ->
+                    timeLimiter.executeCompletionStage(scheduler, () ->
+                            CompletableFuture.supplyAsync(() -> {
+                                try {
+                                    // resolveVault 在熔断外：DB/Redis 查询不参与熔断。
+                                    VaultEntryResponse vault = resolveVaultForRequest(userId, request);
+                                    return resolveBreaker(vault).executeCallable(() -> {
                                         String model = resolveModel(request, vault);
                                         ChatModel chatModel = buildChatModel(vault, model, resolveApiKeyForProvider(vault));
 
                                         return withChatToolScope(userId, request, () -> {
-                                        List<Message> messages = toSpringMessages(request.getMessages());
-                                        Prompt prompt = buildPrompt(request, vault, messages);
-                                        ChatResponse response = chatModel.call(prompt);
-                                        String content = extractStreamDelta(response);
-                                        if (content == null) {
-                                            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
-                                                    "对方没有回复内容，请重试");
-                                        }
-                                        content = enforceExpectedLanguage(
-                                                userId,
-                                                request,
-                                                vault,
-                                                model,
-                                                chatModel,
-                                                content,
-                                                null);
+                                            List<Message> messages = toSpringMessages(request.getMessages());
+                                            Prompt prompt = buildPrompt(request, vault, messages);
+                                            ChatResponse response = chatModel.call(prompt);
+                                            String content = extractStreamDelta(response);
+                                            if (content == null) {
+                                                throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
+                                                        "对方没有回复内容，请重试");
+                                            }
+                                            content = enforceExpectedLanguage(
+                                                    userId,
+                                                    request,
+                                                    vault,
+                                                    model,
+                                                    chatModel,
+                                                    content,
+                                                    null);
 
-                                        ChatResult.ChatResultBuilder builder = ChatResult.builder().content(content);
-                                        if (response.getMetadata() != null && response.getMetadata().getUsage() != null) {
-                                            var usage = response.getMetadata().getUsage();
-                                            builder.promptTokens(usage.getPromptTokens() != null ? usage.getPromptTokens().intValue() : null)
-                                                   .completionTokens(usage.getCompletionTokens() != null ? usage.getCompletionTokens().intValue() : null)
-                                                   .totalTokens(usage.getTotalTokens() != null ? usage.getTotalTokens().intValue() : null);
-                                        }
-                                        return builder.build();
+                                            ChatResult.ChatResultBuilder builder = ChatResult.builder().content(content);
+                                            if (response.getMetadata() != null && response.getMetadata().getUsage() != null) {
+                                                var usage = response.getMetadata().getUsage();
+                                                builder.promptTokens(usage.getPromptTokens() != null ? usage.getPromptTokens().intValue() : null)
+                                                       .completionTokens(usage.getCompletionTokens() != null ? usage.getCompletionTokens().intValue() : null)
+                                                       .totalTokens(usage.getTotalTokens() != null ? usage.getTotalTokens().intValue() : null);
+                                            }
+                                            return builder.build();
                                         });
                                     });
-                            });
-                        } catch (Exception e) {
-                            throw new RuntimeException(e);
-                        }
-                    }, aiStreamExecutor)
-            ).toCompletableFuture().join();
+                                } catch (Exception e) {
+                                    throw new RuntimeException(e);
+                                }
+                            }, pool)
+                    ).toCompletableFuture().join()
+            );
         } catch (Exception e) {
-            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            Throwable cause = unwrap(e);
             if (cause instanceof BusinessException be) {
                 throw be;
+            }
+            if (cause instanceof RejectedExecutionException
+                    || cause instanceof io.github.resilience4j.bulkhead.BulkheadFullException) {
+                log.warn("AI blocking rejected (pool/bulkhead saturated): userId={}", userId);
+                throw new BusinessException(ErrorCode.AI_RATE_LIMITED, "对话服务繁忙，请稍后再试");
             }
             log.error("AI chat error", cause);
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "消息发送失败，请稍后再试");
@@ -469,6 +512,30 @@ public class AiChatService {
             return backgroundBulkhead;
         }
         return interactiveBulkhead;
+    }
+
+    /** Background AI must not share the interactive SSE pool. */
+    private Executor resolveAiExecutor(AiChatRequest request) {
+        if (request != null && (request.isBackground() || request.isPlatformLogic())) {
+            return aiBackgroundExecutor;
+        }
+        return aiStreamExecutor;
+    }
+
+    private static Throwable unwrap(Throwable e) {
+        Throwable cur = e;
+        for (int i = 0; i < 6 && cur != null; i++) {
+            if (cur instanceof BusinessException
+                    || cur instanceof RejectedExecutionException
+                    || cur instanceof io.github.resilience4j.bulkhead.BulkheadFullException) {
+                return cur;
+            }
+            if (cur.getCause() == null || cur.getCause() == cur) {
+                break;
+            }
+            cur = cur.getCause();
+        }
+        return e.getCause() != null ? e.getCause() : e;
     }
 
     public List<ModelEntryDto> previewModels(Long userId, String baseUrl, String apiKey) {
@@ -966,25 +1033,31 @@ public class AiChatService {
             throw new BusinessException(ErrorCode.AI_RATE_LIMITED, "对话服务繁忙，请稍后再试");
         }
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
-        CompletableFuture.runAsync(() -> {
-            try {
-                VaultEntryResponse vault = resolveVaultForRequest(userId, request);
-                ChatResult result = resolveBreaker(vault).executeCallable(() -> doImageChat(userId, request));
-                if (callback != null) {
-                    callback.onVisionComplete(result.getImageDescription());
+        try {
+            CompletableFuture.runAsync(() -> {
+                try {
+                    VaultEntryResponse vault = resolveVaultForRequest(userId, request);
+                    ChatResult result = resolveBreaker(vault).executeCallable(() -> doImageChat(userId, request));
+                    if (callback != null) {
+                        callback.onVisionComplete(result.getImageDescription());
+                    }
+                    String reply = result.getContent();
+                    if (reply != null && !reply.isBlank()) {
+                        sendSseChunk(emitter, reply);
+                    }
+                    finishSseSuccess(emitter, reply, callback);
+                } catch (Exception e) {
+                    log.error("Multimodal stream error: userId={}", userId, e);
+                    finishSseError(emitter, resolveStreamErrorMessage(e), "", callback);
+                } finally {
+                    lane.releasePermission();
                 }
-                String reply = result.getContent();
-                if (reply != null && !reply.isBlank()) {
-                    sendSseChunk(emitter, reply);
-                }
-                finishSseSuccess(emitter, reply, callback);
-            } catch (Exception e) {
-                log.error("Multimodal stream error: userId={}", userId, e);
-                finishSseError(emitter, resolveStreamErrorMessage(e), "", callback);
-            } finally {
-                lane.releasePermission();
-            }
-        }, aiStreamExecutor);
+            }, aiStreamExecutor);
+        } catch (RejectedExecutionException e) {
+            lane.releasePermission();
+            log.warn("AI stream executor saturated, reject chatImageStream userId={}", userId);
+            throw new BusinessException(ErrorCode.AI_RATE_LIMITED, "对话服务繁忙，请稍后再试");
+        }
         return emitter;
     }
 

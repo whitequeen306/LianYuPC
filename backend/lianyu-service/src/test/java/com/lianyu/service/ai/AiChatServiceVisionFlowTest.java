@@ -50,6 +50,7 @@ class AiChatServiceVisionFlowTest {
                 CircuitBreakerRegistry.ofDefaults(),
                 scheduler,
                 aiStreamExecutor,
+                aiStreamExecutor,
                 promptRuleEngine,
                 outputLanguageService);
     }

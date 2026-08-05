@@ -207,6 +207,16 @@ lianyu:
       model: ${MULTIMODAL_MODEL:qwen3-vl-plus}
       max-tokens: 800
       describe-max-tokens: 420
+    # 前台 SSE/语音 AI I/O 线程池（与后台隔离，防朋友圈风暴饿死聊天）
+    executor:
+      core-pool-size: 8
+      max-pool-size: 32
+      queue-capacity: 100
+    # 后台 AI（朋友圈评论/日记/记忆摘要）专用池；对齐 ai-background bulkhead≈6
+    background-executor:
+      core-pool-size: 4
+      max-pool-size: 8
+      queue-capacity: 32
     tts:
       enabled: ${LIANYU_PET_TTS_ENABLED:true}
       api-key: ${DASHSCOPE_API_KEY:}

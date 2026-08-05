@@ -17,9 +17,9 @@ import lombok.extern.slf4j.Slf4j;
 public final class CustomVoiceAudioTrimmer {
 
     /** Seconds kept from the start of the uploaded audio. */
-    public static final double KEEP_SECONDS = 30.0;
+    public static final double KEEP_SECONDS = 55.0;
     /** Give up if decoding takes too long (protects the request thread). */
-    private static final Duration PROCESS_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration PROCESS_TIMEOUT = Duration.ofSeconds(90);
 
     private CustomVoiceAudioTrimmer() {
     }
