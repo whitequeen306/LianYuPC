@@ -898,7 +898,7 @@ public class AiChatService {
     }
 
     private VaultEntryResponse resolveVaultForGeneration(Long userId, String provider) {
-        return resolveVault(userId, provider, false);
+        return resolveVault(userId, provider);
     }
 
     private VaultEntryResponse resolveVaultForRequest(Long userId, AiChatRequest request) {
