@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -41,7 +40,7 @@ class MemoryExtractionServiceTest {
         msg.setRole("USER");
         msg.setContent("我叫小明，我喜欢夜跑");
 
-        List<ExtractedMemory> result = service.extract(List.of(msg), new MemorySummaryTask(1L, 2L, 3L));
+        List<ExtractedMemory> result = service.extract(List.of(msg), new MemorySummaryTask(1L, 2L, 3L, "p", null));
 
         assertTrue(result.stream().anyMatch(m -> m.summary().contains("【长期记忆/姓名】小明")));
         assertTrue(result.stream().anyMatch(m -> m.summary().contains("【长期记忆/爱好】夜跑")));
@@ -65,7 +64,7 @@ class MemoryExtractionServiceTest {
         msg.setRole("USER");
         msg.setContent("我叫小明");
 
-        List<ExtractedMemory> result = service.extract(List.of(msg), new MemorySummaryTask(1L, 2L, 3L));
+        List<ExtractedMemory> result = service.extract(List.of(msg), new MemorySummaryTask(1L, 2L, 3L, "p", null));
 
         long nameMatches = result.stream()
                 .filter(m -> m.summary().contains("小明"))
@@ -84,7 +83,7 @@ class MemoryExtractionServiceTest {
         msg.setRole("USER");
         msg.setContent("以后你可以叫我阿昼");
 
-        List<ExtractedMemory> result = service.extract(List.of(msg), new MemorySummaryTask(1L, 2L, 3L));
+        List<ExtractedMemory> result = service.extract(List.of(msg), new MemorySummaryTask(1L, 2L, 3L, "p", null));
 
         assertTrue(result.stream().anyMatch(m -> "【长期记忆/姓名】阿昼".equals(m.summary())));
         assertTrue(result.stream().anyMatch(m -> "你们形成了专属称呼锚点".equals(m.summary())));
@@ -96,13 +95,13 @@ class MemoryExtractionServiceTest {
         msg.setRole("USER");
         msg.setContent(content);
 
-        List<ExtractedMemory> result = service.extract(List.of(msg), new MemorySummaryTask(1L, 2L, 3L));
+        List<ExtractedMemory> result = service.extract(List.of(msg), new MemorySummaryTask(1L, 2L, 3L, "p", null));
         assertTrue(result.stream().anyMatch(m -> expectedSummary.equals(m.summary())), content);
     }
 
     @Test
     void extract_filtersLowImportanceFromLlm() {
-        when(llmExtractor.extract(eq(3L), anyList())).thenReturn(List.of(
+        when(llmExtractor.extract(any(MemorySummaryTask.class), anyList())).thenReturn(List.of(
                 new ExtractedMemory("临时琐事", MemoryType.FACT, 11L, 0.2)));
 
         Message msg = new Message();
@@ -110,7 +109,7 @@ class MemoryExtractionServiceTest {
         msg.setRole("USER");
         msg.setContent("嗯嗯好的");
 
-        List<ExtractedMemory> result = service.extract(List.of(msg), new MemorySummaryTask(1L, 2L, 3L));
+        List<ExtractedMemory> result = service.extract(List.of(msg), new MemorySummaryTask(1L, 2L, 3L, "p", null));
 
         assertEquals(0, result.size());
     }
@@ -124,7 +123,7 @@ class MemoryExtractionServiceTest {
         msg.setRole("USER");
         msg.setContent("我叫什么来着？");
 
-        List<ExtractedMemory> result = service.extract(List.of(msg), new MemorySummaryTask(1L, 2L, 3L));
+        List<ExtractedMemory> result = service.extract(List.of(msg), new MemorySummaryTask(1L, 2L, 3L, "p", null));
 
         assertTrue(result.stream().noneMatch(m -> m.summary().contains("什么")));
     }

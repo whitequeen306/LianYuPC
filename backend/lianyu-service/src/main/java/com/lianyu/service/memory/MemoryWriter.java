@@ -54,7 +54,8 @@ public class MemoryWriter {
         return t;
     });
 
-    public void enqueueSummary(Long conversationId, Long characterId, Long userId) {
+    public void enqueueSummary(Long conversationId, Long characterId, Long userId,
+                               String provider, String model) {
         String debounceKey = debounceKey(conversationId, characterId);
         Boolean first = redisTemplate.opsForValue().setIfAbsent(debounceKey, "0", DEBOUNCE_TTL);
         if (Boolean.FALSE.equals(first)) {
@@ -63,7 +64,7 @@ public class MemoryWriter {
                     conversationId, characterId);
             return;
         }
-        sendSummaryTask(new MemorySummaryTask(conversationId, characterId, userId));
+        sendSummaryTask(new MemorySummaryTask(conversationId, characterId, userId, provider, model));
         log.info("Memory summary enqueued: conversationId={}, characterId={}", conversationId, characterId);
     }
 
@@ -138,7 +139,8 @@ public class MemoryWriter {
         }
         rescheduleExecutor.schedule(
                 () -> sendSummaryTask(new MemorySummaryTask(
-                        task.conversationId(), task.characterId(), task.userId())),
+                        task.conversationId(), task.characterId(), task.userId(),
+                        task.provider(), task.model())),
                 RESCHEDULE_DELAY_SECONDS,
                 TimeUnit.SECONDS);
         log.info("Memory summary rescheduled: conversationId={}, characterId={}",
@@ -291,6 +293,10 @@ public class MemoryWriter {
 
     private record MemoryUpsertOutcome(MemoryUpsertResult result, MemoryMeta meta) {}
 
+    /**
+     * provider/model 为产生该任务的本回合所用文本模型；为空（旧在途消息等）时由提取器
+     * 回落到用户最近更新的启用 vault。
+     */
     public record MemorySummaryTask(Long conversationId, Long characterId,
-                                     Long userId) implements Serializable {}
+                                     Long userId, String provider, String model) implements Serializable {}
 }

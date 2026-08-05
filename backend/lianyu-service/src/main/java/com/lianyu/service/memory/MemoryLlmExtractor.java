@@ -2,13 +2,15 @@ package com.lianyu.service.memory;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lianyu.common.constant.AiConstants;
 import com.lianyu.dao.entity.Message;
 import com.lianyu.dao.enums.MemoryType;
 import com.lianyu.service.ai.AiChatService;
+import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.dto.AiChatRequest;
 import com.lianyu.service.dto.ChatResult;
 import com.lianyu.service.dto.MessageDto;
+import com.lianyu.service.dto.VaultEntryResponse;
+import com.lianyu.service.memory.MemoryWriter.MemorySummaryTask;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -22,19 +24,30 @@ import org.springframework.stereotype.Component;
 public class MemoryLlmExtractor {
 
     private final AiChatService aiChatService;
+    private final ApiKeyVaultService apiKeyVaultService;
     private final ObjectMapper objectMapper;
-
-    @Value("${lianyu.memory.extraction.model:deepseek-v4-flash}")
-    private String extractionModel;
 
     @Value("${lianyu.memory.extraction.max-context-messages:12}")
     private int maxContextMessages;
 
-    public List<ExtractedMemory> extract(Long userId, List<Message> messages) {
+    public List<ExtractedMemory> extract(MemorySummaryTask task, List<Message> messages) {
         if (messages == null || messages.isEmpty()) {
             return List.of();
         }
         try {
+            String provider = task.provider();
+            String model = task.model();
+            if (provider == null || provider.isBlank()) {
+                VaultEntryResponse preferred = apiKeyVaultService.resolvePreferredUserVault(task.userId());
+                if (preferred == null) {
+                    log.debug("Memory LLM extraction skipped: no user text model, userId={}", task.userId());
+                    return List.of();
+                }
+                provider = preferred.getProvider();
+                if (model == null || model.isBlank()) {
+                    model = preferred.getModelDefault();
+                }
+            }
             String context = buildContext(messages);
             String systemPrompt = """
                     你是长期记忆提取器。从用户消息中识别值得长期记住的信息。
@@ -50,9 +63,9 @@ public class MemoryLlmExtractor {
                     """;
 
             AiChatRequest request = new AiChatRequest();
-            request.setProvider(AiConstants.PLATFORM_PROVIDER);
-            request.setPlatformLogic(true);
-            request.setModel(extractionModel);
+            request.setProvider(provider);
+            request.setBackground(true);
+            request.setModel(model);
             request.setTemperature(0.1);
             List<MessageDto> dtos = new ArrayList<>();
             MessageDto system = new MessageDto();
@@ -65,7 +78,7 @@ public class MemoryLlmExtractor {
             dtos.add(user);
             request.setMessages(dtos);
 
-            ChatResult result = aiChatService.chatBlocking(userId, request);
+            ChatResult result = aiChatService.chatBlocking(task.userId(), request);
             if (result == null || result.getContent() == null || result.getContent().isBlank()) {
                 return List.of();
             }

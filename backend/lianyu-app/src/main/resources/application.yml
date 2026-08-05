@@ -76,7 +76,7 @@ spring:
 
   ai:
     openai:
-      # 密钥勿写死入仓；优先 api_key_vault DEFAULT 池，见 .env.example
+      # 密钥勿写死入仓；对话与内置逻辑均使用 api_key_vault 中用户自有配置
       api-key: ${OPENAI_API_KEY:}
       # Base 可带或不带 /v1，AiChatService 会规范化
       base-url: ${OPENAI_BASE_URL:}
@@ -167,7 +167,6 @@ lianyu:
       enabled: true
     extraction:
       enabled: true
-      model: deepseek-v4-flash
       importance-threshold: 0.5
       max-memories-per-turn: 3
       max-context-messages: 12
@@ -186,11 +185,7 @@ lianyu:
     # 是否开放 /api/ai/chat 直连（默认关闭，走会话接口）
     direct-chat-enabled: ${LIANYU_AI_DIRECT_CHAT:false}
     direct-chat-daily-limit: 50
-    # 用户可见聊天不再走平台 DEFAULT 池；须用户自有文本模型。逻辑（记忆/摘要/@裁决）仍可用 DEFAULT 池
-    platform-chat-enabled: false
-    platform:
-      # 平台逻辑 key 仅走 MySQL api_key_vault DEFAULT 池（10 槽位 + Redis 轮询），勿在 .env 配置单 key
-      api-keys: ""
+    # 用户可见聊天与内置逻辑（记忆/摘要/@裁决）均须用户自有文本模型
     # 拼进 Prompt 的最近历史消息条数
     context-window: 32
     # 记忆向量维度（与 Milvus collection、embedding 一致）
@@ -249,7 +244,6 @@ lianyu:
       enabled: true
       raw-window: 32
       slide-batch-min: 6
-      model: deepseek-v4-flash
       redis-ttl-hours: 72
       target-chars: 600
       soft-max-chars: 900
@@ -328,8 +322,6 @@ lianyu:
       enabled: true
       # 高于此阈值直接采用（Java规则或小模型输出）
       threshold: 0.8
-      # 低置信度裁决模型（复用平台 deepseek key，不新增 key）
-      model: deepseek-chat
       # 送给裁决模型的最近上下文条数
       max-context-messages: 6
 

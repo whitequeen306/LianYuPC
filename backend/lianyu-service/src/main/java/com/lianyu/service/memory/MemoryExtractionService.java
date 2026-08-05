@@ -48,7 +48,7 @@ public class MemoryExtractionService {
         }
 
         if (extractionEnabled && shouldCallLlm(messages, heuristicMemories)) {
-            List<ExtractedMemory> llmMemories = llmExtractor.extract(task.userId(), messages);
+            List<ExtractedMemory> llmMemories = llmExtractor.extract(task, messages);
             for (ExtractedMemory memory : llmMemories) {
                 if (!isDuplicateSummary(merged, memory.summary())) {
                     merged.add(memory);

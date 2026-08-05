@@ -52,11 +52,11 @@ public class SessionSummaryService {
     }
 
     @Async
-    public void maybeMergeAsync(Long conversationId) {
-        maybeMerge(conversationId);
+    public void maybeMergeAsync(Long conversationId, String provider, String model) {
+        maybeMerge(conversationId, provider, model);
     }
 
-    public void maybeMerge(Long conversationId) {
+    public void maybeMerge(Long conversationId, String provider, String model) {
         if (!properties.isEnabled() || conversationId == null) {
             return;
         }
@@ -85,7 +85,7 @@ public class SessionSummaryService {
             return;
         }
 
-        String merged = merger.merge(userId, state.getText(), pending);
+        String merged = merger.merge(userId, provider, model, state.getText(), pending);
         if (StrUtil.isBlank(merged)) {
             return;
         }

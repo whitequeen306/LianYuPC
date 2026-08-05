@@ -35,7 +35,7 @@ mvn -B test                  # 单元 / 集成测试
 
 | 路径 | 说明 |
 |------|------|
-| `scripts/` | 维护脚本（如 `seed-default-vault-pool.ps1` 轮换平台 Key） |
+| `scripts/` | 维护脚本（SQL 修复 / 代码批量处理等） |
 | `Dockerfile` | 云端多阶段镜像：Maven 打包 → JRE 运行 |
 
 ## Flyway 迁移

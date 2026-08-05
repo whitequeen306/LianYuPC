@@ -12,7 +12,6 @@ public class SessionSummaryProperties {
     private boolean enabled = true;
     private int rawWindow = 32;
     private int slideBatchMin = 6;
-    private String model = "deepseek-v4-flash";
     private long redisTtlHours = 72;
     private int targetChars = 600;
     private int softMaxChars = 900;

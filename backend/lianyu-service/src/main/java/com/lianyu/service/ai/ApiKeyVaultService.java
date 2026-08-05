@@ -14,7 +14,6 @@ import com.lianyu.service.dto.VaultEntryResponse;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,16 +23,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class ApiKeyVaultService {
 
     public static final String USER_SCOPE = "USER";
-    public static final String DEFAULT_SCOPE = "DEFAULT";
     /** 与 api_key_vault.provider VARCHAR(32) 一致 */
     public static final int MAX_PROVIDER_LENGTH = 32;
-    private static final String DEFAULT_POOL_CURSOR_KEY = "vault:default:pool:cursor";
     /** 插入占位，插入后立即改为 Provider{id} */
     private static final String PROVIDER_INSERT_PLACEHOLDER = "p";
 
     private final ApiKeyVaultMapper vaultMapper;
     private final JasyptUtil jasyptUtil;
-    private final StringRedisTemplate redisTemplate;
 
     @Transactional
     public VaultEntryResponse create(Long userId, CreateVaultRequest request) {
@@ -193,30 +189,6 @@ public class ApiKeyVaultService {
         return null;
     }
 
-    /**
-     * 内部逻辑处理专用：记忆抽取 / 会话摘要 / 群聊@裁决等，仍走平台 DEFAULT 池轮询。
-     */
-    public VaultEntryResponse resolveForLogic(Long userId) {
-        List<ApiKeyVault> defaults = vaultMapper.selectList(new LambdaQueryWrapper<ApiKeyVault>()
-                .eq(ApiKeyVault::getVaultScope, DEFAULT_SCOPE)
-                .eq(ApiKeyVault::getEnabled, 1)
-                .eq(ApiKeyVault::getProvider, AiConstants.PLATFORM_PROVIDER)
-                .orderByAsc(ApiKeyVault::getId));
-        if (defaults == null || defaults.isEmpty()) {
-            log.info("AI vault resolve: branch=LOGIC_POOL_EMPTY, userId={}", userId);
-            return null;
-        }
-        Long cursor = redisTemplate.opsForValue().increment(DEFAULT_POOL_CURSOR_KEY);
-        int idx = Math.floorMod((cursor != null ? cursor.intValue() : 1) - 1, defaults.size());
-        ApiKeyVault picked = defaults.get(idx);
-        VaultEntryResponse response = toInternalResponse(picked);
-        log.info("AI vault resolve: branch=LOGIC_DEFAULT_POOL, userId={}, poolSize={}, index={}, vaultId={}, "
-                        + "baseUrl={}, modelDefault={}, key={}",
-                userId, defaults.size(), idx, picked.getId(), picked.getBaseUrl(), picked.getModelDefault(),
-                maskApiKey(response.getApiKey()));
-        return response;
-    }
-
     /** 用户是否已配置至少一套启用的自有文本模型（用于主动消息等静默跳过判断）。 */
     public boolean hasEnabledUserVault(Long userId) {
         if (userId == null) {
@@ -269,7 +241,7 @@ public class ApiKeyVaultService {
         } catch (IllegalStateException e) {
             // 仅在密码学解密失败时提示 master key；Key「好不好用」由拉取模型 / 实际对话验证
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
-                    "API Key 解密失败：LIANYU_MASTER_KEY 与入库时不一致。请用 backend/scripts/seed-default-vault-pool.ps1 重新加密写入 DEFAULT 池");
+                    "API Key 解密失败：LIANYU_MASTER_KEY 与入库时不一致，请重新填写该 API Key");
         }
     }
 

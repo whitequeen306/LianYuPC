@@ -53,8 +53,8 @@ class MemoryWriterDebounceTest {
     void enqueueSummary_secondCallWithinWindowMarksPending() {
         when(valueOps.setIfAbsent(anyString(), eq("0"), eq(Duration.ofSeconds(30)))).thenReturn(true, false);
 
-        writer.enqueueSummary(1L, 2L, 3L);
-        writer.enqueueSummary(1L, 2L, 3L);
+        writer.enqueueSummary(1L, 2L, 3L, "p", null);
+        writer.enqueueSummary(1L, 2L, 3L, "p", null);
 
         verify(valueOps, times(2)).setIfAbsent("memory:summary:debounce:1:2", "0", Duration.ofSeconds(30));
         verify(valueOps).set("memory:summary:debounce:1:2", "1", Duration.ofSeconds(30));
@@ -63,7 +63,7 @@ class MemoryWriterDebounceTest {
 
     @Test
     void maybeReschedule_pendingFlagSendsFollowUpTask() throws Exception {
-        MemorySummaryTask task = new MemorySummaryTask(1L, 2L, 3L);
+        MemorySummaryTask task = new MemorySummaryTask(1L, 2L, 3L, "p", null);
         when(valueOps.get("memory:summary:debounce:1:2")).thenReturn("1");
 
         ReflectionTestUtils.invokeMethod(writer, "maybeReschedule", task);
@@ -75,7 +75,7 @@ class MemoryWriterDebounceTest {
 
     @Test
     void maybeReschedule_withoutPending_doesNotSendFollowUpTask() {
-        MemorySummaryTask task = new MemorySummaryTask(9L, 8L, 7L);
+        MemorySummaryTask task = new MemorySummaryTask(9L, 8L, 7L, "p", null);
         when(valueOps.get("memory:summary:debounce:9:8")).thenReturn("0");
 
         ReflectionTestUtils.invokeMethod(writer, "maybeReschedule", task);

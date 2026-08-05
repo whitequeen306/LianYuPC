@@ -1,11 +1,12 @@
 package com.lianyu.service.conversation;
 
-import com.lianyu.common.constant.AiConstants;
 import com.lianyu.dao.entity.Message;
 import com.lianyu.service.ai.AiChatService;
+import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.dto.AiChatRequest;
 import com.lianyu.service.dto.ChatResult;
 import com.lianyu.service.dto.MessageDto;
+import com.lianyu.service.dto.VaultEntryResponse;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -19,23 +20,25 @@ public class SessionSummaryMerger {
 
     private final AiChatService aiChatService;
     private final SessionSummaryProperties properties;
+    private final ApiKeyVaultService apiKeyVaultService;
 
-    public String merge(Long userId, String existingSummary, List<Message> pendingMessages) {
+    public String merge(Long userId, String provider, String model,
+                        String existingSummary, List<Message> pendingMessages) {
         if (pendingMessages == null || pendingMessages.isEmpty()) {
             return normalize(existingSummary);
         }
         try {
             String systemPrompt = buildMergeSystemPrompt();
             String userContent = buildMergeUserContent(existingSummary, pendingMessages);
-            String merged = callModel(userId, systemPrompt, userContent);
-            return normalizeLength(merged, userId);
+            String merged = callModel(userId, provider, model, systemPrompt, userContent);
+            return normalizeLength(merged, userId, provider, model);
         } catch (Exception e) {
             log.warn("Session summary merge failed: {}", e.getMessage());
             return normalize(existingSummary);
         }
     }
 
-    public String compress(Long userId, String summary) {
+    public String compress(Long userId, String provider, String model, String summary) {
         if (summary == null || summary.isBlank()) {
             return "";
         }
@@ -52,7 +55,7 @@ public class SessionSummaryMerger {
                     + properties.getTargetChars()
                     + " 字以内：\n\n"
                     + summary;
-            String compressed = callModel(userId, systemPrompt, userContent);
+            String compressed = callModel(userId, provider, model, systemPrompt, userContent);
             if (compressed == null || compressed.isBlank()) {
                 return summary;
             }
@@ -63,13 +66,13 @@ public class SessionSummaryMerger {
         }
     }
 
-    private String normalizeLength(String merged, Long userId) {
+    private String normalizeLength(String merged, Long userId, String provider, String model) {
         if (merged == null || merged.isBlank()) {
             return "";
         }
         String text = merged.trim();
         if (text.length() > properties.getSoftMaxChars()) {
-            text = compress(userId, text);
+            text = compress(userId, provider, model, text);
         }
         return enforceHardMax(text);
     }
@@ -162,11 +165,23 @@ public class SessionSummaryMerger {
         return lines.isEmpty() ? "（无有效内容）" : String.join("\n", lines);
     }
 
-    private String callModel(Long userId, String systemPrompt, String userContent) {
+    private String callModel(Long userId, String provider, String model,
+                             String systemPrompt, String userContent) {
+        if (provider == null || provider.isBlank()) {
+            VaultEntryResponse preferred = apiKeyVaultService.resolvePreferredUserVault(userId);
+            if (preferred == null) {
+                log.debug("Session summary skipped: no user text model, userId={}", userId);
+                return "";
+            }
+            provider = preferred.getProvider();
+            if (model == null || model.isBlank()) {
+                model = preferred.getModelDefault();
+            }
+        }
         AiChatRequest request = new AiChatRequest();
-        request.setProvider(AiConstants.PLATFORM_PROVIDER);
-        request.setPlatformLogic(true);
-        request.setModel(properties.getModel());
+        request.setProvider(provider);
+        request.setBackground(true);
+        request.setModel(model);
         request.setTemperature(0.1);
         List<MessageDto> dtos = new ArrayList<>();
         MessageDto system = new MessageDto();

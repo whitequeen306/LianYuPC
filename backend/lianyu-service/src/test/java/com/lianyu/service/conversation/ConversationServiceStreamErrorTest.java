@@ -152,7 +152,7 @@ class ConversationServiceStreamErrorTest {
         callbackCaptor.getValue().onComplete("partial text", new RuntimeException("provider down"));
 
         verify(relationshipStateService, never()).recordAssistantTurn(anyLong(), anyLong(), anyLong(), any());
-        verify(memoryWriter, never()).enqueueSummary(anyLong(), anyLong(), anyLong());
+        verify(memoryWriter, never()).enqueueSummary(anyLong(), anyLong(), anyLong(), any(), any());
         verify(messageMapper, never()).insert(argThatAssistantMessage());
     }
 
@@ -193,7 +193,7 @@ class ConversationServiceStreamErrorTest {
                 new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "Connection reset"));
 
         verify(relationshipStateService, never()).recordAssistantTurn(anyLong(), anyLong(), anyLong(), any());
-        verify(memoryWriter, never()).enqueueSummary(anyLong(), anyLong(), anyLong());
+        verify(memoryWriter, never()).enqueueSummary(anyLong(), anyLong(), anyLong(), any(), any());
         verify(messageMapper, never()).insert(argThatAssistantMessage());
     }
 
@@ -241,7 +241,7 @@ class ConversationServiceStreamErrorTest {
                     assertThat(message.getContent()).isEqualTo("complete reply");
                 });
         verify(relationshipStateService).recordAssistantTurn(eq(userId), eq(charId), eq(convId), any());
-        verify(memoryWriter).enqueueSummary(eq(convId), eq(charId), eq(userId));
+        verify(memoryWriter).enqueueSummary(eq(convId), eq(charId), eq(userId), eq("my-deepseek"), any());
     }
 
     private Message argThatAssistantMessage() {

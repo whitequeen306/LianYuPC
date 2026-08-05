@@ -109,9 +109,9 @@ class SessionSummaryServiceTest {
                 .thenReturn(recentWindow(30L))
                 .thenReturn(List.of(msg(25L, "USER", "only one")));
 
-        service.maybeMerge(11L);
+        service.maybeMerge(11L, "p", null);
 
-        verify(merger, never()).merge(anyLong(), anyString(), any());
+        verify(merger, never()).merge(anyLong(), any(), any(), anyString(), any());
     }
 
     @Test
@@ -129,9 +129,9 @@ class SessionSummaryServiceTest {
                         msg(34L, "USER", "u4"),
                         msg(35L, "USER", "u5"),
                         msg(36L, "USER", "u6")));
-        when(merger.merge(eq(3L), eq(""), any())).thenReturn("【约定/计划】下午买衣服");
+        when(merger.merge(eq(3L), eq("p"), any(), eq(""), any())).thenReturn("【约定/计划】下午买衣服");
 
-        service.maybeMerge(11L);
+        service.maybeMerge(11L, "p", null);
 
         ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
         verify(valueOperations).set(
@@ -153,7 +153,7 @@ class SessionSummaryServiceTest {
 
     @Test
     void mergerEnforceHardMaxDropsSectionsInPriorityOrder() {
-        SessionSummaryMerger hardMerger = new SessionSummaryMerger(null, properties);
+        SessionSummaryMerger hardMerger = new SessionSummaryMerger(null, properties, null);
         properties.setHardMaxChars(80);
         String longSummary = """
                 【约定/计划】

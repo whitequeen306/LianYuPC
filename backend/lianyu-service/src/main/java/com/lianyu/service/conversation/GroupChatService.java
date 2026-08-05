@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lianyu.common.base.ErrorCode;
-import com.lianyu.common.constant.AiConstants;
 import com.lianyu.common.exception.BusinessException;
 import com.lianyu.common.i18n.OutputLanguage;
 import com.lianyu.common.util.UserInputSanitizer;
@@ -95,8 +94,6 @@ public class GroupChatService {
     private boolean mentionJudgeEnabled;
     @Value("${lianyu.group.mention-judge.threshold:0.8}")
     private double mentionJudgeThreshold;
-    @Value("${lianyu.group.mention-judge.model:deepseek-chat}")
-    private String mentionJudgeModel;
     @Value("${lianyu.group.mention-judge.max-context-messages:6}")
     private int mentionJudgeContextMessages;
 
@@ -1008,9 +1005,9 @@ public class GroupChatService {
                     + "\n最近上下文:\n" + ctx;
 
             AiChatRequest judgeReq = new AiChatRequest();
-            judgeReq.setProvider(AiConstants.PLATFORM_PROVIDER);
-            judgeReq.setPlatformLogic(true);
-            judgeReq.setModel(mentionJudgeModel);
+            judgeReq.setProvider(request.getProvider());
+            judgeReq.setBackground(true);
+            judgeReq.setModel(request.getModel());
             judgeReq.setTemperature(0.1);
             judgeReq.setMessages(List.of(
                     buildSystemMessage(systemPrompt),

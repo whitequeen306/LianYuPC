@@ -405,7 +405,7 @@ public class VoiceCallService {
                     userId, conversationId, assistantMsg.getId(), transcript));
         }
 
-        memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
+        memoryWriter.enqueueSummary(conversationId, character.getId(), userId, null, null);
         log.info("Voice call ended: convId={}, durationSec={}, summaryLen={}",
                 conversationId, durationSeconds, summary.length());
 

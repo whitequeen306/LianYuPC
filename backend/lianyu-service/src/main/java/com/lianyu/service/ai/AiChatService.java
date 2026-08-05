@@ -81,7 +81,7 @@ public class AiChatService {
     private final ObjectMapper objectMapper;
     /** 前台交互（SSE / 语音 / 用户可见破冰等） */
     private final Bulkhead interactiveBulkhead;
-    /** 后台任务（朋友圈 / 日记 / 记忆摘要 / platformLogic 等） */
+    /** 后台任务（朋友圈 / 日记 / 记忆摘要 / 会话摘要 / @裁决等） */
     private final Bulkhead backgroundBulkhead;
     private final TimeLimiter timeLimiter;
     /** Fallback/global breaker; per-upstream breakers resolved via {@link #upstreamBreakers}. */
@@ -505,10 +505,10 @@ public class AiChatService {
     }
 
     /**
-     * 前台交互走 {@code ai-chat}；{@code background=true} 或 {@code platformLogic=true} 走 {@code ai-background}。
+     * 前台交互走 {@code ai-chat}；{@code background=true} 走 {@code ai-background}。
      */
     private Bulkhead resolveBulkhead(AiChatRequest request) {
-        if (request != null && (request.isBackground() || request.isPlatformLogic())) {
+        if (request != null && request.isBackground()) {
             return backgroundBulkhead;
         }
         return interactiveBulkhead;
@@ -516,7 +516,7 @@ public class AiChatService {
 
     /** Background AI must not share the interactive SSE pool. */
     private Executor resolveAiExecutor(AiChatRequest request) {
-        if (request != null && (request.isBackground() || request.isPlatformLogic())) {
+        if (request != null && request.isBackground()) {
             return aiBackgroundExecutor;
         }
         return aiStreamExecutor;
@@ -874,29 +874,9 @@ public class AiChatService {
     }
 
     private VaultEntryResponse resolveVault(Long userId, String provider) {
-        return resolveVault(userId, provider, false);
-    }
-
-    /**
-     * @param allowPlatformLogic true 时允许走平台 DEFAULT 池（仅内部逻辑：记忆/摘要/@裁决）
-     */
-    private VaultEntryResponse resolveVault(Long userId, String provider, boolean allowPlatformLogic) {
         if (isPlatformProvider(provider)) {
-            if (!allowPlatformLogic) {
-                throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
-                        "未配置文本模型，请在设置中添加");
-            }
-            VaultEntryResponse logicVault = vaultService.resolveForLogic(userId);
-            if (logicVault != null) {
-                log.info("AI chat vault: source=LOGIC_POOL, userId={}, scope={}, vaultId={}, provider={}, "
-                                + "baseUrl={}, modelDefault={}, key={}",
-                        userId, logicVault.getVaultScope(), logicVault.getId(), logicVault.getProvider(),
-                        logicVault.getBaseUrl(), logicVault.getModelDefault(),
-                        ApiKeyVaultService.maskApiKey(logicVault.getApiKey()));
-                return logicVault;
-            }
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
-                    "平台逻辑服务未就绪，请稍后再试");
+                    "未配置文本模型，请在设置中添加");
         }
         VaultEntryResponse userVault = vaultService.resolveForChat(userId, provider);
         if (userVault == null) {
@@ -922,9 +902,8 @@ public class AiChatService {
     }
 
     private VaultEntryResponse resolveVaultForRequest(Long userId, AiChatRequest request) {
-        boolean allowLogic = request != null && request.isPlatformLogic();
         String provider = request != null ? request.getProvider() : null;
-        return resolveVault(userId, provider, allowLogic);
+        return resolveVault(userId, provider);
     }
 
     /**
@@ -1396,7 +1375,7 @@ public class AiChatService {
     }
 
     /**
-     * 模型优先级：请求指定 > Vault（含 DB DEFAULT 池 model_default）> 环境变量 OPENAI_CHAT_MODEL。
+     * 模型优先级：请求指定 > Vault model_default > 环境变量 OPENAI_CHAT_MODEL。
      */
     private String resolveChatModel(String requestModel, VaultEntryResponse vault) {
         if (requestModel != null && !requestModel.isBlank()) {

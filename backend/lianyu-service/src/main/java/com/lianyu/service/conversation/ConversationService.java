@@ -319,8 +319,9 @@ public class ConversationService {
                 conversationId, character, chatResult.getContent(), chatResult.getTotalTokens());
         relationshipStateService.recordAssistantTurn(userId, character.getId(), conversationId, replies);
 
-        memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
-        sessionSummaryService.maybeMergeAsync(conversationId);
+        memoryWriter.enqueueSummary(conversationId, character.getId(), userId,
+                request.getProvider(), request.getModel());
+        sessionSummaryService.maybeMergeAsync(conversationId, request.getProvider(), request.getModel());
         if (!replies.isEmpty()) {
             notificationService.notifyAssistantMessage(
                     userId,
@@ -409,8 +410,9 @@ public class ConversationService {
                     relationshipStateService.recordAssistantTurn(userId, character.getId(), conversationId, replies);
                     log.info("Assistant message saved: convId={}, pieces={}, size={} chars",
                             conversationId, replies.size(), fullContent.length());
-                    memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
-                    sessionSummaryService.maybeMergeAsync(conversationId);
+                    memoryWriter.enqueueSummary(conversationId, character.getId(), userId,
+                            request.getProvider(), request.getModel());
+                    sessionSummaryService.maybeMergeAsync(conversationId, request.getProvider(), request.getModel());
                     if (!replies.isEmpty()) {
                         notificationService.notifyAssistantMessage(
                                 userId,
@@ -494,7 +496,8 @@ public class ConversationService {
                 conversationId, character, chatResult.getContent(), chatResult.getTotalTokens());
         if (!replies.isEmpty()) {
             proactiveUnrepliedThrottle.recordProactiveSent(conversationId);
-            memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
+            memoryWriter.enqueueSummary(conversationId, character.getId(), userId,
+                    userVault.getProvider(), userVault.getModelDefault());
             notificationService.notifyProactiveMessage(
                     userId,
                     conversationId,
@@ -586,7 +589,8 @@ public class ConversationService {
             List<MessageResponse> replies = saveAssistantRepliesLimited(
                     conversationId, character, chatResult.getContent(), chatResult.getTotalTokens(), maxPieces);
             if (!replies.isEmpty()) {
-                memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
+                memoryWriter.enqueueSummary(conversationId, character.getId(), userId,
+                        userVault.getProvider(), userVault.getModelDefault());
                 notificationService.notifyProactiveMessage(
                         userId,
                         conversationId,
@@ -864,7 +868,8 @@ public class ConversationService {
         List<MessageResponse> replies = saveAssistantRepliesLimited(
                 conversationId, character, chatResult.getContent(), chatResult.getTotalTokens(), 1);
         if (!replies.isEmpty()) {
-            memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
+            memoryWriter.enqueueSummary(conversationId, character.getId(), userId,
+                    userVault.getProvider(), userVault.getModelDefault());
             notificationService.notifyProactiveMessage(
                     userId,
                     conversationId,
@@ -950,7 +955,8 @@ public class ConversationService {
         List<MessageResponse> replies = saveAssistantRepliesLimited(
                 conversationId, character, chatResult.getContent(), chatResult.getTotalTokens(), 1);
         if (!replies.isEmpty()) {
-            memoryWriter.enqueueSummary(conversationId, character.getId(), userId);
+            memoryWriter.enqueueSummary(conversationId, character.getId(), userId,
+                    userVault.getProvider(), userVault.getModelDefault());
             notificationService.notifyProactiveMessage(
                     userId,
                     conversationId,
