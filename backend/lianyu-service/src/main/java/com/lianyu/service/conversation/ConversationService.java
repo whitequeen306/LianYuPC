@@ -510,8 +510,11 @@ public class ConversationService {
 
     /**
      * 新建单聊后第一波：角色先发破冰话（会话仍为空时才会写入，避免并发重复）。
+     * <p>
+     * 故意不加 {@code @Transactional}：内部会调 AI / 下载语音，不能把外部调用
+     * 包在数据库事务里——之前因此导致连接泄漏、锁超时、全站聊天卡死。
+     * 真正需要事务的「防重 + 落库」只在最后一步小范围开启。
      */
-    @Transactional
     public void sendColdOpenFirstLine(Long userId, Long conversationId) {
         Conversation conversation = findOwned(userId, conversationId);
         if (!"SINGLE".equalsIgnoreCase(conversation.getMode())) {
@@ -586,21 +589,34 @@ public class ConversationService {
             if (findLastMessage(conversationId) != null) {
                 return;
             }
-            List<MessageResponse> replies = saveAssistantRepliesLimited(
-                    conversationId, character, chatResult.getContent(), chatResult.getTotalTokens(), maxPieces);
-            if (!replies.isEmpty()) {
-                memoryWriter.enqueueSummary(conversationId, character.getId(), userId,
-                        userVault.getProvider(), userVault.getModelDefault());
-                notificationService.notifyProactiveMessage(
-                        userId,
-                        conversationId,
-                        character.getId(),
-                        character.getName(),
-                        replies.get(0).getContent());
-                log.info("Cold open first line: convId={}, pieces={}", conversationId, replies.size());
-            }
+            // 仅最后一步「防重 + 落库」进事务，缩小锁持有窗口
+            persistColdOpenReply(userId, conversationId, character, userVault, chatResult, maxPieces);
         } finally {
             redisTemplate.delete(lockKey);
+        }
+    }
+
+    /**
+     * 破冰话落库：小事务，只做「再确认空会话 + 插消息 + 入队记忆/通知」。
+     */
+    @Transactional
+    protected void persistColdOpenReply(Long userId, Long conversationId, Character character,
+                                        VaultEntryResponse userVault, ChatResult chatResult, int maxPieces) {
+        if (findLastMessage(conversationId) != null) {
+            return;
+        }
+        List<MessageResponse> replies = saveAssistantRepliesLimited(
+                conversationId, character, chatResult.getContent(), chatResult.getTotalTokens(), maxPieces);
+        if (!replies.isEmpty()) {
+            memoryWriter.enqueueSummary(conversationId, character.getId(), userId,
+                    userVault.getProvider(), userVault.getModelDefault());
+            notificationService.notifyProactiveMessage(
+                    userId,
+                    conversationId,
+                    character.getId(),
+                    character.getName(),
+                    replies.get(0).getContent());
+            log.info("Cold open first line: convId={}, pieces={}", conversationId, replies.size());
         }
     }
 
