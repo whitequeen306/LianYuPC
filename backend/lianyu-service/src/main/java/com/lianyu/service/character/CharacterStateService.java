@@ -6,7 +6,6 @@ import com.lianyu.dao.mapper.CharacterStateMapper;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -86,7 +85,10 @@ public class CharacterStateService {
     }
 
     /**
-     * 挂起外层事务，避免 REPEATABLE READ 快照导致并发 insert 冲突后仍 select 不到已存在行。
+     * 并发首聊同一角色时 select-then-insert 会在 uk_char_user 上死锁
+     * （双方持 S 间隙锁、互等 insert intention），且 afterUserMessage 自调用
+     * 使 NOT_SUPPORTED 失效、整个插入落入外层事务放大锁持有时间。
+     * 改用单语句 upsert 后无 S→X 升级环，并发只在唯一键上短暂串行。
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public CharacterState getOrCreate(Long characterId, Long userId) {
@@ -102,16 +104,9 @@ public class CharacterStateService {
         toInsert.setEmotionIntensity(50);
         toInsert.setStatusText("一切安好。");
         toInsert.setEmotionUpdatedAt(LocalDateTime.now());
-        try {
-            stateMapper.insert(toInsert);
-            return toInsert;
-        } catch (DuplicateKeyException e) {
-            CharacterState existing = waitForExistingState(characterId, userId);
-            if (existing != null) {
-                return existing;
-            }
-            throw new IllegalStateException("Failed to create or find character state", e);
-        }
+        stateMapper.upsertDefault(toInsert);
+        CharacterState existing = findState(characterId, userId);
+        return existing != null ? existing : toInsert;
     }
 
     private CharacterState findState(Long characterId, Long userId) {
@@ -120,23 +115,6 @@ public class CharacterStateService {
                         .eq(CharacterState::getCharacterId, characterId)
                         .eq(CharacterState::getUserId, userId)
                         .last("LIMIT 1"));
-    }
-
-    /** 并发 insert 冲突后，等待对方事务提交再读取。 */
-    private CharacterState waitForExistingState(Long characterId, Long userId) {
-        for (int attempt = 0; attempt < 5; attempt++) {
-            CharacterState state = findState(characterId, userId);
-            if (state != null) {
-                return state;
-            }
-            try {
-                Thread.sleep(20L * (attempt + 1));
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-        }
-        return findState(characterId, userId);
     }
 
     /** 批量加载用户角色的情绪状态，缺失项按需创建。 */
