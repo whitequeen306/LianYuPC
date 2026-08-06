@@ -29,7 +29,7 @@ spring:
       max-request-size: 40MB
 
   datasource:
-    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3307}/lianyu?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3307}/lianyu?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&socketTimeout=60000&connectTimeout=10000
     username: ${MYSQL_USER:lianyu}
     password: ${MYSQL_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -39,6 +39,8 @@ spring:
       idle-timeout: 300000
       max-lifetime: 1200000
       connection-timeout: 20000
+      # 借出超 60s 未还即打堆栈：僵尸事务（idle in transaction）下次直接留证据
+      leak-detection-threshold: 60000
 
   data:
     redis:

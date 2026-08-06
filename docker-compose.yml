@@ -133,6 +133,9 @@ services:
     image: mysql:8.4
     container_name: lianyu-mysql
     restart: unless-stopped
+    # 空闲会话 30min 服务端回收（hikari max-lifetime=20min < 此值，兼容）：
+    # 僵尸事务（idle in transaction）不再挂 8h，自动回滚释放行锁
+    command: --wait_timeout=1800 --interactive_timeout=1800
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: lianyu
