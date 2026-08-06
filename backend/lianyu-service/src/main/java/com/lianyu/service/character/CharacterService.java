@@ -85,7 +85,8 @@ public class CharacterService {
     @Value("${lianyu.character.max-per-user:80}")
     private int maxCharactersPerUser;
 
-    @Transactional
+    // 故意不加 @Transactional：虚构城市模式会先调 LLM 推理（applyCityMode → inferFictionalCity），
+    // 进事务会把 Hikari 连接占住，DeepSeek 一挂全场卡死。推理完成后再进事务建角色。
     public CharacterResponse create(Long userId, CreateCharacterRequest request) {
         assertCharacterLimit(userId);
         Map<String, Object> settings = CharacterSettingsUtils.normalizeSettings(request.getSettings());
@@ -94,7 +95,12 @@ public class CharacterService {
         }
         characterCitySettingsService.applyCityMode(userId, request.getName(), request.getPromptTemplate(), settings);
         CharacterPreferenceResolver.applyCreationDefaults(settings);
+        return persistNewCharacter(userId, request, settings);
+    }
 
+    /** 仅最后一步落库进事务。 */
+    @Transactional
+    protected CharacterResponse persistNewCharacter(Long userId, CreateCharacterRequest request, Map<String, Object> settings) {
         Character entity = new Character();
         entity.setOwnerUserId(userId);
         entity.setName(request.getName());

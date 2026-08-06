@@ -448,7 +448,8 @@ public class ConversationService {
         return error instanceof java.io.IOException;
     }
 
-    @Transactional
+    // 故意不加 @Transactional：invokeBlocking 会调 AI，长事务占住 Hikari 连接拖死前台。
+    // 只在最后一步「防重 + 落库」进事务。
     public List<MessageResponse> sendProactiveMessage(Long userId, Long conversationId, String hint) {
         VaultEntryResponse userVault = resolveUserTextVaultOrNull(userId);
         if (userVault == null) {
@@ -492,8 +493,15 @@ public class ConversationService {
                 .extraSystemSuffix(buildProactiveTaskSystemSuffix(maxPieces))
                 .streaming(false)
                 .build());
-        List<MessageResponse> replies = saveAssistantReplies(
-                conversationId, character, chatResult.getContent(), chatResult.getTotalTokens());
+        return persistProactiveReply(userId, conversationId, character, userVault, chatResult, maxPieces);
+    }
+
+    /** 仅最后一步「防重 + 落库 + 通知」进事务。 */
+    @Transactional
+    protected List<MessageResponse> persistProactiveReply(Long userId, Long conversationId, Character character,
+                                                          VaultEntryResponse userVault, ChatTurnResult chatResult, int maxPieces) {
+        List<MessageResponse> replies = saveAssistantRepliesLimited(
+                conversationId, character, chatResult.getContent(), chatResult.getTotalTokens(), maxPieces);
         if (!replies.isEmpty()) {
             proactiveUnrepliedThrottle.recordProactiveSent(conversationId);
             memoryWriter.enqueueSummary(conversationId, character.getId(), userId,
@@ -817,7 +825,8 @@ public class ConversationService {
     /**
      * 若用户在「首条破冰」之后仍未回复（最后一条仍为助手侧），则再补一条简短关心；仅此一次，不会再发第三条。
      */
-    @Transactional
+    // 故意不加 @Transactional：chatBlocking 会调 AI，长事务占住 Hikari 连接拖死前台。
+    // 只在最后一步「落库 + 通知」进事务。
     public void sendColdOpenFollowUpIfStillSilent(Long userId, Long conversationId) {
         Conversation conversation = findOwned(userId, conversationId);
         if (!"SINGLE".equalsIgnoreCase(conversation.getMode())) {
@@ -881,6 +890,13 @@ public class ConversationService {
         aiRequest.setMessages(allMessages);
         aiRequest.setBackground(true);
         ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
+        persistColdOpenFollowUpReply(userId, conversationId, character, userVault, chatResult);
+    }
+
+    /** 仅最后一步「落库 + 通知」进事务。 */
+    @Transactional
+    protected void persistColdOpenFollowUpReply(Long userId, Long conversationId, Character character,
+                                                VaultEntryResponse userVault, ChatResult chatResult) {
         List<MessageResponse> replies = saveAssistantRepliesLimited(
                 conversationId, character, chatResult.getContent(), chatResult.getTotalTokens(), 1);
         if (!replies.isEmpty()) {
@@ -899,8 +915,9 @@ public class ConversationService {
 
     /**
      * 用户修改现实城市后，由最近有消息的单聊角色主动关心是否搬家。
+     * 故意不加 @Transactional：chatBlocking 会调 AI，长事务占住 Hikari 连接拖死前台。
+     * 只在最后一步「落库 + 通知」进事务。
      */
-    @Transactional
     public void sendCityChangeFollowUp(Long userId, String previousCity, String newCity) {
         Optional<Conversation> recentOpt = findMostRecentSingleConversation(userId);
         if (recentOpt.isEmpty()) {
@@ -968,6 +985,14 @@ public class ConversationService {
         aiRequest.setBackground(true);
 
         ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
+        persistCityChangeFollowUpReply(userId, conversationId, character, userVault, chatResult, previousCity, newCity);
+    }
+
+    /** 仅最后一步「落库 + 通知」进事务。 */
+    @Transactional
+    protected void persistCityChangeFollowUpReply(Long userId, Long conversationId, Character character,
+                                                  VaultEntryResponse userVault, ChatResult chatResult,
+                                                  String previousCity, String newCity) {
         List<MessageResponse> replies = saveAssistantRepliesLimited(
                 conversationId, character, chatResult.getContent(), chatResult.getTotalTokens(), 1);
         if (!replies.isEmpty()) {

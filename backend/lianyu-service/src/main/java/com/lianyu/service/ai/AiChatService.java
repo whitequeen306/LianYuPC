@@ -419,6 +419,64 @@ public class AiChatService {
         return false;
     }
 
+    /**
+     * Blocking 调用的瞬断重试：只在连接瞬断（DNS/拒绝/连接超时）时重试 1 次，
+     * 与 SSE 的 {@code Retry.fixedDelay(1, 300ms)} 对齐。
+     * 语义/内容错误不重试 —— 非幂等，重试会重复生成、重复扣 token。
+     */
+    private ChatResult callBlockingWithTransientRetry(Long userId, AiChatRequest request, VaultEntryResponse vault)
+            throws Exception {
+        int maxAttempts = 2;
+        Exception lastError = null;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return callBlockingOnce(userId, request, vault);
+            } catch (Exception e) {
+                lastError = e;
+                if (attempt >= maxAttempts || !isTransientStreamFailure(e)) {
+                    throw e;
+                }
+                log.warn("AI chat blocking transient connect failure, retrying once (attempt {}/{}): {}",
+                        attempt, maxAttempts, e.toString());
+            }
+        }
+        throw lastError;
+    }
+
+    /** 单次 blocking 调用：构建 ChatModel → 调用 → 后处理。 */
+    private ChatResult callBlockingOnce(Long userId, AiChatRequest request, VaultEntryResponse vault) throws Exception {
+        String model = resolveModel(request, vault);
+        ChatModel chatModel = buildChatModel(vault, model, resolveApiKeyForProvider(vault));
+
+        return withChatToolScope(userId, request, () -> {
+            List<Message> messages = toSpringMessages(request.getMessages());
+            Prompt prompt = buildPrompt(request, vault, messages);
+            ChatResponse response = chatModel.call(prompt);
+            String content = extractStreamDelta(response);
+            if (content == null) {
+                throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
+                        "对方没有回复内容，请重试");
+            }
+            content = enforceExpectedLanguage(
+                    userId,
+                    request,
+                    vault,
+                    model,
+                    chatModel,
+                    content,
+                    null);
+
+            ChatResult.ChatResultBuilder builder = ChatResult.builder().content(content);
+            if (response.getMetadata() != null && response.getMetadata().getUsage() != null) {
+                var usage = response.getMetadata().getUsage();
+                builder.promptTokens(usage.getPromptTokens() != null ? usage.getPromptTokens().intValue() : null)
+                       .completionTokens(usage.getCompletionTokens() != null ? usage.getCompletionTokens().intValue() : null)
+                       .totalTokens(usage.getTotalTokens() != null ? usage.getTotalTokens().intValue() : null);
+            }
+            return builder.build();
+        });
+    }
+
     @FunctionalInterface
     public interface StreamCallback {
         void onComplete(String fullContent, Throwable error);
@@ -451,38 +509,8 @@ public class AiChatService {
                                 try {
                                     // resolveVault 在熔断外：DB/Redis 查询不参与熔断。
                                     VaultEntryResponse vault = resolveVaultForRequest(userId, request);
-                                    return resolveBreaker(vault).executeCallable(() -> {
-                                        String model = resolveModel(request, vault);
-                                        ChatModel chatModel = buildChatModel(vault, model, resolveApiKeyForProvider(vault));
-
-                                        return withChatToolScope(userId, request, () -> {
-                                            List<Message> messages = toSpringMessages(request.getMessages());
-                                            Prompt prompt = buildPrompt(request, vault, messages);
-                                            ChatResponse response = chatModel.call(prompt);
-                                            String content = extractStreamDelta(response);
-                                            if (content == null) {
-                                                throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
-                                                        "对方没有回复内容，请重试");
-                                            }
-                                            content = enforceExpectedLanguage(
-                                                    userId,
-                                                    request,
-                                                    vault,
-                                                    model,
-                                                    chatModel,
-                                                    content,
-                                                    null);
-
-                                            ChatResult.ChatResultBuilder builder = ChatResult.builder().content(content);
-                                            if (response.getMetadata() != null && response.getMetadata().getUsage() != null) {
-                                                var usage = response.getMetadata().getUsage();
-                                                builder.promptTokens(usage.getPromptTokens() != null ? usage.getPromptTokens().intValue() : null)
-                                                       .completionTokens(usage.getCompletionTokens() != null ? usage.getCompletionTokens().intValue() : null)
-                                                       .totalTokens(usage.getTotalTokens() != null ? usage.getTotalTokens().intValue() : null);
-                                            }
-                                            return builder.build();
-                                        });
-                                    });
+                                    return resolveBreaker(vault).executeCallable(() ->
+                                            callBlockingWithTransientRetry(userId, request, vault));
                                 } catch (Exception e) {
                                     throw new RuntimeException(e);
                                 }

@@ -180,7 +180,6 @@ public class CharacterDiaryService {
     }
 
     /** MQ 消费：生成一篇角色日记。 */
-    @Transactional
     public void processDiaryJob(AiBackgroundTask task) {
         if (task == null || task.userId() == null || task.characterId() == null) {
             return;
@@ -191,7 +190,8 @@ public class CharacterDiaryService {
         }
     }
 
-    @Transactional
+    // 故意不加 @Transactional：chatBlocking 会调 AI，长事务占住 Hikari 连接拖死前台。
+    // 只在最后一步「落库 + 通知」进事务。
     public CharacterDiary tryGenerateDiary(Long userId, Long characterId) {
         Character character = characterMapper.selectById(characterId);
         if (character == null) {
@@ -347,33 +347,39 @@ public class CharacterDiaryService {
                 return null; // 太短不像日记
             }
 
-            CharacterDiary diary = new CharacterDiary();
-            diary.setCharacterId(characterId);
-            diary.setUserId(userId);
-            diary.setTitle(title.length() > 100 ? title.substring(0, 100) : title);
-            diary.setContent(diaryContent);
-            diary.setMood(null);
-            diary.setConversationId(conversation.getId());
-            diaryMapper.insert(diary);
-            characterRecentActivityService.evictCache(userId, characterId);
-
-            String preview = title;
-            if (preview == null || preview.isBlank()) {
-                preview = diaryContent;
-            }
-            notificationService.notifyDiaryNew(
-                    userId,
-                    conversation.getId(),
-                    characterId,
-                    character.getName(),
-                    preview
-            );
-
-            return diary;
+            return persistDiary(userId, characterId, character, conversation, title, diaryContent);
         } catch (Exception e) {
             log.debug("Diary generation failed for charId={}, reason={}", characterId, e.getMessage());
             return null;
         }
+    }
+
+    /** 仅最后一步「落库 + 通知」进事务。 */
+    @Transactional
+    protected CharacterDiary persistDiary(Long userId, Long characterId, Character character,
+                                          Conversation conversation, String title, String diaryContent) {
+        CharacterDiary diary = new CharacterDiary();
+        diary.setCharacterId(characterId);
+        diary.setUserId(userId);
+        diary.setTitle(title.length() > 100 ? title.substring(0, 100) : title);
+        diary.setContent(diaryContent);
+        diary.setMood(null);
+        diary.setConversationId(conversation.getId());
+        diaryMapper.insert(diary);
+        characterRecentActivityService.evictCache(userId, characterId);
+
+        String preview = title;
+        if (preview == null || preview.isBlank()) {
+            preview = diaryContent;
+        }
+        notificationService.notifyDiaryNew(
+                userId,
+                conversation.getId(),
+                characterId,
+                character.getName(),
+                preview
+        );
+        return diary;
     }
 
     /**

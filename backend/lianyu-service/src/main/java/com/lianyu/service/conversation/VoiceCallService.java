@@ -106,7 +106,9 @@ public class VoiceCallService {
     @Value("${lianyu.voice-call.max-tokens:512}")
     private int maxTokens;
 
-    @Transactional
+    // 故意不加 @Transactional：ASR + LLM + TTS 三段外部慢调用全在这里，
+    // 进事务会把 Hikari 连接和行锁占住，上游一挂全场卡死。
+    // 只在最后一步「防重 + 落两条消息」进事务，缩小锁持有窗口。
     public VoiceCallTurnResponse processTurn(Long userId, Long conversationId, MultipartFile audio) {
         Conversation conversation = findOwned(userId, conversationId);
         if (!"SINGLE".equalsIgnoreCase(conversation.getMode())) {
@@ -138,16 +140,6 @@ public class VoiceCallService {
             return VoiceCallTurnResponse.builder().userText("").replyText("").build();
         }
 
-        long userSeq = nextSeq(conversationId);
-        Message userMsg = new Message();
-        userMsg.setSeq(userSeq);
-        userMsg.setConversationId(conversationId);
-        userMsg.setRole("USER");
-        userMsg.setCharacterId(character.getId());
-        userMsg.setContent(userText);
-        userMsg.setAudioUrl("system/voice-call-turn");
-        messageMapper.insert(userMsg);
-
         // 通话内容不进关系/情绪/记忆；唯一持久作用是挂断时摘要进文字聊
         int msgLimit = clampHistoryMessageLimit(historyLimit);
         List<Message> history = recentVoiceCallTurnsInCurrentCall(conversationId, msgLimit);
@@ -165,15 +157,9 @@ public class VoiceCallService {
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "语音合成失败，请稍后再试");
         }
 
-        long assistantSeq = nextSeq(conversationId);
-        Message assistantMsg = new Message();
-        assistantMsg.setSeq(assistantSeq);
-        assistantMsg.setConversationId(conversationId);
-        assistantMsg.setRole("ASSISTANT");
-        assistantMsg.setCharacterId(character.getId());
-        assistantMsg.setContent(replyText);
-        assistantMsg.setAudioUrl("system/voice-call-turn");
-        messageMapper.insert(assistantMsg);
+        Message[] persisted = persistVoiceTurn(conversationId, character.getId(), userText, replyText);
+        Message userMsg = persisted[0];
+        Message assistantMsg = persisted[1];
 
         log.info("Voice call turn: convId={}, mode={}, petId={}, userLen={}, replyLen={}, asrMs={}, llmMs={}, ttsMs={}",
                 conversationId, target.mode(), target.petId(), userText.length(), replyText.length(),
@@ -187,6 +173,31 @@ public class VoiceCallService {
                 .userMessageId(userMsg.getId())
                 .replyMessageId(assistantMsg.getId())
                 .build();
+    }
+
+    /** 仅最后一步落库进事务：用户句 + 角色句，原子写入。 */
+    @Transactional
+    protected Message[] persistVoiceTurn(Long conversationId, Long characterId, String userText, String replyText) {
+        long userSeq = nextSeq(conversationId);
+        Message userMsg = new Message();
+        userMsg.setSeq(userSeq);
+        userMsg.setConversationId(conversationId);
+        userMsg.setRole("USER");
+        userMsg.setCharacterId(characterId);
+        userMsg.setContent(userText);
+        userMsg.setAudioUrl("system/voice-call-turn");
+        messageMapper.insert(userMsg);
+
+        long assistantSeq = nextSeq(conversationId);
+        Message assistantMsg = new Message();
+        assistantMsg.setSeq(assistantSeq);
+        assistantMsg.setConversationId(conversationId);
+        assistantMsg.setRole("ASSISTANT");
+        assistantMsg.setCharacterId(characterId);
+        assistantMsg.setContent(replyText);
+        assistantMsg.setAudioUrl("system/voice-call-turn");
+        messageMapper.insert(assistantMsg);
+        return new Message[]{userMsg, assistantMsg};
     }
 
     /** Duplex: assert ownership + supported voice target. */

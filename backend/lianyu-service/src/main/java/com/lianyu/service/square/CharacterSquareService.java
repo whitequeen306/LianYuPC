@@ -195,7 +195,8 @@ public class CharacterSquareService {
         return List.copyOf(tags);
     }
 
-    @Transactional
+    // 故意不加 @Transactional：虚构城市模式会先调 LLM 推理（applySquareAddCity → inferFictionalCity），
+    // 进事务会把 Hikari 连接占住。先推理出 settings，再进事务建角色+建会话。
     public CharacterResponse addTemplateToMyCharacters(Long userId,
                                                        Long templateId,
                                                        String uiLanguageCode,
@@ -224,15 +225,28 @@ public class CharacterSquareService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "角色模板不存在或已下架");
         }
 
+        Map<String, Object> settings = copySettings(template.getSettingsJson());
+        characterCitySettingsService.applySquareAddCity(
+                userId, resolvedName, resolvedPrompt, settings, cityMode, userCity);
+
+        return persistSquareCharacter(userId, templateId, slug, template, resolvedName, resolvedPrompt, settings);
+    }
+
+    /** 仅最后一步「建角色 + 建会话」进事务。 */
+    @Transactional
+    protected CharacterResponse persistSquareCharacter(Long userId,
+                                                       Long templateId,
+                                                       String slug,
+                                                       CharacterSquareTemplate template,
+                                                       String resolvedName,
+                                                       String resolvedPrompt,
+                                                       Map<String, Object> settings) {
         Character entity = new Character();
         entity.setOwnerUserId(userId);
         entity.setSourceTemplateId(templateId);
         entity.setName(resolvedName);
         entity.setAvatarUrl(template.getAvatarUrl());
         entity.setPromptTemplate(resolvedPrompt);
-        Map<String, Object> settings = copySettings(template.getSettingsJson());
-        characterCitySettingsService.applySquareAddCity(
-                userId, resolvedName, resolvedPrompt, settings, cityMode, userCity);
         entity.setSettings(settings);
 
         try {

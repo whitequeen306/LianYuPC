@@ -41,8 +41,10 @@ public class CustomVoiceService {
 
     /**
      * Create/replace custom voice. DashScope: apiBase + apiKey + models; Local: endpoint + refText.
+     *
+     * 故意不加 @Transactional：MinIO 上传 + DashScope 音色注册 ×2 是外部慢调用，
+     * 进事务会把 Hikari 连接占住，上游一挂拖死前台。只在最后一步 upsert 行进事务。
      */
-    @Transactional
     public CustomVoiceResponse upsert(
             Long userId,
             Long characterId,
@@ -89,14 +91,20 @@ public class CustomVoiceService {
             configureLocal(row, refText, endpoint);
         }
 
-        if (existing == null) {
+        persistUpsert(row, existing == null);
+        log.info("Custom voice upsert userId={} characterId={} provider={} status={}",
+                userId, characterId, provider, row.getStatus());
+        return toResponse(row);
+    }
+
+    /** 仅最后一步落库进事务。 */
+    @Transactional
+    protected void persistUpsert(UserCustomVoice row, boolean isNew) {
+        if (isNew) {
             customVoiceMapper.insert(row);
         } else {
             customVoiceMapper.updateById(row);
         }
-        log.info("Custom voice upsert userId={} characterId={} provider={} status={}",
-                userId, characterId, provider, row.getStatus());
-        return toResponse(row);
     }
 
     @Transactional
