@@ -161,6 +161,34 @@ cd C:\Users\hp\Desktop\LianYu-PC
 - 日志用 `@Slf4j` + traceId
 - 统一返回格式 `Result<T>`
 
+## 事务红线（强制）：慢调用不进事务
+
+**任何会「等别人」的操作，都不要进 `@Transactional`。** 「等别人」= AI 调用、HTTP 请求、ASR/TTS、MinIO 上传、第三方 SDK、文件下载 —— 耗时不归你管（网络、对端负载、对端挂起）。事务持有的是**你的 Hikari 连接和行锁**，把两者绑在一起，就是把「别人的慢」变成「你全站的卡」。
+
+**后台任务 ≠ 例外。** 慢调用占的是**资源**（DB 连接、行锁），不是用户的时间。定时器/MQ 触发的任务（比如 `sendProactiveMessage`）不耗用户时间，但照样耗 Hikari 连接；连接一耗光，前台用户请求拿不到连接，全场卡死。所以「反正后台跑的」不能成为慢调用进事务的借口。
+
+**写法模板（必须照这个拆）：**
+
+```java
+// 外层：故意不加 @Transactional —— 慢调用在这里，挂了只影响这一条请求
+public Result doX(Long userId, Req req) {
+    AiResult ai = aiChatService.chatBlocking(userId, aiReq); // 慢调用
+    return persistX(userId, req, ai);                         // 最后才进事务
+}
+
+// 内层：只有「防重 + 落库 + 通知」，快进快出
+@Transactional
+protected Result persistX(Long userId, Req req, AiResult ai) { ... }
+```
+
+**配套纪律：**
+
+- **重试只重「瞬断」，不重「语义错」**：DNS/连接拒绝/连接超时 → 可重试 1 次；AI 返回空/审核不通过/参数错 → 不重试（非幂等，重试=重复生成、重复扣 token）。参考 `AiChatService.isTransientStreamFailure`。
+- **落库多步需原子性时一起进事务**（比如建角色+建会话），不需要就拆细。
+- 纯 DB 的 CRUD（无慢调用）→ 随便 `@Transactional`。
+
+违反本条的后端代码不得合入 `main`。
+
 ## 桌宠开发
 
 新增角色桌宠（atlas + 语音 + 前后端接入）时，**必须先读取 skill 文档**：
