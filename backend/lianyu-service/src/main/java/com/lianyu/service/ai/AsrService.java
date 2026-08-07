@@ -43,7 +43,6 @@ public class AsrService {
     );
 
     private final ObjectMapper objectMapper;
-    private final RestClient.Builder restClientBuilder;
 
     @Value("${lianyu.asr.enabled:true}")
     private boolean enabled;
@@ -112,7 +111,8 @@ public class AsrService {
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
 
         try {
-            RestClient client = restClientBuilder.build();
+            // 带超时的客户端：默认探测的 reactor-netty 无读超时，ASR 容器挂起会无限占用线程
+            RestClient client = com.lianyu.ai.SsrfPinningClientFactory.defaultRestClientBuilder().build();
             ResponseEntity<String> response = client.post()
                     .uri(url)
                     .headers(h -> h.addAll(headers))

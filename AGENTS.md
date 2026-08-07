@@ -189,6 +189,30 @@ protected Result persistX(Long userId, Req req, AiResult ai) { ... }
 
 违反本条的后端代码不得合入 `main`。
 
+## 出站 HTTP 红线（强制）：不许用零超时客户端
+
+**任何「等别人」的 HTTP 调用，都必须显式带超时。** 对端可以 TCP/TLS 握手成功后永远不回一个字节（挂起的连接）——没有读超时，调用线程就**永久** park 在 `Mono.block()`，攒够后 Tomcat 全场卡死（2026-08-07 线上实例：线程 park 78 分钟，全站 499/504）。
+
+**唯一允许的写法**（`SsrfPinningClientFactory`）：
+
+```java
+// 阻塞路径（RestClient/.call）：OkHttp，connect 15s / read 60s / write 30s
+RestClient client = SsrfPinningClientFactory.defaultRestClientBuilder().build();          // 受信端点
+RestClient client = SsrfPinningClientFactory.restClientBuilder(validatedEndpoint).build(); // 用户自填 URL（SSRF 固定）
+
+// 流式路径（WebClient/.stream）：reactor-netty，connect 15s / 读间隙 90s
+WebClient.Builder b = SsrfPinningClientFactory.defaultWebClientBuilder();                  // 受信端点
+WebClient.Builder b = SsrfPinningClientFactory.webClientBuilder(validatedEndpoint);        // 用户自填 URL
+```
+
+**禁止：**
+
+- `RestClient.create()` / `WebClient.create()` / Spring 自动探测的裸 Builder——classpath 里有 reactor-netty 时会选中它，而 reactor-netty **默认零读超时**
+- 只包 Resilience4j `TimeLimiter` 就当有超时——它只放弃 Future，**杀不死**底层 park 住的线程；超时必须设在 HTTP 客户端上
+- reactor-netty `responseTimeout` 语义是「两次读之间的最长间隔」，不是总时长，故流式 SSE 可安全使用（正常分块持续到达不触发）
+
+违反本条的后端代码不得合入 `main`。
+
 ## 桌宠开发
 
 新增角色桌宠（atlas + 语音 + 前后端接入）时，**必须先读取 skill 文档**：

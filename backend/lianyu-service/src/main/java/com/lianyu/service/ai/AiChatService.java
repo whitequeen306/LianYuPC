@@ -854,11 +854,11 @@ public class AiChatService {
         String base = normalizeOpenAiBaseUrl(userSupplied ? vaultBaseUrl : platformBaseUrl);
         String url = base + "/v1/models";
 
-        // 用户自填非受信 base_url 固定已校验 IP 防 DNS 重绑定 SSRF；平台受信 DashScope / 默认 URL 不固定、不强制 DNS
+        // 用户自填非受信 base_url 固定已校验 IP 防 DNS 重绑定 SSRF；受信端点用带超时的默认客户端（防对端挂起无限 park 线程）
         RestClient client = userSupplied && !OutboundUrlValidator.isTrustedPlatformEndpoint(vaultBaseUrl)
                 ? SsrfPinningClientFactory.restClientBuilder(
                         OutboundUrlValidator.validateAndResolve(vaultBaseUrl, false)).build()
-                : RestClient.create();
+                : SsrfPinningClientFactory.defaultRestClientBuilder().build();
         String body = client.get()
                 .uri(url)
                 .header("Authorization", "Bearer " + apiKey)
@@ -1860,6 +1860,12 @@ public class AiChatService {
             openAiBuilder
                     .restClientBuilder(SsrfPinningClientFactory.restClientBuilder(endpoint))
                     .webClientBuilder(SsrfPinningClientFactory.webClientBuilder(endpoint));
+        } else {
+            // 受信端点也必须显式带超时：Spring AI 默认 RestClient/WebClient 走 reactor-netty 零超时，
+            // 对端挂起时线程会永久 park 在 Mono.block()（timeLimiter 只放弃 Future，杀不死底层线程）。
+            openAiBuilder
+                    .restClientBuilder(SsrfPinningClientFactory.defaultRestClientBuilder())
+                    .webClientBuilder(SsrfPinningClientFactory.defaultWebClientBuilder());
         }
         // 受信 DashScope/DeepSeek / 平台默认：不做 DNS 预解析与 IP 固定。
         // 容器 DNS 抖动时预解析会误报「主机名无法解析」，拖垮识图第二阶段文本调用并误开全局熔断。

@@ -58,7 +58,7 @@ public class EmbeddingService {
                     "input", text
             );
 
-            RestClient client = RestClient.create();
+            RestClient client = com.lianyu.ai.SsrfPinningClientFactory.defaultRestClientBuilder().build();
             String response = client.post()
                     .uri(url)
                     .header("Authorization", "Bearer " + apiKey)

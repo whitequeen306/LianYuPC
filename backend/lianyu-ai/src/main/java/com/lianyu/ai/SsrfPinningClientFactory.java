@@ -1,6 +1,7 @@
 package com.lianyu.ai;
 
 import com.lianyu.common.util.OutboundUrlValidator.ValidatedEndpoint;
+import io.netty.channel.ChannelOption;
 import io.netty.resolver.AddressResolver;
 import io.netty.resolver.AddressResolverGroup;
 import io.netty.util.concurrent.EventExecutor;
@@ -41,7 +42,40 @@ import java.util.List;
  */
 public final class SsrfPinningClientFactory {
 
+    /** 连接建立超时：对端 TCP/TLS 不握手时快速失败。 */
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(15);
+    /** 阻塞读超时：对端接了连接但永不回字节时，线程最多被占 60s（防 Tomcat/执行器线程无限 park）。 */
+    private static final Duration READ_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration WRITE_TIMEOUT = Duration.ofSeconds(30);
+    /**
+     * 流式读间隙超时（reactor-netty responseTimeout = 两次网络读之间的最长间隔）：
+     * 等响应头/流中长时间无字节时断开；正常 SSE 分块持续到达不受影响，故不能设太短。
+     */
+    private static final Duration STREAM_READ_GAP_TIMEOUT = Duration.ofSeconds(90);
+
     private SsrfPinningClientFactory() {
+    }
+
+    /**
+     * 受信端点（不做 IP 固定）的阻塞客户端：OkHttp + 超时。
+     * 关键：RestClient 默认按 classpath 探测会选中 reactor-netty，且 reactor-netty 默认无任何读超时——
+     * 对端挂起会让调用线程在 Mono.block() 里永久 park（线上已发生全场 HTTP 卡死）。
+     */
+    public static RestClient.Builder defaultRestClientBuilder() {
+        OkHttpClient okHttp = new OkHttpClient.Builder()
+                .connectTimeout(CONNECT_TIMEOUT)
+                .readTimeout(READ_TIMEOUT)
+                .writeTimeout(WRITE_TIMEOUT)
+                .build();
+        return RestClient.builder().requestFactory(new OkHttp3ClientHttpRequestFactory(okHttp));
+    }
+
+    /** 受信端点（不做 IP 固定）的流式客户端：reactor-netty + 连接/读间隙超时。 */
+    public static WebClient.Builder defaultWebClientBuilder() {
+        HttpClient httpClient = HttpClient.create()
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) CONNECT_TIMEOUT.toMillis())
+                .responseTimeout(STREAM_READ_GAP_TIMEOUT);
+        return WebClient.builder().clientConnector(new ReactorClientHttpConnector(httpClient));
     }
 
     /**
@@ -54,9 +88,9 @@ public final class SsrfPinningClientFactory {
         }
         OkHttpClient okHttp = new OkHttpClient.Builder()
                 .dns(new PinnedDns(endpoint.host(), endpoint.pinnedIps()))
-                .connectTimeout(Duration.ofSeconds(15))
-                .readTimeout(Duration.ofSeconds(60))
-                .writeTimeout(Duration.ofSeconds(30))
+                .connectTimeout(CONNECT_TIMEOUT)
+                .readTimeout(READ_TIMEOUT)
+                .writeTimeout(WRITE_TIMEOUT)
                 .build();
         return RestClient.builder().requestFactory(new OkHttp3ClientHttpRequestFactory(okHttp));
     }
@@ -71,6 +105,8 @@ public final class SsrfPinningClientFactory {
         }
         HttpClient httpClient = HttpClient.create()
                 .resolver(new PinnedAddressResolverGroup(endpoint.host(), endpoint.port(), endpoint.pinnedIps()))
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) CONNECT_TIMEOUT.toMillis())
+                .responseTimeout(STREAM_READ_GAP_TIMEOUT)
                 .secure();
         return WebClient.builder().clientConnector(new ReactorClientHttpConnector(httpClient));
     }

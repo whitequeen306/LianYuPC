@@ -77,7 +77,7 @@ public class WeatherTool {
         try {
             String encodedCity = URLEncoder.encode(city, StandardCharsets.UTF_8);
             String url = weatherBaseUrl.replaceAll("/$", "") + "/" + encodedCity + "?format=j1";
-            String body = RestClient.create()
+            String body = com.lianyu.ai.SsrfPinningClientFactory.defaultRestClientBuilder().build()
                     .get()
                     .uri(url)
                     .retrieve()
