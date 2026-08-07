@@ -23,6 +23,13 @@ spring:
       # connection while reading upstream）。
       request-timeout: 15m
 
+  task:
+    scheduling:
+      # 所有 @Scheduled 共用该池：Spring 默认只有 1 个线程，
+      # 一个任务卡住（如 AI 审核调用）会拖停其余全部调度任务
+      pool:
+        size: 4
+
   servlet:
     multipart:
       max-file-size: 30MB

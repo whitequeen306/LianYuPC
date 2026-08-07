@@ -25,10 +25,17 @@ public class MinioConfig {
 
     @Bean
     public MinioClient minioClient() {
-        return MinioClient.builder()
+        MinioClient client = MinioClient.builder()
                 .endpoint(endpoint)
                 .credentials(accessKey, secretKey)
                 .build();
+        // SDK 默认 5 分钟超时太长：MinIO 挂起会占住调用线程 5 分钟。同机容器内网通信秒级完成，
+        // read/write 给 60s（字节间隙语义，大文件流式不受影响），connect 10s。
+        client.setTimeout(
+                java.util.concurrent.TimeUnit.SECONDS.toMillis(10),
+                java.util.concurrent.TimeUnit.SECONDS.toMillis(60),
+                java.util.concurrent.TimeUnit.SECONDS.toMillis(60));
+        return client;
     }
 
     @EventListener(ApplicationReadyEvent.class)

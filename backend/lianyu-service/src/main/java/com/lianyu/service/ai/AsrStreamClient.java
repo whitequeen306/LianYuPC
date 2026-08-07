@@ -55,7 +55,11 @@ public class AsrStreamClient {
         CompletableFuture<WebSocket> future = httpClient.newWebSocketBuilder()
                 .buildAsync(URI.create(wsUrl), session);
         try {
-            session.attach(future.join());
+            // connectTimeout 只管 TCP 建连；对端收了 Upgrade 请求但永远不应答时 join 会永久 park，
+            // 给握手未来补硬超时（建连 + 握手余量）
+            session.attach(future
+                    .orTimeout(Math.max(1000, connectTimeoutMs) + 2000L, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    .join());
         } catch (Exception e) {
             session.fail("无法连接语音识别流：" + safeMsg(e));
         }

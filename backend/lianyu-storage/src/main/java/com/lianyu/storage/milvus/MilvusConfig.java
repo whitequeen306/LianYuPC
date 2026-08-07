@@ -42,6 +42,9 @@ public class MilvusConfig {
                         .withHost(host)
                         .withPort(port)
                         .withDatabaseName(database)
+                        // gRPC 默认无 RPC deadline：对端挂起会让调用线程无限阻塞（同出站 HTTP 红线）
+                        .withConnectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                        .withRpcDeadline(30, java.util.concurrent.TimeUnit.SECONDS)
                         .build()
         );
     }
