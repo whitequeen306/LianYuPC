@@ -225,10 +225,7 @@
       destroy-on-close
       @close="cancelAddDialog"
     >
-      <CharacterCityModeForm
-        v-model:city-mode="addCityMode"
-        v-model:city="addCity"
-      />
+      <CharacterCityModeForm v-model:city="addCity" />
       <template #footer>
         <el-button @click="cancelAddDialog">{{ t('common.cancel') }}</el-button>
         <el-button
@@ -289,7 +286,6 @@ const previewVisible = ref(false)
 const previewItem = ref(null)
 const previewLoading = ref(false)
 const addDialogVisible = ref(false)
-const addCityMode = ref('real')
 const addCity = ref('')
 const commentsByTemplateId = ref({})
 const avatarLoadTier = ref({})
@@ -485,7 +481,6 @@ async function openPreview(item) {
 let addDialogResolve = null
 
 async function openAddCityDialog() {
-  addCityMode.value = 'real'
   addCity.value = getSavedUserCity()
   addDialogVisible.value = true
   return new Promise((resolve) => {
@@ -500,15 +495,13 @@ function cancelAddDialog() {
 }
 
 async function confirmAdd() {
-  if (addCityMode.value === 'real' && !addCity.value?.trim()) {
+  const city = addCity.value?.trim()
+  if (!city) {
     ElMessage.warning(t('characterSquare.cityRequired'))
     return
   }
-  const payload = {
-    cityMode: addCityMode.value,
-    city: addCityMode.value === 'real' ? addCity.value.trim() : undefined
-  }
-  if (payload.city) saveUserCity(payload.city)
+  saveUserCity(city)
+  const payload = { cityMode: 'real', city }
   addDialogVisible.value = false
   addDialogResolve?.(payload)
   addDialogResolve = null

@@ -195,8 +195,7 @@ public class CharacterSquareService {
         return List.copyOf(tags);
     }
 
-    // 故意不加 @Transactional：虚构城市模式会先调 LLM 推理（applySquareAddCity → inferFictionalCity），
-    // 进事务会把 Hikari 连接占住。先推理出 settings，再进事务建角色+建会话。
+    // 故意不加 @Transactional：先拼好 settings，再进事务建角色+建会话。
     public CharacterResponse addTemplateToMyCharacters(Long userId,
                                                        Long templateId,
                                                        String uiLanguageCode,

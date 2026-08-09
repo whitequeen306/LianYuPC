@@ -216,14 +216,9 @@ export default {
     unread: 'Unread messages'
   },
   cityMode: {
-    label: 'City setting',
-    real: 'Use my real-world city',
-    fictional: 'Use the character\'s fictional city',
-    hint: 'Affects proactive greetings and time/weather context in chat.',
     realCityLabel: 'Your city',
     realCityPlaceholder: 'e.g. Shanghai, Beijing, Guangzhou',
-    realCityHint: 'Used for local time and weather.',
-    fictionalNote: 'We infer the canonical fictional city from the character name and persona — no manual input needed.'
+    realCityHint: 'Used for local time, weather, and proactive greetings.'
   },
   characterSettings: {
     pageTitle: '{name} · Settings',
@@ -232,7 +227,6 @@ export default {
     realCity: 'Your city',
     realCityHint: 'After you change it, your most recently chatted character may ask if you moved.',
     realCityTooLong: 'City name cannot exceed 50 characters',
-    fictionalCityLocked: 'This character uses a fictional city — real city cannot be edited here.',
     chatBackground: 'Chat background',
     useGlobalBackground: 'Use global background',
     behavior: 'Interaction preferences',

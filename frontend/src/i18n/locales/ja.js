@@ -211,14 +211,9 @@ export default {
     unread: '未読あり'
   },
   cityMode: {
-    label: '都市設定',
-    real: '自分の現実の都市を使う',
-    fictional: 'キャラの架空都市を使う',
-    hint: '能動的な挨拶や天気・時間の会話で参照する都市に影響します。',
     realCityLabel: 'あなたの都市',
     realCityPlaceholder: '例：東京、大阪、名古屋',
-    realCityHint: '現地時間と天気の計算に使用します。',
-    fictionalNote: 'キャラ名と設定から原作の架空都市を自動推定します。手入力は不要です。'
+    realCityHint: '現地時間・天気・能動挨拶の参照に使用します。'
   },
   characterSettings: {
     pageTitle: '{name} · 設定',
@@ -227,7 +222,6 @@ export default {
     realCity: 'あなたの所在都市',
     realCityHint: '変更後、最近チャットしたキャラが引っ越しを気遣うことがあります。',
     realCityTooLong: '都市名は50文字以内にしてください',
-    fictionalCityLocked: 'このキャラは架空都市を使用しているため、現実の都市は変更できません。',
     chatBackground: 'チャット背景',
     useGlobalBackground: '全体背景を使う',
     behavior: '付き合い方',

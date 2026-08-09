@@ -158,10 +158,7 @@
           <el-input v-model="form.name" placeholder="给你的角色起个名字" />
         </el-form-item>
 
-        <CharacterCityModeForm
-          v-model:city-mode="form.cityMode"
-          v-model:city="form.city"
-        />
+        <CharacterCityModeForm v-model:city="form.city" />
 
         <el-form-item label="动漫角色参考（可选）">
           <div class="generate-row">
@@ -338,7 +335,6 @@ const isDragging = ref(false)
 
 const initialForm = () => ({
   name: '',
-  cityMode: 'real',
   city: getSavedUserCity(),
   promptTemplate: '',
   avatarUrl: '',
@@ -351,9 +347,7 @@ const form = reactive(initialForm())
 
 const formRules = computed(() => ({
   name: [{ required: true, message: '请输入角色名称', trigger: 'blur' }],
-  city: form.cityMode === 'real'
-    ? [{ required: true, message: '请填写你的所在城市', trigger: 'blur' }]
-    : [],
+  city: [{ required: true, message: '请填写你的所在城市', trigger: 'blur' }],
   promptTemplate: [{ required: true, message: '请输入性格设定', trigger: 'blur' }]
 }))
 
@@ -544,8 +538,8 @@ async function handleSubmit() {
 
   submitting.value = true
   try {
-    const settings = { city_mode: form.cityMode }
-    if (form.cityMode === 'real' && form.city?.trim()) {
+    const settings = { city_mode: 'real' }
+    if (form.city?.trim()) {
       settings.city = form.city.trim()
       saveUserCity(settings.city)
     }

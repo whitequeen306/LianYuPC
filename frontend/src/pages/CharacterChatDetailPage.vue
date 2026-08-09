@@ -85,20 +85,15 @@
         </div>
 
         <div class="section-title">{{ t('characterSettings.location') }}</div>
-        <template v-if="isRealCityMode">
-          <el-form-item :label="t('characterSettings.realCity')">
-            <el-input
-              v-model="form.city"
-              :placeholder="t('cityMode.realCityPlaceholder')"
-              maxlength="50"
-              show-word-limit
-            />
-            <div class="field-hint">{{ t('characterSettings.realCityHint') }}</div>
-          </el-form-item>
-        </template>
-        <div v-else class="city-mode-form__fictional-note">
-          {{ t('characterSettings.fictionalCityLocked') }}
-        </div>
+        <el-form-item :label="t('characterSettings.realCity')">
+          <el-input
+            v-model="form.city"
+            :placeholder="t('cityMode.realCityPlaceholder')"
+            maxlength="50"
+            show-word-limit
+          />
+          <div class="field-hint">{{ t('characterSettings.realCityHint') }}</div>
+        </el-form-item>
 
         <div class="section-title">{{ t('characterSettings.behavior') }}</div>
         <div class="form-grid two-col">
@@ -313,15 +308,6 @@ const voiceForm = reactive({
   refText: '',
 })
 
-const isRealCityMode = computed(() => {
-  const settings = character.value?.settings || {}
-  const mode = settings.city_mode
-  if (mode === 'fictional') return false
-  if (mode === 'real') return true
-  const legacy = settings.use_fictional_city
-  return !(legacy === true || legacy === 'true')
-})
-
 const form = reactive({
   city: '',
   chatBackgroundKey: '',
@@ -518,16 +504,14 @@ async function loadCharacter() {
 
 async function handleSave() {
   if (!character.value) return
-  if (isRealCityMode.value) {
-    const city = String(form.city || '').trim()
-    if (!city) {
-      ElMessage.warning(t('cityMode.realCityPlaceholder'))
-      return
-    }
-    if (city.length > 50) {
-      ElMessage.warning(t('characterSettings.realCityTooLong'))
-      return
-    }
+  const city = String(form.city || '').trim()
+  if (!city) {
+    ElMessage.warning(t('cityMode.realCityPlaceholder'))
+    return
+  }
+  if (city.length > 50) {
+    ElMessage.warning(t('characterSettings.realCityTooLong'))
+    return
   }
   saving.value = true
   try {
@@ -542,10 +526,9 @@ async function handleSave() {
       doNotDisturbEnabled: form.doNotDisturbEnabled,
       dndStartMinutes: clampMinutes(form.dndStartMinutes),
       dndEndMinutes: clampMinutes(form.dndEndMinutes),
-      blocked: form.blocked
-    }
-    if (isRealCityMode.value) {
-      settings.city = String(form.city || '').trim()
+      blocked: form.blocked,
+      city_mode: 'real',
+      city
     }
     const updated = await updateCharacter(character.value.id, { settings })
     character.value = updated
@@ -919,17 +902,6 @@ function clampPercentage(value, fallback = 50) {
   margin-top: $space-2;
   font-size: $font-size-xs;
   color: $color-text-muted;
-  line-height: $line-height-relaxed;
-}
-
-.city-mode-form__fictional-note {
-  margin: 0 0 $space-4;
-  padding: $space-3 $space-4;
-  border-radius: $radius-md;
-  background: rgba($color-pink-rgb, 0.06);
-  border: 1px solid rgba($color-pink-rgb, 0.1);
-  color: $color-text-secondary;
-  font-size: $font-size-sm;
   line-height: $line-height-relaxed;
 }
 

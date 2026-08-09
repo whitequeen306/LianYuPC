@@ -263,6 +263,11 @@ export default {
     dialogCreate: '建立角色',
     unread: '有未讀訊息'
   },
+  cityMode: {
+    realCityLabel: '你的所在城市',
+    realCityPlaceholder: '如 上海、北京、廣州',
+    realCityHint: '用於精確計算當地時間與天氣，並影響主動問候相關對話。'
+  },
   characterSettings: {
     pageTitle: '{name} · 設定',
     pageDesc: '調整與該角色的相處方式，不修改性格設定。',
@@ -270,7 +275,6 @@ export default {
     realCity: '你的所在城市',
     realCityHint: '修改後，最近聊天的角色可能會主動關心你是否搬家。',
     realCityTooLong: '城市名稱不能超過 50 個字元',
-    fictionalCityLocked: '該角色使用虛構城市，無法在此修改現實城市。',
     chatBackground: '聊天背景',
     useGlobalBackground: '使用全域背景',
     behavior: '相處偏好',

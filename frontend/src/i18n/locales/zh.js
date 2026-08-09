@@ -181,7 +181,6 @@ export default {
     cityPromptMessage: '为方便精确计算当地时间与天气，请填写你所在的城市。',
     cityPlaceholder: '如 上海、北京、广州',
     cityRequired: '请填写城市',
-    fictionalCityFailed: '由于角色背景原因虚构失败，建议您选择现实城市',
     confirmAdd: '确认加入',
     mostLiked: '更多人喜欢的角色',
     voiceInteraction: '有语音交互',
@@ -217,14 +216,9 @@ export default {
     unread: '有未读消息'
   },
   cityMode: {
-    label: '城市设定',
-    real: '使用我的现实城市',
-    fictional: '使用角色所在虚构城市',
-    hint: '影响主动问候、时间与天气相关对话所参考的城市。',
     realCityLabel: '你的所在城市',
     realCityPlaceholder: '如 上海、北京、广州',
-    realCityHint: '用于精确计算当地时间与天气。',
-    fictionalNote: '系统将依据角色名与人设，自动推断其原作中的虚构城市，无需手动填写。'
+    realCityHint: '用于精确计算当地时间与天气，并影响主动问候相关对话。'
   },
   characterSettings: {
     pageTitle: '{name} · 设置',
@@ -233,7 +227,6 @@ export default {
     realCity: '你的所在城市',
     realCityHint: '修改后，最近聊天的角色可能会主动关心你是否搬家。',
     realCityTooLong: '城市名称不能超过 50 个字符',
-    fictionalCityLocked: '该角色使用虚构城市，无法在此修改现实城市。',
     chatBackground: '聊天背景',
     useGlobalBackground: '使用全局背景',
     behavior: '相处偏好',

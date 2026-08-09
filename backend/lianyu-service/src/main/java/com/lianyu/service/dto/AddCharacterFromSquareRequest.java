@@ -5,9 +5,9 @@ import lombok.Data;
 @Data
 public class AddCharacterFromSquareRequest {
 
-    /** real | fictional — 现实城市由用户填写，虚构城市由模型推断 */
+    /** 已废弃：始终按现实城市处理，忽略 fictional */
     private String cityMode = "real";
 
-    /** 用户所在城市（cityMode=real 时必填，写入 settings.city） */
+    /** 用户所在城市（必填，写入 settings.city） */
     private String city;
 }
