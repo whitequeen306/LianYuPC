@@ -1990,7 +1990,8 @@ function formatTime(ts) {
 
 .gal-bubble {
   position: relative;
-  max-width: min(78%, 560px);
+  /* 头像 40px + gap + 气泡 ≈ 聊天区 7/8；短句仍 fit-content 收窄 */
+  max-width: calc(87.5% - 40px - #{$space-3});
   min-width: 0;
   width: fit-content;
   padding: $space-3 $space-4;
@@ -2323,7 +2324,7 @@ function formatTime(ts) {
   }
 
   .gal-bubble {
-    max-width: 88%;
+    max-width: calc(87.5% - 40px - #{$space-3});
   }
 }
 </style>

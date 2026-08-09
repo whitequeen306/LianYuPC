@@ -1,16 +1,27 @@
 const OPEN_PARENS = new Set(['（', '('])
 const CLOSE_PARENS = new Set(['）', ')'])
+const WORD_JOINER = '\u2060'
 
-export function normalizeAssistantContent(text) {
+export function prepareAssistantContentForSplit(text) {
   if (text == null || text === '') return ''
-  let t = String(text).replace(/\r\n/g, '\n').trim()
+  let t = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+  t = t.replaceAll(WORD_JOINER, '')
   t = stripLeadingOrphanCloses(t)
   t = flattenNewlinesInsideParentheses(t)
   const depth = countUnclosedParenDepth(t)
   if (depth > 0) {
     t += '）'.repeat(depth)
   }
-  return t.replace(/\s{2,}/g, ' ').trim()
+  return t
+}
+
+/** 单条气泡：压平硬换行并粘住闭括号（展示 / 落库前） */
+export function normalizeAssistantContent(text) {
+  if (text == null || text === '') return ''
+  let t = prepareAssistantContentForSplit(text)
+  if (!t) return ''
+  t = t.replace(/\n/g, ' ').replace(/\s{2,}/g, ' ').trim()
+  return glueClosingParentheses(t)
 }
 
 function flattenNewlinesInsideParentheses(text) {
@@ -20,6 +31,21 @@ function flattenNewlinesInsideParentheses(text) {
     if (ch === '\n' && isInsideParentheses(text, i)) {
       if (out.length > 0 && out[out.length - 1] !== ' ') out += ' '
       continue
+    }
+    out += ch
+  }
+  return out
+}
+
+function glueClosingParentheses(text) {
+  let out = ''
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i]
+    if (CLOSE_PARENS.has(ch)) {
+      out = out.replace(/ +$/u, '')
+      if (out.length === 0 || out[out.length - 1] !== WORD_JOINER) {
+        out += WORD_JOINER
+      }
     }
     out += ch
   }
@@ -43,7 +69,7 @@ export function stripLeadingOrphanCloses(text) {
   let i = 0
   while (i < text.length) {
     const ch = text[i]
-    if (CLOSE_PARENS.has(ch)) {
+    if (CLOSE_PARENS.has(ch) || ch === WORD_JOINER) {
       i += 1
       continue
     }
@@ -158,5 +184,5 @@ export function resolveShowInnerThoughts(settings) {
 }
 
 export function displayAssistantContent(content, showInnerThoughts = true) {
-  return stripInnerThoughts(content, showInnerThoughts)
+  return stripInnerThoughts(normalizeAssistantContent(content), showInnerThoughts)
 }

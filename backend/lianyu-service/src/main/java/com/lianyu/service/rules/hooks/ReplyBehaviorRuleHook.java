@@ -37,8 +37,8 @@ public class ReplyBehaviorRuleHook implements PromptRuleHook {
 
     private String renderZh(int maxPieces, String persona, boolean showInnerThoughts) {
         String multiRule = maxPieces > 1
-                ? "4. 可拆成1~" + maxPieces + "条短消息，多条时必须用空行分隔；两个独立想法/情绪转折必须分条，不要把两句该分开的话挤在同一条里；同一条内不要换行\n"
-                : "4. 每次一条短消息，像微信聊天；该短就短，该长就长\n";
+                ? "4. 可拆成1~" + maxPieces + "条短消息，多条时必须用空行分隔；同一条必须写成连续段落，禁止一句一行或句中硬换行\n"
+                : "4. 每次一条短消息，像微信聊天；写成连续段落，禁止一句一行\n";
         return """
                 【以下回复规则优先级高于角色模板里「演剧情/沉浸世界观/不跳出设定」的表述】
                 回复规则：
@@ -55,8 +55,8 @@ public class ReplyBehaviorRuleHook implements PromptRuleHook {
 
     private String renderZhTw(int maxPieces, String persona, boolean showInnerThoughts) {
         String multiRule = maxPieces > 1
-                ? "4. 可拆成1~" + maxPieces + "條短訊息，多條時必須用空行分隔；兩個獨立想法/情緒轉折必須分條，不要把兩句該分開的話擠在同一條裡；同一條內不要換行\n"
-                : "4. 每次一條短訊息，像即時聊天；該短就短，該長就長\n";
+                ? "4. 可拆成1~" + maxPieces + "條短訊息，多條時必須用空行分隔；同一條必須寫成連續段落，禁止一句一行或句中硬換行\n"
+                : "4. 每次一條短訊息，像即時聊天；寫成連續段落，禁止一句一行\n";
         return """
                 【以下回覆規則優先於角色模板裡「演劇情/沉浸世界觀/不跳出設定」的表述】
                 回覆規則：
@@ -109,25 +109,25 @@ public class ReplyBehaviorRuleHook implements PromptRuleHook {
 
     private String innerThoughtRuleZh(boolean showInnerThoughts) {
         return showInnerThoughts
-                ? "心理活动可用括号（如「（心里有点堵）」「（其实挺在乎的）」）；禁止用括号写动作/表情描写（如「（微笑）」「（叹气）」）\n"
+                ? "心理活动可用括号（如「（心里有点堵）」「（其实挺在乎的）」）；括号内必须连续书写、禁止换行；闭括号必须紧贴内容末尾，禁止单独成行；禁止用括号写动作/表情描写（如「（微笑）」「（叹气）」）\n"
                 : "禁止输出括号内心独白或心理活动，只写说出口的话；不要用括号补充未说出的想法\n";
     }
 
     private String innerThoughtRuleZhTw(boolean showInnerThoughts) {
         return showInnerThoughts
-                ? "心理活動可用括號（如「（心裡有點堵）」「（其實挺在乎的）」）；禁止用括號寫動作/表情描寫（如「（微笑）」「（嘆氣）」）\n"
+                ? "心理活動可用括號（如「（心裡有點堵）」「（其實挺在乎的）」）；括號內必須連續書寫、禁止換行；閉括號必須緊貼內容末尾，禁止單獨成行；禁止用括號寫動作/表情描寫（如「（微笑）」「（嘆氣）」）\n"
                 : "禁止輸出括號內心獨白或心理活動，只寫說出口的話；不要用括號補充未說出的想法\n";
     }
 
     private String innerThoughtRuleEn(boolean showInnerThoughts) {
         return showInnerThoughts
-                ? "Inner thoughts may use parentheses; no parenthetical physical actions or expressions (e.g. \"(smiles)\")\n"
+                ? "Inner thoughts may use parentheses as one continuous span (no line breaks inside; closing paren must stay on the same line); no parenthetical physical actions or expressions (e.g. \"(smiles)\")\n"
                 : "Do not output parenthetical inner monologue; only write what you would say out loud\n";
     }
 
     private String innerThoughtRuleJa(boolean showInnerThoughts) {
         return showInnerThoughts
-                ? "心の声は括弧でよい；動作・表情の括弧描写（例「（微笑）」）は禁止\n"
+                ? "心の声は括弧でよい（括弧内は改行禁止、閉じ括弧は内容の直後）；動作・表情の括弧描写（例「（微笑）」）は禁止\n"
                 : "括弧での心の声・内面独白は禁止。口に出す言葉だけ書く\n";
     }
 

@@ -12,7 +12,11 @@
 
 <script setup>
 import { computed } from 'vue'
-import { parseInnerThoughtSegments, stripInnerThoughts } from '@/utils/innerThoughtFilter'
+import {
+  normalizeAssistantContent,
+  parseInnerThoughtSegments,
+  stripInnerThoughts
+} from '@/utils/innerThoughtFilter'
 
 const props = defineProps({
   content: { type: String, default: '' },
@@ -33,11 +37,14 @@ const props = defineProps({
   }
 })
 
-const displayText = computed(() => stripInnerThoughts(props.content, props.showInnerThoughts))
+/** 历史脏数据 / 流式原文也可能带括号内硬换行，展示前再洗一遍 */
+const normalizedContent = computed(() => normalizeAssistantContent(props.content))
+
+const displayText = computed(() => stripInnerThoughts(normalizedContent.value, props.showInnerThoughts))
 
 const segments = computed(() => {
-  if (!props.showInnerThoughts || !props.content) return []
-  return parseInnerThoughtSegments(props.content)
+  if (!props.showInnerThoughts || !normalizedContent.value) return []
+  return parseInnerThoughtSegments(normalizedContent.value)
 })
 
 const hasStyledInner = computed(() =>

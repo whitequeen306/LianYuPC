@@ -1,5 +1,6 @@
 package com.lianyu.service.ai;
 
+import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -17,11 +18,22 @@ public class AssistantReplyService {
     }
 
     public ProcessedReply process(String raw, int maxRepliesPerTurn) {
-        String normalized = AssistantContentNormalizer.normalize(raw);
-        if (normalized.isBlank()) {
+        String prepared = AssistantContentNormalizer.prepareForSplit(raw);
+        if (prepared.isBlank()) {
             return new ProcessedReply("", List.of());
         }
-        List<String> pieces = replySplitter.split(normalized, maxRepliesPerTurn);
-        return new ProcessedReply(normalized, pieces);
+        List<String> split = replySplitter.split(prepared, maxRepliesPerTurn);
+        List<String> pieces = new ArrayList<>(split.size());
+        for (String piece : split) {
+            String normalizedPiece = AssistantContentNormalizer.normalize(piece);
+            if (!normalizedPiece.isBlank()) {
+                pieces.add(normalizedPiece);
+            }
+        }
+        if (pieces.isEmpty()) {
+            return new ProcessedReply("", List.of());
+        }
+        // 流式 replace 用：每条气泡一行，便于前端按条替换
+        return new ProcessedReply(String.join("\n", pieces), pieces);
     }
 }

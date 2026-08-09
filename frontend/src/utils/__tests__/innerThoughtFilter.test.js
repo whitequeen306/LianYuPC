@@ -40,9 +40,22 @@ describe('parseInnerThoughtSegments', () => {
 })
 
 describe('normalizeAssistantContent', () => {
+  const WJ = '\u2060'
+
   it('flattens and closes inner thought parentheses', () => {
     const raw = '（愣了一下\n\n目光瞟了一眼'
-    expect(normalizeAssistantContent(raw)).toBe('（愣了一下 目光瞟了一眼）')
+    expect(normalizeAssistantContent(raw)).toBe(`（愣了一下 目光瞟了一眼${WJ}）`)
+  })
+
+  it('collapses hard newlines so closing paren is not alone on next line', () => {
+    const raw =
+      '嗯。(她把手机屏幕朝下扣在枕边，闭上眼睛。\n心里默默算着：还有八个多小时就能见到你了。\n这次是真的不回了。\n)'
+    const normalized = normalizeAssistantContent(raw)
+    expect(normalized).not.toContain('\n')
+    expect(normalized.endsWith(`${WJ})`)).toBe(true)
+    expect(normalized).toBe(
+      `嗯。(她把手机屏幕朝下扣在枕边，闭上眼睛。 心里默默算着：还有八个多小时就能见到你了。 这次是真的不回了。${WJ})`
+    )
   })
 })
 

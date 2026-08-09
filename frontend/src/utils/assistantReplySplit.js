@@ -4,6 +4,7 @@
 import {
   isInsideParentheses,
   normalizeAssistantContent,
+  prepareAssistantContentForSplit,
   rebalanceSplitPieces,
   stripLeadingOrphanCloses
 } from '@/utils/innerThoughtFilter'
@@ -75,10 +76,10 @@ function collectReplyPieces(fullContent) {
   if (!fullContent || !String(fullContent).trim()) {
     return []
   }
-  const normalized = normalizeAssistantContent(fullContent)
-  let pieces = splitLinesOutsideParentheses(normalized)
+  const prepared = prepareAssistantContentForSplit(fullContent)
+  let pieces = splitLinesOutsideParentheses(prepared)
   if (pieces.length === 0) {
-    pieces = [normalized]
+    pieces = [prepared]
   }
 
   if (pieces.length === 1 && pieces[0].length >= SENTENCE_SPLIT_MIN_CHARS) {
@@ -88,6 +89,8 @@ function collectReplyPieces(fullContent) {
     }
   }
   return rebalanceSplitPieces(pieces.map(p => stripLeadingOrphanCloses(p)))
+    .map(p => normalizeAssistantContent(p))
+    .filter(Boolean)
 }
 
 function capReplyPieces(pieces, limit) {

@@ -50,13 +50,14 @@ describe('splitAssistantReplyForDisplay', () => {
   })
 
   it('does not split on newlines inside parentheses', () => {
+    const WJ = '\u2060'
     const text = [
       '（她靠近你，轻轻握住你的手',
       '',
       '）好的，我等一下倒没关系。'
     ].join('\n')
     expect(splitAssistantReplyForDisplay(text)).toEqual([
-      '（她靠近你，轻轻握住你的手 ）好的，我等一下倒没关系。'
+      `（她靠近你，轻轻握住你的手${WJ}）好的，我等一下倒没关系。`
     ])
   })
 
@@ -70,10 +71,14 @@ describe('splitAssistantReplyForDisplay', () => {
     expect(pieces).toHaveLength(1)
     expect(pieces[0]).toContain('（被他轻轻摸头')
     expect(pieces[0]).toContain('）嗯——')
+    expect(pieces[0]).not.toContain('\n')
   })
 
   it('does not split on sentence punctuation inside parentheses', () => {
+    const WJ = '\u2060'
     const text = '（被他轻轻摸头的瞬间，我愣了一下。logo落进眼里。）我假装没看到。'
-    expect(splitAssistantReplyForDisplay(text)).toEqual([text])
+    expect(splitAssistantReplyForDisplay(text)).toEqual([
+      `（被他轻轻摸头的瞬间，我愣了一下。logo落进眼里。${WJ}）我假装没看到。`
+    ])
   })
 })
