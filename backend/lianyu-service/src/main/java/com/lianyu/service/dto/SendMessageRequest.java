@@ -14,6 +14,7 @@ public class SendMessageRequest {
     private String model;
     /** Optional vision/VL model for image turns; empty → vault/platform default */
     @Size(max = 128)
+    /** @deprecated 识图固定走平台多模态，该字段保留兼容旧客户端但不再生效 */
     private String visionModel;
     private Double temperature;
     private String content;

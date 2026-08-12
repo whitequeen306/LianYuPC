@@ -1056,33 +1056,15 @@ public class AiChatService {
     }
 
     /**
-     * 识图路由：请求显式 visionModel / 用户 vault 的 visionModelDefault 优先；
-     * 自有 Provider 且配置了识图模型时走用户 Key；否则走平台多模态（默认 qwen3.7-flash）。
+     * 识图路由：固定走平台多模态（默认 qwen3.7-flash）。
+     * 请求里的 visionModel 与 vault 的 visionModelDefault 仅为兼容旧客户端而保留，均不再生效——
+     * 历史上用户把 qwen 系识图模型配到纯文本接口（如 DeepSeek）的 base-url 上，必然 400。
      */
     private VisionRoute resolveVisionRoute(Long userId, AiChatRequest request) {
-        String requested = trimToNull(request != null ? request.getVisionModel() : null);
-        String provider = request != null ? request.getProvider() : null;
-        if (!isPlatformProvider(provider)) {
-            VaultEntryResponse userVault = resolveVault(userId, provider);
-            String vaultVision = trimToNull(userVault.getVisionModelDefault());
-            if (requested != null || vaultVision != null) {
-                String model = requested != null ? requested : vaultVision;
-                return new VisionRoute(userVault, model);
-            }
-        }
-        String model = requested != null ? requested : multimodalModel;
-        return new VisionRoute(buildMultimodalVault(), model);
+        return new VisionRoute(buildMultimodalVault(), multimodalModel);
     }
 
     private record VisionRoute(VaultEntryResponse vault, String model) {}
-
-    private static String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
-    }
 
     private BusinessException mapVisionProviderException(Throwable e) {
         String msg = collectThrowableMessages(e);

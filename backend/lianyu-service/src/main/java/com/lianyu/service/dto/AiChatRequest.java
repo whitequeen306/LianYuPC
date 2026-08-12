@@ -13,6 +13,7 @@ public class AiChatRequest {
 
     private String model;
     /** Optional vision/VL model override for image analysis stage */
+    /** @deprecated 识图固定走平台多模态，该字段保留兼容但不再生效 */
     private String visionModel;
     private Double temperature;
 

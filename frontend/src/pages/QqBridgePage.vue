@@ -185,24 +185,6 @@
               </el-select>
               <p class="field-hint">{{ t('qqBridge.binding.modelHint') }}</p>
             </el-form-item>
-            <el-form-item :label="t('qqBridge.binding.visionModel')">
-              <el-select
-                v-model="bindingForm.visionModel"
-                filterable
-                allow-create
-                clearable
-                :placeholder="t('qqBridge.binding.visionModelPlaceholder')"
-                style="width: 100%"
-              >
-                <el-option
-                  v-for="m in visionModelOptions"
-                  :key="m.id || '__platform_vision__'"
-                  :label="m.name"
-                  :value="m.id"
-                />
-              </el-select>
-              <p class="field-hint">{{ t('qqBridge.binding.visionModelHint') }}</p>
-            </el-form-item>
             <el-form-item :label="t('qqBridge.binding.allowMode')">
               <el-select v-model="bindingForm.allowMode" style="width: 100%">
                 <el-option :label="t('qqBridge.binding.allowModeAllowlist')" value="allowlist" />
@@ -419,10 +401,7 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import { listCharacters } from '@/api/character'
 import { useProvidersStore } from '@/stores/providers'
 import { fetchModels } from '@/api/ai'
-import {
-  PLATFORM_PROVIDER,
-  VISION_MODEL_SUGGESTIONS,
-} from '@/constants/ai'
+import { PLATFORM_PROVIDER } from '@/constants/ai'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -430,7 +409,6 @@ const store = useQqBridgeStore()
 const providersStore = useProvidersStore()
 const isElectron = isElectronApp()
 const goBack = () => router.push('/app/settings')
-const visionModelOptions = VISION_MODEL_SUGGESTIONS
 const qqModelOptions = ref([])
 
 const hostStatus = computed(() => store.hostStatus || { state: 'stopped' })
@@ -479,7 +457,6 @@ const bindingForm = reactive({
   characterId: '',
   provider: '',
   model: '',
-  visionModel: '',
   allowMode: 'allowlist',
   allowUsers: '',
   allowGroups: '',
@@ -505,7 +482,6 @@ watch(
     const savedProvider = s.binding?.provider || ''
     bindingForm.provider = savedProvider === PLATFORM_PROVIDER ? '' : savedProvider
     bindingForm.model = s.binding?.model || ''
-    bindingForm.visionModel = s.binding?.visionModel || ''
     bindingForm.allowMode = s.binding?.allowMode === 'open' ? 'open' : 'allowlist'
     bindingForm.allowUsers = joinList(s.binding?.allowUsers)
     bindingForm.allowGroups = joinList(s.binding?.allowGroups)
@@ -636,13 +612,11 @@ function onQqProviderChange(provider) {
   if (!provider || provider === PLATFORM_PROVIDER) {
     bindingForm.provider = ''
     bindingForm.model = ''
-    bindingForm.visionModel = ''
     qqModelOptions.value = []
     return
   }
   const vault = providersStore.vaults.find((v) => v.provider === provider)
   bindingForm.model = vault?.modelDefault || ''
-  bindingForm.visionModel = vault?.visionModelDefault || ''
   loadQqModels(provider)
 }
 
@@ -765,7 +739,6 @@ async function onSaveBinding() {
         characterId: bindingForm.characterId.trim(),
         provider,
         model: String(bindingForm.model || '').trim(),
-        visionModel: String(bindingForm.visionModel || '').trim(),
         allowMode: bindingForm.allowMode,
         allowUsers: splitList(bindingForm.allowUsers),
         allowGroups: splitList(bindingForm.allowGroups),

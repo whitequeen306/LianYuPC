@@ -290,22 +290,6 @@
               :value="m.id || m"
             />
           </el-select>
-          <el-select
-            v-model="currentVisionModel"
-            size="small"
-            placeholder="识图"
-            class="toolbar-select toolbar-select--wide"
-            filterable
-            allow-create
-            clearable
-          >
-            <el-option
-              v-for="m in visionModelOptions"
-              :key="m.id || '__platform_vision__'"
-              :label="m.name"
-              :value="m.id"
-            />
-          </el-select>
         </div>
       </div>
     </div>
@@ -362,10 +346,7 @@ import { ArrowLeft, ArrowDown, ChatDotRound, Promotion, Picture, Close, User, Us
 import { ElMessage } from 'element-plus'
 import { resolveMediaUrl } from '@/utils/media'
 import { nextCharacterAvatarTier, resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
-import {
-  PLATFORM_PROVIDER,
-  VISION_MODEL_SUGGESTIONS,
-} from '@/constants/ai'
+import { PLATFORM_PROVIDER } from '@/constants/ai'
 import { normalizeHex } from '@/utils/themeColor'
 import EmotionBadge from '@/components/EmotionBadge.vue'
 import { getCharacterState } from '@/api/characterState'
@@ -582,11 +563,9 @@ let voiceFinalConsumed = false
 const awaitingOpening = ref(false)
 const currentProvider = ref('')
 const currentModel = ref('')
-const currentVisionModel = ref('')
 let restoringProviderPref = false
 
 const availableModels = ref([])
-const visionModelOptions = computed(() => VISION_MODEL_SUGGESTIONS)
 let conversationPollTimer = null
 let pollFailureCount = 0
 const POLL_FAILURE_WARN_THRESHOLD = 3
@@ -602,17 +581,12 @@ function loadCharProviderPref(charId) {
     return map[charId] || null
   } catch { return null }
 }
-function saveCharProviderPref(charId, provider, model, visionModel) {
+function saveCharProviderPref(charId, provider, model) {
   if (!charId) return
   try {
     const raw = localStorage.getItem(PER_CHAR_PROVIDER_KEY)
     const map = raw ? JSON.parse(raw) : {}
-    const prev = map[charId] && typeof map[charId] === 'object' ? map[charId] : {}
-    map[charId] = {
-      provider,
-      model,
-      visionModel: visionModel !== undefined ? visionModel : (prev.visionModel || ''),
-    }
+    map[charId] = { provider, model }
     localStorage.setItem(PER_CHAR_PROVIDER_KEY, JSON.stringify(map))
   } catch { /* ignore */ }
 }
@@ -625,12 +599,10 @@ function applyUserVaultDefaults(vault) {
   if (!vault) {
     currentProvider.value = ''
     currentModel.value = ''
-    currentVisionModel.value = ''
     return
   }
   currentProvider.value = vault.provider
   currentModel.value = vault.modelDefault || ''
-  currentVisionModel.value = vault.visionModelDefault || ''
   loadModels(vault.provider)
 }
 
@@ -648,15 +620,13 @@ function restoreCharProviderPref() {
       && providersStore.vaults.some(v => v.provider === saved.provider)) {
     currentProvider.value = saved.provider
     currentModel.value = saved.model || ''
-    currentVisionModel.value = saved.visionModel || ''
     loadModels(saved.provider)
   } else if (fallback) {
     applyUserVaultDefaults(fallback)
-    saveCharProviderPref(charId, fallback.provider, fallback.modelDefault || '', fallback.visionModelDefault || '')
+    saveCharProviderPref(charId, fallback.provider, fallback.modelDefault || '')
   } else {
     currentProvider.value = ''
     currentModel.value = ''
-    currentVisionModel.value = ''
   }
   // nextTick 后重置 flag，此时 watcher 中的 model 覆盖已执行完毕
   nextTick(() => { restoringProviderPref = false })
@@ -897,7 +867,6 @@ watch(currentProvider, (p) => {
       else {
         currentProvider.value = ''
         currentModel.value = ''
-        currentVisionModel.value = ''
       }
     }
     return
@@ -905,15 +874,14 @@ watch(currentProvider, (p) => {
   const vault = providersStore.vaults.find(v => v.provider === p)
   if (!restoringProviderPref) {
     currentModel.value = vault?.modelDefault || ''
-    currentVisionModel.value = vault?.visionModelDefault || ''
   }
   loadModels(p)
 })
 
-watch([currentModel, currentVisionModel], ([m, vm]) => {
+watch(currentModel, (m) => {
   const charId = activeCharacter.value?.id
   if (charId && currentProvider.value) {
-    saveCharProviderPref(charId, currentProvider.value, m || '', vm || '')
+    saveCharProviderPref(charId, currentProvider.value, m || '')
   }
 })
 
@@ -1452,7 +1420,6 @@ async function handleSend() {
   const streamPayload = {
     provider: currentProvider.value,
     model: currentModel.value || undefined,
-    visionModel: currentVisionModel.value || undefined,
     content: draftText || undefined,
     imageUrl: draftImageUrl || undefined
   }
