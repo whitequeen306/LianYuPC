@@ -7,6 +7,7 @@ import com.lianyu.dao.entity.Character;
 import com.lianyu.dao.entity.User;
 import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.UserMapper;
+import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.dto.PublicCharacterCard;
 import com.lianyu.service.dto.PublicUserProfileResponse;
 import com.lianyu.service.dto.UpdateUserSettingsRequest;
@@ -28,6 +29,7 @@ public class UserPublicProfileService {
     private final UserMapper userMapper;
     private final CharacterMapper characterMapper;
     private final FileStorageService fileStorageService;
+    private final ApiKeyVaultService apiKeyVaultService;
 
     public PublicUserProfileResponse getPublicProfile(Long viewerId, Long targetUserId) {
         User user = userMapper.selectById(targetUserId);
@@ -55,9 +57,12 @@ public class UserPublicProfileService {
 
     public UserSettingsResponse getMySettings(Long userId) {
         User user = requireUser(userId);
+        UserSettingsResolver.VisionSource vs = UserSettingsResolver.visionSource(user.getSettingsJson());
         return UserSettingsResponse.builder()
                 .showCharactersOnProfile(UserSettingsResolver.showCharactersOnProfile(user.getSettingsJson()))
                 .communityPushEnabled(UserSettingsResolver.communityPushEnabled(user.getSettingsJson()))
+                .visionSourceMode(vs.mode())
+                .visionSourceProvider(vs.provider())
                 .build();
     }
 
@@ -73,6 +78,18 @@ public class UserPublicProfileService {
         if (request.getCommunityPushEnabled() != null) {
             user.setSettingsJson(UserSettingsResolver.withCommunityPushEnabled(
                     user.getSettingsJson(), request.getCommunityPushEnabled()));
+            dirty = true;
+        }
+        if (request.getVisionSourceMode() != null) {
+            String mode = request.getVisionSourceMode().trim();
+            String provider = request.getVisionSourceProvider();
+            if (UserSettingsResolver.VISION_MODE_PROVIDER.equals(mode)) {
+                if (provider == null || provider.isBlank()
+                        || apiKeyVaultService.resolveVisionVault(userId, provider) == null) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择已添加的识图 Provider");
+                }
+            }
+            user.setSettingsJson(UserSettingsResolver.withVisionSource(user.getSettingsJson(), mode, provider));
             dirty = true;
         }
         if (dirty) {

@@ -16,7 +16,9 @@ public class ApiKeyVault {
     private String keyVersion;
     private String baseUrl;
     private String modelDefault;
-    /** Optional default vision/VL model for image turns using this vault. */
+    /** text（默认，聊天文本模型）| vision（识图/VL 专用，modelDefault 即识图模型） */
+    private String purpose;
+    /** @deprecated 识图改走 purpose=vision 的整条 vault 或平台默认；列保留，不再使用 */
     private String visionModelDefault;
     private Integer enabled;
     private String remark;

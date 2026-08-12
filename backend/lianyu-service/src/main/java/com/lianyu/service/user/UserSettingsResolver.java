@@ -11,6 +11,14 @@ public final class UserSettingsResolver {
     public static final String KEY_SHOW_CHARACTERS_ON_PROFILE = "showCharactersOnProfile";
     /** Default ON: missing key means the user still accepts community post toasts. */
     public static final String KEY_COMMUNITY_PUSH_ENABLED = "communityPushEnabled";
+    /** 识图来源：platform（平台默认 qwen3.7-flash）| followText（跟随文本 Provider 一次调用）| provider（指定识图 Provider） */
+    public static final String KEY_VISION_SOURCE_MODE = "visionSourceMode";
+    /** mode=provider 时，purpose=vision 的 vault 别名 */
+    public static final String KEY_VISION_SOURCE_PROVIDER = "visionSourceProvider";
+
+    public static final String VISION_MODE_PLATFORM = "platform";
+    public static final String VISION_MODE_FOLLOW_TEXT = "followText";
+    public static final String VISION_MODE_PROVIDER = "provider";
 
     private UserSettingsResolver() {
     }
@@ -33,6 +41,42 @@ public final class UserSettingsResolver {
         Map<String, Object> next = existing == null ? new HashMap<>() : new HashMap<>(existing);
         next.put(KEY_COMMUNITY_PUSH_ENABLED, value);
         return next;
+    }
+
+    /**
+     * 识图来源设置。mode 缺省/非法 → platform；mode≠provider 时 provider 视为无效（返回 null）。
+     */
+    public static VisionSource visionSource(Map<String, Object> settings) {
+        String mode = readString(settings, KEY_VISION_SOURCE_MODE);
+        if (!VISION_MODE_FOLLOW_TEXT.equals(mode) && !VISION_MODE_PROVIDER.equals(mode)) {
+            mode = VISION_MODE_PLATFORM;
+        }
+        String provider = VISION_MODE_PROVIDER.equals(mode) ? readString(settings, KEY_VISION_SOURCE_PROVIDER) : null;
+        return new VisionSource(mode, provider);
+    }
+
+    public static Map<String, Object> withVisionSource(Map<String, Object> existing, String mode, String provider) {
+        Map<String, Object> next = existing == null ? new HashMap<>() : new HashMap<>(existing);
+        String normalized = VISION_MODE_FOLLOW_TEXT.equals(mode) || VISION_MODE_PROVIDER.equals(mode)
+                ? mode : VISION_MODE_PLATFORM;
+        next.put(KEY_VISION_SOURCE_MODE, normalized);
+        if (VISION_MODE_PROVIDER.equals(normalized) && provider != null && !provider.isBlank()) {
+            next.put(KEY_VISION_SOURCE_PROVIDER, provider.trim());
+        } else {
+            next.remove(KEY_VISION_SOURCE_PROVIDER);
+        }
+        return next;
+    }
+
+    public record VisionSource(String mode, String provider) {
+    }
+
+    private static String readString(Map<String, Object> settings, String key) {
+        if (settings == null || settings.get(key) == null) {
+            return null;
+        }
+        String s = String.valueOf(settings.get(key)).trim();
+        return s.isEmpty() ? null : s;
     }
 
     private static boolean resolveBoolean(Map<String, Object> settings, String key, boolean fallback) {

@@ -20,6 +20,9 @@ public class VaultEntryResponse {
     private String apiKey;
     private String baseUrl;
     private String modelDefault;
+    /** text（默认）| vision */
+    private String purpose;
+    /** @deprecated 识图走 purpose=vision 的 vault 或平台默认；保留兼容 */
     private String visionModelDefault;
     private Integer enabled;
     private String remark;

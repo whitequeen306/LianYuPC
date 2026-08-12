@@ -269,7 +269,7 @@
         <div v-else-if="!isCompact" class="input-toolbar">
           <el-select v-model="currentProvider" size="small" placeholder="Provider" class="toolbar-select">
             <el-option
-              v-for="v in providersStore.vaults"
+              v-for="v in providersStore.textVaults"
               :key="v.provider"
               :label="v.provider"
               :value="v.provider"
@@ -592,7 +592,7 @@ function saveCharProviderPref(charId, provider, model) {
 }
 
 function firstUserVault() {
-  return providersStore.vaults[0] || null
+  return providersStore.textVaults[0] || null
 }
 
 function applyUserVaultDefaults(vault) {
@@ -617,7 +617,7 @@ function restoreCharProviderPref() {
   const saved = loadCharProviderPref(charId)
   restoringProviderPref = true
   if (saved && saved.provider && saved.provider !== PLATFORM_PROVIDER
-      && providersStore.vaults.some(v => v.provider === saved.provider)) {
+      && providersStore.textVaults.some(v => v.provider === saved.provider)) {
     currentProvider.value = saved.provider
     currentModel.value = saved.model || ''
     loadModels(saved.provider)
@@ -642,7 +642,7 @@ let bounceTween = null
 let isUnmounted = false         // 卸载标志：流 finally 守卫，避免对已卸载实例写状态
 const burstTimers = []          // scheduleOpeningPollBurst 的 setTimeout 句柄，卸载时清理
 
-const hasUserTextProvider = computed(() => providersStore.vaults.length > 0
+const hasUserTextProvider = computed(() => providersStore.textVaults.length > 0
   && !!currentProvider.value
   && currentProvider.value !== PLATFORM_PROVIDER)
 const isCompact = computed(() => route.meta.compact === true)
@@ -871,7 +871,7 @@ watch(currentProvider, (p) => {
     }
     return
   }
-  const vault = providersStore.vaults.find(v => v.provider === p)
+  const vault = providersStore.textVaults.find(v => v.provider === p)
   if (!restoringProviderPref) {
     currentModel.value = vault?.modelDefault || ''
   }

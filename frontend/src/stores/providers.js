@@ -1,9 +1,11 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { listVaults, createVault, updateVault, deleteVault, fetchModels, previewModels } from '@/api/ai'
 
 export const useProvidersStore = defineStore('providers', () => {
   const vaults = ref([])
+  /** 文本聊天可用的 Provider（识图专用 purpose=vision 不参与文本模型选择） */
+  const textVaults = computed(() => vaults.value.filter(v => v.purpose !== 'vision'))
   const models = ref({})  // { provider: [{ id, name }] }
   const loading = ref(false)
   const modelsLoading = ref(false)
@@ -52,7 +54,7 @@ export const useProvidersStore = defineStore('providers', () => {
   }
 
   return {
-    vaults, models, loading, modelsLoading,
+    vaults, textVaults, models, loading, modelsLoading,
     fetchVaults, addVault, editVault, removeVault,
     fetchModelsFor, previewModelsFor
   }

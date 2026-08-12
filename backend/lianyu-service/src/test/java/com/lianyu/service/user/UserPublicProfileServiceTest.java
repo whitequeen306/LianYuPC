@@ -34,4 +34,34 @@ class UserPublicProfileServiceTest {
         assertFalse(UserSettingsResolver.communityPushEnabled(
                 UserSettingsResolver.withCommunityPushEnabled(null, false)));
     }
+
+    @Test
+    void visionSourceDefaultsToPlatform() {
+        assertEquals("platform", UserSettingsResolver.visionSource(null).mode());
+        assertEquals(null, UserSettingsResolver.visionSource(null).provider());
+        assertEquals("platform", UserSettingsResolver.visionSource(
+                UserSettingsResolver.withVisionSource(null, "bogus", "VL1")).mode());
+    }
+
+    @Test
+    void visionSourceFollowTextDropsProvider() {
+        var vs = UserSettingsResolver.visionSource(
+                UserSettingsResolver.withVisionSource(null, "followText", "VL1"));
+        assertEquals("followText", vs.mode());
+        assertEquals(null, vs.provider());
+    }
+
+    @Test
+    void visionSourceProviderRoundTrips() {
+        var settings = UserSettingsResolver.withVisionSource(null, "provider", " VL1 ");
+        var vs = UserSettingsResolver.visionSource(settings);
+        assertEquals("provider", vs.mode());
+        assertEquals("VL1", vs.provider());
+
+        // provider 模式下 provider 缺失 → 读回为 null（后端路由会回退平台）
+        var noProvider = UserSettingsResolver.visionSource(
+                UserSettingsResolver.withVisionSource(null, "provider", " "));
+        assertEquals("provider", noProvider.mode());
+        assertEquals(null, noProvider.provider());
+    }
 }

@@ -25,6 +25,8 @@ public class ApiKeyVaultService {
     public static final String USER_SCOPE = "USER";
     /** 与 api_key_vault.provider VARCHAR(32) 一致 */
     public static final int MAX_PROVIDER_LENGTH = 32;
+    public static final String PURPOSE_TEXT = "text";
+    public static final String PURPOSE_VISION = "vision";
     /** 插入占位，插入后立即改为 Provider{id} */
     private static final String PROVIDER_INSERT_PLACEHOLDER = "p";
 
@@ -68,11 +70,7 @@ public class ApiKeyVaultService {
         vault.setKeyVersion(jasyptUtil.getCurrentVersion());
         vault.setBaseUrl(baseUrl);
         vault.setModelDefault(request.getModelDefault().trim());
-        String visionDefault = trimToNull(request.getVisionModelDefault());
-        if (visionDefault != null) {
-            validateModelDefault(visionDefault);
-        }
-        vault.setVisionModelDefault(visionDefault);
+        vault.setPurpose(normalizePurpose(request.getPurpose()));
         vault.setEnabled(1);
         vault.setRemark(trimToNull(request.getRemark()));
         vaultMapper.insert(vault);
@@ -133,13 +131,6 @@ public class ApiKeyVaultService {
         } else if (vault.getModelDefault() == null || vault.getModelDefault().isBlank()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "默认模型不能为空");
         }
-        if (request.getVisionModelDefault() != null) {
-            String visionDefault = trimToNull(request.getVisionModelDefault());
-            if (visionDefault != null) {
-                validateModelDefault(visionDefault);
-            }
-            vault.setVisionModelDefault(visionDefault);
-        }
         if (request.getEnabled() != null) {
             vault.setEnabled(request.getEnabled() != 0 ? 1 : 0);
         }
@@ -163,7 +154,7 @@ public class ApiKeyVaultService {
     }
 
     /**
-     * 对话时解析可用 Vault（用户可见聊天路径）：
+     * 对话时解析可用 Vault（用户可见聊天路径，仅 purpose=text）：
      * 1) provider 指定且非 platform：仅查用户私有配置；
      * 2) provider 为空或 platform：不再返回平台 DEFAULT 池（须用户自有文本模型）。
      */
@@ -174,6 +165,7 @@ public class ApiKeyVaultService {
                     .eq(ApiKeyVault::getUserId, userId)
                     .eq(ApiKeyVault::getVaultScope, USER_SCOPE)
                     .eq(ApiKeyVault::getEnabled, 1)
+                    .eq(ApiKeyVault::getPurpose, PURPOSE_TEXT)
                     .eq(ApiKeyVault::getProvider, target)
                     .last("LIMIT 1"));
             if (userVault == null) {
@@ -198,11 +190,12 @@ public class ApiKeyVaultService {
                 .eq(ApiKeyVault::getUserId, userId)
                 .eq(ApiKeyVault::getVaultScope, USER_SCOPE)
                 .eq(ApiKeyVault::getEnabled, 1)
+                .eq(ApiKeyVault::getPurpose, PURPOSE_TEXT)
                 .last("LIMIT 1"));
     }
 
     /**
-     * 取用户最近更新的启用 vault（主动消息 / 冷启动等无显式 provider 时选用）。
+     * 取用户最近更新的启用文本 vault（主动消息 / 冷启动等无显式 provider 时选用）。
      * 无配置时返回 null。
      */
     public VaultEntryResponse resolvePreferredUserVault(Long userId) {
@@ -213,6 +206,7 @@ public class ApiKeyVaultService {
                 .eq(ApiKeyVault::getUserId, userId)
                 .eq(ApiKeyVault::getVaultScope, USER_SCOPE)
                 .eq(ApiKeyVault::getEnabled, 1)
+                .eq(ApiKeyVault::getPurpose, PURPOSE_TEXT)
                 .orderByDesc(ApiKeyVault::getUpdatedAt)
                 .last("LIMIT 1"));
         if (vault == null) {
@@ -225,6 +219,24 @@ public class ApiKeyVaultService {
     public static boolean isPlatformOrBlank(String provider) {
         String target = trimToNull(provider);
         return target == null || AiConstants.PLATFORM_PROVIDER.equalsIgnoreCase(target);
+    }
+
+    /**
+     * 解析用户指定的识图专用 vault（purpose=vision，启用）。找不到返回 null（调用方决定回退策略）。
+     */
+    public VaultEntryResponse resolveVisionVault(Long userId, String provider) {
+        String target = trimToNull(provider);
+        if (userId == null || target == null) {
+            return null;
+        }
+        ApiKeyVault vault = vaultMapper.selectOne(new LambdaQueryWrapper<ApiKeyVault>()
+                .eq(ApiKeyVault::getUserId, userId)
+                .eq(ApiKeyVault::getVaultScope, USER_SCOPE)
+                .eq(ApiKeyVault::getEnabled, 1)
+                .eq(ApiKeyVault::getPurpose, PURPOSE_VISION)
+                .eq(ApiKeyVault::getProvider, target)
+                .last("LIMIT 1"));
+        return vault == null ? null : toInternalResponse(vault);
     }
 
     public String decryptKey(ApiKeyVault vault) {
@@ -264,6 +276,7 @@ public class ApiKeyVaultService {
                 .apiKey(showFull ? plainKey : maskApiKey(plainKey))
                 .baseUrl(vault.getBaseUrl())
                 .modelDefault(vault.getModelDefault())
+                .purpose(normalizePurpose(vault.getPurpose()))
                 .visionModelDefault(vault.getVisionModelDefault())
                 .enabled(vault.getEnabled())
                 .remark(vault.getRemark())
@@ -283,6 +296,7 @@ public class ApiKeyVaultService {
                 .apiKey(maskApiKey(decrypted))
                 .baseUrl(vault.getBaseUrl())
                 .modelDefault(vault.getModelDefault())
+                .purpose(normalizePurpose(vault.getPurpose()))
                 .visionModelDefault(vault.getVisionModelDefault())
                 .enabled(vault.getEnabled())
                 .remark(vault.getRemark())
@@ -321,6 +335,11 @@ public class ApiKeyVaultService {
             return "****";
         }
         return trimmed.substring(0, 3) + "-****-" + trimmed.substring(trimmed.length() - 4);
+    }
+
+    static String normalizePurpose(String purpose) {
+        String p = trimToNull(purpose);
+        return PURPOSE_VISION.equalsIgnoreCase(p) ? PURPOSE_VISION : PURPOSE_TEXT;
     }
 
     private void validateModelDefault(String modelDefault) {

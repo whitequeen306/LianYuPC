@@ -267,7 +267,7 @@ async function handleSend() {
   const convId = currentConvId.value
   if (!text || !convId || waitingReply.value) return
 
-  const vault = providersStore.vaults[0]
+  const vault = providersStore.textVaults[0]
   if (!vault?.provider) {
     ElMessage.warning('请先在设置中配置文本模型后再聊天')
     return

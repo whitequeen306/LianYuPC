@@ -21,6 +21,8 @@ import com.lianyu.service.rules.PromptRuleSlot;
 import com.lianyu.service.rules.PromptRuleContext;
 import com.lianyu.service.support.OutputLanguageService;
 import com.lianyu.service.storage.FileStorageService;
+import com.lianyu.service.user.UserPublicProfileService;
+import com.lianyu.service.user.UserSettingsResolver;
 import com.lianyu.service.tools.ChatToolContext;
 import com.lianyu.service.tools.ToolManager;
 import io.github.resilience4j.bulkhead.Bulkhead;
@@ -94,6 +96,7 @@ public class AiChatService {
     private final Executor aiBackgroundExecutor;
     private final PromptRuleEngine promptRuleEngine;
     private final OutputLanguageService outputLanguageService;
+    private final UserPublicProfileService userPublicProfileService;
     private final MultimodalOutputParser multimodalOutputParser;
     private final VisionAnalysisParser visionAnalysisParser;
 
@@ -168,7 +171,8 @@ public class AiChatService {
                          @Qualifier("aiStreamExecutor") Executor aiStreamExecutor,
                          @Qualifier("aiBackgroundExecutor") Executor aiBackgroundExecutor,
                          PromptRuleEngine promptRuleEngine,
-                         OutputLanguageService outputLanguageService) {
+                         OutputLanguageService outputLanguageService,
+                         UserPublicProfileService userPublicProfileService) {
         this.vaultService = vaultService;
         this.fileStorageService = fileStorageService;
         this.toolManager = toolManager;
@@ -184,6 +188,7 @@ public class AiChatService {
         this.aiBackgroundExecutor = aiBackgroundExecutor;
         this.promptRuleEngine = promptRuleEngine;
         this.outputLanguageService = outputLanguageService;
+        this.userPublicProfileService = userPublicProfileService;
         this.multimodalOutputParser = new MultimodalOutputParser(objectMapper);
         this.visionAnalysisParser = new VisionAnalysisParser(objectMapper);
     }
@@ -1006,6 +1011,9 @@ public class AiChatService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "图片识别功能未启用");
         }
         VisionRoute vision = resolveVisionRoute(userId, request);
+        if (vision.oneCall()) {
+            return doOneCallImageChat(userId, request, vision);
+        }
         String visionApiKey = resolveApiKeyForProvider(vision.vault());
         ChatModel visionChatModel = buildChatModel(vision.vault(), vision.model(), visionApiKey);
         logChatVaultUsage(userId, request.getProvider(), vision.vault(), vision.model(), "image-vision");
@@ -1056,15 +1064,72 @@ public class AiChatService {
     }
 
     /**
-     * 识图路由：固定走平台多模态（默认 qwen3.7-flash）。
-     * 请求里的 visionModel 与 vault 的 visionModelDefault 仅为兼容旧客户端而保留，均不再生效——
-     * 历史上用户把 qwen 系识图模型配到纯文本接口（如 DeepSeek）的 base-url 上，必然 400。
+     * 跟随文本 Provider 的一次多模态调用：角色 system prompt + 历史 + 图片 inline base64
+     * 直接发给用户的多模态模型（如 gemini-3.6-flash），一次调用出角色回复。
+     * 无独立识图描述——历史占位走通用文案（ImageMessageHistoryText 兜底）。
+     * 模型不收图片时（unknown variant image_url 等）由 mapVisionProviderException 给出可读报错。
      */
-    private VisionRoute resolveVisionRoute(Long userId, AiChatRequest request) {
-        return new VisionRoute(buildMultimodalVault(), multimodalModel);
+    private ChatResult doOneCallImageChat(Long userId, AiChatRequest request, VisionRoute route) throws Exception {
+        VaultEntryResponse vault = route.vault();
+        String model = route.model();
+        String apiKey = resolveApiKeyForProvider(vault);
+        ChatModel chatModel = buildChatModel(vault, model, apiKey);
+        logChatVaultUsage(userId, request.getProvider(), vault, model, "image-onecall");
+        MessageDto imageDto = lastImageMessage(request.getMessages(), request.getImageUrl());
+        List<Message> messages = buildMultimodalMessages(request.getMessages(), imageDto.getImageUrl());
+        Prompt prompt = buildPrompt(request, vault, messages);
+        return withChatToolScope(userId, request, () -> {
+            ChatResponse response;
+            try {
+                response = chatModel.call(prompt);
+            } catch (BusinessException e) {
+                throw e;
+            } catch (Exception e) {
+                throw mapVisionProviderException(e);
+            }
+            String raw = extractStreamDelta(response);
+            if (raw == null || raw.isBlank()) {
+                throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "图片识别失败，请换一张图片再试");
+            }
+            String reply = enforceExpectedLanguage(userId, request, vault, model, chatModel, raw, null, null);
+            log.info("Multimodal one-call chat: userId={}, model={}", userId, model);
+            ChatResult.ChatResultBuilder builder = ChatResult.builder()
+                    .content(reply)
+                    .imageDescription(null);
+            if (response.getMetadata() != null && response.getMetadata().getUsage() != null) {
+                var usage = response.getMetadata().getUsage();
+                builder.totalTokens(usage.getTotalTokens() != null ? usage.getTotalTokens().intValue() : null);
+            }
+            return builder.build();
+        });
     }
 
-    private record VisionRoute(VaultEntryResponse vault, String model) {}
+    /**
+     * 识图路由 v2（用户全局设置 visionSource）：
+     * - platform（默认）：平台多模态 vault（qwen3.7-flash），两段式（识图 → 文本模型回复）；
+     * - followText：跟随请求的文本 Provider 一次调用（要求该模型支持图片输入）；
+     * - provider：指定的 purpose=vision 识图 vault 做第一段，第二段仍走文本 Provider。
+     * 请求里的 visionModel 与 vault 的 visionModelDefault 仅为兼容旧客户端而保留，均不再生效。
+     */
+    private VisionRoute resolveVisionRoute(Long userId, AiChatRequest request) {
+        var settings = userPublicProfileService.getMySettings(userId);
+        String mode = settings.getVisionSourceMode();
+        if (UserSettingsResolver.VISION_MODE_FOLLOW_TEXT.equals(mode)) {
+            VaultEntryResponse textVault = resolveVaultForRequest(userId, request);
+            return new VisionRoute(textVault, resolveModel(request, textVault), true);
+        }
+        if (UserSettingsResolver.VISION_MODE_PROVIDER.equals(mode)) {
+            VaultEntryResponse visionVault = vaultService.resolveVisionVault(userId, settings.getVisionSourceProvider());
+            if (visionVault != null) {
+                return new VisionRoute(visionVault, visionVault.getModelDefault(), false);
+            }
+            log.warn("Vision source provider unavailable, fallback to platform: userId={}, provider={}",
+                    userId, settings.getVisionSourceProvider());
+        }
+        return new VisionRoute(buildMultimodalVault(), multimodalModel, false);
+    }
+
+    private record VisionRoute(VaultEntryResponse vault, String model, boolean oneCall) {}
 
     private BusinessException mapVisionProviderException(Throwable e) {
         String msg = collectThrowableMessages(e);
@@ -1080,7 +1145,7 @@ public class AiChatService {
                 || lower.contains("not support image")
                 || lower.contains("vision is not supported")) {
             return new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
-                    "当前 Provider 的接口不支持识图：请把它的「识图模型」留空（走平台默认），或换成支持图片输入的模型");
+                    "当前模型不支持图片输入：请到设置把「识图来源」改为平台默认或识图 Provider，或换一个多模态模型");
         }
         if (lower.contains("无法连接") || lower.contains("connection") || lower.contains("timed out")
                 || lower.contains("timeout") || lower.contains("connect timed out")

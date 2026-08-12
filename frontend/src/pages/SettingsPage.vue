@@ -90,14 +90,14 @@
       </div>
     </section>
 
-    <!-- Provider Section -->
+    <!-- Text Provider Section -->
     <section class="section stagger-item">
       <div class="section-header">
         <div>
           <h2 class="section-title">{{ t('settings.aiSection') }}</h2>
           <p class="section-desc">{{ t('settings.aiDesc') }}</p>
         </div>
-        <el-button type="primary" class="btn-cta" @click="showAddDialog" :icon="Plus">
+        <el-button type="primary" class="btn-cta" @click="showAddDialog('text')" :icon="Plus">
           {{ t('settings.addConfig') }}
         </el-button>
       </div>
@@ -107,20 +107,20 @@
         <span>{{ t('common.loading') }}</span>
       </div>
 
-      <div v-else-if="providersStore.vaults.length === 0" class="empty-state">
+      <div v-else-if="textVaults.length === 0" class="empty-state">
         <div class="empty-icon">
           <el-icon :size="40"><Connection /></el-icon>
         </div>
         <h3>{{ t('settings.emptyTitle') }}</h3>
         <p>{{ t('settings.emptyDesc') }}</p>
-        <el-button type="primary" class="btn-cta btn-cta-lg" :icon="Plus" @click="showAddDialog">
+        <el-button type="primary" class="btn-cta btn-cta-lg" :icon="Plus" @click="showAddDialog('text')">
           {{ t('settings.addFirst') }}
         </el-button>
       </div>
 
       <div v-else class="provider-grid">
         <div
-          v-for="vault in providersStore.vaults"
+          v-for="vault in textVaults"
           :key="vault.id"
           class="provider-card glass stagger-item"
         >
@@ -152,6 +152,92 @@
       </div>
     </section>
 
+    <!-- Vision Provider Section -->
+    <section class="section stagger-item">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">识图 Provider</h2>
+          <p class="section-desc">发图时由谁「看图」。默认走平台识图（qwen3.7-flash），也可以用你自己的多模态模型</p>
+        </div>
+        <el-button type="primary" class="btn-cta" @click="showAddDialog('vision')" :icon="Plus">
+          添加识图配置
+        </el-button>
+      </div>
+
+      <div class="desktop-settings glass vision-source">
+        <div class="desktop-settings__row">
+          <div>
+            <div class="desktop-settings__label">识图来源</div>
+            <div class="desktop-settings__hint">{{ visionSourceHint }}</div>
+          </div>
+          <el-select
+            v-model="visionSourceMode"
+            class="vision-source__select"
+            :loading="visionSourceSaving"
+            @change="onVisionSourceModeChange"
+          >
+            <el-option value="platform" label="平台默认（qwen3.7-flash）" />
+            <el-option value="followText" label="跟随文本 Provider（文本+识图一次调用）" />
+            <el-option value="provider" label="指定识图 Provider" />
+          </el-select>
+        </div>
+        <div v-if="visionSourceMode === 'provider'" class="desktop-settings__row">
+          <div>
+            <div class="desktop-settings__label">识图 Provider</div>
+            <div class="desktop-settings__hint">从下方已添加的识图配置中选择</div>
+          </div>
+          <el-select
+            v-model="visionSourceProvider"
+            class="vision-source__select"
+            placeholder="选择识图 Provider"
+            :loading="visionSourceSaving"
+            @change="saveVisionSource"
+          >
+            <el-option
+              v-for="v in visionVaults"
+              :key="v.id"
+              :value="v.provider"
+              :label="`${v.provider}（${v.modelDefault}）`"
+            />
+          </el-select>
+        </div>
+      </div>
+
+      <div v-if="visionVaults.length > 0" class="provider-grid">
+        <div
+          v-for="vault in visionVaults"
+          :key="vault.id"
+          class="provider-card glass stagger-item"
+        >
+          <div class="card-top">
+            <div class="provider-badge" :class="vault.provider.toLowerCase()">
+              {{ vault.provider }}
+            </div>
+            <div class="card-actions">
+              <el-button text :icon="Edit" size="small" @click="showEditDialog(vault)" />
+              <el-button text :icon="Delete" size="small" class="btn-delete" @click="confirmDelete(vault)" />
+            </div>
+          </div>
+
+          <div class="card-body">
+            <div class="info-row">
+              <span class="info-label">Base URL</span>
+              <span class="info-value">{{ vault.baseUrl || '默认' }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">识图模型</span>
+              <span class="info-value">{{ vault.modelDefault || '未设置' }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">密钥版本</span>
+              <span class="info-value mono">{{ vault.keyVersion }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p v-else class="vision-empty-hint">还没有识图配置。平台默认识图无需配置即可用；想用自己的 VL 模型（如 qwen3.7-flash、gemini-3.6-flash）就点右上角添加。</p>
+    </section>
+
     <!-- 诊断日志 -->
     <section v-if="isElectron" class="section stagger-item">
       <div class="section-header">
@@ -181,7 +267,7 @@
     <!-- Add/Edit Dialog -->
     <el-dialog
       v-model="dialogVisible"
-      :title="editingVault ? '编辑 AI 配置' : '添加 AI 配置'"
+      :title="dialogTitle"
       :width="dialogWidth"
       destroy-on-close
     >
@@ -224,7 +310,7 @@
           <p class="field-hint">决定实际连接哪个 AI 服务，须以 http:// 或 https:// 开头。DeepSeek 官方填 <code>https://api.deepseek.com</code>（不要带 /v1）。</p>
         </el-form-item>
 
-        <el-form-item label="默认模型（必填）" prop="modelDefault">
+        <el-form-item :label="formPurpose === 'vision' ? '识图模型（必填）' : '默认模型（必填）'" prop="modelDefault">
           <div class="model-input-row">
             <el-select
               v-model="form.modelDefault"
@@ -250,7 +336,10 @@
               拉取模型
             </el-button>
           </div>
-          <p class="field-hint">填写接口地址和密钥后点击「拉取模型」自动获取可用列表，也可手动输入。</p>
+          <p class="field-hint">
+            填写接口地址和密钥后点击「拉取模型」自动获取可用列表，也可手动输入。
+            <template v-if="formPurpose === 'vision'">该模型必须支持图片输入（多模态/VL），如 qwen3.7-flash、gemini-3.6-flash。</template>
+          </p>
         </el-form-item>
 
       </el-form>
@@ -274,6 +363,7 @@ import { useProvidersStore } from '@/stores/providers'
 import { useDesktopStore } from '@/stores/desktop'
 import { useSettingsStore } from '@/stores/settings'
 import { getElectronAPI, isElectronApp } from '@/utils/electron'
+import { getMyUserSettings, updateMyUserSettings } from '@/api/users'
 import { PET_CATALOG, getPetPreviewUrl, petHasInteractiveVoice } from '@/constants/petCatalog'
 
 const { t } = useI18n()
@@ -322,10 +412,60 @@ const desktopForm = reactive({
 const dialogVisible = ref(false)
 const dialogWidth = useResponsiveDialogWidth(480)
 const editingVault = ref(null)
+const formPurpose = ref('text')
 const submitting = ref(false)
 const formRef = ref(null)
 const dialogModels = ref([])
 const dialogModelsLoading = ref(false)
+
+const textVaults = computed(() => providersStore.vaults.filter(v => v.purpose !== 'vision'))
+const visionVaults = computed(() => providersStore.vaults.filter(v => v.purpose === 'vision'))
+
+const dialogTitle = computed(() => {
+  const action = editingVault.value ? '编辑' : '添加'
+  return formPurpose.value === 'vision' ? `${action}识图配置` : `${action} AI 配置`
+})
+
+// ---- 识图来源（全局）----
+const visionSourceMode = ref('platform')
+const visionSourceProvider = ref('')
+const visionSourceSaving = ref(false)
+let visionSourceLoaded = false
+
+const visionSourceHint = computed(() => {
+  if (visionSourceMode.value === 'followText') {
+    return '发图时图片随文字一起直接发给你的文本模型，一次调用。要求文本模型支持图片输入（如 gemini-3.6-flash），否则会报错'
+  }
+  if (visionSourceMode.value === 'provider') {
+    return '先用你指定的识图 Provider 看图，再由文本模型回复（两次调用）'
+  }
+  return '先用平台 qwen3.7-flash 看图，再由你的文本模型回复（两次调用）'
+})
+
+async function saveVisionSource() {
+  if (!visionSourceLoaded) return
+  if (visionSourceMode.value === 'provider' && !visionSourceProvider.value) return
+  visionSourceSaving.value = true
+  try {
+    const body = { visionSourceMode: visionSourceMode.value }
+    if (visionSourceMode.value === 'provider') {
+      body.visionSourceProvider = visionSourceProvider.value
+    }
+    await updateMyUserSettings(body)
+    ElMessage.success('识图来源已保存')
+  } catch (err) {
+    // 错误提示由拦截器处理
+  } finally {
+    visionSourceSaving.value = false
+  }
+}
+
+function onVisionSourceModeChange(mode) {
+  if (mode === 'provider' && !visionSourceProvider.value && visionVaults.value.length) {
+    visionSourceProvider.value = visionVaults.value[0].provider
+  }
+  saveVisionSource()
+}
 
 const initialForm = () => ({
   provider: '',
@@ -376,6 +516,15 @@ const formRules = computed(() => ({
 
 onMounted(async () => {
   providersStore.fetchVaults()
+  try {
+    const settings = await getMyUserSettings()
+    visionSourceMode.value = settings?.visionSourceMode || 'platform'
+    visionSourceProvider.value = settings?.visionSourceProvider || ''
+  } catch {
+    // 拉取失败保持平台默认
+  } finally {
+    visionSourceLoaded = true
+  }
   if (isElectron) {
     await desktopStore.syncFromMain()
     desktopForm.closeToTray = desktopStore.closeToTray
@@ -442,8 +591,9 @@ async function onScreenObserveChange(enabled) {
   }
 }
 
-function showAddDialog() {
+function showAddDialog(purpose = 'text') {
   editingVault.value = null
+  formPurpose.value = purpose
   Object.assign(form, initialForm())
   dialogModels.value = []
   dialogVisible.value = true
@@ -451,6 +601,7 @@ function showAddDialog() {
 
 function showEditDialog(vault) {
   editingVault.value = vault
+  formPurpose.value = vault.purpose === 'vision' ? 'vision' : 'text'
   form.provider = vault.provider
   form.apiKey = ''
   form.baseUrl = vault.baseUrl || ''
@@ -476,6 +627,7 @@ async function handleSubmit() {
       apiKey: form.apiKey?.trim() || (isOllamaProvider.value ? 'local' : ''),
       baseUrl: form.baseUrl.trim(),
       modelDefault: form.modelDefault.trim(),
+      purpose: formPurpose.value,
     }
 
     if (editingVault.value) {
@@ -830,6 +982,20 @@ async function handleFetchDialogModels() {
     font-size: $font-size-xs;
     opacity: 0.6;
   }
+}
+
+.vision-source {
+  margin-bottom: $space-4;
+}
+
+.vision-source__select {
+  min-width: 260px;
+}
+
+.vision-empty-hint {
+  margin: $space-3 0 0;
+  color: $color-text-secondary;
+  font-size: $font-size-sm;
 }
 
 .model-input-row {

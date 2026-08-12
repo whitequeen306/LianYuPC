@@ -158,7 +158,7 @@
                 @change="onQqProviderChange"
               >
                 <el-option
-                  v-for="v in providersStore.vaults"
+                  v-for="v in providersStore.textVaults"
                   :key="v.provider"
                   :label="v.provider"
                   :value="v.provider"
@@ -615,7 +615,7 @@ function onQqProviderChange(provider) {
     qqModelOptions.value = []
     return
   }
-  const vault = providersStore.vaults.find((v) => v.provider === provider)
+  const vault = providersStore.textVaults.find((v) => v.provider === provider)
   bindingForm.model = vault?.modelDefault || ''
   loadQqModels(provider)
 }

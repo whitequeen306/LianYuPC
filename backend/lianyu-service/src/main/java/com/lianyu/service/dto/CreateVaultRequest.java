@@ -17,7 +17,10 @@ public class CreateVaultRequest {
     @NotBlank(message = "默认模型不能为空")
     private String modelDefault;
 
-    /** @deprecated 识图固定走平台 qwen3.7-flash；字段保留兼容，值不再生效 */
+    /** text（默认，文本聊天）| vision（识图专用，modelDefault 即识图模型） */
+    private String purpose;
+
+    /** @deprecated 识图走 purpose=vision 的 vault 或平台默认；字段保留兼容，值不再写入 */
     private String visionModelDefault;
 
     /** 备注（可选） */

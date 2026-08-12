@@ -539,7 +539,7 @@ async function sendGroupMessage() {
   const text = groupInput.value.trim()
   if (!text || wsStatus.value !== 'connected' || !activeGroup.value) return
 
-  const vault = providersStore.vaults[0]
+  const vault = providersStore.textVaults[0]
   if (!vault?.provider) {
     ElMessage.warning('请先在设置中配置文本模型后再群聊')
     return

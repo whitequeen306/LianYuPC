@@ -8,6 +8,7 @@ import com.lianyu.service.rules.PromptRuleEngine;
 import com.lianyu.service.storage.FileStorageService;
 import com.lianyu.service.support.OutputLanguageService;
 import com.lianyu.service.tools.ToolManager;
+import com.lianyu.service.user.UserPublicProfileService;
 import io.github.resilience4j.bulkhead.BulkheadRegistry;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.timelimiter.TimeLimiterRegistry;
@@ -34,6 +35,7 @@ class AiChatServiceVisionFlowTest {
     @Mock private Executor aiStreamExecutor;
     @Mock private PromptRuleEngine promptRuleEngine;
     @Mock private OutputLanguageService outputLanguageService;
+    @Mock private UserPublicProfileService userPublicProfileService;
 
     private AiChatService service;
 
@@ -52,7 +54,8 @@ class AiChatServiceVisionFlowTest {
                 aiStreamExecutor,
                 aiStreamExecutor,
                 promptRuleEngine,
-                outputLanguageService);
+                outputLanguageService,
+                userPublicProfileService);
     }
 
     @Test
