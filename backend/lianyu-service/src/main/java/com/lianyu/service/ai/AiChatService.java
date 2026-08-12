@@ -1091,6 +1091,15 @@ public class AiChatService {
             return new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
                     "图片未能通过内容安全审核，请换一张图片再试");
         }
+        // 自有 Provider 的 base-url 是纯文本接口（如 DeepSeek）却配了识图模型：
+        // 上游会以「image_url 非法」拒绝，翻译成可操作的指引
+        if (lower.contains("unknown variant `image_url`")
+                || lower.contains("does not support image")
+                || lower.contains("not support image")
+                || lower.contains("vision is not supported")) {
+            return new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
+                    "当前 Provider 的接口不支持识图：请把它的「识图模型」留空（走平台默认），或换成支持图片输入的模型");
+        }
         if (lower.contains("无法连接") || lower.contains("connection") || lower.contains("timed out")
                 || lower.contains("timeout") || lower.contains("connect timed out")
                 || lower.contains("connection refused") || lower.contains("unknown host")) {
