@@ -63,6 +63,16 @@ import {
   isQqntReady,
 } from './napcatRuntime/napcatHost.js'
 import { wipeNapCatInstall } from './napcatRuntime/napcatRelease.js'
+import { createMcpHost } from './mcp/mcpHost.js'
+import { readMcpSettings, writeMcpSettings } from './mcp/mcpSettings.js'
+import {
+  ENGINE_MANIFEST_PATH,
+  parseAgentLatestYml,
+  resolveEngineAssetUrl,
+  getEngineStatus,
+  resolveManagedEngineCommand,
+} from './mcp/engineRelease.js'
+import { ensureManagedEngine } from './mcp/engineDownloader.js'
 import { loadRuntimeSecrets, getRuntimeSecrets } from './runtimeSecrets.js'
 import { initUpdater } from './updater/updater.js'
 import { schedulePostWindowStartup } from './startupOrchestrator.js'
@@ -552,6 +562,130 @@ const qqBridgeCoordinator = createQqBridgeCoordinator({
   resolveDistPath,
   logger,
 })
+
+// ---- MCP 本地服务宿主（Agent 工具桥客户端侧） ----
+
+function broadcastToAppWindows(channel, payload) {
+  for (const win of [mainWindow, launcherWindow]) {
+    if (win && !win.isDestroyed()) {
+      try {
+        win.webContents.send(channel, payload)
+      } catch { /* ignore */ }
+    }
+  }
+}
+
+/** 演示 MCP 服务脚本路径：dev 在源码树；打包后走 extraResources（asar 外可 spawn） */
+function resolveDemoServerCommand() {
+  const candidates = app.isPackaged
+    ? [path.join(process.resourcesPath, 'mcp', 'demoServer.cjs')]
+    : [
+        path.join(app.getAppPath(), 'electron', 'mcp', 'demoServer.cjs'),
+        path.join(__dirname, '../electron/mcp/demoServer.cjs'),
+      ]
+  const script = candidates.find((p) => {
+    try {
+      return fs.existsSync(p)
+    } catch {
+      return false
+    }
+  })
+  if (!script) return null
+  // 用自身 Electron 可执行文件以纯 Node 模式跑脚本，无需用户装 Node
+  return {
+    command: process.execPath,
+    args: [script],
+    env: { ELECTRON_RUN_AS_NODE: '1' },
+  }
+}
+
+const MCP_CONFIRM_TIMEOUT_MS = 45_000
+const pendingMcpConfirms = new Map() // id -> resolve(boolean)
+let mcpConfirmSeq = 0
+
+/**
+ * 危险工具 / elicitation 确认：广播到渲染端弹窗，超时或无窗口默认拒绝（fail-safe）。
+ */
+function requestMcpConfirm(payload) {
+  return new Promise((resolve) => {
+    const hasWindow = [mainWindow, launcherWindow].some((w) => w && !w.isDestroyed())
+    if (!hasWindow) {
+      log('mcp confirm denied: no window to ask')
+      resolve(false)
+      return
+    }
+    const id = `mcp-confirm-${++mcpConfirmSeq}`
+    const timer = setTimeout(() => {
+      pendingMcpConfirms.delete(id)
+      log(`mcp confirm timeout (deny): ${id}`)
+      resolve(false)
+    }, MCP_CONFIRM_TIMEOUT_MS)
+    pendingMcpConfirms.set(id, (approved) => {
+      clearTimeout(timer)
+      pendingMcpConfirms.delete(id)
+      resolve(approved === true)
+    })
+    try {
+      showMainWindow()
+    } catch { /* ignore */ }
+    broadcastToAppWindows('desktop:mcp-confirm-request', {
+      id,
+      kind: payload.kind || 'tool',
+      toolName: payload.toolName || '',
+      message: payload.message || '',
+      args: payload.args || '',
+      timeoutMs: MCP_CONFIRM_TIMEOUT_MS,
+    })
+  })
+}
+
+const mcpHost = createMcpHost({
+  getSettings: readMcpSettings,
+  resolveDemoServerCommand,
+  resolveManagedEngine: resolveManagedEngineCommand,
+  requestConfirm: requestMcpConfirm,
+  broadcast: broadcastToAppWindows,
+  log: (msg) => log(`[mcp] ${msg}`),
+})
+
+async function installManagedEngineFromCloud(onProgress) {
+  const secrets = getRuntimeSecrets()
+  const apiOrigin = secrets?.apiOrigin || ''
+  if (!apiOrigin) throw new Error('no api origin')
+  const ymlUrl = `${apiOrigin}${ENGINE_MANIFEST_PATH}`
+  const ymlResp = await performApiRequest({
+    method: 'GET',
+    url: ymlUrl,
+    apiOrigin,
+    timeoutMs: 15000,
+  })
+  if (ymlResp.status !== 200) {
+    throw new Error(`agent-latest.yml HTTP ${ymlResp.status}`)
+  }
+  const manifest = parseAgentLatestYml(typeof ymlResp.data === 'string' ? ymlResp.data : '')
+  if (!manifest) {
+    throw new Error('agent-latest.yml parse failed')
+  }
+  const downloadUrl = resolveEngineAssetUrl(manifest.url, ymlUrl, secrets?.updateOrigin || '')
+  if (!isAllowedEgressUrl(downloadUrl, apiOrigin, secrets?.updateOrigin || '')) {
+    throw new Error('download url not allowed')
+  }
+  return ensureManagedEngine({
+    manifest,
+    downloadUrl,
+    onProgress,
+  })
+}
+
+async function autoStartMcpHostIfNeeded() {
+  try {
+    if (readMcpSettings().enabled) {
+      await mcpHost.start()
+    }
+  } catch (e) {
+    log(`mcp auto-start failed: ${e?.message || e}`)
+  }
+}
 
 function resolveTrayIcon() {
   // 打包后 build/icon.ico 不在 asar 里；dist/icon.ico 才在（regenerate-icon.py 同步写
@@ -1825,6 +1959,7 @@ function quitApplication(options = {}) {
   isQuitting = true
   stopQqBridge()
   stopNapCatHost()
+  void mcpHost.stop()
   qqBridgeCoordinator.dispose()
   closeCharacterPicker()
   if (quickChatShell && !quickChatShell.isDestroyed()) quickChatShell.destroy()
@@ -2411,6 +2546,85 @@ function registerIpcHandlers() {
     return { ok: true }
   })
 
+  // ---- MCP 本地服务（Agent 工具桥） ----
+  ipcMain.handle('mcp:get-settings', (event) => {
+    if (!guardTrusted(event)) return null
+    return readMcpSettings()
+  })
+
+  ipcMain.handle('mcp:set-settings', async (event, partial) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    const prev = readMcpSettings()
+    const next = writeMcpSettings(partial)
+    // 开关/命令变化时同步服务进程状态
+    if (prev.enabled && !next.enabled) {
+      await mcpHost.stop()
+    } else if (next.enabled && (!prev.enabled
+        || prev.useDemoServer !== next.useDemoServer
+        || prev.command !== next.command
+        || prev.cwd !== next.cwd
+        || JSON.stringify(prev.args) !== JSON.stringify(next.args))) {
+      await mcpHost.stop()
+      await mcpHost.start()
+    }
+    return { ok: true, settings: next }
+  })
+
+  ipcMain.handle('mcp:get-status', (event) => {
+    if (!guardTrusted(event)) return { state: 'stopped', tools: [], error: '' }
+    return mcpHost.status()
+  })
+
+  ipcMain.handle('mcp:start', async (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    return { ok: true, status: await mcpHost.start() }
+  })
+
+  ipcMain.handle('mcp:stop', async (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    return { ok: true, status: await mcpHost.stop() }
+  })
+
+  ipcMain.handle('mcp:list-tools', (event) => {
+    if (!guardTrusted(event)) return []
+    return mcpHost.listToolsForRegistration()
+  })
+
+  ipcMain.handle('mcp:call-tool', async (event, payload) => {
+    if (!guardTrusted(event)) return { ok: false, error: 'untrusted_sender' }
+    const name = typeof payload?.name === 'string' ? payload.name : ''
+    const args = payload?.args && typeof payload.args === 'object' ? payload.args : {}
+    if (!name) return { ok: false, error: '工具名缺失' }
+    return mcpHost.callTool(name, args)
+  })
+
+  ipcMain.handle('mcp:confirm-response', (event, payload) => {
+    if (!guardTrusted(event)) return { ok: false }
+    const resolve = pendingMcpConfirms.get(payload?.id)
+    if (resolve) resolve(payload?.approved === true)
+    return { ok: true }
+  })
+
+  ipcMain.handle('mcp:engine-status', (event) => {
+    if (!guardTrusted(event)) return { installed: false, version: '', exePath: '' }
+    return getEngineStatus()
+  })
+
+  ipcMain.handle('mcp:install-engine', async (event) => {
+    if (!guardTrusted(event)) return { ok: false, error: 'untrusted_sender' }
+    try {
+      const result = await installManagedEngineFromCloud((progress) => {
+        broadcastToAppWindows('desktop:mcp-engine-progress', progress)
+      })
+      return { ok: true, ...result, status: getEngineStatus() }
+    } catch (e) {
+      const error = e?.message || String(e)
+      log(`[mcp] engine install failed: ${error}`)
+      broadcastToAppWindows('desktop:mcp-engine-progress', { phase: 'error', error, percent: 0 })
+      return { ok: false, error }
+    }
+  })
+
   ipcMain.handle('desktop:get-qq-bridge-status', (event) => {
     if (!guardTrusted(event)) return { state: 'unknown', selfId: '' }
     return getQqBridgeStatus()
@@ -2928,6 +3142,7 @@ app.whenReady().then(() => {
 
   void autoStartQqBridgeIfNeeded()
   void autoStartNapCatHostIfNeeded()
+  void autoStartMcpHostIfNeeded()
 
   // 电源事件：唤醒后通知窗口切换检测
   if (powerMonitor) {

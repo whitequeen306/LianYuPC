@@ -313,6 +313,14 @@ lianyu:
     recent-activity:
       # 角色近况（日记/动态）按需 Tool；关闭后模型无法主动查询近况
       enabled: true
+    agent-bridge:
+      # 桌面 Agent 工具桥：客户端注册的本地 MCP 工具经 STOMP 下发本地执行
+      enabled: true
+      # 单次本地工具调用最长等待（毫秒）。委托型工具（computer_task）在本地跑多步 agent，
+      # 可能耗时数分钟，故给到 10.5 分钟。须 > 客户端侧 tools/call 超时（600s），
+      # 保证客户端总能先回传结果（成功或自身超时错误），而不是后端先放弃、回传落到已过期请求。
+      # 注意：阻塞的是一次 SSE 流式请求的线程（无事务、不持 DB 连接），受 ai-chat 隔舱上限约束。
+      call-timeout-ms: 630000
 
   group:
     # 单个群聊最多角色数（不含用户本人）

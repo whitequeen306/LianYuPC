@@ -164,4 +164,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   /** Local GPT-SoVITS TTS (custom character voice). */
   synthesizeLocalTts: (payload) => ipcRenderer.invoke('custom-tts:sovits', payload),
+  // ── MCP 本地服务（Agent 工具桥） ──
+  getMcpSettings: () => ipcRenderer.invoke('mcp:get-settings'),
+  setMcpSettings: (partial) => ipcRenderer.invoke('mcp:set-settings', partial),
+  getMcpStatus: () => ipcRenderer.invoke('mcp:get-status'),
+  startMcp: () => ipcRenderer.invoke('mcp:start'),
+  stopMcp: () => ipcRenderer.invoke('mcp:stop'),
+  listMcpTools: () => ipcRenderer.invoke('mcp:list-tools'),
+  mcpCallTool: (name, args) => ipcRenderer.invoke('mcp:call-tool', { name, args }),
+  respondMcpConfirm: (id, approved) => ipcRenderer.invoke('mcp:confirm-response', { id, approved }),
+  onMcpStatus: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on('desktop:mcp-status', handler)
+    return () => ipcRenderer.removeListener('desktop:mcp-status', handler)
+  },
+  onMcpProgress: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on('desktop:mcp-progress', handler)
+    return () => ipcRenderer.removeListener('desktop:mcp-progress', handler)
+  },
+  onMcpConfirmRequest: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on('desktop:mcp-confirm-request', handler)
+    return () => ipcRenderer.removeListener('desktop:mcp-confirm-request', handler)
+  },
+  getEngineStatus: () => ipcRenderer.invoke('mcp:engine-status'),
+  installEngine: () => ipcRenderer.invoke('mcp:install-engine'),
+  onEngineProgress: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on('desktop:mcp-engine-progress', handler)
+    return () => ipcRenderer.removeListener('desktop:mcp-engine-progress', handler)
+  },
 })

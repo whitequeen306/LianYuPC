@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process'
+import { execFileSync, execSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -43,3 +43,23 @@ execSync(`npm version ${bump} --no-git-tag-version`, { stdio: 'inherit' })
 execSync('node scripts/electron-pack.mjs', { stdio: 'inherit' })
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 execSync(`python ../scripts/_upload_update_assets.py --version ${pkg.version}`, { stdio: 'inherit' })
+
+// AgentEngine 与 Electron 版本解耦：zip 在兄弟仓库 AgentAssistant/packaging，
+// 上传到同一 MinIO updates/ 前缀（agent-latest.yml）。缺 zip 时跳过（已在 MinIO 的可继续用）；
+// 强制跳过设 AGENT_ENGINE_SKIP=1。
+if (process.env.AGENT_ENGINE_SKIP === '1') {
+  console.log('[electron:release] skip AgentEngine upload (AGENT_ENGINE_SKIP=1)')
+} else {
+  const engineZip = process.env.AGENT_ENGINE_ZIP
+    || path.resolve(root, '..', '..', 'AgentAssistant', 'packaging', 'AgentEngine-hosted-win-x64.zip')
+  const engineVersion = process.env.AGENT_ENGINE_VERSION || '0.1.0'
+  if (fs.existsSync(engineZip)) {
+    execFileSync('python', [
+      path.join(root, '..', 'scripts', '_upload_agent_engine.py'),
+      '--zip', engineZip,
+      '--version', engineVersion,
+    ], { stdio: 'inherit' })
+  } else {
+    console.warn(`[electron:release] AgentEngine zip not found (${engineZip}); skip upload`)
+  }
+}

@@ -33,6 +33,109 @@
       </div>
     </section>
 
+    <!-- MCP 服务（桌面端） -->
+    <section v-if="isElectron" class="section stagger-item">
+      <div class="section-header">
+        <h2 class="section-title">{{ t('about.mcpTitle') }}</h2>
+      </div>
+      <div class="glass about-card mcp-card">
+        <div class="mcp-service">
+          <div class="mcp-service__head">
+            <div class="mcp-service__text">
+              <div class="mcp-service__name">
+                AgentAssistant
+                <span class="mcp-badge" :class="`mcp-badge--${bridge.mcpState}`">{{ mcpStateLabel }}</span>
+              </div>
+              <p class="mcp-service__desc">{{ t('about.mcpAgentAssistantDesc') }}</p>
+            </div>
+            <el-switch
+              :model-value="mcpEnabled"
+              :loading="mcpToggling"
+              @change="onToggleMcp"
+            />
+          </div>
+
+          <div v-if="bridge.mcpError" class="mcp-service__error">{{ bridge.mcpError }}</div>
+
+          <div v-if="mcpEnabled" class="mcp-service__body">
+            <div class="info-row">
+              <span class="info-label">{{ t('about.mcpBridge') }}</span>
+              <span class="info-value">{{ bridge.registered ? t('about.mcpBridgeOnline') : t('about.mcpBridgeOffline') }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">{{ t('about.mcpTools') }}</span>
+              <span class="info-value">
+                {{ bridge.tools.length ? bridge.tools.map(tool => tool.name).join('、') : '—' }}
+              </span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">{{ t('about.mcpEngine') }}</span>
+              <span class="info-value">{{ engineLabel }}</span>
+            </div>
+            <div v-if="engineBusy" class="mcp-engine-progress">
+              <el-progress
+                :percentage="enginePercent"
+                :stroke-width="8"
+              />
+              <p class="mcp-engine-progress__meta">
+                {{ enginePhaseLabel }}
+                <span v-if="engineBytesLabel"> · {{ engineBytesLabel }}</span>
+              </p>
+            </div>
+            <el-collapse v-model="advancedOpen" class="mcp-advanced">
+              <el-collapse-item :title="t('about.mcpAdvanced')" name="advanced">
+                <div class="mcp-advanced__row">
+                  <span class="mcp-advanced__label">{{ t('about.mcpUseDemo') }}</span>
+                  <el-switch :model-value="usingDemo" @change="onToggleDemo" />
+                </div>
+                <template v-if="!usingDemo">
+                  <div class="mcp-advanced__row mcp-advanced__row--column">
+                    <span class="mcp-advanced__label">{{ t('about.mcpCommand') }}</span>
+                    <el-input
+                      v-model="commandDraft"
+                      :placeholder="t('about.mcpCommandPlaceholder')"
+                      @blur="onCommandBlur"
+                    />
+                  </div>
+                  <div class="mcp-advanced__row mcp-advanced__row--column">
+                    <span class="mcp-advanced__label">{{ t('about.mcpArgs') }}</span>
+                    <el-input
+                      v-model="argsDraft"
+                      type="textarea"
+                      :autosize="{ minRows: 2, maxRows: 6 }"
+                      :placeholder="t('about.mcpArgsPlaceholder')"
+                      @blur="onArgsBlur"
+                    />
+                    <p class="mcp-advanced__hint">{{ t('about.mcpArgsHint') }}</p>
+                  </div>
+                  <div class="mcp-advanced__row mcp-advanced__row--column">
+                    <span class="mcp-advanced__label">{{ t('about.mcpCwd') }}</span>
+                    <el-input
+                      v-model="cwdDraft"
+                      :placeholder="t('about.mcpCwdPlaceholder')"
+                      @blur="onCwdBlur"
+                    />
+                    <p class="mcp-advanced__hint">{{ t('about.mcpCommandHint') }}</p>
+                  </div>
+                </template>
+              </el-collapse-item>
+            </el-collapse>
+          </div>
+          <p v-else class="mcp-service__hint">{{ t('about.mcpDisabledHint') }}</p>
+          <div v-if="!mcpEnabled && engineBusy" class="mcp-engine-progress mcp-engine-progress--disabled">
+            <el-progress
+              :percentage="enginePercent"
+              :stroke-width="8"
+            />
+            <p class="mcp-engine-progress__meta">
+              {{ enginePhaseLabel }}
+              <span v-if="engineBytesLabel"> · {{ engineBytesLabel }}</span>
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- 版权 -->
     <section class="section stagger-item">
       <div class="glass about-card about-footer">
@@ -72,12 +175,14 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { isElectronApp } from '@/utils/electron'
+import { useAgentBridgeStore } from '@/stores/agentBridge'
 import AppUpdateButton from '@/components/AppUpdateButton.vue'
 import { ArrowLeft, Link } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { APP_LOGO } from '@/constants/brand'
 import pkg from '../../package.json'
 
@@ -87,6 +192,131 @@ const isElectron = isElectronApp()
 // 版本号取自 package.json，构建时注入；桌面版亦可由主进程覆盖但此处统一用前端版本
 const version = computed(() => pkg.version || '—')
 const goBack = () => router.push('/app/settings')
+
+// ---- MCP 服务（Agent 工具桥） ----
+const bridge = useAgentBridgeStore()
+const mcpToggling = ref(false)
+const advancedOpen = ref([])
+const commandDraft = ref('')
+const argsDraft = ref('')
+const cwdDraft = ref('')
+
+const mcpSettings = computed(() => bridge.settings)
+const mcpEnabled = computed(() => mcpSettings.value?.enabled === true)
+const usingDemo = computed(() => mcpSettings.value?.useDemoServer === true)
+const usingCustom = computed(() => !usingDemo.value && Boolean(mcpSettings.value?.command))
+
+const engineLabel = computed(() => {
+  if (usingDemo.value) return t('about.mcpEngineDemo')
+  if (usingCustom.value) return mcpSettings.value.command
+  if (bridge.engineStatus?.installed && bridge.engineStatus.version) {
+    return t('about.mcpEngineManaged', { version: bridge.engineStatus.version })
+  }
+  return t('about.mcpEngineNotInstalled')
+})
+
+const engineBusy = computed(() => {
+  const phase = bridge.engineProgress?.phase
+  return phase === 'downloading' || phase === 'extracting'
+})
+const enginePercent = computed(() => {
+  const n = Number(bridge.engineProgress?.percent)
+  return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0
+})
+const enginePhaseLabel = computed(() => {
+  const phase = bridge.engineProgress?.phase
+  if (phase === 'extracting') return t('about.mcpEngineExtracting')
+  if (phase === 'downloading') return t('about.mcpEngineDownloading')
+  return ''
+})
+const engineBytesLabel = computed(() => {
+  const p = bridge.engineProgress
+  if (!p?.total) return ''
+  return `${formatBytes(p.received || 0)} / ${formatBytes(p.total)}`
+})
+
+function formatBytes(n) {
+  const v = Number(n) || 0
+  if (v < 1024) return `${v} B`
+  if (v < 1024 * 1024) return `${(v / 1024).toFixed(1)} KB`
+  return `${(v / (1024 * 1024)).toFixed(1)} MB`
+}
+
+const mcpStateLabel = computed(() => {
+  switch (bridge.mcpState) {
+    case 'running': return t('about.mcpStateRunning')
+    case 'starting': return t('about.mcpStateStarting')
+    case 'error': return t('about.mcpStateError')
+    default: return t('about.mcpStateStopped')
+  }
+})
+
+watch(mcpSettings, (s) => {
+  commandDraft.value = s?.command || ''
+  argsDraft.value = Array.isArray(s?.args) ? s.args.join('\n') : ''
+  cwdDraft.value = s?.cwd || ''
+}, { immediate: true })
+
+function parseArgsInput(text) {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+}
+
+async function onToggleMcp(enabled) {
+  mcpToggling.value = true
+  try {
+    if (enabled === true && !usingDemo.value && !usingCustom.value) {
+      const res = await bridge.installEngine()
+      if (!res?.ok) {
+        ElMessage.error(res?.error || t('about.mcpEngineDownloadFailed'))
+        return
+      }
+    }
+    await bridge.updateSettings({ enabled: enabled === true })
+  } finally {
+    mcpToggling.value = false
+  }
+}
+
+async function onToggleDemo(useDemo) {
+  if (useDemo !== true && !mcpSettings.value?.command) {
+    const res = await bridge.installEngine()
+    if (!res?.ok) {
+      ElMessage.error(res?.error || t('about.mcpEngineDownloadFailed'))
+      return
+    }
+  }
+  await bridge.updateSettings({ useDemoServer: useDemo === true })
+}
+
+async function onCommandBlur() {
+  const command = commandDraft.value.trim()
+  if (command === (mcpSettings.value?.command || '')) return
+  await bridge.updateSettings({ command })
+}
+
+async function onArgsBlur() {
+  const args = parseArgsInput(argsDraft.value)
+  const current = Array.isArray(mcpSettings.value?.args) ? mcpSettings.value.args : []
+  if (JSON.stringify(args) === JSON.stringify(current)) return
+  await bridge.updateSettings({ args })
+}
+
+async function onCwdBlur() {
+  const cwd = cwdDraft.value.trim()
+  if (cwd === (mcpSettings.value?.cwd || '')) return
+  await bridge.updateSettings({ cwd })
+}
+
+onMounted(() => {
+  if (isElectron) {
+    void bridge.init()
+    void bridge.refreshSettings()
+    void bridge.refreshEngineStatus()
+  }
+})
 
 // 彩蛋：连续点击恋语图标 10 次跳转爱发电赞助页。
 // 计数窗口 2s，中断则重置，避免误触。
@@ -215,6 +445,132 @@ function handleLogoClick() {
   align-items: center;
   justify-content: space-between;
   gap: $space-4;
+}
+
+.mcp-service__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $space-4;
+}
+
+.mcp-service__name {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  font-size: $font-size-base;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+}
+
+.mcp-badge {
+  padding: 1px $space-2;
+  border-radius: $radius-pill;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-normal;
+  color: $color-text-secondary;
+  background: rgba(128, 128, 140, 0.12);
+
+  &--running {
+    color: $color-pink-primary;
+    background: rgba($color-pink-rgb, 0.12);
+  }
+
+  &--starting {
+    color: $color-text-secondary;
+    background: rgba($color-pink-rgb, 0.08);
+  }
+
+  &--error {
+    color: $color-error;
+    background: rgba(128, 128, 140, 0.1);
+  }
+}
+
+.mcp-service__desc {
+  margin: $space-1 0 0;
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+  line-height: $line-height-normal;
+}
+
+.mcp-service__error {
+  margin-top: $space-3;
+  font-size: $font-size-xs;
+  color: $color-error;
+}
+
+.mcp-service__body {
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+  margin-top: $space-5;
+  padding-top: $space-5;
+  border-top: 1px solid rgba(128, 128, 140, 0.15);
+}
+
+.mcp-service__hint {
+  margin: $space-4 0 0;
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+}
+
+.mcp-engine-progress {
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+
+  &--disabled {
+    margin-top: $space-4;
+  }
+}
+
+.mcp-engine-progress__meta {
+  margin: 0;
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+  font-family: $font-mono;
+}
+
+.mcp-advanced {
+  border: none;
+
+  :deep(.el-collapse-item__header) {
+    background: transparent;
+    border: none;
+    font-size: $font-size-xs;
+    color: $color-text-muted;
+    height: 32px;
+  }
+
+  :deep(.el-collapse-item__wrap) {
+    background: transparent;
+    border: none;
+  }
+}
+
+.mcp-advanced__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $space-3;
+  padding: $space-2 0;
+
+  &--column {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+.mcp-advanced__label {
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+}
+
+.mcp-advanced__hint {
+  margin: $space-1 0 0;
+  font-size: $font-size-xs;
+  color: $color-text-muted;
 }
 
 .about-copyright {
