@@ -208,7 +208,7 @@ lianyu:
       enabled: ${LIANYU_MULTIMODAL_ENABLED:true}
       base-url: ${MULTIMODAL_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
       api-key: ${MULTIMODAL_API_KEY:${DASHSCOPE_API_KEY:}}
-      model: ${MULTIMODAL_MODEL:qwen3-vl-plus}
+      model: ${MULTIMODAL_MODEL:qwen3.7-flash}
       max-tokens: 800
       describe-max-tokens: 420
     # 前台 SSE/语音 AI I/O 线程池（与后台隔离，防朋友圈风暴饿死聊天）

@@ -15,6 +15,6 @@ describe('ai constants after platform chat removal', () => {
   })
 
   it('keeps vision model default for Alibaba VL', () => {
-    expect(PLATFORM_VISION_MODEL).toBe('qwen3-vl-plus')
+    expect(PLATFORM_VISION_MODEL).toBe('qwen3.7-flash')
   })
 })

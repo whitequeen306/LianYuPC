@@ -5,16 +5,17 @@ export const PLATFORM_PROVIDER = 'platform'
 export const PLATFORM_MODEL = ''
 
 /** Platform default VL model when chat/QQ visionModel is empty */
-export const PLATFORM_VISION_MODEL = 'qwen3-vl-plus'
+export const PLATFORM_VISION_MODEL = 'qwen3.7-flash'
 
 /** @deprecated 聊天不再提供「平台默认」选项 */
 export const PLATFORM_PROVIDER_LABEL = '需配置自有模型'
 
-export const PLATFORM_VISION_MODEL_LABEL = '平台默认识图 (qwen3-vl-plus)'
+export const PLATFORM_VISION_MODEL_LABEL = '平台默认识图 (qwen3.7-flash)'
 
 /** Suggested VL model ids for selects (allow-create still enabled) */
 export const VISION_MODEL_SUGGESTIONS = [
   { id: '', name: PLATFORM_VISION_MODEL_LABEL },
+  { id: 'qwen3.7-flash', name: 'qwen3.7-flash' },
   { id: 'qwen3-vl-plus', name: 'qwen3-vl-plus' },
   { id: 'qwen3-vl-flash', name: 'qwen3-vl-flash' },
   { id: 'qwen-vl-plus', name: 'qwen-vl-plus' },

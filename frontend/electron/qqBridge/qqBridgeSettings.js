@@ -24,7 +24,7 @@ export const DEFAULTS = {
     conversationId: '',
     provider: 'platform',
     model: '',
-    // 识图/多模态模型；空 = 平台默认 qwen3-vl-plus
+    // 识图/多模态模型；空 = 平台默认 qwen3.7-flash
     visionModel: '',
     // 放行模式：'allowlist'（默认拒绝——私聊须命中 allowUsers、群聊须命中 allowGroups，空表=全拒）
     //           'open'（开放——任何 QQ 用户/群均可驱动宿主 AI，注意配额/prompt 注入风险）

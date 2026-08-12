@@ -264,7 +264,7 @@
             allow-create
             clearable
             default-first-option
-            placeholder="留空则走平台默认识图 qwen3-vl-plus"
+            placeholder="留空则走平台默认识图 qwen3.7-flash"
             class="model-select"
             style="width: 100%"
           >

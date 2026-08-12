@@ -112,7 +112,7 @@ public class AiChatService {
     @Value("${lianyu.ai.multimodal.api-key:}")
     private String multimodalApiKey;
 
-    @Value("${lianyu.ai.multimodal.model:qwen3-vl-plus}")
+    @Value("${lianyu.ai.multimodal.model:qwen3.7-flash}")
     private String multimodalModel;
 
     @Value("${lianyu.ai.multimodal.max-tokens:800}")
@@ -926,7 +926,7 @@ public class AiChatService {
         return greeting.trim();
     }
 
-    /** 视觉模型 Vault（DashScope 官方 OpenAI-compatible url/key，qwen3-vl-flash）。 */
+    /** 视觉模型 Vault（DashScope 官方 OpenAI-compatible url/key，默认 qwen3.7-flash）。 */
     private VaultEntryResponse buildMultimodalVault() {
         String apiKey = multimodalApiKey;
         if (apiKey == null || apiKey.isBlank()) {
@@ -1057,7 +1057,7 @@ public class AiChatService {
 
     /**
      * 识图路由：请求显式 visionModel / 用户 vault 的 visionModelDefault 优先；
-     * 自有 Provider 且配置了识图模型时走用户 Key；否则走平台多模态（默认 qwen3-vl-plus）。
+     * 自有 Provider 且配置了识图模型时走用户 Key；否则走平台多模态（默认 qwen3.7-flash）。
      */
     private VisionRoute resolveVisionRoute(Long userId, AiChatRequest request) {
         String requested = trimToNull(request != null ? request.getVisionModel() : null);
