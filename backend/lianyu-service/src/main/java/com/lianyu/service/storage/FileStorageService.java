@@ -49,7 +49,7 @@ public class FileStorageService {
     private static final Pattern SAFE_PET_ID = Pattern.compile("^[a-z0-9-]{1,32}$");
     private static final Pattern SAFE_USER_ID = Pattern.compile("^[0-9]{1,20}$");
     private static final Pattern SAFE_OBJECT_KEY = Pattern.compile(
-            "^(avatars/[a-zA-Z0-9._-]+|chat-images/[a-zA-Z0-9._-]+|community-images/[a-zA-Z0-9._-]+|chat-voice/[a-z0-9-]+/[a-zA-Z0-9._-]+|custom-voices/[0-9]+/[a-zA-Z0-9._-]+|square-avatars/[a-z0-9._-]+|square-avatars-thumb/[a-z0-9._-]+|updates/(latest\\.yml|[a-zA-Z0-9._-]+\\.exe|[a-zA-Z0-9._-]+\\.exe\\.blockmap))$"
+            "^(avatars/[a-zA-Z0-9._-]+|chat-images/[a-zA-Z0-9._-]+|community-images/[a-zA-Z0-9._-]+|chat-voice/[a-z0-9-]+/[a-zA-Z0-9._-]+|custom-voices/[0-9]+/[a-zA-Z0-9._-]+|square-avatars/[a-z0-9._-]+|square-avatars-thumb/[a-z0-9._-]+|updates/(latest\\.yml|agent-latest\\.yml|[a-zA-Z0-9._-]+\\.exe|[a-zA-Z0-9._-]+\\.exe\\.blockmap|AgentEngine-hosted-win-x64-[0-9]+\\.[0-9]+\\.[0-9]+\\.zip))$"
     );
 
     public String uploadAvatar(MultipartFile file) {
@@ -542,7 +542,8 @@ public class FileStorageService {
             }
             return lowerKey.endsWith(".mp3") ? "audio/mpeg" : "audio/wav";
         }
-        if (lowerKey.equals(UPDATES_PATH + "latest.yml")) {
+        if (lowerKey.equals(UPDATES_PATH + "latest.yml")
+                || lowerKey.equals(UPDATES_PATH + "agent-latest.yml")) {
             return "text/yaml";
         }
         return "application/octet-stream";
@@ -600,7 +601,8 @@ public class FileStorageService {
 
     private String guessContentTypeFromKey(String objectKey) {
         String lower = objectKey.toLowerCase();
-        if (lower.equals(UPDATES_PATH + "latest.yml")) return "text/yaml";
+        if (lower.equals(UPDATES_PATH + "latest.yml")
+                || lower.equals(UPDATES_PATH + "agent-latest.yml")) return "text/yaml";
         if (lower.endsWith(".png")) return "image/png";
         if (lower.endsWith(".webp")) return "image/webp";
         if (lower.endsWith(".gif")) return "image/gif";

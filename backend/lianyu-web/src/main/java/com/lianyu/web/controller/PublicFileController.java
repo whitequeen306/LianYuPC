@@ -80,7 +80,7 @@ public class PublicFileController {
 
     private static String cacheControlFor(String objectKey) {
         if (objectKey != null && objectKey.startsWith("updates/")) {
-            return objectKey.equals("updates/latest.yml") ? "no-cache" : "public, max-age=31536000, immutable";
+            return isUpdateManifest(objectKey) ? "no-cache" : "public, max-age=31536000, immutable";
         }
         if (objectKey != null && objectKey.startsWith("square-avatars-thumb/")) {
             return "public, max-age=31536000, immutable";
@@ -89,10 +89,14 @@ public class PublicFileController {
     }
 
     private static String contentDispositionFor(String objectKey) {
-        if (objectKey != null && objectKey.startsWith("updates/") && !objectKey.equals("updates/latest.yml")) {
+        if (objectKey != null && objectKey.startsWith("updates/") && !isUpdateManifest(objectKey)) {
             String filename = objectKey.substring("updates/".length());
             return "attachment; filename=\"" + filename + "\"";
         }
         return "inline";
+    }
+
+    private static boolean isUpdateManifest(String objectKey) {
+        return "updates/latest.yml".equals(objectKey) || "updates/agent-latest.yml".equals(objectKey);
     }
 }
