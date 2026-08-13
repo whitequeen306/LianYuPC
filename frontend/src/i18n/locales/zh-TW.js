@@ -392,6 +392,8 @@ export default {
     mcpEngineDownloading: '正在下載引擎…',
     mcpEngineExtracting: '正在解壓引擎…',
     mcpEngineDownloadFailed: '引擎下載失敗',
+    mcpAutoApprove: '允許所有詢問',
+    mcpAutoApproveHint: '開啟後，角色操作電腦時的確認彈窗將自動允許（含執行命令、結束程序等敏感操作）。適合不想每次點確認的使用者；請在信任角色的前提下開啟。',
     mcpAdvanced: '進階設定',
     mcpUseDemo: '使用內建演示服務',
     mcpCommand: '引擎命令',

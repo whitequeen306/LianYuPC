@@ -118,6 +118,21 @@ lianyu-app → lianyu-qq-bridge → lianyu-service
 - Docker Compose 编排全部中间件
 - `.env.example` 入仓，`.env` 入 `.gitignore`
 
+### 本地联调：后端镜像同步（强制）
+
+本地 backend 容器运行的是**镜像内代码，不挂载工作区源码**。凡修改会影响后端运行结果的内容（`backend/**/*.java`、resources、Flyway、`pom.xml`、Dockerfile 等），在本地验收前必须重新构建镜像并重建容器：
+
+```powershell
+cd C:\Users\hp\Desktop\LianYu-PC
+docker compose up -d --build backend
+```
+
+- **禁止**在后端源码变化后只执行 `docker compose restart backend` 或 `docker compose up -d backend`；这两种方式可能继续运行旧镜像。
+- 重建后至少确认 `docker compose ps backend` 为 `Up`，并确认 `http://127.0.0.1:8080/actuator/health` 返回 `UP`。
+- 日常重建不要执行 `docker compose down -v`，否则会删除 MySQL / Redis / MinIO / Milvus 等本地数据卷。
+- 当前前端开发不使用 Docker 静态前端镜像；运行 `cd frontend; npm run dev` 直接读取当前源码。不要再使用历史遗留的 `lianyu-pc-frontend:latest`。
+- 本地重建只用于联调，**不等于**云端部署，也不能替代发版时的 `.\local\ship-release.ps1 -BackendOnly`。
+
 ## 发布发版（Agent 必看 — 不要另想流程）
 
 **唯一入口：`.\local\ship-release.ps1`。** 详细说明见文首「推送 / 部署 / 发版（强制）」与 `local/README.md`。

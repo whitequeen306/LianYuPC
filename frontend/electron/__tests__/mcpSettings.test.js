@@ -29,11 +29,14 @@ beforeEach(() => {
 })
 
 describe('mcpSettings', () => {
-  it('defaults to disabled + managed engine (not demo)', () => {
+  it('defaults to disabled + managed engine (not demo) + confirm every ask', () => {
     expect(DEFAULTS.enabled).toBe(false)
     expect(DEFAULTS.useDemoServer).toBe(false)
+    expect(DEFAULTS.autoApprove).toBe(false)
     const s = readMcpSettings()
-    expect(s).toEqual({ enabled: false, useDemoServer: false, command: '', args: [], cwd: '' })
+    expect(s).toEqual({
+      enabled: false, autoApprove: false, useDemoServer: false, command: '', args: [], cwd: '',
+    })
   })
 
   it('normalizes enabled/useDemoServer strictly to booleans', () => {
@@ -42,6 +45,20 @@ describe('mcpSettings', () => {
     expect(normalizeMcpSettings({}).useDemoServer).toBe(false)
     expect(normalizeMcpSettings({ useDemoServer: true }).useDemoServer).toBe(true)
     expect(normalizeMcpSettings({ useDemoServer: false }).useDemoServer).toBe(false)
+  })
+
+  it('normalizes autoApprove strictly to boolean (default false)', () => {
+    expect(normalizeMcpSettings({}).autoApprove).toBe(false)
+    expect(normalizeMcpSettings({ autoApprove: true }).autoApprove).toBe(true)
+    expect(normalizeMcpSettings({ autoApprove: 'yes' }).autoApprove).toBe(false)
+    expect(normalizeMcpSettings({ autoApprove: 1 }).autoApprove).toBe(false)
+  })
+
+  it('round-trips autoApprove and keeps it across partial writes', () => {
+    writeMcpSettings({ autoApprove: true })
+    expect(readMcpSettings().autoApprove).toBe(true)
+    writeMcpSettings({ command: 'engine' })
+    expect(readMcpSettings().autoApprove).toBe(true)
   })
 
   it('trims command and filters/limits args', () => {
@@ -70,6 +87,7 @@ describe('mcpSettings', () => {
     const s = readMcpSettings()
     expect(s).toEqual({
       enabled: true,
+      autoApprove: false,
       useDemoServer: false,
       command: 'python',
       args: ['-m', 'agent_assistant.hosted.mcp_server'],

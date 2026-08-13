@@ -1,4 +1,4 @@
-import { onBeforeUnmount, onMounted, ref, unref } from 'vue'
+import { ref, unref, watch } from 'vue'
 
 const SCROLL_UP_THRESHOLD = 80
 const SCROLL_BOTTOM_THRESHOLD = 20
@@ -7,10 +7,12 @@ const SCROLL_TOP_LOAD_THRESHOLD = 120
 /**
  * 聊天消息区滚动：用户上翻时不自动拉底，提供「回到底部」按钮；
  * 可选在滚到顶部时触发加载更早消息。
+ *
+ * 容器常在会话 id 就绪后才挂到 DOM（v-if），所以监听必须跟 ref 走，
+ * 不能只在 onMounted 绑一次——那时列表往往还不存在。
  */
 export function useChatScroll(containerRef, anchorRef, options = {}) {
   const isUserScrolledUp = ref(false)
-  let detachScrollListener = null
 
   function distanceFromBottom(el) {
     if (!el) return 0
@@ -36,6 +38,19 @@ export function useChatScroll(containerRef, anchorRef, options = {}) {
     options.onReachTop?.()
   }
 
+  watch(containerRef, (el, _prev, onCleanup) => {
+    if (!el) return
+    const onScroll = () => {
+      updateScrollState()
+      maybeLoadOlder()
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    updateScrollState()
+    onCleanup(() => {
+      el.removeEventListener('scroll', onScroll)
+    })
+  }, { flush: 'post', immediate: true })
+
   function scrollToBottom({ force = false, behavior = 'smooth' } = {}) {
     if (!force && isUserScrolledUp.value) return
     const el = containerRef.value
@@ -54,23 +69,6 @@ export function useChatScroll(containerRef, anchorRef, options = {}) {
   function jumpToBottom() {
     scrollToBottom({ force: true, behavior: 'auto' })
   }
-
-  onMounted(() => {
-    const el = containerRef.value
-    if (!el) return
-    const onScroll = () => {
-      updateScrollState()
-      maybeLoadOlder()
-    }
-    el.addEventListener('scroll', onScroll, { passive: true })
-    detachScrollListener = () => el.removeEventListener('scroll', onScroll)
-    updateScrollState()
-  })
-
-  onBeforeUnmount(() => {
-    detachScrollListener?.()
-    detachScrollListener = null
-  })
 
   return {
     isUserScrolledUp,

@@ -82,6 +82,11 @@
                 <span v-if="engineBytesLabel"> · {{ engineBytesLabel }}</span>
               </p>
             </div>
+            <div class="mcp-advanced__row">
+              <span class="mcp-advanced__label">{{ t('about.mcpAutoApprove') }}</span>
+              <el-switch :model-value="autoApprove" @change="onToggleAutoApprove" />
+            </div>
+            <p class="mcp-advanced__hint">{{ t('about.mcpAutoApproveHint') }}</p>
             <el-collapse v-model="advancedOpen" class="mcp-advanced">
               <el-collapse-item :title="t('about.mcpAdvanced')" name="advanced">
                 <div class="mcp-advanced__row">
@@ -203,6 +208,7 @@ const cwdDraft = ref('')
 
 const mcpSettings = computed(() => bridge.settings)
 const mcpEnabled = computed(() => mcpSettings.value?.enabled === true)
+const autoApprove = computed(() => mcpSettings.value?.autoApprove === true)
 const usingDemo = computed(() => mcpSettings.value?.useDemoServer === true)
 const usingCustom = computed(() => !usingDemo.value && Boolean(mcpSettings.value?.command))
 
@@ -278,6 +284,10 @@ async function onToggleMcp(enabled) {
   } finally {
     mcpToggling.value = false
   }
+}
+
+async function onToggleAutoApprove(value) {
+  await bridge.updateSettings({ autoApprove: value === true })
 }
 
 async function onToggleDemo(useDemo) {

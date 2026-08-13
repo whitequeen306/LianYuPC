@@ -608,6 +608,13 @@ let mcpConfirmSeq = 0
  */
 function requestMcpConfirm(payload) {
   return new Promise((resolve) => {
+    // 「允许所有询问」开关：面向普通用户的一键放行。每次确认时实时读取设置，
+    // 切换后无需重启引擎即刻生效；只留一行日志作审计。
+    if (readMcpSettings().autoApprove === true) {
+      log(`mcp confirm auto-approved: kind=${payload.kind || 'tool'} tool=${payload.toolName || '-'}`)
+      resolve(true)
+      return
+    }
     const hasWindow = [mainWindow, launcherWindow].some((w) => w && !w.isDestroyed())
     if (!hasWindow) {
       log('mcp confirm denied: no window to ask')

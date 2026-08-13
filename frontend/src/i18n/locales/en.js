@@ -384,6 +384,8 @@ export default {
     mcpEngineDownloading: 'Downloading engine…',
     mcpEngineExtracting: 'Extracting engine…',
     mcpEngineDownloadFailed: 'Engine download failed',
+    mcpAutoApprove: 'Allow all confirmations',
+    mcpAutoApproveHint: 'Auto-approves every confirmation dialog when the character operates your computer (including running commands and ending processes). For users who don\'t want to click through prompts — enable only if you trust your character.',
     mcpAdvanced: 'Advanced',
     mcpUseDemo: 'Use built-in demo service',
     mcpCommand: 'Engine command',

@@ -53,18 +53,18 @@
         当前角色已被拉黑，无法继续发送消息。请前往角色设置调整。
       </div>
 
-      <div class="gal-log" ref="msgListRef">
+      <div class="gal-log-clip">
+        <div class="gal-log" ref="msgListRef">
         <button
-          v-if="isUserScrolledUp"
+          v-if="loadingOlder || hasMoreOlder"
           type="button"
-          class="gal-scroll-bottom"
-          :title="t('chat.scrollToBottom')"
-          @click="jumpToBottom"
+          class="gal-load-more"
+          :class="{ 'gal-load-more--hint': !loadingOlder }"
+          :disabled="loadingOlder"
+          @click="loadOlderMessages"
         >
-          <el-icon :size="18"><ArrowDown /></el-icon>
+          {{ loadingOlder ? t('common.loading') : t('chat.loadMore') }}
         </button>
-        <div v-if="loadingOlder" class="gal-load-more">{{ t('common.loading') }}</div>
-        <div v-else-if="hasMoreOlder" class="gal-load-more gal-load-more--hint">{{ t('chat.loadMore') }}</div>
         <template v-for="item in messageTimeline" :key="item._key">
           <div v-if="item.type === 'time'" class="msg-time-divider">
             <span>{{ item.label }}</span>
@@ -170,7 +170,17 @@
           </template>
           </div>
         </template>
-        <div ref="scrollAnchor" />
+          <div ref="scrollAnchor" />
+        </div>
+        <button
+          v-if="isUserScrolledUp"
+          type="button"
+          class="gal-scroll-bottom"
+          :title="t('chat.scrollToBottom')"
+          @click="jumpToBottom"
+        >
+          <el-icon :size="18"><ArrowDown /></el-icon>
+        </button>
       </div>
 
       <div v-if="selectionMode" class="gal-share-bar glass-strong">
@@ -931,7 +941,7 @@ async function loadRecentMessages(convId) {
 async function loadOlderMessages() {
   const convId = currentConvId.value
   if (!convId || loadingOlder.value || !hasMoreOlder.value) return
-  const beforeSeq = oldestLoadedSeq.value
+  const beforeSeq = oldestLoadedSeq.value ?? messages.value[0]?.seq
   if (beforeSeq == null) return
 
   loadingOlder.value = true
@@ -947,9 +957,17 @@ async function loadOlderMessages() {
     }
     const existingIds = new Set(messages.value.map(m => m.id).filter(Boolean))
     const toPrepend = batch.filter(m => !m.id || !existingIds.has(m.id))
-    if (toPrepend.length) {
-      messages.value = [...toPrepend, ...messages.value]
+    if (!toPrepend.length) {
+      const nextSeq = page?.nextBeforeSeq
+      if (nextSeq == null || nextSeq === beforeSeq) {
+        hasMoreOlder.value = false
+        return
+      }
+      oldestLoadedSeq.value = nextSeq
+      hasMoreOlder.value = !!page?.hasMore
+      return
     }
+    messages.value = [...toPrepend, ...messages.value]
     hasMoreOlder.value = !!page?.hasMore
     oldestLoadedSeq.value = page?.nextBeforeSeq ?? (toPrepend[0]?.seq ?? oldestLoadedSeq.value)
     await nextTick()
@@ -1740,19 +1758,25 @@ function formatTime(ts) {
   font-size: $font-size-sm;
 }
 
-.gal-log {
+.gal-log-clip {
   position: relative;
   z-index: 2;
   flex: 1;
   min-height: 0;
+  /* mask 放在非滚动层：Chromium 把 mask 打在 overflow 容器上会把 scrollTop 弹回顶部 */
+  mask-image: linear-gradient(180deg, transparent 0%, #000 8%, #000 100%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 8%, #000 100%);
+}
+
+.gal-log {
+  height: 100%;
   overflow-y: auto;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
   padding: $space-2 $space-4 $space-4;
   display: flex;
   flex-direction: column;
   gap: $space-1;
-  /* 仅顶部淡入；底部不做 mask，避免滚到最新消息时被渐变遮暗 */
-  mask-image: linear-gradient(180deg, transparent 0%, #000 8%, #000 100%);
-  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 8%, #000 100%);
 }
 
 .msg-time-divider {
@@ -1800,22 +1824,33 @@ function formatTime(ts) {
 }
 
 .gal-load-more {
+  appearance: none;
   align-self: center;
+  flex-shrink: 0;
   padding: $space-2 $space-4;
   margin-bottom: $space-2;
+  border: none;
+  border-radius: $radius-full;
+  background: transparent;
   font-size: $font-size-sm;
+  font-family: inherit;
   color: $color-text-secondary;
   text-align: center;
+  cursor: pointer;
 
   &--hint {
     opacity: 0.75;
   }
+
+  &:disabled {
+    cursor: default;
+  }
 }
 
 .gal-scroll-bottom {
-  position: sticky;
+  position: absolute;
+  left: 50%;
   bottom: $space-3;
-  align-self: center;
   z-index: 5;
   width: 40px;
   height: 40px;
@@ -1827,18 +1862,22 @@ function formatTime(ts) {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  transform: translateX(-50%);
   backdrop-filter: blur(8px);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-  transition: transform 0.2s ease, opacity 0.2s ease;
+  transition:
+    transform 0.22s cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 0.22s cubic-bezier(0.23, 1, 0.32, 1);
 
   &:hover {
-    transform: translateY(-2px);
+    transform: translateX(-50%) translateY(-2px);
     opacity: 0.95;
   }
 }
 
 .gal-log__item {
   display: flex;
+  flex-shrink: 0;
   align-items: flex-end;
   gap: $space-3;
   width: 100%;
@@ -2271,10 +2310,13 @@ function formatTime(ts) {
     min-height: 100%;
   }
 
-  .gal-log {
-    padding: 8px 10px 12px;
+  .gal-log-clip {
     mask-image: none;
     -webkit-mask-image: none;
+  }
+
+  .gal-log {
+    padding: 8px 10px 12px;
   }
 
   .gal-bg-vignette {

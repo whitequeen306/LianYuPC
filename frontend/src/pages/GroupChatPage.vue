@@ -77,18 +77,18 @@
         />
       </header>
 
-      <div class="group-messages" ref="groupMsgListRef">
+      <div class="group-messages-clip">
+        <div class="group-messages" ref="groupMsgListRef">
         <button
-          v-if="isUserScrolledUp"
+          v-if="loadingOlder || hasMoreOlder"
           type="button"
-          class="group-scroll-bottom"
-          :title="t('chat.scrollToBottom')"
-          @click="jumpToBottom"
+          class="group-load-more"
+          :class="{ 'group-load-more--hint': !loadingOlder }"
+          :disabled="loadingOlder"
+          @click="loadOlderGroupMessages"
         >
-          <el-icon :size="18"><ArrowDown /></el-icon>
+          {{ loadingOlder ? t('common.loading') : t('chat.loadMore') }}
         </button>
-        <div v-if="loadingOlder" class="group-load-more">{{ t('common.loading') }}</div>
-        <div v-else-if="hasMoreOlder" class="group-load-more group-load-more--hint">{{ t('chat.loadMore') }}</div>
         <template v-for="item in groupMessageTimeline" :key="item._key">
           <div v-if="item.type === 'time'" class="msg-time-divider">
             <span>{{ item.label }}</span>
@@ -122,7 +122,17 @@
             </div>
           </div>
         </template>
-        <div ref="groupScrollAnchor"></div>
+          <div ref="groupScrollAnchor"></div>
+        </div>
+        <button
+          v-if="isUserScrolledUp"
+          type="button"
+          class="group-scroll-bottom"
+          :title="t('chat.scrollToBottom')"
+          @click="jumpToBottom"
+        >
+          <el-icon :size="18"><ArrowDown /></el-icon>
+        </button>
       </div>
 
       <div class="group-input-area">
@@ -671,7 +681,7 @@ async function loadRecentGroupMessages(groupId, seenChars) {
 async function loadOlderGroupMessages() {
   const group = activeGroup.value
   if (!group?.id || loadingOlder.value || !hasMoreOlder.value) return
-  const beforeSeq = oldestLoadedSeq.value
+  const beforeSeq = oldestLoadedSeq.value ?? groupMessages.value[0]?.seq
   if (beforeSeq == null) return
 
   loadingOlder.value = true
@@ -688,9 +698,17 @@ async function loadOlderGroupMessages() {
     }
     const existingIds = new Set(groupMessages.value.map(m => m.id).filter(Boolean))
     const toPrepend = batch.filter(m => !m.id || !existingIds.has(m.id))
-    if (toPrepend.length) {
-      groupMessages.value = [...mapGroupMessages(toPrepend, seenChars), ...groupMessages.value]
+    if (!toPrepend.length) {
+      const nextSeq = page?.nextBeforeSeq
+      if (nextSeq == null || nextSeq === beforeSeq) {
+        hasMoreOlder.value = false
+        return
+      }
+      oldestLoadedSeq.value = nextSeq
+      hasMoreOlder.value = !!page?.hasMore
+      return
     }
+    groupMessages.value = [...mapGroupMessages(toPrepend, seenChars), ...groupMessages.value]
     hasMoreOlder.value = !!page?.hasMore
     oldestLoadedSeq.value = page?.nextBeforeSeq ?? (toPrepend[0]?.seq ?? oldestLoadedSeq.value)
     await nextTick()
@@ -1147,11 +1165,17 @@ function isUserMessage(msg) {
 }
 
 // Messages
-.group-messages {
+.group-messages-clip {
   position: relative;
   flex: 1;
   min-height: 0;
+}
+
+.group-messages {
+  height: 100%;
   overflow-y: auto;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
   padding: $space-4 $space-6;
   display: flex;
   flex-direction: column;
@@ -1159,21 +1183,32 @@ function isUserMessage(msg) {
 }
 
 .group-load-more {
+  appearance: none;
   align-self: center;
+  flex-shrink: 0;
   padding: $space-2 $space-4;
+  border: none;
+  border-radius: $radius-full;
+  background: transparent;
   font-size: $font-size-sm;
+  font-family: inherit;
   color: $color-text-secondary;
   text-align: center;
+  cursor: pointer;
 
   &--hint {
     opacity: 0.75;
   }
+
+  &:disabled {
+    cursor: default;
+  }
 }
 
 .group-scroll-bottom {
-  position: sticky;
+  position: absolute;
+  left: 50%;
   bottom: $space-3;
-  align-self: center;
   z-index: 5;
   width: 40px;
   height: 40px;
@@ -1185,8 +1220,17 @@ function isUserMessage(msg) {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  transform: translateX(-50%);
   backdrop-filter: blur(8px);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  transition:
+    transform 0.22s cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 0.22s cubic-bezier(0.23, 1, 0.32, 1);
+
+  &:hover {
+    transform: translateX(-50%) translateY(-2px);
+    opacity: 0.95;
+  }
 }
 
 .msg-time-divider {
@@ -1208,6 +1252,7 @@ function isUserMessage(msg) {
 
 .group-msg-row {
   display: flex;
+  flex-shrink: 0;
   gap: $space-3;
   max-width: 80%;
 

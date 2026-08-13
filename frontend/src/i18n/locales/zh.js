@@ -385,6 +385,8 @@ export default {
     mcpEngineDownloading: '正在下载引擎…',
     mcpEngineExtracting: '正在解压引擎…',
     mcpEngineDownloadFailed: '引擎下载失败',
+    mcpAutoApprove: '允许所有询问',
+    mcpAutoApproveHint: '开启后，角色操作电脑时的确认弹窗将自动允许（含运行命令、结束进程等敏感操作）。适合不想每次点确认的用户；请在信任角色的前提下开启。',
     mcpAdvanced: '高级设置',
     mcpUseDemo: '使用内置演示服务',
     mcpCommand: '引擎命令',

@@ -379,6 +379,8 @@ export default {
     mcpEngineDownloading: 'エンジンをダウンロード中…',
     mcpEngineExtracting: 'エンジンを展開中…',
     mcpEngineDownloadFailed: 'エンジンのダウンロードに失敗しました',
+    mcpAutoApprove: 'すべての確認を許可',
+    mcpAutoApproveHint: 'オンにすると、キャラクターが PC を操作する際の確認ダイアログを自動で許可します（コマンド実行やプロセス終了などの操作を含む）。毎回確認したくない方向けです。キャラクターを信頼できる場合のみオンにしてください。',
     mcpAdvanced: '詳細設定',
     mcpUseDemo: '内蔵デモサービスを使用',
     mcpCommand: 'エンジンコマンド',

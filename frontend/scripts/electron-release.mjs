@@ -52,7 +52,8 @@ if (process.env.AGENT_ENGINE_SKIP === '1') {
 } else {
   const engineZip = process.env.AGENT_ENGINE_ZIP
     || path.resolve(root, '..', '..', 'AgentAssistant', 'packaging', 'AgentEngine-hosted-win-x64.zip')
-  const engineVersion = process.env.AGENT_ENGINE_VERSION || '0.1.0'
+  // 0.1.1: hosted 提速（thinking 默认关 / ui_inspect 单读+缓存 / 轮内压缩生效）
+  const engineVersion = process.env.AGENT_ENGINE_VERSION || '0.1.1'
   if (fs.existsSync(engineZip)) {
     execFileSync('python', [
       path.join(root, '..', 'scripts', '_upload_agent_engine.py'),

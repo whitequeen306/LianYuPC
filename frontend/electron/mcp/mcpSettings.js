@@ -14,6 +14,9 @@ import fs from 'fs'
 export const DEFAULTS = {
   // 总开关：开启后应用启动即拉起本地 MCP 服务并注册到云端工具桥
   enabled: false,
+  // true = 引擎的确认询问（elicitation）一律自动允许，不再弹窗打扰用户。
+  // 面向"只想用、不想懂"的用户；默认 false（每次弹窗，超时拒绝）。
+  autoApprove: false,
   // true = 使用内置演示服务（高级选项）；默认 false，走云端分发的 AgentEngine
   useDemoServer: false,
   // 自定义引擎命令（可执行文件路径，或 python 等）；留空则使用已下载的托管引擎
@@ -47,6 +50,7 @@ export function normalizeMcpSettings(settings) {
   if (cwd.length > MAX_CWD_LENGTH) cwd = ''
   return {
     enabled: raw.enabled === true,
+    autoApprove: raw.autoApprove === true,
     useDemoServer: raw.useDemoServer === true,
     command,
     args,
