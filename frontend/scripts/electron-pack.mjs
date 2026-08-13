@@ -1,6 +1,7 @@
 import { execSync } from 'node:child_process'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildSync } from 'esbuild'
@@ -167,6 +168,13 @@ function resolveReleaseOutDir(version) {
 const outDir = resolveReleaseOutDir(pkg.version)
 const outDirFull = path.join(root, outDir)
 fs.mkdirSync(outDirFull, { recursive: true })
+// Windows: unpack outside the Cursor workspace. The workspace file watcher
+// otherwise holds handles on win-unpacked.tmp and electron-builder's rename
+// fails with EPERM.
+const builderOutDir = process.platform === 'win32'
+  ? path.join(os.tmpdir(), 'lianyu-electron-release', path.basename(outDir))
+  : outDirFull
+fs.mkdirSync(builderOutDir, { recursive: true })
 
 function killLianYuProcesses() {
   if (process.platform !== 'win32') return
@@ -179,16 +187,40 @@ function killLianYuProcesses() {
 }
 
 function removePartialReleaseArtifacts() {
-  const installer = path.join(outDirFull, `LianYu Setup ${pkg.version}.exe`)
-  const winUnpacked = path.join(outDirFull, 'win-unpacked')
-  if (fs.existsSync(installer)) return
-  if (!fs.existsSync(winUnpacked)) return
-  try {
-    fs.rmSync(winUnpacked, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
-    console.log(`Removed partial release folder: ${path.relative(root, winUnpacked)}`)
-  } catch (err) {
-    console.warn(`Could not remove partial release folder (continuing): ${err.message}`)
+  const installerName = `LianYu Setup ${pkg.version}.exe`
+  if (fs.existsSync(path.join(outDirFull, installerName)) || fs.existsSync(path.join(builderOutDir, installerName))) {
+    return
   }
+  for (const dir of [
+    path.join(outDirFull, 'win-unpacked'),
+    path.join(outDirFull, 'win-unpacked.tmp'),
+    path.join(builderOutDir, 'win-unpacked'),
+    path.join(builderOutDir, 'win-unpacked.tmp'),
+  ]) {
+    if (!fs.existsSync(dir)) continue
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 300 })
+      console.log(`Removed partial release folder: ${dir}`)
+    } catch (err) {
+      console.warn(`Could not remove ${dir} (continuing): ${err.message}`)
+    }
+  }
+}
+
+function copyBuilderArtifactsToRepo() {
+  if (builderOutDir === outDirFull) return
+  const names = [
+    `LianYu Setup ${pkg.version}.exe`,
+    `LianYu Setup ${pkg.version}.exe.blockmap`,
+    'latest.yml',
+  ]
+  fs.mkdirSync(outDirFull, { recursive: true })
+  for (const name of names) {
+    const src = path.join(builderOutDir, name)
+    if (!fs.existsSync(src)) continue
+    fs.copyFileSync(src, path.join(outDirFull, name))
+  }
+  console.log(`Copied installer artifacts to ${outDir}`)
 }
 
 execSync('python scripts/regenerate-icon.py', { stdio: 'inherit' })
@@ -217,7 +249,7 @@ execSync('node scripts/smoke-launcher.mjs', { stdio: 'inherit', cwd: root })
 killLianYuProcesses()
 removePartialReleaseArtifacts()
 
-const outputArg = `--config.directories.output=${outDir.replace(/\\/g, '/')}`
+const outputArg = `--config.directories.output=${builderOutDir.replace(/\\/g, '/')}`
 // 配了 GH_TOKEN 才上传 Releases；否则只产本地包，避免误传
 const publishArg = process.env.GH_TOKEN ? '--publish always' : '--publish never'
 if (process.env.GH_TOKEN) {
@@ -244,10 +276,24 @@ if (process.env.GH_TOKEN) {
 }
 const electronBuilderEnv = { ...process.env }
 electronBuilderEnv.NODE_OPTIONS = `${process.env.NODE_OPTIONS || ''} --use-system-ca`.trim()
-execSync(`npx electron-builder --win ${outputArg} ${publishArg}`, {
-  stdio: 'inherit',
-  env: electronBuilderEnv,
-})
+const builderCmd = `npx electron-builder --win ${outputArg} ${publishArg}`
+const builderAttempts = 3
+for (let attempt = 1; attempt <= builderAttempts; attempt++) {
+  killLianYuProcesses()
+  removePartialReleaseArtifacts()
+  try {
+    execSync(builderCmd, {
+      stdio: 'inherit',
+      env: electronBuilderEnv,
+    })
+    break
+  } catch (err) {
+    if (attempt === builderAttempts) throw err
+    console.warn(`electron-builder failed (attempt ${attempt}/${builderAttempts}); retrying in case of Windows file lock...`)
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 4000)
+  }
+}
+copyBuilderArtifactsToRepo()
 
 console.log(`\n??????: ${outDir}/LianYu Setup ${pkg.version}.exe`)
 console.log(`API Origin (packed in runtime-secrets.bin): ${packApiOrigin}`)
