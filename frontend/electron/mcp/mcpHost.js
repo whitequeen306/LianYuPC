@@ -15,6 +15,20 @@ const TOOL_CALL_TIMEOUT_MS = 600_000
 const MAX_TOOL_RESULT_CHARS = 8_000
 
 /**
+ * 云端下发的引擎凭据（跟随用户文本渠道）→ spawn 环境变量。
+ * 引擎侧 config.Settings 按 DEEPSEEK_API_KEY / DEEPSEEK_BASE_URL / DEEPSEEK_MODEL
+ * 读取（pydantic-settings）。只注入非空项：拉取失败时保留继承 env（setx 手动配置仍生效）。
+ */
+export function engineEnvFromCredentials(creds) {
+  if (!creds || creds.available !== true) return {}
+  const env = {}
+  if (creds.apiKey) env.DEEPSEEK_API_KEY = String(creds.apiKey)
+  if (creds.baseUrl) env.DEEPSEEK_BASE_URL = String(creds.baseUrl)
+  if (creds.model) env.DEEPSEEK_MODEL = String(creds.model)
+  return env
+}
+
+/**
  * 解析本次要 spawn 的命令：演示服务 > 自定义 command > 已下载的托管引擎。
  * 纯函数，便于单测；缺引擎时返回 { error } 而不是抛。
  */
@@ -27,6 +41,7 @@ export function resolveMcpLaunchTarget(settings, { resolveDemoServerCommand, res
       args: Array.isArray(demo.args) ? demo.args : [],
       cwd: undefined,
       env: demo.env && typeof demo.env === 'object' ? demo.env : {},
+      needsModelCredentials: false,
     }
   }
   if (settings?.command) {
@@ -35,6 +50,7 @@ export function resolveMcpLaunchTarget(settings, { resolveDemoServerCommand, res
       args: Array.isArray(settings.args) ? settings.args : [],
       cwd: settings.cwd || undefined,
       env: {},
+      needsModelCredentials: true,
     }
   }
   const managed = resolveManagedEngine?.()
@@ -44,6 +60,7 @@ export function resolveMcpLaunchTarget(settings, { resolveDemoServerCommand, res
     args: Array.isArray(managed.args) ? managed.args : [],
     cwd: managed.cwd || undefined,
     env: {},
+    needsModelCredentials: true,
   }
 }
 
@@ -51,6 +68,7 @@ export function createMcpHost({
   getSettings,
   resolveDemoServerCommand,
   resolveManagedEngine,
+  resolveEngineEnv,
   requestConfirm,
   broadcast,
   log = () => {},
@@ -105,12 +123,24 @@ export function createMcpHost({
       setState('error', target.error)
       return status()
     }
+    setState('starting')
+
+    // 引擎跟随用户文本渠道：spawn 前向云端拉取凭据注入 env（一处配置，处处共用）。
+    // 拉取失败不阻断启动——继承 env 里手动配置的 DEEPSEEK_* 仍可兜底。
+    let credentialEnv = {}
+    if (target.needsModelCredentials && resolveEngineEnv) {
+      try {
+        credentialEnv = (await resolveEngineEnv()) || {}
+      } catch (e) {
+        log(`engine env fetch failed: ${e?.message || e}`)
+      }
+      if (gen !== generation) return status()
+    }
     const command = target.command
     const args = target.args
     const cwd = target.cwd
-    const env = { ...process.env, ...target.env }
+    const env = { ...process.env, ...target.env, ...credentialEnv }
 
-    setState('starting')
     try {
       const spawnOpts = { windowsHide: true, shell: false, env, stdio: ['pipe', 'pipe', 'pipe'] }
       if (cwd) spawnOpts.cwd = cwd

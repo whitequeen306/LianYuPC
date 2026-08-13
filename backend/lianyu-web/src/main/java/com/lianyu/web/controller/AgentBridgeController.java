@@ -5,6 +5,7 @@ import com.lianyu.common.base.Result;
 import com.lianyu.service.dto.AgentToolResultRequest;
 import com.lianyu.service.dto.RegisterAgentToolsRequest;
 import com.lianyu.service.tools.bridge.AgentBridgeService;
+import com.lianyu.service.tools.bridge.EngineCredentialsService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AgentBridgeController {
 
     private final AgentBridgeService agentBridgeService;
+    private final EngineCredentialsService engineCredentialsService;
 
     @Operation(summary = "注册/替换本地工具清单")
     @PostMapping("/tools")
@@ -69,5 +71,16 @@ public class AgentBridgeController {
         return Result.ok(Map.of(
                 "online", agentBridgeService.isOnline(userId),
                 "toolCount", agentBridgeService.availableTools(userId).size()));
+    }
+
+    /**
+     * 本地引擎模型凭据：跟随本人文本渠道（最近更新的启用文本 vault），一处配置处处共用。
+     * 仅登录本人可取；桌面端主进程在 spawn 引擎前调用，注入子进程环境变量，不落盘。
+     */
+    @Operation(summary = "本地引擎模型凭据（跟随本人文本渠道）")
+    @GetMapping("/engine-credentials")
+    public Result<EngineCredentialsService.EngineCredentials> engineCredentials() {
+        long userId = StpUtil.getLoginIdAsLong();
+        return Result.ok(engineCredentialsService.resolve(userId));
     }
 }

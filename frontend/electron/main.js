@@ -63,7 +63,7 @@ import {
   isQqntReady,
 } from './napcatRuntime/napcatHost.js'
 import { wipeNapCatInstall } from './napcatRuntime/napcatRelease.js'
-import { createMcpHost } from './mcp/mcpHost.js'
+import { createMcpHost, engineEnvFromCredentials } from './mcp/mcpHost.js'
 import { readMcpSettings, writeMcpSettings } from './mcp/mcpSettings.js'
 import {
   ENGINE_MANIFEST_PATH,
@@ -639,10 +639,45 @@ function requestMcpConfirm(payload) {
   })
 }
 
+/**
+ * 引擎模型凭据跟随用户文本渠道（一处配置）：spawn 前经主进程从云端拉取，
+ * 注入子进程 env，不落盘、不经渲染端。失败返回 {}（继承 env 兜底）。
+ */
+async function resolveEngineEnvFromCloud() {
+  const authToken = await resolveDesktopAuthToken()
+  if (!authToken) {
+    log('[mcp] engine credentials skipped: not logged in')
+    return {}
+  }
+  const apiOrigin = resolveApiOrigin()
+  const resp = await performApiRequest({
+    method: 'GET',
+    url: `${apiOrigin}/api/agent-bridge/engine-credentials`,
+    apiOrigin,
+    authToken,
+    timeoutMs: 15000,
+  })
+  if (resp.status !== 200) {
+    log(`[mcp] engine credentials HTTP ${resp.status}`)
+    return {}
+  }
+  let creds = null
+  try {
+    creds = JSON.parse(resp.data)?.data || null
+  } catch {
+    creds = null
+  }
+  const env = engineEnvFromCredentials(creds)
+  // 只记录「注入与否」，绝不落 key 本身
+  log(`[mcp] engine credentials: ${env.DEEPSEEK_API_KEY ? `injected (model=${env.DEEPSEEK_MODEL || 'default'})` : 'no user text vault'}`)
+  return env
+}
+
 const mcpHost = createMcpHost({
   getSettings: readMcpSettings,
   resolveDemoServerCommand,
   resolveManagedEngine: resolveManagedEngineCommand,
+  resolveEngineEnv: resolveEngineEnvFromCloud,
   requestConfirm: requestMcpConfirm,
   broadcast: broadcastToAppWindows,
   log: (msg) => log(`[mcp] ${msg}`),
