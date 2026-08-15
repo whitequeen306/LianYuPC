@@ -6,7 +6,7 @@ export function isElectronRuntime() {
   )
 }
 
-const DEFAULT_API_ORIGIN = 'http://localhost:8080'
+const DEFAULT_API_ORIGIN = 'http://127.0.0.1:8080'
 const PACKED_API_ORIGIN = (
   typeof import.meta.env.VITE_LIANYU_PACKED_API_ORIGIN === 'string'
     ? import.meta.env.VITE_LIANYU_PACKED_API_ORIGIN
@@ -51,12 +51,25 @@ export async function ensureApiOriginReady() {
   }
 }
 
-/** Electron 下 API 根地址（云端由主进程 secrets 提供；本地开发默认 localhost） */
+/**
+ * electron:dev 页面在 http://localhost:5180，若 axios 直连 http://127.0.0.1:8080，
+ * Chromium 会把这次跨环回请求打成 failed to fetch（CORS / Local Network Access），
+ * 用户只看到「无法连接服务器」。同源走 Vite /api /ws 代理即可。
+ */
+export function shouldUseViteDevProxy() {
+  return Boolean(
+    import.meta.env.DEV
+    && isElectronRuntime()
+    && typeof window !== 'undefined'
+    && /^https?:$/i.test(window.location.protocol),
+  )
+}
+
+/** Electron 下 API 根地址（云端由主进程 secrets 提供；本地开发走 Vite 同源代理） */
 export function resolveApiOrigin() {
-  if (isElectronRuntime()) {
-    return cachedElectronOrigin || DEFAULT_API_ORIGIN
-  }
-  return ''
+  if (!isElectronRuntime()) return ''
+  if (shouldUseViteDevProxy()) return ''
+  return cachedElectronOrigin || DEFAULT_API_ORIGIN
 }
 
 /** HTTP API 根（Electron 直连后端；浏览器走同源 nginx） */
@@ -71,14 +84,14 @@ export function apiBasePath() {
 
 /** WebSocket STOMP 地址 */
 export function buildWsUrl() {
-  if (isElectronRuntime()) {
+  if (isElectronRuntime() && !shouldUseViteDevProxy()) {
     const origin = resolveApiOrigin()
     try {
       const url = new URL(origin)
       const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
       return `${wsProtocol}//${url.host}/ws`
     } catch {
-      return 'ws://localhost:8080/ws'
+      return 'ws://127.0.0.1:8080/ws'
     }
   }
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'

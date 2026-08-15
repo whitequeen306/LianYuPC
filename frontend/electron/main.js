@@ -20,6 +20,11 @@ import { execFileSync } from 'child_process'
 import { fileURLToPath } from 'url'
 import * as logger from './logger.js'
 import {
+  sanitizeExportFileName,
+  validateExportText,
+  writeUtf8TextFile,
+} from './exportTextFile.js'
+import {
   readDesktopSettings,
   writeDesktopSettings,
   applyLaunchAtLogin,
@@ -137,7 +142,7 @@ const LAUNCHER_WEB_PREFS = {
   autoplayPolicy: 'no-user-gesture-required',
 }
 
-const DEFAULT_API_ORIGIN = 'http://localhost:8080'
+const DEFAULT_API_ORIGIN = 'http://127.0.0.1:8080'
 
 if (process.env.LIANYU_MAIN_STARTUP_SMOKE === '1' && process.env.LIANYU_SMOKE_USER_DATA) {
   app.setPath('userData', process.env.LIANYU_SMOKE_USER_DATA)
@@ -2739,6 +2744,29 @@ function registerIpcHandlers() {
       if (result.canceled || !result.filePath) return { ok: false, reason: 'cancelled' }
       const ret = logger.exportLogs(result.filePath)
       return ret
+    } catch (e) {
+      return { ok: false, reason: 'export_failed', error: e?.message || String(e) }
+    }
+  })
+
+  ipcMain.handle('desktop:export-text-file', async (event, payload) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    try {
+      const content = payload?.content
+      const checked = validateExportText(content)
+      if (!checked.ok) return { ok: false, reason: checked.reason }
+      const suggestedName = sanitizeExportFileName(payload?.suggestedName)
+      const win = BrowserWindow.fromWebContents(event.sender)
+      const saveOpts = {
+        title: '导出聊天记录',
+        defaultPath: path.join(app.getPath('desktop'), suggestedName),
+        filters: [{ name: '文本文件', extensions: ['txt'] }, { name: '所有文件', extensions: ['*'] }],
+      }
+      const result = win
+        ? await dialog.showSaveDialog(win, saveOpts)
+        : await dialog.showSaveDialog(saveOpts)
+      if (result.canceled || !result.filePath) return { ok: false, reason: 'cancelled' }
+      return writeUtf8TextFile(result.filePath, content)
     } catch (e) {
       return { ok: false, reason: 'export_failed', error: e?.message || String(e) }
     }

@@ -246,7 +246,12 @@ export default {
     thinking: 'Thinking...',
     loadMore: 'Load earlier messages',
     noMessages: 'No messages yet — say hello',
-    typing: '{name} is replying...'
+    typing: '{name} is replying...',
+    export: 'Export',
+    exporting: 'Preparing chat history…',
+    exportSuccess: 'Chat history exported',
+    exportEmpty: 'No chat history to export',
+    exportFailed: 'Export failed',
   },
   group: {
     title: 'Group chat',

@@ -150,6 +150,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   capturePageRegion: (rect) => ipcRenderer.invoke('desktop:capture-page-region', rect),
   rendererLog: (level, tag, msg) => ipcRenderer.send('desktop:renderer-log', { level, tag, msg }),
   exportLogs: () => ipcRenderer.invoke('desktop:export-logs'),
+  exportTextFile: (payload) => ipcRenderer.invoke('desktop:export-text-file', payload),
   getGlobalLogs: (maxLines) => ipcRenderer.invoke('desktop:get-global-logs', maxLines),
   openLogFolder: () => ipcRenderer.invoke('desktop:open-log-folder'),
   // ── 应用自动更新（updater.js 主进程封装） ──

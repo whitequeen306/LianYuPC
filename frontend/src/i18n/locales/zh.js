@@ -248,6 +248,11 @@ export default {
     noMessages: '还没有消息，打个招呼吧',
     typing: '{name}正在回复中...',
     scrollToBottom: '回到底部',
+    export: '导出',
+    exporting: '正在整理聊天记录…',
+    exportSuccess: '聊天记录已导出',
+    exportEmpty: '暂无聊天记录可导出',
+    exportFailed: '导出失败',
   },
   group: {
     title: '群聊',

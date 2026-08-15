@@ -22,7 +22,7 @@ import path from 'path'
 /** Must match frontend/scripts/pack-runtime-secrets.mjs */
 export const RUNTIME_SECRETS_PEPPER = 'LianYu-RtSec-v1-8F3C2A1B'
 
-const DEFAULT_API_ORIGIN = 'http://localhost:8080'
+const DEFAULT_API_ORIGIN = 'http://127.0.0.1:8080'
 const SECRETS_FILENAME = 'runtime-secrets.bin'
 
 /** @type {{ apiOrigin: string, updateOrigin: string, certFingerprint: string, pinnedSpki: string } | null} */

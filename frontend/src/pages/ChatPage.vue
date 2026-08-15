@@ -42,6 +42,15 @@
           v-if="!selectionMode"
           type="button"
           class="gal-header__share"
+          :disabled="exportingChat"
+          @click="exportChatTranscript"
+        >
+          {{ t('chat.export') }}
+        </button>
+        <button
+          v-if="!selectionMode"
+          type="button"
+          class="gal-header__share"
           @click="enterShareMode"
         >
           分享
@@ -382,6 +391,12 @@ import {
   buildChatImageShareDraft,
   COMMUNITY_SHARE_MAX_MESSAGES
 } from '@/utils/communityShareDraft'
+import {
+  defaultChatExportFileName,
+  fetchAllConversationMessages,
+  formatChatTranscript,
+  saveChatTranscriptFile,
+} from '@/utils/exportChatTranscript'
 import { captureChatShareScreenshot } from '@/utils/captureChatShareScreenshot'
 import { uploadCommunityImage } from '@/api/community'
 import { isElectronApp } from '@/utils/electron'
@@ -435,6 +450,7 @@ const imageViewerInitialIndex = ref(0)
 const selectionMode = ref(false)
 const selectedMessageIds = ref(new Set())
 const shareCapturing = ref(false)
+const exportingChat = ref(false)
 
 function shareSelectable(item) {
   return isShareSelectableMessage(item)
@@ -442,6 +458,41 @@ function shareSelectable(item) {
 
 function isMessageSelected(item) {
   return selectedMessageIds.value.has(Number(item.id))
+}
+
+async function exportChatTranscript() {
+  if (exportingChat.value || !currentConvId.value) return
+  exportingChat.value = true
+  try {
+    const characterName = activeCharacter.value?.name || t('group.roleFallback')
+    const userName = (userStore.nickname || userStore.username || '').trim() || '用户'
+    const records = await fetchAllConversationMessages(currentConvId.value, getMessages)
+    const text = formatChatTranscript(records, {
+      userName,
+      characterName,
+      includeInnerThoughts: showInnerThoughts.value,
+    })
+    if (!text) {
+      ElMessage.warning(t('chat.exportEmpty'))
+      return
+    }
+    const suggestedName = defaultChatExportFileName(characterName)
+    const ret = await saveChatTranscriptFile({
+      suggestedName,
+      content: text,
+      electronAPI: getElectronAPI(),
+    })
+    if (ret?.reason === 'cancelled') return
+    if (!ret?.ok) {
+      ElMessage.error(t('chat.exportFailed'))
+      return
+    }
+    ElMessage.success(t('chat.exportSuccess'))
+  } catch (e) {
+    ElMessage.error(humanizeError(e, t('chat.exportFailed')))
+  } finally {
+    exportingChat.value = false
+  }
 }
 
 function enterShareMode() {
@@ -1737,6 +1788,12 @@ function formatTime(ts) {
   &:hover {
     border-color: color-mix(in srgb, var(--ly-accent) 35%, transparent);
     background: color-mix(in srgb, var(--ly-accent) 10%, transparent);
+  }
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: default;
+    pointer-events: none;
   }
 }
 
