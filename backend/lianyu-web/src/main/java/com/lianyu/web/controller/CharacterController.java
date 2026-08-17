@@ -4,6 +4,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.lianyu.common.base.Result;
 import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.auth.AuthRateLimiter;
+import com.lianyu.service.character.CharacterImportService;
 import com.lianyu.service.character.CharacterService;
 import com.lianyu.service.square.CharacterSquareService;
 import com.lianyu.service.square.SquareCommentService;
@@ -12,6 +13,7 @@ import com.lianyu.service.storage.FileStorageService;
 import com.lianyu.service.dto.CharacterResponse;
 import com.lianyu.service.dto.AddCharacterFromSquareRequest;
 import com.lianyu.service.dto.CreateCharacterRequest;
+import com.lianyu.service.dto.AnalyzeCharacterImportRequest;
 import com.lianyu.service.dto.GenerateCharacterRequest;
 import com.lianyu.service.dto.CharacterSquarePageResponse;
 import com.lianyu.service.dto.CharacterSquareTemplateResponse;
@@ -44,6 +46,7 @@ public class CharacterController {
     private final SquareCommentService squareCommentService;
     private final FileStorageService fileStorageService;
     private final AiChatService aiChatService;
+    private final CharacterImportService characterImportService;
     private final AuthRateLimiter authRateLimiter;
     private final com.lianyu.service.voice.CustomVoiceService customVoiceService;
 
@@ -225,6 +228,15 @@ public class CharacterController {
     public Result<Map<String, Object>> generate(@Valid @RequestBody GenerateCharacterRequest request) {
         long userId = StpUtil.getLoginIdAsLong();
         return Result.ok(aiChatService.generateCharacter(userId, request));
+    }
+
+    @Operation(summary = "从人设或聊天记录抽取角色设定（不写入会话）")
+    @PostMapping("/import/analyze")
+    public Result<Map<String, Object>> analyzeImport(@Valid @RequestBody AnalyzeCharacterImportRequest request) {
+        long userId = StpUtil.getLoginIdAsLong();
+        authRateLimiter.checkRateLimit("rate:character-import:", String.valueOf(userId),
+                10, Duration.ofHours(1), "角色导入过于频繁，请稍后再试");
+        return Result.ok(characterImportService.analyze(userId, request));
     }
 
     private static List<Long> parseTemplateIds(String raw) {

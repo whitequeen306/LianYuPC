@@ -42,6 +42,10 @@ export function generateCharacter(data) {
   return http.post('/character/generate', data, { timeout: 120000 })
 }
 
+export function analyzeCharacterImport(data) {
+  return http.post('/character/import/analyze', data, { timeout: 120000 })
+}
+
 export function getCustomVoice(id) {
   return http.get(`/character/${id}/custom-voice`)
 }

@@ -5,9 +5,14 @@
         <h1 class="page-title">我的羁绊</h1>
         <p class="page-desc">点开头像继续对话，或创建属于你的角色</p>
       </div>
-      <el-button v-bubble-btn type="primary" class="btn-cta" :icon="Plus" @click="showCreateDialog">
-        创建角色
-      </el-button>
+      <div class="header-actions">
+        <el-button type="default" :icon="Upload" @click="showImportDialog">
+          {{ t('characters.import') }}
+        </el-button>
+        <el-button v-bubble-btn type="primary" class="btn-cta" :icon="Plus" @click="showCreateDialog">
+          {{ t('characters.create') }}
+        </el-button>
+      </div>
     </header>
 
     <div v-if="loading" class="loading-state">
@@ -21,9 +26,14 @@
       </div>
       <h3>还没有角色</h3>
       <p>创建你的第一个 AI 角色，赋予它独特的性格和说话风格</p>
-      <el-button v-bubble-btn type="primary" class="btn-cta btn-cta-lg" :icon="Plus" @click="showCreateDialog">
-        创建角色
-      </el-button>
+      <div class="empty-actions">
+        <el-button type="default" :icon="Upload" @click="showImportDialog">
+          {{ t('characters.import') }}
+        </el-button>
+        <el-button v-bubble-btn type="primary" class="btn-cta btn-cta-lg" :icon="Plus" @click="showCreateDialog">
+          {{ t('characters.create') }}
+        </el-button>
+      </div>
     </div>
 
     <div v-else class="characters-layout" @mouseleave="hoveredCharacterId = null">
@@ -266,6 +276,8 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <CharacterImportDialog v-model="importDialogVisible" />
   </div>
 </template>
 
@@ -284,7 +296,7 @@ import { listNotifications } from '@/api/notification'
 import { useConversationUnread } from '@/composables/useConversationUnread'
 import { useResponsiveDialogWidth } from '@/composables/useResponsiveDialogWidth'
 import { useNotificationsStore } from '@/stores/notifications'
-import { Plus, Delete, User, Loading, ChatDotRound, UploadFilled, Setting } from '@element-plus/icons-vue'
+import { Plus, Delete, User, Loading, ChatDotRound, UploadFilled, Setting, Upload } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { resolveMediaUrl } from '@/utils/media'
 import { nextCharacterAvatarTier, resolveCharacterAvatarSrc } from '@/utils/characterAvatar'
@@ -294,6 +306,7 @@ import { getSavedUserCity, saveUserCity } from '@/utils/userCity'
 import { buildLatestSingleConversationMap, selectCharacterPreview } from '@/pages/charactersPreview'
 import { resolveCharacterCardRefreshTarget } from '@/pages/charactersRealtime'
 import CharacterCityModeForm from '@/components/CharacterCityModeForm.vue'
+import CharacterImportDialog from '@/components/CharacterImportDialog.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -324,6 +337,7 @@ const characterAvatarTier = ref({})
 const DEFAULT_INNER_SPACE_HEADLINE = '她还在慢慢熟悉与你相处的节奏。'
 const DEFAULT_INNER_SPACE_BODY = '她对这段关系还保持着温柔的试探，正在从每一次对话里确认与你靠近的方式。'
 const dialogVisible = ref(false)
+const importDialogVisible = ref(false)
 const submitting = ref(false)
 const generating = ref(false)
 const formRef = ref(null)
@@ -495,6 +509,10 @@ function showCreateDialog() {
   generatorDescription.value = ''
   isDragging.value = false
   dialogVisible.value = true
+}
+
+function showImportDialog() {
+  importDialogVisible.value = true
 }
 
 function triggerUpload() {
@@ -835,8 +853,21 @@ async function startChat(char) {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  gap: $space-4;
   margin-bottom: $space-8;
   animation: fadeSlideUp 0.5s ease both;
+}
+
+.header-actions,
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-3;
+  flex-shrink: 0;
+}
+
+.empty-actions {
+  justify-content: center;
 }
 
 .page-title {

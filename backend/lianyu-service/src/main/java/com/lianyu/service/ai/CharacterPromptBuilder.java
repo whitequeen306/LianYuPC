@@ -4,6 +4,7 @@ import cn.hutool.core.map.MapUtil;
 import cn.hutool.core.util.StrUtil;
 import com.lianyu.common.util.UserInputSanitizer;
 import com.lianyu.dao.entity.Character;
+import com.lianyu.service.character.CharacterAddressing;
 import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
 import com.lianyu.service.character.CharacterPreferenceResolver;
@@ -53,6 +54,11 @@ public class CharacterPromptBuilder {
                     .replace("{{persona}}", persona);
         } else {
             prompt = buildDefaultPrompt(character.getName(), persona);
+        }
+
+        String userAddressing = MapUtil.getStr(settings, "userAddressing", "");
+        if (StrUtil.isNotBlank(userAddressing)) {
+            prompt = CharacterAddressing.appendHint(prompt, userAddressing);
         }
 
         if (StrUtil.isNotBlank(memoryContext)) {
