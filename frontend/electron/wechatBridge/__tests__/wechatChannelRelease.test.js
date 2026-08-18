@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 vi.mock('electron', () => ({
   app: { getPath: () => `${process.env.TEMP || process.env.TMPDIR || '/tmp'}/lianyu-wechat-rel-test` },
@@ -122,5 +123,18 @@ describe('installed meta', () => {
     expect(meta.version).toBe('0.1.0')
     expect(meta.sha256).toBe('b'.repeat(64))
     expect(meta.cwdRelPath).toBe('v0.1.0')
+  })
+})
+
+describe('api-gateway wechat channel updates', () => {
+  const nginx = fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../../deploy/api-gateway/nginx.conf'),
+    'utf8',
+  )
+
+  it('proxies the wechat channel manifest and zip, and still 404s unknown updates', () => {
+    expect(nginx).toContain('location = /api/public/files/updates/wechat-channel-latest.yml')
+    expect(nginx).toContain('location ~ ^/api/public/files/updates/WechatChannel-win-x64-[0-9]+\\.[0-9]+\\.[0-9]+\\.zip$')
+    expect(nginx).toMatch(/location \/api\/public\/files\/updates\/ \{\s+return 404;/)
   })
 })
