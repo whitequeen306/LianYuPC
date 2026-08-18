@@ -70,6 +70,7 @@ async function main() {
   fs.mkdirSync(payload, { recursive: true })
   fs.copyFileSync(path.join(nodeRoot, 'node.exe'), path.join(payload, 'node.exe'))
   fs.copyFileSync(path.join(__dirname, 'lianyu-weixin-host.mjs'), path.join(payload, 'host.mjs'))
+  fs.copyFileSync(path.join(__dirname, 'wechatProtocol.js'), path.join(payload, 'wechatProtocol.js'))
   fs.writeFileSync(path.join(payload, 'package.json'), JSON.stringify({
     name: 'lianyu-wechat-channel',
     version: VERSION,

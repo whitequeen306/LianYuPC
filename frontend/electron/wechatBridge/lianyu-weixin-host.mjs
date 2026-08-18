@@ -13,6 +13,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import readline from 'node:readline'
 import { fileURLToPath } from 'node:url'
+import { buildWeixinSendMessage } from './wechatProtocol.js'
 
 const DEFAULT_BASE = 'https://ilinkai.weixin.qq.com'
 const ILINK_APP_ID = 'bot'
@@ -261,6 +262,7 @@ async function pollOnce() {
       timeout + 5000,
     )
     if (resp.ret && resp.ret !== 0) {
+      hostLog(`getupdates ret=${resp.ret}`)
       emit({ type: 'error', message: `getupdates ret=${resp.ret}` })
       return
     }
@@ -277,6 +279,7 @@ async function pollOnce() {
       const imgItem = items.find((it) => it?.type === 2)
       if (imgItem) image = await downloadImageItem(imgItem)
       if (!text && !image) continue
+      hostLog(`inbound text=${text ? 'yes' : 'no'} image=${image ? 'yes' : 'no'}`)
       emit({
         type: 'inbound',
         text,
@@ -317,22 +320,18 @@ async function startPoll() {
     .finally(() => { polling = false })
 }
 
+function hostLog(message) {
+  process.stderr.write(`[weixin-host] ${message}\n`)
+}
+
 async function sendText(cmd) {
-  const text = typeof cmd.text === 'string' ? cmd.text : ''
-  const toUserId = typeof cmd.toUserId === 'string' ? cmd.toUserId : ''
-  const contextToken = typeof cmd.contextToken === 'string' ? cmd.contextToken : ''
   if (!token) throw new Error('not logged in')
-  if (!text.trim()) throw new Error('empty text')
-  if (!toUserId || !contextToken) throw new Error('missing context')
-  await apiPost(baseUrl, 'ilink/bot/sendmessage', {
-    msg: {
-      to_user_id: toUserId,
-      context_token: contextToken,
-      message_type: 2,
-      message_state: 2,
-      item_list: [{ type: 1, text_item: { text } }],
-    },
-  }, token, 15000)
+  const body = buildWeixinSendMessage(cmd)
+  const resp = await apiPost(baseUrl, 'ilink/bot/sendmessage', body, token, 15000)
+  if (resp.ret && resp.ret !== 0) {
+    throw new Error(`sendmessage ret=${resp.ret}`)
+  }
+  hostLog('sendmessage ok')
   emit({ type: 'sent' })
 }
 
@@ -351,27 +350,31 @@ async function shutdown() {
 loadCreds()
 
 const rl = readline.createInterface({ input: process.stdin })
-rl.on('line', async (line) => {
-  const raw = String(line || '').trim()
-  if (!raw) return
-  let cmd
-  try {
-    cmd = JSON.parse(raw)
-  } catch {
-    emit({ type: 'error', message: 'bad command' })
-    return
-  }
-  try {
-    if (cmd.type === 'login') await doLogin()
-    else if (cmd.type === 'start_poll') await startPoll()
-    else if (cmd.type === 'send_text') await sendText(cmd)
-    else if (cmd.type === 'stop') {
-      await shutdown()
-      process.exit(0)
+let commandTail = Promise.resolve()
+rl.on('line', (line) => {
+  commandTail = commandTail.then(async () => {
+    const raw = String(line || '').trim()
+    if (!raw) return
+    let cmd
+    try {
+      cmd = JSON.parse(raw)
+    } catch {
+      emit({ type: 'error', message: 'bad command' })
+      return
     }
-  } catch (err) {
-    emit({ type: 'error', message: String(err?.message || err) })
-  }
+    try {
+      if (cmd.type === 'login') await doLogin()
+      else if (cmd.type === 'start_poll') await startPoll()
+      else if (cmd.type === 'send_text') await sendText(cmd)
+      else if (cmd.type === 'stop') {
+        await shutdown()
+        process.exit(0)
+      }
+    } catch (err) {
+      hostLog(`cmd ${cmd?.type || '?'} failed: ${err?.message || err}`)
+      emit({ type: 'error', message: String(err?.message || err) })
+    }
+  })
 })
 
 process.on('SIGINT', () => { shutdown().finally(() => process.exit(0)) })

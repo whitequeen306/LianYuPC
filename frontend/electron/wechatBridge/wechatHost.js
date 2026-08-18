@@ -48,6 +48,13 @@ export function createWechatHost({ log = () => {}, onMessage = () => {} } = {}) 
     }
     if (msg.type === HOST_MSG.ERROR) {
       lastError = String(msg.message || 'host error')
+      log(`[wechatHost] error: ${lastError}`)
+    }
+    if (msg.type === HOST_MSG.INBOUND) {
+      log(`[wechatHost] inbound text=${msg.text ? 'yes' : 'no'} image=${msg.imageBase64 ? 'yes' : 'no'}`)
+    }
+    if (msg.type === HOST_MSG.SENT) {
+      log('[wechatHost] sent')
     }
     onMessage(msg)
   }

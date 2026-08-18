@@ -2,6 +2,7 @@
  * WeChat ClawBot host line protocol + proactive filters.
  * Host stdin/stdout is one JSON object per line. Tokens never belong in logs.
  */
+import crypto from 'node:crypto'
 
 export const HOST_MSG = {
   QR: 'qr',
@@ -34,6 +35,26 @@ export function parseHostLine(line) {
 export function encodeHostCommand(cmd) {
   if (!cmd || typeof cmd !== 'object') return ''
   return `${JSON.stringify(cmd)}\n`
+}
+
+/** iLink sendmessage body. Unique client_id per send — missing it makes later replies vanish. */
+export function buildWeixinSendMessage({ text, toUserId, contextToken }) {
+  const bodyText = typeof text === 'string' ? text : ''
+  const to = typeof toUserId === 'string' ? toUserId : ''
+  const token = typeof contextToken === 'string' ? contextToken : ''
+  if (!bodyText.trim()) throw new Error('empty text')
+  if (!to || !token) throw new Error('missing context')
+  return {
+    msg: {
+      from_user_id: '',
+      to_user_id: to,
+      client_id: `lianyu-${crypto.randomBytes(8).toString('hex')}`,
+      message_type: 2,
+      message_state: 2,
+      context_token: token,
+      item_list: [{ type: 1, text_item: { text: bodyText } }],
+    },
+  }
 }
 
 export function extractInboundPayload(msg) {

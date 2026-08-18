@@ -5,6 +5,7 @@ import {
   extractInboundPayload,
   shouldSkipWechatProactive,
   pickLatestAssistant,
+  buildWeixinSendMessage,
   HOST_MSG,
   HOST_CMD,
 } from '../wechatProtocol.js'
@@ -22,6 +23,27 @@ describe('parseHostLine / encodeHostCommand', () => {
       '{"type":"send_text","text":"ok"}\n',
     )
     expect(encodeHostCommand(null)).toBe('')
+  })
+})
+
+describe('buildWeixinSendMessage', () => {
+  it('assigns a unique client_id and the official bot fields', () => {
+    const a = buildWeixinSendMessage({ text: 'hi', toUserId: 'wx1', contextToken: 'tok' })
+    const b = buildWeixinSendMessage({ text: 'hi', toUserId: 'wx1', contextToken: 'tok' })
+    expect(a.msg.from_user_id).toBe('')
+    expect(a.msg.to_user_id).toBe('wx1')
+    expect(a.msg.message_type).toBe(2)
+    expect(a.msg.message_state).toBe(2)
+    expect(a.msg.context_token).toBe('tok')
+    expect(a.msg.item_list).toEqual([{ type: 1, text_item: { text: 'hi' } }])
+    expect(a.msg.client_id).toMatch(/^lianyu-[0-9a-f]{16}$/)
+    expect(a.msg.client_id).not.toBe(b.msg.client_id)
+  })
+
+  it('rejects empty text or missing peer context', () => {
+    expect(() => buildWeixinSendMessage({ text: ' ', toUserId: 'wx1', contextToken: 'tok' })).toThrow('empty text')
+    expect(() => buildWeixinSendMessage({ text: 'hi', toUserId: '', contextToken: 'tok' })).toThrow('missing context')
+    expect(() => buildWeixinSendMessage({ text: 'hi', toUserId: 'wx1', contextToken: '' })).toThrow('missing context')
   })
 })
 
