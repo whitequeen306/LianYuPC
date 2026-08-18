@@ -69,6 +69,13 @@
           </div>
           <el-button text :icon="Promotion" @click="goQqBridge">前往配置</el-button>
         </div>
+        <div class="desktop-settings__row">
+          <div>
+            <div class="desktop-settings__label">微信 ClawBot</div>
+            <div class="desktop-settings__hint">用手机微信 ClawBot 与已绑定的恋语角色聊天</div>
+          </div>
+          <el-button text :icon="Promotion" @click="goWechatBridge">前往配置</el-button>
+        </div>
         <div v-if="desktopForm.showDesktopPet" class="desktop-settings__pet-block">
           <div class="desktop-settings__label">桌宠角色</div>
           <div class="desktop-settings__hint">选择关闭主窗口后在桌面显示的角色形象；带「语音」标记的支持截图问候与点击/拖跑常驻语音</div>
@@ -375,6 +382,7 @@ const desktopStore = useDesktopStore()
 const settingsStore = useSettingsStore()
 const router = useRouter()
 const goQqBridge = () => router.push('/app/qq-bridge')
+const goWechatBridge = () => router.push('/app/wechat-bridge')
 const goAbout = () => router.push('/app/about')
 const goBack = () => router.push('/app')
 const isElectron = isElectronApp()

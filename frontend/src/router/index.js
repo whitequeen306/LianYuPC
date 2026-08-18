@@ -18,6 +18,7 @@ const routes = [
   { path: '/profile', redirect: '/app/profile' },
   { path: '/settings', redirect: '/app/settings' },
   { path: '/qq-bridge', redirect: '/app/qq-bridge' },
+  { path: '/wechat-bridge', redirect: '/app/wechat-bridge' },
   { path: '/about', redirect: '/app/about' },
   {
     path: '/login',
@@ -144,6 +145,12 @@ const routes = [
         name: 'QqBridge',
         component: () => import('@/pages/QqBridgePage.vue'),
         meta: { titleKey: 'routes.qqBridge', hideDock: true }
+      },
+      {
+        path: 'wechat-bridge',
+        name: 'WechatBridge',
+        component: () => import('@/pages/WechatBridgePage.vue'),
+        meta: { titleKey: 'routes.wechatBridge', hideDock: true }
       },
       {
         path: 'about',

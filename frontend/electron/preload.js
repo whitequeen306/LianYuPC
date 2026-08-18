@@ -146,6 +146,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('desktop:qq-host-download', handler)
   },
   openQqLoginWindow: () => ipcRenderer.invoke('desktop:open-qq-login-window'),
+  getWechatBridgeSettings: () => ipcRenderer.invoke('desktop:get-wechat-bridge-settings'),
+  setWechatBridgeSettings: (partial) => ipcRenderer.invoke('desktop:set-wechat-bridge-settings', partial),
+  startWechatHost: () => ipcRenderer.invoke('desktop:start-wechat-host'),
+  stopWechatHost: () => ipcRenderer.invoke('desktop:stop-wechat-host'),
+  reinstallWechatHost: () => ipcRenderer.invoke('desktop:reinstall-wechat-host'),
+  openWechatLogin: () => ipcRenderer.invoke('desktop:open-wechat-login'),
+  getWechatHostStatus: () => ipcRenderer.invoke('desktop:get-wechat-host-status'),
+  onWechatHostStatus: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on('desktop:wechat-host-status', handler)
+    return () => ipcRenderer.removeListener('desktop:wechat-host-status', handler)
+  },
+  onWechatHostDownload: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on('desktop:wechat-host-download', handler)
+    return () => ipcRenderer.removeListener('desktop:wechat-host-download', handler)
+  },
   openImageViewer: (payload) => ipcRenderer.invoke('desktop:open-image-viewer', payload),
   capturePageRegion: (rect) => ipcRenderer.invoke('desktop:capture-page-region', rect),
   rendererLog: (level, tag, msg) => ipcRenderer.send('desktop:renderer-log', { level, tag, msg }),

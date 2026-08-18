@@ -68,6 +68,11 @@ import {
   isQqntReady,
 } from './napcatRuntime/napcatHost.js'
 import { wipeNapCatInstall } from './napcatRuntime/napcatRelease.js'
+import { createWechatBridgeCoordinator } from './wechatBridge/wechatBridgeCoordinator.js'
+import {
+  readWechatBridgeSettings,
+  writeWechatBridgeSettings,
+} from './wechatBridge/wechatBridgeSettings.js'
 import { createMcpHost, engineEnvFromCredentials } from './mcp/mcpHost.js'
 import { readMcpSettings, writeMcpSettings } from './mcp/mcpSettings.js'
 import {
@@ -568,6 +573,16 @@ const qqBridgeCoordinator = createQqBridgeCoordinator({
   logger,
 })
 
+const wechatBridgeCoordinator = createWechatBridgeCoordinator({
+  getWindows: () => [mainWindow, launcherWindow],
+  log: (...args) => log(args.join(' ')),
+  performApiRequest,
+  resolveApiOrigin,
+  resolveDesktopAuthToken,
+  getRuntimeSecrets,
+  isAllowedEgressUrl,
+})
+
 // ---- MCP 本地服务宿主（Agent 工具桥客户端侧） ----
 
 function broadcastToAppWindows(channel, payload) {
@@ -1062,6 +1077,9 @@ function ensureToastAppRegistration() {
 
 /** 角色主动消息：后台 + 桌宠不可见 → Windows 系统通知；桌宠可见 → 仅桌宠提示 */
 function handleProactiveMessageNotification(payload = {}) {
+  void wechatBridgeCoordinator.fanoutWechatProactive(payload || {}).catch((e) => {
+    log(`[wechatBridge] proactive fanout error: ${e?.message || e}`)
+  })
   if (!isMainWindowInBackground()) return
 
   if (isDesktopPetActivelyVisible()) {
@@ -2006,6 +2024,7 @@ function quitApplication(options = {}) {
   isQuitting = true
   stopQqBridge()
   stopNapCatHost()
+  void wechatBridgeCoordinator.stopHost({ persist: false })
   void mcpHost.stop()
   qqBridgeCoordinator.dispose()
   closeCharacterPicker()
@@ -2677,6 +2696,52 @@ function registerIpcHandlers() {
     return getQqBridgeStatus()
   })
 
+  ipcMain.handle('desktop:get-wechat-bridge-settings', (event) => {
+    if (!guardTrusted(event)) return null
+    return readWechatBridgeSettings()
+  })
+
+  ipcMain.handle('desktop:set-wechat-bridge-settings', (event, partial) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    const next = writeWechatBridgeSettings(partial || {})
+    return { ok: true, settings: next }
+  })
+
+  ipcMain.handle('desktop:start-wechat-host', async (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    try {
+      return await wechatBridgeCoordinator.startHost()
+    } catch (e) {
+      log(`[wechatHost] start failed: ${e?.message || e}`)
+      return { ok: false, reason: 'start_failed' }
+    }
+  })
+
+  ipcMain.handle('desktop:stop-wechat-host', async (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    return wechatBridgeCoordinator.stopHost()
+  })
+
+  ipcMain.handle('desktop:reinstall-wechat-host', async (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    try {
+      return await wechatBridgeCoordinator.reinstallHost()
+    } catch (e) {
+      log(`[wechatHost] reinstall failed: ${e?.message || e}`)
+      return { ok: false, reason: 'install_failed' }
+    }
+  })
+
+  ipcMain.handle('desktop:open-wechat-login', (event) => {
+    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
+    return wechatBridgeCoordinator.requestLogin()
+  })
+
+  ipcMain.handle('desktop:get-wechat-host-status', (event) => {
+    if (!guardTrusted(event)) return { state: 'stopped', running: false }
+    return wechatBridgeCoordinator.getStatus()
+  })
+
   // 按角色自动获取/绑定会话号：指定 characterId 时 find/create 该角色的 SINGLE 会话；
   // 不指定则按 ensureBridgeBinding 默认（首个 SINGLE/首个角色）。结果写回 binding 并返回。
   ipcMain.handle('desktop:qq-bridge-resolve-conversation', async (event, characterId) => {
@@ -3212,6 +3277,7 @@ app.whenReady().then(() => {
 
   void autoStartQqBridgeIfNeeded()
   void autoStartNapCatHostIfNeeded()
+  void wechatBridgeCoordinator.autoStartIfNeeded()
   void autoStartMcpHostIfNeeded()
 
   // 电源事件：唤醒后通知窗口切换检测

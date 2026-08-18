@@ -38,6 +38,7 @@ export default {
     profile: 'プロフィール',
     settings: '設定',
     qqBridge: 'QQ ブリッジ（beta）',
+    wechatBridge: 'WeChat ClawBot',
     about: 'について'
   },
   qqBridge: {
@@ -55,6 +56,62 @@ export default {
     download: { label: 'ダウンロード進捗', title: 'NapCat ランタイムをダウンロード中', hint: 'ダウンロード中はウィンドウを閉じないでください。完了すると自動的に続行します', cancel: 'ダウンロードをキャンセル', phase: { preparing: '準備中', downloading: 'ダウンロード中', extracting: '解凍中', done: '完了' } },
     state: { stopped: '停止', 'resolving-release': 'リリース解析中', downloading: 'ダウンロード中', extracting: '解凍中', 'writing-config': '設定書き込み中', launching: '起動中', running: '実行中', reconnecting: '再接続中', restarting: '再起動中', error: 'エラー', connecting: '接続中', connected: '接続済み', ready: '準備完了', disconnected: '切断済み' },
     reason: { not_auto_mode: '先に自動ホスティングを有効にしてください', not_consented: '先に QQ ホスティングの同意を完了してください', start_failed: '起動失敗、ネットワークを確認して再試行してください', reinstall_failed: '再インストール失敗、再試行するかネットワークを確認してください', not_running: 'ランタイムが準備されていません、先にホスティングを開始してください', no_conversation: '下の「メッセージルーティング」で会話を選択してください', not_logged_in: '先に恋語アカウントにログインしてください', disabled: 'ブリッジは無効です', qqnt_not_found: 'QQ デスクトップ版（QQNT）が検出されません。自動ホスティング前にインストールしてください：https://im.qq.com/index/', exception: '操作エラー、再試行してください', unknown: '操作に失敗しました、再試行してください' }
+  },
+  wechatBridge: {
+    desc: 'スマホの WeChat ClawBot から、紐付けた恋語キャラとチャットします。PC版 WeChat では入口が見えないことが多いので、スマホでスキャンしてください。本機に Node は入れず、OpenClaw 付属エージェントも起動しません。',
+    notElectron: 'WeChat ClawBot チャネルはデスクトップ版でのみ利用できます。',
+    consent: {
+      title: 'WeChat ClawBot を有効化',
+      body: 'アプリは恋語が梱包したローカルランタイムをダウンロードして起動します。自分の WeChat で ClawBot にログインしてください。資格情報はこの PC にのみ保存されます。返信は OpenClaw 付属エージェントではなく、紐付けた恋語会話からです。',
+      confirm: '了解して有効化',
+      cancel: 'キャンセル'
+    },
+    status: {
+      title: '実行状態',
+      hint: '起動後、スマホの WeChat で QR をスキャンしてください。入室ボイスは WeChat に送りません。'
+    },
+    host: {
+      start: 'インストールして起動',
+      stop: '停止',
+      login: 'スキャンしてログイン',
+      version: 'バージョン',
+      loggedIn: 'ログイン済み',
+      stateLabel: '状態',
+      scanHint: 'スマホの WeChat でスキャンしてください。PC版では ClawBot が見えないことが多いです。',
+      stopFailed: '停止に失敗しました。再試行してください',
+      loginFailed: 'ログインを開始できません。チャネルが起動しているか確認してください',
+      reinstall: '再インストール',
+      reinstallConfirm: 'チャネルを停止し、ローカルランタイムを削除して再ダウンロードします。ログイン資格情報は残します。続行しますか？'
+    },
+    binding: {
+      title: 'キャラクター紐付け',
+      character: '恋語キャラクター',
+      characterPlaceholder: 'キャラクターを選択',
+      characterHint: 'そのキャラの唯一の1対1会話が、WeChat ClawBot とテキストおよび送信画像で共有されます。',
+      provider: 'テキスト Provider',
+      providerPlaceholder: '設定済みのテキスト Provider を選択',
+      providerHint: '自分のテキストモデルを使う必要があります。プラットフォーム内蔵は使えません。',
+      providerRequired: '先に自分のテキスト Provider を選択してください',
+      model: 'テキストモデル',
+      modelPlaceholder: 'モデル名を選択または入力',
+      modelHint: '空ならその Provider の既定モデルを使います。',
+      save: '紐付けを保存',
+      saved: '紐付けを保存しました',
+      noCharacter: '先にキャラクターを選択してください'
+    },
+    download: {
+      phase: { downloading: 'ダウンロード中', extracting: '解凍中', done: '完了', error: '失敗' }
+    },
+    state: { stopped: '停止', starting: '起動中', running: '実行中', error: 'エラー' },
+    reason: {
+      not_logged_in: '先に恋語アカウントにログインしてください',
+      not_consented: '先に同意を完了してください',
+      no_character: '先にキャラクターを選択してください',
+      no_provider: '先に自分のテキストモデルを選択してください（プラットフォーム内蔵は不可）',
+      install_failed: 'ランタイムのダウンロードに失敗しました。ネットワークを確認して再試行してください',
+      start_failed: '起動に失敗しました。再試行してください',
+      unknown: '操作に失敗しました。再試行してください'
+    }
   },
   header: {
     notifications: '通知',

@@ -97,6 +97,8 @@ public class PublicFileController {
     }
 
     private static boolean isUpdateManifest(String objectKey) {
-        return "updates/latest.yml".equals(objectKey) || "updates/agent-latest.yml".equals(objectKey);
+        return "updates/latest.yml".equals(objectKey)
+                || "updates/agent-latest.yml".equals(objectKey)
+                || "updates/wechat-channel-latest.yml".equals(objectKey);
     }
 }

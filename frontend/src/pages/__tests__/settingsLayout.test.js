@@ -29,4 +29,13 @@ describe('SettingsPage layout', () => {
     expect(aboutIndex).toBeLessThan(diagnosticsIndex)
     expect(providerIndex).toBeLessThan(visionIndex)
   })
+
+  test('places WeChat ClawBot under the QQ bridge row', () => {
+    const source = readFileSync(settingsPagePath, 'utf8')
+    const qqIndex = source.indexOf('goQqBridge')
+    const wechatIndex = source.indexOf('goWechatBridge')
+    expect(qqIndex).toBeGreaterThan(-1)
+    expect(wechatIndex).toBeGreaterThan(qqIndex)
+    expect(source).toContain('微信 ClawBot')
+  })
 })

@@ -38,6 +38,7 @@ export default {
     profile: '个人资料',
     settings: '设置',
     qqBridge: 'QQ 桥接（beta）',
+    wechatBridge: '微信 ClawBot',
     about: '关于'
   },
   qqBridge: {
@@ -55,6 +56,62 @@ export default {
     download: { label: '下载进度', title: '下载 NapCat 运行时', hint: '下载中请勿关闭窗口，完成后将自动继续', cancel: '取消下载', phase: { preparing: '准备中', downloading: '下载中', extracting: '解压中', done: '完成' } },
     state: { stopped: '已停止', 'resolving-release': '解析发行中', downloading: '下载中', extracting: '解压中', 'writing-config': '写入配置中', launching: '启动中', running: '运行中', reconnecting: '重连中', restarting: '重启中', error: '错误', connecting: '连接中', connected: '已连接', ready: '已就绪', disconnected: '已断开' },
     reason: { not_auto_mode: '请先在上方开启自动托管', not_consented: '请先完成 QQ 托管授权', start_failed: '启动失败，请检查网络后重试', reinstall_failed: '重装失败，请重试或检查网络', not_running: '运行时未就绪，请先启动托管', no_conversation: '请先在下方「消息路由」选择会话', not_logged_in: '请先登录恋语账号', disabled: '桥接已被禁用', qqnt_not_found: '未检测到 QQ 桌面版（QQNT），请先安装后再启用自动托管：https://im.qq.com/index/', exception: '操作异常，请重试', unknown: '操作失败，请重试' }
+  },
+  wechatBridge: {
+    desc: '用手机微信里的 ClawBot 与已绑定的恋语角色聊天。电脑微信常常看不到入口，请用手机扫码。本机不安装 Node，也不运行 OpenClaw 自带大脑。',
+    notElectron: '微信 ClawBot 通道仅在桌面客户端可用。',
+    consent: {
+      title: '开启微信 ClawBot',
+      body: '应用会下载恋语打包的本机通道到本机并启动。请用自己的微信扫描 ClawBot 登录；凭证只保存在本机。回复来自你绑定的恋语角色会话，而不是 OpenClaw 自带 agent。',
+      confirm: '我已了解，开启',
+      cancel: '取消'
+    },
+    status: {
+      title: '运行状态',
+      hint: '启动后用手机微信扫描二维码。进房语音不会推到微信。'
+    },
+    host: {
+      start: '安装并启动',
+      stop: '停止',
+      login: '扫码登录',
+      version: '版本',
+      loggedIn: '已登录',
+      stateLabel: '状态',
+      scanHint: '请用手机微信扫描，电脑微信常常看不到 ClawBot',
+      stopFailed: '停止失败，请重试',
+      loginFailed: '发起扫码失败，请确认通道已启动',
+      reinstall: '重新安装',
+      reinstallConfirm: '将停止通道、删除本机运行时并重新下载。登录凭证会保留。确认继续？'
+    },
+    binding: {
+      title: '角色绑定',
+      character: '恋语角色',
+      characterPlaceholder: '选择角色',
+      characterHint: '该角色的唯一单聊会话会与微信 ClawBot 互通文字和你发的图片。',
+      provider: '文本 Provider',
+      providerPlaceholder: '请选择已配置的文本 Provider',
+      providerHint: '必须使用自己的文本模型，不能用平台内置。',
+      providerRequired: '请先选择自己的文本 Provider',
+      model: '文本模型',
+      modelPlaceholder: '选择或填写模型名',
+      modelHint: '留空则用该 Provider 的默认模型。',
+      save: '保存绑定',
+      saved: '绑定已保存',
+      noCharacter: '请先选择要绑定的角色'
+    },
+    download: {
+      phase: { downloading: '下载中', extracting: '解压中', done: '完成', error: '失败' }
+    },
+    state: { stopped: '已停止', starting: '启动中', running: '运行中', error: '错误' },
+    reason: {
+      not_logged_in: '请先登录恋语账号',
+      not_consented: '请先完成授权',
+      no_character: '请先选择要绑定的角色',
+      no_provider: '请先选择自己的文本模型（不能用平台内置）',
+      install_failed: '下载运行时失败，请检查网络后重试',
+      start_failed: '启动失败，请重试',
+      unknown: '操作失败，请重试'
+    }
   },
   header: {
     notifications: '通知',

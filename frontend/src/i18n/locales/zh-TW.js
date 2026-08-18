@@ -39,6 +39,7 @@ export default {
     profile: '個人資料',
     settings: '設定',
     qqBridge: 'QQ 橋接（beta）',
+    wechatBridge: '微信 ClawBot',
     about: '關於'
   },
   qqBridge: {
@@ -56,6 +57,62 @@ export default {
     download: { label: '下載進度', title: '下載 NapCat 執行環境', hint: '下載中請勿關閉視窗，完成後將自動繼續', cancel: '取消下載', phase: { preparing: '準備中', downloading: '下載中', extracting: '解壓中', done: '完成' } },
     state: { stopped: '已停止', 'resolving-release': '解析發行中', downloading: '下載中', extracting: '解壓中', 'writing-config': '寫入設定中', launching: '啟動中', running: '執行中', reconnecting: '重連中', restarting: '重啟中', error: '錯誤', connecting: '連線中', connected: '已連線', ready: '已就緒', disconnected: '已斷線' },
     reason: { not_auto_mode: '請先在上方開啟自動託管', not_consented: '請先完成 QQ 託管授權', start_failed: '啟動失敗，請檢查網路後重試', reinstall_failed: '重裝失敗，請重試或檢查網路', not_running: '執行環境未就緒，請先啟動託管', no_conversation: '請先在下方「訊息路由」選擇會話', not_logged_in: '請先登入戀語帳號', disabled: '橋接已被停用', qqnt_not_found: '未偵測到 QQ 桌面版（QQNT），請先安裝後再啟用自動託管：https://im.qq.com/index/', exception: '操作異常，請重試', unknown: '操作失敗，請重試' }
+  },
+  wechatBridge: {
+    desc: '用手機微信裡的 ClawBot 與已綁定的戀語角色聊天。電腦微信常常看不到入口，請用手機掃碼。本機不安裝 Node，也不執行 OpenClaw 自帶大腦。',
+    notElectron: '微信 ClawBot 通道僅在桌面用戶端可用。',
+    consent: {
+      title: '開啟微信 ClawBot',
+      body: '應用會下載戀語打包的本機通道到本機並啟動。請用自己的微信掃描 ClawBot 登入；憑證只保存在本機。回覆來自你綁定的戀語角色會話，而不是 OpenClaw 自帶 agent。',
+      confirm: '我已了解，開啟',
+      cancel: '取消'
+    },
+    status: {
+      title: '執行狀態',
+      hint: '啟動後用手機微信掃描二維碼。進房語音不會推到微信。'
+    },
+    host: {
+      start: '安裝並啟動',
+      stop: '停止',
+      login: '掃碼登入',
+      version: '版本',
+      loggedIn: '已登入',
+      stateLabel: '狀態',
+      scanHint: '請用手機微信掃描，電腦微信常常看不到 ClawBot',
+      stopFailed: '停止失敗，請重試',
+      loginFailed: '發起掃碼失敗，請確認通道已啟動',
+      reinstall: '重新安裝',
+      reinstallConfirm: '將停止通道、刪除本機執行環境並重新下載。登入憑證會保留。確認繼續？'
+    },
+    binding: {
+      title: '角色綁定',
+      character: '戀語角色',
+      characterPlaceholder: '選擇角色',
+      characterHint: '該角色的唯一單聊會話會與微信 ClawBot 互通文字和你發的圖片。',
+      provider: '文字 Provider',
+      providerPlaceholder: '請選擇已設定的文字 Provider',
+      providerHint: '必須使用自己的文字模型，不能用平台內建。',
+      providerRequired: '請先選擇自己的文字 Provider',
+      model: '文字模型',
+      modelPlaceholder: '選擇或填寫模型名',
+      modelHint: '留空則用該 Provider 的預設模型。',
+      save: '儲存綁定',
+      saved: '綁定已儲存',
+      noCharacter: '請先選擇要綁定的角色'
+    },
+    download: {
+      phase: { downloading: '下載中', extracting: '解壓中', done: '完成', error: '失敗' }
+    },
+    state: { stopped: '已停止', starting: '啟動中', running: '執行中', error: '錯誤' },
+    reason: {
+      not_logged_in: '請先登入戀語帳號',
+      not_consented: '請先完成授權',
+      no_character: '請先選擇要綁定的角色',
+      no_provider: '請先選擇自己的文字模型（不能用平台內建）',
+      install_failed: '下載執行環境失敗，請檢查網路後重試',
+      start_failed: '啟動失敗，請重試',
+      unknown: '操作失敗，請重試'
+    }
   },
   moments: {
     title: '朋友圈',

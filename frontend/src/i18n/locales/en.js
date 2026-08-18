@@ -38,6 +38,7 @@ export default {
     profile: 'Profile',
     settings: 'Settings',
     qqBridge: 'QQ Bridge (beta)',
+    wechatBridge: 'WeChat ClawBot',
     about: 'About'
   },
   qqBridge: {
@@ -55,6 +56,62 @@ export default {
     download: { label: 'Download progress', title: 'Downloading NapCat runtime', hint: 'Please keep this window open while downloading; it will continue automatically when done', cancel: 'Cancel download', phase: { preparing: 'Preparing', downloading: 'Downloading', extracting: 'Extracting', done: 'Done' } },
     state: { stopped: 'Stopped', 'resolving-release': 'Resolving release', downloading: 'Downloading', extracting: 'Extracting', 'writing-config': 'Writing config', launching: 'Launching', running: 'Running', reconnecting: 'Reconnecting', restarting: 'Restarting', error: 'Error', connecting: 'Connecting', connected: 'Connected', ready: 'Ready', disconnected: 'Disconnected' },
     reason: { not_auto_mode: 'Enable auto-hosting above first', not_consented: 'Complete QQ hosting consent first', start_failed: 'Start failed; please check your network and retry', reinstall_failed: 'Reinstall failed; please retry or check your network', not_running: 'Runtime not ready; please start hosting first', no_conversation: 'Please select a conversation in Message Routing below first', not_logged_in: 'Please log in to your LianYu account first', disabled: 'The bridge is disabled', qqnt_not_found: 'QQ desktop (QQNT) not detected. Please install it before enabling auto-hosting: https://im.qq.com/index/', exception: 'Operation error; please retry', unknown: 'Operation failed; please retry' }
+  },
+  wechatBridge: {
+    desc: 'Chat with your bound LianYu character from WeChat ClawBot on your phone. PC WeChat often has no entry; scan with your phone. This does not install Node or run the OpenClaw agent.',
+    notElectron: 'The WeChat ClawBot channel is only available in the desktop client.',
+    consent: {
+      title: 'Enable WeChat ClawBot',
+      body: 'The app will download LianYu’s local channel runtime and start it. Scan with your own WeChat to sign in to ClawBot. Credentials stay on this PC. Replies come from your bound LianYu chat, not the OpenClaw agent.',
+      confirm: 'I understand, enable',
+      cancel: 'Cancel'
+    },
+    status: {
+      title: 'Status',
+      hint: 'After start, scan the QR code with phone WeChat. App-open enter voice is not sent to WeChat.'
+    },
+    host: {
+      start: 'Install and start',
+      stop: 'Stop',
+      login: 'Scan to sign in',
+      version: 'Version',
+      loggedIn: 'Signed in',
+      stateLabel: 'State',
+      scanHint: 'Scan with phone WeChat. PC WeChat often cannot see ClawBot.',
+      stopFailed: 'Stop failed; please retry',
+      loginFailed: 'Could not start login; make sure the channel is running',
+      reinstall: 'Reinstall',
+      reinstallConfirm: 'This stops the channel, deletes the local runtime, and downloads it again. Login credentials are kept. Continue?'
+    },
+    binding: {
+      title: 'Character binding',
+      character: 'LianYu character',
+      characterPlaceholder: 'Choose a character',
+      characterHint: 'That character’s only single chat is shared with WeChat ClawBot for text and photos you send.',
+      provider: 'Text provider',
+      providerPlaceholder: 'Choose a configured text provider',
+      providerHint: 'You must use your own text model, not the platform built-in.',
+      providerRequired: 'Please choose your own text provider first',
+      model: 'Text model',
+      modelPlaceholder: 'Choose or type a model name',
+      modelHint: 'Leave empty to use the provider default.',
+      save: 'Save binding',
+      saved: 'Binding saved',
+      noCharacter: 'Please choose a character first'
+    },
+    download: {
+      phase: { downloading: 'Downloading', extracting: 'Extracting', done: 'Done', error: 'Failed' }
+    },
+    state: { stopped: 'Stopped', starting: 'Starting', running: 'Running', error: 'Error' },
+    reason: {
+      not_logged_in: 'Please log in to your LianYu account first',
+      not_consented: 'Please complete consent first',
+      no_character: 'Please choose a character first',
+      no_provider: 'Please choose your own text model (not the platform built-in)',
+      install_failed: 'Failed to download the runtime; check the network and retry',
+      start_failed: 'Start failed; please retry',
+      unknown: 'Operation failed; please retry'
+    }
   },
   header: {
     notifications: 'Notifications',
