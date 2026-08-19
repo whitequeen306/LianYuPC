@@ -6,14 +6,21 @@
  * Official endpoints (Tencent @tencent-weixin/openclaw-weixin README):
  *   GET  ilink/bot/get_bot_qrcode
  *   GET  ilink/bot/get_qrcode_status
- *   POST ilink/bot/getupdates | sendmessage | msg/notifystart | msg/notifystop
+ *   POST ilink/bot/getupdates | sendmessage | getconfig | sendtyping
+ *        | msg/notifystart | msg/notifystop
  */
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import readline from 'node:readline'
 import { fileURLToPath } from 'node:url'
-import { buildWeixinSendMessage } from './wechatProtocol.js'
+import {
+  buildWeixinSendMessage,
+  HOST_CMD,
+  TYPING_HARD_CAP_MS,
+  TYPING_KEEPALIVE_MS,
+  TYPING_TICKET_TTL_MS,
+} from './wechatProtocol.js'
 
 const DEFAULT_BASE = 'https://ilinkai.weixin.qq.com'
 const ILINK_APP_ID = 'bot'
@@ -192,6 +199,12 @@ function extractText(msg) {
 }
 
 const args = parseArgs(process.argv)
+const DEFAULT_POLL_TIMEOUT_MS = 35000
+const POLL_OK_GAP_MS = 50
+const POLL_ERR_GAP_MS = 1000
+const POLL_TIMEOUT_MIN_MS = 5000
+const POLL_TIMEOUT_MAX_MS = 120000
+
 let credPath = args.cred
 let statePath = args.state
 let baseUrl = args.base || DEFAULT_BASE
@@ -199,6 +212,13 @@ let token = ''
 let pollBuf = ''
 let running = true
 let polling = false
+let pollTimeoutMs = DEFAULT_POLL_TIMEOUT_MS
+const typingTickets = new Map()
+const typingSessions = new Map()
+
+function hostLog(message) {
+  process.stderr.write(`[weixin-host] ${message}\n`)
+}
 
 function loadCreds() {
   const cred = readJson(credPath)
@@ -251,8 +271,23 @@ async function doLogin() {
   throw new Error('login timeout')
 }
 
+function emitInbound(msg, text, image) {
+  if (!running) return
+  if (!text && !image) return
+  hostLog(`inbound text=${text ? 'yes' : 'no'} image=${image ? 'yes' : 'no'}`)
+  emit({
+    type: 'inbound',
+    text: text || '',
+    imageBase64: image?.base64 || '',
+    mime: image?.mime || '',
+    contextToken: msg.context_token || '',
+    fromUserId: msg.from_user_id || '',
+    toUserId: msg.to_user_id || '',
+  })
+}
+
 async function pollOnce() {
-  const timeout = 35000
+  const timeout = pollTimeoutMs
   try {
     const resp = await apiPost(
       baseUrl,
@@ -264,7 +299,11 @@ async function pollOnce() {
     if (resp.ret && resp.ret !== 0) {
       hostLog(`getupdates ret=${resp.ret}`)
       emit({ type: 'error', message: `getupdates ret=${resp.ret}` })
-      return
+      return 'error'
+    }
+    const suggested = Number(resp.longpolling_timeout_ms)
+    if (Number.isFinite(suggested) && suggested > 0) {
+      pollTimeoutMs = Math.min(POLL_TIMEOUT_MAX_MS, Math.max(POLL_TIMEOUT_MIN_MS, suggested))
     }
     if (typeof resp.get_updates_buf === 'string') {
       pollBuf = resp.get_updates_buf
@@ -274,25 +313,21 @@ async function pollOnce() {
     for (const msg of msgs) {
       if (msg.message_type !== 1) continue
       const text = extractText(msg)
-      let image = null
       const items = Array.isArray(msg.item_list) ? msg.item_list : []
       const imgItem = items.find((it) => it?.type === 2)
-      if (imgItem) image = await downloadImageItem(imgItem)
-      if (!text && !image) continue
-      hostLog(`inbound text=${text ? 'yes' : 'no'} image=${image ? 'yes' : 'no'}`)
-      emit({
-        type: 'inbound',
-        text,
-        imageBase64: image?.base64 || '',
-        mime: image?.mime || '',
-        contextToken: msg.context_token || '',
-        fromUserId: msg.from_user_id || '',
-        toUserId: msg.to_user_id || '',
-      })
+      if (!imgItem) {
+        emitInbound(msg, text, null)
+        continue
+      }
+      void downloadImageItem(imgItem)
+        .then((image) => emitInbound(msg, text, image))
+        .catch(() => emitInbound(msg, text, null))
     }
+    return 'ok'
   } catch (err) {
-    if (err?.name === 'AbortError') return
+    if (err?.name === 'AbortError') return 'ok'
     emit({ type: 'error', message: String(err?.message || err) })
+    return 'error'
   }
 }
 
@@ -311,8 +346,9 @@ async function startPoll() {
   emit({ type: 'status', phase: 'polling' })
   const loop = async () => {
     while (running) {
-      await pollOnce()
-      await new Promise((r) => setTimeout(r, 200))
+      const result = await pollOnce()
+      const gap = result === 'error' ? POLL_ERR_GAP_MS : POLL_OK_GAP_MS
+      await new Promise((r) => setTimeout(r, gap))
     }
   }
   loop()
@@ -320,8 +356,76 @@ async function startPoll() {
     .finally(() => { polling = false })
 }
 
-function hostLog(message) {
-  process.stderr.write(`[weixin-host] ${message}\n`)
+async function getTypingTicket(userId, contextToken) {
+  const cached = typingTickets.get(userId)
+  if (cached?.ticket && cached.expiry > Date.now()) return cached.ticket
+  const resp = await apiPost(baseUrl, 'ilink/bot/getconfig', {
+    ilink_user_id: userId,
+    context_token: contextToken || undefined,
+  }, token, 10000)
+  const ticket = typeof resp.typing_ticket === 'string' ? resp.typing_ticket : ''
+  if (!ticket || (resp.ret && resp.ret !== 0)) {
+    throw new Error(`getconfig ret=${resp.ret || 'empty'}`)
+  }
+  typingTickets.set(userId, { ticket, expiry: Date.now() + TYPING_TICKET_TTL_MS })
+  return ticket
+}
+
+async function sendTypingStatus(userId, contextToken, status) {
+  if (!token || !userId) return
+  const ticket = await getTypingTicket(userId, contextToken)
+  const resp = await apiPost(baseUrl, 'ilink/bot/sendtyping', {
+    ilink_user_id: userId,
+    typing_ticket: ticket,
+    status,
+  }, token, 10000)
+  if (resp.ret && resp.ret !== 0) {
+    throw new Error(`sendtyping ret=${resp.ret}`)
+  }
+}
+
+function clearTypingSession(userId) {
+  const session = typingSessions.get(userId)
+  if (!session) return
+  session.cancelled = true
+  if (session.interval) clearInterval(session.interval)
+  if (session.cap) clearTimeout(session.cap)
+  typingSessions.delete(userId)
+}
+
+async function startTyping(cmd) {
+  const userId = typeof cmd.toUserId === 'string' ? cmd.toUserId : ''
+  const contextToken = typeof cmd.contextToken === 'string' ? cmd.contextToken : ''
+  if (!userId) return
+  clearTypingSession(userId)
+  const session = { cancelled: false, interval: null, cap: null }
+  typingSessions.set(userId, session)
+  try {
+    await sendTypingStatus(userId, contextToken, 1)
+    if (session.cancelled) return
+    session.interval = setInterval(() => {
+      void sendTypingStatus(userId, contextToken, 1).catch((err) => {
+        hostLog(`typing keepalive failed: ${err?.message || err}`)
+      })
+    }, TYPING_KEEPALIVE_MS)
+    session.cap = setTimeout(() => {
+      void stopTyping({ toUserId: userId, contextToken })
+    }, TYPING_HARD_CAP_MS)
+  } catch (err) {
+    hostLog(`typing start failed: ${err?.message || err}`)
+    clearTypingSession(userId)
+  }
+}
+
+async function stopTyping(cmd) {
+  const userId = typeof cmd.toUserId === 'string' ? cmd.toUserId : ''
+  const contextToken = typeof cmd.contextToken === 'string' ? cmd.contextToken : ''
+  if (userId) clearTypingSession(userId)
+  try {
+    await sendTypingStatus(userId, contextToken, 2)
+  } catch (err) {
+    hostLog(`typing stop failed: ${err?.message || err}`)
+  }
 }
 
 async function sendText(cmd) {
@@ -338,6 +442,9 @@ async function sendText(cmd) {
 async function shutdown() {
   running = false
   polling = false
+  for (const userId of [...typingSessions.keys()]) {
+    clearTypingSession(userId)
+  }
   if (token) {
     try {
       await apiPost(baseUrl, 'ilink/bot/msg/notifystop', {}, token, 8000)
@@ -363,10 +470,16 @@ rl.on('line', (line) => {
       return
     }
     try {
-      if (cmd.type === 'login') await doLogin()
-      else if (cmd.type === 'start_poll') await startPoll()
-      else if (cmd.type === 'send_text') await sendText(cmd)
-      else if (cmd.type === 'stop') {
+      if (cmd.type === HOST_CMD.LOGIN || cmd.type === 'login') await doLogin()
+      else if (cmd.type === HOST_CMD.START_POLL || cmd.type === 'start_poll') await startPoll()
+      else if (cmd.type === HOST_CMD.SEND_TEXT || cmd.type === 'send_text') await sendText(cmd)
+      else if (cmd.type === HOST_CMD.TYPING_START || cmd.type === 'typing_start') {
+        void startTyping(cmd).catch((err) => hostLog(`typing_start: ${err?.message || err}`))
+      }
+      else if (cmd.type === HOST_CMD.TYPING_STOP || cmd.type === 'typing_stop') {
+        void stopTyping(cmd).catch((err) => hostLog(`typing_stop: ${err?.message || err}`))
+      }
+      else if (cmd.type === HOST_CMD.STOP || cmd.type === 'stop') {
         await shutdown()
         process.exit(0)
       }

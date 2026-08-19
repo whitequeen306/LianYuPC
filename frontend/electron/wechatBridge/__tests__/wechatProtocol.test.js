@@ -8,6 +8,9 @@ import {
   buildWeixinSendMessage,
   HOST_MSG,
   HOST_CMD,
+  TYPING_TICKET_TTL_MS,
+  TYPING_KEEPALIVE_MS,
+  TYPING_HARD_CAP_MS,
 } from '../wechatProtocol.js'
 
 describe('parseHostLine / encodeHostCommand', () => {
@@ -23,6 +26,14 @@ describe('parseHostLine / encodeHostCommand', () => {
       '{"type":"send_text","text":"ok"}\n',
     )
     expect(encodeHostCommand(null)).toBe('')
+  })
+
+  it('exports typing command names and keepalive constants', () => {
+    expect(HOST_CMD.TYPING_START).toBe('typing_start')
+    expect(HOST_CMD.TYPING_STOP).toBe('typing_stop')
+    expect(TYPING_TICKET_TTL_MS).toBe(20 * 3600 * 1000)
+    expect(TYPING_KEEPALIVE_MS).toBe(5000)
+    expect(TYPING_HARD_CAP_MS).toBe(180 * 1000)
   })
 })
 

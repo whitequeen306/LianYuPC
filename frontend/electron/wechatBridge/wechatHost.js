@@ -124,6 +124,14 @@ export function createWechatHost({ log = () => {}, onMessage = () => {} } = {}) 
     })
   }
 
+  function setTyping({ toUserId, contextToken, on }) {
+    return send({
+      type: on ? HOST_CMD.TYPING_START : HOST_CMD.TYPING_STOP,
+      toUserId,
+      contextToken,
+    })
+  }
+
   async function stop() {
     setState('stopped')
     if (!proc) return getStatus()
@@ -155,5 +163,5 @@ export function createWechatHost({ log = () => {}, onMessage = () => {} } = {}) 
     }
   }
 
-  return { start, stop, requestLogin, sendText, getStatus }
+  return { start, stop, requestLogin, sendText, setTyping, getStatus }
 }

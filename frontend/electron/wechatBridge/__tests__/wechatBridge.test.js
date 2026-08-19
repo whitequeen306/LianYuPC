@@ -31,6 +31,7 @@ import {
 function makeHost() {
   return {
     sendText: vi.fn(() => true),
+    setTyping: vi.fn(() => true),
     getStatus: vi.fn(() => ({ running: true, loggedIn: true, state: 'running' })),
   }
 }
@@ -130,6 +131,87 @@ describe('inbound turns', () => {
     })
     await vi.waitFor(() => expect(host.sendText).toHaveBeenCalled())
     expect(performApiRequest).not.toHaveBeenCalled()
+  })
+})
+
+describe('typing indicator', () => {
+  function inbound(text, token) {
+    return {
+      type: 'inbound',
+      text,
+      fromUserId: 'wx-user',
+      toUserId: 'bot',
+      contextToken: token,
+    }
+  }
+
+  it('turns typing on at enqueue and off after the turn', async () => {
+    const host = makeHost()
+    const performApiRequest = vi.fn(async ({ url }) => {
+      if (String(url).includes('/messages/stream')) {
+        return { status: 200, data: 'data: {"content":"你好"}\n\n' }
+      }
+      throw new Error(`unexpected ${url}`)
+    })
+    configureWechatBridge({
+      apiOrigin: 'https://api.lianyu.test',
+      authToken: 't',
+      performApiRequest,
+      host,
+      log: () => {},
+    })
+    handleWechatHostMessage(inbound('hello', 'ctx-1'))
+    expect(host.setTyping).toHaveBeenCalledWith({
+      toUserId: 'wx-user',
+      contextToken: 'ctx-1',
+      on: true,
+    })
+    await vi.waitFor(() => expect(host.setTyping).toHaveBeenCalledWith({
+      toUserId: 'wx-user',
+      contextToken: 'ctx-1',
+      on: false,
+    }))
+  })
+
+  it('turns typing off after a platform-provider early return', async () => {
+    state.settings.binding.provider = 'platform'
+    const host = makeHost()
+    configureWechatBridge({
+      apiOrigin: 'https://api.lianyu.test',
+      authToken: 't',
+      performApiRequest: vi.fn(),
+      host,
+      log: () => {},
+    })
+    handleWechatHostMessage(inbound('hello', 'ctx-3'))
+    await vi.waitFor(() => expect(host.setTyping).toHaveBeenCalledWith(expect.objectContaining({ on: false })))
+    expect(host.setTyping.mock.calls[0][0].on).toBe(true)
+  })
+
+  it('keeps typing on across two queued turns and offs once', async () => {
+    const host = makeHost()
+    const resolvers = []
+    const performApiRequest = vi.fn(() => new Promise((resolve) => {
+      resolvers.push(resolve)
+    }))
+    configureWechatBridge({
+      apiOrigin: 'https://api.lianyu.test',
+      authToken: 't',
+      performApiRequest,
+      host,
+      log: () => {},
+    })
+    handleWechatHostMessage(inbound('a', 'c1'))
+    handleWechatHostMessage(inbound('b', 'c2'))
+    expect(host.setTyping.mock.calls.filter(([arg]) => arg.on === true)).toHaveLength(1)
+    await vi.waitFor(() => expect(resolvers.length).toBe(1))
+    resolvers[0]({ status: 200, data: 'data: {"content":"one"}\n\n' })
+    await vi.waitFor(() => expect(resolvers.length).toBe(2))
+    expect(host.setTyping.mock.calls.filter(([arg]) => arg.on === false)).toHaveLength(0)
+    resolvers[1]({ status: 200, data: 'data: {"content":"two"}\n\n' })
+    await vi.waitFor(() => expect(host.sendText).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(host.setTyping.mock.calls.filter(([arg]) => arg.on === false)).toHaveLength(1))
+    expect(host.setTyping.mock.calls.filter(([arg]) => arg.on === true)).toHaveLength(1)
   })
 })
 

@@ -14,6 +14,7 @@ let session = {
 }
 let inflight = Promise.resolve()
 let lastPeer = { toUserId: '', contextToken: '' }
+let pendingTurns = 0
 
 export function configureWechatBridge(deps) {
   session = {
@@ -23,6 +24,7 @@ export function configureWechatBridge(deps) {
     host: deps.host || null,
     log: deps.log || (() => {}),
   }
+  pendingTurns = 0
 }
 
 export function getWechatLastPeer() {
@@ -36,6 +38,14 @@ export function rememberWechatPeer({ toUserId, contextToken }) {
 
 export function clearWechatPeer() {
   lastPeer = { toUserId: '', contextToken: '' }
+  pendingTurns = 0
+}
+
+function setTyping(on, inbound) {
+  const toUserId = inbound?.toUserId || lastPeer.toUserId
+  const contextToken = inbound?.contextToken || lastPeer.contextToken
+  if (!toUserId) return
+  session.host?.setTyping?.({ toUserId, contextToken, on })
 }
 
 function unwrap(res, path) {
@@ -171,8 +181,18 @@ export function handleWechatHostMessage(msg) {
     contextToken: inbound.contextToken,
   })
   const replyTo = inbound.fromUserId || inbound.toUserId
-  inflight = inflight.then(() => relayTurn({ ...inbound, toUserId: replyTo })).catch((e) => {
-    session.log(`[wechatBridge] turn failed: ${e?.message || e}`)
+  const turn = { ...inbound, toUserId: replyTo }
+  pendingTurns += 1
+  if (pendingTurns === 1) setTyping(true, turn)
+  inflight = inflight.then(async () => {
+    try {
+      await relayTurn(turn)
+    } catch (e) {
+      session.log(`[wechatBridge] turn failed: ${e?.message || e}`)
+    } finally {
+      pendingTurns = Math.max(0, pendingTurns - 1)
+      if (pendingTurns === 0) setTyping(false, turn)
+    }
   })
 }
 

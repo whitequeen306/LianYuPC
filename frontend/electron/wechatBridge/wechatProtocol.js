@@ -17,8 +17,14 @@ export const HOST_CMD = {
   LOGIN: 'login',
   START_POLL: 'start_poll',
   SEND_TEXT: 'send_text',
+  TYPING_START: 'typing_start',
+  TYPING_STOP: 'typing_stop',
   STOP: 'stop',
 }
+
+export const TYPING_TICKET_TTL_MS = 20 * 3600 * 1000
+export const TYPING_KEEPALIVE_MS = 5000
+export const TYPING_HARD_CAP_MS = 180 * 1000
 
 export function parseHostLine(line) {
   const raw = String(line || '').trim()
