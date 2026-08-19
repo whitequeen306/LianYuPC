@@ -43,6 +43,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -240,55 +241,59 @@ public class AiChatService {
                 try {
                     runWithChatToolScope(userId, request, () -> {
                         List<Message> messages = toSpringMessages(request.getMessages());
-                        Prompt prompt = buildPrompt(request, vault, messages);
-                        chatModel.stream(prompt)
-                                .retryWhen(reactor.util.retry.Retry.fixedDelay(1, Duration.ofMillis(300))
-                                        .filter(error -> contentBuffer.isEmpty()
-                                                && isTransientStreamFailure(error))
-                                        .doBeforeRetry(signal -> log.warn(
-                                                "AI chat stream transient connect failure, retrying once: {}",
-                                                signal.failure().toString())))
-                                .doOnNext(response -> {
-                                    try {
-                                        String text = extractStreamDelta(response);
-                                        if (text != null && !text.isEmpty()) {
-                                            contentBuffer.append(text);
-                                            sendSseChunk(emitter, text);
-                                        }
-                                    } catch (IOException e) {
-                                        log.error("SSE send error", e);
-                                    }
-                                })
-                                .doOnComplete(() -> {
-                                    try {
-                                        String finalContent = contentBuffer.toString();
-                                        String corrected = enforceExpectedLanguage(
-                                                userId,
-                                                request,
-                                                vault,
-                                                model,
-                                                chatModel,
-                                                finalContent,
-                                                () -> sendSseHeartbeat(emitter));
-                                        if (corrected != null
-                                                && !corrected.equals(finalContent)
-                                                && !corrected.isBlank()) {
-                                            sendSseReplace(emitter, corrected);
-                                            finishSseSuccess(emitter, corrected, callback);
-                                            return;
-                                        }
-                                        finishSseSuccess(emitter, finalContent, callback);
-                                    } catch (Exception e) {
-                                        log.error("SSE language correction failed", e);
-                                        finishSseSuccess(emitter, contentBuffer.toString(), callback);
-                                    }
-                                })
-                                .onErrorResume(e -> {
-                                    log.error("AI stream error", e);
-                                    finishSseError(emitter, resolveStreamErrorMessage(e), contentBuffer.toString(), callback);
-                                    return reactor.core.publisher.Mono.empty();
-                                })
-                                .blockLast();
+                        AtomicReference<Throwable> streamError = new AtomicReference<>();
+                        streamIntoBuffer(
+                                chatModel,
+                                buildPrompt(request, vault, messages, false),
+                                contentBuffer,
+                                emitter,
+                                streamError);
+                        if (streamError.get() != null) {
+                            finishSseError(emitter, resolveStreamErrorMessage(streamError.get()),
+                                    contentBuffer.toString(), callback);
+                            return;
+                        }
+                        if (isBlankAssistantContent(contentBuffer.toString())) {
+                            log.warn("AI chat stream empty content, retrying once with thinking disabled: userId={}, model={}",
+                                    userId, model);
+                            streamIntoBuffer(
+                                    chatModel,
+                                    buildPrompt(request, vault, messages, true),
+                                    contentBuffer,
+                                    emitter,
+                                    streamError);
+                            if (streamError.get() != null) {
+                                finishSseError(emitter, resolveStreamErrorMessage(streamError.get()),
+                                        contentBuffer.toString(), callback);
+                                return;
+                            }
+                            if (isBlankAssistantContent(contentBuffer.toString())) {
+                                log.warn("AI chat stream still empty after thinking-disabled retry: userId={}, model={}",
+                                        userId, model);
+                            }
+                        }
+                        try {
+                            String finalContent = contentBuffer.toString();
+                            String corrected = enforceExpectedLanguage(
+                                    userId,
+                                    request,
+                                    vault,
+                                    model,
+                                    chatModel,
+                                    finalContent,
+                                    () -> sendSseHeartbeat(emitter));
+                            if (corrected != null
+                                    && !corrected.equals(finalContent)
+                                    && !corrected.isBlank()) {
+                                sendSseReplace(emitter, corrected);
+                                finishSseSuccess(emitter, corrected, callback);
+                                return;
+                            }
+                            finishSseSuccess(emitter, finalContent, callback);
+                        } catch (Exception e) {
+                            log.error("SSE language correction failed", e);
+                            finishSseSuccess(emitter, contentBuffer.toString(), callback);
+                        }
                     });
                 } catch (Exception e) {
                     upstreamError = e;
@@ -1524,6 +1529,11 @@ public class AiChatService {
     }
 
     private Prompt buildPrompt(AiChatRequest request, VaultEntryResponse vault, List<Message> messages) {
+        return buildPrompt(request, vault, messages, false);
+    }
+
+    private Prompt buildPrompt(AiChatRequest request, VaultEntryResponse vault, List<Message> messages,
+                               boolean thinkingDisabled) {
         double temperature = request.getTemperature() != null ? request.getTemperature() : 0.8;
         String model = resolveModel(request, vault);
         List<ToolCallback> toolCallbacks = toolManager.resolveToolCallbacks(request);
@@ -1545,7 +1555,52 @@ public class AiChatService {
             builder.maxTokens(request.getMaxTokens());
         }
         applyToolCallbacks(builder, toolCallbacks);
+        if (thinkingDisabled) {
+            builder.extraBody(thinkingDisabledExtraBody());
+        }
         return new Prompt(messages, builder.build());
+    }
+
+    /** DeepSeek Chat Completions：thinking.type=disabled，extraBody 会摊到请求顶层。 */
+    static Map<String, Object> thinkingDisabledExtraBody() {
+        Map<String, Object> extra = new LinkedHashMap<>();
+        extra.put("thinking", Map.of("type", "disabled"));
+        return extra;
+    }
+
+    static boolean isBlankAssistantContent(String content) {
+        return content == null || content.isBlank();
+    }
+
+    private void streamIntoBuffer(ChatModel chatModel,
+                                  Prompt prompt,
+                                  StringBuilder contentBuffer,
+                                  SseEmitter emitter,
+                                  AtomicReference<Throwable> streamError) {
+        chatModel.stream(prompt)
+                .retryWhen(reactor.util.retry.Retry.fixedDelay(1, Duration.ofMillis(300))
+                        .filter(error -> contentBuffer.isEmpty()
+                                && isTransientStreamFailure(error))
+                        .doBeforeRetry(signal -> log.warn(
+                                "AI chat stream transient connect failure, retrying once: {}",
+                                signal.failure().toString())))
+                .doOnNext(response -> {
+                    try {
+                        String text = extractStreamDelta(response);
+                        if (text != null && !text.isEmpty()) {
+                            contentBuffer.append(text);
+                            sendSseChunk(emitter, text);
+                        }
+                    } catch (IOException e) {
+                        log.error("SSE send error", e);
+                    }
+                })
+                .onErrorResume(e -> {
+                    log.error("AI stream error", e);
+                    streamError.set(e);
+                    return reactor.core.publisher.Mono.empty();
+                })
+                .blockLast();
     }
 
     private static void applyToolCallbacks(OllamaChatOptions.Builder builder, List<ToolCallback> toolCallbacks) {
