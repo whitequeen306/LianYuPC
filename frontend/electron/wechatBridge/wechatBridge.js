@@ -2,7 +2,12 @@
  * WeChat inbound turns → LianYu conversation; outbound text back to ClawBot.
  */
 import { extractInboundPayload, pickLatestAssistant, shouldSkipWechatProactive } from './wechatProtocol.js'
-import { readWechatBridgeSettings } from './wechatBridgeSettings.js'
+import {
+  clearWechatLastPeer,
+  readWechatBridgeSettings,
+  readWechatLastPeer,
+  writeWechatLastPeer,
+} from './wechatBridgeSettings.js'
 
 const INPUT_IMAGE_MAX_BYTES = 5 * 1024 * 1024
 let session = {
@@ -16,6 +21,13 @@ let inflight = Promise.resolve()
 let lastPeer = { toUserId: '', contextToken: '' }
 let pendingTurns = 0
 
+function hydrateLastPeer() {
+  if (lastPeer.contextToken && lastPeer.toUserId) return
+  const saved = readWechatLastPeer()
+  if (saved.toUserId) lastPeer.toUserId = saved.toUserId
+  if (saved.contextToken) lastPeer.contextToken = saved.contextToken
+}
+
 export function configureWechatBridge(deps) {
   session = {
     apiOrigin: deps.apiOrigin || '',
@@ -25,6 +37,7 @@ export function configureWechatBridge(deps) {
     log: deps.log || (() => {}),
   }
   pendingTurns = 0
+  hydrateLastPeer()
 }
 
 export function getWechatLastPeer() {
@@ -34,11 +47,13 @@ export function getWechatLastPeer() {
 export function rememberWechatPeer({ toUserId, contextToken }) {
   if (toUserId) lastPeer.toUserId = toUserId
   if (contextToken) lastPeer.contextToken = contextToken
+  if (lastPeer.toUserId && lastPeer.contextToken) writeWechatLastPeer(lastPeer)
 }
 
-export function clearWechatPeer() {
+export function clearWechatPeer({ persist = true } = {}) {
   lastPeer = { toUserId: '', contextToken: '' }
   pendingTurns = 0
+  if (persist) clearWechatLastPeer()
 }
 
 function setTyping(on, inbound) {
@@ -196,15 +211,23 @@ export function handleWechatHostMessage(msg) {
   })
 }
 
+function skipProactive(reason, extra = '') {
+  session.log(`[wechatBridge] proactive skip: ${reason}${extra}`)
+  return { ok: false, reason }
+}
+
 export async function fanoutWechatProactive(payload = {}) {
   try {
+    hydrateLastPeer()
     const settings = readWechatBridgeSettings()
     const boundId = String(settings.binding?.conversationId || '')
     const incomingId = payload?.conversationId != null ? String(payload.conversationId) : ''
-    if (!boundId || !incomingId || boundId !== incomingId) return { ok: false, reason: 'conversation_mismatch' }
-    if (!session.host?.getStatus?.().running) return { ok: false, reason: 'host_stopped' }
-    if (!lastPeer.contextToken || !lastPeer.toUserId) return { ok: false, reason: 'no_context_token' }
-    if (!session.performApiRequest || !session.apiOrigin) return { ok: false, reason: 'no_api' }
+    if (!boundId || !incomingId || boundId !== incomingId) {
+      return skipProactive('conversation_mismatch', ` bound=${boundId || '-'} incoming=${incomingId || '-'}`)
+    }
+    if (!session.host?.getStatus?.().running) return skipProactive('host_stopped')
+    if (!lastPeer.contextToken || !lastPeer.toUserId) return skipProactive('no_context_token')
+    if (!session.performApiRequest || !session.apiOrigin) return skipProactive('no_api')
 
     const res = await session.performApiRequest({
       method: 'GET',
@@ -216,14 +239,15 @@ export async function fanoutWechatProactive(payload = {}) {
     const data = unwrap(res, '/messages')
     const records = data?.records || data || []
     const latest = pickLatestAssistant(records)
-    if (shouldSkipWechatProactive(latest)) return { ok: false, reason: 'enter_voice' }
+    if (shouldSkipWechatProactive(latest)) return skipProactive('enter_voice')
     const text = String(latest?.content || payload.preview || '').trim()
-    if (!text) return { ok: false, reason: 'empty' }
+    if (!text) return skipProactive('empty')
     session.host.sendText({
       toUserId: lastPeer.toUserId,
       contextToken: lastPeer.contextToken,
       text,
     })
+    session.log('[wechatBridge] proactive sent')
     return { ok: true }
   } catch (e) {
     session.log(`[wechatBridge] proactive fanout failed: ${e?.message || e}`)

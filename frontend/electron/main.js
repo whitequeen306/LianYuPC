@@ -1077,7 +1077,9 @@ function ensureToastAppRegistration() {
 
 /** 角色主动消息：后台 + 桌宠不可见 → Windows 系统通知；桌宠可见 → 仅桌宠提示 */
 function handleProactiveMessageNotification(payload = {}) {
-  void wechatBridgeCoordinator.fanoutWechatProactive(payload || {}).catch((e) => {
+  void wechatBridgeCoordinator.fanoutWechatProactive(payload || {}).then((result) => {
+    if (!result?.ok) log(`[wechatBridge] proactive skip: ${result?.reason || 'unknown'}`)
+  }).catch((e) => {
     log(`[wechatBridge] proactive fanout error: ${e?.message || e}`)
   })
   if (!isMainWindowInBackground()) return

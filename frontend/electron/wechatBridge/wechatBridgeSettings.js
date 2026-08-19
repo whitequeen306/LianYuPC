@@ -27,6 +27,41 @@ function settingsPath() {
   return path.join(app.getPath('userData'), 'wechat-bridge-settings.json')
 }
 
+function lastPeerPath() {
+  return path.join(app.getPath('userData'), 'wechat-last-peer.json')
+}
+
+export function normalizeWechatLastPeer(raw) {
+  const toUserId = String(raw?.toUserId || '').trim().slice(0, 128)
+  const contextToken = String(raw?.contextToken || '').trim().slice(0, 4096)
+  return { toUserId, contextToken }
+}
+
+export function readWechatLastPeer() {
+  try {
+    const raw = fs.readFileSync(lastPeerPath(), 'utf8')
+    return normalizeWechatLastPeer(JSON.parse(raw))
+  } catch {
+    return normalizeWechatLastPeer({})
+  }
+}
+
+export function writeWechatLastPeer(peer) {
+  const next = normalizeWechatLastPeer(peer)
+  const dest = lastPeerPath()
+  fs.mkdirSync(path.dirname(dest), { recursive: true })
+  if (!next.toUserId || !next.contextToken) {
+    try { fs.unlinkSync(dest) } catch { /* missing is fine */ }
+    return next
+  }
+  fs.writeFileSync(dest, JSON.stringify(next, null, 2))
+  return next
+}
+
+export function clearWechatLastPeer() {
+  return writeWechatLastPeer({})
+}
+
 export function normalizeWechatBridgeSettings(settings) {
   const raw = settings || {}
   const binding = { ...DEFAULTS.binding, ...(raw.binding || {}) }

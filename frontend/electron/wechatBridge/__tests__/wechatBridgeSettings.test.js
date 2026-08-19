@@ -10,6 +10,9 @@ import {
   normalizeWechatBridgeSettings,
   readWechatBridgeSettings,
   writeWechatBridgeSettings,
+  writeWechatLastPeer,
+  readWechatLastPeer,
+  clearWechatLastPeer,
 } from '../wechatBridgeSettings.js'
 
 let tmp
@@ -61,5 +64,18 @@ describe('read/write wechat-bridge-settings.json', () => {
     expect(disk.hosting.consented).toBe(true)
     expect(JSON.stringify(disk)).not.toMatch(/sk-|token|secret/i)
     expect(readWechatBridgeSettings().binding.provider).toBe('openai')
+  })
+
+  it('persists last WeChat peer outside settings.json', () => {
+    writeWechatBridgeSettings({ binding: { characterId: '9', provider: 'openai' } })
+    writeWechatLastPeer({ toUserId: 'wx-user', contextToken: 'ctx-abc' })
+    expect(readWechatLastPeer()).toEqual({ toUserId: 'wx-user', contextToken: 'ctx-abc' })
+    const settingsDisk = JSON.parse(fs.readFileSync(path.join(tmp, 'wechat-bridge-settings.json'), 'utf8'))
+    expect(JSON.stringify(settingsDisk)).not.toMatch(/ctx-abc|token/i)
+    const peerDisk = JSON.parse(fs.readFileSync(path.join(tmp, 'wechat-last-peer.json'), 'utf8'))
+    expect(peerDisk).toEqual({ toUserId: 'wx-user', contextToken: 'ctx-abc' })
+    clearWechatLastPeer()
+    expect(readWechatLastPeer()).toEqual({ toUserId: '', contextToken: '' })
+    expect(fs.existsSync(path.join(tmp, 'wechat-last-peer.json'))).toBe(false)
   })
 })

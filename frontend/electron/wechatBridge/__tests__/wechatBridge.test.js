@@ -18,6 +18,16 @@ vi.mock('electron', () => ({
 
 vi.mock('../wechatBridgeSettings.js', () => ({
   readWechatBridgeSettings: () => state.settings,
+  readWechatLastPeer: () => state.peer || { toUserId: '', contextToken: '' },
+  writeWechatLastPeer: (peer) => {
+    state.peer = {
+      toUserId: peer?.toUserId || '',
+      contextToken: peer?.contextToken || '',
+    }
+  },
+  clearWechatLastPeer: () => {
+    state.peer = { toUserId: '', contextToken: '' }
+  },
 }))
 
 import {
@@ -43,6 +53,7 @@ beforeEach(() => {
     reply: { fallbackText: '稍后再试', timeoutMs: 120000 },
     hosting: { consented: true, version: '' },
   }
+  state.peer = { toUserId: '', contextToken: '' }
   clearWechatPeer()
 })
 
@@ -283,6 +294,34 @@ describe('proactive fanout', () => {
     const result = await fanoutWechatProactive({ conversationId: '42', preview: '回来啦' })
     expect(result.reason).toBe('enter_voice')
     expect(host.sendText).not.toHaveBeenCalled()
+  })
+
+  it('hydrates lastPeer from disk after a process-like memory reset', async () => {
+    const host = makeHost()
+    const performApiRequest = vi.fn(async () => ({
+      status: 200,
+      data: JSON.stringify({
+        code: 200,
+        data: { records: [{ role: 'ASSISTANT', seq: 3, content: '还在吗' }] },
+      }),
+    }))
+    rememberWechatPeer({ toUserId: 'wx-user', contextToken: 'ctx-live' })
+    expect(state.peer.contextToken).toBe('ctx-live')
+    clearWechatPeer({ persist: false })
+    configureWechatBridge({
+      apiOrigin: 'https://api.lianyu.test',
+      authToken: 't',
+      performApiRequest,
+      host,
+      log: () => {},
+    })
+    const result = await fanoutWechatProactive({ conversationId: '42', preview: 'ignored' })
+    expect(result).toEqual({ ok: true })
+    expect(host.sendText).toHaveBeenCalledWith({
+      toUserId: 'wx-user',
+      contextToken: 'ctx-live',
+      text: '还在吗',
+    })
   })
 
   it('does not send when conversation ids do not match', async () => {

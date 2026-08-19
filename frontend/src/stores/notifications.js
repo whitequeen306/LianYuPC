@@ -314,6 +314,9 @@ export const useNotificationsStore = defineStore('notifications', () => {
     if (!data) return
     const convId = data.conversationId != null ? Number(data.conversationId) : null
     const type = data.type || ''
+    // WeChat fanout / OS toast must run even if the in-app toast is suppressed
+    // (user is already looking at this chat). Main process still gates OS toast.
+    notifyProactiveDesktopIfNeeded(data)
 
     // 社区通知：postId 复用 conversationId 字段，不能走单聊会话匹配
     if (COMMUNITY_NOTIFY_TYPES.has(type)) {
@@ -361,9 +364,6 @@ export const useNotificationsStore = defineStore('notifications', () => {
       })
       playSound()
     }
-
-    // Desktop/OS toast only when main window is backgrounded (gated in main process).
-    notifyProactiveDesktopIfNeeded(data)
   }
 
   function extractCharacterName(title) {
