@@ -1,29 +1,23 @@
 /**
  * 电脑操控指示条：屏幕最顶端 always-on-top 窗口，展示角色头像 + 文案，Esc 取消。
  *
- * 视觉令牌来自 DESIGN.md 的 toast（与应用主题互为反相，保证压在任意壁纸上可读）。
+ * 视觉令牌来自 DESIGN.md：primary（#f4a6b5）+ on-primary-light（#ffffff）。
  * 窗口 click-through + showInactive，避免抢走正在被操控的前台焦点。
  */
 
 export const BANNER_HEIGHT = 44
 export const BANNER_SHOW_DELAY_MS = 120
 
-const TOAST_DARK_APP = {
-  bg: 'rgba(247, 247, 249, 0.96)',
-  text: '#1a1a1e',
-  muted: '#8a8a96',
-  avatarBg: '#e0e0e3',
-  avatarText: '#1a1a1e',
-  border: 'rgba(26, 26, 30, 0.1)',
-}
-
-const TOAST_LIGHT_APP = {
-  bg: 'rgba(26, 18, 22, 0.94)',
-  text: '#f5e6eb',
-  muted: '#8a727c',
-  avatarBg: '#35282e',
-  avatarText: '#f5e6eb',
-  border: 'rgba(245, 230, 235, 0.14)',
+/** DESIGN.md primary + on-primary-light；独立窗口无法继承应用 CSS 变量，这里内联同一套令牌。 */
+const BANNER_TOKENS = {
+  bg: '#f4a6b5',
+  text: '#ffffff',
+  muted: 'rgba(255, 255, 255, 0.86)',
+  avatarBg: 'rgba(255, 255, 255, 0.28)',
+  avatarText: '#ffffff',
+  border: 'rgba(255, 255, 255, 0.32)',
+  kbdBg: 'rgba(255, 255, 255, 0.22)',
+  kbdText: '#ffffff',
 }
 
 export function escapeHtml(value) {
@@ -58,7 +52,7 @@ export function sanitizeActor(raw) {
 
 export function buildBannerHtml(actorInput) {
   const actor = sanitizeActor(actorInput)
-  const tokens = actor.theme === 'light' ? TOAST_LIGHT_APP : TOAST_DARK_APP
+  const tokens = BANNER_TOKENS
   const initial = escapeHtml(actor.name.slice(0, 1) || '·')
   const caption = escapeHtml(actor.caption).replace(/\bEsc\b/g, '<kbd>Esc</kbd>')
   const avatar = actor.avatarUrl
@@ -73,12 +67,14 @@ export function buildBannerHtml(actorInput) {
 <style>
   :root {
     --ly-accent: #f4a6b5;
-    --ly-toast-bg: ${tokens.bg};
-    --ly-toast-text: ${tokens.text};
-    --ly-toast-muted: ${tokens.muted};
-    --ly-toast-avatar-bg: ${tokens.avatarBg};
-    --ly-toast-avatar-text: ${tokens.avatarText};
-    --ly-toast-border: ${tokens.border};
+    --ly-banner-bg: ${tokens.bg};
+    --ly-banner-text: ${tokens.text};
+    --ly-banner-muted: ${tokens.muted};
+    --ly-banner-avatar-bg: ${tokens.avatarBg};
+    --ly-banner-avatar-text: ${tokens.avatarText};
+    --ly-banner-border: ${tokens.border};
+    --ly-banner-kbd-bg: ${tokens.kbdBg};
+    --ly-banner-kbd-text: ${tokens.kbdText};
     --ly-radius-full: 9999px;
     --ly-ease: cubic-bezier(0.23, 1, 0.32, 1);
   }
@@ -96,8 +92,8 @@ export function buildBannerHtml(actorInput) {
     align-items: center;
     justify-content: center;
     height: 100%;
-    background: var(--ly-toast-bg);
-    border-bottom: 1px solid var(--ly-toast-border);
+    background: var(--ly-banner-bg);
+    border-bottom: 1px solid var(--ly-banner-border);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     animation: ly-drop 0.24s var(--ly-ease);
@@ -108,7 +104,7 @@ export function buildBannerHtml(actorInput) {
     gap: 0.5rem;
     max-width: min(720px, calc(100vw - 2rem));
     padding: 0 1rem;
-    color: var(--ly-toast-text);
+    color: var(--ly-banner-text);
     font-size: 0.875rem;
     line-height: 1.5;
     font-weight: 500;
@@ -119,8 +115,8 @@ export function buildBannerHtml(actorInput) {
     height: 28px;
     border-radius: var(--ly-radius-full);
     overflow: hidden;
-    background: var(--ly-toast-avatar-bg);
-    color: var(--ly-toast-avatar-text);
+    background: var(--ly-banner-avatar-bg);
+    color: var(--ly-banner-avatar-text);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -133,8 +129,9 @@ export function buildBannerHtml(actorInput) {
     margin: 0 0.15em;
     padding: 0 0.4em;
     border-radius: 8px;
-    border: 1px solid var(--ly-toast-border);
-    color: var(--ly-accent);
+    border: 1px solid var(--ly-banner-border);
+    background: var(--ly-banner-kbd-bg);
+    color: var(--ly-banner-kbd-text);
     font-family: inherit;
     font-size: 0.75rem;
     font-weight: 600;

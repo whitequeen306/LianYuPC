@@ -79,7 +79,7 @@ public class ToolManager {
         }
         for (AgentBridgeService.ClientTool tool : clientTools) {
             if (taken.add(tool.name())) {
-                callbacks.add(new ClientBridgeToolCallback(agentBridgeService, scope.userId(), tool));
+                callbacks.add(new ClientBridgeToolCallback(agentBridgeService, scope.userId(), tool, scope));
             }
         }
     }

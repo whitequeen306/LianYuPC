@@ -369,7 +369,7 @@ import { PLATFORM_PROVIDER } from '@/constants/ai'
 import { normalizeHex } from '@/utils/themeColor'
 import EmotionBadge from '@/components/EmotionBadge.vue'
 import { getCharacterState } from '@/api/characterState'
-import { setActiveChatConversationId, setActiveChatRefreshHandler } from '@/composables/useActiveChatContext'
+import { setActiveChatConversationId, setActiveChatRefreshHandler, setActiveChatActor } from '@/composables/useActiveChatContext'
 import {
   splitAssistantReply,
   resolveMaxRepliesPerTurn
@@ -585,6 +585,7 @@ function openImagePreview(imageUrl) {
 const currentConvId = ref(null)
 const activeCharacter = ref(null)
 const activeCharacterAvatarTier = ref('thumb')
+watch(activeCharacter, (char) => setActiveChatActor(char), { immediate: true })
 const emotionState = ref(null)
 const msgListRef = ref(null)
 const scrollAnchor = ref(null)
@@ -914,6 +915,7 @@ onUnmounted(() => {
   burstTimers.forEach((id) => clearTimeout(id))
   burstTimers.length = 0
   setActiveChatConversationId(null)
+  setActiveChatActor(null)
   setActiveChatRefreshHandler(null)
   stopConversationPolling()
   void stopVoiceDuplex()

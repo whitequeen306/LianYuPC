@@ -25,6 +25,10 @@ vi.mock('@/stores/settings', () => ({
   useSettingsStore: () => ({ theme: 'dark' }),
 }))
 
+vi.mock('@/composables/useActiveChatContext', () => ({
+  activeChatActor: { value: null },
+}))
+
 const registerAgentTools = vi.fn(async () => ({}))
 const agentBridgeHeartbeat = vi.fn(async () => ({ registered: true }))
 const unregisterAgentBridge = vi.fn(async () => ({}))

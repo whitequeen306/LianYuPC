@@ -35,6 +35,31 @@ describe('resolveMcpControlActor', () => {
     expect(actor.theme).toBe('dark')
   })
 
+  it('fills name and avatar from the current chat character', () => {
+    const actor = resolveMcpControlActor(
+      { type: 'tool_call' },
+      {
+        characters: [],
+        currentCharacter: { id: 12, name: '爱莉希雅', avatarUrl: '/eli.png' },
+      },
+    )
+    expect(actor.name).toBe('爱莉希雅')
+    expect(actor.avatarUrl).toBe('resolved:/eli.png')
+    expect(actor.caption).toContain('爱莉希雅正在操控你的电脑')
+  })
+
+  it('does not use an unrelated current character when STOMP has another id', () => {
+    const actor = resolveMcpControlActor(
+      { characterId: 1 },
+      {
+        characters: [],
+        currentCharacter: { id: 99, name: '别人', avatarUrl: '/x.png' },
+      },
+    )
+    expect(actor.name).toBe('角色')
+    expect(actor.avatarUrl).toBe('')
+  })
+
   it('fills name and avatar from the local character list', () => {
     const actor = resolveMcpControlActor(
       { characterId: '9' },

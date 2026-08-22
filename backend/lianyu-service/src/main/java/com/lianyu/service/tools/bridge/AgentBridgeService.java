@@ -153,6 +153,19 @@ public class AgentBridgeService {
      * 仅可在模型调用线程（无事务）中执行；超时/离线返回错误文案。
      */
     public String dispatch(Long userId, String toolName, String argumentsJson) {
+        ChatToolContext.Scope scope = ChatToolContext.current();
+        return dispatch(userId, toolName, argumentsJson,
+                scope != null ? scope.characterId() : null,
+                scope != null ? scope.characterName() : null,
+                scope != null ? scope.characterAvatarUrl() : null);
+    }
+
+    /**
+     * 派发工具调用。角色信息必须由调用方在创建 callback 时快照传入：
+     * Spring AI 流式工具执行会换到 Reactor 线程，{@link ChatToolContext} ThreadLocal 到不了这里。
+     */
+    public String dispatch(Long userId, String toolName, String argumentsJson,
+                           Long characterId, String characterName, String characterAvatarUrl) {
         BridgeSession session = sessions.get(userId);
         if (session == null || !session.alive()) {
             return "（本地助手当前不在线，无法执行 " + toolName + "）";
@@ -166,10 +179,6 @@ public class AgentBridgeService {
         CompletableFuture<String> future = new CompletableFuture<>();
         pendingCalls.put(requestId, new PendingCall(userId, future));
         try {
-            ChatToolContext.Scope scope = ChatToolContext.current();
-            Long characterId = scope != null ? scope.characterId() : null;
-            String characterName = scope != null ? scope.characterName() : null;
-            String characterAvatarUrl = scope != null ? scope.characterAvatarUrl() : null;
             messagingTemplate.convertAndSendToUser(userId.toString(), QUEUE_DESTINATION,
                     new ToolCallPush("tool_call", requestId, toolName,
                             argumentsJson == null ? "{}" : argumentsJson,

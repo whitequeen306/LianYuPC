@@ -98,6 +98,7 @@ import { useProvidersStore } from '@/stores/providers'
 import { ElMessage } from 'element-plus'
 import { humanizeError } from '@/utils/errorMessage'
 import CharacterAvatarImg from '@/components/CharacterAvatarImg.vue'
+import { setActiveChatActor } from '@/composables/useActiveChatContext'
 import { getElectronAPI } from '@/utils/electron'
 import { useChatScroll, sleep, MIN_REPLY_DISPLAY_MS } from '@/composables/useChatScroll'
 import { useStreamAbort, isNetworkError } from '@/composables/useStreamAbort'
@@ -127,6 +128,7 @@ const waitingReply = ref(false)
 const inputText = ref('')
 const messages = ref([])
 const activeCharacter = ref(null)
+watch(activeCharacter, (char) => setActiveChatActor(char), { immediate: true })
 const currentConvId = ref(null)
 const msgListRef = ref(null)
 const scrollAnchor = ref(null)
@@ -392,6 +394,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   isUnmounted = true
+  setActiveChatActor(null)
   stopPolling()
   clearTimeout(errorTimer)
 })

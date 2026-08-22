@@ -189,4 +189,26 @@ class AgentBridgeServiceTest {
         // 消息通道为 mock 且无人回传 → 超时文案，证明 call 走的是 dispatch
         assertThat(callback.call("{}")).contains("超时");
     }
+
+    @Test
+    void clientBridgeToolCallbackKeepsActorAfterContextCleared() {
+        ChatToolContext.set(7L, 620L, null, null, "琉璃", "/api/public/files/avatars/x.png");
+        service.register(7L, requestWith("computer_task"));
+        AgentBridgeService.ClientTool tool = service.availableTools(7L).get(0);
+        ClientBridgeToolCallback callback = new ClientBridgeToolCallback(service, 7L, tool);
+        ChatToolContext.clear();
+
+        AtomicReference<AgentBridgeService.ToolCallPush> pushRef = new AtomicReference<>();
+        doAnswer(invocation -> {
+            AgentBridgeService.ToolCallPush push = invocation.getArgument(2);
+            pushRef.set(push);
+            service.completeResult(7L, push.requestId(), true, "ok", null);
+            return null;
+        }).when(messagingTemplate).convertAndSendToUser(anyString(), anyString(), any());
+
+        assertThat(callback.call("{}")).isEqualTo("ok");
+        assertThat(pushRef.get().characterId()).isEqualTo(620L);
+        assertThat(pushRef.get().characterName()).isEqualTo("琉璃");
+        assertThat(pushRef.get().characterAvatarUrl()).isEqualTo("/api/public/files/avatars/x.png");
+    }
 }

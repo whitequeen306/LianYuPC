@@ -20,10 +20,12 @@ describe('mcpControlBanner html', () => {
     expect(html).not.toContain('javascript:')
     expect(html).toContain('&lt;script&gt;')
     expect(html).toContain('<kbd>Esc</kbd>')
-    expect(html).toContain('--ly-toast-bg')
+    expect(html).toContain('--ly-banner-bg')
+    expect(html).toContain('#f4a6b5')
+    expect(html).toContain('#ffffff')
   })
 
-  it('renders a safe http avatar and light-theme toast tokens', () => {
+  it('renders a safe http avatar on the pink banner', () => {
     const html = buildBannerHtml({
       name: '琉璃',
       caption: '琉璃正在操控你的电脑，按 Esc 取消',
@@ -31,7 +33,8 @@ describe('mcpControlBanner html', () => {
       theme: 'light',
     })
     expect(html).toContain('src="https://example.com/a.png"')
-    expect(html).toContain('rgba(26, 18, 22, 0.94)')
+    expect(html).toContain('#f4a6b5')
+    expect(html).toContain('#ffffff')
   })
 
   it('rejects non-image data urls', () => {

@@ -5,6 +5,7 @@ import { useNotificationsStore } from '@/stores/notifications'
 import { useCharactersStore } from '@/stores/characters'
 import { useSettingsStore } from '@/stores/settings'
 import { resolveMcpControlActor } from '@/utils/mcpControlActor'
+import { activeChatActor } from '@/composables/useActiveChatContext'
 import {
   registerAgentTools,
   agentBridgeHeartbeat,
@@ -110,6 +111,7 @@ export const useAgentBridgeStore = defineStore('agentBridge', () => {
       }
       result = await api?.mcpCallTool?.(message.name, args, resolveMcpControlActor(message, {
         characters: useCharactersStore().list,
+        currentCharacter: activeChatActor.value,
         theme: useSettingsStore().theme,
       }))
     } catch (e) {

@@ -4,10 +4,26 @@ import router from '@/router'
 /** 当前正在查看的单聊会话 ID（ChatPage 设置，用于抑制同会话的站内通知） */
 export const activeChatConversationId = ref(null)
 
+/** 当前聊天角色（桌面 MCP 控制条：头像 + 名字） */
+export const activeChatActor = ref(null)
+
 let refreshHandler = null
 
 export function setActiveChatConversationId(id) {
   activeChatConversationId.value = id != null ? Number(id) : null
+}
+
+export function setActiveChatActor(character) {
+  if (!character?.id && !character?.name) {
+    activeChatActor.value = null
+    return
+  }
+  activeChatActor.value = {
+    id: character.id ?? null,
+    name: String(character.name || '').trim(),
+    avatarUrl: character.avatarUrl || '',
+    avatarThumbUrl: character.avatarThumbUrl || '',
+  }
 }
 
 /** ChatPage 注册：收到同会话 proactive 通知时立即拉取消息 */
