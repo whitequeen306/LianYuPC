@@ -31,7 +31,10 @@ export function mergeAddressingIntoPrompt(promptTemplate, addressing) {
 }
 
 export function buildImportCreatePayload({ draft, city, userAddressing }) {
-  const addressing = sanitizeAddressing(userAddressing)
+  const addressing = sanitizeAddressing(
+      userAddressing != null && String(userAddressing).length > 0
+          ? userAddressing
+          : draft?.userAddressing)
   const promptTemplate = mergeAddressingIntoPrompt(draft?.promptTemplate || '', addressing)
   const settings = {
     city_mode: 'real',

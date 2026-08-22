@@ -14,6 +14,7 @@ import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.dto.AnalyzeCharacterImportRequest;
 import com.lianyu.service.dto.VaultEntryResponse;
+import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,33 +39,36 @@ class CharacterImportServiceTest {
         when(vaultService.resolvePreferredUserVault(9L)).thenReturn(null);
         AnalyzeCharacterImportRequest request = new AnalyzeCharacterImportRequest();
         request.setSourceText("你是一个温柔的邻家姐姐。");
-        request.setUserAddressing("笨蛋");
 
         BusinessException ex = assertThrows(BusinessException.class, () -> service.analyze(9L, request));
 
         assertEquals(ErrorCode.AI_PROVIDER_ERROR, ex.getErrorCode());
         assertEquals("未配置文本模型，请在设置中添加", ex.getMessage());
-        verify(aiChatService, never()).analyzeCharacterImportWithVault(any(), any(), any());
+        verify(aiChatService, never()).analyzeCharacterImportWithVault(any(), any());
     }
 
     @Test
-    void usesPreferredUserVaultForExtraction() {
+    void usesPreferredUserVaultAndExtractedAddressing() {
         VaultEntryResponse vault = VaultEntryResponse.builder()
                 .id(3L)
                 .provider("MyDeepSeek")
                 .modelDefault("deepseek-chat")
                 .build();
         when(vaultService.resolvePreferredUserVault(9L)).thenReturn(vault);
-        when(aiChatService.analyzeCharacterImportWithVault(eq(vault), any(), eq("笨蛋")))
-                .thenReturn(Map.of("name", "邻家姐姐"));
+        when(aiChatService.analyzeCharacterImportWithVault(eq(vault), any()))
+                .thenReturn(new HashMap<>(Map.of(
+                        "name", "邻家姐姐",
+                        "promptTemplate", "性格定位：温柔",
+                        "userAddressing", "「笨蛋」")));
 
         AnalyzeCharacterImportRequest request = new AnalyzeCharacterImportRequest();
-        request.setSourceText("你是一个温柔的邻家姐姐。");
-        request.setUserAddressing("笨蛋");
+        request.setSourceText("你是一个温柔的邻家姐姐。笨蛋，过来。");
 
         Map<String, Object> draft = service.analyze(9L, request);
 
         assertEquals("邻家姐姐", draft.get("name"));
-        verify(aiChatService).analyzeCharacterImportWithVault(eq(vault), any(), eq("笨蛋"));
+        assertEquals("笨蛋", draft.get("userAddressing"));
+        assertEquals(true, String.valueOf(draft.get("promptTemplate")).contains("最常用的称呼是「笨蛋」"));
+        verify(aiChatService).analyzeCharacterImportWithVault(eq(vault), any());
     }
 }

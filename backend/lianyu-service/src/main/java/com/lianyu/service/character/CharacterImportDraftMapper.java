@@ -46,6 +46,7 @@ public final class CharacterImportDraftMapper {
         String archetype = normalizeArchetype(valueOrDefault(root, "personalityArchetype", "oc"));
         String sourceType = normalizeSourceType(valueOrDefault(root, "sourceType", "persona"));
         String summary = fix(valueOrDefault(root, "summary", ""));
+        String userAddressing = CharacterAddressing.sanitize(valueOrDefault(root, "userAddressing", ""));
         String promptTemplate = fix(valueOrDefault(root, "promptTemplate", ""));
         if (promptTemplate.isBlank()) {
             promptTemplate = "性格定位：自设（oc）\n你是" + name + "。用自然口语和用户私聊，保持自己的性格。";
@@ -58,6 +59,7 @@ public final class CharacterImportDraftMapper {
         draft.put("gender", gender);
         draft.put("speakingStyle", speakingStyle);
         draft.put("personalityArchetype", archetype);
+        draft.put("userAddressing", userAddressing);
         draft.put("promptTemplate", promptTemplate);
         draft.put("summary", summary);
         return draft;

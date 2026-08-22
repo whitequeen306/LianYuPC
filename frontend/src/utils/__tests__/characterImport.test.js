@@ -23,9 +23,9 @@ describe('characterImport', () => {
         personalityArchetype: 'tsundere',
         promptTemplate: '性格定位：傲娇（tsundere）\n嘴硬但会关心你。',
         sourceType: 'chat_log',
+        userAddressing: '人类',
       },
       city: '上海',
-      userAddressing: '人类',
     })
 
     expect(payload.name).toBe('时崎狂三')

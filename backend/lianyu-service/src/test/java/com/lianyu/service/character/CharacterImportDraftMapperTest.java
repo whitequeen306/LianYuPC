@@ -23,6 +23,7 @@ class CharacterImportDraftMapperTest {
                   "gender": "女",
                   "speakingStyle": "有点傲娇毒舌",
                   "personalityArchetype": "tsundere",
+                  "userAddressing": "「人类」",
                   "promptTemplate": "性格定位：傲娇（tsundere）\\n嘴硬但会默默关心对方。",
                   "summary": "冷静又别扭的精灵少女"
                 }
@@ -36,6 +37,7 @@ class CharacterImportDraftMapperTest {
         assertEquals("女", draft.get("gender"));
         assertEquals("傲娇", draft.get("speakingStyle"));
         assertEquals("tsundere", draft.get("personalityArchetype"));
+        assertEquals("人类", draft.get("userAddressing"));
         assertEquals("冷静又别扭的精灵少女", draft.get("summary"));
         assertEquals(true, String.valueOf(draft.get("promptTemplate")).contains("性格定位"));
     }
@@ -54,6 +56,7 @@ class CharacterImportDraftMapperTest {
         assertEquals("温柔", draft.get("speakingStyle"));
         assertEquals("oc", draft.get("personalityArchetype"));
         assertEquals("persona", draft.get("sourceType"));
+        assertEquals("", draft.get("userAddressing"));
         assertFalseContains(draft, "foo");
     }
 

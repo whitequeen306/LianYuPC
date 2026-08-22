@@ -24,10 +24,6 @@ public class CharacterImportService {
      */
     public Map<String, Object> analyze(Long userId, AnalyzeCharacterImportRequest request) {
         String prepared = CharacterImportSourceParser.prepare(request.getSourceText());
-        String addressing = CharacterAddressing.sanitize(request.getUserAddressing());
-        if (addressing.isEmpty()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "请填写角色最常用的称呼");
-        }
 
         VaultEntryResponse vault = vaultService.resolvePreferredUserVault(userId);
         if (vault == null) {
@@ -35,7 +31,9 @@ public class CharacterImportService {
         }
 
         Map<String, Object> draft = new LinkedHashMap<>(
-                aiChatService.analyzeCharacterImportWithVault(vault, prepared, addressing));
+                aiChatService.analyzeCharacterImportWithVault(vault, prepared));
+        String addressing = CharacterAddressing.sanitize(
+                draft.get("userAddressing") == null ? "" : String.valueOf(draft.get("userAddressing")));
         Object prompt = draft.get("promptTemplate");
         draft.put("promptTemplate", CharacterAddressing.appendHint(
                 prompt == null ? "" : String.valueOf(prompt), addressing));

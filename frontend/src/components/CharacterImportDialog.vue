@@ -16,19 +16,19 @@
       @submit.prevent="handleImport"
     >
       <el-form-item :label="t('characters.importSource')" prop="sourceText">
-        <el-input
-          v-model="form.sourceText"
-          type="textarea"
-          :rows="7"
-          :placeholder="t('characters.importSourcePlaceholder')"
-        />
-        <div class="source-actions">
-          <el-button type="default" size="small" @click="triggerSourceUpload">
-            {{ t('characters.importPickFile') }}
-          </el-button>
-          <span v-if="sourceFileName" class="source-filename">{{ sourceFileName }}</span>
-        </div>
-        <div class="field-hint">{{ t('characters.importSourceHint') }}</div>
+        <button
+          type="button"
+          class="source-drop"
+          @click="triggerSourceUpload"
+          @dragover.prevent
+          @drop.prevent="onSourceDrop"
+        >
+          <el-icon :size="28"><UploadFilled /></el-icon>
+          <span class="source-drop__title">
+            {{ sourceFileName || t('characters.importPickFile') }}
+          </span>
+          <span class="source-drop__hint">{{ t('characters.importSourceHint') }}</span>
+        </button>
         <input
           ref="sourceInput"
           type="file"
@@ -39,16 +39,6 @@
       </el-form-item>
 
       <CharacterCityModeForm v-model:city="form.city" />
-
-      <el-form-item :label="t('characters.importAddressing')" prop="userAddressing">
-        <el-input
-          v-model="form.userAddressing"
-          :placeholder="t('characters.importAddressingPlaceholder')"
-          :maxlength="ADDRESSING_MAX_CHARS"
-          show-word-limit
-        />
-        <div class="field-hint">{{ t('characters.importAddressingHint') }}</div>
-      </el-form-item>
 
       <el-form-item :label="t('characters.importAvatar')">
         <div class="avatar-upload">
@@ -96,12 +86,10 @@ import { useProvidersStore } from '@/stores/providers'
 import { useResponsiveDialogWidth } from '@/composables/useResponsiveDialogWidth'
 import { getSavedUserCity, saveUserCity } from '@/utils/userCity'
 import {
-  ADDRESSING_MAX_CHARS,
   IMPORT_MAX_RAW_CHARS,
   buildImportCreatePayload,
   isAllowedImportFile,
   readImportFileAsText,
-  sanitizeAddressing,
 } from '@/utils/characterImport'
 import CharacterCityModeForm from '@/components/CharacterCityModeForm.vue'
 
@@ -129,15 +117,13 @@ const visible = computed({
 const initialForm = () => ({
   sourceText: '',
   city: getSavedUserCity(),
-  userAddressing: '',
   avatarUrl: ''
 })
 const form = reactive(initialForm())
 
 const formRules = computed(() => ({
-  sourceText: [{ required: true, message: t('characters.importNeedSource'), trigger: 'blur' }],
-  city: [{ required: true, message: t('cityMode.realCityLabel'), trigger: 'blur' }],
-  userAddressing: [{ required: true, message: t('characters.importNeedAddressing'), trigger: 'blur' }]
+  sourceText: [{ required: true, message: t('characters.importNeedSource'), trigger: 'change' }],
+  city: [{ required: true, message: t('cityMode.realCityLabel'), trigger: 'blur' }]
 }))
 
 function resetForm() {
@@ -161,9 +147,7 @@ function triggerAvatarUpload() {
   avatarInput.value?.click()
 }
 
-async function handleSourceFile(e) {
-  const file = e.target.files?.[0]
-  e.target.value = ''
+async function applySourceFile(file) {
   if (!file) return
   if (!isAllowedImportFile(file)) {
     ElMessage.warning(t('characters.importFileType'))
@@ -177,6 +161,7 @@ async function handleSourceFile(e) {
     }
     form.sourceText = text
     sourceFileName.value = file.name
+    formRef.value?.validateField?.('sourceText')
   } catch (err) {
     if (err?.code === 'FILE_TOO_LARGE') {
       ElMessage.warning(t('characters.importFileTooLarge'))
@@ -184,6 +169,17 @@ async function handleSourceFile(e) {
     }
     ElMessage.warning(t('characters.importFileType'))
   }
+}
+
+async function handleSourceFile(e) {
+  const file = e.target.files?.[0]
+  e.target.value = ''
+  await applySourceFile(file)
+}
+
+async function onSourceDrop(e) {
+  const file = e.dataTransfer?.files?.[0]
+  await applySourceFile(file)
 }
 
 function handleAvatarFile(e) {
@@ -208,14 +204,9 @@ async function handleImport() {
   if (!valid) return
 
   const sourceText = form.sourceText.trim()
-  const userAddressing = sanitizeAddressing(form.userAddressing)
   const city = form.city.trim()
   if (!sourceText) {
     ElMessage.warning(t('characters.importNeedSource'))
-    return
-  }
-  if (!userAddressing) {
-    ElMessage.warning(t('characters.importNeedAddressing'))
     return
   }
 
@@ -227,8 +218,8 @@ async function handleImport() {
       return
     }
 
-    const draft = await analyzeCharacterImport({ sourceText, userAddressing })
-    const payload = buildImportCreatePayload({ draft, city, userAddressing })
+    const draft = await analyzeCharacterImport({ sourceText })
+    const payload = buildImportCreatePayload({ draft, city })
     if (city) saveUserCity(city)
 
     let char = await charactersStore.create(payload)
@@ -254,26 +245,43 @@ async function handleImport() {
   line-height: $line-height-relaxed;
 }
 
-.field-hint {
-  margin-top: $space-2;
-  font-size: $font-size-xs;
-  color: $color-text-muted;
-  line-height: $line-height-relaxed;
-}
-
-.source-actions {
+.source-drop {
+  appearance: none;
+  font-family: inherit;
+  width: 100%;
+  min-height: 132px;
+  padding: $space-5 $space-4;
+  border-radius: $radius-lg;
+  background: $color-bg-secondary;
+  border: 1px dashed color-mix(in srgb, $color-pink-primary 28%, transparent);
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: $space-3;
-  margin-top: $space-3;
+  justify-content: center;
+  gap: $space-2;
+  cursor: pointer;
+  color: $color-text-muted;
+  text-align: center;
+  transition: border-color 0.24s cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-.source-filename {
-  font-size: $font-size-xs;
+.source-drop:hover {
+  border-color: $color-pink-primary;
+}
+
+.source-drop__title {
+  font-size: $font-size-sm;
   color: $color-text-secondary;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 100%;
+}
+
+.source-drop__hint {
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+  line-height: $line-height-relaxed;
 }
 
 .avatar-upload {
@@ -287,7 +295,7 @@ async function handleImport() {
   height: 88px;
   border-radius: $radius-lg;
   background: $color-bg-secondary;
-  border: 1px dashed rgba($color-pink-rgb, 0.28);
+  border: 1px dashed color-mix(in srgb, $color-pink-primary 28%, transparent);
   display: flex;
   flex-direction: column;
   align-items: center;

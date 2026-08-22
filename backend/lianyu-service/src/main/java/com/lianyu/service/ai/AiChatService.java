@@ -732,7 +732,12 @@ public class AiChatService {
 
     /**
      * 从人设或聊天记录抽取固定 JSON 角色草稿。使用调用方已解析的用户 vault，不做平台回退。
+     * 称呼由模型从材料里归纳；若调用方已指定则写入提示作为口吻参考。
      */
+    public Map<String, Object> analyzeCharacterImportWithVault(VaultEntryResponse vault, String preparedSource) {
+        return analyzeCharacterImportWithVault(vault, preparedSource, "");
+    }
+
     public Map<String, Object> analyzeCharacterImportWithVault(
             VaultEntryResponse vault, String preparedSource, String userAddressing) {
         if (vault == null || vault.getId() == null) {
@@ -754,6 +759,7 @@ public class AiChatService {
                   "gender": "女 或 男 或 其他 或 未知",
                   "speakingStyle": "温柔/活泼/冷静/傲娇/元气/慵懒/成熟/毒舌 之一",
                   "personalityArchetype": "gentle/tsundere/yandere/genki/onesan/oc 之一",
+                  "userAddressing": "角色最常用来称呼用户的词，没有则空字符串，不要加书名号或引号",
                   "promptTemplate": "150~260字的中文角色设定，包含性格、语气、边界和互动方式，适合直接放入系统Prompt",
                   "summary": "一句高密度核心魅力"
                 }
