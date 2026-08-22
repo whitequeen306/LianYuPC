@@ -479,7 +479,9 @@ export default {
     mcpStateRunning: '実行中',
     mcpStateStarting: '起動中',
     mcpStateStopped: '停止',
-    mcpStateError: 'エラー'
+    mcpStateError: 'エラー',
+    mcpControlBanner: '{name}があなたのパソコンを操作しています。Esc でキャンセル',
+    mcpControlFallbackName: 'キャラクター',
   },
   profile: {
     title: 'プロフィール',

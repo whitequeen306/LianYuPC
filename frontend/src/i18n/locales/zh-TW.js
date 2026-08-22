@@ -492,7 +492,9 @@ export default {
     mcpStateRunning: '運行中',
     mcpStateStarting: '啟動中',
     mcpStateStopped: '已停止',
-    mcpStateError: '異常'
+    mcpStateError: '異常',
+    mcpControlBanner: '{name}正在操控你的電腦，按 Esc 取消',
+    mcpControlFallbackName: '角色',
   },
   profile: {
     title: '個人資料',

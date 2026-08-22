@@ -484,7 +484,9 @@ export default {
     mcpStateRunning: 'Running',
     mcpStateStarting: 'Starting',
     mcpStateStopped: 'Stopped',
-    mcpStateError: 'Error'
+    mcpStateError: 'Error',
+    mcpControlBanner: '{name} is controlling your computer. Press Esc to cancel',
+    mcpControlFallbackName: 'Character',
   },
   profile: {
     title: 'Profile',

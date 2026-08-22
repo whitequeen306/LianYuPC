@@ -30,12 +30,12 @@ export function createMcpClient({ proc, onNotification, onServerRequest, onClose
   }
 
   function request(method, params, timeoutMs = 30000) {
-    return new Promise((resolve, reject) => {
+    const id = nextId++
+    const promise = new Promise((resolve, reject) => {
       if (closed) {
         reject(new Error('MCP client closed'))
         return
       }
-      const id = nextId++
       const timer = setTimeout(() => {
         pending.delete(id)
         reject(new Error(`MCP request timeout: ${method}`))
@@ -47,6 +47,24 @@ export function createMcpClient({ proc, onNotification, onServerRequest, onClose
         reject(new Error('MCP server not writable'))
       }
     })
+    promise.mcpRequestId = id
+    return promise
+  }
+
+  /**
+   * 取消进行中的 JSON-RPC 请求：立刻 reject 本地 Promise，并按 MCP 规范发
+   * notifications/cancelled。引擎若不支持取消，后续响应会被忽略。
+   */
+  function cancel(requestId, reason = 'cancelled') {
+    const entry = pending.get(requestId)
+    if (!entry) return false
+    pending.delete(requestId)
+    clearTimeout(entry.timer)
+    notify('notifications/cancelled', { requestId, reason })
+    const err = new Error(reason)
+    err.cancelled = true
+    entry.reject(err)
+    return true
   }
 
   function notify(method, params) {
@@ -150,5 +168,5 @@ export function createMcpClient({ proc, onNotification, onServerRequest, onClose
     return result
   }
 
-  return { request, notify, initialize, close, get isClosed() { return closed } }
+  return { request, notify, cancel, initialize, close, get isClosed() { return closed } }
 }

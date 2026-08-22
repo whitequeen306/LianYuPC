@@ -1618,7 +1618,8 @@ public class AiChatService {
     private <T> T withChatToolScope(Long userId, AiChatRequest request, java.util.concurrent.Callable<T> action)
             throws Exception {
         if (request.getChatToolCharacterId() != null) {
-            ChatToolContext.set(userId, request.getChatToolCharacterId(), request.getToolCharacterSettings());
+            ChatToolContext.set(userId, request.getChatToolCharacterId(), request.getToolCharacterSettings(),
+                    null, request.getChatToolCharacterName(), request.getChatToolCharacterAvatarUrl());
         }
         try {
             return action.call();

@@ -189,7 +189,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startMcp: () => ipcRenderer.invoke('mcp:start'),
   stopMcp: () => ipcRenderer.invoke('mcp:stop'),
   listMcpTools: () => ipcRenderer.invoke('mcp:list-tools'),
-  mcpCallTool: (name, args) => ipcRenderer.invoke('mcp:call-tool', { name, args }),
+  mcpCallTool: (name, args, actor) => ipcRenderer.invoke('mcp:call-tool', { name, args, actor }),
   respondMcpConfirm: (id, approved) => ipcRenderer.invoke('mcp:confirm-response', { id, approved }),
   onMcpStatus: (callback) => {
     const handler = (_event, payload) => callback(payload)

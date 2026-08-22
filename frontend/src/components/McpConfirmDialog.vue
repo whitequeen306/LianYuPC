@@ -4,10 +4,11 @@
     :title="dialogTitle"
     width="420px"
     :close-on-click-modal="false"
-    :close-on-press-escape="false"
+    :close-on-press-escape="true"
     :show-close="false"
     align-center
     class="mcp-confirm-dialog"
+    @close="onDialogClose"
   >
     <div class="mcp-confirm">
       <p class="mcp-confirm__message">{{ current?.message || '本地服务请求执行操作' }}</p>
@@ -73,10 +74,15 @@ function showNext() {
 function respond(approved) {
   const item = current.value
   stopCountdown()
+  current.value = null
   if (item) {
     getElectronAPI()?.respondMcpConfirm?.(item.id, approved)
   }
   showNext()
+}
+
+function onDialogClose() {
+  if (current.value) respond(false)
 }
 
 onMounted(() => {

@@ -74,6 +74,7 @@ import {
   writeWechatBridgeSettings,
 } from './wechatBridge/wechatBridgeSettings.js'
 import { createMcpHost, engineEnvFromCredentials } from './mcp/mcpHost.js'
+import { createMcpControlBanner } from './mcp/mcpControlBanner.js'
 import { readMcpSettings, writeMcpSettings } from './mcp/mcpSettings.js'
 import {
   ENGINE_MANIFEST_PATH,
@@ -700,13 +701,23 @@ async function resolveEngineEnvFromCloud() {
   return env
 }
 
-const mcpHost = createMcpHost({
+let mcpHost = null
+const mcpControlBanner = createMcpControlBanner({
+  BrowserWindow,
+  screen,
+  globalShortcut,
+  log: (msg) => log(`[mcp-banner] ${msg}`),
+  onCancel: () => mcpHost?.cancelActiveCall?.(),
+})
+mcpHost = createMcpHost({
   getSettings: readMcpSettings,
   resolveDemoServerCommand,
   resolveManagedEngine: resolveManagedEngineCommand,
   resolveEngineEnv: resolveEngineEnvFromCloud,
   requestConfirm: requestMcpConfirm,
   broadcast: broadcastToAppWindows,
+  onControlStart: (actor) => mcpControlBanner.show(actor),
+  onControlEnd: () => mcpControlBanner.hide(),
   log: (msg) => log(`[mcp] ${msg}`),
 })
 
@@ -2027,6 +2038,7 @@ function quitApplication(options = {}) {
   stopQqBridge()
   stopNapCatHost()
   void wechatBridgeCoordinator.stopHost({ persist: false })
+  try { mcpControlBanner.hide() } catch { /* ignore */ }
   void mcpHost.stop()
   qqBridgeCoordinator.dispose()
   closeCharacterPicker()
@@ -2663,7 +2675,8 @@ function registerIpcHandlers() {
     const name = typeof payload?.name === 'string' ? payload.name : ''
     const args = payload?.args && typeof payload.args === 'object' ? payload.args : {}
     if (!name) return { ok: false, error: '工具名缺失' }
-    return mcpHost.callTool(name, args)
+    const actor = payload?.actor && typeof payload.actor === 'object' ? payload.actor : {}
+    return mcpHost.callTool(name, args, { actor })
   })
 
   ipcMain.handle('mcp:confirm-response', (event, payload) => {
@@ -3303,6 +3316,7 @@ app.whenReady().then(() => {
 })
 
 app.on('will-quit', () => {
+  try { mcpControlBanner.dispose() } catch { /* ignore */ }
   globalShortcut.unregisterAll()
 })
 

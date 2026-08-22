@@ -28,6 +28,12 @@ public class AiChatRequest {
     /** 角色 settings，供 get_weather 等解析默认城市 */
     private Map<String, Object> toolCharacterSettings;
 
+    /** 本轮发言角色名，经工具桥下发给桌面端控制条 */
+    private String chatToolCharacterName;
+
+    /** 本轮发言角色头像路径（相对或绝对），桌面端会再 resolve 成可加载 URL */
+    private String chatToolCharacterAvatarUrl;
+
     /** 期望的回复语言（zh / zh-TW / ja / en）；非空时启用输出语言门控 */
     private String expectedLanguage;
 

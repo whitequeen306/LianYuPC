@@ -17,6 +17,14 @@ vi.mock('@/stores/notifications', () => ({
   }),
 }))
 
+vi.mock('@/stores/characters', () => ({
+  useCharactersStore: () => ({ list: [] }),
+}))
+
+vi.mock('@/stores/settings', () => ({
+  useSettingsStore: () => ({ theme: 'dark' }),
+}))
+
 const registerAgentTools = vi.fn(async () => ({}))
 const agentBridgeHeartbeat = vi.fn(async () => ({ registered: true }))
 const unregisterAgentBridge = vi.fn(async () => ({}))
@@ -26,6 +34,15 @@ vi.mock('@/api/agentBridge', () => ({
   agentBridgeHeartbeat: (...args) => agentBridgeHeartbeat(...args),
   unregisterAgentBridge: (...args) => unregisterAgentBridge(...args),
   postAgentToolResult: (...args) => postAgentToolResult(...args),
+}))
+
+vi.mock('@/utils/mcpControlActor', () => ({
+  resolveMcpControlActor: (message) => ({
+    name: message?.characterName || '角色',
+    avatarUrl: '',
+    caption: `${message?.characterName || '角色'}正在操控你的电脑，按 Esc 取消`,
+    theme: 'dark',
+  }),
 }))
 
 import { useAgentBridgeStore } from '@/stores/agentBridge'
@@ -90,7 +107,14 @@ describe('agentBridge store', () => {
       name: 'computer_task',
       arguments: '{"instruction":"打开网易云"}',
     })
-    expect(holder.api.mcpCallTool).toHaveBeenCalledWith('computer_task', { instruction: '打开网易云' })
+    expect(holder.api.mcpCallTool).toHaveBeenCalledWith(
+      'computer_task',
+      { instruction: '打开网易云' },
+      expect.objectContaining({
+        name: expect.any(String),
+        caption: expect.stringMatching(/Esc/),
+      }),
+    )
     expect(postAgentToolResult).toHaveBeenCalledWith({
       requestId: 'req-1',
       ok: true,
@@ -109,7 +133,11 @@ describe('agentBridge store', () => {
 
   it('tolerates malformed argument json (falls back to empty object)', async () => {
     await store.handleToolCallMessage({ type: 'tool_call', requestId: 'req-3', name: 'x', arguments: 'not-json' })
-    expect(holder.api.mcpCallTool).toHaveBeenCalledWith('x', {})
+    expect(holder.api.mcpCallTool).toHaveBeenCalledWith(
+      'x',
+      {},
+      expect.objectContaining({ caption: expect.any(String) }),
+    )
   })
 
   it('ignores non tool_call messages', async () => {

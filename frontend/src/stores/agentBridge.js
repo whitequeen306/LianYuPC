@@ -2,6 +2,9 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { getElectronAPI, isElectronApp } from '@/utils/electron'
 import { useNotificationsStore } from '@/stores/notifications'
+import { useCharactersStore } from '@/stores/characters'
+import { useSettingsStore } from '@/stores/settings'
+import { resolveMcpControlActor } from '@/utils/mcpControlActor'
 import {
   registerAgentTools,
   agentBridgeHeartbeat,
@@ -105,7 +108,10 @@ export const useAgentBridgeStore = defineStore('agentBridge', () => {
       } catch {
         args = {}
       }
-      result = await api?.mcpCallTool?.(message.name, args)
+      result = await api?.mcpCallTool?.(message.name, args, resolveMcpControlActor(message, {
+        characters: useCharactersStore().list,
+        theme: useSettingsStore().theme,
+      }))
     } catch (e) {
       result = { ok: false, error: e?.message || '本地调用异常' }
     }

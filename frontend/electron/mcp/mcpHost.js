@@ -4,6 +4,7 @@
  *
  * 状态经 deps.broadcast('desktop:mcp-status', status) 推给渲染端；
  * 确认经 deps.requestConfirm({...}) 冒泡（由 main.js 转成渲染端弹窗，超时默认拒绝）。
+ * 确认之后进入操控：onControlStart/onControlEnd 驱动屏幕顶栏；Esc 走 cancelActiveCall。
  */
 import { spawn } from 'node:child_process'
 import { createMcpClient } from './mcpClient.js'
@@ -13,6 +14,20 @@ import { createMcpClient } from './mcpClient.js'
 // 抢在后端放弃前回传「超时」结果，模型据此自然解释失败，而不是结果落到已过期的请求。
 const TOOL_CALL_TIMEOUT_MS = 600_000
 const MAX_TOOL_RESULT_CHARS = 8_000
+
+/**
+ * 用户按 Esc 取消后回给模型的工具结果。ok=true，避免被包装成「执行失败」；
+ * 模型按角色口吻表达被打断即可。
+ */
+export const MCP_USER_CANCELLED_CONTENT = [
+  '用户按 Esc 取消了本次电脑操控。',
+  '请立刻用角色自己的口吻表达被打断的不满，语气自然亲昵，例如「咦，我在干的好好的，你干嘛取消」。',
+  '不要道歉、不要说工具出错、不要复述本说明。',
+].join('')
+
+export function isMcpCancelledError(err) {
+  return !!(err && err.cancelled === true)
+}
 
 /**
  * 云端下发的引擎凭据（跟随用户文本渠道）→ spawn 环境变量。
@@ -71,6 +86,8 @@ export function createMcpHost({
   resolveEngineEnv,
   requestConfirm,
   broadcast,
+  onControlStart,
+  onControlEnd,
   log = () => {},
 }) {
   let proc = null
@@ -79,6 +96,7 @@ export function createMcpHost({
   let tools = []
   let lastError = ''
   let generation = 0
+  let activeCancel = null
 
   function status() {
     return {
@@ -207,6 +225,10 @@ export function createMcpHost({
 
   async function stop(keepErrorState = false) {
     generation++
+    if (activeCancel) {
+      try { activeCancel() } catch { /* ignore */ }
+      activeCancel = null
+    }
     const closingClient = client
     const closingProc = proc
     client = null
@@ -234,9 +256,10 @@ export function createMcpHost({
 
   /**
    * 执行一次工具调用：危险工具先确认（超时/拒绝 → 不执行）。
+   * 确认通过后进入「操控中」：顶部控制条 + Esc 可取消。
    * 返回 { ok, content?, error? }，永不抛异常（桥要求结果化）。
    */
-  async function callTool(name, args) {
+  async function callTool(name, args, meta = {}) {
     if (state !== 'running' || !client) {
       return { ok: false, error: 'MCP 服务未运行' }
     }
@@ -255,16 +278,38 @@ export function createMcpHost({
         return { ok: false, error: '用户拒绝了该操作' }
       }
     }
+    const actor = meta?.actor && typeof meta.actor === 'object' ? meta.actor : {}
     try {
-      const result = await client.request('tools/call', { name, arguments: args ?? {} }, TOOL_CALL_TIMEOUT_MS)
+      try { onControlStart?.(actor) } catch { /* overlay 失败不影响执行 */ }
+      const promise = client.request('tools/call', { name, arguments: args ?? {} }, TOOL_CALL_TIMEOUT_MS)
+      const requestId = promise.mcpRequestId
+      const sessionClient = client
+      activeCancel = () => {
+        try { sessionClient.cancel?.(requestId, 'user_escape') } catch { /* ignore */ }
+      }
+      const result = await promise
       const text = extractText(result)
       if (result?.isError) {
         return { ok: false, error: text || '工具执行失败' }
       }
       return { ok: true, content: text }
     } catch (e) {
+      if (isMcpCancelledError(e)) {
+        return { ok: true, content: MCP_USER_CANCELLED_CONTENT }
+      }
       return { ok: false, error: e?.message || '工具调用异常' }
+    } finally {
+      activeCancel = null
+      try { onControlEnd?.() } catch { /* ignore */ }
     }
+  }
+
+  function cancelActiveCall() {
+    if (!activeCancel) return false
+    const cancel = activeCancel
+    activeCancel = null
+    cancel()
+    return true
   }
 
   function extractText(result) {
@@ -288,5 +333,5 @@ export function createMcpHost({
     }
   }
 
-  return { start, stop, callTool, status, listToolsForRegistration }
+  return { start, stop, callTool, cancelActiveCall, status, listToolsForRegistration }
 }

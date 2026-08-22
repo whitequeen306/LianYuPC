@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lianyu.common.base.ErrorCode;
 import com.lianyu.common.exception.BusinessException;
 import com.lianyu.service.dto.RegisterAgentToolsRequest;
+import com.lianyu.service.tools.ChatToolContext;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -64,8 +65,9 @@ public class AgentBridgeService {
     public record ClientTool(String name, String description, String inputSchema, boolean dangerous) {
     }
 
-    /** 下发给客户端的工具调用载荷 */
-    public record ToolCallPush(String type, String requestId, String name, String arguments) {
+    /** 下发给客户端的工具调用载荷（含本轮角色，供桌面端控制条展示） */
+    public record ToolCallPush(String type, String requestId, String name, String arguments,
+                               Long characterId, String characterName, String characterAvatarUrl) {
     }
 
     private static final class BridgeSession {
@@ -164,9 +166,14 @@ public class AgentBridgeService {
         CompletableFuture<String> future = new CompletableFuture<>();
         pendingCalls.put(requestId, new PendingCall(userId, future));
         try {
+            ChatToolContext.Scope scope = ChatToolContext.current();
+            Long characterId = scope != null ? scope.characterId() : null;
+            String characterName = scope != null ? scope.characterName() : null;
+            String characterAvatarUrl = scope != null ? scope.characterAvatarUrl() : null;
             messagingTemplate.convertAndSendToUser(userId.toString(), QUEUE_DESTINATION,
                     new ToolCallPush("tool_call", requestId, toolName,
-                            argumentsJson == null ? "{}" : argumentsJson));
+                            argumentsJson == null ? "{}" : argumentsJson,
+                            characterId, characterName, characterAvatarUrl));
             log.info("Agent bridge dispatch: userId={}, tool={}, requestId={}", userId, toolName, requestId);
             return future.get(callTimeoutMs, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {

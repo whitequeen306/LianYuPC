@@ -14,7 +14,8 @@ public final class ChatToolContext {
     private ChatToolContext() {
     }
 
-    public record Scope(Long userId, Long characterId, Map<String, Object> characterSettings, String userCity) {
+    public record Scope(Long userId, Long characterId, Map<String, Object> characterSettings, String userCity,
+                        String characterName, String characterAvatarUrl) {
         public String effectiveCity() {
             if (characterSettings != null) {
                 String fc = characterSettings.get("fictional_city") instanceof String s && !s.isBlank() ? s : null;
@@ -27,15 +28,20 @@ public final class ChatToolContext {
     }
 
     public static void set(Long userId, Long characterId, Map<String, Object> characterSettings) {
-        set(userId, characterId, characterSettings, null);
+        set(userId, characterId, characterSettings, null, null, null);
     }
 
     public static void set(Long userId, Long characterId, Map<String, Object> characterSettings, String userCity) {
+        set(userId, characterId, characterSettings, userCity, null, null);
+    }
+
+    public static void set(Long userId, Long characterId, Map<String, Object> characterSettings, String userCity,
+                           String characterName, String characterAvatarUrl) {
         if (userId == null || characterId == null) {
             clear();
             return;
         }
-        CURRENT.set(new Scope(userId, characterId, characterSettings, userCity));
+        CURRENT.set(new Scope(userId, characterId, characterSettings, userCity, characterName, characterAvatarUrl));
     }
 
     public static Scope current() {
@@ -60,5 +66,9 @@ public final class ChatToolContext {
         }
         request.setChatToolCharacterId(character.getId());
         request.setToolCharacterSettings(character.getSettings());
+        String name = character.getName();
+        request.setChatToolCharacterName(name == null || name.isBlank() ? null : name.trim());
+        String avatar = character.getAvatarUrl();
+        request.setChatToolCharacterAvatarUrl(avatar == null || avatar.isBlank() ? null : avatar.trim());
     }
 }

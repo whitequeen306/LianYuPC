@@ -11,9 +11,11 @@ import static org.mockito.Mockito.verify;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lianyu.common.exception.BusinessException;
 import com.lianyu.service.dto.RegisterAgentToolsRequest;
+import com.lianyu.service.tools.ChatToolContext;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,6 +37,11 @@ class AgentBridgeServiceTest {
         service = new AgentBridgeService(messagingTemplate, new ObjectMapper());
         ReflectionTestUtils.setField(service, "enabled", true);
         ReflectionTestUtils.setField(service, "callTimeoutMs", 200L);
+    }
+
+    @AfterEach
+    void tearDown() {
+        ChatToolContext.clear();
     }
 
     private RegisterAgentToolsRequest requestWith(String... names) {
@@ -98,6 +105,28 @@ class AgentBridgeServiceTest {
         String result = service.dispatch(7L, "computer_task", "{\"instruction\":\"打开网易云\"}");
         assertThat(result).isEqualTo("已打开 网易云音乐");
         assertThat(requestId.get()).isNotBlank();
+    }
+
+    @Test
+    void dispatchIncludesCharacterActorFromChatToolContext() {
+        ChatToolContext.set(7L, 620L, null, null, "琉璃", "/api/public/files/avatars/x.png");
+        try {
+            service.register(7L, requestWith("computer_task"));
+            AtomicReference<AgentBridgeService.ToolCallPush> pushRef = new AtomicReference<>();
+            doAnswer(invocation -> {
+                AgentBridgeService.ToolCallPush push = invocation.getArgument(2);
+                pushRef.set(push);
+                service.completeResult(7L, push.requestId(), true, "ok", null);
+                return null;
+            }).when(messagingTemplate).convertAndSendToUser(anyString(), anyString(), any());
+
+            service.dispatch(7L, "computer_task", "{}");
+            assertThat(pushRef.get().characterId()).isEqualTo(620L);
+            assertThat(pushRef.get().characterName()).isEqualTo("琉璃");
+            assertThat(pushRef.get().characterAvatarUrl()).isEqualTo("/api/public/files/avatars/x.png");
+        } finally {
+            ChatToolContext.clear();
+        }
     }
 
     @Test

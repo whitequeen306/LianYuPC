@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resolveMcpLaunchTarget, engineEnvFromCredentials } from '../mcp/mcpHost.js'
+import { resolveMcpLaunchTarget, engineEnvFromCredentials, createMcpHost, MCP_USER_CANCELLED_CONTENT, isMcpCancelledError } from '../mcp/mcpHost.js'
 
 describe('resolveMcpLaunchTarget', () => {
   it('prefers the demo server when useDemoServer is true', () => {
@@ -84,5 +84,23 @@ describe('engineEnvFromCredentials', () => {
   it('skips empty fields so inherited env survives', () => {
     const env = engineEnvFromCredentials({ available: true, apiKey: 'sk-x', baseUrl: '', model: '' })
     expect(env).toEqual({ DEEPSEEK_API_KEY: 'sk-x' })
+  })
+})
+
+describe('mcpHost cancel helpers', () => {
+  it('exposes the in-character cancel payload', () => {
+    expect(MCP_USER_CANCELLED_CONTENT).toMatch(/Esc/)
+    expect(MCP_USER_CANCELLED_CONTENT).toMatch(/咦/)
+    expect(isMcpCancelledError({ cancelled: true })).toBe(true)
+    expect(isMcpCancelledError(new Error('nope'))).toBe(false)
+  })
+
+  it('cancelActiveCall is a no-op when idle', () => {
+    const host = createMcpHost({
+      getSettings: () => ({ enabled: false, useDemoServer: false, command: '' }),
+      requestConfirm: async () => true,
+      broadcast: () => {},
+    })
+    expect(host.cancelActiveCall()).toBe(false)
   })
 })
