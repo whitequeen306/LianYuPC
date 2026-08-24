@@ -15,6 +15,8 @@ import java.util.Map;
 public class ReleaseController {
     private final AdminAuthorizationService authorization;
     private final JdbcTemplate jdbc;
+    private final ReleaseService releaseService;
     @GetMapping public Result<List<Map<String,Object>>> list() { authorization.require("release.manage"); return Result.ok(jdbc.queryForList("SELECT id,version,channel,state,mandatory,package_size,sha512,published_at,created_at FROM app_release ORDER BY created_at DESC LIMIT 100")); }
-    @PostMapping public Result<Void> create(@RequestBody Map<String,Object> body) { authorization.require("release.manage"); jdbc.update("INSERT INTO app_release(version,channel,notes,mandatory,created_by) VALUES(?,?,?,?,?)", body.get("version"), body.getOrDefault("channel","stable"), body.get("notes"), Boolean.TRUE.equals(body.get("mandatory")), authorization.currentAdminId()); return Result.ok(); }
+    @PostMapping public Result<Map<String,Object>> create(@RequestBody Map<String,Object> body) { long id = releaseService.create(String.valueOf(body.get("version")), String.valueOf(body.getOrDefault("channel","stable")), body.get("notes") == null ? null : String.valueOf(body.get("notes")), Boolean.TRUE.equals(body.get("mandatory"))); return Result.ok(Map.of("id", id)); }
+    @PostMapping("/{id}/state/{state}") public Result<Void> transition(@PathVariable long id, @PathVariable String state) { releaseService.transition(id, state); return Result.ok(); }
 }
