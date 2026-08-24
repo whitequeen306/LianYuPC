@@ -27,6 +27,6 @@ public class AdminBootstrapService {
         Long userId = jdbc.queryForObject("SELECT id FROM admin_user WHERE username=?", Long.class, properties.getUsername().trim());
         Long roleId = jdbc.queryForObject("SELECT id FROM admin_role WHERE role_key='super_admin'", Long.class);
         jdbc.update("INSERT INTO admin_user_role(admin_user_id,role_id) VALUES(?,?)", userId, roleId);
-        log.info("Initial admin bootstrap completed for configured username");
+        org.slf4j.LoggerFactory.getLogger(AdminBootstrapService.class).info("Initial admin bootstrap completed for configured username");
     }
 }

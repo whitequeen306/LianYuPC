@@ -3,8 +3,9 @@ import { computed, ref } from 'vue'
 import { useAdminSession } from './stores/session'
 import { adminLogin, adminLogout } from './api'
 import ManagementPage from './pages/ManagementPage.vue'
+import { adminMenus } from './menu'
 const session=useAdminSession(); const page=ref('overview'); const loginForm=ref({username:'',password:'',otp:''}); const error=ref(''); const busy=ref(false); const needsOtp=ref(false)
-const menus=[{id:'overview',label:'运行概览',icon:'⌂'},{id:'users',label:'用户治理',icon:'◌'},{id:'releases',label:'版本发布',icon:'↥'},{id:'admins',label:'管理员与角色',icon:'◇'},{id:'announcements',label:'公告管理',icon:'◈'},{id:'audit',label:'审计日志',icon:'≡'}]; const current=computed(()=>menus.find(m=>m.id===page.value)||menus[0])
+const menus=adminMenus; const current=computed(()=>menus.find(m=>m.id===page.value)||menus[0])
 async function submitLogin(){busy.value=true;error.value='';try{const result=await adminLogin(loginForm.value);if(result?.data?.otpRequired)needsOtp.value=true;else if(result?.data?.accessToken)session.login(result.data.accessToken,result.data.username);else error.value=result?.message||'登录失败'}catch(e){error.value=e?.response?.data?.message||'服务暂时不可用'}finally{busy.value=false}}
 async function logout(){try{await adminLogout()}finally{session.logout()}}
 </script>
