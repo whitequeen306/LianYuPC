@@ -77,7 +77,7 @@ secure, usable operating loop rather than a collection of incomplete screens.
 ### 4.1 Admin desktop client
 
 Create a root-level `admin/` application using Vue 3, Vite, Element Plus,
-Pinia, and Electron. It has an independent package version and produces
+TanStack Table, ECharts, Pinia, Vue Router, and Electron. It has an independent package version and produces
 `LianYu-Admin-Setup-<version>.exe`.
 
 The client contains presentation, local session handling, resumable upload, and
@@ -88,6 +88,41 @@ The UI follows `DESIGN.md`: dark-first with equivalent light mode, existing
 color and spacing variables, dense work-focused layouts, fixed navigation, and
 restrained glass surfaces. It uses the LianYu brand without copying the
 consumer app's immersive chat composition.
+
+The admin client is an independently composed desktop tool, not a Vben,
+Soybean, Shadcn, or other complete admin template. Those projects may inform
+information architecture, dynamic menus, and RBAC organization only. Their
+themes, layout shells, visual defaults, and dependency bundles are not copied.
+
+Visual direction is a mature Windows operations console: fixed sidebar, compact
+top toolbar, and a stable main workspace. Tables, split panes, filter toolbars,
+detail drawers, dialogs, and inline row expansion carry most workflows. Cards
+are reserved for genuinely framed tools and repeated items; avoid nested cards
+and avoid a four-metric-card dashboard. Charts use low-saturation colors, thin
+lines, explicit axes, and readable labels rather than decorative data-wall
+composition.
+
+Rose pink is limited to selected states, primary actions, focus, and sparse
+emphasis. Glass is limited to the title bar, sidebar, overlays, drawers, and
+dialogs; table regions remain opaque/stable for scanning. No gradient orbs,
+marketing copy, oversized headings, exaggerated whitespace, or full-screen
+capsules are used.
+
+The Electron window is frameless but retains native desktop behavior: a
+draggable title bar, polished minimize/maximize/close controls, hit-test-safe
+drag regions, and native resize affordances. Page, drawer, and row expansion
+motion uses the existing EaseOutQuint transition token at 0.2-0.28s; no bounce,
+floating, or spectacle motion is used.
+
+TanStack Table is used for server-backed sorting, filtering, pagination,
+column visibility, density, and row selection. ECharts is used only where a
+trend or distribution is materially easier to understand than a table. Both
+are imported per feature to keep the Admin EXE focused.
+
+The existing design tokens must be extended before implementing admin-specific
+needs. The planned additions are compact table density (row heights, cell
+padding, header height), desktop title-bar dimensions, and drawer widths. No
+component may hardcode new colors, radii, fonts, spacing, or timing values.
 
 ### 4.2 Backend module
 
