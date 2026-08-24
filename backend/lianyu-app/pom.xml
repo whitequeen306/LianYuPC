@@ -16,6 +16,11 @@
     <dependencies>
         <dependency>
             <groupId>com.lianyu</groupId>
+            <artifactId>lianyu-admin</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.lianyu</groupId>
             <artifactId>lianyu-web</artifactId>
             <version>${project.version}</version>
         </dependency>

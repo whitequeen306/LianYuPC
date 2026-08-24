@@ -163,6 +163,17 @@ components:
   glass-surface:
     backgroundColor: "{colors.bg-glass}"
     rounded: "{rounded.lg}"
+  admin-table:
+    rowHeightCompact: 40px
+    headerHeight: 36px
+    cellPadding: "8px 12px"
+    rounded: "{rounded.sm}"
+  admin-titlebar:
+    height: 52px
+    controlsWidth: 138px
+  admin-drawer:
+    width: 440px
+    widthWide: 640px
 ---
 
 ## Overview

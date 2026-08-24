@@ -1,5 +1,12 @@
 // Runtime theme tokens (overridden by applyAccentColor in utils/themeColor.js)
 :root {
+  --ly-admin-table-row-height-compact: 40px;
+  --ly-admin-table-header-height: 36px;
+  --ly-admin-table-cell-padding: 8px 12px;
+  --ly-admin-titlebar-height: 52px;
+  --ly-admin-titlebar-controls-width: 138px;
+  --ly-admin-drawer-width: 440px;
+  --ly-admin-drawer-width-wide: 640px;
   --ly-accent: #f4a6b5;
   --ly-accent-light: #f8c8d8;
   --ly-accent-dark: #d48494;

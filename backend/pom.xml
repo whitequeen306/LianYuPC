@@ -15,6 +15,7 @@
     <modules>
         <module>lianyu-common</module>
         <module>lianyu-dao</module>
+        <module>lianyu-admin</module>
         <module>lianyu-storage</module>
         <module>lianyu-security</module>
         <module>lianyu-ai</module>
