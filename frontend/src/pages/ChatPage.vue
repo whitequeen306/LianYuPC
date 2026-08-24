@@ -179,6 +179,11 @@
           </template>
           </div>
         </template>
+          <McpTaskProgressBubble
+            v-if="mcpActiveTask"
+            :task="mcpActiveTask"
+            class="gal-log__mcp-task"
+          />
           <div ref="scrollAnchor" />
         </div>
         <button
@@ -358,6 +363,7 @@ import { useUserStore } from '@/stores/user'
 import { useSettingsStore } from '@/stores/settings'
 import { useCharactersStore } from '@/stores/characters'
 import { useConversationsStore } from '@/stores/conversations'
+import { useAgentBridgeStore } from '@/stores/agentBridge'
 import { humanizeError } from '@/utils/errorMessage'
 import { getConversation, getMessages, notifyConversationOpened, sendMessageStream, uploadChatImage } from '@/api/conversation'
 import { fetchModels } from '@/api/ai'
@@ -381,6 +387,7 @@ import { drainAssistantStream } from '@/utils/assistantStreamDrain'
 import { formatSmartTime } from '@/utils/feedTime'
 import AssistantMessageContent from '@/components/AssistantMessageContent.vue'
 import VoiceMessageBubble from '@/components/VoiceMessageBubble.vue'
+import McpTaskProgressBubble from '@/components/McpTaskProgressBubble.vue'
 import VoiceCallOverlay from '@/components/VoiceCallOverlay.vue'
 import { useVoiceDuplex } from '@/composables/useVoiceDuplex'
 import { typewriteText } from '@/utils/voiceResponse'
@@ -585,6 +592,16 @@ function openImagePreview(imageUrl) {
 const currentConvId = ref(null)
 const activeCharacter = ref(null)
 const activeCharacterAvatarTier = ref('thumb')
+const agentBridgeStore = useAgentBridgeStore()
+// 角色正在本机执行的电脑任务（进度小气泡；任务结束自动消失）
+const mcpActiveTask = computed(() => taskForCharacterSafe(activeCharacter.value?.id))
+function taskForCharacterSafe(characterId) {
+  try {
+    return agentBridgeStore.taskForCharacter(characterId)
+  } catch {
+    return null
+  }
+}
 watch(activeCharacter, (char) => setActiveChatActor(char), { immediate: true })
 const emotionState = ref(null)
 const msgListRef = ref(null)
@@ -599,6 +616,14 @@ const { isUserScrolledUp, scrollToBottom, jumpToBottom } = useChatScroll(msgList
   onReachTop: () => { void loadOlderMessages() },
 })
 const { beginStream, abortStream, isAbortError } = useStreamAbort({ abortOnUnmount: false })
+// 任务进度更新时跟随滚动（用户上翻时 useChatScroll 内部会拦截）
+watch(
+  () => mcpActiveTask.value?.updates?.length,
+  async () => {
+    await nextTick()
+    scrollToBottom()
+  },
+)
 const fileInputRef = ref(null)
 const galBgRef = ref(null)
 

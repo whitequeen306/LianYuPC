@@ -2676,7 +2676,8 @@ function registerIpcHandlers() {
     const args = payload?.args && typeof payload.args === 'object' ? payload.args : {}
     if (!name) return { ok: false, error: '工具名缺失' }
     const actor = payload?.actor && typeof payload.actor === 'object' ? payload.actor : {}
-    return mcpHost.callTool(name, args, { actor })
+    const requestId = typeof payload?.requestId === 'string' ? payload.requestId : null
+    return mcpHost.callTool(name, args, { actor, requestId })
   })
 
   ipcMain.handle('mcp:confirm-response', (event, payload) => {

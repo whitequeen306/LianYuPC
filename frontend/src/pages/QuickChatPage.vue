@@ -60,6 +60,7 @@
           </div>
         </div>
       </template>
+      <McpTaskProgressBubble v-if="mcpActiveTask" :task="mcpActiveTask" />
       <div ref="scrollAnchor" class="quick-chat__anchor" />
     </div>
 
@@ -98,6 +99,8 @@ import { useProvidersStore } from '@/stores/providers'
 import { ElMessage } from 'element-plus'
 import { humanizeError } from '@/utils/errorMessage'
 import CharacterAvatarImg from '@/components/CharacterAvatarImg.vue'
+import McpTaskProgressBubble from '@/components/McpTaskProgressBubble.vue'
+import { useAgentBridgeStore } from '@/stores/agentBridge'
 import { setActiveChatActor } from '@/composables/useActiveChatContext'
 import { getElectronAPI } from '@/utils/electron'
 import { useChatScroll, sleep, MIN_REPLY_DISPLAY_MS } from '@/composables/useChatScroll'
@@ -129,6 +132,22 @@ const inputText = ref('')
 const messages = ref([])
 const activeCharacter = ref(null)
 watch(activeCharacter, (char) => setActiveChatActor(char), { immediate: true })
+const agentBridgeStore = useAgentBridgeStore()
+// 角色正在本机执行的电脑任务（进度小气泡；任务结束自动消失）
+const mcpActiveTask = computed(() => {
+  try {
+    return agentBridgeStore.taskForCharacter(activeCharacter.value?.id)
+  } catch {
+    return null
+  }
+})
+watch(
+  () => mcpActiveTask.value?.updates?.length,
+  async () => {
+    await nextTick()
+    scrollToBottom()
+  },
+)
 const currentConvId = ref(null)
 const msgListRef = ref(null)
 const scrollAnchor = ref(null)

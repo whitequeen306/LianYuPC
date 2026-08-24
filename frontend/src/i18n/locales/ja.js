@@ -326,6 +326,8 @@ export default {
     exportSuccess: 'チャット履歴を書き出しました',
     exportEmpty: '書き出せるチャット履歴がありません',
     exportFailed: '書き出しに失敗しました',
+    mcpTaskActive: 'パソコンでタスク実行中',
+    mcpTaskStarting: '開始しています…',
   },
   group: {
     title: 'グループチャット',

@@ -332,6 +332,8 @@ export default {
     exportSuccess: '聊天记录已导出',
     exportEmpty: '暂无聊天记录可导出',
     exportFailed: '导出失败',
+    mcpTaskActive: '电脑任务进行中',
+    mcpTaskStarting: '正在开始执行…',
   },
   group: {
     title: '群聊',

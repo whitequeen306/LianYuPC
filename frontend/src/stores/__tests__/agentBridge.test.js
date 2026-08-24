@@ -118,6 +118,7 @@ describe('agentBridge store', () => {
         name: expect.any(String),
         caption: expect.stringMatching(/Esc/),
       }),
+      'req-1',
     )
     expect(postAgentToolResult).toHaveBeenCalledWith({
       requestId: 'req-1',
@@ -141,6 +142,7 @@ describe('agentBridge store', () => {
       'x',
       {},
       expect.objectContaining({ caption: expect.any(String) }),
+      'req-3',
     )
   })
 
@@ -165,5 +167,58 @@ describe('agentBridge store', () => {
     await Promise.resolve()
     expect(agentBridgeHeartbeat).toHaveBeenCalled()
     expect(registerAgentTools).toHaveBeenCalledTimes(2)
+  })
+
+  it('tracks an active task while the engine runs and clears it after the result', async () => {
+    let release
+    holder.api.mcpCallTool = vi.fn(() => new Promise((resolve) => {
+      release = () => resolve({ ok: true, content: 'done' })
+    }))
+    const pending = store.handleToolCallMessage({
+      type: 'tool_call', requestId: 'req-9', name: 'computer_task',
+      arguments: '{"instruction":"放歌"}', characterId: 42, characterName: '琉璃', characterAvatarUrl: '/a.png',
+    })
+    await Promise.resolve()
+    const task = store.taskForCharacter(42)
+    expect(task?.instruction).toBe('放歌')
+    expect(task?.actor?.name).toBe('琉璃')
+
+    store.handleProgressMessage({ requestId: 'req-9', message: '先打开网易云音乐' })
+    store.handleProgressMessage({ requestId: 'req-9', message: '先打开网易云音乐' }) // dup ignored
+    store.handleProgressMessage({ requestId: 'req-9', message: '正在输入「大海」…' })
+    expect(store.activeTasks['req-9'].updates.map((u) => u.text))
+      .toEqual(['先打开网易云音乐', '正在输入「大海」…'])
+
+    release()
+    await pending
+    expect(store.taskForCharacter(42)).toBeNull()
+    expect(store.activeTasks['req-9']).toBeUndefined()
+  })
+
+  it('ignores progress for unknown tasks and other characters', async () => {
+    store.handleProgressMessage({ requestId: 'ghost', message: 'x' })
+    expect(Object.keys(store.activeTasks)).toHaveLength(0)
+
+    let release
+    holder.api.mcpCallTool = vi.fn(() => new Promise((resolve) => {
+      release = () => resolve({ ok: true, content: '' })
+    }))
+    const pending = store.handleToolCallMessage({
+      type: 'tool_call', requestId: 'req-10', name: 'computer_task',
+      arguments: '{}', characterId: 42, characterName: '琉璃',
+    })
+    await Promise.resolve()
+    expect(store.taskForCharacter(43)).toBeNull()
+    store.handleProgressMessage({ requestId: 'req-10', message: '' }) // blank ignored
+    expect(store.activeTasks['req-10'].updates).toHaveLength(0)
+    release()
+    await pending
+  })
+
+  it('subscribes to engine progress notifications on init', async () => {
+    const onMcpProgress = vi.fn(() => () => {})
+    makeApi({ onMcpProgress })
+    await store.init()
+    expect(onMcpProgress).toHaveBeenCalled()
   })
 })

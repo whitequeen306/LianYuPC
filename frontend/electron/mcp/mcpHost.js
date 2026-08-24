@@ -173,10 +173,16 @@ export function createMcpHost({
       proc: spawned,
       log,
       onNotification: (method, params) => {
-        // v1 只透传进度类通知给渲染端（将来展示任务进度气泡）
+        // 引擎任务进度：透传给渲染端（聊天内角色进度气泡）。
+        // progressToken 即桥 requestId（callTool 时种下），供渲染端关联任务。
         if (method === 'notifications/progress') {
           try {
-            broadcast('desktop:mcp-progress', params)
+            broadcast('desktop:mcp-progress', {
+              requestId: params?.progressToken ?? null,
+              message: typeof params?.message === 'string' ? params.message : '',
+              progress: params?.progress,
+              total: params?.total,
+            })
           } catch { /* ignore */ }
         }
       },
@@ -279,9 +285,13 @@ export function createMcpHost({
       }
     }
     const actor = meta?.actor && typeof meta.actor === 'object' ? meta.actor : {}
+    const requestId = typeof meta?.requestId === 'string' && meta.requestId ? meta.requestId : null
     try {
       try { onControlStart?.(actor) } catch { /* overlay 失败不影响执行 */ }
-      const promise = client.request('tools/call', { name, arguments: args ?? {} }, TOOL_CALL_TIMEOUT_MS)
+      // progressToken 让引擎的 notifications/progress 能关联回这次桥调用。
+      const params = { name, arguments: args ?? {} }
+      if (requestId) params._meta = { progressToken: requestId }
+      const promise = client.request('tools/call', params, TOOL_CALL_TIMEOUT_MS)
       const requestId = promise.mcpRequestId
       const sessionClient = client
       activeCancel = () => {

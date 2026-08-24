@@ -14,11 +14,14 @@ import {
 } from '@/api/agentBridge'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
+const MAX_TASK_UPDATES = 30
 
 /**
  * Agent 工具桥（渲染端协调者）：
  * - 监听 Electron 主进程 MCP 服务状态；running 时把工具清单注册到云端并开始心跳
  * - 经 STOMP /user/queue/agent-tools 接收云端下发的工具调用 → IPC 转交主进程本地执行 → REST 回传结果
+ * - 维护 activeTasks：任务执行期间引擎经 MCP progress 上报的现场解说，
+ *   聊天页把它渲染成角色的进度小气泡（任务结束即消失，不落库）。
  */
 export const useAgentBridgeStore = defineStore('agentBridge', () => {
   const mcpState = ref('stopped') // stopped | starting | running | error
@@ -28,10 +31,13 @@ export const useAgentBridgeStore = defineStore('agentBridge', () => {
   const settings = ref(null)
   const engineStatus = ref({ installed: false, version: '', exePath: '' })
   const engineProgress = ref(null)
+  // requestId → { requestId, name, instruction, actor, updates: [{ ts, text }], startedAt }
+  const activeTasks = ref({})
 
   let heartbeatTimer = null
   let statusUnsub = null
   let engineProgressUnsub = null
+  let progressUnsub = null
   let inited = false
 
   const online = computed(() => mcpState.value === 'running' && registered.value)
@@ -102,18 +108,31 @@ export const useAgentBridgeStore = defineStore('agentBridge', () => {
     if (!message || message.type !== 'tool_call' || !message.requestId) return
     const api = getElectronAPI()
     let result = null
+    let args = {}
     try {
-      let args = {}
-      try {
-        args = message.arguments ? JSON.parse(message.arguments) : {}
-      } catch {
-        args = {}
-      }
+      args = message.arguments ? JSON.parse(message.arguments) : {}
+    } catch {
+      args = {}
+    }
+    const task = {
+      requestId: message.requestId,
+      name: message.name || '',
+      instruction: typeof args.instruction === 'string' ? args.instruction : '',
+      actor: {
+        characterId: message.characterId ?? null,
+        name: String(message.characterName || '').trim(),
+        avatarUrl: message.characterAvatarUrl || '',
+      },
+      updates: [],
+      startedAt: Date.now(),
+    }
+    activeTasks.value = { ...activeTasks.value, [message.requestId]: task }
+    try {
       result = await api?.mcpCallTool?.(message.name, args, resolveMcpControlActor(message, {
         characters: useCharactersStore().list,
         currentCharacter: activeChatActor.value,
         theme: useSettingsStore().theme,
-      }))
+      }), message.requestId)
     } catch (e) {
       result = { ok: false, error: e?.message || '本地调用异常' }
     }
@@ -126,7 +145,37 @@ export const useAgentBridgeStore = defineStore('agentBridge', () => {
       })
     } catch (e) {
       console.warn('[agentBridge] post result failed', e)
+    } finally {
+      const next = { ...activeTasks.value }
+      delete next[message.requestId]
+      activeTasks.value = next
     }
+  }
+
+  /** 引擎经 MCP notifications/progress 上报的现场解说（progressToken = requestId） */
+  function handleProgressMessage(params) {
+    const requestId = params?.requestId
+    const text = typeof params?.message === 'string' ? params.message.trim() : ''
+    if (!requestId || !text) return
+    const task = activeTasks.value[requestId]
+    if (!task) return
+    const last = task.updates[task.updates.length - 1]
+    if (last && last.text === text) return
+    const updates = [...task.updates, { ts: Date.now(), text }].slice(-MAX_TASK_UPDATES)
+    activeTasks.value = {
+      ...activeTasks.value,
+      [requestId]: { ...task, updates },
+    }
+  }
+
+  /** 指定角色当前正在执行的任务（聊天页进度气泡用）；取最近开始的一个 */
+  function taskForCharacter(characterId) {
+    if (characterId == null) return null
+    const id = Number(characterId)
+    const list = Object.values(activeTasks.value)
+      .filter((t) => Number(t.actor?.characterId) === id)
+      .sort((a, b) => b.startedAt - a.startedAt)
+    return list[0] || null
   }
 
   async function refreshEngineStatus() {
@@ -170,6 +219,11 @@ export const useAgentBridgeStore = defineStore('agentBridge', () => {
     statusUnsub = api.onMcpStatus((status) => {
       void handleMcpStatus(status)
     })
+    if (api.onMcpProgress) {
+      progressUnsub = api.onMcpProgress((params) => {
+        handleProgressMessage(params)
+      })
+    }
     if (api.onEngineProgress) {
       engineProgressUnsub = api.onEngineProgress((progress) => {
         engineProgress.value = progress || null
@@ -192,6 +246,10 @@ export const useAgentBridgeStore = defineStore('agentBridge', () => {
       statusUnsub()
       statusUnsub = null
     }
+    if (progressUnsub) {
+      progressUnsub()
+      progressUnsub = null
+    }
     if (engineProgressUnsub) {
       engineProgressUnsub()
       engineProgressUnsub = null
@@ -201,9 +259,10 @@ export const useAgentBridgeStore = defineStore('agentBridge', () => {
 
   return {
     mcpState, mcpError, tools, registered, online, settings,
-    engineStatus, engineProgress,
+    engineStatus, engineProgress, activeTasks,
     init, dispose, refreshSettings, updateSettings, refreshEngineStatus, installEngine,
+    taskForCharacter,
     // 导出供测试
-    handleMcpStatus, handleToolCallMessage,
+    handleMcpStatus, handleToolCallMessage, handleProgressMessage,
   }
 })

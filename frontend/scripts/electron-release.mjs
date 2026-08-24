@@ -52,8 +52,8 @@ if (process.env.AGENT_ENGINE_SKIP === '1') {
 } else {
   const engineZip = process.env.AGENT_ENGINE_ZIP
     || path.resolve(root, '..', '..', 'AgentAssistant', 'packaging', 'AgentEngine-hosted-win-x64.zip')
-  // 0.1.2: hosted 显式 thinking=disabled，避免 V4 Flash 默认开思考后 400
-  const engineVersion = process.env.AGENT_ENGINE_VERSION || '0.1.2'
+  // 0.1.3: hosted 进度气泡（里程碑解说 + 模板状态行）
+  const engineVersion = process.env.AGENT_ENGINE_VERSION || '0.1.3'
   if (fs.existsSync(engineZip)) {
     execFileSync('python', [
       path.join(root, '..', 'scripts', '_upload_agent_engine.py'),

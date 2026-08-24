@@ -331,6 +331,8 @@ export default {
     exportSuccess: 'Chat history exported',
     exportEmpty: 'No chat history to export',
     exportFailed: 'Export failed',
+    mcpTaskActive: 'Working on your computer',
+    mcpTaskStarting: 'Getting started…',
   },
   group: {
     title: 'Group chat',
