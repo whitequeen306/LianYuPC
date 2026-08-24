@@ -6,3 +6,4 @@ export async function adminLogout() { await client.post('/api/admin/v1/auth/logo
 export async function getOverview() { const { data } = await client.get('/api/admin/v1/overview'); return data }
 export async function fetchAdminList(endpoint) { const { data } = await client.get(endpoint); return data?.data || [] }
 export async function createRelease(payload) { return client.post('/api/admin/v1/releases', payload) }
+export async function moderateUser(id, action) { return client.post(`/api/admin/v1/users/${id}/${action}`) }
