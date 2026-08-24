@@ -10,6 +10,7 @@ files:
 asar: true
 win:
   target: nsis
+  icon: ../frontend/build/icon.ico
   signAndEditExecutable: false
 nsis:
   oneClick: false
@@ -18,3 +19,5 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: LianYu Admin
+  installerIcon: ../frontend/build/icon.ico
+  uninstallerIcon: ../frontend/build/icon.ico

@@ -1,4 +1,4 @@
-# LianYu Admin
+# LianYu Admin v0.2.363
 
 独立 Windows 管理中枢。服务器只提供 `/api/admin/v1/**` 管理 API，Admin EXE 不携带数据库、MinIO、GitHub 或基础设施密钥。
 
