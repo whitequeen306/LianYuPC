@@ -1,6 +1,8 @@
 {
   "name": "lianyu-admin",
   "version": "0.2.363",
+  "description": "LianYu desktop operations management center",
+  "author": "LianYu",
   "private": true,
   "type": "module",
   "main": "electron/main.js",
