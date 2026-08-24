@@ -8,12 +8,30 @@
  */
 import { spawn } from 'node:child_process'
 import { createMcpClient } from './mcpClient.js'
+import { parseAgentToolArguments } from '../../src/utils/parseAgentToolArguments.js'
+
+export { parseAgentToolArguments }
 
 // 委托型工具（computer_task）在本地跑多步 agent，可能耗时数分钟，给到 10 分钟上限。
 // 必须 < 后端 lianyu.tools.agent-bridge.call-timeout-ms（630s）：这样引擎超时后本地仍能
 // 抢在后端放弃前回传「超时」结果，模型据此自然解释失败，而不是结果落到已过期的请求。
 const TOOL_CALL_TIMEOUT_MS = 600_000
 const MAX_TOOL_RESULT_CHARS = 8_000
+const START_WAIT_MS = 20_000
+
+/** 委托型总工具：细粒度危险操作走 elicitation，宿主不要对整次任务先弹确认。 */
+const HOST_CONFIRM_EXEMPT = new Set(['computer_task'])
+
+/**
+ * MCP annotations → 是否需要宿主预确认。
+ * computer_task 即使缺 annotations 也不预确认（否则缺省 destructiveHint=true 会每次弹窗，
+ * 对话框一关就回「用户拒绝」，引擎日志里看不到 computer_task start）。
+ */
+export function toolIsDangerous(name, annotations = {}) {
+  if (HOST_CONFIRM_EXEMPT.has(String(name || ''))) return false
+  if (annotations.readOnlyHint === true) return false
+  return annotations.destructiveHint !== false
+}
 
 /**
  * 用户按 Esc 取消后回给模型的工具结果。ok=true，避免被包装成「执行失败」；
@@ -119,15 +137,15 @@ export function createMcpHost({
   }
 
   function normalizeTool(raw) {
+    const name = String(raw?.name || '')
     const annotations = raw?.annotations || {}
     return {
-      name: String(raw?.name || ''),
-      description: String(raw?.description || '').trim() || String(raw?.name || ''),
+      name,
+      description: String(raw?.description || '').trim() || name,
       inputSchema: raw?.inputSchema && typeof raw.inputSchema === 'object'
         ? raw.inputSchema
         : { type: 'object', properties: {} },
-      // readOnlyHint=true 一定安全；destructiveHint 缺省时按 MCP 规范视为 true（保守）
-      dangerous: annotations.readOnlyHint === true ? false : annotations.destructiveHint !== false,
+      dangerous: toolIsDangerous(name, annotations),
     }
   }
 
@@ -265,12 +283,22 @@ export function createMcpHost({
    * 确认通过后进入「操控中」：顶部控制条 + Esc 可取消。
    * 返回 { ok, content?, error? }，永不抛异常（桥要求结果化）。
    */
-  async function callTool(name, args, meta = {}) {
+  async function callTool(name, rawArgs, meta = {}) {
+    if (state === 'starting') {
+      log(`mcp callTool waiting for start: ${name}`)
+      const deadline = Date.now() + START_WAIT_MS
+      while (state === 'starting' && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 150))
+      }
+    }
     if (state !== 'running' || !client) {
+      log(`mcp callTool skipped: ${name} state=${state}`)
       return { ok: false, error: 'MCP 服务未运行' }
     }
+    const args = parseAgentToolArguments(rawArgs)
     const tool = tools.find((t) => t.name === name)
     if (!tool) {
+      log(`mcp callTool skipped: unknown ${name}`)
       return { ok: false, error: `未知工具：${name}` }
     }
     if (tool.dangerous) {
@@ -281,6 +309,7 @@ export function createMcpHost({
         args: safeArgsPreview(args),
       })
       if (!approved) {
+        log(`mcp callTool denied by user: ${name}`)
         return { ok: false, error: '用户拒绝了该操作' }
       }
     }
@@ -292,21 +321,25 @@ export function createMcpHost({
       const params = { name, arguments: args ?? {} }
       if (requestId) params._meta = { progressToken: requestId }
       const promise = client.request('tools/call', params, TOOL_CALL_TIMEOUT_MS)
-      const requestId = promise.mcpRequestId
+      const mcpRequestId = promise.mcpRequestId
       const sessionClient = client
       activeCancel = () => {
-        try { sessionClient.cancel?.(requestId, 'user_escape') } catch { /* ignore */ }
+        try { sessionClient.cancel?.(mcpRequestId, 'user_escape') } catch { /* ignore */ }
       }
       const result = await promise
       const text = extractText(result)
       if (result?.isError) {
+        log(`mcp callTool error: ${name} ${String(text || '工具执行失败').slice(0, 240)}`)
         return { ok: false, error: text || '工具执行失败' }
       }
+      log(`mcp callTool ok: ${name} chars=${text.length}`)
       return { ok: true, content: text }
     } catch (e) {
       if (isMcpCancelledError(e)) {
+        log(`mcp callTool cancelled: ${name}`)
         return { ok: true, content: MCP_USER_CANCELLED_CONTENT }
       }
+      log(`mcp callTool exception: ${name} ${e?.message || e}`)
       return { ok: false, error: e?.message || '工具调用异常' }
     } finally {
       activeCancel = null

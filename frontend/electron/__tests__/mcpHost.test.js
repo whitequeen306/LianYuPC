@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resolveMcpLaunchTarget, engineEnvFromCredentials, createMcpHost, MCP_USER_CANCELLED_CONTENT, isMcpCancelledError } from '../mcp/mcpHost.js'
+import { resolveMcpLaunchTarget, engineEnvFromCredentials, createMcpHost, MCP_USER_CANCELLED_CONTENT, isMcpCancelledError, toolIsDangerous } from '../mcp/mcpHost.js'
 
 describe('resolveMcpLaunchTarget', () => {
   it('prefers the demo server when useDemoServer is true', () => {
@@ -102,5 +102,32 @@ describe('mcpHost cancel helpers', () => {
       broadcast: () => {},
     })
     expect(host.cancelActiveCall()).toBe(false)
+  })
+})
+
+describe('callTool requestId binding', () => {
+  it('does not redeclare requestId inside the same try block (TDZ crash in 0.2.361)', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const src = readFileSync(fileURLToPath(new URL('../mcp/mcpHost.js', import.meta.url)), 'utf8')
+    const start = src.indexOf('async function callTool')
+    const end = src.indexOf('\n  function cancelActiveCall')
+    const fn = src.slice(start, end)
+    const bindings = fn.match(/\b(?:const|let) requestId\b/g) || []
+    expect(bindings).toHaveLength(1)
+    expect(fn).toMatch(/\bmcpRequestId\b/)
+  })
+})
+
+describe('toolIsDangerous', () => {
+  it('never pre-confirms computer_task even when annotations are missing', () => {
+    expect(toolIsDangerous('computer_task', {})).toBe(false)
+    expect(toolIsDangerous('computer_task', { destructiveHint: true })).toBe(false)
+  })
+
+  it('treats missing destructiveHint as dangerous for other tools', () => {
+    expect(toolIsDangerous('run_command', {})).toBe(true)
+    expect(toolIsDangerous('run_command', { destructiveHint: false })).toBe(false)
+    expect(toolIsDangerous('read_file', { readOnlyHint: true })).toBe(false)
   })
 })

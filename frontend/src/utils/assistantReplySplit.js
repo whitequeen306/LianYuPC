@@ -93,6 +93,34 @@ function collectReplyPieces(fullContent) {
     .filter(Boolean)
 }
 
+const ATTEMPT_MARKERS = ['现在就试', '这就试', '我去试', '我试试', '稍等', '盯着', '马上帮你', '这就去']
+const OUTCOME_MARKERS = [
+  '这次还是没成', '还是没成', '还是不行', '没帮上忙', '报了个错',
+  '执行失败', '助手还没', '无法执行', '没有成功', '没成',
+  '失败了', '失败，', '失败。'
+]
+
+/** 须与后端 {@code AssistantReplySplitter.groupComputerTaskAttemptAndOutcome} 一致 */
+function groupComputerTaskAttemptAndOutcome(pieces) {
+  if (!pieces || pieces.length < 2) return pieces || []
+  const outcomeAt = pieces.findIndex((piece) => OUTCOME_MARKERS.some((m) => piece.includes(m)))
+  if (outcomeAt <= 0) return pieces
+  const preamble = joinReplyPieces(pieces.slice(0, outcomeAt))
+  const outcome = joinReplyPieces(pieces.slice(outcomeAt))
+  if (!preamble || !outcome || !ATTEMPT_MARKERS.some((m) => preamble.includes(m))) {
+    return pieces
+  }
+  return [preamble, outcome]
+}
+
+function joinReplyPieces(parts) {
+  return parts.reduce((acc, part) => {
+    if (!part) return acc
+    if (!acc) return part
+    return /[。！？!?]$/.test(acc) ? acc + part : `${acc} ${part}`
+  }, '').trim()
+}
+
 function capReplyPieces(pieces, limit) {
   const capped = Math.max(1, Number(limit) || 3)
   if (pieces.length <= capped) {
@@ -109,11 +137,18 @@ export function splitAssistantReply(fullContent, maxRepliesPerTurn = 3) {
 
 /** 展示层：后端已按条落库时不再二次切分；仅用于流式兜底 */
 export function splitAssistantReplyForDisplay(fullContent) {
-  return capReplyPieces(collectReplyPieces(fullContent), 5)
+  return processAssistantReply(fullContent, 5)
 }
 
 export function processAssistantReply(fullContent, maxRepliesPerTurn = 3) {
-  return capReplyPieces(collectReplyPieces(fullContent), maxRepliesPerTurn)
+  let pieces = collectReplyPieces(fullContent)
+  const grouped = groupComputerTaskAttemptAndOutcome(pieces)
+  let limit = Math.max(1, Number(maxRepliesPerTurn) || 3)
+  if (grouped.length === 2) {
+    pieces = grouped
+    limit = Math.max(limit, 2)
+  }
+  return capReplyPieces(pieces, limit)
 }
 
 /** 与后端 {@code CharacterChatBehaviorResolver.StyleProfile} 默认条数一致 */

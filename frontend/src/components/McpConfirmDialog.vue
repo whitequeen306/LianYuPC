@@ -4,7 +4,7 @@
     :title="dialogTitle"
     width="420px"
     :close-on-click-modal="false"
-    :close-on-press-escape="true"
+    :close-on-press-escape="false"
     :show-close="false"
     align-center
     class="mcp-confirm-dialog"

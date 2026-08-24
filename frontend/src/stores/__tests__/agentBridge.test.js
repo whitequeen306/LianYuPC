@@ -136,13 +136,26 @@ describe('agentBridge store', () => {
     )
   })
 
-  it('tolerates malformed argument json (falls back to empty object)', async () => {
-    await store.handleToolCallMessage({ type: 'tool_call', requestId: 'req-3', name: 'x', arguments: 'not-json' })
+  it('treats a non-json string as the instruction rather than dropping it', async () => {
+    await store.handleToolCallMessage({ type: 'tool_call', requestId: 'req-3', name: 'x', arguments: '打开网易云' })
     expect(holder.api.mcpCallTool).toHaveBeenCalledWith(
       'x',
-      {},
+      { instruction: '打开网易云' },
       expect.objectContaining({ caption: expect.any(String) }),
       'req-3',
+    )
+  })
+
+  it('accepts already-parsed argument objects from STOMP', async () => {
+    await store.handleToolCallMessage({
+      type: 'tool_call', requestId: 'req-3b', name: 'computer_task',
+      arguments: { task: '播放水手' },
+    })
+    expect(holder.api.mcpCallTool).toHaveBeenCalledWith(
+      'computer_task',
+      { task: '播放水手', instruction: '播放水手' },
+      expect.objectContaining({ caption: expect.any(String) }),
+      'req-3b',
     )
   })
 
@@ -220,5 +233,23 @@ describe('agentBridge store', () => {
     makeApi({ onMcpProgress })
     await store.init()
     expect(onMcpProgress).toHaveBeenCalled()
+  })
+
+  it('retries a tool call after MCP finishes starting', async () => {
+    store.mcpState = 'starting'
+    const pending = store.handleToolCallMessage({
+      type: 'tool_call', requestId: 'req-restart', name: 'computer_task',
+      arguments: '{"instruction":"放歌"}',
+    })
+    await Promise.resolve()
+    expect(holder.api.mcpCallTool).not.toHaveBeenCalled()
+    store.mcpState = 'running'
+    await vi.advanceTimersByTimeAsync(250)
+    await pending
+    expect(holder.api.mcpCallTool).toHaveBeenCalledTimes(1)
+    expect(postAgentToolResult).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: 'req-restart',
+      ok: true,
+    }))
   })
 })

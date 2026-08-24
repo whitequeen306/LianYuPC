@@ -52,8 +52,8 @@ if (process.env.AGENT_ENGINE_SKIP === '1') {
 } else {
   const engineZip = process.env.AGENT_ENGINE_ZIP
     || path.resolve(root, '..', '..', 'AgentAssistant', 'packaging', 'AgentEngine-hosted-win-x64.zip')
-  // 0.1.3: hosted 进度气泡（里程碑解说 + 模板状态行）
-  const engineVersion = process.env.AGENT_ENGINE_VERSION || '0.1.3'
+  // 0.1.4: drop 「先说一句」from computer_task description; coerce string/alias args
+  const engineVersion = process.env.AGENT_ENGINE_VERSION || '0.1.4'
   if (fs.existsSync(engineZip)) {
     execFileSync('python', [
       path.join(root, '..', 'scripts', '_upload_agent_engine.py'),

@@ -12,9 +12,21 @@ import {
   unregisterAgentBridge,
   postAgentToolResult,
 } from '@/api/agentBridge'
+import { parseAgentToolArguments } from '@/utils/parseAgentToolArguments'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
 const MAX_TASK_UPDATES = 30
+const MCP_RESTART_WAIT_MS = 20_000
+
+function mcpRestartLikely(mcpState, engineProgress) {
+  if (mcpState === 'starting') return true
+  const phase = engineProgress?.phase
+  return !!phase && phase !== 'done' && phase !== 'error' && phase !== 'skipped'
+}
+
+function isTransientMcpDown(error) {
+  return String(error || '').includes('MCP 服务未运行')
+}
 
 /**
  * Agent 工具桥（渲染端协调者）：
@@ -103,17 +115,30 @@ export const useAgentBridgeStore = defineStore('agentBridge', () => {
     }
   }
 
+  function waitForMcpRunning(timeoutMs) {
+    if (mcpState.value === 'running') return Promise.resolve(true)
+    return new Promise((resolve) => {
+      const deadline = Date.now() + timeoutMs
+      const timer = setInterval(() => {
+        if (mcpState.value === 'running') {
+          clearInterval(timer)
+          resolve(true)
+          return
+        }
+        if (Date.now() >= deadline) {
+          clearInterval(timer)
+          resolve(mcpState.value === 'running')
+        }
+      }, 200)
+    })
+  }
+
   /** 云端下发的工具调用：本地执行后回传（永不抛异常，失败也要回包让模型继续） */
   async function handleToolCallMessage(message) {
     if (!message || message.type !== 'tool_call' || !message.requestId) return
     const api = getElectronAPI()
     let result = null
-    let args = {}
-    try {
-      args = message.arguments ? JSON.parse(message.arguments) : {}
-    } catch {
-      args = {}
-    }
+    const args = parseAgentToolArguments(message.arguments)
     const task = {
       requestId: message.requestId,
       name: message.name || '',
@@ -128,11 +153,25 @@ export const useAgentBridgeStore = defineStore('agentBridge', () => {
     }
     activeTasks.value = { ...activeTasks.value, [message.requestId]: task }
     try {
+      if (mcpRestartLikely(mcpState.value, engineProgress.value) && mcpState.value !== 'running') {
+        await waitForMcpRunning(MCP_RESTART_WAIT_MS)
+      }
       result = await api?.mcpCallTool?.(message.name, args, resolveMcpControlActor(message, {
         characters: useCharactersStore().list,
         currentCharacter: activeChatActor.value,
         theme: useSettingsStore().theme,
       }), message.requestId)
+      if (result?.ok === false && isTransientMcpDown(result.error)
+          && mcpRestartLikely(mcpState.value, engineProgress.value)) {
+        const recovered = await waitForMcpRunning(MCP_RESTART_WAIT_MS)
+        if (recovered) {
+          result = await api?.mcpCallTool?.(message.name, args, resolveMcpControlActor(message, {
+            characters: useCharactersStore().list,
+            currentCharacter: activeChatActor.value,
+            theme: useSettingsStore().theme,
+          }), message.requestId)
+        }
+      }
     } catch (e) {
       result = { ok: false, error: e?.message || '本地调用异常' }
     }

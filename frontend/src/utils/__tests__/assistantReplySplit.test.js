@@ -37,6 +37,23 @@ describe('splitAssistantReply', () => {
   it('splits into three pieces when limit allows', () => {
     expect(splitAssistantReply(sample, 3)).toHaveLength(3)
   })
+
+  it('splits computer-task failure even when maxReplies is 1', () => {
+    const text = [
+      '好，您说可以了，那我我现在就试。',
+      '麻烦稍等一下，我这边盯着呢。',
+      '这次还是没成，执行的时候报了个错，看来这台电脑这边的助手还没完全恢复。',
+      '真是让您费心了，试了这么多次都没帮上忙。'
+    ].join('')
+    const result = splitAssistantReply(text, 1)
+    expect(result).toHaveLength(2)
+    expect(result[0]).toBe('好，您说可以了，那我我现在就试。麻烦稍等一下，我这边盯着呢。')
+    expect(result[1].startsWith('这次还是没成')).toBe(true)
+  })
+
+  it('does not force-split ordinary chat when maxReplies is 1', () => {
+    expect(splitAssistantReply(sample, 1)).toHaveLength(1)
+  })
 })
 
 describe('splitAssistantReplyForDisplay', () => {

@@ -73,7 +73,7 @@ import {
   readWechatBridgeSettings,
   writeWechatBridgeSettings,
 } from './wechatBridge/wechatBridgeSettings.js'
-import { createMcpHost, engineEnvFromCredentials } from './mcp/mcpHost.js'
+import { createMcpHost, engineEnvFromCredentials, parseAgentToolArguments } from './mcp/mcpHost.js'
 import { createMcpControlBanner } from './mcp/mcpControlBanner.js'
 import { readMcpSettings, writeMcpSettings } from './mcp/mcpSettings.js'
 import {
@@ -2673,7 +2673,7 @@ function registerIpcHandlers() {
   ipcMain.handle('mcp:call-tool', async (event, payload) => {
     if (!guardTrusted(event)) return { ok: false, error: 'untrusted_sender' }
     const name = typeof payload?.name === 'string' ? payload.name : ''
-    const args = payload?.args && typeof payload.args === 'object' ? payload.args : {}
+    const args = parseAgentToolArguments(payload?.args)
     if (!name) return { ok: false, error: '工具名缺失' }
     const actor = payload?.actor && typeof payload.actor === 'object' ? payload.actor : {}
     const requestId = typeof payload?.requestId === 'string' ? payload.requestId : null
@@ -2698,6 +2698,13 @@ function registerIpcHandlers() {
       const result = await installManagedEngineFromCloud((progress) => {
         broadcastToAppWindows('desktop:mcp-engine-progress', progress)
       })
+      // 新引擎落到磁盘后必须重启宿主，否则仍跑旧进程；更新窗口内的
+      // computer_task 由桥 session-wait / callTool starting-wait 兜住。
+      if (result?.skipped !== true && readMcpSettings().enabled) {
+        log('[mcp] engine updated, restarting host')
+        await mcpHost.stop()
+        await mcpHost.start()
+      }
       return { ok: true, ...result, status: getEngineStatus() }
     } catch (e) {
       const error = e?.message || String(e)
