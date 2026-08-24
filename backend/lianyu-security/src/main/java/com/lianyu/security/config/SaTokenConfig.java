@@ -18,7 +18,8 @@ public class SaTokenConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new SaInterceptor(handle -> {
                     var router = SaRouter.match("/api/**")
-                            .notMatch("/api/auth/login", "/api/auth/register", "/api/auth/captcha")
+                            .notMatch("/api/auth/login", "/api/auth/register", "/api/auth/captcha", "/api/admin/v1/auth/login")
+                            .notMatch("/api/admin/v1/**")
                             .notMatch("/api/public/**");
                     if (apiDocsEnabled) {
                         router.notMatch("/doc.html", "/v3/api-docs/**", "/webjars/**", "/swagger-ui.html",
