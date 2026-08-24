@@ -51,4 +51,5 @@ public class AdminAuthService {
     }
 
     public void logout() { StpUtil.logout(); }
+    public String currentUsername() { long id = Long.parseLong(StpUtil.getLoginIdAsString().substring("admin:".length())); return jdbc.queryForObject("SELECT username FROM admin_user WHERE id=?", String.class, id); }
 }

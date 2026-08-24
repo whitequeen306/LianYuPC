@@ -13,6 +13,8 @@ import java.util.Map;
 public class ReleaseMetadataController {
     private final AdminAuthorizationService authorization;
     private final ReleaseValidationService validation;
+    private final ReleaseUploadService uploadService;
+    @PostMapping("/upload-session") public Result<Map<String,Object>> uploadSession(@RequestBody Map<String,Object> body) { return Result.ok(uploadService.createUpload(String.valueOf(body.get("fileName")), ((Number) body.getOrDefault("size",0)).longValue())); }
     @PostMapping("/validate")
     public Result<Void> validate(@RequestBody Map<String,Object> body) {
         authorization.require("release.manage");

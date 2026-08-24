@@ -125,6 +125,20 @@ CREATE TABLE IF NOT EXISTS admin_config_revision (
     UNIQUE KEY uk_admin_config_revision (config_key, revision_no)
 );
 
+CREATE TABLE IF NOT EXISTS support_access_grant (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    conversation_id BIGINT NOT NULL,
+    issued_by BIGINT NOT NULL,
+    redeemed_by BIGINT NULL,
+    code_hash CHAR(64) NOT NULL,
+    expires_at DATETIME(3) NOT NULL,
+    revoked_at DATETIME(3) NULL,
+    redeemed_at DATETIME(3) NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uk_support_grant_code (code_hash),
+    KEY idx_support_grant_conversation (conversation_id, expires_at, revoked_at)
+);
+
 INSERT INTO admin_permission(permission_key, permission_name)
 SELECT * FROM (SELECT 'admin.manage', '管理管理员') x WHERE NOT EXISTS (SELECT 1 FROM admin_permission WHERE permission_key='admin.manage');
 INSERT INTO admin_permission(permission_key, permission_name)
@@ -139,6 +153,8 @@ INSERT INTO admin_permission(permission_key, permission_name)
 SELECT * FROM (SELECT 'audit.read', '查看审计日志') x WHERE NOT EXISTS (SELECT 1 FROM admin_permission WHERE permission_key='audit.read');
 INSERT INTO admin_permission(permission_key, permission_name)
 SELECT * FROM (SELECT 'system.health', '查看服务健康') x WHERE NOT EXISTS (SELECT 1 FROM admin_permission WHERE permission_key='system.health');
+INSERT INTO admin_permission(permission_key, permission_name)
+SELECT * FROM (SELECT 'support.conversation.read', '临时查看会话') x WHERE NOT EXISTS (SELECT 1 FROM admin_permission WHERE permission_key='support.conversation.read');
 
 INSERT INTO admin_role(role_key, role_name, protected_role)
 SELECT * FROM (SELECT 'super_admin', '超级管理员', TRUE) x WHERE NOT EXISTS (SELECT 1 FROM admin_role WHERE role_key='super_admin');
