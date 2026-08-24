@@ -1,0 +1,20 @@
+appId: com.lianyu.admin
+productName: LianYu Admin
+artifactName: LianYu-Admin-Setup-${version}.${ext}
+directories:
+  output: release
+files:
+  - dist/**
+  - electron/**
+  - package.json
+asar: true
+win:
+  target: nsis
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: LianYu Admin

@@ -9,6 +9,7 @@ WORKDIR /build
 COPY pom.xml .
 COPY lianyu-common/pom.xml lianyu-common/pom.xml
 COPY lianyu-dao/pom.xml lianyu-dao/pom.xml
+COPY lianyu-admin/pom.xml lianyu-admin/pom.xml
 COPY lianyu-storage/pom.xml lianyu-storage/pom.xml
 COPY lianyu-security/pom.xml lianyu-security/pom.xml
 COPY lianyu-ai/pom.xml lianyu-ai/pom.xml
@@ -23,6 +24,7 @@ RUN --mount=type=cache,target=/root/.m2 \
 # 源码层（任意模块 src 变更即重新编译打包）
 COPY lianyu-common/src lianyu-common/src
 COPY lianyu-dao/src lianyu-dao/src
+COPY lianyu-admin/src lianyu-admin/src
 COPY lianyu-storage/src lianyu-storage/src
 COPY lianyu-security/src lianyu-security/src
 COPY lianyu-ai/src lianyu-ai/src

@@ -105,6 +105,26 @@ CREATE TABLE IF NOT EXISTS announcement (
     updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
 );
 
+CREATE TABLE IF NOT EXISTS release_rollout (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    release_id BIGINT NOT NULL,
+    percentage DECIMAL(5,2) NOT NULL DEFAULT 100.00,
+    salt VARCHAR(128) NOT NULL,
+    state VARCHAR(16) NOT NULL DEFAULT 'active',
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    CONSTRAINT fk_release_rollout_release FOREIGN KEY (release_id) REFERENCES app_release(id)
+);
+
+CREATE TABLE IF NOT EXISTS admin_config_revision (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    config_key VARCHAR(128) NOT NULL,
+    revision_no INT NOT NULL,
+    value_json JSON NOT NULL,
+    created_by BIGINT NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uk_admin_config_revision (config_key, revision_no)
+);
+
 INSERT INTO admin_permission(permission_key, permission_name)
 SELECT * FROM (SELECT 'admin.manage', '管理管理员') x WHERE NOT EXISTS (SELECT 1 FROM admin_permission WHERE permission_key='admin.manage');
 INSERT INTO admin_permission(permission_key, permission_name)
@@ -124,3 +144,10 @@ INSERT INTO admin_role(role_key, role_name, protected_role)
 SELECT * FROM (SELECT 'super_admin', '超级管理员', TRUE) x WHERE NOT EXISTS (SELECT 1 FROM admin_role WHERE role_key='super_admin');
 INSERT INTO admin_role(role_key, role_name, protected_role)
 SELECT * FROM (SELECT 'operations', '运营管理员', FALSE) x WHERE NOT EXISTS (SELECT 1 FROM admin_role WHERE role_key='operations');
+
+INSERT INTO admin_role_permission(role_id, permission_id)
+SELECT r.id, p.id FROM admin_role r CROSS JOIN admin_permission p
+WHERE r.role_key='super_admin' AND NOT EXISTS (SELECT 1 FROM admin_role_permission rp WHERE rp.role_id=r.id AND rp.permission_id=p.id);
+INSERT INTO admin_role_permission(role_id, permission_id)
+SELECT r.id, p.id FROM admin_role r JOIN admin_permission p ON p.permission_key IN ('user.read','release.manage','announcement.manage','system.health')
+WHERE r.role_key='operations' AND NOT EXISTS (SELECT 1 FROM admin_role_permission rp WHERE rp.role_id=r.id AND rp.permission_id=p.id);
