@@ -42,6 +42,24 @@ process.chdir(root)
 execSync(`npm version ${bump} --no-git-tag-version`, { stdio: 'inherit' })
 execSync('node scripts/electron-pack.mjs', { stdio: 'inherit' })
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
+execSync('node scripts/prepare-branded-release.mjs', { stdio: 'inherit' })
+
+const tag = `v${pkg.version}`
+const releaseDir = path.join(root, 'release', tag)
+const installerName = `LianYu-Setup-${pkg.version}.exe`
+const brandedAssets = [
+  path.join(releaseDir, installerName),
+  path.join(releaseDir, `${installerName}.blockmap`),
+  path.join(releaseDir, 'latest.yml'),
+]
+execFileSync('gh', ['release', 'upload', tag, ...brandedAssets, '--clobber'], {
+  stdio: 'inherit',
+  env: process.env,
+})
+execFileSync('gh', ['release', 'edit', tag, '--draft=false'], {
+  stdio: 'inherit',
+  env: process.env,
+})
 execSync(`python ../scripts/_upload_update_assets.py --version ${pkg.version}`, { stdio: 'inherit' })
 
 // AgentEngine 与 Electron 版本解耦：zip 在兄弟仓库 AgentAssistant/packaging，

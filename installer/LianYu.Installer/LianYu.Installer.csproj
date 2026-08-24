@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>LianYu-Setup</AssemblyName>
+    <RootNamespace>LianYu.Installer</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
+    <Version Condition="'$(LianYuVersion)' == ''">0.2.363</Version>
+    <Version Condition="'$(LianYuVersion)' != ''">$(LianYuVersion)</Version>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\mahiru.jpg" />
+    <Resource Include="Assets\mika.jpg" />
+    <Resource Include="Assets\character-a.jpg" />
+    <Resource Include="Assets\logo.png" />
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('Payload\LianYu-payload.zip')">
+    <EmbeddedResource Include="Payload\LianYu-payload.zip" LogicalName="LianYu.Payload.zip" />
+  </ItemGroup>
+</Project>

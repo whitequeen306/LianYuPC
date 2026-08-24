@@ -153,7 +153,7 @@ const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
 function resolveReleaseOutDir(version) {
   const primary = path.join('release', `v${version}`)
   const primaryFull = path.join(root, primary)
-  const installer = path.join(primaryFull, `LianYu Setup ${version}.exe`)
+  const installer = path.join(primaryFull, `LianYu-Setup-${version}.exe`)
   if (fs.existsSync(installer)) return primary
 
   const winUnpacked = path.join(primaryFull, 'win-unpacked')
@@ -187,7 +187,7 @@ function killLianYuProcesses() {
 }
 
 function removePartialReleaseArtifacts() {
-  const installerName = `LianYu Setup ${pkg.version}.exe`
+  const installerName = `LianYu-Setup-${pkg.version}.exe`
   if (fs.existsSync(path.join(outDirFull, installerName)) || fs.existsSync(path.join(builderOutDir, installerName))) {
     return
   }
@@ -210,8 +210,8 @@ function removePartialReleaseArtifacts() {
 function copyBuilderArtifactsToRepo() {
   if (builderOutDir === outDirFull) return
   const names = [
-    `LianYu Setup ${pkg.version}.exe`,
-    `LianYu Setup ${pkg.version}.exe.blockmap`,
+    `LianYu-Setup-${pkg.version}.exe`,
+    `LianYu-Setup-${pkg.version}.exe.blockmap`,
     'latest.yml',
   ]
   fs.mkdirSync(outDirFull, { recursive: true })
@@ -295,5 +295,5 @@ for (let attempt = 1; attempt <= builderAttempts; attempt++) {
 }
 copyBuilderArtifactsToRepo()
 
-console.log(`\n??????: ${outDir}/LianYu Setup ${pkg.version}.exe`)
+console.log(`\nInstaller: ${outDir}/LianYu-Setup-${pkg.version}.exe`)
 console.log(`API Origin (packed in runtime-secrets.bin): ${packApiOrigin}`)

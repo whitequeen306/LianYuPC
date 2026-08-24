@@ -189,8 +189,8 @@ def configure_update_assets_public_read(client: paramiko.SSHClient) -> None:
 
 def artifact_paths(version: str) -> list[tuple[Path, str]]:
     release_dir = ROOT / "frontend" / "release" / f"v{version}"
-    installer = release_dir / f"LianYu Setup {version}.exe"
-    blockmap = release_dir / f"LianYu Setup {version}.exe.blockmap"
+    installer = release_dir / f"LianYu-Setup-{version}.exe"
+    blockmap = release_dir / f"LianYu-Setup-{version}.exe.blockmap"
     latest = release_dir / "latest.yml"
     targets = [
         (installer, f"LianYu-Setup-{version}.exe"),

@@ -10,6 +10,7 @@
     "electron:dev": "node scripts/electron-dev.mjs",
     "icon:regenerate": "python scripts/regenerate-icon.py",
     "electron:build": "node scripts/electron-pack.mjs",
+    "installer:build": "node scripts/prepare-branded-release.mjs",
     "electron:release": "node scripts/electron-release.mjs",
     "electron:release:minor": "node scripts/electron-release.mjs minor",
     "electron:release:major": "node scripts/electron-release.mjs major",
@@ -46,7 +47,7 @@
   "build": {
     "appId": "com.lianyu.pc",
     "productName": "LianYu",
-    "artifactName": "${productName} Setup ${version}.${ext}",
+    "artifactName": "LianYu-Setup-${version}.${ext}",
     "directories": {
       "output": "release"
     },
