@@ -37,6 +37,7 @@ class AgentBridgeServiceTest {
         service = new AgentBridgeService(messagingTemplate, new ObjectMapper());
         ReflectionTestUtils.setField(service, "enabled", true);
         ReflectionTestUtils.setField(service, "callTimeoutMs", 200L);
+        ReflectionTestUtils.setField(service, "sessionWaitMs", 0L);
     }
 
     @AfterEach
@@ -210,5 +211,31 @@ class AgentBridgeServiceTest {
         assertThat(pushRef.get().characterId()).isEqualTo(620L);
         assertThat(pushRef.get().characterName()).isEqualTo("琉璃");
         assertThat(pushRef.get().characterAvatarUrl()).isEqualTo("/api/public/files/avatars/x.png");
+    }
+
+    @Test
+    void dispatchWaitsForReregisterAfterUnregister() throws Exception {
+        service.register(7L, requestWith("computer_task"));
+        service.unregister(7L);
+        ReflectionTestUtils.setField(service, "sessionWaitMs", 2000L);
+
+        doAnswer(invocation -> {
+            AgentBridgeService.ToolCallPush push = invocation.getArgument(2);
+            service.completeResult(7L, push.requestId(), true, "ok-after-wait", null);
+            return null;
+        }).when(messagingTemplate).convertAndSendToUser(anyString(), anyString(), any());
+
+        Thread registrar = new Thread(() -> {
+            try {
+                Thread.sleep(300);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            service.register(7L, requestWith("computer_task"));
+        });
+        registrar.start();
+        String result = service.dispatch(7L, "computer_task", "{\"instruction\":\"ping\"}");
+        registrar.join();
+        assertThat(result).isEqualTo("ok-after-wait");
     }
 }

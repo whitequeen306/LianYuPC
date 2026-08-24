@@ -17,6 +17,14 @@ public class AssistantReplySplitter {
             Pattern.compile("(?<=[。！？!?])(?=[^。！？!?\\s])");
     private static final Pattern EN_SENTENCE_BOUNDARY =
             Pattern.compile("(?<=[.!?])\\s+");
+    private static final String[] ATTEMPT_MARKERS = {
+            "现在就试", "这就试", "我去试", "我试试", "稍等", "盯着", "马上帮你", "这就去"
+    };
+    private static final String[] OUTCOME_MARKERS = {
+            "这次还是没成", "还是没成", "还是不行", "没帮上忙", "报了个错",
+            "执行失败", "助手还没", "无法执行", "没有成功", "没成",
+            "失败了", "失败，", "失败。"
+    };
 
     public List<String> split(String fullContent, int maxRepliesPerTurn) {
         if (fullContent == null || fullContent.isBlank()) {
@@ -40,6 +48,12 @@ public class AssistantReplySplitter {
 
         pieces = ParenthesisUtils.rebalanceSplitPieces(pieces);
 
+        List<String> attemptOutcome = groupComputerTaskAttemptAndOutcome(pieces);
+        if (attemptOutcome.size() == 2) {
+            pieces = attemptOutcome;
+            limit = Math.max(limit, 2);
+        }
+
         if (pieces.size() > limit) {
             List<String> merged = new ArrayList<>(pieces.subList(0, limit - 1));
             String tail = String.join(" ", pieces.subList(limit - 1, pieces.size()));
@@ -47,6 +61,64 @@ public class AssistantReplySplitter {
             return merged;
         }
         return pieces;
+    }
+
+    /**
+     * 电脑操控回合常把「我去试」和「失败了」写在同一段里；冷静人设 maxReplies=1
+     * 会把整段并成一条气泡。探测到「动手 / 稍等」后接执行结果时，强制拆成两条。
+     * 须与 frontend/src/utils/assistantReplySplit.js 保持一致。
+     */
+    static List<String> groupComputerTaskAttemptAndOutcome(List<String> pieces) {
+        if (pieces == null || pieces.size() < 2) {
+            return pieces == null ? List.of() : pieces;
+        }
+        int outcomeAt = -1;
+        for (int i = 0; i < pieces.size(); i++) {
+            if (containsAny(pieces.get(i), OUTCOME_MARKERS)) {
+                outcomeAt = i;
+                break;
+            }
+        }
+        if (outcomeAt <= 0) {
+            return pieces;
+        }
+        String preamble = joinReplyPieces(pieces.subList(0, outcomeAt));
+        String outcome = joinReplyPieces(pieces.subList(outcomeAt, pieces.size()));
+        if (preamble.isBlank() || outcome.isBlank() || !containsAny(preamble, ATTEMPT_MARKERS)) {
+            return pieces;
+        }
+        return List.of(preamble, outcome);
+    }
+
+    private static boolean containsAny(String text, String[] markers) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        for (String marker : markers) {
+            if (text.contains(marker)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String joinReplyPieces(List<String> parts) {
+        StringBuilder sb = new StringBuilder();
+        for (String part : parts) {
+            if (part == null || part.isBlank()) {
+                continue;
+            }
+            if (sb.length() == 0) {
+                sb.append(part);
+                continue;
+            }
+            char last = sb.charAt(sb.length() - 1);
+            if (last != '。' && last != '！' && last != '？' && last != '!' && last != '?') {
+                sb.append(' ');
+            }
+            sb.append(part);
+        }
+        return sb.toString().trim();
     }
 
     private List<String> splitBySentenceBoundary(String text) {

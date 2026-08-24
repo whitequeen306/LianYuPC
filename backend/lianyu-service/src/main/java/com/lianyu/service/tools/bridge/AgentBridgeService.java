@@ -58,8 +58,19 @@ public class AgentBridgeService {
     @Value("${lianyu.tools.agent-bridge.call-timeout-ms:630000}")
     private long callTimeoutMs;
 
+    /**
+     * 引擎刚卸载重装时客户端会先 unregister 再重新注册。
+     * 这段窗口里模型仍可能发起 computer_task；等几秒让桌面端把桥挂回来，
+     * 避免被说成「执行报错 / 助手没恢复」。MCP 从未开过则不等。
+     */
+    @Value("${lianyu.tools.agent-bridge.session-wait-ms:25000}")
+    private long sessionWaitMs;
+
     private final Map<Long, BridgeSession> sessions = new ConcurrentHashMap<>();
     private final Map<String, PendingCall> pendingCalls = new ConcurrentHashMap<>();
+    private final Map<Long, Long> lastUnregisteredAt = new ConcurrentHashMap<>();
+
+    private static final long RECENT_UNREGISTER_MS = 60_000L;
 
     /** 客户端注册的本地工具（inputSchema 为 JSON Schema 字符串） */
     public record ClientTool(String name, String description, String inputSchema, boolean dangerous) {
@@ -103,6 +114,7 @@ public class AgentBridgeService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "工具名称重复");
         }
         sessions.put(userId, new BridgeSession(tools));
+        lastUnregisteredAt.remove(userId);
         log.info("Agent bridge registered: userId={}, tools={}", userId,
                 tools.stream().map(ClientTool::name).toList());
     }
@@ -120,6 +132,7 @@ public class AgentBridgeService {
     /** 注销：清除工具清单并让所有等待中的调用立即失败。 */
     public void unregister(Long userId) {
         sessions.remove(userId);
+        lastUnregisteredAt.put(userId, System.currentTimeMillis());
         pendingCalls.entrySet().removeIf(entry -> {
             if (userId.equals(entry.getValue().userId())) {
                 entry.getValue().future().complete("（本地助手已断开，操作未执行）");
@@ -166,9 +179,9 @@ public class AgentBridgeService {
      */
     public String dispatch(Long userId, String toolName, String argumentsJson,
                            Long characterId, String characterName, String characterAvatarUrl) {
-        BridgeSession session = sessions.get(userId);
+        BridgeSession session = resolveSession(userId);
         if (session == null || !session.alive()) {
-            return "（本地助手当前不在线，无法执行 " + toolName + "）";
+            return "（本地助手当前不在线，无法执行 " + toolName + "。若刚打开或正在更新电脑助手，请等关于页显示运行中后再试一次。）";
         }
         boolean known = session.tools.stream().anyMatch(t -> t.name().equals(toolName));
         if (!known) {
@@ -176,14 +189,15 @@ public class AgentBridgeService {
         }
 
         String requestId = UUID.randomUUID().toString();
+        String args = AgentToolArguments.normalizeJson(argumentsJson, objectMapper);
         CompletableFuture<String> future = new CompletableFuture<>();
         pendingCalls.put(requestId, new PendingCall(userId, future));
         try {
             messagingTemplate.convertAndSendToUser(userId.toString(), QUEUE_DESTINATION,
-                    new ToolCallPush("tool_call", requestId, toolName,
-                            argumentsJson == null ? "{}" : argumentsJson,
+                    new ToolCallPush("tool_call", requestId, toolName, args,
                             characterId, characterName, characterAvatarUrl));
-            log.info("Agent bridge dispatch: userId={}, tool={}, requestId={}", userId, toolName, requestId);
+            log.info("Agent bridge dispatch: userId={}, tool={}, requestId={}, args={}",
+                    userId, toolName, requestId, AgentToolArguments.preview(args));
             return future.get(callTimeoutMs, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             log.warn("Agent bridge call timeout: userId={}, tool={}, requestId={}", userId, toolName, requestId);
@@ -220,7 +234,48 @@ public class AgentBridgeService {
         if (text.isBlank()) {
             text = "（本地工具执行完成，无输出）";
         }
+        if (!ok) {
+            String err = text.length() > 240 ? text.substring(0, 240) : text;
+            log.warn("Agent bridge result: userId={}, requestId={}, error={}", userId, requestId, err);
+        } else {
+            log.info("Agent bridge result: userId={}, requestId={}, ok=true, chars={}",
+                    userId, requestId, text.length());
+        }
         pending.future().complete(text);
+    }
+
+    /**
+     * 桥刚断开（引擎更新/开关切换）时等桌面端重新注册；从未上线则立即返回。
+     * 阻塞在模型调用线程，无事务、不持 DB 连接。
+     */
+    private BridgeSession resolveSession(Long userId) {
+        BridgeSession session = sessions.get(userId);
+        if (session != null && session.alive()) {
+            return session;
+        }
+        Long unregisteredAt = lastUnregisteredAt.get(userId);
+        if (unregisteredAt == null || sessionWaitMs <= 0) {
+            return session;
+        }
+        long now = System.currentTimeMillis();
+        if (now - unregisteredAt > RECENT_UNREGISTER_MS) {
+            return session;
+        }
+        long deadline = Math.min(unregisteredAt + RECENT_UNREGISTER_MS, now + sessionWaitMs);
+        log.info("Agent bridge waiting for desktop re-register: userId={}", userId);
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(200L);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            session = sessions.get(userId);
+            if (session != null && session.alive()) {
+                return session;
+            }
+        }
+        return sessions.get(userId);
     }
 
     private ClientTool toClientTool(RegisterAgentToolsRequest.AgentToolSpec spec) {
