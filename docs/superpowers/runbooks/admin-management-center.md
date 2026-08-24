@@ -34,7 +34,9 @@ LIANYU_ADMIN_BOOTSTRAP_PASSWORD=<一次性初始密码>
 
 版本号使用 SemVer，渠道只允许 `stable` / `beta`。状态按 `draft → uploading → validating → ready → published → rollout` 流转；非法跳转会被拒绝。安装包文件名、大小和 SHA-512 在元数据校验接口验证，发布/回滚操作必须追加审计记录。
 
-当前版本文件上传和 GitHub Release 导入接口仍在后续发布批次中接入；在此之前只允许创建草稿和执行服务端元数据校验，不应把草稿当作可下载版本发布。
+- `/api/admin/v1/releases/metadata/upload-session` 返回 15 分钟、对象级 MinIO 预签名 PUT 地址；文件字节不进入 Spring 内存。
+- `/api/admin/v1/releases/github/inspect` 只允许 `https://api.github.com` 和 `owner/repo` + SemVer tag，使用带超时的客户端。
+- `/api/public/admin-release` 按 stable/beta、发布状态和 rollout 盐值为客户端解析版本；旧客户端的 `latest.yml` 路径保持不变。
 
 ## 审计
 
