@@ -4,3 +4,5 @@ client.interceptors.request.use(config => { const token = localStorage.getItem('
 export async function adminLogin(payload) { const { data } = await client.post('/api/admin/v1/auth/login', payload); return data }
 export async function adminLogout() { await client.post('/api/admin/v1/auth/logout') }
 export async function getOverview() { const { data } = await client.get('/api/admin/v1/overview'); return data }
+export async function fetchAdminList(endpoint) { const { data } = await client.get(endpoint); return data?.data || [] }
+export async function createRelease(payload) { return client.post('/api/admin/v1/releases', payload) }
