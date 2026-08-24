@@ -28,7 +28,7 @@ public class AdminAuthService {
     }
 
     public AdminDtos.LoginResponse login(AdminDtos.LoginRequest request) {
-        var rows = jdbc.queryForList("SELECT id, username, password_hash, status, totp_enabled, locked_until FROM admin_user WHERE username=?", request.username().trim());
+        var rows = jdbc.queryForList("SELECT id, username, password_hash, status, totp_enabled, totp_secret, locked_until FROM admin_user WHERE username=?", request.username().trim());
         if (rows.isEmpty()) throw new IllegalArgumentException("用户名或密码错误");
         Map<String, Object> row = rows.get(0);
         if (!"active".equals(row.get("status"))) throw new IllegalStateException("管理员账号已停用");
