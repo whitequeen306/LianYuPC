@@ -47,6 +47,12 @@ vi.mock('@/utils/mcpControlActor', () => ({
     caption: `${message?.characterName || '角色'}正在操控你的电脑，按 Esc 取消`,
     theme: 'dark',
   }),
+  resolveMcpActorIdentity: (message) => ({
+    characterId: message?.characterId ?? null,
+    name: String(message?.characterName || '').trim(),
+    avatarUrl: message?.characterAvatarUrl || '',
+    avatarThumbUrl: '',
+  }),
 }))
 
 import { useAgentBridgeStore } from '@/stores/agentBridge'

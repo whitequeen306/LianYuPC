@@ -16,7 +16,7 @@ vi.mock('@/utils/media', () => ({
   resolveMediaUrl: (url) => (url ? `resolved:${url}` : ''),
 }))
 
-import { resolveMcpControlActor } from '../mcpControlActor.js'
+import { resolveMcpActorIdentity, resolveMcpControlActor } from '../mcpControlActor.js'
 
 describe('resolveMcpControlActor', () => {
   beforeEach(() => {
@@ -74,5 +74,71 @@ describe('resolveMcpControlActor', () => {
     const actor = resolveMcpControlActor({ type: 'tool_call' }, { characters: [] })
     expect(actor.name).toBe('角色')
     expect(actor.caption).toContain('角色')
+  })
+
+  it('prefers local public thumb over a STOMP object key', () => {
+    const actor = resolveMcpControlActor({
+      characterId: '744',
+      characterName: '甘雨',
+      characterAvatarUrl: 'square-avatars/ganyu.jpg',
+    }, {
+      characters: [{
+        id: 744,
+        name: '甘雨',
+        avatarUrl: '/api/public/files/square-avatars/ganyu.jpg',
+        avatarThumbUrl: '/api/public/files/square-avatars-thumb/ganyu.jpg',
+      }],
+    })
+    expect(actor.avatarUrl).toBe('resolved:/api/public/files/square-avatars-thumb/ganyu.jpg')
+  })
+})
+
+describe('resolveMcpActorIdentity', () => {
+  it('keeps STOMP name but fills avatar from the local character list', () => {
+    const identity = resolveMcpActorIdentity({
+      characterId: 744,
+      characterName: '甘雨',
+      characterAvatarUrl: 'square-avatars/ganyu.jpg',
+    }, {
+      characters: [{
+        id: 744,
+        name: '甘雨',
+        avatarUrl: '/api/public/files/square-avatars/ganyu.jpg',
+        avatarThumbUrl: '/api/public/files/square-avatars-thumb/ganyu.jpg',
+      }],
+    })
+    expect(identity).toEqual({
+      characterId: 744,
+      name: '甘雨',
+      avatarUrl: '/api/public/files/square-avatars/ganyu.jpg',
+      avatarThumbUrl: '/api/public/files/square-avatars-thumb/ganyu.jpg',
+    })
+  })
+
+  it('uses the current chat character when the list is empty', () => {
+    const identity = resolveMcpActorIdentity(
+      { characterId: 12, characterName: '爱莉希雅', characterAvatarUrl: 'avatars/raw-key.png' },
+      {
+        characters: [],
+        currentCharacter: {
+          id: 12,
+          name: '爱莉希雅',
+          avatarUrl: '/api/public/files/avatars/eli.png',
+          avatarThumbUrl: '/api/public/files/square-avatars-thumb/eli.jpg',
+        },
+      },
+    )
+    expect(identity.avatarUrl).toBe('/api/public/files/avatars/eli.png')
+    expect(identity.avatarThumbUrl).toBe('/api/public/files/square-avatars-thumb/eli.jpg')
+  })
+
+  it('falls back to the STOMP url when no local avatar is available', () => {
+    const identity = resolveMcpActorIdentity({
+      characterId: 1,
+      characterName: '甘雨',
+      characterAvatarUrl: 'square-avatars/ganyu.jpg',
+    }, { characters: [] })
+    expect(identity.avatarUrl).toBe('square-avatars/ganyu.jpg')
+    expect(identity.avatarThumbUrl).toBe('')
   })
 })

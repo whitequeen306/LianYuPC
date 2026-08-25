@@ -24,6 +24,7 @@ import { resolveMediaUrl } from '@/utils/media'
 import {
   nextCharacterAvatarTier,
   resolveCharacterAvatarSrc,
+  sameCharacterId,
 } from '@/utils/characterAvatar'
 
 const props = defineProps({
@@ -64,7 +65,9 @@ watch(sourceKey, () => {
 const mergedCharacter = computed(() => {
   const idHint = props.characterId ?? props.character?.id ?? props.character?.characterId
   const fromList = idHint != null && Array.isArray(props.characters)
-    ? props.characters.find((c) => c != null && (c.id === idHint || c.characterId === idHint))
+    ? props.characters.find((c) => c != null && (
+      sameCharacterId(c.id, idHint) || sameCharacterId(c.characterId, idHint)
+    ))
     : null
   // Prefer explicit props / character fields, then fill gaps from characters list.
   return {

@@ -2,6 +2,14 @@
  * 角色头像展示 URL（广场 square-avatars 优先缩略图，失败回退原图）。
  */
 
+export function sameCharacterId(a, b) {
+  if (a == null || b == null) return false
+  const na = Number(a)
+  const nb = Number(b)
+  if (Number.isFinite(na) && Number.isFinite(nb)) return na === nb
+  return String(a) === String(b)
+}
+
 export function pickCharacterAvatarRaw(character, tier = 'thumb') {
   if (!character) return ''
   if (tier === 'broken') return ''
@@ -49,7 +57,7 @@ export function resolveCharacterAvatarSrc(input = {}) {
 
   const fromStore = character
     || (characterId != null && Array.isArray(characters)
-      ? characters.find((c) => c != null && c.id === characterId)
+      ? characters.find((c) => c != null && sameCharacterId(c.id ?? c.characterId, characterId))
       : null)
 
   const merged = {

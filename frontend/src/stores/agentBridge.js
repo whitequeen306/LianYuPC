@@ -4,7 +4,7 @@ import { getElectronAPI, isElectronApp } from '@/utils/electron'
 import { useNotificationsStore } from '@/stores/notifications'
 import { useCharactersStore } from '@/stores/characters'
 import { useSettingsStore } from '@/stores/settings'
-import { resolveMcpControlActor } from '@/utils/mcpControlActor'
+import { resolveMcpActorIdentity, resolveMcpControlActor } from '@/utils/mcpControlActor'
 import { activeChatActor } from '@/composables/useActiveChatContext'
 import {
   registerAgentTools,
@@ -143,11 +143,10 @@ export const useAgentBridgeStore = defineStore('agentBridge', () => {
       requestId: message.requestId,
       name: message.name || '',
       instruction: typeof args.instruction === 'string' ? args.instruction : '',
-      actor: {
-        characterId: message.characterId ?? null,
-        name: String(message.characterName || '').trim(),
-        avatarUrl: message.characterAvatarUrl || '',
-      },
+      actor: resolveMcpActorIdentity(message, {
+        characters: useCharactersStore().list,
+        currentCharacter: activeChatActor.value,
+      }),
       updates: [],
       startedAt: Date.now(),
     }

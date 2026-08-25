@@ -1,14 +1,14 @@
 <template>
   <div class="mcp-task" role="status" aria-live="polite">
     <div class="mcp-task__avatar" aria-hidden="true">
-      <img
-        v-if="avatarSrc"
-        :src="avatarSrc"
+      <CharacterAvatarImg
+        :character-id="task.actor?.characterId"
+        :characters="charactersStore.list"
+        :avatar-url="stompAvatarFallback.avatarUrl"
+        :avatar-thumb-url="stompAvatarFallback.avatarThumbUrl"
         :alt="displayName"
-        loading="lazy"
-        decoding="async"
+        :icon-size="18"
       />
-      <el-icon v-else :size="18"><User /></el-icon>
     </div>
     <div class="mcp-task__bubble">
       <div class="mcp-task__header">
@@ -25,8 +25,9 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { User } from '@element-plus/icons-vue'
-import { resolveMediaUrl } from '@/utils/media'
+import { useCharactersStore } from '@/stores/characters'
+import CharacterAvatarImg from '@/components/CharacterAvatarImg.vue'
+import { sameCharacterId } from '@/utils/characterAvatar'
 
 // 进度行显示限频：引擎一轮只要 1~3s，逐条翻会显得抖；合并突发，始终取最新。
 const LINE_MIN_INTERVAL_MS = 1500
@@ -36,13 +37,29 @@ const props = defineProps({
 })
 
 const { t } = useI18n()
+const charactersStore = useCharactersStore()
 
 const displayName = computed(() =>
   props.task?.actor?.name || t('about.mcpControlFallbackName'),
 )
-const avatarSrc = computed(() =>
-  props.task?.actor?.avatarUrl ? resolveMediaUrl(props.task.actor.avatarUrl) : '',
-)
+
+const listCharacter = computed(() => {
+  const id = props.task?.actor?.characterId
+  if (id == null) return null
+  return (charactersStore.list || []).find((c) => c != null && sameCharacterId(c.id ?? c.characterId, id)) || null
+})
+
+// STOMP 常带未解析的 object key；本地列表有公开头像时不要让它盖过缩略图。
+const stompAvatarFallback = computed(() => {
+  const local = listCharacter.value
+  if (local?.avatarUrl || local?.avatarThumbUrl) {
+    return { avatarUrl: '', avatarThumbUrl: '' }
+  }
+  return {
+    avatarUrl: props.task?.actor?.avatarUrl || '',
+    avatarThumbUrl: props.task?.actor?.avatarThumbUrl || '',
+  }
+})
 
 const latestLine = computed(() => {
   const updates = props.task?.updates
@@ -98,6 +115,7 @@ onUnmounted(() => clearTimeout(pendingTimer))
     border: 1px solid var(--ly-chat-hero-bubble-border);
     color: var(--ly-text-muted);
 
+    :deep(img),
     img {
       width: 100%;
       height: 100%;

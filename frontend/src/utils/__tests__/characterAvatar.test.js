@@ -3,6 +3,7 @@ import {
   nextCharacterAvatarTier,
   pickCharacterAvatarRaw,
   resolveCharacterAvatarSrc,
+  sameCharacterId,
 } from '@/utils/characterAvatar'
 
 describe('characterAvatar', () => {
@@ -103,5 +104,14 @@ describe('resolveCharacterAvatarSrc', () => {
       character: storeChar,
       tier: 'broken',
     })).toBe('')
+  })
+
+  it('matches string and numeric character ids', () => {
+    expect(sameCharacterId('744', 744)).toBe(true)
+    expect(sameCharacterId(744, 745)).toBe(false)
+    expect(resolveCharacterAvatarSrc({
+      characterId: '10',
+      characters: [storeChar],
+    })).toBe(storeChar.avatarThumbUrl)
   })
 })
