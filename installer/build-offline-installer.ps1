@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$Version = "0.2.363",
   [string]$ElectronUnpacked = "",
   [string]$Output = ""
@@ -34,12 +34,29 @@ if (!(Test-Path (Join-Path $unpacked 'LianYu.exe'))) {
 }
 
 if (!(Test-Path (Join-Path $unpacked 'LianYu.exe'))) {
-  throw "找不到 Electron win-unpacked：$unpacked。请先运行 npm run electron:build。"
+  throw "Electron win-unpacked not found: $unpacked. Run npm run electron:build first."
 }
+
+function Resolve-Dotnet {
+  $cmd = Get-Command dotnet -ErrorAction SilentlyContinue
+  if ($cmd -and $cmd.Source) { return $cmd.Source }
+  $candidates = @(
+    (Join-Path $env:ProgramFiles 'dotnet\dotnet.exe'),
+    (Join-Path ${env:ProgramFiles(x86)} 'dotnet\dotnet.exe'),
+    (Join-Path $env:LocalAppData 'Microsoft\dotnet\dotnet.exe'),
+    (Join-Path $env:USERPROFILE '.dotnet\dotnet.exe')
+  )
+  foreach ($c in $candidates) {
+    if ($c -and (Test-Path -LiteralPath $c)) { return $c }
+  }
+  throw 'dotnet SDK not found. Install .NET 10 SDK to build the offline installer.'
+}
+
+$dotnet = Resolve-Dotnet
 New-Item -ItemType Directory -Force -Path $payloadDir,(Split-Path $outputFull) | Out-Null
 Remove-Item -LiteralPath $payload -Force -ErrorAction SilentlyContinue
 Compress-Archive -Path (Join-Path $unpacked '*') -DestinationPath $payload -CompressionLevel Optimal
-dotnet publish (Join-Path $project 'LianYu.Installer.csproj') -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:LianYuVersion=$Version
+& $dotnet publish (Join-Path $project 'LianYu.Installer.csproj') -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:LianYuVersion=$Version
 $published = Join-Path $project "bin\Release\net10.0-windows\win-x64\publish\LianYu-Setup.exe"
 Copy-Item -LiteralPath $published -Destination $outputFull -Force
-Write-Host "离线安装包已生成：$outputFull"
+Write-Host "Offline installer written: $outputFull"
