@@ -58,6 +58,8 @@ class ChatTurnPromptAssemblerTest {
                 .thenReturn("BASE_PROMPT");
         when(promptBuilder.buildSystemPrompt(any(Character.class), eq(""), eq("zh"), eq(true), eq(true)))
                 .thenReturn("BASE_PROMPT");
+        when(promptBuilder.buildSystemPrompt(any(Character.class), eq(""), eq("zh"), eq(true), eq(true), eq(9L)))
+                .thenReturn("BASE_PROMPT");
         when(timeTool.readCurrentTimeFact()).thenReturn("2026-06-22 10:00");
     }
 
@@ -81,7 +83,7 @@ class ChatTurnPromptAssemblerTest {
         assertFalse(prompt.systemPrompt().contains("你最近的生活动态"));
         assertFalse(prompt.systemPrompt().contains("写了日记"));
         org.mockito.Mockito.verify(promptBuilder).buildSystemPrompt(
-                any(Character.class), eq(""), eq("zh"), eq(true), eq(true));
+                any(Character.class), eq(""), eq("zh"), eq(true), eq(true), eq(9L));
     }
 
     @Test
@@ -92,6 +94,8 @@ class ChatTurnPromptAssemblerTest {
         when(promptBuilder.buildSystemPrompt(any(Character.class), eq(""), eq("zh"), eq(false)))
                 .thenReturn("BASE_PROMPT");
         when(promptBuilder.buildSystemPrompt(any(Character.class), eq(""), eq("zh"), eq(false), eq(false)))
+                .thenReturn("BASE_PROMPT");
+        when(promptBuilder.buildSystemPrompt(any(Character.class), eq(""), eq("zh"), eq(false), eq(false), eq(9L)))
                 .thenReturn("BASE_PROMPT");
 
         ChatTurnPromptAssembler.AssembledPrompt prompt = assembler.assemble(
@@ -108,6 +112,6 @@ class ChatTurnPromptAssemblerTest {
         assertTrue(prompt.systemPrompt().contains("VOICE_SUFFIX"));
         assertFalse(prompt.systemPrompt().contains("用户当前所在现实城市"));
         org.mockito.Mockito.verify(promptBuilder).buildSystemPrompt(
-                any(Character.class), eq(""), eq("zh"), eq(false), eq(false));
+                any(Character.class), eq(""), eq("zh"), eq(false), eq(false), eq(9L));
     }
 }

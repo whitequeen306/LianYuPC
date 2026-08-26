@@ -596,30 +596,6 @@ function broadcastToAppWindows(channel, payload) {
   }
 }
 
-/** 演示 MCP 服务脚本路径：dev 在源码树；打包后走 extraResources（asar 外可 spawn） */
-function resolveDemoServerCommand() {
-  const candidates = app.isPackaged
-    ? [path.join(process.resourcesPath, 'mcp', 'demoServer.cjs')]
-    : [
-        path.join(app.getAppPath(), 'electron', 'mcp', 'demoServer.cjs'),
-        path.join(__dirname, '../electron/mcp/demoServer.cjs'),
-      ]
-  const script = candidates.find((p) => {
-    try {
-      return fs.existsSync(p)
-    } catch {
-      return false
-    }
-  })
-  if (!script) return null
-  // 用自身 Electron 可执行文件以纯 Node 模式跑脚本，无需用户装 Node
-  return {
-    command: process.execPath,
-    args: [script],
-    env: { ELECTRON_RUN_AS_NODE: '1' },
-  }
-}
-
 const MCP_CONFIRM_TIMEOUT_MS = 45_000
 const pendingMcpConfirms = new Map() // id -> resolve(boolean)
 let mcpConfirmSeq = 0
@@ -711,7 +687,6 @@ const mcpControlBanner = createMcpControlBanner({
 })
 mcpHost = createMcpHost({
   getSettings: readMcpSettings,
-  resolveDemoServerCommand,
   resolveManagedEngine: resolveManagedEngineCommand,
   resolveEngineEnv: resolveEngineEnvFromCloud,
   requestConfirm: requestMcpConfirm,
@@ -2640,7 +2615,7 @@ function registerIpcHandlers() {
     if (prev.enabled && !next.enabled) {
       await mcpHost.stop()
     } else if (next.enabled && (!prev.enabled
-        || prev.useDemoServer !== next.useDemoServer
+        || prev.useLocalSource !== next.useLocalSource
         || prev.command !== next.command
         || prev.cwd !== next.cwd
         || JSON.stringify(prev.args) !== JSON.stringify(next.args))) {
@@ -3235,6 +3210,11 @@ process.on('unhandledRejection', (reason) => {
 })
 
 app.whenReady().then(() => {
+  if (process.env.LIANYU_MCP_STDIO_CHILD === '1') {
+    log('refusing nested LianYu process spawned as MCP child')
+    app.exit(1)
+    return
+  }
   startupMainProfiler.mark('whenReady')
   logger.initGlobalErrorHandlers()
   if (process.env.LIANYU_MAIN_STARTUP_SMOKE === '1') {

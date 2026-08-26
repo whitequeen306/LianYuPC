@@ -11,6 +11,9 @@
  */
 
 export const MCP_PROTOCOL_VERSION = '2025-06-18'
+/** Cold ``python -m`` + pywinauto import can exceed 15s; source-run handshake needs this. */
+export const MCP_INITIALIZE_TIMEOUT_MS = 30_000
+const MAX_NON_JSON_STDOUT_LOGS = 8
 
 export function createMcpClient({ proc, onNotification, onServerRequest, onClose, log = () => {} }) {
   let nextId = 1
@@ -63,6 +66,7 @@ export function createMcpClient({ proc, onNotification, onServerRequest, onClose
     notify('notifications/cancelled', { requestId, reason })
     const err = new Error(reason)
     err.cancelled = true
+    err.cancelReason = reason
     entry.reject(err)
     return true
   }
@@ -116,6 +120,7 @@ export function createMcpClient({ proc, onNotification, onServerRequest, onClose
   }
 
   proc.stdout.setEncoding('utf8')
+  let ignoredNonJson = 0
   proc.stdout.on('data', (chunk) => {
     stdoutBuffer += chunk
     let idx
@@ -127,7 +132,10 @@ export function createMcpClient({ proc, onNotification, onServerRequest, onClose
       try {
         message = JSON.parse(line)
       } catch {
-        log(`mcp stdout non-json line ignored: ${line.slice(0, 200)}`)
+        if (ignoredNonJson < MAX_NON_JSON_STDOUT_LOGS) {
+          ignoredNonJson += 1
+          log(`mcp stdout non-json line ignored: ${line.slice(0, 200)}`)
+        }
         continue
       }
       try {
@@ -163,7 +171,7 @@ export function createMcpClient({ proc, onNotification, onServerRequest, onClose
       protocolVersion: MCP_PROTOCOL_VERSION,
       capabilities: { elicitation: {} },
       clientInfo,
-    }, 15000)
+    }, MCP_INITIALIZE_TIMEOUT_MS)
     notify('notifications/initialized')
     return result
   }

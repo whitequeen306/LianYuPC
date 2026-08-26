@@ -6,7 +6,9 @@
  * 确认经 deps.requestConfirm({...}) 冒泡（由 main.js 转成渲染端弹窗，超时默认拒绝）。
  * 确认之后进入操控：onControlStart/onControlEnd 驱动屏幕顶栏；Esc 走 cancelActiveCall。
  */
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
+import fs from 'node:fs'
+import path from 'node:path'
 import { createMcpClient } from './mcpClient.js'
 import { parseAgentToolArguments } from '../../src/utils/parseAgentToolArguments.js'
 
@@ -43,8 +45,66 @@ export const MCP_USER_CANCELLED_CONTENT = [
   '不要道歉、不要说工具出错、不要复述本说明。',
 ].join('')
 
+/** 用户发了新的 computer_task，旧任务被顶掉（不是 Esc）。 */
+export const MCP_SUPERSEDED_CONTENT = [
+  '用户发起了新的电脑任务，本次操作已中止。',
+  '不要向用户道歉，也不要再说旧任务的进度。',
+].join('')
+
 export function isMcpCancelledError(err) {
   return !!(err && err.cancelled === true)
+}
+
+export function looksLikePythonCommand(command) {
+  const base = path.basename(String(command || '').trim()).toLowerCase()
+  return base === 'python' || base === 'python.exe' || base === 'py' || base === 'py.exe'
+}
+
+/** Prefer a real CPython over the WindowsApps store stub (the stub hangs; host then times out on initialize). */
+export function pickRealPython(whereOutput, fallback) {
+  const lines = String(whereOutput || '')
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  for (const line of lines) {
+    if (!/\\WindowsApps\\/i.test(line)) return line
+  }
+  return fallback
+}
+
+export function resolveSourcePython(command) {
+  const raw = String(command || '').trim()
+  if (!looksLikePythonCommand(raw)) return raw
+  if (path.isAbsolute(raw) && !/\\WindowsApps\\/i.test(raw) && fs.existsSync(raw)) return raw
+  if (process.platform !== 'win32') return raw
+  try {
+    const query = path.basename(raw).toLowerCase().startsWith('py') && !path.basename(raw).toLowerCase().startsWith('python')
+      ? 'py'
+      : 'python'
+    const out = execFileSync('where.exe', [query], {
+      encoding: 'utf8',
+      timeout: 3000,
+      windowsHide: true,
+    })
+    const picked = pickRealPython(out, raw)
+    if (picked && !/\\WindowsApps\\/i.test(picked) && fs.existsSync(picked)) return picked
+  } catch { /* keep raw */ }
+  return raw
+}
+
+/** Env so ``python -m agent_assistant.hosted.mcp_server`` talks JSON-RPC immediately. */
+export function sourceInterpreterEnv(cwd, inherited = {}) {
+  const env = {
+    PYTHONUNBUFFERED: '1',
+    PYTHONUTF8: '1',
+    PYTHONIOENCODING: 'utf-8',
+  }
+  if (cwd) {
+    const extra = [cwd, path.join(cwd, 'src')].join(path.delimiter)
+    const prev = inherited.PYTHONPATH || ''
+    env.PYTHONPATH = prev ? `${extra}${path.delimiter}${prev}` : extra
+  }
+  return env
 }
 
 /**
@@ -62,24 +122,15 @@ export function engineEnvFromCredentials(creds) {
 }
 
 /**
- * 解析本次要 spawn 的命令：演示服务 > 自定义 command > 已下载的托管引擎。
+ * 解析本次要 spawn 的命令：本地源码 > 已下载的官方 AgentEngine。
  * 纯函数，便于单测；缺引擎时返回 { error } 而不是抛。
  */
-export function resolveMcpLaunchTarget(settings, { resolveDemoServerCommand, resolveManagedEngine } = {}) {
-  if (settings?.useDemoServer) {
-    const demo = resolveDemoServerCommand?.()
-    if (!demo?.command) return { error: '内置演示服务不可用' }
+export function resolveMcpLaunchTarget(settings, { resolveManagedEngine } = {}) {
+  if (settings?.useLocalSource) {
+    const command = typeof settings.command === 'string' ? settings.command.trim() : ''
+    if (!command) return { error: '请填写本地源码的 Python 解释器路径' }
     return {
-      command: demo.command,
-      args: Array.isArray(demo.args) ? demo.args : [],
-      cwd: undefined,
-      env: demo.env && typeof demo.env === 'object' ? demo.env : {},
-      needsModelCredentials: false,
-    }
-  }
-  if (settings?.command) {
-    return {
-      command: settings.command,
+      command,
       args: Array.isArray(settings.args) ? settings.args : [],
       cwd: settings.cwd || undefined,
       env: {},
@@ -97,9 +148,28 @@ export function resolveMcpLaunchTarget(settings, { resolveDemoServerCommand, res
   }
 }
 
+/** Child exit 3221225477 = NTSTATUS 0xC0000005 STATUS_ACCESS_VIOLATION. */
+const ACCESS_VIOLATION_EXIT = /code=(?:3221225477|-1073741819)\b/
+
+const CRASH_RESTART_DELAYS_MS = [800, 2000, 5000]
+
+export function isMcpChildCrash(reason) {
+  return /MCP server exited/i.test(String(reason || ''))
+}
+
+export function describeMcpChildExit(reason) {
+  const text = String(reason || '')
+  if (ACCESS_VIOLATION_EXIT.test(text)) {
+    return '本地助手进程崩溃了（操作网易云这类界面时偶发）。正在自动重启，请稍后再试一次。'
+  }
+  if (isMcpChildCrash(text)) {
+    return `本地助手进程退出了（${text}）。正在自动重启。`
+  }
+  return text
+}
+
 export function createMcpHost({
   getSettings,
-  resolveDemoServerCommand,
   resolveManagedEngine,
   resolveEngineEnv,
   requestConfirm,
@@ -114,7 +184,35 @@ export function createMcpHost({
   let tools = []
   let lastError = ''
   let generation = 0
+  let callGeneration = 0
   let activeCancel = null
+  let crashRestarts = 0
+  let crashTimer = null
+
+  function clearCrashTimer() {
+    if (crashTimer) {
+      clearTimeout(crashTimer)
+      crashTimer = null
+    }
+  }
+
+  function scheduleCrashRestart(reason) {
+    if (getSettings()?.enabled !== true) return
+    if (crashRestarts >= CRASH_RESTART_DELAYS_MS.length) {
+      log(`mcp auto-restart gave up: ${reason}`)
+      return
+    }
+    const delay = CRASH_RESTART_DELAYS_MS[crashRestarts]
+    crashRestarts += 1
+    clearCrashTimer()
+    log(`mcp child died, auto-restart ${crashRestarts} in ${delay}ms`)
+    crashTimer = setTimeout(() => {
+      crashTimer = null
+      if (getSettings()?.enabled !== true) return
+      if (state === 'starting' || state === 'running') return
+      void start()
+    }, delay)
+  }
 
   function status() {
     return {
@@ -154,7 +252,7 @@ export function createMcpHost({
     const settings = getSettings()
     const gen = ++generation
 
-    const target = resolveMcpLaunchTarget(settings, { resolveDemoServerCommand, resolveManagedEngine })
+    const target = resolveMcpLaunchTarget(settings, { resolveManagedEngine })
     if (target.error) {
       setState('error', target.error)
       return status()
@@ -172,10 +270,15 @@ export function createMcpHost({
       }
       if (gen !== generation) return status()
     }
-    const command = target.command
+    let command = target.command
     const args = target.args
     const cwd = target.cwd
-    const env = { ...process.env, ...target.env, ...credentialEnv }
+    const env = { ...process.env, ...target.env, ...credentialEnv, LIANYU_MCP_STDIO_CHILD: '1' }
+    if (looksLikePythonCommand(command)) {
+      command = resolveSourcePython(command)
+      Object.assign(env, sourceInterpreterEnv(cwd, env))
+    }
+    log(`mcp spawn: command=${command} args=${JSON.stringify(args)} cwd=${cwd || '(inherit)'}`)
 
     try {
       const spawnOpts = { windowsHide: true, shell: false, env, stdio: ['pipe', 'pipe', 'pipe'] }
@@ -223,9 +326,10 @@ export function createMcpHost({
         proc = null
         client = null
         tools = []
-        if (state !== 'stopped') {
-          setState(state === 'starting' ? 'error' : 'stopped', reason || '')
-        }
+        if (state === 'stopped') return
+        const message = describeMcpChildExit(reason)
+        setState('error', message)
+        scheduleCrashRestart(reason)
       },
     })
 
@@ -237,17 +341,22 @@ export function createMcpHost({
         ? listed.tools.map(normalizeTool).filter((t) => t.name)
         : []
       if (gen !== generation) return status()
+      crashRestarts = 0
       setState('running')
     } catch (e) {
       if (gen === generation) {
+        log(`mcp handshake failed: ${e?.message || e}`)
         setState('error', `握手失败：${e?.message || e}`)
         await stop(true)
+        scheduleCrashRestart(e?.message || e)
       }
     }
     return status()
   }
 
   async function stop(keepErrorState = false) {
+    clearCrashTimer()
+    if (!keepErrorState) crashRestarts = 0
     generation++
     if (activeCancel) {
       try { activeCancel() } catch { /* ignore */ }
@@ -315,6 +424,12 @@ export function createMcpHost({
     }
     const actor = meta?.actor && typeof meta.actor === 'object' ? meta.actor : {}
     const requestId = typeof meta?.requestId === 'string' && meta.requestId ? meta.requestId : null
+    const myCall = ++callGeneration
+    if (activeCancel) {
+      const prev = activeCancel
+      activeCancel = null
+      try { prev('superseded') } catch { /* ignore */ }
+    }
     try {
       try { onControlStart?.(actor) } catch { /* overlay 失败不影响执行 */ }
       // progressToken 让引擎的 notifications/progress 能关联回这次桥调用。
@@ -323,8 +438,8 @@ export function createMcpHost({
       const promise = client.request('tools/call', params, TOOL_CALL_TIMEOUT_MS)
       const mcpRequestId = promise.mcpRequestId
       const sessionClient = client
-      activeCancel = () => {
-        try { sessionClient.cancel?.(mcpRequestId, 'user_escape') } catch { /* ignore */ }
+      activeCancel = (reason = 'user_escape') => {
+        try { sessionClient.cancel?.(mcpRequestId, reason) } catch { /* ignore */ }
       }
       const result = await promise
       const text = extractText(result)
@@ -336,14 +451,18 @@ export function createMcpHost({
       return { ok: true, content: text }
     } catch (e) {
       if (isMcpCancelledError(e)) {
-        log(`mcp callTool cancelled: ${name}`)
-        return { ok: true, content: MCP_USER_CANCELLED_CONTENT }
+        const superseded = e.cancelReason === 'superseded' || e.message === 'superseded'
+        log(`mcp callTool cancelled: ${name} reason=${superseded ? 'superseded' : 'user_escape'}`)
+        return { ok: true, content: superseded ? MCP_SUPERSEDED_CONTENT : MCP_USER_CANCELLED_CONTENT }
       }
-      log(`mcp callTool exception: ${name} ${e?.message || e}`)
-      return { ok: false, error: e?.message || '工具调用异常' }
+      const raw = e?.message || String(e)
+      log(`mcp callTool exception: ${name} ${raw}`)
+      return { ok: false, error: describeMcpChildExit(raw) || '工具调用异常' }
     } finally {
-      activeCancel = null
-      try { onControlEnd?.() } catch { /* ignore */ }
+      if (callGeneration === myCall) {
+        activeCancel = null
+        try { onControlEnd?.() } catch { /* ignore */ }
+      }
     }
   }
 
@@ -351,7 +470,7 @@ export function createMcpHost({
     if (!activeCancel) return false
     const cancel = activeCancel
     activeCancel = null
-    cancel()
+    cancel('user_escape')
     return true
   }
 

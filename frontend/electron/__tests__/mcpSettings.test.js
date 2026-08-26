@@ -22,29 +22,47 @@ vi.mock('fs', () => ({
   mkdirSync: () => {},
 }))
 
-import { normalizeMcpSettings, readMcpSettings, writeMcpSettings, DEFAULTS } from '../mcp/mcpSettings.js'
+import { normalizeMcpSettings, readMcpSettings, writeMcpSettings, DEFAULTS, SOURCE_ENGINE_DEFAULT_ARGS } from '../mcp/mcpSettings.js'
 
 beforeEach(() => {
   files.clear()
 })
 
 describe('mcpSettings', () => {
-  it('defaults to disabled + managed engine (not demo) + confirm every ask', () => {
+  it('defaults to disabled + official engine + confirm every ask', () => {
     expect(DEFAULTS.enabled).toBe(false)
-    expect(DEFAULTS.useDemoServer).toBe(false)
+    expect(DEFAULTS.useLocalSource).toBe(false)
     expect(DEFAULTS.autoApprove).toBe(false)
+    expect(SOURCE_ENGINE_DEFAULT_ARGS).toEqual(['-m', 'agent_assistant.hosted.mcp_server'])
     const s = readMcpSettings()
     expect(s).toEqual({
-      enabled: false, autoApprove: false, useDemoServer: false, command: '', args: [], cwd: '',
+      enabled: false, autoApprove: false, useLocalSource: false, command: '', args: [], cwd: '',
     })
   })
 
-  it('normalizes enabled/useDemoServer strictly to booleans', () => {
+  it('normalizes enabled/useLocalSource strictly to booleans', () => {
     expect(normalizeMcpSettings({ enabled: 'yes' }).enabled).toBe(false)
     expect(normalizeMcpSettings({ enabled: true }).enabled).toBe(true)
-    expect(normalizeMcpSettings({}).useDemoServer).toBe(false)
-    expect(normalizeMcpSettings({ useDemoServer: true }).useDemoServer).toBe(true)
-    expect(normalizeMcpSettings({ useDemoServer: false }).useDemoServer).toBe(false)
+    expect(normalizeMcpSettings({}).useLocalSource).toBe(false)
+    expect(normalizeMcpSettings({ useLocalSource: true, command: 'python' }).useLocalSource).toBe(true)
+    expect(normalizeMcpSettings({ useLocalSource: false, command: 'python' }).useLocalSource).toBe(false)
+  })
+
+  it('migrates old demo-on files to official even if command is set', () => {
+    const s = normalizeMcpSettings({
+      useDemoServer: true,
+      command: 'python',
+      cwd: 'C:/src',
+    })
+    expect(s.useLocalSource).toBe(false)
+    expect(s).not.toHaveProperty('useDemoServer')
+  })
+
+  it('migrates old custom command (no demo) to local source', () => {
+    expect(normalizeMcpSettings({
+      useDemoServer: false,
+      command: 'python',
+    }).useLocalSource).toBe(true)
   })
 
   it('normalizes autoApprove strictly to boolean (default false)', () => {
@@ -79,7 +97,7 @@ describe('mcpSettings', () => {
   it('round-trips through write/read (incl. cwd for source-run python -m)', () => {
     writeMcpSettings({
       enabled: true,
-      useDemoServer: false,
+      useLocalSource: true,
       command: 'python',
       args: ['-m', 'agent_assistant.hosted.mcp_server'],
       cwd: 'C:/AgentAssistant',
@@ -88,11 +106,25 @@ describe('mcpSettings', () => {
     expect(s).toEqual({
       enabled: true,
       autoApprove: false,
-      useDemoServer: false,
+      useLocalSource: true,
       command: 'python',
       args: ['-m', 'agent_assistant.hosted.mcp_server'],
       cwd: 'C:/AgentAssistant',
     })
+  })
+
+  it('keeps stored python path when switching back to official', () => {
+    writeMcpSettings({
+      useLocalSource: true,
+      command: 'python',
+      args: ['-m', 'agent_assistant.hosted.mcp_server'],
+      cwd: 'C:/AgentAssistant',
+    })
+    writeMcpSettings({ useLocalSource: false })
+    const s = readMcpSettings()
+    expect(s.useLocalSource).toBe(false)
+    expect(s.command).toBe('python')
+    expect(s.cwd).toBe('C:/AgentAssistant')
   })
 
   it('trims cwd and drops oversized values', () => {

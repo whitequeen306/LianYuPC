@@ -85,6 +85,15 @@ public class ToolManager {
     }
 
     public String buildToolsPromptHint() {
+        ChatToolContext.Scope scope = ChatToolContext.current();
+        return buildToolsPromptHint(scope != null ? scope.userId() : null);
+    }
+
+    /**
+     * @param userId 当前用户；用来判断桌面桥是否在线。组装系统提示时 ThreadLocal 还没设，
+     *               必须把 ChatTurn 的 userId 传进来，否则 computer_task 规则写不进 prompt。
+     */
+    public String buildToolsPromptHint(Long userId) {
         if (!chatToolsEnabled) {
             return "";
         }
@@ -101,7 +110,23 @@ public class ToolManager {
             sb.append("""
                     - get_my_recent_life：用户问你最近在干嘛、日记/动态写了什么、近况如何时调用；寒暄勿调。""");
         }
-        sb.append("\n仅在与用户问题相关时调用工具，避免每条消息都调用。");
+        if (hasComputerTask(userId)) {
+            sb.append("""
+                    - computer_task：用户要操作【本机电脑】时本轮必须调用（打开应用、网易云搜歌/换歌/播放、整理文件、终端命令等）。
+                      禁止只回复「我去换」「稍等」「让助手去搜」而不调用。上一轮已经操作过电脑、用户改口换任务，也要立刻再调，不要等对方催促。
+                      参数用 instruction 写一句具体任务。闲聊、纯查资料不要调用。""");
+            sb.append("\n时间/天气/记忆类工具按需调用，避免每条寒暄都调。电脑操作只要用户开口要做，本轮就必须调 computer_task。");
+        } else {
+            sb.append("\n仅在与用户问题相关时调用工具，避免每条寒暄都调。");
+        }
         return sb.toString();
+    }
+
+    boolean hasComputerTask(Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        return agentBridgeService.availableTools(userId).stream()
+                .anyMatch(t -> "computer_task".equals(t.name()));
     }
 }

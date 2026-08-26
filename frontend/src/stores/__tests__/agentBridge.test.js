@@ -61,7 +61,7 @@ function makeApi(overrides = {}) {
   holder.statusCb = null
   const api = {
     isElectron: true,
-    getMcpSettings: vi.fn(async () => ({ enabled: true, useDemoServer: true, command: '', args: [] })),
+    getMcpSettings: vi.fn(async () => ({ enabled: true, useLocalSource: false, command: '', args: [] })),
     getMcpStatus: vi.fn(async () => ({ state: 'stopped', tools: [], error: '' })),
     onMcpStatus: vi.fn((cb) => { holder.statusCb = cb; return () => { holder.statusCb = null } }),
     listMcpTools: vi.fn(async () => [
@@ -256,6 +256,30 @@ describe('agentBridge store', () => {
     expect(postAgentToolResult).toHaveBeenCalledWith(expect.objectContaining({
       requestId: 'req-restart',
       ok: true,
+    }))
+  })
+
+  it('retries computer_task after the MCP child crashes and comes back', async () => {
+    holder.api.mcpCallTool = vi.fn()
+      .mockResolvedValueOnce({ ok: false, error: 'MCP server exited (code=3221225477)' })
+      .mockResolvedValueOnce({ ok: true, content: '已播放夜曲' })
+    const pending = store.handleToolCallMessage({
+      type: 'tool_call', requestId: 'req-crash', name: 'computer_task',
+      arguments: '{"instruction":"放夜曲"}',
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(holder.api.mcpCallTool).toHaveBeenCalledTimes(1)
+    store.mcpState = 'error'
+    await vi.advanceTimersByTimeAsync(250)
+    store.mcpState = 'running'
+    await vi.advanceTimersByTimeAsync(250)
+    await pending
+    expect(holder.api.mcpCallTool).toHaveBeenCalledTimes(2)
+    expect(postAgentToolResult).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: 'req-crash',
+      ok: true,
+      content: '已播放夜曲',
     }))
   })
 })

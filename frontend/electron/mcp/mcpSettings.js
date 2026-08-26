@@ -2,28 +2,28 @@
  * MCP 本地服务配置 — 与 desktopSettings.js / qqBridgeSettings.js 同构：
  * userData 下的 JSON 文件 + read/normalize/write。
  *
- * v1 只托管一个服务位（AgentAssistant 引擎）：
- * - useDemoServer=true：用应用内置的演示 MCP 服务（高级选项）
- * - useDemoServer=false 且 command 为空：spawn 已下载的托管引擎（MinIO updates/）
- * - useDemoServer=false 且 command 有值：spawn 用户配置的自定义命令
+ * 两个引擎位（v2）：
+ * - useLocalSource=false：spawn 云端分发的官方 AgentEngine（MinIO updates/）
+ * - useLocalSource=true：spawn 用户填写的本地源码命令（python -m …，cwd 为仓库根）
+ *
+ * 旧字段 useDemoServer 已移除，读取时忽略。
  */
 import { app } from 'electron'
 import path from 'path'
 import fs from 'fs'
 
+export const SOURCE_ENGINE_DEFAULT_ARGS = ['-m', 'agent_assistant.hosted.mcp_server']
+
 export const DEFAULTS = {
   // 总开关：开启后应用启动即拉起本地 MCP 服务并注册到云端工具桥
   enabled: false,
   // true = 引擎的确认询问（elicitation）一律自动允许，不再弹窗打扰用户。
-  // 面向"只想用、不想懂"的用户；默认 false（每次弹窗，超时拒绝）。
   autoApprove: false,
-  // true = 使用内置演示服务（高级选项）；默认 false，走云端分发的 AgentEngine
-  useDemoServer: false,
-  // 自定义引擎命令（可执行文件路径，或 python 等）；留空则使用已下载的托管引擎
+  // true = 用本机 AgentAssistant 源码；false = 官方 AgentEngine
+  useLocalSource: false,
+  // 仅 useLocalSource 时使用
   command: '',
-  // 命令参数（字符串数组），例如 ['-m','agent_assistant.hosted.mcp_server']
   args: [],
-  // 工作目录（可选）；源码方式跑 python -m 时须指向 AgentAssistant 仓库根，模块才可解析
   cwd: '',
 }
 
@@ -34,6 +34,13 @@ const MAX_CWD_LENGTH = 1024
 
 function settingsPath() {
   return path.join(app.getPath('userData'), 'mcp-settings.json')
+}
+
+/** 旧配置：有自定义 command 且不是演示 → 本地源码；演示开关视为官方。 */
+export function inferUseLocalSource(raw, command) {
+  if (typeof raw?.useLocalSource === 'boolean') return raw.useLocalSource
+  if (raw?.useDemoServer === true) return false
+  return Boolean(command)
 }
 
 export function normalizeMcpSettings(settings) {
@@ -51,7 +58,7 @@ export function normalizeMcpSettings(settings) {
   return {
     enabled: raw.enabled === true,
     autoApprove: raw.autoApprove === true,
-    useDemoServer: raw.useDemoServer === true,
+    useLocalSource: inferUseLocalSource(raw, command),
     command,
     args,
     cwd,

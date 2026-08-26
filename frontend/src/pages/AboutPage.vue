@@ -57,21 +57,38 @@
 
           <div v-if="bridge.mcpError" class="mcp-service__error">{{ bridge.mcpError }}</div>
 
-          <div v-if="mcpEnabled" class="mcp-service__body">
-            <div class="info-row">
+          <div class="mcp-service__body">
+            <div v-if="mcpEnabled" class="info-row">
               <span class="info-label">{{ t('about.mcpBridge') }}</span>
               <span class="info-value">{{ bridge.registered ? t('about.mcpBridgeOnline') : t('about.mcpBridgeOffline') }}</span>
             </div>
-            <div class="info-row">
+            <div v-if="mcpEnabled" class="info-row">
               <span class="info-label">{{ t('about.mcpTools') }}</span>
               <span class="info-value">
                 {{ bridge.tools.length ? bridge.tools.map(tool => tool.name).join('、') : '—' }}
               </span>
             </div>
-            <div class="info-row">
+            <div v-if="mcpEnabled" class="info-row">
               <span class="info-label">{{ t('about.mcpEngine') }}</span>
               <span class="info-value">{{ engineLabel }}</span>
             </div>
+            <div class="mcp-engine-mode" role="radiogroup" :aria-label="t('about.mcpEngine')">
+              <button
+                type="button"
+                class="mcp-engine-mode__btn"
+                :class="{ 'is-active': !usingLocal }"
+                :aria-pressed="!usingLocal"
+                @click="onSelectOfficial"
+              >{{ t('about.mcpEngineOfficial') }}</button>
+              <button
+                type="button"
+                class="mcp-engine-mode__btn"
+                :class="{ 'is-active': usingLocal }"
+                :aria-pressed="usingLocal"
+                @click="onSelectLocal"
+              >{{ t('about.mcpEngineLocal') }}</button>
+            </div>
+            <p class="mcp-field__hint">{{ usingLocal ? t('about.mcpEngineLocalHint') : t('about.mcpEngineOfficialHint') }}</p>
             <div v-if="engineBusy" class="mcp-engine-progress">
               <el-progress
                 :percentage="enginePercent"
@@ -82,60 +99,44 @@
                 <span v-if="engineBytesLabel"> · {{ engineBytesLabel }}</span>
               </p>
             </div>
-            <div class="mcp-advanced__row">
-              <span class="mcp-advanced__label">{{ t('about.mcpAutoApprove') }}</span>
-              <el-switch :model-value="autoApprove" @change="onToggleAutoApprove" />
-            </div>
-            <p class="mcp-advanced__hint">{{ t('about.mcpAutoApproveHint') }}</p>
-            <el-collapse v-model="advancedOpen" class="mcp-advanced">
-              <el-collapse-item :title="t('about.mcpAdvanced')" name="advanced">
-                <div class="mcp-advanced__row">
-                  <span class="mcp-advanced__label">{{ t('about.mcpUseDemo') }}</span>
-                  <el-switch :model-value="usingDemo" @change="onToggleDemo" />
-                </div>
-                <template v-if="!usingDemo">
-                  <div class="mcp-advanced__row mcp-advanced__row--column">
-                    <span class="mcp-advanced__label">{{ t('about.mcpCommand') }}</span>
-                    <el-input
-                      v-model="commandDraft"
-                      :placeholder="t('about.mcpCommandPlaceholder')"
-                      @blur="onCommandBlur"
-                    />
-                  </div>
-                  <div class="mcp-advanced__row mcp-advanced__row--column">
-                    <span class="mcp-advanced__label">{{ t('about.mcpArgs') }}</span>
-                    <el-input
-                      v-model="argsDraft"
-                      type="textarea"
-                      :autosize="{ minRows: 2, maxRows: 6 }"
-                      :placeholder="t('about.mcpArgsPlaceholder')"
-                      @blur="onArgsBlur"
-                    />
-                    <p class="mcp-advanced__hint">{{ t('about.mcpArgsHint') }}</p>
-                  </div>
-                  <div class="mcp-advanced__row mcp-advanced__row--column">
-                    <span class="mcp-advanced__label">{{ t('about.mcpCwd') }}</span>
-                    <el-input
-                      v-model="cwdDraft"
-                      :placeholder="t('about.mcpCwdPlaceholder')"
-                      @blur="onCwdBlur"
-                    />
-                    <p class="mcp-advanced__hint">{{ t('about.mcpCommandHint') }}</p>
-                  </div>
-                </template>
-              </el-collapse-item>
-            </el-collapse>
-          </div>
-          <p v-else class="mcp-service__hint">{{ t('about.mcpDisabledHint') }}</p>
-          <div v-if="!mcpEnabled && engineBusy" class="mcp-engine-progress mcp-engine-progress--disabled">
-            <el-progress
-              :percentage="enginePercent"
-              :stroke-width="8"
-            />
-            <p class="mcp-engine-progress__meta">
-              {{ enginePhaseLabel }}
-              <span v-if="engineBytesLabel"> · {{ engineBytesLabel }}</span>
-            </p>
+            <template v-if="usingLocal">
+              <div class="mcp-field mcp-field--column">
+                <span class="mcp-field__label">{{ t('about.mcpCommand') }}</span>
+                <el-input
+                  v-model="commandDraft"
+                  :placeholder="t('about.mcpCommandPlaceholder')"
+                  @blur="onCommandBlur"
+                />
+              </div>
+              <div class="mcp-field mcp-field--column">
+                <span class="mcp-field__label">{{ t('about.mcpArgs') }}</span>
+                <el-input
+                  v-model="argsDraft"
+                  type="textarea"
+                  :autosize="{ minRows: 2, maxRows: 6 }"
+                  :placeholder="t('about.mcpArgsPlaceholder')"
+                  @blur="onArgsBlur"
+                />
+                <p class="mcp-field__hint">{{ t('about.mcpArgsHint') }}</p>
+              </div>
+              <div class="mcp-field mcp-field--column">
+                <span class="mcp-field__label">{{ t('about.mcpCwd') }}</span>
+                <el-input
+                  v-model="cwdDraft"
+                  :placeholder="t('about.mcpCwdPlaceholder')"
+                  @blur="onCwdBlur"
+                />
+                <p class="mcp-field__hint">{{ t('about.mcpCommandHint') }}</p>
+              </div>
+            </template>
+            <template v-if="mcpEnabled">
+              <div class="mcp-field">
+                <span class="mcp-field__label">{{ t('about.mcpAutoApprove') }}</span>
+                <el-switch :model-value="autoApprove" @change="onToggleAutoApprove" />
+              </div>
+              <p class="mcp-field__hint">{{ t('about.mcpAutoApproveHint') }}</p>
+            </template>
+            <p v-else class="mcp-service__hint">{{ usingLocal ? t('about.mcpDisabledHintLocal') : t('about.mcpDisabledHint') }}</p>
           </div>
         </div>
       </div>
@@ -201,20 +202,22 @@ const goBack = () => router.push('/app/settings')
 // ---- MCP 服务（Agent 工具桥） ----
 const bridge = useAgentBridgeStore()
 const mcpToggling = ref(false)
-const advancedOpen = ref([])
 const commandDraft = ref('')
 const argsDraft = ref('')
 const cwdDraft = ref('')
 
+const SOURCE_ENGINE_DEFAULT_ARGS = ['-m', 'agent_assistant.hosted.mcp_server']
+
 const mcpSettings = computed(() => bridge.settings)
 const mcpEnabled = computed(() => mcpSettings.value?.enabled === true)
 const autoApprove = computed(() => mcpSettings.value?.autoApprove === true)
-const usingDemo = computed(() => mcpSettings.value?.useDemoServer === true)
-const usingCustom = computed(() => !usingDemo.value && Boolean(mcpSettings.value?.command))
+const usingLocal = computed(() => mcpSettings.value?.useLocalSource === true)
 
 const engineLabel = computed(() => {
-  if (usingDemo.value) return t('about.mcpEngineDemo')
-  if (usingCustom.value) return mcpSettings.value.command
+  if (usingLocal.value) {
+    const cmd = mcpSettings.value?.command
+    return cmd ? t('about.mcpEngineLocalRunning', { command: cmd }) : t('about.mcpEngineLocal')
+  }
   if (bridge.engineStatus?.installed && bridge.engineStatus.version) {
     return t('about.mcpEngineManaged', { version: bridge.engineStatus.version })
   }
@@ -273,7 +276,7 @@ function parseArgsInput(text) {
 async function onToggleMcp(enabled) {
   mcpToggling.value = true
   try {
-    if (enabled === true && !usingDemo.value && !usingCustom.value) {
+    if (enabled === true && !usingLocal.value) {
       const res = await bridge.installEngine()
       if (!res?.ok) {
         ElMessage.error(res?.error || t('about.mcpEngineDownloadFailed'))
@@ -290,15 +293,26 @@ async function onToggleAutoApprove(value) {
   await bridge.updateSettings({ autoApprove: value === true })
 }
 
-async function onToggleDemo(useDemo) {
-  if (useDemo !== true && !mcpSettings.value?.command) {
+async function onSelectOfficial() {
+  if (!usingLocal.value) return
+  if (mcpEnabled.value && !bridge.engineStatus?.installed) {
     const res = await bridge.installEngine()
     if (!res?.ok) {
       ElMessage.error(res?.error || t('about.mcpEngineDownloadFailed'))
       return
     }
   }
-  await bridge.updateSettings({ useDemoServer: useDemo === true })
+  await bridge.updateSettings({ useLocalSource: false })
+}
+
+async function onSelectLocal() {
+  if (usingLocal.value) return
+  const patch = { useLocalSource: true }
+  if (!(mcpSettings.value?.command || '').trim()) {
+    patch.command = 'python'
+    patch.args = [...SOURCE_ENGINE_DEFAULT_ARGS]
+  }
+  await bridge.updateSettings(patch)
 }
 
 async function onCommandBlur() {
@@ -529,10 +543,6 @@ function handleLogoClick() {
   display: flex;
   flex-direction: column;
   gap: $space-2;
-
-  &--disabled {
-    margin-top: $space-4;
-  }
 }
 
 .mcp-engine-progress__meta {
@@ -542,24 +552,32 @@ function handleLogoClick() {
   font-family: $font-mono;
 }
 
-.mcp-advanced {
+.mcp-engine-mode {
+  display: flex;
+  gap: $space-2;
+  padding: $space-1;
+  border-radius: $radius-pill;
+  background: rgba(128, 128, 140, 0.08);
+}
+
+.mcp-engine-mode__btn {
+  flex: 1;
   border: none;
+  border-radius: $radius-pill;
+  padding: $space-2 $space-3;
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.22s cubic-bezier(0.23, 1, 0.32, 1), color 0.22s cubic-bezier(0.23, 1, 0.32, 1);
 
-  :deep(.el-collapse-item__header) {
-    background: transparent;
-    border: none;
-    font-size: $font-size-xs;
-    color: $color-text-muted;
-    height: 32px;
-  }
-
-  :deep(.el-collapse-item__wrap) {
-    background: transparent;
-    border: none;
+  &.is-active {
+    color: $color-pink-primary;
+    background: rgba($color-pink-rgb, 0.16);
   }
 }
 
-.mcp-advanced__row {
+.mcp-field {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -572,12 +590,12 @@ function handleLogoClick() {
   }
 }
 
-.mcp-advanced__label {
+.mcp-field__label {
   font-size: $font-size-sm;
   color: $color-text-secondary;
 }
 
-.mcp-advanced__hint {
+.mcp-field__hint {
   margin: $space-1 0 0;
   font-size: $font-size-xs;
   color: $color-text-muted;

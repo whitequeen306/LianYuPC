@@ -19,13 +19,17 @@ const MAX_TASK_UPDATES = 30
 const MCP_RESTART_WAIT_MS = 20_000
 
 function mcpRestartLikely(mcpState, engineProgress) {
-  if (mcpState === 'starting') return true
+  if (mcpState === 'starting' || mcpState === 'error') return true
   const phase = engineProgress?.phase
   return !!phase && phase !== 'done' && phase !== 'error' && phase !== 'skipped'
 }
 
 function isTransientMcpDown(error) {
-  return String(error || '').includes('MCP 服务未运行')
+  const s = String(error || '')
+  return s.includes('MCP 服务未运行')
+    || /MCP server exited/i.test(s)
+    || s.includes('助手进程崩溃')
+    || s.includes('正在自动重启')
 }
 
 /**
@@ -133,6 +137,28 @@ export const useAgentBridgeStore = defineStore('agentBridge', () => {
     })
   }
 
+  /** Wait until MCP is running after a down/crash. If still 'running' (stale), wait for a down→up cycle. */
+  function waitForMcpRecovered(timeoutMs, { requireCycle } = {}) {
+    const needDown = requireCycle === true || mcpState.value !== 'running'
+    if (mcpState.value === 'running' && !needDown) return Promise.resolve(true)
+    return new Promise((resolve) => {
+      const deadline = Date.now() + timeoutMs
+      let sawDown = mcpState.value !== 'running'
+      const timer = setInterval(() => {
+        if (mcpState.value !== 'running') sawDown = true
+        if (mcpState.value === 'running' && sawDown) {
+          clearInterval(timer)
+          resolve(true)
+          return
+        }
+        if (Date.now() >= deadline) {
+          clearInterval(timer)
+          resolve(mcpState.value === 'running')
+        }
+      }, 200)
+    })
+  }
+
   /** 云端下发的工具调用：本地执行后回传（永不抛异常，失败也要回包让模型继续） */
   async function handleToolCallMessage(message) {
     if (!message || message.type !== 'tool_call' || !message.requestId) return
@@ -160,9 +186,10 @@ export const useAgentBridgeStore = defineStore('agentBridge', () => {
         currentCharacter: activeChatActor.value,
         theme: useSettingsStore().theme,
       }), message.requestId)
-      if (result?.ok === false && isTransientMcpDown(result.error)
-          && mcpRestartLikely(mcpState.value, engineProgress.value)) {
-        const recovered = await waitForMcpRunning(MCP_RESTART_WAIT_MS)
+      if (result?.ok === false && isTransientMcpDown(result.error)) {
+        const recovered = await waitForMcpRecovered(MCP_RESTART_WAIT_MS, {
+          requireCycle: mcpState.value === 'running',
+        })
         if (recovered) {
           result = await api?.mcpCallTool?.(message.name, args, resolveMcpControlActor(message, {
             characters: useCharactersStore().list,

@@ -62,12 +62,6 @@
       "dist/**/*",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": "electron/mcp/demoServer.cjs",
-        "to": "mcp/demoServer.cjs"
-      }
-    ],
     "asar": true,
     "asarUnpack": [],
     "afterPack": "scripts/after-pack.mjs",

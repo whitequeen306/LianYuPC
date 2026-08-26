@@ -92,7 +92,7 @@ public class ChatTurnPromptAssembler {
         boolean showInnerThoughts = scene != ChatTurnScene.VOICE_CALL
                 && CharacterPreferenceResolver.showInnerThoughts(character);
         String base = promptBuilder.buildSystemPrompt(
-                character, memoryContext, lang, scene.enableChatTools(), showInnerThoughts);
+                character, memoryContext, lang, scene.enableChatTools(), showInnerThoughts, userId);
 
         if (scene.includeTime()) {
             base = appendCurrentTimeContext(base);

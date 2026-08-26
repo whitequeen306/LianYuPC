@@ -28,7 +28,11 @@ describe('mcpClient cancel', () => {
 
     const cancelled = client.cancel(p.mcpRequestId, 'user_escape')
     expect(cancelled).toBe(true)
-    await expect(p).rejects.toMatchObject({ message: 'user_escape', cancelled: true })
+    await expect(p).rejects.toMatchObject({
+      message: 'user_escape',
+      cancelled: true,
+      cancelReason: 'user_escape',
+    })
 
     const note = parsedWrites(proc).find((m) => m.method === 'notifications/cancelled')
     expect(note.params).toEqual({ requestId: 1, reason: 'user_escape' })

@@ -1,32 +1,37 @@
 import { describe, it, expect } from 'vitest'
-import { resolveMcpLaunchTarget, engineEnvFromCredentials, createMcpHost, MCP_USER_CANCELLED_CONTENT, isMcpCancelledError, toolIsDangerous } from '../mcp/mcpHost.js'
+import { resolveMcpLaunchTarget, engineEnvFromCredentials, createMcpHost, MCP_USER_CANCELLED_CONTENT, MCP_SUPERSEDED_CONTENT, isMcpCancelledError, toolIsDangerous, looksLikePythonCommand, pickRealPython, sourceInterpreterEnv, describeMcpChildExit, isMcpChildCrash } from '../mcp/mcpHost.js'
 
 describe('resolveMcpLaunchTarget', () => {
-  it('prefers the demo server when useDemoServer is true', () => {
+  it('uses local source command when useLocalSource is true', () => {
     const target = resolveMcpLaunchTarget(
-      { useDemoServer: true, command: 'C:/custom.exe' },
-      {
-        resolveDemoServerCommand: () => ({ command: 'electron', args: ['demo.cjs'], env: { ELECTRON_RUN_AS_NODE: '1' } }),
-        resolveManagedEngine: () => ({ command: 'C:/managed/AgentEngine.exe', args: [], cwd: 'C:/managed' }),
-      },
-    )
-    expect(target.command).toBe('electron')
-    expect(target.args).toEqual(['demo.cjs'])
-    expect(target.env.ELECTRON_RUN_AS_NODE).toBe('1')
-  })
-
-  it('uses a custom command over the managed engine', () => {
-    const target = resolveMcpLaunchTarget(
-      { useDemoServer: false, command: 'python', args: ['-m', 'agent_assistant.hosted.mcp_server'], cwd: 'C:/src' },
+      { useLocalSource: true, command: 'python', args: ['-m', 'agent_assistant.hosted.mcp_server'], cwd: 'C:/src' },
       { resolveManagedEngine: () => ({ command: 'C:/managed/AgentEngine.exe' }) },
     )
     expect(target.command).toBe('python')
     expect(target.cwd).toBe('C:/src')
+    expect(target.needsModelCredentials).toBe(true)
+  })
+
+  it('ignores leftover command when using the official engine', () => {
+    const target = resolveMcpLaunchTarget(
+      { useLocalSource: false, command: 'python', cwd: 'C:/src' },
+      { resolveManagedEngine: () => ({ command: 'C:/managed/AgentEngine.exe', args: [], cwd: 'C:/managed' }) },
+    )
+    expect(target.command).toBe('C:/managed/AgentEngine.exe')
+    expect(target.cwd).toBe('C:/managed')
+  })
+
+  it('errors when local source has no command', () => {
+    const target = resolveMcpLaunchTarget(
+      { useLocalSource: true, command: '' },
+      { resolveManagedEngine: () => ({ command: 'C:/managed/AgentEngine.exe' }) },
+    )
+    expect(target.error).toMatch(/Python/)
   })
 
   it('falls back to the downloaded managed engine', () => {
     const target = resolveMcpLaunchTarget(
-      { useDemoServer: false, command: '' },
+      { useLocalSource: false, command: '' },
       { resolveManagedEngine: () => ({ command: 'C:/managed/AgentEngine.exe', args: [], cwd: 'C:/managed' }) },
     )
     expect(target.command).toBe('C:/managed/AgentEngine.exe')
@@ -35,28 +40,46 @@ describe('resolveMcpLaunchTarget', () => {
 
   it('errors when the managed engine is missing', () => {
     const target = resolveMcpLaunchTarget(
-      { useDemoServer: false, command: '' },
+      { useLocalSource: false, command: '' },
       { resolveManagedEngine: () => null },
     )
     expect(target.error).toMatch(/未安装/)
   })
 
-  it('marks managed/custom targets as needing model credentials, demo not', () => {
-    const demo = resolveMcpLaunchTarget(
-      { useDemoServer: true },
-      { resolveDemoServerCommand: () => ({ command: 'electron', args: [] }) },
-    )
-    expect(demo.needsModelCredentials).toBe(false)
+  it('marks official and local targets as needing model credentials', () => {
     const managed = resolveMcpLaunchTarget(
-      { useDemoServer: false, command: '' },
+      { useLocalSource: false, command: '' },
       { resolveManagedEngine: () => ({ command: 'C:/managed/AgentEngine.exe' }) },
     )
     expect(managed.needsModelCredentials).toBe(true)
-    const custom = resolveMcpLaunchTarget(
-      { useDemoServer: false, command: 'python', args: [] },
+    const local = resolveMcpLaunchTarget(
+      { useLocalSource: true, command: 'python', args: [] },
       {},
     )
-    expect(custom.needsModelCredentials).toBe(true)
+    expect(local.needsModelCredentials).toBe(true)
+  })
+})
+
+describe('python source helpers', () => {
+  it('recognizes python launchers', () => {
+    expect(looksLikePythonCommand('python')).toBe(true)
+    expect(looksLikePythonCommand('C:/Python311/python.exe')).toBe(true)
+    expect(looksLikePythonCommand('py')).toBe(true)
+    expect(looksLikePythonCommand('C:/managed/AgentEngine.exe')).toBe(false)
+  })
+
+  it('skips the WindowsApps python stub', () => {
+    expect(pickRealPython(
+      'C:\\Users\\hp\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe\r\nC:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python311\\python.exe\r\n',
+      'python',
+    )).toBe('C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python311\\python.exe')
+  })
+
+  it('sets unbuffered UTF-8 env for source runs', () => {
+    const env = sourceInterpreterEnv('C:/src', {})
+    expect(env.PYTHONUNBUFFERED).toBe('1')
+    expect(env.PYTHONUTF8).toBe('1')
+    expect(env.PYTHONPATH).toMatch(/C:\/src/)
   })
 })
 
@@ -91,17 +114,30 @@ describe('mcpHost cancel helpers', () => {
   it('exposes the in-character cancel payload', () => {
     expect(MCP_USER_CANCELLED_CONTENT).toMatch(/Esc/)
     expect(MCP_USER_CANCELLED_CONTENT).toMatch(/咦/)
+    expect(MCP_SUPERSEDED_CONTENT).toMatch(/新的电脑任务/)
     expect(isMcpCancelledError({ cancelled: true })).toBe(true)
     expect(isMcpCancelledError(new Error('nope'))).toBe(false)
   })
 
   it('cancelActiveCall is a no-op when idle', () => {
     const host = createMcpHost({
-      getSettings: () => ({ enabled: false, useDemoServer: false, command: '' }),
+      getSettings: () => ({ enabled: false, useLocalSource: false, command: '' }),
       requestConfirm: async () => true,
       broadcast: () => {},
     })
     expect(host.cancelActiveCall()).toBe(false)
+  })
+})
+
+describe('describeMcpChildExit', () => {
+  it('maps Windows access-violation exits to a restart message', () => {
+    expect(isMcpChildCrash('MCP server exited (code=3221225477)')).toBe(true)
+    expect(describeMcpChildExit('MCP server exited (code=3221225477)')).toMatch(/崩溃/)
+    expect(describeMcpChildExit('MCP server exited (code=-1073741819)')).toMatch(/自动重启/)
+  })
+
+  it('passes through unrelated errors', () => {
+    expect(describeMcpChildExit('握手失败：timeout')).toBe('握手失败：timeout')
   })
 })
 
@@ -116,6 +152,8 @@ describe('callTool requestId binding', () => {
     const bindings = fn.match(/\b(?:const|let) requestId\b/g) || []
     expect(bindings).toHaveLength(1)
     expect(fn).toMatch(/\bmcpRequestId\b/)
+    expect(fn).toMatch(/superseded/)
+    expect(fn).toMatch(/callGeneration/)
   })
 })
 

@@ -44,6 +44,11 @@ public class CharacterPromptBuilder {
 
     public String buildSystemPrompt(Character character, String memoryContext, String outputLanguage,
                                     boolean enableChatTools, boolean showInnerThoughts) {
+        return buildSystemPrompt(character, memoryContext, outputLanguage, enableChatTools, showInnerThoughts, null);
+    }
+
+    public String buildSystemPrompt(Character character, String memoryContext, String outputLanguage,
+                                    boolean enableChatTools, boolean showInnerThoughts, Long toolUserId) {
         Map<String, Object> settings = character.getSettings();
         String persona = extractPersona(character.getName(), settings);
 
@@ -74,7 +79,7 @@ public class CharacterPromptBuilder {
         }
 
         if (enableChatTools) {
-            prompt += toolManager.buildToolsPromptHint();
+            prompt += toolManager.buildToolsPromptHint(toolUserId);
         }
 
         CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
