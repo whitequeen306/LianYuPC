@@ -34,6 +34,10 @@ public class ApiKeyVaultService {
     private final ApiKeyVaultMapper vaultMapper;
     private final JasyptUtil jasyptUtil;
 
+    /**
+     * 事务红线（AGENTS.md §9）：本事务内只做「防重 + 落库」，validateVaultEndpoint 目前是本地校验、
+     * 不发 HTTP —— 未来若加端点探活等慢调用，必须移出本方法在事务外执行。
+     */
     @Transactional
     public VaultEntryResponse create(Long userId, CreateVaultRequest request) {
         String baseUrl = normalizeBaseUrl(request.getBaseUrl());

@@ -34,6 +34,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.web.multipart.MultipartFile;
 
 @Slf4j
@@ -182,12 +184,11 @@ public class CommunityService {
             if (!Objects.equals(post.getAuthorUserId(), userId)) {
                 User actor = loadUser(userId);
                 String name = actor.getNickname() != null ? actor.getNickname() : "有人";
-                notificationService.notifyCommunityLike(
-                        post.getAuthorUserId(),
-                        postId,
-                        name,
-                        trimPreview(post.getContent()),
-                        notificationService.resolveUserAvatarUrl(actor));
+                // 通知（STOMP/RabbitMQ）在事务提交后发送，避免拉长 DB 事务窗口（AGENTS.md §9）
+                Long authorId = post.getAuthorUserId();
+                String preview = trimPreview(post.getContent());
+                String avatar = notificationService.resolveUserAvatarUrl(actor);
+                afterCommit(() -> notificationService.notifyCommunityLike(authorId, postId, name, preview, avatar));
             }
         }
         CommunityPost fresh = communityPostMapper.selectById(postId);
@@ -486,5 +487,18 @@ public class CommunityService {
         }
         String t = content.trim();
         return t.length() > 80 ? t.substring(0, 80) : t;
+    }
+
+    private void afterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+        } else {
+            action.run();
+        }
     }
 }
