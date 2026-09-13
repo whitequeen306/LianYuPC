@@ -15,6 +15,7 @@ import com.lianyu.dao.entity.Character;
 import com.lianyu.dao.entity.CharacterState;
 import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.service.character.CharacterDiaryService;
+import com.lianyu.service.character.CharacterStateQueryService;
 import com.lianyu.service.character.CharacterStateService;
 import com.lianyu.service.relationship.RelationshipInnerSpace;
 import com.lianyu.service.relationship.RelationshipStateService;
@@ -34,12 +35,13 @@ class CharacterStateControllerInnerSpaceTest {
         FileStorageService fileStorageService = mock(FileStorageService.class);
         RelationshipStateService relationshipStateService = mock(RelationshipStateService.class);
 
-        CharacterStateController controller = new CharacterStateController(
+        CharacterStateQueryService queryService = new CharacterStateQueryService(
                 characterStateService,
                 diaryService,
                 characterMapper,
                 fileStorageService,
                 relationshipStateService);
+        CharacterStateController controller = new CharacterStateController(queryService);
 
         Character character = new Character();
         character.setId(5L);
