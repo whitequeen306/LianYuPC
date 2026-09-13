@@ -34,6 +34,15 @@ RUN (wget --tries=5 --timeout=180 -O /tmp/asr-stream.tar.bz2 "${ASR_STREAM_MODEL
     && rm /tmp/asr-stream.tar.bz2 \
     && mv /models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20 /models/zipformer-zh
 
+# Runtime loads int8 only; drop unused fp32 weights + test wavs from the image.
+RUN rm -f \
+        /models/sense-voice/model.onnx \
+        /models/zipformer-zh/encoder-epoch-99-avg-1.onnx \
+        /models/zipformer-zh/decoder-epoch-99-avg-1.onnx \
+        /models/zipformer-zh/joiner-epoch-99-avg-1.onnx \
+    && rm -rf /models/sense-voice/test_wavs /models/zipformer-zh/test_wavs \
+    && rm -f /models/sense-voice/export-onnx.py
+
 ENV ASR_MODEL_DIR=/models/sense-voice
 ENV ASR_STREAM_MODEL_DIR=/models/zipformer-zh
 ENV ASR_STREAM_ENABLED=true

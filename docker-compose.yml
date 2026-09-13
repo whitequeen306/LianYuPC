@@ -96,7 +96,8 @@ services:
       ASR_STREAM_THREADS: "2"
       ASR_STREAM_ENABLED: "true"
       ASR_PORT: "8080"
-    mem_limit: 2560m
+    # int8 SenseVoice + Zipformer 常驻约 1.3–1.6G；3G 给识别峰值留余量
+    mem_limit: 3072m
     cpus: "2.5"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]

@@ -42,12 +42,16 @@ def _find_under(root: Path, name: str) -> Path | None:
 
 
 def _find_model_onnx(root: Path) -> str:
-    candidates = list(root.rglob("model.onnx"))
-    if not candidates:
-        candidates = list(root.rglob("*.onnx"))
+    """Prefer int8 SenseVoice (~229MB) over fp32 (~895MB)."""
+    for name in ("model.int8.onnx", "model.onnx"):
+        found = list(root.rglob(name))
+        if found:
+            found.sort(key=lambda p: len(p.parts))
+            return str(found[0])
+    candidates = list(root.rglob("*.onnx"))
     if not candidates:
         raise FileNotFoundError(f"No onnx model under {root}")
-    candidates.sort(key=lambda p: (p.name != "model.onnx", len(p.parts)))
+    candidates.sort(key=lambda p: ("int8" not in p.name, len(p.parts)))
     return str(candidates[0])
 
 
@@ -59,14 +63,16 @@ def _load_offline() -> sherpa_onnx.OfflineRecognizer:
     tokens_path = _find_under(SENSE_DIR, "tokens.txt")
     if tokens_path is None:
         raise FileNotFoundError(f"tokens.txt not found under {SENSE_DIR}")
+    threads = int(os.environ.get("ASR_THREADS", "2"))
     _offline = sherpa_onnx.OfflineRecognizer.from_sense_voice(
         model=str(model_path),
         tokens=str(tokens_path),
-        num_threads=int(os.environ.get("ASR_THREADS", "2")),
+        num_threads=threads,
         language=os.environ.get("ASR_LANGUAGE", "zh"),
         use_itn=True,
         debug=False,
     )
+    print(f"[asr] SenseVoice model={model_path} threads={threads}", flush=True)
     return _offline
 
 
@@ -88,13 +94,19 @@ def _pick_encoder(root: Path) -> Path:
 
 
 def _pick_decoder(root: Path) -> Path:
-    for name in ("decoder-epoch-99-avg-1.onnx", "decoder.onnx"):
+    for name in (
+        "decoder-epoch-99-avg-1.int8.onnx",
+        "decoder-epoch-99-avg-1.onnx",
+        "decoder.int8.onnx",
+        "decoder.onnx",
+    ):
         p = _find_under(root, name)
         if p is not None:
             return p
     found = list(root.rglob("decoder*.onnx"))
     if not found:
         raise FileNotFoundError(f"No decoder*.onnx under {root}")
+    found.sort(key=lambda p: ("int8" not in p.name, len(str(p))))
     return found[0]
 
 
@@ -125,12 +137,13 @@ def _load_online() -> sherpa_onnx.OnlineRecognizer:
     encoder = _pick_encoder(ZIPFORMER_DIR)
     decoder = _pick_decoder(ZIPFORMER_DIR)
     joiner = _pick_joiner(ZIPFORMER_DIR)
+    stream_threads = int(os.environ.get("ASR_STREAM_THREADS", os.environ.get("ASR_THREADS", "2")))
     _online = sherpa_onnx.OnlineRecognizer.from_transducer(
         tokens=str(tokens),
         encoder=str(encoder),
         decoder=str(decoder),
         joiner=str(joiner),
-        num_threads=int(os.environ.get("ASR_STREAM_THREADS", os.environ.get("ASR_THREADS", "2"))),
+        num_threads=stream_threads,
         sample_rate=SAMPLE_RATE,
         feature_dim=80,
         decoding_method="greedy_search",
@@ -139,6 +152,11 @@ def _load_online() -> sherpa_onnx.OnlineRecognizer:
         rule2_min_trailing_silence=float(os.environ.get("ASR_EP_RULE2", "1.2")),
         rule3_min_utterance_length=float(os.environ.get("ASR_EP_RULE3", "20")),
         provider="cpu",
+    )
+    print(
+        f"[asr] Zipformer encoder={encoder} decoder={decoder} joiner={joiner} "
+        f"threads={stream_threads}",
+        flush=True,
     )
     return _online
 
