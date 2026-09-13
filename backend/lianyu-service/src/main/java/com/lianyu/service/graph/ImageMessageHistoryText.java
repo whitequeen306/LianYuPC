@@ -1,5 +1,7 @@
 package com.lianyu.service.graph;
 
+import com.lianyu.common.util.TextUtils;
+
 /**
  * 历史消息中的图片占位：文本聊天只送文字，不送 imageUrl / 二进制。
  */
@@ -12,7 +14,7 @@ public final class ImageMessageHistoryText {
     }
 
     public static String placeholder(String imageDescription) {
-        String desc = trimToNull(imageDescription);
+        String desc = TextUtils.trimToNull(imageDescription);
         if (desc == null) {
             return GENERIC_SHORT;
         }
@@ -118,7 +120,7 @@ public final class ImageMessageHistoryText {
         var matcher = java.util.regex.Pattern.compile("图片内容[：:]\\s*(.+?)(?:\\n|$)")
                 .matcher(stripped);
         if (matcher.find()) {
-            return trimToNull(matcher.group(1));
+            return TextUtils.trimToNull(matcher.group(1));
         }
         return null;
     }
@@ -128,11 +130,4 @@ public final class ImageMessageHistoryText {
         return inner.isEmpty();
     }
 
-    private static String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
-    }
 }

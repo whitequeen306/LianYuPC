@@ -5,6 +5,7 @@ import com.lianyu.common.base.ErrorCode;
 import com.lianyu.common.constant.AiConstants;
 import com.lianyu.common.exception.BusinessException;
 import com.lianyu.common.util.OutboundUrlValidator;
+import com.lianyu.common.util.TextUtils;
 import com.lianyu.dao.entity.ApiKeyVault;
 import com.lianyu.dao.mapper.ApiKeyVaultMapper;
 import com.lianyu.security.util.JasyptUtil;
@@ -39,7 +40,7 @@ public class ApiKeyVaultService {
         validateVaultEndpoint(baseUrl, request.getApiKey());
         validateModelDefault(request.getModelDefault());
 
-        String alias = trimToNull(request.getProvider());
+        String alias = TextUtils.trimToNull(request.getProvider());
         if (AiConstants.PLATFORM_PROVIDER.equalsIgnoreCase(alias)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "不能使用保留别名 platform");
         }
@@ -72,7 +73,7 @@ public class ApiKeyVaultService {
         vault.setModelDefault(request.getModelDefault().trim());
         vault.setPurpose(normalizePurpose(request.getPurpose()));
         vault.setEnabled(1);
-        vault.setRemark(trimToNull(request.getRemark()));
+        vault.setRemark(TextUtils.trimToNull(request.getRemark()));
         vaultMapper.insert(vault);
 
         if (autoAlias) {
@@ -135,7 +136,7 @@ public class ApiKeyVaultService {
             vault.setEnabled(request.getEnabled() != 0 ? 1 : 0);
         }
         if (request.getRemark() != null) {
-            vault.setRemark(trimToNull(request.getRemark()));
+            vault.setRemark(TextUtils.trimToNull(request.getRemark()));
         }
         vaultMapper.updateById(vault);
 
@@ -159,7 +160,7 @@ public class ApiKeyVaultService {
      * 2) provider 为空或 platform：不再返回平台 DEFAULT 池（须用户自有文本模型）。
      */
     public VaultEntryResponse resolveForChat(Long userId, String provider) {
-        String target = trimToNull(provider);
+        String target = TextUtils.trimToNull(provider);
         if (target != null && !AiConstants.PLATFORM_PROVIDER.equalsIgnoreCase(target)) {
             ApiKeyVault userVault = vaultMapper.selectOne(new LambdaQueryWrapper<ApiKeyVault>()
                     .eq(ApiKeyVault::getUserId, userId)
@@ -217,7 +218,7 @@ public class ApiKeyVaultService {
 
     /** 请求 provider 是否为空或平台内置（不可再用于用户可见聊天）。 */
     public static boolean isPlatformOrBlank(String provider) {
-        String target = trimToNull(provider);
+        String target = TextUtils.trimToNull(provider);
         return target == null || AiConstants.PLATFORM_PROVIDER.equalsIgnoreCase(target);
     }
 
@@ -225,7 +226,7 @@ public class ApiKeyVaultService {
      * 解析用户指定的识图专用 vault（purpose=vision，启用）。找不到返回 null（调用方决定回退策略）。
      */
     public VaultEntryResponse resolveVisionVault(Long userId, String provider) {
-        String target = trimToNull(provider);
+        String target = TextUtils.trimToNull(provider);
         if (userId == null || target == null) {
             return null;
         }
@@ -338,7 +339,7 @@ public class ApiKeyVaultService {
     }
 
     static String normalizePurpose(String purpose) {
-        String p = trimToNull(purpose);
+        String p = TextUtils.trimToNull(purpose);
         return PURPOSE_VISION.equalsIgnoreCase(p) ? PURPOSE_VISION : PURPOSE_TEXT;
     }
 
@@ -363,14 +364,6 @@ public class ApiKeyVaultService {
         }
         String lower = baseUrl.toLowerCase();
         return lower.contains(":11434") || lower.contains("ollama");
-    }
-
-    private static String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private String normalizeBaseUrl(String baseUrl) {

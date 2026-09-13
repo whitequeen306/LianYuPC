@@ -21,11 +21,6 @@
         </dependency>
         <dependency>
             <groupId>com.lianyu</groupId>
-            <artifactId>lianyu-dao</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.lianyu</groupId>
             <artifactId>lianyu-security</artifactId>
             <version>${project.version}</version>
         </dependency>
