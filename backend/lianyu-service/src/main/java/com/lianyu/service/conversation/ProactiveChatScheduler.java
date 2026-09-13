@@ -43,6 +43,7 @@ public class ProactiveChatScheduler {
     private final CharacterMapper characterMapper;
     private final CharacterStateMapper characterStateMapper;
     private final ConversationService conversationService;
+    private final ProactiveMessageService proactiveMessageService;
     private final CharacterChatBehaviorResolver chatBehaviorResolver;
     private final EngagementFrequencyScorer engagementScorer;
     private final StringRedisTemplate redisTemplate;
@@ -155,7 +156,7 @@ public class ProactiveChatScheduler {
                 continue;
             }
             try {
-                var replies = conversationService.sendProactiveMessage(
+                var replies = proactiveMessageService.sendProactiveMessage(
                         item.conv().getUserId(),
                         item.conv().getId(),
                         item.lastUser().getContent());
@@ -203,7 +204,7 @@ public class ProactiveChatScheduler {
                 continue;
             }
             try {
-                var replies = conversationService.trySendWaitNudgeVoice(conv.getUserId(), conv.getId());
+                var replies = proactiveMessageService.trySendWaitNudgeVoice(conv.getUserId(), conv.getId());
                 if (!replies.isEmpty()) {
                     sent++;
                     setCooldown(conv.getId(), behavior);
@@ -221,7 +222,7 @@ public class ProactiveChatScheduler {
     private int trySendTimedFixedVoices(List<Conversation> candidates,
                                         Map<Long, Character> characterMap,
                                         Map<Long, Message> latestMessageMap) {
-        if (ConversationService.resolveTimedVoiceSlot(java.time.LocalTime.now(
+        if (ProactiveMessageService.resolveTimedVoiceSlot(java.time.LocalTime.now(
                 java.time.ZoneId.of("Asia/Shanghai"))) == null) {
             return 0;
         }
@@ -253,7 +254,7 @@ public class ProactiveChatScheduler {
                 continue;
             }
             try {
-                var fixed = conversationService.trySendTimedFixedVoice(conv.getUserId(), conv.getId());
+                var fixed = proactiveMessageService.trySendTimedFixedVoice(conv.getUserId(), conv.getId());
                 if (!fixed.isEmpty()) {
                     sent++;
                     setCooldown(conv.getId(), behavior);

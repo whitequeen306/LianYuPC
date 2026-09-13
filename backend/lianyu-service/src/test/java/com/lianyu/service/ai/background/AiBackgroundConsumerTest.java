@@ -6,6 +6,7 @@ import static org.mockito.Mockito.verify;
 
 import com.lianyu.service.character.CharacterDiaryService;
 import com.lianyu.service.conversation.ConversationService;
+import com.lianyu.service.conversation.ProactiveMessageService;
 import com.lianyu.service.conversation.VoiceCallService;
 import com.lianyu.service.moments.MomentsCommentOrchestrator;
 import com.lianyu.service.moments.MomentsService;
@@ -23,6 +24,7 @@ class AiBackgroundConsumerTest {
     @Mock MomentsService momentsService;
     @Mock CharacterDiaryService characterDiaryService;
     @Mock ConversationService conversationService;
+    @Mock ProactiveMessageService proactiveMessageService;
     @Mock VoiceCallService voiceCallService;
 
     private AiBackgroundConsumer consumer;
@@ -34,6 +36,7 @@ class AiBackgroundConsumerTest {
                 momentsService,
                 characterDiaryService,
                 conversationService,
+                proactiveMessageService,
                 voiceCallService);
     }
 

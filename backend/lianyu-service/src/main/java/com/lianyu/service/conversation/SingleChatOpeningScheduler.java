@@ -20,6 +20,7 @@ public class SingleChatOpeningScheduler {
 
     private final ScheduledExecutorService scheduledExecutorService;
     private final ConversationService conversationService;
+    private final ProactiveMessageService proactiveMessageService;
     private final AiBackgroundPublisher aiBackgroundPublisher;
 
     @Value("${lianyu.chat.opening.enabled:true}")
@@ -31,9 +32,11 @@ public class SingleChatOpeningScheduler {
     @Autowired
     public SingleChatOpeningScheduler(ScheduledExecutorService scheduledExecutorService,
                                       @Lazy ConversationService conversationService,
+                                      @Lazy ProactiveMessageService proactiveMessageService,
                                       AiBackgroundPublisher aiBackgroundPublisher) {
         this.scheduledExecutorService = scheduledExecutorService;
         this.conversationService = conversationService;
+        this.proactiveMessageService = proactiveMessageService;
         this.aiBackgroundPublisher = aiBackgroundPublisher;
     }
 
@@ -43,7 +46,7 @@ public class SingleChatOpeningScheduler {
         }
         scheduledExecutorService.execute(() -> {
             try {
-                conversationService.sendColdOpenFirstLine(userId, conversationId);
+                proactiveMessageService.sendColdOpenFirstLine(userId, conversationId);
             } catch (Exception e) {
                 log.warn("Cold open first line failed, convId={}, reason={}", conversationId, e.getMessage());
                 return;

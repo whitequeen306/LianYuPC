@@ -40,6 +40,7 @@ class ProactiveChatSchedulerRelationshipTest {
                 characterMapper,
                 characterStateMapper,
                 conversationService,
+                org.mockito.Mockito.mock(ProactiveMessageService.class),
                 chatBehaviorResolver,
                 engagementScorer,
                 redisTemplate,

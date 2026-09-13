@@ -6,6 +6,7 @@ import com.lianyu.common.base.Result;
 import com.lianyu.common.exception.BusinessException;
 import com.lianyu.service.auth.AuthRateLimiter;
 import com.lianyu.service.conversation.ConversationService;
+import com.lianyu.service.conversation.ProactiveMessageService;
 import com.lianyu.service.conversation.VoiceCallService;
 import com.lianyu.service.storage.FileStorageService;
 import com.lianyu.service.dto.*;
@@ -29,6 +30,7 @@ import java.util.Map;
 public class ConversationController {
 
     private final ConversationService conversationService;
+    private final ProactiveMessageService proactiveMessageService;
     private final VoiceCallService voiceCallService;
     private final FileStorageService fileStorageService;
     private final AuthRateLimiter authRateLimiter;
@@ -119,7 +121,7 @@ public class ConversationController {
         long userId = StpUtil.getLoginIdAsLong();
         authRateLimiter.checkRateLimit("rate:opened:", String.valueOf(userId),
                 30, java.time.Duration.ofMinutes(1), "操作过于频繁，请稍后再试");
-        return Result.ok(conversationService.onSingleChatOpened(userId, id));
+        return Result.ok(proactiveMessageService.onSingleChatOpened(userId, id));
     }
 
     @Operation(summary = "语音通话回合（V1 仅雷神）", description = "上传用户语音 → ASR → 短回复 LLM → TTS")

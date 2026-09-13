@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.LocalTime;
 import org.junit.jupiter.api.Test;
-import com.lianyu.service.conversation.ConversationService;
+import com.lianyu.service.conversation.ProactiveMessageService;
 
 class PetMeetVoiceCatalogTest {
 
@@ -83,11 +83,11 @@ class PetMeetVoiceCatalogTest {
 
     @Test
     void resolvesTimedSlots() {
-        assertThat(ConversationService.resolveTimedVoiceSlot(LocalTime.of(12, 0)))
+        assertThat(ProactiveMessageService.resolveTimedVoiceSlot(LocalTime.of(12, 0)))
                 .isEqualTo(PetMeetVoiceCatalog.Kind.NOON);
-        assertThat(ConversationService.resolveTimedVoiceSlot(LocalTime.of(19, 0)))
+        assertThat(ProactiveMessageService.resolveTimedVoiceSlot(LocalTime.of(19, 0)))
                 .isEqualTo(PetMeetVoiceCatalog.Kind.EVENING);
-        assertThat(ConversationService.resolveTimedVoiceSlot(LocalTime.of(15, 0))).isNull();
-        assertThat(ConversationService.resolveTimedVoiceSlot(LocalTime.of(22, 0))).isNull();
+        assertThat(ProactiveMessageService.resolveTimedVoiceSlot(LocalTime.of(15, 0))).isNull();
+        assertThat(ProactiveMessageService.resolveTimedVoiceSlot(LocalTime.of(22, 0))).isNull();
     }
 }

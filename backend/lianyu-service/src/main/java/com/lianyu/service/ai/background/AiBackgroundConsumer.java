@@ -2,6 +2,7 @@ package com.lianyu.service.ai.background;
 
 import com.lianyu.service.character.CharacterDiaryService;
 import com.lianyu.service.conversation.ConversationService;
+import com.lianyu.service.conversation.ProactiveMessageService;
 import com.lianyu.service.conversation.VoiceCallService;
 import com.lianyu.service.moments.MomentsCommentOrchestrator;
 import com.lianyu.service.moments.MomentsService;
@@ -19,6 +20,7 @@ public class AiBackgroundConsumer {
     private final MomentsService momentsService;
     private final CharacterDiaryService characterDiaryService;
     private final ConversationService conversationService;
+    private final ProactiveMessageService proactiveMessageService;
     private final VoiceCallService voiceCallService;
 
     @RabbitListener(
@@ -38,9 +40,9 @@ public class AiBackgroundConsumer {
                 case MOMENTS_AUTHOR_REPLY -> momentsCommentOrchestrator.processAuthorReplyJob(task);
                 case MOMENTS_POST -> momentsService.processMomentsPostJob(task);
                 case CHARACTER_DIARY -> characterDiaryService.processDiaryJob(task);
-                case COLD_OPEN_FOLLOWUP -> conversationService.sendColdOpenFollowUpIfStillSilent(
+                case COLD_OPEN_FOLLOWUP -> proactiveMessageService.sendColdOpenFollowUpIfStillSilent(
                         task.userId(), task.conversationId());
-                case CITY_CHANGE_FOLLOWUP -> conversationService.sendCityChangeFollowUp(
+                case CITY_CHANGE_FOLLOWUP -> proactiveMessageService.sendCityChangeFollowUp(
                         task.userId(), task.previousCity(), task.newCity());
                 case VOICE_CALL_SUMMARY -> voiceCallService.processVoiceCallSummaryJob(task);
                 default -> log.warn("AI background unknown type: {}", task.type());

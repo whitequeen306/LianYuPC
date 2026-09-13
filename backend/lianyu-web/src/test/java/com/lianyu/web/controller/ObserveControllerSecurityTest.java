@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import cn.dev33.satoken.exception.SaTokenContextException;
 import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.DashScopeTtsService;
+import com.lianyu.service.ai.VisionChatService;
 import com.lianyu.service.auth.AuthRateLimiter;
 import com.lianyu.service.dto.ObserveDesktopRequest;
 import com.lianyu.web.util.ClientIpResolver;
@@ -19,6 +20,7 @@ class ObserveControllerSecurityTest {
     ObserveController controller =
         new ObserveController(
             mock(AiChatService.class),
+            mock(VisionChatService.class),
             mock(DashScopeTtsService.class),
             mock(AuthRateLimiter.class),
             mock(ClientIpResolver.class));
