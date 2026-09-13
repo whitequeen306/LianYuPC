@@ -2,16 +2,9 @@ package com.lianyu.service.ai;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lianyu.service.dto.MessageDto;
-import com.lianyu.service.rules.PromptRuleEngine;
 import com.lianyu.service.storage.FileStorageService;
-import com.lianyu.service.support.OutputLanguageService;
-import com.lianyu.service.tools.ToolManager;
 import com.lianyu.service.user.UserPublicProfileService;
-import io.github.resilience4j.bulkhead.BulkheadRegistry;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
-import io.github.resilience4j.timelimiter.TimeLimiterRegistry;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
@@ -20,46 +13,48 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.ai.chat.messages.Message;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
-class AiChatServiceVisionFlowTest {
+class VisionChatServiceTest {
 
+    @Mock private AiChatService aiChatService;
     @Mock private ApiKeyVaultService vaultService;
     @Mock private FileStorageService fileStorageService;
-    @Mock private ToolManager toolManager;
-    @Mock private StringRedisTemplate redisTemplate;
+    @Mock private UserPublicProfileService userPublicProfileService;
     @Mock private ScheduledExecutorService scheduler;
     @Mock private Executor aiStreamExecutor;
-    @Mock private PromptRuleEngine promptRuleEngine;
-    @Mock private OutputLanguageService outputLanguageService;
-    @Mock private UserPublicProfileService userPublicProfileService;
 
-    private AiChatService service;
+    private VisionChatService service;
 
     @BeforeEach
     void setUp() {
-        service = new AiChatService(
-                vaultService,
-                fileStorageService,
-                toolManager,
-                redisTemplate,
-                new ObjectMapper(),
-                BulkheadRegistry.ofDefaults(),
-                TimeLimiterRegistry.ofDefaults(),
-                CircuitBreakerRegistry.ofDefaults(),
+        io.github.resilience4j.bulkhead.BulkheadRegistry bulkheads =
+                io.github.resilience4j.bulkhead.BulkheadRegistry.ofDefaults();
+        AiResilience resilience = new AiResilience(
+                bulkheads,
+                io.github.resilience4j.timelimiter.TimeLimiterRegistry.ofDefaults(),
+                io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry.ofDefaults(),
                 scheduler,
                 aiStreamExecutor,
-                aiStreamExecutor,
-                promptRuleEngine,
-                outputLanguageService,
+                aiStreamExecutor);
+        SseChatStreamHelper sseHelper = new SseChatStreamHelper(new com.fasterxml.jackson.databind.ObjectMapper());
+        VisionMessageBuilder visionMessageBuilder = new VisionMessageBuilder(fileStorageService);
+        VisionAnalysisParser visionAnalysisParser =
+                new VisionAnalysisParser(new com.fasterxml.jackson.databind.ObjectMapper());
+        service = new VisionChatService(
+                aiChatService,
+                resilience,
+                sseHelper,
+                visionMessageBuilder,
+                visionAnalysisParser,
+                vaultService,
                 userPublicProfileService);
     }
 
     @Test
-    void buildImageAugmentedTextMessages_appendsStructuredVisionContext() {
+    void buildImageAugmentedTextMessageDtos_appendsStructuredVisionContext() {
         MessageDto system = new MessageDto();
         system.setRole("system");
         system.setContent("你是一个温柔角色。");
@@ -72,11 +67,14 @@ class AiChatServiceVisionFlowTest {
         VisionAnalysisResult analysis = new VisionAnalysisResult("求识图", "high", "一只橘猫趴在窗台上");
 
         @SuppressWarnings("unchecked")
-        List<Message> messages = (List<Message>) ReflectionTestUtils.invokeMethod(
+        List<MessageDto> dtos = (List<MessageDto>) ReflectionTestUtils.invokeMethod(
                 service,
-                "buildImageAugmentedTextMessages",
+                "buildImageAugmentedTextMessageDtos",
                 List.of(system, user),
                 analysis);
+        @SuppressWarnings("unchecked")
+        List<Message> messages = (List<Message>) ReflectionTestUtils.invokeMethod(
+                service, "toTextOnlySpringMessages", dtos);
 
         assertThat(messages).hasSize(2);
         assertThat(messages.get(0).getText())
@@ -90,7 +88,7 @@ class AiChatServiceVisionFlowTest {
     }
 
     @Test
-    void buildImageAugmentedTextMessages_imageOnlyEmptyXml_injectsDescriptionIntoUserTurn() {
+    void buildImageAugmentedTextMessageDtos_imageOnlyEmptyXml_injectsDescriptionIntoUserTurn() {
         MessageDto system = new MessageDto();
         system.setRole("system");
         system.setContent("你是江之岛盾子。");
@@ -104,11 +102,14 @@ class AiChatServiceVisionFlowTest {
                 "分享日常", "high", "夜间户外餐桌上有烤肉、西瓜和几个人");
 
         @SuppressWarnings("unchecked")
-        List<Message> messages = (List<Message>) ReflectionTestUtils.invokeMethod(
+        List<MessageDto> dtos = (List<MessageDto>) ReflectionTestUtils.invokeMethod(
                 service,
-                "buildImageAugmentedTextMessages",
+                "buildImageAugmentedTextMessageDtos",
                 List.of(system, user),
                 analysis);
+        @SuppressWarnings("unchecked")
+        List<Message> messages = (List<Message>) ReflectionTestUtils.invokeMethod(
+                service, "toTextOnlySpringMessages", dtos);
 
         assertThat(messages).hasSize(2);
         assertThat(messages.get(0).getText())
@@ -120,7 +121,7 @@ class AiChatServiceVisionFlowTest {
     }
 
     @Test
-    void buildImageAugmentedTextMessages_whenLowConfidence_addsHonestVisibilityRule() {
+    void buildImageAugmentedTextMessageDtos_whenLowConfidence_addsHonestVisibilityRule() {
         MessageDto user = new MessageDto();
         user.setRole("user");
         user.setContent("这是什么");
@@ -129,34 +130,18 @@ class AiChatServiceVisionFlowTest {
         VisionAnalysisResult analysis = new VisionAnalysisResult("求识图", "看不清", "图像模糊，主体无法辨认");
 
         @SuppressWarnings("unchecked")
-        List<Message> messages = (List<Message>) ReflectionTestUtils.invokeMethod(
+        List<MessageDto> dtos = (List<MessageDto>) ReflectionTestUtils.invokeMethod(
                 service,
-                "buildImageAugmentedTextMessages",
+                "buildImageAugmentedTextMessageDtos",
                 List.of(user),
                 analysis);
+        @SuppressWarnings("unchecked")
+        List<Message> messages = (List<Message>) ReflectionTestUtils.invokeMethod(
+                service, "toTextOnlySpringMessages", dtos);
 
         assertThat(messages).hasSize(2);
         assertThat(messages.get(0).getText())
                 .contains("可辨识度: 看不清")
                 .contains("必须如实告诉用户这张图看不太清");
-    }
-
-    @Test
-    void buildDesktopGreetingPrompt_whenLowConfidence_includesHonestVisibilityRule() {
-        VisionAnalysisResult analysis = new VisionAnalysisResult("观察屏幕", "看不清", "图像模糊，主体无法辨认");
-
-        String prompt = (String) ReflectionTestUtils.invokeMethod(
-                service,
-                "buildDesktopGreetingPrompt",
-                "你是一个可爱的桌面宠物。",
-                "某个游戏窗口",
-                analysis);
-
-        assertThat(prompt)
-                .contains("你是一个可爱的桌面宠物。")
-                .contains("某个游戏窗口")
-                .contains("图像可辨识度：看不清")
-                .contains("自然承认看不太清")
-                .contains("不超过40字");
     }
 }

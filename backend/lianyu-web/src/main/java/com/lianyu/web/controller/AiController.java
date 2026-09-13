@@ -4,6 +4,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.lianyu.common.base.Result;
 import com.lianyu.service.ai.AiChatQuotaService;
 import com.lianyu.service.ai.AiChatService;
+import com.lianyu.service.ai.ModelCatalogService;
 import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.dto.AiChatRequest;
 import com.lianyu.service.dto.ChatResult;
@@ -37,6 +38,7 @@ import java.util.List;
 public class AiController {
 
     private final AiChatService aiChatService;
+    private final ModelCatalogService modelCatalogService;
     private final ApiKeyVaultService vaultService;
     private final AiChatQuotaService aiChatQuotaService;
 
@@ -59,13 +61,13 @@ public class AiController {
     @Operation(summary = "获取 provider 模型列表")
     @GetMapping("/models")
     public Result<List<ModelEntryDto>> models(@RequestParam String provider) {
-        return Result.ok(aiChatService.fetchModels(StpUtil.getLoginIdAsLong(), provider));
+        return Result.ok(modelCatalogService.fetchModels(StpUtil.getLoginIdAsLong(), provider));
     }
 
     @Operation(summary = "预览模型列表（未保存配置时）")
     @PostMapping("/models/preview")
     public Result<List<ModelEntryDto>> previewModels(@Valid @RequestBody PreviewModelsRequest request) {
-        return Result.ok(aiChatService.previewModels(
+        return Result.ok(modelCatalogService.previewModels(
                 StpUtil.getLoginIdAsLong(), request.getBaseUrl(), request.getApiKey()));
     }
 

@@ -6,6 +6,7 @@ import com.lianyu.ai.graph.ChatTurnKeys;
 import com.lianyu.ai.graph.ChatTurnState;
 import com.lianyu.dao.entity.Character;
 import com.lianyu.service.ai.AiChatService;
+import com.lianyu.service.ai.VisionChatService;
 import com.lianyu.service.dto.AiChatRequest;
 import com.lianyu.service.dto.ChatResult;
 import com.lianyu.service.dto.MessageDto;
@@ -27,6 +28,7 @@ import org.springframework.stereotype.Component;
 public class InvokeModelNode implements NodeAction {
 
     private final AiChatService aiChatService;
+    private final VisionChatService visionChatService;
 
     @Override
     @SuppressWarnings("unchecked")
@@ -43,7 +45,7 @@ public class InvokeModelNode implements NodeAction {
         AiChatRequest request = buildRequest(state, turn, character, messages);
 
         ChatResult result = hasImage(request)
-                ? aiChatService.chatImageBlocking(turn.userId(), request)
+                ? visionChatService.chatImageBlocking(turn.userId(), request)
                 : aiChatService.chatBlocking(turn.userId(), request);
 
         Map<String, Object> updates = new HashMap<>();

@@ -9,6 +9,7 @@ import com.lianyu.common.base.ErrorCode;
 import com.lianyu.common.exception.BusinessException;
 import com.lianyu.dao.entity.Character;
 import com.lianyu.service.ai.AiChatService;
+import com.lianyu.service.ai.VisionChatService;
 import com.lianyu.service.dto.AiChatRequest;
 import com.lianyu.service.dto.MessageDto;
 import com.lianyu.service.graph.nodes.InvokeModelNode;
@@ -32,6 +33,7 @@ public class ChatTurnFacade {
 
     private final CompiledGraph chatTurnGraph;
     private final AiChatService aiChatService;
+    private final VisionChatService visionChatService;
     private final ChatTurnPromptAssembler promptAssembler;
 
     public String assembleSystemPrompt(ChatTurnCommand command) {
@@ -69,7 +71,7 @@ public class ChatTurnFacade {
         log.info("ChatTurn stream assembled: scene={} messages={} hasImage={}",
                 turn.scene(), messages.size(), hasImage);
         return hasImage
-                ? aiChatService.chatImageStream(command.getUserId(), request, callback)
+                ? visionChatService.chatImageStream(command.getUserId(), request, callback)
                 : aiChatService.chatStream(command.getUserId(), request, callback);
     }
 

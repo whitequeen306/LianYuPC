@@ -3,6 +3,7 @@ package com.lianyu.web.controller;
 import cn.dev33.satoken.stp.StpUtil;
 import com.lianyu.common.base.Result;
 import com.lianyu.service.ai.AiChatService;
+import com.lianyu.service.ai.VisionChatService;
 import com.lianyu.service.ai.DashScopeTtsService;
 import com.lianyu.service.auth.AuthRateLimiter;
 import com.lianyu.service.dto.ObserveDesktopRequest;
@@ -32,15 +33,18 @@ public class ObserveController {
     private static final int OBSERVE_PER_IP_PER_HOUR = 30;
 
     private final AiChatService aiChatService;
+    private final VisionChatService visionChatService;
     private final DashScopeTtsService dashScopeTtsService;
     private final AuthRateLimiter authRateLimiter;
     private final ClientIpResolver clientIpResolver;
 
     public ObserveController(AiChatService aiChatService,
+                             VisionChatService visionChatService,
                              DashScopeTtsService dashScopeTtsService,
                              AuthRateLimiter authRateLimiter,
                              ClientIpResolver clientIpResolver) {
         this.aiChatService = aiChatService;
+        this.visionChatService = visionChatService;
         this.dashScopeTtsService = dashScopeTtsService;
         this.authRateLimiter = authRateLimiter;
         this.clientIpResolver = clientIpResolver;
@@ -61,7 +65,7 @@ public class ObserveController {
         }
 
         try {
-            String greeting = aiChatService.observeDesktop(
+            String greeting = visionChatService.observeDesktop(
                     userId, request.getImageBase64(), request.getWindowTitle(), request.getPersona(),
                     request.getProvider(), request.getModel());
             if (greeting == null || greeting.isBlank()) {

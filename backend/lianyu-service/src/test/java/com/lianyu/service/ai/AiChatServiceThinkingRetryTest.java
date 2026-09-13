@@ -13,7 +13,6 @@ import com.lianyu.service.rules.PromptRuleEngine;
 import com.lianyu.service.storage.FileStorageService;
 import com.lianyu.service.support.OutputLanguageService;
 import com.lianyu.service.tools.ToolManager;
-import com.lianyu.service.user.UserPublicProfileService;
 import io.github.resilience4j.bulkhead.BulkheadRegistry;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.timelimiter.TimeLimiterRegistry;
@@ -40,32 +39,32 @@ class AiChatServiceThinkingRetryTest {
     @Mock private ApiKeyVaultService vaultService;
     @Mock private FileStorageService fileStorageService;
     @Mock private ToolManager toolManager;
-    @Mock private StringRedisTemplate redisTemplate;
     @Mock private ScheduledExecutorService scheduler;
     @Mock private Executor aiStreamExecutor;
     @Mock private PromptRuleEngine promptRuleEngine;
     @Mock private OutputLanguageService outputLanguageService;
-    @Mock private UserPublicProfileService userPublicProfileService;
 
     private AiChatService service;
 
     @BeforeEach
     void setUp() {
-        service = new AiChatService(
-                vaultService,
-                fileStorageService,
-                toolManager,
-                redisTemplate,
-                new ObjectMapper(),
+        AiResilience resilience = new AiResilience(
                 BulkheadRegistry.ofDefaults(),
                 TimeLimiterRegistry.ofDefaults(),
                 CircuitBreakerRegistry.ofDefaults(),
                 scheduler,
                 aiStreamExecutor,
-                aiStreamExecutor,
+                aiStreamExecutor);
+        service = new AiChatService(
+                vaultService,
+                toolManager,
+                new ObjectMapper(),
+                resilience,
+                new SseChatStreamHelper(new ObjectMapper()),
+                new VisionMessageBuilder(fileStorageService),
+                new ChatModelFactory(),
                 promptRuleEngine,
-                outputLanguageService,
-                userPublicProfileService);
+                outputLanguageService);
     }
 
     @Test

@@ -80,28 +80,14 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class AiChatService {
 
     private final ApiKeyVaultService vaultService;
-    private final FileStorageService fileStorageService;
     private final ToolManager toolManager;
-    private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
-    /** 前台交互（SSE / 语音 / 用户可见破冰等） */
-    private final Bulkhead interactiveBulkhead;
-    /** 后台任务（朋友圈 / 日记 / 记忆摘要 / 会话摘要 / @裁决等） */
-    private final Bulkhead backgroundBulkhead;
-    private final TimeLimiter timeLimiter;
-    /** Fallback/global breaker; per-upstream breakers resolved via {@link #upstreamBreakers}. */
-    private final CircuitBreaker circuitBreaker;
-    private final UpstreamCircuitBreakerFactory upstreamBreakers;
-    private final ScheduledExecutorService scheduler;
-    /** Foreground SSE / voice / interactive blocking. */
-    private final Executor aiStreamExecutor;
-    /** Background moments / diary / memory — isolated so storms cannot starve chat. */
-    private final Executor aiBackgroundExecutor;
+    private final AiResilience resilience;
+    private final SseChatStreamHelper sseHelper;
+    private final VisionMessageBuilder visionMessageBuilder;
+    private final ChatModelFactory chatModelFactory;
     private final PromptRuleEngine promptRuleEngine;
     private final OutputLanguageService outputLanguageService;
-    private final UserPublicProfileService userPublicProfileService;
-    private final MultimodalOutputParser multimodalOutputParser;
-    private final VisionAnalysisParser visionAnalysisParser;
 
     @Value("${spring.ai.openai.chat.options.model:}")
     private String defaultModel;
@@ -109,31 +95,6 @@ public class AiChatService {
     @Value("${spring.ai.openai.base-url:}")
     private String platformBaseUrl;
 
-    @Value("${lianyu.ai.multimodal.enabled:true}")
-    private boolean multimodalEnabled;
-
-    @Value("${lianyu.ai.multimodal.base-url:https://dashscope.aliyuncs.com/compatible-mode/v1}")
-    private String multimodalBaseUrl;
-
-    @Value("${lianyu.ai.multimodal.api-key:}")
-    private String multimodalApiKey;
-
-    @Value("${lianyu.ai.multimodal.model:qwen3.7-flash}")
-    private String multimodalModel;
-
-    @Value("${lianyu.ai.multimodal.max-tokens:800}")
-    private int multimodalMaxTokens;
-
-    @Value("${lianyu.ai.multimodal.describe-max-tokens:420}")
-    private int multimodalDescribeMaxTokens;
-
-    private static final String CACHE_KEY_PREFIX = "provider_models:";
-    private static final String CACHE_LOCK_SUFFIX = ":lock";
-    private static final Duration CACHE_TTL = Duration.ofHours(1);
-    private static final Duration EMPTY_CACHE_BASE_TTL = Duration.ofMinutes(2);
-    private static final Duration CACHE_LOCK_TTL = Duration.ofSeconds(10);
-    private static final String RESILIENCE_NAME = "ai-chat";
-    private static final String BACKGROUND_BULKHEAD_NAME = "ai-background";
     private static final int LANGUAGE_GATE_MAX_RETRIES = 2;
 
     /**
@@ -143,57 +104,24 @@ public class AiChatService {
      */
     private static final long SSE_TIMEOUT_MS = 1_800_000L;
 
-    /** 原子比较删除 Redis 缓存锁的 Lua 脚本（issue #19：避免 GET-then-DELETE 误删他人锁） */
-    private static final DefaultRedisScript<Long> RELEASE_LOCK_SCRIPT = new DefaultRedisScript<>(
-            "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
-            Long.class);
-
-    private static final String VISION_ANALYSIS_JSON_INSTRUCTION = """
-
-            你是图片分析助手，只输出 JSON，不输出 markdown，不输出解释。
-            JSON 字段固定为：subIntent, confidence, imageDescription。
-            - subIntent: 判断用户发送这张图片的子意图，如求识图/分享日常/展示成果/吐槽/求建议/闲聊。
-            - confidence: 诚实表达看得清程度。看不清、模糊、遮挡、分辨率不足时必须明确写低置信。
-            - imageDescription: 只写客观可见内容，不脑补，不扮演角色。
-            输出格式示例：
-            {"subIntent":"求识图","confidence":"high","imageDescription":"一只橘猫趴在窗台上"}
-            """;
-
-    /** Stage-1 VL user hint: neutral, no roleplay (roleplay/placeholder text can trip content filters). */
-    private static final String VISION_ANALYSIS_USER_HINT = "请客观描述这张图片中可见的内容。";
-
     public AiChatService(ApiKeyVaultService vaultService,
-                         FileStorageService fileStorageService,
                          ToolManager toolManager,
-                         StringRedisTemplate redisTemplate,
                          ObjectMapper objectMapper,
-                         BulkheadRegistry bulkheadRegistry,
-                         TimeLimiterRegistry timeLimiterRegistry,
-                         CircuitBreakerRegistry circuitBreakerRegistry,
-                         ScheduledExecutorService scheduler,
-                         @Qualifier("aiStreamExecutor") Executor aiStreamExecutor,
-                         @Qualifier("aiBackgroundExecutor") Executor aiBackgroundExecutor,
+                         AiResilience resilience,
+                         SseChatStreamHelper sseHelper,
+                         VisionMessageBuilder visionMessageBuilder,
+                         ChatModelFactory chatModelFactory,
                          PromptRuleEngine promptRuleEngine,
-                         OutputLanguageService outputLanguageService,
-                         UserPublicProfileService userPublicProfileService) {
+                         OutputLanguageService outputLanguageService) {
         this.vaultService = vaultService;
-        this.fileStorageService = fileStorageService;
         this.toolManager = toolManager;
-        this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
-        this.interactiveBulkhead = bulkheadRegistry.bulkhead(RESILIENCE_NAME);
-        this.backgroundBulkhead = bulkheadRegistry.bulkhead(BACKGROUND_BULKHEAD_NAME);
-        this.timeLimiter = timeLimiterRegistry.timeLimiter(RESILIENCE_NAME);
-        this.circuitBreaker = circuitBreakerRegistry.circuitBreaker(RESILIENCE_NAME);
-        this.upstreamBreakers = new UpstreamCircuitBreakerFactory(circuitBreakerRegistry);
-        this.scheduler = scheduler;
-        this.aiStreamExecutor = aiStreamExecutor;
-        this.aiBackgroundExecutor = aiBackgroundExecutor;
+        this.resilience = resilience;
+        this.sseHelper = sseHelper;
+        this.visionMessageBuilder = visionMessageBuilder;
+        this.chatModelFactory = chatModelFactory;
         this.promptRuleEngine = promptRuleEngine;
         this.outputLanguageService = outputLanguageService;
-        this.userPublicProfileService = userPublicProfileService;
-        this.multimodalOutputParser = new MultimodalOutputParser(objectMapper);
-        this.visionAnalysisParser = new VisionAnalysisParser(objectMapper);
     }
 
     public SseEmitter chatStream(Long userId, AiChatRequest request) {
@@ -202,7 +130,7 @@ public class AiChatService {
 
     public SseEmitter chatStream(Long userId, AiChatRequest request, StreamCallback callback) {
         // 流式聊天始终走前台池；后台任务不得占用 SSE 槽位。
-        final Bulkhead lane = interactiveBulkhead;
+        final Bulkhead lane = resilience.interactiveBulkhead();
         if (!lane.tryAcquirePermission()) {
             throw new BusinessException(ErrorCode.AI_RATE_LIMITED, "对话服务繁忙，请稍后再试");
         }
@@ -223,9 +151,9 @@ public class AiChatService {
             throw e;
         }
 
-        final CircuitBreaker upstreamCb = resolveBreaker(vault);
+        final CircuitBreaker upstreamCb = resilience.resolveBreaker(vault);
         try {
-            acquireUpstreamPermit(upstreamCb, vault);
+            resilience.acquireUpstreamPermit(upstreamCb, vault);
         } catch (RuntimeException e) {
             lane.releasePermission();
             throw e;
@@ -249,7 +177,7 @@ public class AiChatService {
                                 emitter,
                                 streamError);
                         if (streamError.get() != null) {
-                            finishSseError(emitter, resolveStreamErrorMessage(streamError.get()),
+                            sseHelper.finishSseError(emitter, sseHelper.resolveStreamErrorMessage(streamError.get()),
                                     contentBuffer.toString(), callback);
                             return;
                         }
@@ -263,7 +191,7 @@ public class AiChatService {
                                     emitter,
                                     streamError);
                             if (streamError.get() != null) {
-                                finishSseError(emitter, resolveStreamErrorMessage(streamError.get()),
+                                sseHelper.finishSseError(emitter, sseHelper.resolveStreamErrorMessage(streamError.get()),
                                         contentBuffer.toString(), callback);
                                 return;
                             }
@@ -281,32 +209,32 @@ public class AiChatService {
                                     model,
                                     chatModel,
                                     finalContent,
-                                    () -> sendSseHeartbeat(emitter));
+                                    () -> sseHelper.sendSseHeartbeat(emitter));
                             if (corrected != null
                                     && !corrected.equals(finalContent)
                                     && !corrected.isBlank()) {
-                                sendSseReplace(emitter, corrected);
-                                finishSseSuccess(emitter, corrected, callback);
+                                sseHelper.sendSseReplace(emitter, corrected);
+                                sseHelper.finishSseSuccess(emitter, corrected, callback);
                                 return;
                             }
-                            finishSseSuccess(emitter, finalContent, callback);
+                            sseHelper.finishSseSuccess(emitter, finalContent, callback);
                         } catch (Exception e) {
                             log.error("SSE language correction failed", e);
-                            finishSseSuccess(emitter, contentBuffer.toString(), callback);
+                            sseHelper.finishSseSuccess(emitter, contentBuffer.toString(), callback);
                         }
                     });
                 } catch (Exception e) {
                     upstreamError = e;
                     log.error("AI chat stream fatal error", e);
-                    finishSseError(emitter, resolveStreamErrorMessage(e), contentBuffer.toString(), callback);
+                    sseHelper.finishSseError(emitter, sseHelper.resolveStreamErrorMessage(e), contentBuffer.toString(), callback);
                 } finally {
-                    releaseUpstreamPermit(upstreamCb, upstreamStart, upstreamError);
+                    resilience.releaseUpstreamPermit(upstreamCb, upstreamStart, upstreamError);
                     lane.releasePermission();
                 }
-            }, aiStreamExecutor);
+            }, resilience.resolveAiExecutor(request));
         } catch (RejectedExecutionException e) {
             // Pool full — release permits acquired above; do not count as upstream failure.
-            releaseUpstreamPermit(upstreamCb, System.nanoTime(), null);
+            resilience.releaseUpstreamPermit(upstreamCb, System.nanoTime(), null);
             lane.releasePermission();
             log.warn("AI stream executor saturated, reject chatStream userId={}", userId);
             throw new BusinessException(ErrorCode.AI_RATE_LIMITED, "对话服务繁忙，请稍后再试");
@@ -323,7 +251,7 @@ public class AiChatService {
             AiChatRequest request,
             java.util.function.Consumer<String> onDelta) {
         CompletableFuture<String> future = new CompletableFuture<>();
-        final Bulkhead lane = interactiveBulkhead;
+        final Bulkhead lane = resilience.interactiveBulkhead();
         if (!lane.tryAcquirePermission()) {
             future.completeExceptionally(
                     new BusinessException(ErrorCode.AI_RATE_LIMITED, "对话服务繁忙，请稍后再试"));
@@ -343,9 +271,9 @@ public class AiChatService {
             return future;
         }
 
-        final CircuitBreaker upstreamCb = resolveBreaker(vault);
+        final CircuitBreaker upstreamCb = resilience.resolveBreaker(vault);
         try {
-            acquireUpstreamPermit(upstreamCb, vault);
+            resilience.acquireUpstreamPermit(upstreamCb, vault);
         } catch (RuntimeException e) {
             lane.releasePermission();
             future.completeExceptionally(e);
@@ -394,12 +322,12 @@ public class AiChatService {
                         future.completeExceptionally(e);
                     }
                 } finally {
-                    releaseUpstreamPermit(upstreamCb, upstreamStart, upstreamError);
+                    resilience.releaseUpstreamPermit(upstreamCb, upstreamStart, upstreamError);
                     lane.releasePermission();
                 }
-            }, aiStreamExecutor);
+            }, resilience.resolveAiExecutor(request));
         } catch (RejectedExecutionException e) {
-            releaseUpstreamPermit(upstreamCb, System.nanoTime(), null);
+            resilience.releaseUpstreamPermit(upstreamCb, System.nanoTime(), null);
             lane.releasePermission();
             log.warn("AI stream executor saturated, reject streamTokens userId={}", userId);
             future.completeExceptionally(
@@ -509,19 +437,19 @@ public class AiChatService {
     }
 
     public ChatResult chatBlocking(Long userId, AiChatRequest request) {
-        final Bulkhead lane = resolveBulkhead(request);
-        final Executor pool = resolveAiExecutor(request);
+        final Bulkhead lane = resilience.resolveBulkhead(request);
+        final Executor pool = resilience.resolveAiExecutor(request);
         try {
             // Hold bulkhead BEFORE enqueueing onto the executor. Previously tasks piled into
             // the shared pool first, then waited on a 6-slot background bulkhead — moments
             // storms filled the pool and starved interactive SSE (RejectedExecution).
             return lane.executeCallable(() ->
-                    timeLimiter.executeCompletionStage(scheduler, () ->
+                    resilience.timeLimiter().executeCompletionStage(resilience.scheduler(), () ->
                             CompletableFuture.supplyAsync(() -> {
                                 try {
                                     // resolveVault 在熔断外：DB/Redis 查询不参与熔断。
                                     VaultEntryResponse vault = resolveVaultForRequest(userId, request);
-                                    return resolveBreaker(vault).executeCallable(() ->
+                                    return resilience.resolveBreaker(vault).executeCallable(() ->
                                             callBlockingWithTransientRetry(userId, request, vault));
                                 } catch (Exception e) {
                                     throw new RuntimeException(e);
@@ -530,7 +458,7 @@ public class AiChatService {
                     ).toCompletableFuture().join()
             );
         } catch (Exception e) {
-            Throwable cause = unwrap(e);
+            Throwable cause = AiResilience.unwrap(e);
             if (cause instanceof BusinessException be) {
                 throw be;
             }
@@ -541,110 +469,6 @@ public class AiChatService {
             }
             log.error("AI chat error", cause);
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "消息发送失败，请稍后再试");
-        }
-    }
-
-    /**
-     * 前台交互走 {@code ai-chat}；{@code background=true} 走 {@code ai-background}。
-     */
-    private Bulkhead resolveBulkhead(AiChatRequest request) {
-        if (request != null && request.isBackground()) {
-            return backgroundBulkhead;
-        }
-        return interactiveBulkhead;
-    }
-
-    /** Background AI must not share the interactive SSE pool. */
-    private Executor resolveAiExecutor(AiChatRequest request) {
-        if (request != null && request.isBackground()) {
-            return aiBackgroundExecutor;
-        }
-        return aiStreamExecutor;
-    }
-
-    private static Throwable unwrap(Throwable e) {
-        Throwable cur = e;
-        for (int i = 0; i < 6 && cur != null; i++) {
-            if (cur instanceof BusinessException
-                    || cur instanceof RejectedExecutionException
-                    || cur instanceof io.github.resilience4j.bulkhead.BulkheadFullException) {
-                return cur;
-            }
-            if (cur.getCause() == null || cur.getCause() == cur) {
-                break;
-            }
-            cur = cur.getCause();
-        }
-        return e.getCause() != null ? e.getCause() : e;
-    }
-
-    public List<ModelEntryDto> previewModels(Long userId, String baseUrl, String apiKey) {
-        VaultEntryResponse transientVault = VaultEntryResponse.builder()
-                .provider("__preview__")
-                .baseUrl(baseUrl)
-                .apiKey(apiKey)
-                .build();
-        try {
-            return ApiKeyVaultService.isOllamaEndpoint(baseUrl)
-                    ? fetchOllamaModels(transientVault)
-                    : fetchOpenAiCompatibleModels(transientVault, apiKey != null ? apiKey : "");
-        } catch (Exception e) {
-            if (e instanceof BusinessException be) throw be;
-            log.warn("previewModels failed: baseUrl={}, error={}", baseUrl, e.getMessage(), e);
-            String em = e.getMessage();
-            String hint;
-            if (em != null && em.contains("401")) {
-                hint = "API Key 无效或已过期，请检查密钥是否正确";
-            } else if (em != null) {
-                hint = em;
-            } else {
-                hint = "请检查接口地址和密钥后重试";
-            }
-            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "无法加载模型列表：" + hint);
-        }
-    }
-
-    public List<ModelEntryDto> fetchModels(Long userId, String provider) {
-        String cacheKey = CACHE_KEY_PREFIX + provider + ":" + userId;
-        String cached = redisTemplate.opsForValue().get(cacheKey);
-        if (cached != null) {
-            try {
-                return parseCachedModels(cached);
-            } catch (Exception e) {
-                log.warn("Failed to parse cached model list, will refetch", e);
-            }
-        }
-
-        String lockKey = cacheKey + CACHE_LOCK_SUFFIX;
-        String lockValue = UUID.randomUUID().toString();
-        boolean locked = tryAcquireCacheLock(lockKey, lockValue);
-        if (!locked) {
-            // Briefly wait for the current rebuilding request to populate cache.
-            sleepQuietly(80);
-            String retriedCache = redisTemplate.opsForValue().get(cacheKey);
-            if (retriedCache != null) {
-                try {
-                    return parseCachedModels(retriedCache);
-                } catch (Exception e) {
-                    log.warn("Failed to parse cached model list after wait, will refetch", e);
-                }
-            }
-        }
-
-        try {
-            VaultEntryResponse vault = resolveVault(userId, provider);
-            List<ModelEntryDto> models;
-            models = ApiKeyVaultService.isOllamaEndpoint(vault.getBaseUrl())
-                    ? fetchOllamaModels(vault)
-                    : fetchOpenAiCompatibleModels(vault, resolveApiKeyForProvider(vault));
-            cacheModels(cacheKey, models);
-
-            return models;
-        } catch (Exception e) {
-            if (e instanceof BusinessException be) throw be;
-            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "无法加载模型列表，请检查 AI 配置后重试");
-        } finally {
-            releaseCacheLock(lockKey, lockValue);
         }
     }
 
@@ -853,79 +677,15 @@ public class AiChatService {
         return baseUrl != null && baseUrl.toLowerCase().contains("deepseek.com");
     }
 
-    private List<ModelEntryDto> parseCachedModels(String cached) throws Exception {
-        JsonNode arr = objectMapper.readTree(cached);
-        List<ModelEntryDto> models = new ArrayList<>();
-        for (JsonNode node : arr) {
-            models.add(ModelEntryDto.builder()
-                    .id(node.get("id").asText())
-                    .name(node.has("name") ? node.get("name").asText() : node.get("id").asText())
-                    .build());
-        }
-        return models;
-    }
 
-    private String resolveApiKeyForProvider(VaultEntryResponse vault) {
+    String resolveApiKeyForProvider(VaultEntryResponse vault) {
         if (vault.getId() != null) {
             return vaultService.decryptKeyForChat(vault.getId());
         }
         return vault.getApiKey();
     }
 
-    private List<ModelEntryDto> fetchOpenAiCompatibleModels(VaultEntryResponse vault, String apiKey) {
-        String vaultBaseUrl = vault.getBaseUrl();
-        boolean userSupplied = vaultBaseUrl != null && !vaultBaseUrl.isBlank();
-        String base = normalizeOpenAiBaseUrl(userSupplied ? vaultBaseUrl : platformBaseUrl);
-        String url = base + "/v1/models";
-
-        // 用户自填非受信 base_url 固定已校验 IP 防 DNS 重绑定 SSRF；受信端点用带超时的默认客户端（防对端挂起无限 park 线程）
-        RestClient client = userSupplied && !OutboundUrlValidator.isTrustedPlatformEndpoint(vaultBaseUrl)
-                ? SsrfPinningClientFactory.restClientBuilder(
-                        OutboundUrlValidator.validateAndResolve(vaultBaseUrl, false)).build()
-                : SsrfPinningClientFactory.defaultRestClientBuilder().build();
-        String body = client.get()
-                .uri(url)
-                .header("Authorization", "Bearer " + apiKey)
-                .retrieve()
-                .body(String.class);
-
-        try {
-            JsonNode root = objectMapper.readTree(body);
-            List<ModelEntryDto> models = new ArrayList<>();
-            JsonNode data = root.get("data");
-            if (data != null && data.isArray()) {
-                for (JsonNode item : data) {
-                    String id = item.get("id").asText();
-                    models.add(ModelEntryDto.builder().id(id).name(id).build());
-                }
-            }
-            return models;
-        } catch (Exception e) {
-            log.warn("Failed to parse models response for provider={}", vault.getProvider(), e);
-            return List.of();
-        }
-    }
-
-    private List<ModelEntryDto> fetchOllamaModels(VaultEntryResponse vault) {
-        String vaultBaseUrl = vault.getBaseUrl();
-        boolean useLocal = vaultBaseUrl == null || vaultBaseUrl.isBlank();
-        String baseUrl = useLocal ? "http://localhost:11434" : vaultBaseUrl;
-
-        OllamaApi.Builder builder = OllamaApi.builder().baseUrl(baseUrl);
-        if (!useLocal) {
-            // 用户配置的远程 ollama：固定已校验 IP，防 DNS 重绑定 SSRF
-            var endpoint = OutboundUrlValidator.validateAndResolve(vaultBaseUrl, true);
-            builder.restClientBuilder(SsrfPinningClientFactory.restClientBuilder(endpoint))
-                    .webClientBuilder(SsrfPinningClientFactory.webClientBuilder(endpoint));
-        }
-        OllamaApi ollamaApi = builder.build();
-        var response = ollamaApi.listModels();
-        return response.models().stream()
-                .map(m -> ModelEntryDto.builder().id(m.model()).name(m.model()).build())
-                .toList();
-    }
-
-    private VaultEntryResponse resolveVault(Long userId, String provider) {
+    VaultEntryResponse resolveVault(Long userId, String provider) {
         if (isPlatformProvider(provider)) {
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
                     "未配置文本模型，请在设置中添加");
@@ -942,7 +702,7 @@ public class AiChatService {
         return userVault;
     }
 
-    private void logChatVaultUsage(Long userId, String provider, VaultEntryResponse vault, String model, String mode) {
+    void logChatVaultUsage(Long userId, String provider, VaultEntryResponse vault, String model, String mode) {
         String source = vault.getId() == null ? "ENV" : vault.getVaultScope();
         log.info("AI chat {}: userId={}, requestProvider={}, vaultSource={}, vaultId={}, model={}, baseUrl={}, key={}",
                 mode, userId, provider, source, vault.getId(), model, vault.getBaseUrl(),
@@ -953,514 +713,9 @@ public class AiChatService {
         return resolveVault(userId, provider);
     }
 
-    private VaultEntryResponse resolveVaultForRequest(Long userId, AiChatRequest request) {
+    VaultEntryResponse resolveVaultForRequest(Long userId, AiChatRequest request) {
         String provider = request != null ? request.getProvider() : null;
         return resolveVault(userId, provider);
-    }
-
-    /**
-     * 桌面感知：截图 VL 识图 → 角色语气生成主动问候。
-     */
-    public String observeDesktop(Long userId, String imageBase64, String windowTitle, String persona,
-                                 String provider, String model) {
-        if (!multimodalEnabled) {
-            return null;
-        }
-        VaultEntryResponse visionVault = buildMultimodalVault();
-        ChatModel visionChatModel = buildChatModel(visionVault, multimodalModel, visionVault.getApiKey());
-
-        byte[] imageBytes;
-        try {
-            imageBytes = java.util.Base64.getDecoder().decode(imageBase64);
-        } catch (IllegalArgumentException e) {
-            log.warn("Desktop observe: invalid base64 image");
-            return null;
-        }
-
-        // Stage 1: 视觉 JSON 分析
-        Media media = Media.builder()
-                .data(new ByteArrayResource(imageBytes))
-                .mimeType(MimeTypeUtils.IMAGE_PNG)
-                .build();
-        Message vlMessage = UserMessage.builder()
-                .text("请分析这张桌面截图，判断用户当前大概在做什么，并只输出结构化 JSON。"
-                        + "若看不清必须如实说明。")
-                .media(media)
-                .build();
-        VisionAnalysisResult analysis = analyzeImage(visionChatModel, multimodalModel, vlMessage, multimodalDescribeMaxTokens);
-        if (analysis.imageDescription() == null || analysis.imageDescription().isBlank()) {
-            log.warn("Desktop observe: vision analysis returned empty description");
-            return null;
-        }
-        log.info("Desktop observe: vision result confidence={}, subIntent={}",
-                analysis.confidence(), analysis.subIntent());
-
-        // Stage 2: 用户当前文本模型生成桌宠问候（provider/model 由调用方携带，缺省走平台默认）
-        String personaText = (persona != null && !persona.isBlank()) ? persona : "你是一个可爱的桌面宠物。";
-        String winTitle = (windowTitle != null && !windowTitle.isBlank()) ? windowTitle : "未知";
-        VaultEntryResponse textVault = resolveVault(userId, (provider != null && !provider.isBlank()) ? provider : null);
-        String textModel = (model != null && !model.isBlank()) ? model.trim() : resolveChatModel(null, textVault);
-        String textApiKey = resolveApiKeyForProvider(textVault);
-        logChatVaultUsage(userId, null, textVault, textModel, "desktop-observe");
-        ChatModel textChatModel = buildChatModel(textVault, textModel, textApiKey);
-        String greetingPrompt = buildDesktopGreetingPrompt(personaText, winTitle, analysis);
-
-        List<Message> greetingMessages = List.of(new UserMessage(greetingPrompt));
-        Prompt greetingPromptObj = buildGenerationPrompt(textVault, textModel, greetingMessages);
-        ChatResponse greetingResponse = textChatModel.call(greetingPromptObj);
-        String greeting = extractStreamDelta(greetingResponse);
-        if (greeting == null || greeting.isBlank()) {
-            log.warn("Desktop observe: greeting generation returned empty");
-            return null;
-        }
-        log.info("Desktop observe: greeting generated ({} chars): {}", greeting.length(), greeting);
-        return greeting.trim();
-    }
-
-    /** 视觉模型 Vault（DashScope 官方 OpenAI-compatible url/key，默认 qwen3.7-flash）。 */
-    private VaultEntryResponse buildMultimodalVault() {
-        String apiKey = multimodalApiKey;
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "多模态识图服务未配置");
-        }
-        return VaultEntryResponse.builder()
-                .provider(AiConstants.PLATFORM_PROVIDER)
-                .apiKey(apiKey)
-                .baseUrl(multimodalBaseUrl)
-                .modelDefault(multimodalModel)
-                .build();
-    }
-
-    /**
-     * 图片消息专用多模态调用：携带完整角色上下文（system prompt 已由 ConversationService 用
-     * CharacterPromptBuilder 组装好人设/记忆/关系/情绪），图片以 inline base64 发送，
-     * 一次调用内先输出结构化 JSON 再输出角色回复（由 {@link MultimodalOutputParser} 解析）。
-     */
-    public ChatResult chatImageBlocking(Long userId, AiChatRequest request) {
-        final Bulkhead lane = resolveBulkhead(request);
-        try {
-            return lane.executeCallable(() -> {
-                VaultEntryResponse vault = resolveVaultForRequest(userId, request);
-                return resolveBreaker(vault).executeCallable(() -> doImageChat(userId, request));
-            });
-        } catch (Exception e) {
-            Throwable cause = e.getCause() != null ? e.getCause() : e;
-            if (cause instanceof BusinessException be) {
-                throw be;
-            }
-            log.error("Multimodal chat error: userId={}", userId, cause);
-            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "消息发送失败，请稍后再试");
-        }
-    }
-
-    /**
-     * 图片消息流式入口：多模态调用本身是阻塞的（需先完整解析 JSON 再决定回复），
-     * 这里在调度线程内完成阻塞调用后，把回复以 SSE chunk 形式下发，复用 {@link StreamCallback}
-     * 保证后处理（pieces 拆分、落库、关系/情绪更新）与纯文本链路一致。
-     */
-    public SseEmitter chatImageStream(Long userId, AiChatRequest request, StreamCallback callback) {
-        final Bulkhead lane = interactiveBulkhead;
-        if (!lane.tryAcquirePermission()) {
-            throw new BusinessException(ErrorCode.AI_RATE_LIMITED, "对话服务繁忙，请稍后再试");
-        }
-        SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
-        try {
-            CompletableFuture.runAsync(() -> {
-                try {
-                    VaultEntryResponse vault = resolveVaultForRequest(userId, request);
-                    ChatResult result = resolveBreaker(vault).executeCallable(() -> doImageChat(userId, request));
-                    if (callback != null) {
-                        callback.onVisionComplete(result.getImageDescription());
-                    }
-                    String reply = result.getContent();
-                    if (reply != null && !reply.isBlank()) {
-                        sendSseChunk(emitter, reply);
-                    }
-                    finishSseSuccess(emitter, reply, callback);
-                } catch (Exception e) {
-                    log.error("Multimodal stream error: userId={}", userId, e);
-                    finishSseError(emitter, resolveStreamErrorMessage(e), "", callback);
-                } finally {
-                    lane.releasePermission();
-                }
-            }, aiStreamExecutor);
-        } catch (RejectedExecutionException e) {
-            lane.releasePermission();
-            log.warn("AI stream executor saturated, reject chatImageStream userId={}", userId);
-            throw new BusinessException(ErrorCode.AI_RATE_LIMITED, "对话服务繁忙，请稍后再试");
-        }
-        return emitter;
-    }
-
-    private ChatResult doImageChat(Long userId, AiChatRequest request) throws Exception {
-        if (!multimodalEnabled) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "图片识别功能未启用");
-        }
-        VisionRoute vision = resolveVisionRoute(userId, request);
-        if (vision.oneCall()) {
-            return doOneCallImageChat(userId, request, vision);
-        }
-        String visionApiKey = resolveApiKeyForProvider(vision.vault());
-        ChatModel visionChatModel = buildChatModel(vision.vault(), vision.model(), visionApiKey);
-        logChatVaultUsage(userId, request.getProvider(), vision.vault(), vision.model(), "image-vision");
-        MessageDto imageDto = lastImageMessage(request.getMessages(), request.getImageUrl());
-        VisionAnalysisResult analysis;
-        try {
-            analysis = analyzeImage(
-                    visionChatModel,
-                    vision.model(),
-                    buildVisionAnalysisUserMessage(imageDto),
-                    multimodalMaxTokens);
-        } catch (BusinessException e) {
-            throw e;
-        } catch (Exception e) {
-            throw mapVisionProviderException(e);
-        }
-
-        VaultEntryResponse textVault = resolveVaultForRequest(userId, request);
-        String textModel = resolveModel(request, textVault);
-        String textApiKey = resolveApiKeyForProvider(textVault);
-        logChatVaultUsage(userId, request.getProvider(), textVault, textModel, "image-text");
-        ChatModel textChatModel = buildChatModel(textVault, textModel, textApiKey);
-        List<MessageDto> textDtos = buildImageAugmentedTextMessageDtos(request.getMessages(), analysis);
-        List<Message> messages = toTextOnlySpringMessages(textDtos);
-        Prompt prompt = buildPrompt(request, textVault, messages);
-
-        // 第二阶段须与主聊天链路一致：进 ChatToolContext + 走语言门控，
-        // 重试 seed 用文本化后的 dtos（已无图片 media），避免重生成时再带图。
-        return withChatToolScope(userId, request, () -> {
-            ChatResponse response = textChatModel.call(prompt);
-            String raw = extractStreamDelta(response);
-            if (raw == null || raw.isBlank()) {
-                throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "图片识别失败，请换一张图片再试");
-            }
-            String reply = enforceExpectedLanguage(userId, request, textVault, textModel, textChatModel, raw, null, textDtos);
-            log.info("Multimodal chat: userId={}, visionModel={}, subIntent={}, confidence={}, low={}",
-                    userId, vision.model(), analysis.subIntent(), analysis.confidence(),
-                    VisionAnalysisParser.isLowConfidence(analysis.confidence()));
-            ChatResult.ChatResultBuilder builder = ChatResult.builder()
-                    .content(reply)
-                    .imageDescription(analysis.imageDescription());
-            if (response.getMetadata() != null && response.getMetadata().getUsage() != null) {
-                var usage = response.getMetadata().getUsage();
-                builder.totalTokens(usage.getTotalTokens() != null ? usage.getTotalTokens().intValue() : null);
-            }
-            return builder.build();
-        });
-    }
-
-    /**
-     * 跟随文本 Provider 的一次多模态调用：角色 system prompt + 历史 + 图片 inline base64
-     * 直接发给用户的多模态模型（如 gemini-3.6-flash），一次调用出角色回复。
-     * 无独立识图描述——历史占位走通用文案（ImageMessageHistoryText 兜底）。
-     * 模型不收图片时（unknown variant image_url 等）由 mapVisionProviderException 给出可读报错。
-     */
-    private ChatResult doOneCallImageChat(Long userId, AiChatRequest request, VisionRoute route) throws Exception {
-        VaultEntryResponse vault = route.vault();
-        String model = route.model();
-        String apiKey = resolveApiKeyForProvider(vault);
-        ChatModel chatModel = buildChatModel(vault, model, apiKey);
-        logChatVaultUsage(userId, request.getProvider(), vault, model, "image-onecall");
-        MessageDto imageDto = lastImageMessage(request.getMessages(), request.getImageUrl());
-        List<Message> messages = buildMultimodalMessages(request.getMessages(), imageDto.getImageUrl());
-        Prompt prompt = buildPrompt(request, vault, messages);
-        return withChatToolScope(userId, request, () -> {
-            ChatResponse response;
-            try {
-                response = chatModel.call(prompt);
-            } catch (BusinessException e) {
-                throw e;
-            } catch (Exception e) {
-                throw mapVisionProviderException(e);
-            }
-            String raw = extractStreamDelta(response);
-            if (raw == null || raw.isBlank()) {
-                throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "图片识别失败，请换一张图片再试");
-            }
-            String reply = enforceExpectedLanguage(userId, request, vault, model, chatModel, raw, null, null);
-            log.info("Multimodal one-call chat: userId={}, model={}", userId, model);
-            ChatResult.ChatResultBuilder builder = ChatResult.builder()
-                    .content(reply)
-                    .imageDescription(null);
-            if (response.getMetadata() != null && response.getMetadata().getUsage() != null) {
-                var usage = response.getMetadata().getUsage();
-                builder.totalTokens(usage.getTotalTokens() != null ? usage.getTotalTokens().intValue() : null);
-            }
-            return builder.build();
-        });
-    }
-
-    /**
-     * 识图路由 v2（用户全局设置 visionSource）：
-     * - platform（默认）：平台多模态 vault（qwen3.7-flash），两段式（识图 → 文本模型回复）；
-     * - followText：跟随请求的文本 Provider 一次调用（要求该模型支持图片输入）；
-     * - provider：指定的 purpose=vision 识图 vault 做第一段，第二段仍走文本 Provider。
-     * 请求里的 visionModel 与 vault 的 visionModelDefault 仅为兼容旧客户端而保留，均不再生效。
-     */
-    private VisionRoute resolveVisionRoute(Long userId, AiChatRequest request) {
-        var settings = userPublicProfileService.getMySettings(userId);
-        String mode = settings.getVisionSourceMode();
-        if (UserSettingsResolver.VISION_MODE_FOLLOW_TEXT.equals(mode)) {
-            VaultEntryResponse textVault = resolveVaultForRequest(userId, request);
-            return new VisionRoute(textVault, resolveModel(request, textVault), true);
-        }
-        if (UserSettingsResolver.VISION_MODE_PROVIDER.equals(mode)) {
-            VaultEntryResponse visionVault = vaultService.resolveVisionVault(userId, settings.getVisionSourceProvider());
-            if (visionVault != null) {
-                return new VisionRoute(visionVault, visionVault.getModelDefault(), false);
-            }
-            log.warn("Vision source provider unavailable, fallback to platform: userId={}, provider={}",
-                    userId, settings.getVisionSourceProvider());
-        }
-        return new VisionRoute(buildMultimodalVault(), multimodalModel, false);
-    }
-
-    private record VisionRoute(VaultEntryResponse vault, String model, boolean oneCall) {}
-
-    private BusinessException mapVisionProviderException(Throwable e) {
-        String msg = collectThrowableMessages(e);
-        String lower = msg.toLowerCase();
-        if (lower.contains("data_inspection_failed") || lower.contains("inappropriate content")) {
-            return new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
-                    "图片未能通过内容安全审核，请换一张图片再试");
-        }
-        // 自有 Provider 的 base-url 是纯文本接口（如 DeepSeek）却配了识图模型：
-        // 上游会以「image_url 非法」拒绝，翻译成可操作的指引
-        if (lower.contains("unknown variant `image_url`")
-                || lower.contains("does not support image")
-                || lower.contains("not support image")
-                || lower.contains("vision is not supported")) {
-            return new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
-                    "当前模型不支持图片输入：请到设置把「识图来源」改为平台默认或识图 Provider，或换一个多模态模型");
-        }
-        if (lower.contains("无法连接") || lower.contains("connection") || lower.contains("timed out")
-                || lower.contains("timeout") || lower.contains("connect timed out")
-                || lower.contains("connection refused") || lower.contains("unknown host")) {
-            return new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
-                    "识图服务暂时无法连接，请稍后重试");
-        }
-        if (e instanceof BusinessException be) {
-            return be;
-        }
-        log.warn("Vision provider error: {}", msg);
-        return new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "图片识别失败，请换一张图片再试");
-    }
-
-    private static String collectThrowableMessages(Throwable e) {
-        StringBuilder sb = new StringBuilder();
-        Throwable cur = e;
-        int depth = 0;
-        while (cur != null && depth < 8) {
-            if (cur.getMessage() != null && !cur.getMessage().isBlank()) {
-                if (!sb.isEmpty()) {
-                    sb.append(" | ");
-                }
-                sb.append(cur.getMessage());
-            }
-            cur = cur.getCause();
-            depth++;
-        }
-        return sb.toString();
-    }
-
-    /**
-     * 组装多模态 prompt：system(角色 prompt + 结构化JSON指令) + 历史(纯文本) + 末尾用户消息(图+文字)。
-     * 图片从 MinIO 读出转 inline base64（中转服务拉不到相对路径），复用 {@link #buildVisionUserMessage}。
-     */
-    private List<Message> buildMultimodalMessages(List<MessageDto> dtos, String imageUrl) {
-        if (dtos == null || dtos.isEmpty()) {
-            return List.of();
-        }
-        List<Message> messages = new ArrayList<>();
-        int start = 0;
-        if ("system".equalsIgnoreCase(dtos.get(0).getRole())) {
-            String sysContent = dtos.get(0).getContent();
-            messages.add(new SystemMessage(sysContent != null ? sysContent : ""));
-            start = 1;
-        }
-        if (start < dtos.size() - 1) {
-            messages.addAll(toSpringMessages(dtos.subList(start, dtos.size() - 1)));
-        }
-        if (start < dtos.size()) {
-            MessageDto last = dtos.get(dtos.size() - 1);
-            String text = (last.getContent() != null && !last.getContent().isBlank())
-                    ? last.getContent()
-                    : VISION_ANALYSIS_USER_HINT;
-            MessageDto imageDto = new MessageDto();
-            imageDto.setRole("user");
-            imageDto.setContent(text);
-            imageDto.setImageUrl(imageUrl);
-            messages.add(buildVisionUserMessage(imageDto));
-        }
-        return messages;
-    }
-
-    private VisionAnalysisResult analyzeImage(
-            ChatModel chatModel, String visionModel, Message visionUserMessage, int maxTokens) {
-        String model = (visionModel != null && !visionModel.isBlank()) ? visionModel.trim() : multimodalModel;
-        List<Message> messages = List.of(new SystemMessage(VISION_ANALYSIS_JSON_INSTRUCTION), visionUserMessage);
-        Prompt prompt = new Prompt(messages, OpenAiChatOptions.builder()
-                .model(model)
-                .temperature(0.1)
-                .maxTokens(maxTokens)
-                .build());
-        ChatResponse response = chatModel.call(prompt);
-        String raw = extractStreamDelta(response);
-        if (raw == null || raw.isBlank()) {
-            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "图片识别失败，请换一张清晰点的图片再试");
-        }
-        try {
-            return visionAnalysisParser.parse(raw);
-        } catch (IllegalArgumentException e) {
-            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "图片识别失败，请换一张清晰点的图片再试");
-        }
-    }
-
-    private MessageDto lastImageMessage(List<MessageDto> dtos, String imageUrl) {
-        if (dtos == null || dtos.isEmpty()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "缺少图片消息");
-        }
-        MessageDto last = dtos.get(dtos.size() - 1);
-        MessageDto copy = new MessageDto();
-        copy.setRole((last.getRole() != null && !last.getRole().isBlank()) ? last.getRole() : "user");
-        copy.setContent(last.getContent());
-        copy.setImageUrl((last.getImageUrl() != null && !last.getImageUrl().isBlank()) ? last.getImageUrl() : imageUrl);
-        if (copy.getImageUrl() == null || copy.getImageUrl().isBlank()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "无效的图片地址");
-        }
-        return copy;
-    }
-
-    /**
-     * 图片两阶段链路的第二阶段：把视觉 JSON 结果编进系统补充上下文，再交给文本模型产出最终回复。
-     * 文本阶段不再携带图片 media，只保留文字历史与最后一条用户文字。
-     */
-    private List<Message> buildImageAugmentedTextMessages(List<MessageDto> dtos, VisionAnalysisResult analysis) {
-        return toTextOnlySpringMessages(buildImageAugmentedTextMessageDtos(dtos, analysis));
-    }
-
-    private List<MessageDto> buildImageAugmentedTextMessageDtos(List<MessageDto> dtos, VisionAnalysisResult analysis) {
-        List<MessageDto> out = new ArrayList<>();
-        int start = 0;
-        if (dtos != null && !dtos.isEmpty() && "system".equalsIgnoreCase(dtos.get(0).getRole())) {
-            String sysContent = dtos.get(0).getContent();
-            MessageDto sys = new MessageDto();
-            sys.setRole("system");
-            sys.setContent(((sysContent != null) ? sysContent : "") + "\n\n" + buildImageAnalysisAugmentation(analysis));
-            out.add(sys);
-            start = 1;
-        } else {
-            MessageDto sys = new MessageDto();
-            sys.setRole("system");
-            sys.setContent(buildImageAnalysisAugmentation(analysis));
-            out.add(sys);
-        }
-        if (dtos != null) {
-            int lastIdx = dtos.size() - 1;
-            for (int i = start; i < lastIdx; i++) {
-                MessageDto src = dtos.get(i);
-                if (src.getContent() == null || src.getContent().isBlank()) {
-                    continue;
-                }
-                MessageDto copy = new MessageDto();
-                copy.setRole(src.getRole());
-                copy.setContent(src.getContent());
-                out.add(copy);
-            }
-            if (start <= lastIdx) {
-                MessageDto last = dtos.get(lastIdx);
-                MessageDto user = new MessageDto();
-                user.setRole("user");
-                user.setContent(resolveImageTurnUserText(last.getContent(), analysis));
-                out.add(user);
-            }
-        }
-        return out;
-    }
-
-    /**
-     * 文本阶段用户句：纯图片/空 user_message 时显式带上识图描述，避免角色当成「空消息」。
-     */
-    private String resolveImageTurnUserText(String rawContent, VisionAnalysisResult analysis) {
-        String description = analysis != null && analysis.imageDescription() != null
-                ? analysis.imageDescription().trim() : "";
-        String stripped = stripUserMessageXml(rawContent);
-        if (stripped == null || stripped.isBlank() || isImagePlaceholderContent(stripped)
-                || isImagePlaceholderContent(rawContent)) {
-            String descLine = description.isBlank()
-                    ? "（识图未给出清晰描述，请自然回应用户发来的图片。）"
-                    : "图片内容：" + description;
-            return UserInputSanitizer.wrapStoredTextForModel(
-                    "我发了一张图片。\n" + descLine + "\n请结合图片内容，用你的性格自然回应，不要当成空消息。");
-        }
-        if (rawContent != null && rawContent.contains("<user_message")) {
-            return rawContent;
-        }
-        return UserInputSanitizer.wrapStoredTextForModel(stripped);
-    }
-
-    private static String stripUserMessageXml(String raw) {
-        if (raw == null) {
-            return null;
-        }
-        return raw.replaceAll("(?s)<user_message[^>]*>|</user_message>", "").trim();
-    }
-
-    private String buildImageAnalysisAugmentation(VisionAnalysisResult analysis) {
-        String subIntent = analysis != null && analysis.subIntent() != null ? analysis.subIntent() : "未知";
-        String confidence = analysis != null && analysis.confidence() != null ? analysis.confidence() : "unknown";
-        String description = analysis != null && analysis.imageDescription() != null ? analysis.imageDescription() : "";
-        return "[图片分析结果]\n"
-                + "- 子意图: " + subIntent + "\n"
-                + "- 可辨识度: " + confidence + "\n"
-                + "- 客观描述: " + description + "\n\n"
-                + "规则:\n"
-                + "1. 用户本轮发送了图片；必须结合上方「客观描述」回应，禁止当成空消息或没发内容。\n"
-                + "2. 若可辨识度低，必须如实告诉用户这张图看不太清，不要假装看到细节。\n"
-                + "3. 保持角色语气、人设、关系状态。\n"
-                + "4. 不要输出 JSON。";
-    }
-
-    private String buildDesktopGreetingPrompt(String persona, String windowTitle, VisionAnalysisResult analysis) {
-        String personaText = (persona != null && !persona.isBlank()) ? persona : "你是一个可爱的桌面宠物。";
-        String winTitle = (windowTitle != null && !windowTitle.isBlank()) ? windowTitle : "未知";
-        String description = analysis != null && analysis.imageDescription() != null ? analysis.imageDescription() : "";
-        String confidence = analysis != null && analysis.confidence() != null ? analysis.confidence() : "unknown";
-        return personaText + "\n\n"
-                + "你正在看着用户的电脑屏幕。当前画面：" + description + "\n"
-                + "图像可辨识度：" + confidence + "\n"
-                + "用户正在使用的窗口：" + winTitle + "\n\n"
-                + "如果图像可辨识度低，请自然承认看不太清。"
-                + "请用你的角色语气，对用户正在做的事情说一句话。\n"
-                + "要求：自然、口语化、不超过40字。不要加括号或动作描写。";
-    }
-
-    private List<Message> toTextOnlySpringMessages(List<MessageDto> dtos) {
-        if (dtos == null || dtos.isEmpty()) {
-            return List.of();
-        }
-        List<Message> messages = new ArrayList<>();
-        for (MessageDto dto : dtos) {
-            boolean hasContent = dto.getContent() != null && !dto.getContent().isBlank();
-            if (!hasContent) {
-                continue;
-            }
-            String role = dto.getRole() != null ? dto.getRole().toLowerCase() : "user";
-            switch (role) {
-                case "system" -> messages.add(new SystemMessage(dto.getContent()));
-                case "assistant" -> messages.add(new AssistantMessage(dto.getContent()));
-                default -> {
-                    String raw = dto.getContent() != null ? dto.getContent() : "";
-                    if (raw.contains("<user_message")) {
-                        messages.add(new UserMessage(raw));
-                    } else {
-                        UserInputSanitizer.SanitizedUserText sanitized = UserInputSanitizer.sanitizeChatMessage(raw);
-                        messages.add(new UserMessage(sanitized.modelText()));
-                    }
-                }
-            }
-        }
-        return messages;
     }
 
     private boolean isPlatformProvider(String provider) {
@@ -1473,14 +728,14 @@ public class AiChatService {
         return vault != null && AiConstants.PLATFORM_PROVIDER.equalsIgnoreCase(vault.getProvider());
     }
 
-    private String resolveModel(AiChatRequest request, VaultEntryResponse vault) {
+    String resolveModel(AiChatRequest request, VaultEntryResponse vault) {
         return resolveChatModel(request.getModel(), vault);
     }
 
     /**
      * 模型优先级：请求指定 > Vault model_default > 环境变量 OPENAI_CHAT_MODEL。
      */
-    private String resolveChatModel(String requestModel, VaultEntryResponse vault) {
+    String resolveChatModel(String requestModel, VaultEntryResponse vault) {
         if (requestModel != null && !requestModel.isBlank()) {
             return requestModel.trim();
         }
@@ -1494,52 +749,12 @@ public class AiChatService {
                 "未配置默认模型：请在 api_key_vault.model_default 或 OPENAI_CHAT_MODEL 中设置");
     }
 
-    private void cacheModels(String cacheKey, List<ModelEntryDto> models) {
-        try {
-            Duration ttl = resolveCacheTtl(models);
-            redisTemplate.opsForValue().set(cacheKey, objectMapper.writeValueAsString(models), ttl);
-        } catch (Exception e) {
-            log.warn("Failed to cache model list", e);
-        }
-    }
-
-    private Duration resolveCacheTtl(List<ModelEntryDto> models) {
-        if (models == null || models.isEmpty()) {
-            // Empty result is cached shortly to reduce penetration/frequent misses.
-            return EMPTY_CACHE_BASE_TTL.plusSeconds(ThreadLocalRandom.current().nextInt(10, 61));
-        }
-        // Add jitter to smooth expiration and reduce cache avalanche.
-        return CACHE_TTL.plusMinutes(ThreadLocalRandom.current().nextInt(0, 11));
-    }
-
-    private boolean tryAcquireCacheLock(String lockKey, String lockValue) {
-        Boolean locked = redisTemplate.opsForValue().setIfAbsent(lockKey, lockValue, CACHE_LOCK_TTL);
-        return Boolean.TRUE.equals(locked);
-    }
-
-    private void releaseCacheLock(String lockKey, String lockValue) {
-        try {
-            // 原子比较删除：GET-then-DELETE 之间存在锁 TTL 到期被他人获取后误删他人锁的窗口（issue #19）
-            redisTemplate.execute(RELEASE_LOCK_SCRIPT, List.of(lockKey), lockValue);
-        } catch (Exception e) {
-            log.debug("release cache lock failed: {}", e.getMessage());
-        }
-    }
-
-    private void sleepQuietly(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException ignored) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
-    private Prompt buildPrompt(AiChatRequest request, VaultEntryResponse vault, List<Message> messages) {
+    Prompt buildPrompt(AiChatRequest request, VaultEntryResponse vault, List<Message> messages) {
         return buildPrompt(request, vault, messages, false);
     }
 
-    private Prompt buildPrompt(AiChatRequest request, VaultEntryResponse vault, List<Message> messages,
-                               boolean thinkingDisabled) {
+    Prompt buildPrompt(AiChatRequest request, VaultEntryResponse vault, List<Message> messages,
+                       boolean thinkingDisabled) {
         double temperature = request.getTemperature() != null ? request.getTemperature() : 0.8;
         String model = resolveModel(request, vault);
         List<ToolCallback> toolCallbacks = toolManager.resolveToolCallbacks(request);
@@ -1595,7 +810,7 @@ public class AiChatService {
                         String text = extractStreamDelta(response);
                         if (text != null && !text.isEmpty()) {
                             contentBuffer.append(text);
-                            sendSseChunk(emitter, text);
+                            sseHelper.sendSseChunk(emitter, text);
                         }
                     } catch (IOException e) {
                         log.error("SSE send error", e);
@@ -1621,7 +836,7 @@ public class AiChatService {
         }
     }
 
-    private <T> T withChatToolScope(Long userId, AiChatRequest request, java.util.concurrent.Callable<T> action)
+    <T> T withChatToolScope(Long userId, AiChatRequest request, java.util.concurrent.Callable<T> action)
             throws Exception {
         if (request.getChatToolCharacterId() != null) {
             ChatToolContext.set(userId, request.getChatToolCharacterId(), request.getToolCharacterSettings(),
@@ -1641,7 +856,7 @@ public class AiChatService {
         });
     }
 
-    private Prompt buildGenerationPrompt(VaultEntryResponse vault, String model, List<Message> messages) {
+    Prompt buildGenerationPrompt(VaultEntryResponse vault, String model, List<Message> messages) {
         if (ApiKeyVaultService.isOllamaEndpoint(vault.getBaseUrl())) {
             return new Prompt(messages, OllamaChatOptions.builder()
                     .model(model)
@@ -1689,7 +904,7 @@ public class AiChatService {
         return e.getMessage() != null ? e.getMessage() : "未知错误";
     }
 
-    private List<Message> toSpringMessages(List<MessageDto> dtos) {
+    List<Message> toSpringMessages(List<MessageDto> dtos) {
         if (dtos == null || dtos.isEmpty()) {
             return List.of();
         }
@@ -1702,7 +917,7 @@ public class AiChatService {
             }
             String role = dto.getRole() != null ? dto.getRole().toLowerCase() : "user";
             if (hasImage && "user".equals(role)) {
-                messages.add(buildVisionUserMessage(dto));
+                messages.add(visionMessageBuilder.buildVisionUserMessage(dto));
                 continue;
             }
             switch (role) {
@@ -1723,58 +938,8 @@ public class AiChatService {
         return messages;
     }
 
-    /** Stage-1 识图：中立提示，避免把角色扮演/占位文案送进 VL（易触发内容审核）。 */
-    private Message buildVisionAnalysisUserMessage(MessageDto dto) {
-        MessageDto analysisDto = new MessageDto();
-        analysisDto.setRole(dto.getRole());
-        analysisDto.setImageUrl(dto.getImageUrl());
-        String raw = dto.getContent();
-        if (raw == null || raw.isBlank() || isImagePlaceholderContent(raw)) {
-            analysisDto.setContent(VISION_ANALYSIS_USER_HINT);
-        } else {
-            String caption = raw.replaceAll("(?s)<user_message[^>]*>|</user_message>", "").trim();
-            if (caption.isBlank() || isImagePlaceholderContent(caption)) {
-                analysisDto.setContent(VISION_ANALYSIS_USER_HINT);
-            } else {
-                String shortCaption = caption.length() > 200 ? caption.substring(0, 200) : caption;
-                analysisDto.setContent("用户附言：" + shortCaption + "\n" + VISION_ANALYSIS_USER_HINT);
-            }
-        }
-        return buildVisionUserMessage(analysisDto);
-    }
-
-    private static boolean isImagePlaceholderContent(String text) {
-        if (text == null) {
-            return true;
-        }
-        String t = text.trim();
-        return t.isEmpty()
-                || t.contains("用户发送了一张图片")
-                || t.contains("用你的性格自然回应");
-    }
-
-    private Message buildVisionUserMessage(MessageDto dto) {
-        String objectKey = FileStorageService.extractObjectKey(dto.getImageUrl());
-        if (objectKey == null) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "无效的图片地址");
-        }
-        byte[] bytes = fileStorageService.readObjectBytes(objectKey);
-        String contentType = fileStorageService.resolveContentType(objectKey);
-        String text = dto.getContent() != null && !dto.getContent().isBlank()
-                ? dto.getContent()
-                : VISION_ANALYSIS_USER_HINT;
-        Media media = Media.builder()
-                .mimeType(MimeTypeUtils.parseMimeType(contentType))
-                .data(new ByteArrayResource(bytes))
-                .build();
-        return UserMessage.builder()
-                .text(text)
-                .media(media)
-                .build();
-    }
-
     /** 流式 chunk 末尾可能只有 usage 元数据，result 为 null */
-    private static String extractStreamDelta(ChatResponse response) {
+    static String extractStreamDelta(ChatResponse response) {
         if (response == null || response.getResult() == null) {
             return null;
         }
@@ -1785,31 +950,7 @@ public class AiChatService {
         return output.getText();
     }
 
-    private void sendSseChunk(SseEmitter emitter, String text) throws IOException {
-        Map<String, String> payload = new LinkedHashMap<>();
-        payload.put("content", text);
-        emitter.send(SseEmitter.event().data(objectMapper.writeValueAsString(payload)));
-    }
-
-    private void sendSseReplace(SseEmitter emitter, String text) throws IOException {
-        Map<String, String> payload = new LinkedHashMap<>();
-        payload.put("replace", text);
-        emitter.send(SseEmitter.event().data(objectMapper.writeValueAsString(payload)));
-    }
-
-    /**
-     * 发送 SSE 心跳注释行（issue #22）：语言门阻塞重生成期间保持连接活跃，
-     * 避免代理/客户端因长时间无数据判为空闲超时。注释行不会被 EventSource 解析为数据。
-     */
-    private void sendSseHeartbeat(SseEmitter emitter) {
-        try {
-            emitter.send(SseEmitter.event().comment("keep-alive"));
-        } catch (IOException e) {
-            log.debug("SSE heartbeat send failed: {}", e.getMessage());
-        }
-    }
-
-    private String enforceExpectedLanguage(Long userId,
+    String enforceExpectedLanguage(Long userId,
                                            AiChatRequest request,
                                            VaultEntryResponse vault,
                                            String model,
@@ -1819,14 +960,14 @@ public class AiChatService {
         return enforceExpectedLanguage(userId, request, vault, model, chatModel, content, onHeartbeat, request.getMessages());
     }
 
-    private String enforceExpectedLanguage(Long userId,
-                                           AiChatRequest request,
-                                           VaultEntryResponse vault,
-                                           String model,
-                                           ChatModel chatModel,
-                                           String content,
-                                           Runnable onHeartbeat,
-                                           List<MessageDto> retrySeedMessages) {
+    String enforceExpectedLanguage(Long userId,
+                                   AiChatRequest request,
+                                   VaultEntryResponse vault,
+                                   String model,
+                                   ChatModel chatModel,
+                                   String content,
+                                   Runnable onHeartbeat,
+                                   List<MessageDto> retrySeedMessages) {
         String expected = request.getExpectedLanguage();
         if (expected == null || expected.isBlank() || content == null || content.isBlank()) {
             return content;
@@ -1903,157 +1044,7 @@ public class AiChatService {
         };
     }
 
-    private void finishSseSuccess(SseEmitter emitter, String fullContent, StreamCallback callback) {
-        try {
-            if (callback != null) {
-                callback.beforeStreamComplete(emitter, fullContent);
-            }
-            emitter.send(SseEmitter.event().data("[DONE]"));
-            emitter.complete();
-        } catch (IOException e) {
-            log.warn("SSE complete failed", e);
-            emitter.complete();
-        }
-        if (callback != null) {
-            callback.onComplete(fullContent, null);
-        }
-    }
-
-    private void finishSseError(SseEmitter emitter, String message, String partialContent,
-                                StreamCallback callback) {
-        try {
-            Map<String, String> payload = new LinkedHashMap<>();
-            payload.put("error", message);
-            emitter.send(SseEmitter.event().data(objectMapper.writeValueAsString(payload)));
-            emitter.send(SseEmitter.event().data("[DONE]"));
-        } catch (Exception e) {
-            log.debug("SSE error event send failed (emitter already completed): {}", e.getMessage());
-        } finally {
-            try {
-                emitter.complete();
-            } catch (Exception ignored) {}
-        }
-        if (callback != null) {
-            Exception err = new BusinessException(ErrorCode.AI_PROVIDER_ERROR, message);
-            callback.onComplete(partialContent, err);
-        }
-    }
-
-    private String resolveStreamErrorMessage(Throwable e) {
-        if (e instanceof BusinessException be) {
-            String msg = be.getMessage();
-            if (msg != null && msg.contains("主机名无法解析")) {
-                return "识图服务暂时无法连接（DNS 解析失败），请稍后重试";
-            }
-            return msg;
-        }
-        String collected = collectThrowableMessages(e);
-        String lower = collected.toLowerCase();
-        if (lower.contains("data_inspection_failed") || lower.contains("inappropriate content")) {
-            return "图片未能通过内容安全审核，请换一张图片再试";
-        }
-        if (lower.contains("无法连接") || lower.contains("connection refused")
-                || lower.contains("connect timed out") || lower.contains("timed out")
-                || lower.contains("unknown host")) {
-            return "识图服务暂时无法连接，请稍后重试";
-        }
-        return collected.isBlank() ? "AI 服务调用失败" : collected;
-    }
-
-    private ChatModel buildChatModel(VaultEntryResponse vault, String model, String apiKey) {
-        String baseUrl = vault.getBaseUrl();
-        if (ApiKeyVaultService.isOllamaEndpoint(baseUrl)) {
-            // 用户配置的 Ollama 端点：本地放行不固定；远程固定已校验 IP，防 DNS 重绑定 SSRF
-            var endpoint = OutboundUrlValidator.validateAndResolve(baseUrl, true);
-            OllamaApi ollamaApi = OllamaApi.builder()
-                    .baseUrl(baseUrl)
-                    .restClientBuilder(SsrfPinningClientFactory.restClientBuilder(endpoint))
-                    .webClientBuilder(SsrfPinningClientFactory.webClientBuilder(endpoint))
-                    .build();
-            return OllamaChatModel.builder()
-                    .ollamaApi(ollamaApi)
-                    .defaultOptions(OllamaChatOptions.builder().model(model).build())
-                    .build();
-        }
-        boolean userSupplied = baseUrl != null && !baseUrl.isBlank();
-        String resolvedUrl = normalizeOpenAiBaseUrl(userSupplied ? baseUrl : platformBaseUrl);
-        OpenAiApi.Builder openAiBuilder = OpenAiApi.builder()
-                .baseUrl(resolvedUrl)
-                .apiKey(apiKey);
-        if (userSupplied && !OutboundUrlValidator.isTrustedPlatformEndpoint(baseUrl)) {
-            // 仅对用户配置的 base_url 固定 IP（平台受信 DashScope / 默认 URL 不固定以支持 CDN 轮转）
-            var endpoint = OutboundUrlValidator.validateAndResolve(baseUrl, false);
-            openAiBuilder
-                    .restClientBuilder(SsrfPinningClientFactory.restClientBuilder(endpoint))
-                    .webClientBuilder(SsrfPinningClientFactory.webClientBuilder(endpoint));
-        } else {
-            // 受信端点也必须显式带超时：Spring AI 默认 RestClient/WebClient 走 reactor-netty 零超时，
-            // 对端挂起时线程会永久 park 在 Mono.block()（timeLimiter 只放弃 Future，杀不死底层线程）。
-            openAiBuilder
-                    .restClientBuilder(SsrfPinningClientFactory.defaultRestClientBuilder())
-                    .webClientBuilder(SsrfPinningClientFactory.defaultWebClientBuilder());
-        }
-        // 受信 DashScope/DeepSeek / 平台默认：不做 DNS 预解析与 IP 固定。
-        // 容器 DNS 抖动时预解析会误报「主机名无法解析」，拖垮识图第二阶段文本调用并误开全局熔断。
-        // 平台默认 URL 已在配置侧约束；受信域名由 isTrustedPlatformEndpoint 白名单覆盖。
-        OpenAiApi openAiApi = openAiBuilder.build();
-        return OpenAiChatModel.builder()
-                .openAiApi(openAiApi)
-                .defaultOptions(OpenAiChatOptions.builder().model(model).build())
-                .build();
-    }
-
-    /** Spring AI 会自动追加 /v1，Base URL 不应以 /v1 结尾，否则会变成 /v1/v1/... 导致 404 */
-    private String normalizeOpenAiBaseUrl(String baseUrl) {
-        String resolved = (baseUrl != null && !baseUrl.isBlank()) ? baseUrl : platformBaseUrl;
-        if (resolved == null || resolved.isBlank()) {
-            throw new IllegalStateException(
-                    "OpenAI-compatible base URL not configured. Set vault base_url or OPENAI_BASE_URL.");
-        }
-        baseUrl = resolved;
-        String trimmed = baseUrl.replaceAll("/$", "");
-        if (trimmed.endsWith("/v1")) {
-            return trimmed.substring(0, trimmed.length() - 3);
-        }
-        return trimmed;
-    }
-
-    /** Per-upstream circuit breaker keyed by (provider + baseUrl); falls back to global when unresolved. */
-    private CircuitBreaker resolveBreaker(VaultEntryResponse vault) {
-        return upstreamBreakers.resolve(vault);
-    }
-
-    /**
-     * Fast-fail stream calls when this upstream's breaker is OPEN. Delegates to
-     * {@code tryAcquirePermission()} (no metrics recorded) so a single user's dead
-     * upstream doesn't drag down every other user's AI calls.
-     */
-    private void acquireUpstreamPermit(CircuitBreaker cb, VaultEntryResponse vault) {
-        if (!cb.tryAcquirePermission()) {
-            String upstream = (vault == null) ? "unknown"
-                    : String.join("|",
-                            vault.getProvider() == null ? "" : vault.getProvider(),
-                            vault.getBaseUrl() == null ? "" : vault.getBaseUrl());
-            log.warn("AI upstream circuit breaker OPEN ({}), fast-fail stream: {}",
-                    cb.getName(), upstream);
-            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "对方模型暂时繁忙，请稍后再试");
-        }
-    }
-
-    private void releaseUpstreamPermit(CircuitBreaker cb, long startNanos, Throwable error) {
-        long duration = System.nanoTime() - startNanos;
-        if (error == null) {
-            cb.onSuccess(duration, java.util.concurrent.TimeUnit.NANOSECONDS);
-            return;
-        }
-        Throwable e = error;
-        for (int depth = 0; depth < 6 && e != null; depth++) {
-            if (e instanceof BusinessException) {
-                cb.onSuccess(duration, java.util.concurrent.TimeUnit.NANOSECONDS);
-                return;
-            }
-            e = e.getCause();
-        }
-        cb.onError(duration, java.util.concurrent.TimeUnit.NANOSECONDS, error);
+    ChatModel buildChatModel(VaultEntryResponse vault, String model, String apiKey) {
+        return chatModelFactory.buildChatModel(vault, model, apiKey);
     }
 }
