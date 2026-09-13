@@ -1,10 +1,13 @@
 package com.lianyu.service.ai;
 
+import org.springframework.stereotype.Component;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+@Component
 final class VisionAnalysisParser {
 
     private static final Pattern JSON_TAG =
