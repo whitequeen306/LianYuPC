@@ -988,7 +988,7 @@ function isUserMessage(msg) {
   height: 20px;
   padding: 0 6px;
   border-radius: 999px;
-  background: #ff4d4f;
+  background: $color-error;
   color: #fff;
   font-size: 11px;
   font-weight: 700;

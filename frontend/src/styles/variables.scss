@@ -28,6 +28,28 @@ $color-warning: #FFA500;
 $color-error: #FA5151;
 $color-info: #8BA4C8;
 
+// Emotion badge (DESIGN.md "emotion-*"; EmotionBadge.vue 十种情绪专用)
+$emotion-happy: #ffc107;
+$emotion-sad: #64b4ff;
+$emotion-miss: #c8a0ff;
+$emotion-jealous: #ff8cc8;
+$emotion-angry: #ff6464;
+$emotion-coquettish: #ffb4a0;
+$emotion-tired: #b4b4b4;
+$emotion-excited: #ffdc64;
+$emotion-calm: #a0c8b4;
+$emotion-worried: #ffc88c;
+
+// Danmaku gold (DESIGN.md "danmaku-*"; 广场弹幕礼盒专用)
+$color-danmaku-gold: #f5b042;
+$color-danmaku-gold-light: #ffd866;
+$color-danmaku-ink: #1a1a24;
+
+// Third-party provider brands (DESIGN.md "brand-*"; 设置页 provider 标识)
+$color-brand-openai: #10a37f;
+$color-brand-gemini: #4285f4;
+$color-brand-gemini-light: #8ab4f8;
+
 // --- Typography ---
 $font-body: 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', system-ui, -apple-system, sans-serif;
 $font-display-serif: 'Noto Serif SC', 'Songti SC', serif;

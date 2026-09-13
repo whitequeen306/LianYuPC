@@ -977,8 +977,8 @@ onUnmounted(() => {
   background: $color-text-muted;
 
   &.is-ok {
-    background: #4ade80;
-    box-shadow: 0 0 6px rgba(74, 222, 128, 0.6);
+    background: $color-success;
+    box-shadow: 0 0 6px rgba($color-success, 0.6);
   }
   &.is-err {
     background: $color-error;
@@ -988,7 +988,7 @@ onUnmounted(() => {
     opacity: 0.5;
   }
   &.is-busy {
-    background: #fbbf24;
+    background: $color-warning;
     animation: pulse 1.2s ease-in-out infinite;
   }
 }
@@ -1014,7 +1014,7 @@ onUnmounted(() => {
     font-family: inherit;
   }
   &.upgrade-hint {
-    color: #fbbf24;
+    color: $color-warning;
   }
 }
 
@@ -1105,7 +1105,7 @@ onUnmounted(() => {
 
 .restart-hint {
   margin: 0;
-  color: #fbbf24;
+  color: $color-warning;
 }
 
 // 桥接日志：页内结构化卡片
@@ -1178,7 +1178,7 @@ onUnmounted(() => {
 }
 
 .log-line.is-success .log-msg {
-  color: #4ade80;
+  color: $color-success;
 }
 
 .log-line.is-fail .log-msg {

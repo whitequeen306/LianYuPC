@@ -96,3 +96,8 @@ frontend/scripts/gen-*.cjs
 # Python cache
 **/__pycache__/
 *.pyc
+
+# One-off cloud incident diag/fix scripts and local run artifacts (see scripts/diag/README.md, artifacts/README.md)
+scripts/diag/
+artifacts/
+scripts/test_updater_flow.py

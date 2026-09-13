@@ -39,6 +39,25 @@ colors:
   warning: "#FFA500"
   error: "#FA5151"
   info: "#8BA4C8"
+  # ── Emotion badge (EmotionBadge.vue 十种情绪；仅限情绪徽章使用) ──
+  emotion-happy: "#ffc107"      # 开心
+  emotion-sad: "#64b4ff"        # 难过
+  emotion-miss: "#c8a0ff"       # 想念
+  emotion-jealous: "#ff8cc8"    # 吃醋
+  emotion-angry: "#ff6464"      # 生气
+  emotion-coquettish: "#ffb4a0" # 撒娇
+  emotion-tired: "#b4b4b4"      # 疲惫
+  emotion-excited: "#ffdc64"    # 兴奋
+  emotion-calm: "#a0c8b4"       # 平静
+  emotion-worried: "#ffc88c"    # 担心
+  # ── Danmaku (广场弹幕高亮；仅限弹幕礼盒) ──
+  danmaku-gold: "#f5b042"
+  danmaku-gold-light: "#ffd866"
+  danmaku-ink: "#1a1a24"
+  # ── Third-party provider brands (设置页 provider 标识；仅限品牌 badge) ──
+  brand-openai: "#10a37f"
+  brand-gemini: "#4285f4"
+  brand-gemini-light: "#8ab4f8"
   # ── Chat scene (immersive dark) ──
   chat-scene-bg: "#0a0a12"
   chat-user-bubble-bg: "rgba(244, 166, 181, 0.26)"

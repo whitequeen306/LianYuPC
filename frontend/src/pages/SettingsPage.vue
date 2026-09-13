@@ -941,10 +941,10 @@ async function handleFetchDialogModels() {
   text-transform: uppercase;
   letter-spacing: 0.05em;
 
-  &.openai { background: rgba(#10a37f, 0.15); color: #10a37f; }
+  &.openai { background: rgba($color-brand-openai, 0.15); color: $color-brand-openai; }
   &.deepseek { background: rgba($color-pink-rgb, 0.12); color: $color-pink-primary; }
   &.ollama { background: rgba($color-pink-light, 0.15); color: $color-pink-light; }
-  &.gemini { background: rgba(#4285f4, 0.12); color: #8ab4f8; }
+  &.gemini { background: rgba($color-brand-gemini, 0.12); color: $color-brand-gemini-light; }
   &:not(.openai):not(.deepseek):not(.ollama):not(.gemini) {
     background: rgba($color-pink-rgb, 0.1);
     color: $color-pink-primary;

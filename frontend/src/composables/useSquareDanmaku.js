@@ -31,9 +31,9 @@ const DANMAKU_DEFAULT_LOOK = {
 }
 
 const DANMAKU_MINE_LOOK = {
-  color: '#1a1a24',
+  color: 'var(--ly-danmaku-ink, #1a1a24)',
   fontWeight: '700',
-  background: 'linear-gradient(135deg, #ffd866 0%, #f5b042 100%)',
+  background: 'linear-gradient(135deg, var(--ly-danmaku-gold-light, #ffd866) 0%, var(--ly-danmaku-gold, #f5b042) 100%)',
   boxShadow: '0 0 14px rgba(245, 176, 66, 0.55), 0 1px 4px rgba(0, 0, 0, 0.28)',
   textShadow: '0 1px 0 rgba(255, 255, 255, 0.35)',
   border: '1px solid rgba(255, 216, 102, 0.85)',

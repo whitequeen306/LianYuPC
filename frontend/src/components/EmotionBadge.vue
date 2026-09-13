@@ -43,16 +43,16 @@ const emotionClass = computed(() => {
   max-width: 100%;
   transition: all $transition-fast;
 
-  &.emotion--开心 { background: rgba(255, 193, 7, 0.12); color: #ffc107; border: 1px solid rgba(255, 193, 7, 0.2); }
-  &.emotion--难过 { background: rgba(100, 180, 255, 0.12); color: #64b4ff; border: 1px solid rgba(100, 180, 255, 0.2); }
-  &.emotion--想念 { background: rgba(200, 160, 255, 0.12); color: #c8a0ff; border: 1px solid rgba(200, 160, 255, 0.2); }
-  &.emotion--吃醋 { background: rgba(255, 140, 200, 0.12); color: #ff8cc8; border: 1px solid rgba(255, 140, 200, 0.2); }
-  &.emotion--生气 { background: rgba(255, 100, 100, 0.12); color: #ff6464; border: 1px solid rgba(255, 100, 100, 0.2); }
-  &.emotion--撒娇 { background: rgba(255, 180, 160, 0.12); color: #ffb4a0; border: 1px solid rgba(255, 180, 160, 0.2); }
-  &.emotion--疲惫 { background: rgba(180, 180, 180, 0.12); color: #b4b4b4; border: 1px solid rgba(180, 180, 180, 0.2); }
-  &.emotion--兴奋 { background: rgba(255, 220, 100, 0.12); color: #ffdc64; border: 1px solid rgba(255, 220, 100, 0.2); }
-  &.emotion--平静 { background: rgba(160, 200, 180, 0.12); color: #a0c8b4; border: 1px solid rgba(160, 200, 180, 0.2); }
-  &.emotion--担心 { background: rgba(255, 200, 140, 0.12); color: #ffc88c; border: 1px solid rgba(255, 200, 140, 0.2); }
+  &.emotion--开心 { background: rgba($emotion-happy, 0.12); color: $emotion-happy; border: 1px solid rgba($emotion-happy, 0.2); }
+  &.emotion--难过 { background: rgba($emotion-sad, 0.12); color: $emotion-sad; border: 1px solid rgba($emotion-sad, 0.2); }
+  &.emotion--想念 { background: rgba($emotion-miss, 0.12); color: $emotion-miss; border: 1px solid rgba($emotion-miss, 0.2); }
+  &.emotion--吃醋 { background: rgba($emotion-jealous, 0.12); color: $emotion-jealous; border: 1px solid rgba($emotion-jealous, 0.2); }
+  &.emotion--生气 { background: rgba($emotion-angry, 0.12); color: $emotion-angry; border: 1px solid rgba($emotion-angry, 0.2); }
+  &.emotion--撒娇 { background: rgba($emotion-coquettish, 0.12); color: $emotion-coquettish; border: 1px solid rgba($emotion-coquettish, 0.2); }
+  &.emotion--疲惫 { background: rgba($emotion-tired, 0.12); color: $emotion-tired; border: 1px solid rgba($emotion-tired, 0.2); }
+  &.emotion--兴奋 { background: rgba($emotion-excited, 0.12); color: $emotion-excited; border: 1px solid rgba($emotion-excited, 0.2); }
+  &.emotion--平静 { background: rgba($emotion-calm, 0.12); color: $emotion-calm; border: 1px solid rgba($emotion-calm, 0.2); }
+  &.emotion--担心 { background: rgba($emotion-worried, 0.12); color: $emotion-worried; border: 1px solid rgba($emotion-worried, 0.2); }
 }
 
 .emotion-icon {

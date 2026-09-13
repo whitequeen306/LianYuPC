@@ -56,10 +56,10 @@ useSquareDanmaku(layerRef, commentsRef, userId)
 }
 
 .danmaku-item--mine {
-  color: #1a1a24 !important;
+  color: $color-danmaku-ink !important;
   font-weight: $font-weight-bold;
-  background: linear-gradient(135deg, #ffd866 0%, #f5b042 100%) !important;
-  box-shadow: 0 0 12px rgba(245, 176, 66, 0.45), 0 1px 4px rgba(0, 0, 0, 0.25);
+  background: linear-gradient(135deg, $color-danmaku-gold-light 0%, $color-danmaku-gold 100%) !important;
+  box-shadow: 0 0 12px rgba($color-danmaku-gold, 0.45), 0 1px 4px rgba(0, 0, 0, 0.25);
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 </style>
