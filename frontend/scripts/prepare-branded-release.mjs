@@ -9,9 +9,11 @@ const repoRoot = path.resolve(root, '..')
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const version = pkg.version
 const releaseDir = path.join(root, 'release', `v${version}`)
-const installerName = `LianYu-Setup-${version}.exe`
+// 命名契约唯一真相源：scripts/release_assets.json
+const releaseAssets = JSON.parse(fs.readFileSync(path.join(repoRoot, 'scripts', 'release_assets.json'), 'utf8'))
+const installerName = releaseAssets.installer.exeName.replace('{version}', version)
 const installerPath = path.join(releaseDir, installerName)
-const blockmapPath = `${installerPath}.blockmap`
+const blockmapPath = `${installerPath}${releaseAssets.installer.blockmapSuffix}`
 
 fs.mkdirSync(releaseDir, { recursive: true })
 execFileSync('powershell.exe', [

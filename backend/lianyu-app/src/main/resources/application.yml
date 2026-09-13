@@ -243,7 +243,8 @@ lianyu:
       url: https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank
   asr:
     enabled: ${LIANYU_ASR_ENABLED:true}
-    base-url: ${LIANYU_ASR_BASE_URL:http://localhost:8081}
+    # 与 docker-compose 服务名一致（容器内 asr:8080）；本地裸跑后端时用 LIANYU_ASR_BASE_URL 覆盖
+    base-url: ${LIANYU_ASR_BASE_URL:http://asr:8080}
     max-bytes: 8388608
   voice:
     duplex:

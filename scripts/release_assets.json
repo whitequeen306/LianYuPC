@@ -1,0 +1,21 @@
+{
+  "$comment": "更新资产命名的唯一真相源（docs/refactor-plan-coupling.md 项1）。{version} 为占位符，versionPattern 为 POSIX 正则。消费方：frontend/scripts/prepare-branded-release.mjs、frontend/electron/wechatBridge/pack-wechat-channel.mjs、frontend/electron/wechatBridge/wechatChannelRelease.js、scripts/_upload_update_assets.py、scripts/_upload_wechat_channel.py、local/ship-release.ps1；scripts/check_release_asset_contract.py 负责校验 nginx.conf 与客户端正则同源。",
+  "installer": {
+    "exeName": "LianYu-Setup-{version}.exe",
+    "blockmapSuffix": ".blockmap",
+    "manifestName": "latest.yml",
+    "objectPrefix": "updates/",
+    "versionPattern": "\\d+\\.\\d+\\.\\d+",
+    "ghRepo": "whitequeen306/LianYuPC"
+  },
+  "agentEngine": {
+    "zipName": "AgentEngine-hosted-win-x64-{version}.zip",
+    "manifestName": "agent-latest.yml",
+    "versionPattern": "\\d+\\.\\d+\\.\\d+"
+  },
+  "wechatChannel": {
+    "zipName": "WechatChannel-win-x64-{version}.zip",
+    "manifestName": "wechat-channel-latest.yml",
+    "versionPattern": "\\d+\\.\\d+\\.\\d+"
+  }
+}

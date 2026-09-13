@@ -5,9 +5,18 @@
 import { app } from 'electron'
 import path from 'path'
 import fs from 'fs'
+// 命名契约唯一真相源：scripts/release_assets.json（构建期内联，见 docs/refactor-plan-coupling.md 项1）
+import releaseAssets from '../../../scripts/release_assets.json'
+
+const _channel = releaseAssets.wechatChannel
+// 模板 → 正则：先挖出版本占位，再转义其余字面量（如 .zip），最后放回捕获组
+const _zipPattern = _channel.zipName
+  .replace('{version}', '\u0000')
+  .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+  .replace('\u0000', `(${_channel.versionPattern})`)
 
 export const WECHAT_CHANNEL_MANIFEST_PATH = '/api/public/files/updates/wechat-channel-latest.yml'
-export const WECHAT_CHANNEL_ZIP_NAME_RE = /^WechatChannel-win-x64-\d+\.\d+\.\d+\.zip$/
+export const WECHAT_CHANNEL_ZIP_NAME_RE = new RegExp(`^${_zipPattern}$`)
 export const WECHAT_CHANNEL_VERSION_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 export const WECHAT_CHANNEL_SHA256_RE = /^[a-fA-F0-9]{64}$/
 export const MAX_WECHAT_CHANNEL_ZIP_BYTES = 150 * 1024 * 1024

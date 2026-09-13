@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import re
 import shlex
@@ -20,8 +21,15 @@ USER = "root"
 ROOT = Path(__file__).resolve().parents[1]
 BUCKET = "lianyu"
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
-CHANNEL_ZIP_RE = re.compile(r"^WechatChannel-win-x64-(\d+\.\d+\.\d+)\.zip$")
 RETENTION_RELEASES = 2
+
+# 命名契约唯一真相源：scripts/release_assets.json
+with open(ROOT / "scripts" / "release_assets.json", encoding="utf-8") as _f:
+    _ASSETS = json.load(_f)
+_CHANNEL = _ASSETS["wechatChannel"]
+CHANNEL_ZIP_RE = re.compile(
+    rf"^{_CHANNEL['zipName'].format(version='(' + _CHANNEL['versionPattern'] + ')')}$"
+)
 
 
 def load_dotenv(path: Path) -> None:
@@ -112,7 +120,7 @@ def cleanup_old_channel_zips(client: paramiko.SSHClient, keep: int = RETENTION_R
     list_cmd = (
         "docker exec lianyu-minio sh -lc '"
         "mc alias set local http://127.0.0.1:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\" >/dev/null && "
-        f"mc find local/{BUCKET}/updates --name \"WechatChannel-win-x64-*.zip\""
+        f"mc find local/{BUCKET}/updates --name \"{_CHANNEL['zipName'].split('{version}')[0]}*.zip\""
         "'"
     )
     _, stdout, stderr = client.exec_command(list_cmd, timeout=120, get_pty=True)
@@ -165,7 +173,7 @@ def main() -> None:
         raise SystemExit("--version must use x.y.z numeric semver format")
 
     zip_path = Path(args.zip).expanduser().resolve() if args.zip else (
-        ROOT / "artifacts" / "wechat-channel" / f"WechatChannel-win-x64-{args.version}.zip"
+        ROOT / "artifacts" / "wechat-channel" / _CHANNEL["zipName"].replace("{version}", args.version)
     )
     if not zip_path.is_file():
         raise SystemExit(f"missing wechat channel zip: {zip_path}")
@@ -175,7 +183,7 @@ def main() -> None:
     if not password:
         raise SystemExit("Set DEPLOY_SSH_PASSWORD in .env or environment")
 
-    filename = f"WechatChannel-win-x64-{args.version}.zip"
+    filename = _CHANNEL["zipName"].replace("{version}", args.version)
     size = zip_path.stat().st_size
     digest = sha256_file(zip_path)
     print(f"wechat channel zip sha256={digest} size={size} version={args.version}", flush=True)

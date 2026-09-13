@@ -25,7 +25,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const VERSION = process.argv[2] || '0.1.0'
 const NODE_VERSION = '22.22.3'
 const NODE_DIST = `https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-win-x64.zip`
-const OUT_NAME = `WechatChannel-win-x64-${VERSION}.zip`
+// 命名契约唯一真相源：scripts/release_assets.json
+const releaseAssets = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../../scripts/release_assets.json'), 'utf8'))
+const OUT_NAME = releaseAssets.wechatChannel.zipName.replace('{version}', VERSION)
 
 function download(url, dest) {
   return new Promise((resolve, reject) => {

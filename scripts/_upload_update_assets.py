@@ -19,10 +19,19 @@ HOST = "156.233.228.18"
 USER = "root"
 ROOT = Path(__file__).resolve().parents[1]
 BUCKET = "lianyu"
-REPO = "whitequeen306/LianYuPC"
 RETENTION_RELEASES = 3
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
-UPDATE_ASSET_RE = re.compile(r"^updates/LianYu-Setup-(\d+)\.(\d+)\.(\d+)\.exe(?:\.blockmap)?$")
+
+# 命名契约唯一真相源：scripts/release_assets.json（docs/refactor-plan-coupling.md 项1）
+with open(ROOT / "scripts" / "release_assets.json", encoding="utf-8") as _f:
+    _ASSETS = json.load(_f)
+REPO = _ASSETS["installer"]["ghRepo"]
+_UPDATE_EXE_RE = re.compile(
+    rf"^{_ASSETS['installer']['exeName'].format(version='(' + _ASSETS['installer']['versionPattern'] + ')')}$"
+)
+UPDATE_ASSET_RE = re.compile(
+    rf"^{_ASSETS['installer']['objectPrefix']}{_ASSETS['installer']['exeName'].format(version='(' + _ASSETS['installer']['versionPattern'] + ')')}(?:\{_ASSETS['installer']['blockmapSuffix']})?$"
+)
 
 
 def load_dotenv(path: Path) -> None:
@@ -137,7 +146,7 @@ def update_asset_version(object_name: str) -> tuple[int, int, int] | None:
     match = UPDATE_ASSET_RE.match(object_name)
     if not match:
         return None
-    return tuple(int(part) for part in match.groups())
+    return tuple(int(part) for part in match.group(1).split("."))
 
 
 def stale_update_objects(object_names: list[str], keep: int = RETENTION_RELEASES) -> list[str]:
@@ -147,10 +156,11 @@ def stale_update_objects(object_names: list[str], keep: int = RETENTION_RELEASES
 
 
 def cleanup_old_update_assets(client: paramiko.SSHClient, keep: int = RETENTION_RELEASES) -> None:
+    installer_glob = _ASSETS["installer"]["exeName"].split("{version}")[0] + "*"
     list_cmd = (
         "docker exec lianyu-minio sh -lc '"
         "mc alias set local http://127.0.0.1:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\" >/dev/null && "
-        f"mc find local/{BUCKET}/updates --name \"LianYu-Setup-*\""
+        f"mc find local/{BUCKET}/updates --name \"{installer_glob}\""
         "'"
     )
     _, stdout, stderr = client.exec_command(list_cmd, timeout=120, get_pty=True)
@@ -189,13 +199,14 @@ def configure_update_assets_public_read(client: paramiko.SSHClient) -> None:
 
 def artifact_paths(version: str) -> list[tuple[Path, str]]:
     release_dir = ROOT / "frontend" / "release" / f"v{version}"
-    installer = release_dir / f"LianYu-Setup-{version}.exe"
-    blockmap = release_dir / f"LianYu-Setup-{version}.exe.blockmap"
-    latest = release_dir / "latest.yml"
+    exe_name = _ASSETS["installer"]["exeName"].format(version=version)
+    installer = release_dir / exe_name
+    blockmap = release_dir / f"{exe_name}{_ASSETS['installer']['blockmapSuffix']}"
+    latest = release_dir / _ASSETS["installer"]["manifestName"]
     targets = [
-        (installer, f"LianYu-Setup-{version}.exe"),
-        (blockmap, f"LianYu-Setup-{version}.exe.blockmap"),
-        (latest, "latest.yml"),
+        (installer, exe_name),
+        (blockmap, f"{exe_name}{_ASSETS['installer']['blockmapSuffix']}"),
+        (latest, _ASSETS["installer"]["manifestName"]),
     ]
     missing = [str(src) for src, _ in targets if not src.is_file()]
     if missing:
