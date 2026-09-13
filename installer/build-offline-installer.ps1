@@ -1,5 +1,5 @@
 ﻿param(
-  [string]$Version = "0.2.363",
+  [string]$Version = "",
   [string]$ElectronUnpacked = "",
   [string]$Output = ""
 )
@@ -8,6 +8,11 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $project = Join-Path $root 'LianYu.Installer'
 $payloadDir = Join-Path $project 'Payload'
 $payload = Join-Path $payloadDir 'LianYu-payload.zip'
+
+if ([string]::IsNullOrWhiteSpace($Version)) {
+  # 版本单一来源是 frontend/package.json（发版链路总是显式传 -Version）
+  throw "Version is required. Pass -Version (from frontend/package.json)."
+}
 
 if ([string]::IsNullOrWhiteSpace($ElectronUnpacked)) {
   $ElectronUnpacked = "..\frontend\release\v$Version\win-unpacked"
