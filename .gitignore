@@ -24,6 +24,7 @@ backend/*/target/
 .cursor/
 *.tmp
 .tmp_*
+.tmp/
 *.swp
 *.swo
 *~
