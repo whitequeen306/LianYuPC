@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Move the update runtime path from GitHub proxy to LianYu public MinIO files and replace inline About-page updater state with a global dialog.
+**Goal:** Move the update runtime path from GitHub proxy to YuNian public MinIO files and replace inline About-page updater state with a global dialog.
 
 **Architecture:** The backend exposes update artifacts as restricted public files under `updates/`. The Electron main process reads `/api/public/files/updates/latest.yml`, resolves relative asset URLs against that directory, streams the installer to temp, and broadcasts progress metrics. Vue mounts one global dialog in `App.vue`; About page keeps only a manual check button.
 

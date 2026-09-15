@@ -79,7 +79,7 @@ def api_request(method: str, path: str, body: dict | None = None, token: str | N
 
 def solve_captcha(expression: str) -> int:
     text = expression.strip()
-    match = re.match(r"(\d+)\s*([+\-×÷])\s*(\d+)\s*=\s*\?", text)
+    match = re.match(r"(\d+)\s*([+\-????])\s*(\d+)\s*=\s*\?", text)
     if not match:
         raise ValueError(f"Unrecognized captcha expression: {expression!r}")
     a, op, b = int(match.group(1)), match.group(2), int(match.group(3))
@@ -87,9 +87,9 @@ def solve_captcha(expression: str) -> int:
         return a + b
     if op == "-":
         return a - b
-    if op == "×":
+    if op == "??":
         return a * b
-    if op == "÷":
+    if op == "??":
         return a // b
     raise ValueError(f"Unknown operator: {op}")
 
@@ -111,8 +111,8 @@ def register_user_via_api(username: str) -> dict:
 
 def wait_for_captcha(page: Page) -> str:
     expr = page.locator(".captcha-expr")
-    expect(expr).not_to_have_text("加载�?..", timeout=15000)
-    expect(expr).not_to_have_text("获取失败，点击刷�?, timeout=15000)
+    expect(expr).not_to_have_text("?????????..", timeout=15000)
+    expect(expr).not_to_have_text("???????????????????????????, timeout=15000)
     text = expr.inner_text().strip()
     if not re.search(r"=\s*\?", text):
         raise AssertionError(f"Captcha not ready: {text!r}")
@@ -126,7 +126,7 @@ def fill_captcha(page: Page) -> None:
 
 def dismiss_onboarding_if_present(page: Page) -> None:
     for _ in range(3):
-        cancel = page.get_by_role("button", name=re.compile(r"^(取消|关闭|知道了|Skip)$"))
+        cancel = page.get_by_role("button", name=re.compile(r"^(??????|??????|?????????|Skip)$"))
         if cancel.count() == 0:
             break
         try:
@@ -209,13 +209,13 @@ def run_tests() -> TestRun:
 
         def test_login_page() -> None:
             goto_hash(page, "/login")
-            expect(page.get_by_role("heading", name="欢迎回来")).to_be_visible()
+            expect(page.get_by_role("heading", name="????????????")).to_be_visible()
             wait_for_captcha(page)
             snap("02-login")
 
         def test_register_page() -> None:
             goto_hash(page, "/register")
-            expect(page.get_by_role("heading", name="注册账号")).to_be_visible()
+            expect(page.get_by_role("heading", name="????????????")).to_be_visible()
             wait_for_captcha(page)
             snap("03-register")
 
@@ -226,9 +226,9 @@ def run_tests() -> TestRun:
         def test_register_ui_form() -> None:
             goto_hash(page, "/register")
             page.locator('input[autocomplete="username"]').fill(f"{username}_ui")
-            page.locator('input[placeholder="昵称（选填�?]').fill("UI Form")
+            page.locator('input[placeholder="??????????????????]').fill("UI Form")
             page.locator('input[autocomplete="new-password"]').first.fill(PASSWORD)
-            page.locator('input[placeholder="确认密码"]').fill(PASSWORD)
+            page.locator('input[placeholder="????????????"]').fill(PASSWORD)
             fill_captcha(page)
             page.locator("button.submit-btn").click()
             page.wait_for_timeout(3000)
@@ -249,7 +249,7 @@ def run_tests() -> TestRun:
             if resp.get("code") != 200:
                 raise AssertionError(
                     f"GET /api/characters failed: code={resp.get('code')} msg={resp.get('message')} "
-                    "(cloud backend may be degraded �?UI steps will still run)"
+                    "(cloud backend may be degraded ???UI steps will still run)"
                 )
 
         def test_home() -> None:
@@ -261,13 +261,13 @@ def run_tests() -> TestRun:
         def test_characters_page() -> None:
             goto_hash(page, "/app/characters")
             expect_hash(page, "#/app/characters")
-            assert_page_title(page, "我的羁绊")
+            assert_page_title(page, "????????????")
             snap("06-characters")
 
         def test_character_square() -> None:
             goto_hash(page, "/app/character-square")
             expect_hash(page, "#/app/character-square")
-            assert_page_title(page, "角色广场")
+            assert_page_title(page, "????????????")
             cards = page.locator(".template-card")
             empty = page.locator(".empty-state")
             if cards.count() == 0 and empty.count() == 0:
@@ -280,22 +280,22 @@ def run_tests() -> TestRun:
 
         def test_add_character_from_square() -> None:
             goto_hash(page, "/app/character-square")
-            add_btn = page.get_by_role("button", name="加入我的角色")
+            add_btn = page.get_by_role("button", name="??????????????????")
             if add_btn.count() == 0:
                 print("        [skip] no square templates available (API may be down)")
                 return
             add_btn.click()
             dialog = page.locator(".el-message-box")
             expect(dialog).to_be_visible(timeout=10000)
-            dialog.locator("input").fill("郑州")
-            dialog.get_by_role("button", name=re.compile("确认|加入|确定")).click()
+            dialog.locator("input").fill("??????")
+            dialog.get_by_role("button", name=re.compile("??????|??????|??????")).click()
             page.wait_for_timeout(2000)
             success = page.locator(".el-message--success")
             if success.count():
                 expect(success.first).to_be_visible(timeout=10000)
             confirm = page.locator(".el-message-box")
             if confirm.count() and confirm.is_visible():
-                confirm.get_by_role("button", name=re.compile("取消|稍后|关闭")).first.click(timeout=5000)
+                confirm.get_by_role("button", name=re.compile("??????|??????|??????")).first.click(timeout=5000)
             snap("08-after-add-character")
 
         def test_characters_has_entry() -> None:
@@ -307,13 +307,13 @@ def run_tests() -> TestRun:
         def test_settings_page() -> None:
             goto_hash(page, "/app/settings")
             expect_hash(page, "#/app/settings")
-            assert_page_title(page, "设置")
+            assert_page_title(page, "??????")
             snap("09-settings")
 
         def test_profile_page() -> None:
             goto_hash(page, "/app/profile")
             expect_hash(page, "#/app/profile")
-            assert_page_title(page, "个人资料")
+            assert_page_title(page, "????????????")
             snap("10-profile")
 
         def test_memory_page() -> None:
@@ -354,13 +354,13 @@ def run_tests() -> TestRun:
 
         def test_start_chat_if_character_exists() -> None:
             goto_hash(page, "/app/characters")
-            chat_btn = page.get_by_role("button", name=re.compile("聊天|对话|继续"))
+            chat_btn = page.get_by_role("button", name=re.compile("??????|??????|??????"))
             if chat_btn.count() == 0:
                 card = page.locator(".character-card, .char-card, .companion-card, .char-list-item").first
                 if card.count():
                     card.click()
                     page.wait_for_timeout(800)
-            chat_btn = page.get_by_role("button", name=re.compile("聊天|对话|继续"))
+            chat_btn = page.get_by_role("button", name=re.compile("??????|??????|??????"))
             if chat_btn.count() == 0:
                 return
             chat_btn.first.click()
@@ -371,10 +371,10 @@ def run_tests() -> TestRun:
         def test_logout() -> None:
             goto_hash(page, "/app")
             page.locator("button.header-avatar").click()
-            page.locator(".el-dropdown-menu__item").filter(has_text="退出登�?).click()
+            page.locator(".el-dropdown-menu__item").filter(has_text="????????????).click()
             confirm = page.locator(".el-message-box")
             expect(confirm).to_be_visible(timeout=5000)
-            confirm.locator("button").filter(has_text="退出登�?).click()
+            confirm.locator("button").filter(has_text="????????????).click()
             page.wait_for_url(re.compile(r"#/$|#/login"), timeout=15000)
             token = page.evaluate("() => localStorage.getItem('lianyu-token')")
             assert not token, "Token should be cleared after logout"
@@ -415,7 +415,7 @@ def run_tests() -> TestRun:
             ("Register UI form (secondary)", test_register_ui_form),
         ]
 
-        print(f"\nLianYu E2E �?base URL: {BASE_URL}")
+        print(f"\nYuNian E2E ???base URL: {BASE_URL}")
         print(f"Test user: {username}\n")
         for name, fn in steps:
             run.record(name, fn)

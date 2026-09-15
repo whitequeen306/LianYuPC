@@ -58,7 +58,7 @@
         <div class="desktop-settings__row">
           <div>
             <div class="desktop-settings__label">开机自动启动</div>
-            <div class="desktop-settings__hint">登录 Windows 后自动在后台启动 LianYu</div>
+            <div class="desktop-settings__hint">登录 Windows 后自动在后台启动 YuNian</div>
           </div>
           <el-switch v-model="desktopForm.launchAtLogin" @change="onDesktopChange" />
         </div>
@@ -72,7 +72,7 @@
         <div class="desktop-settings__row">
           <div>
             <div class="desktop-settings__label">微信 ClawBot</div>
-            <div class="desktop-settings__hint">用手机微信 ClawBot 与已绑定的恋语角色聊天</div>
+            <div class="desktop-settings__hint">用手机微信 ClawBot 与已绑定的予念角色聊天</div>
           </div>
           <el-button text :icon="Promotion" @click="goWechatBridge">前往配置</el-button>
         </div>

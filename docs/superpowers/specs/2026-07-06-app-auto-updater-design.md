@@ -7,7 +7,7 @@
 
 ## 1. 背景与目标
 
-当前 LianYu 桌面客户端（Electron + electron-builder，Windows nsis 安装包）每次发版都要把 `LianYu Setup vX.X.X.exe` 手动发给用户安装。用户没有"在软件里点一下就更新"的能力，导致旧版本长期留存、修复难以触达。
+当前 YuNian 桌面客户端（Electron + electron-builder，Windows nsis 安装包）每次发版都要把 `YuNian Setup vX.X.X.exe` 手动发给用户安装。用户没有"在软件里点一下就更新"的能力，导致旧版本长期留存、修复难以触达。
 
 目标：在「关于」页版本号旁加一个"检查更新"入口，发现新版本后**一键下载 + 静默安装 + 自动重启**，无需用户手动下载安装包。版本源用 GitHub Releases（仓库 `whitequeen306/LianYuPC`）。
 
@@ -177,7 +177,7 @@ error 状态下，按钮下方显示一行小字链接："前往 GitHub 手动�
    - `npm version <bump> --no-git-tag-version`（改 package.json version）
    - `node scripts/electron-pack.mjs`（vite build + esbuild bundle + electron-builder）
    - 检测到 `GH_TOKEN` → `electron-builder --win --publish always`
-   - electron-builder 产出 `LianYu Setup vX.X.X.exe` + `latest.yml`，上传到 `whitequeen306/LianYuPC` 的 Releases（tag=`vX.X.X`）
+   - electron-builder 产出 `YuNian Setup vX.X.X.exe` + `latest.yml`，上传到 `whitequeen306/LianYuPC` 的 Releases（tag=`vX.X.X`）
 4. 用户端旧版本点"检查更新" → 拉 `latest.yml` → 比对版本号 → 下载 → 安装
 
 ### 6.3 本地测试构建（不上传）

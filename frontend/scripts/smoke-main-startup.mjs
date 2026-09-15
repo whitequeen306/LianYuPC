@@ -18,7 +18,7 @@ const electronBin = process.platform === 'win32'
   ? path.join(root, 'node_modules', 'electron', 'dist', 'electron.exe')
   : path.join(root, 'node_modules', 'electron', 'dist', 'electron')
 const mainEntry = path.join(root, 'dist-electron', 'main.js')
-const unpackedExe = path.join(outDir, 'win-unpacked', 'LianYu.exe')
+const unpackedExe = path.join(outDir, 'win-unpacked', 'YuNian.exe')
 const captureScript = path.join(root, 'scripts', 'capture-window.ps1')
 
 fs.mkdirSync(outDir, { recursive: true })
@@ -26,7 +26,7 @@ fs.mkdirSync(userData, { recursive: true })
 
 function killApp() {
   if (process.platform === 'win32') {
-    try { spawnSync('taskkill', ['/F', '/IM', 'LianYu.exe', '/T'], { stdio: 'ignore' }) } catch { /* ignore */ }
+    try { spawnSync('taskkill', ['/F', '/IM', 'YuNian.exe', '/T'], { stdio: 'ignore' }) } catch { /* ignore */ }
     try { spawnSync('taskkill', ['/F', '/IM', 'electron.exe', '/T'], { stdio: 'ignore' }) } catch { /* ignore */ }
   }
 }

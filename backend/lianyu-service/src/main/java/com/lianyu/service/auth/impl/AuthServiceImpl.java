@@ -149,7 +149,7 @@ public class AuthServiceImpl implements AuthService {
         if (StrUtil.isNotBlank(nickname)) {
             return nickname.trim();
         }
-        return "恋语用户_" + RandomUtil.randomNumbers(4) + RandomUtil.randomString(RandomUtil.BASE_CHAR, 4);
+        return "予念用户_" + RandomUtil.randomNumbers(4) + RandomUtil.randomString(RandomUtil.BASE_CHAR, 4);
     }
 
     private UserProfile toProfile(User user) {

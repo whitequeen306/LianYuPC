@@ -157,7 +157,7 @@ milvus:
   database: default                # 数据库名
   dim: 1024                        # 向量维度（需与 embedding 模型一致）
 
-# LianYu 业务配置
+# 予念业务配置
 lianyu:
   api-docs:
     enabled: ${LIANYU_API_DOCS_ENABLED:true}
@@ -478,7 +478,7 @@ lianyu:
     binding:
       # 【单人模式】绑定的 QQ 号：仅处理来自此 QQ 的私聊消息（其它私聊忽略）
       qq-user-id: ${LIANYU_QQ_BINDING_QQ_USER_ID:0}
-      # 映射到的 LianYu 用户 ID（须为已存在的真实用户；该用户的角色即对外服务的角色）
+      # 映射到的予念用户 ID（须为已存在的真实用户；该用户的角色即对外服务的角色）
       lianyu-user-id: ${LIANYU_QQ_BINDING_LIANYU_USER_ID:0}
       # 复用的会话 ID（单人模式固定一个会话；请填一个已存在的会话 ID）
       conversation-id: ${LIANYU_QQ_BINDING_CONVERSATION_ID:0}

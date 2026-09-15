@@ -8,7 +8,7 @@
 
 ### Current architecture in practice
 
-- 当前实际主路径是 Electron 桌面端桥接：`frontend/electron/qqBridge/qqBridge.js` 通过本地 NapCat WebSocket 收发 QQ 消息，再调用恋语云端 `/api/conversation/...` 接口完成角色回复。
+- 当前实际主路径是 Electron 桌面端桥接：`frontend/electron/qqBridge/qqBridge.js` 通过本地 NapCat WebSocket 收发 QQ 消息，再调用予念云端 `/api/conversation/...` 接口完成角色回复。
 - `frontend/electron/main.js` 不仅负责 Electron app/bootstrap，还负责 QQ 桥接相关的业务编排，包括：
   - QQ bridge 状态推送
   - NapCat host 状态与下载进度推送
@@ -30,7 +30,7 @@
 ## Constraints
 
 - 不改变 QQ 桥接现有可用行为。
-- 不改变恋语角色接入方式，仍由当前 Electron bridge 调用现有恋语会话接口。
+- 不改变予念角色接入方式，仍由当前 Electron bridge 调用现有予念会话接口。
 - 不改变现有本地配置结构与字段语义。
 - 不改变现有 IPC channel 名称，对渲染进程保持兼容。
 - 不顺手推进第二阶段拆分 `frontend/electron/qqBridge/qqBridge.js`。
@@ -221,7 +221,7 @@
 ## Out Of Scope
 
 - 拆分 `frontend/electron/qqBridge/qqBridge.js`
-- 调整 QQ bridge 与恋语后端的接口协议
+- 调整 QQ bridge 与予念后端的接口协议
 - 改造现有渲染层页面和 store 结构
 - 清理文档里旧的后端 `lianyu-qq-bridge` 方案说明
 - 引入 asrbot 或替换 NapCat

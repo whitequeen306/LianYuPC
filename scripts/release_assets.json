@@ -1,7 +1,7 @@
 {
   "$comment": "Single source of truth for update-asset naming (docs/refactor-plan-coupling.md item 1). {version} is a placeholder; versionPattern is a POSIX regex. Consumers: prepare-branded-release.mjs, pack-wechat-channel.mjs, wechatChannelRelease.js, _upload_update_assets.py, _upload_wechat_channel.py, local/ship-release.ps1; check_release_asset_contract.py verifies nginx.conf and client regex stay in sync.",
   "installer": {
-    "exeName": "LianYu-Setup-{version}.exe",
+    "exeName": "YuNian-Setup-{version}.exe",
     "blockmapSuffix": ".blockmap",
     "manifestName": "latest.yml",
     "objectPrefix": "updates/",

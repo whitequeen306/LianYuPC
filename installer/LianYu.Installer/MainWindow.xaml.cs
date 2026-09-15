@@ -167,14 +167,14 @@ public partial class MainWindow : Window
     {
         var dialog = new Microsoft.Win32.OpenFolderDialog
         {
-            Title = "选择恋语安装位置",
+            Title = "选择予念安装位置",
             InitialDirectory = Directory.Exists(InstallDirectoryBox.Text)
                 ? InstallDirectoryBox.Text
                 : Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             Multiselect = false
         };
         if (dialog.ShowDialog(this) == true)
-            InstallDirectoryBox.Text = Path.Combine(dialog.FolderName, "LianYu");
+            InstallDirectoryBox.Text = Path.Combine(dialog.FolderName, "YuNian");
     }
 
     private void BuildProgressCard()
@@ -237,7 +237,7 @@ public partial class MainWindow : Window
         };
         var detail = new TextBlock
         {
-            Text = "当前文件：LianYu.exe    已处理：0 MB    预计剩余：准备中",
+            Text = "当前文件：YuNian.exe    已处理：0 MB    预计剩余：准备中",
             Foreground = new SolidColorBrush(Color.FromRgb(114, 128, 144)),
             FontSize = 10,
             Margin = new Thickness(0, 5, 0, 0),
@@ -358,7 +358,7 @@ public partial class MainWindow : Window
         _progressPercent.Text = $"{percent}%";
         _progressCard.Tag = percent;
         _progressMeta.Text = percent < 100 ? "本地离线安装 · 正在处理资源" : "本地离线安装 · 即将完成";
-        _progressDetail.Text = $"当前文件：{(percent < 40 ? "角色资源" : percent < 80 ? "LianYu.exe" : "快捷方式")}    已处理：{Math.Round(percent * 1.66, 1):0.0} MB    预计剩余：{(percent >= 100 ? "完成" : $"约 {Math.Max(1, (100 - percent) / 7)} 秒")}";
+        _progressDetail.Text = $"当前文件：{(percent < 40 ? "角色资源" : percent < 80 ? "YuNian.exe" : "快捷方式")}    已处理：{Math.Round(percent * 1.66, 1):0.0} MB    预计剩余：{(percent >= 100 ? "完成" : $"约 {Math.Max(1, (100 - percent) / 7)} 秒")}";
         if (percentChanged) UpdateProgressFill();
     }
 
@@ -370,7 +370,7 @@ public partial class MainWindow : Window
         _progressPercent.Text = $"{percent}%";
         _progressCard.Tag = percent;
         _progressMeta!.Text = percent < 100 ? "本地离线安装 · 正在处理资源" : "本地离线安装 · 即将完成";
-        _progressDetail!.Text = $"当前文件：{(percent < 40 ? "角色资源" : percent < 80 ? "LianYu.exe" : "快捷方式")}    已处理：{Math.Round(percent * 1.66, 1):0.0} MB    预计剩余：{(percent >= 100 ? "完成" : $"约 {Math.Max(1, (100 - percent) / 7)} 秒")}";
+        _progressDetail!.Text = $"当前文件：{(percent < 40 ? "角色资源" : percent < 80 ? "YuNian.exe" : "快捷方式")}    已处理：{Math.Round(percent * 1.66, 1):0.0} MB    预计剩余：{(percent >= 100 ? "完成" : $"约 {Math.Max(1, (100 - percent) / 7)} 秒")}";
         _progressFill.BeginAnimation(WidthProperty, null);
         _progressFill.Width = Math.Max(0, _progressTrack.ActualWidth * percent / 100d);
     }
@@ -385,7 +385,7 @@ public partial class MainWindow : Window
             var value = (int)Math.Round(from + (to - from) * eased);
             InstallButton.Content = $"正在安装… {value}%";
             SetProgressFrame(value, stage);
-            StatusText.Text = $"{stage} · LianYu.exe";
+            StatusText.Text = $"{stage} · YuNian.exe";
             await Task.Delay(33);
         }
         InstallButton.Content = $"正在安装… {to}%";
@@ -461,7 +461,7 @@ public partial class MainWindow : Window
             }
             var progress = new Progress<InstallProgress>(UpdateProgress);
             await _engine.InstallAsync(options, progress, CancellationToken.None);
-            StatusText.Text = "安装完成 · 正在启动恋语";
+            StatusText.Text = "安装完成 · 正在启动予念";
             if (options.LaunchAfterInstall) InstallerEngine.Launch(options.InstallDirectory);
             await Task.Delay(900);
             Close();
@@ -487,7 +487,7 @@ public partial class MainWindow : Window
         {
             ("正在准备安装环境", "检查磁盘空间与安装目录", 12),
             ("正在解压角色资源", "整理角色图片、语音与界面资源", 38),
-            ("正在写入桌面应用", "部署 LianYu 主程序与运行组件", 67),
+            ("正在写入桌面应用", "部署 YuNian 主程序与运行组件", 67),
             ("正在创建快捷方式", "写入桌面和开始菜单入口", 89),
             ("正在完成安装", "保存安装信息并准备首次启动", 100),
         };
@@ -500,7 +500,7 @@ public partial class MainWindow : Window
             await Task.Delay(280);
         }
         _demoCompleted = true;
-        HeroTitle.Text = "恋语已安装，\n等你打开。";
+        HeroTitle.Text = "予念已安装，\n等你打开。";
         HeroDescription.Text = "安装完成。你的桌面陪伴已经准备好了。\n点击下面的按钮结束预览。";
         HeroDescription.Visibility = Visibility.Visible;
         InstallButton.Content = "立即体验";

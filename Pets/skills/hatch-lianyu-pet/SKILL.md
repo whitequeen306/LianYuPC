@@ -1,8 +1,8 @@
-# Hatch LianYu Pet — Q版桌宠制作流程
+# Hatch YuNian Pet — Q版桌宠制作流程
 
 ## 用途
 
-从一张角色 Q 版立绘，制作一个可用的 LianYu 桌宠角色。
+从一张角色 Q 版立绘，制作一个可用的 YuNian 桌宠角色。
 
 图像生成和 atlas 拼合的核心流程**不在本 skill 重复**，而是直接引用 `awesome-codex-pet` 仓库的 `hatch-pet-v1` 技能。本 skill 只负责：项目特有的适配、接入、部署、踩坑记录。
 

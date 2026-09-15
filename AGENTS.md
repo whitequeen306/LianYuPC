@@ -36,8 +36,8 @@ SCSS 令牌别名定义在 `frontend/src/styles/variables.scss`，运行时 CSS 
 
 | 目录 | 内容 |
 |---|---|
-| `frontend/` | 用户恋语客户端（Vue + Electron；含微信通道打包脚本） |
-| `admin/` | 独立管理端 Electron（LianYu Admin） |
+| `frontend/` | 用户予念客户端（Vue + Electron；含微信通道打包脚本） |
+| `admin/` | 独立管理端 Electron（YuNian Admin） |
 | `installer/` | 用户客户端 WPF 离线安装器（.NET 10） |
 | `backend/` | Spring Boot 多模块 |
 | `deploy/` | api-gateway（Nginx TLS）+ ASR 镜像 |
@@ -66,7 +66,7 @@ SCSS 令牌别名定义在 `frontend/src/styles/variables.scss`，运行时 CSS 
 | 层 | 技术 |
 |---|---|
 | 前端 | Vue 3.5 + Vite 6 + Element Plus 2.8 + Pinia 2.2 + Vue Router 4.4 + Vue I18n 9 + Axios 1.7 + @stomp/stompjs 7 + Electron 42（`frontend/package.json` `engines.node` ≥ 22.12） |
-| 安装器 | WPF（.NET 10）把 Electron `win-unpacked` 打成离线单文件 `LianYu-Setup-*.exe`。**不是** electron-builder 默认 NSIS |
+| 安装器 | WPF（.NET 10）把 Electron `win-unpacked` 打成离线单文件 `YuNian-Setup-*.exe`。**不是** electron-builder 默认 NSIS |
 | 管理端 | 独立 `admin/` Electron + 后端 `lianyu-admin`（`/api/admin/v1/**`）。不混进 `-ElectronOnly` |
 | 后端 | Spring Boot 3.5.5 (Servlet/MVC) + Maven 多模块 + JDK 17 |
 | ORM/DB | MyBatis-Plus 3.5.9；MySQL 8.4 + Flyway 10.20.1 |
@@ -123,7 +123,7 @@ lianyu-app → lianyu-admin（admin 只依赖 dao/security/storage/ai，不依�
 
 **打包 / 发版链路（一条龙内部依赖的入仓脚本）**
 - Electron 打包：`frontend/scripts/electron-pack.mjs`（预建 GitHub draft）
-- WPF 离线安装器：`frontend/scripts/prepare-branded-release.mjs` → `installer/build-offline-installer.ps1`，产物 `frontend/release/v<ver>/LianYu-Setup-<ver>.exe`（+ blockmap / `latest.yml`）
+- WPF 离线安装器：`frontend/scripts/prepare-branded-release.mjs` → `installer/build-offline-installer.ps1`，产物 `frontend/release/v<ver>/YuNian-Setup-<ver>.exe`（+ blockmap / `latest.yml`）
 - 发版总入口：`frontend/scripts/electron-release.mjs`（bump → pack → branded → gh upload → draft=false → MinIO → AgentEngine）
 - MinIO 更新包：`scripts/_upload_update_assets.py`；AgentEngine zip：`scripts/_upload_agent_engine.py`
 - 云端部署：`scripts/_cloud_deploy_pull.py`（`git pull` + `docker compose up -d --build asr backend api-gateway`）
@@ -243,18 +243,18 @@ WebClient.Builder b = SsrfPinningClientFactory.webClientBuilder(validatedEndpoin
 
 ### 用户客户端：Electron 程序 + WPF 安装器
 
-装完之后跑的仍是 Electron（`win-unpacked/LianYu.exe`）。换掉的只是安装外壳：
+装完之后跑的仍是 Electron（`win-unpacked/YuNian.exe`）。换掉的只是安装外壳：
 
 1. `frontend/scripts/electron-pack.mjs` 打出 Electron `win-unpacked`（仍调用 electron-builder；`package.json` 的 `win.target=nsis` 只是 builder 配置，**不要**把这一步产出的 NSIS exe 当用户安装包）
-2. `frontend/scripts/prepare-branded-release.mjs` 调用 `installer/build-offline-installer.ps1`，用 WPF 安装器把 payload 打成离线单文件 `LianYu-Setup-*.exe`（含 blockmap / `latest.yml`）
+2. `frontend/scripts/prepare-branded-release.mjs` 调用 `installer/build-offline-installer.ps1`，用 WPF 安装器把 payload 打成离线单文件 `YuNian-Setup-*.exe`（含 blockmap / `latest.yml`）
 3. `npm run electron:release` 上传上述 WPF 安装包到 GitHub Releases + MinIO
 4. 同一步骤会顺带把 **AgentEngine hosted zip** 传到 MinIO `updates/`（`agent-latest.yml`）；zip 缺失时自动跳过，`AGENT_ENGINE_SKIP=1` 强制跳过（细节见 §6 打包链路索引）
 
 本地只打程序、不发版：`cd frontend; npm run electron:build`。只要安装器：先有 `win-unpacked`，再 `installer/build-offline-installer.ps1`（详见 `installer/README.md`）。改安装器 UI/逻辑只动 `installer/`，不改 Electron 业务代码。
 
-**GitHub Release 双 Draft / 只有 blockmap：** electron-builder 并行上传仍可能竞态建多个 draft。入仓侧已在 `electron-pack.mjs` 预建 draft + `publish.releaseType=draft`；随后 WPF 安装包 `--clobber` 覆盖同名 exe；发版脚本尾段强制校验并补传 `LianYu-Setup-*.exe`，缺 exe 则失败而非静默成功。
+**GitHub Release 双 Draft / 只有 blockmap：** electron-builder 并行上传仍可能竞态建多个 draft。入仓侧已在 `electron-pack.mjs` 预建 draft + `publish.releaseType=draft`；随后 WPF 安装包 `--clobber` 覆盖同名 exe；发版脚本尾段强制校验并补传 `YuNian-Setup-*.exe`，缺 exe 则失败而非静默成功。
 
-`-ElectronOnly` 打的是**用户恋语客户端**。下面两条**不在**一条龙里：
+`-ElectronOnly` 打的是**用户予念客户端**。下面两条**不在**一条龙里：
 
 - 管理端 `admin/`（Electron + NSIS，产物 `LianYu-Admin-Setup-*.exe`）
 - 微信通道 zip（`frontend/electron/wechatBridge/pack-wechat-channel.mjs` → `WechatChannel-win-x64-*.zip`，上传用 `scripts/_upload_wechat_channel.py`）

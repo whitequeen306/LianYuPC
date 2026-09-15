@@ -4,7 +4,7 @@
       to="/app"
       class="header-brand"
     >
-      <img :src="APP_LOGO" alt="LianYu" class="header-logo" />
+      <img :src="APP_LOGO" alt="YuNian" class="header-logo" />
     </router-link>
 
     <div class="header-drag-region" aria-hidden="true" />

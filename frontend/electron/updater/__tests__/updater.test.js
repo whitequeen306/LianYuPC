@@ -140,7 +140,7 @@ describe('updater (manual mode)', () => {
   function configureLatest(version = '0.2.260', sha512 = sha512Base64(Buffer.from('abcdefghijkl'))) {
     mocks.apiResponses['https://api.lianyu.test/api/public/files/updates/latest.yml'] = {
       status: 200,
-      data: `version: ${version}\nfiles:\n  - url: LianYu-Setup-${version}.exe\npath: LianYu-Setup-${version}.exe\nsha512: ${sha512}\n`,
+      data: `version: ${version}\nfiles:\n  - url: YuNian-Setup-${version}.exe\npath: YuNian-Setup-${version}.exe\nsha512: ${sha512}\n`,
     }
   }
 
@@ -167,7 +167,7 @@ describe('updater (manual mode)', () => {
   it('check: 有新版本时推送 update-available', async () => {
     mocks.apiResponses['https://api.lianyu.test/api/public/files/updates/latest.yml'] = {
       status: 200,
-      data: 'version: 0.2.260\nfiles:\n  - url: LianYu-Setup-0.2.260.exe\npath: LianYu-Setup-0.2.260.exe\nsha512: abc\n',
+      data: 'version: 0.2.260\nfiles:\n  - url: YuNian-Setup-0.2.260.exe\npath: YuNian-Setup-0.2.260.exe\nsha512: abc\n',
     }
     const { initUpdater } = await loadUpdater()
     initUpdater(mockMainWindow)
@@ -250,7 +250,7 @@ describe('updater (manual mode)', () => {
     expect(requestedRanges.filter(Boolean).length).toBeGreaterThan(1)
     expect(requestedRanges).toContain('bytes=0-1')
     expect(requestedRanges).toContain('bytes=10-11')
-    const finalPath = '/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe'
+    const finalPath = '/tmp/lianyu-test/updates/YuNian-Setup-0.2.260.exe'
     expect(Buffer.concat(mocks.writes.get(finalPath)).toString()).toBe('abcdefghijkl')
     expect(mocks.removedFiles).toContain(`${finalPath}.part.0`)
     expect(mocks.mkdirCalls).toContain('/tmp/lianyu-test/updates')
@@ -291,7 +291,7 @@ describe('updater (manual mode)', () => {
 
     expect(ret.ok).toBe(true)
     expect(requestedRanges).toEqual(['bytes=0-0', ''])
-    const finalPath = '/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe'
+    const finalPath = '/tmp/lianyu-test/updates/YuNian-Setup-0.2.260.exe'
     expect(Buffer.concat(mocks.writes.get(finalPath)).toString()).toBe('abcdefghijkl')
   })
 
@@ -405,8 +405,8 @@ describe('updater (manual mode)', () => {
 
     expect(ret.ok).toBe(false)
     expect(ret.error).toContain('Content-Range mismatch')
-    expect(mocks.removedFiles).toContain('/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe')
-    expect(mocks.removedFiles).toContain('/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe.part.0')
+    expect(mocks.removedFiles).toContain('/tmp/lianyu-test/updates/YuNian-Setup-0.2.260.exe')
+    expect(mocks.removedFiles).toContain('/tmp/lianyu-test/updates/YuNian-Setup-0.2.260.exe.part.0')
   })
 
   it('install: 调用 shell.openPath 启动安装包并退出', async () => {
@@ -416,7 +416,7 @@ describe('updater (manual mode)', () => {
     // 直接调 install，需要先调 download 设置路径
     mocks.apiResponses['https://api.lianyu.test/api/public/files/updates/latest.yml'] = {
       status: 200,
-      data: `version: 0.2.260\nfiles:\n  - url: LianYu-Setup-0.2.260.exe\nsha512: ${sha512Base64(Buffer.alloc(100))}\n`,
+      data: `version: 0.2.260\nfiles:\n  - url: YuNian-Setup-0.2.260.exe\nsha512: ${sha512Base64(Buffer.alloc(100))}\n`,
     }
     // mock net.request for download
     let requestedDownloadUrl = ''
@@ -441,8 +441,8 @@ describe('updater (manual mode)', () => {
       return req
     }
     await mocks.handleRegistry.get('updater:download')()
-    mocks.existingFiles.add('/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe')
-    expect(requestedDownloadUrl).toBe('https://download.lianyu.test/LianYu-Setup-0.2.260.exe')
+    mocks.existingFiles.add('/tmp/lianyu-test/updates/YuNian-Setup-0.2.260.exe')
+    expect(requestedDownloadUrl).toBe('https://download.lianyu.test/YuNian-Setup-0.2.260.exe')
     expect(mocks.webSend).toHaveBeenCalledWith('updater:state', expect.objectContaining({
       state: 'downloading',
       info: expect.objectContaining({ speedBytesPerSec: expect.any(Number), etaSeconds: expect.any(Number) }),
@@ -482,12 +482,12 @@ describe('updater (manual mode)', () => {
       return req
     }
     await mocks.handleRegistry.get('updater:download')()
-    mocks.existingFiles.add('/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe')
+    mocks.existingFiles.add('/tmp/lianyu-test/updates/YuNian-Setup-0.2.260.exe')
 
     const ret = await mocks.handleRegistry.get('updater:openInstallerFolder')()
 
     expect(ret.ok).toBe(true)
-    expect(mocks.shellShowItemInFolder).toHaveBeenCalledWith('/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe')
+    expect(mocks.shellShowItemInFolder).toHaveBeenCalledWith('/tmp/lianyu-test/updates/YuNian-Setup-0.2.260.exe')
     expect(mocks.shellOpenPath).toHaveBeenCalledWith('/tmp/lianyu-test/updates')
     expect(mocks.quitAndInstall).not.toHaveBeenCalled()
     expect(mocks.appQuit).not.toHaveBeenCalled()
@@ -498,7 +498,7 @@ describe('updater (manual mode)', () => {
     initUpdater(mockMainWindow, { quitAndInstall: mocks.quitAndInstall })
     mocks.apiResponses['https://api.lianyu.test/api/public/files/updates/latest.yml'] = {
       status: 200,
-      data: `version: 0.2.260&calc\nfiles:\n  - url: LianYu-Setup-0.2.260.exe\nsha512: ${sha512Base64(Buffer.alloc(100))}\n`,
+      data: `version: 0.2.260&calc\nfiles:\n  - url: YuNian-Setup-0.2.260.exe\nsha512: ${sha512Base64(Buffer.alloc(100))}\n`,
     }
     mocks.netRequestImpl = () => {
       const handlers = { response: null, error: null }
@@ -529,7 +529,7 @@ describe('updater (manual mode)', () => {
     initUpdater(mockMainWindow, { quitAndInstall: mocks.quitAndInstall })
     mocks.apiResponses['https://api.lianyu.test/api/public/files/updates/latest.yml'] = {
       status: 200,
-      data: `version: 01.2.3\nfiles:\n  - url: LianYu-Setup-01.2.3.exe\nsha512: ${sha512Base64(Buffer.alloc(100))}\n`,
+      data: `version: 01.2.3\nfiles:\n  - url: YuNian-Setup-01.2.3.exe\nsha512: ${sha512Base64(Buffer.alloc(100))}\n`,
     }
     mocks.netRequestImpl = () => {
       const handlers = { response: null, error: null }
@@ -560,7 +560,7 @@ describe('updater (manual mode)', () => {
     initUpdater(mockMainWindow)
     mocks.apiResponses['https://api.lianyu.test/api/public/files/updates/latest.yml'] = {
       status: 200,
-      data: `version: 0.2.260\nfiles:\n  - url: https://mirror.lianyu.test/LianYu-Setup-0.2.260.exe\nsha512: ${sha512Base64(Buffer.alloc(100))}\n`,
+      data: `version: 0.2.260\nfiles:\n  - url: https://mirror.lianyu.test/YuNian-Setup-0.2.260.exe\nsha512: ${sha512Base64(Buffer.alloc(100))}\n`,
     }
     let requestedDownloadUrl = ''
     mocks.netRequestImpl = (opts) => {
@@ -585,7 +585,7 @@ describe('updater (manual mode)', () => {
     }
     const ret = await mocks.handleRegistry.get('updater:download')()
     expect(ret.ok).toBe(true)
-    expect(requestedDownloadUrl).toBe('https://mirror.lianyu.test/LianYu-Setup-0.2.260.exe')
+    expect(requestedDownloadUrl).toBe('https://mirror.lianyu.test/YuNian-Setup-0.2.260.exe')
   })
 
   it('check: 无 apiOrigin 时推送 error', async () => {

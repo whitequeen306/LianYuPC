@@ -23,7 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * 消费 {@link OneBotMessageEvent}，把 QQ 消息路由进 LianYu 会话并把角色回复发回 QQ。
+ * 消费 {@link OneBotMessageEvent}，把 QQ 消息路由进予念会话并把角色回复发回 QQ。
  * <p>
  * 单人模式（Phase 1）：私聊按 {@code binding.qq-user-id} 白名单，群聊按 {@code allow-groups} 且需 @本机器人；
  * 全部路由到 {@code binding.lianyu-user-id} 的 {@code binding.conversation-id} 会话，
@@ -102,7 +102,7 @@ public class QqBridgeTurnHandler {
         String provider = b.getProvider() == null ? "" : b.getProvider().trim();
         if (provider.isEmpty() || AiConstants.PLATFORM_PROVIDER.equalsIgnoreCase(provider)) {
             log.warn("QQ bridge skip: text provider not configured (must be user vault, not platform)");
-            sendFallback(ev, isPrivate, "请先在恋语 App 设置中配置文本模型，再使用 QQ 桥接聊天");
+            sendFallback(ev, isPrivate, "请先在予念 App 设置中配置文本模型，再使用 QQ 桥接聊天");
             return;
         }
 

@@ -1,4 +1,4 @@
-# LianYu E2E Tests (Playwright)
+# YuNian E2E Tests (Playwright)
 
 ## Prerequisites
 

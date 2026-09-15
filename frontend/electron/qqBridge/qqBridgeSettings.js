@@ -20,7 +20,7 @@ export const DEFAULTS = {
     reconnectMaxMs: 6000,
   },
   binding: {
-    // 收到 QQ 消息后路由到的云端会话 id（在 LianYu App 内创建会话后填入）
+    // 收到 QQ 消息后路由到的云端会话 id（在予念 App 内创建会话后填入）
     conversationId: '',
     provider: 'platform',
     model: '',

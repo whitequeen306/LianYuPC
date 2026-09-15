@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verification gate for LianYu Electron releases (Tier B hardening)."""
+"""Verification gate for YuNian Electron releases (Tier B hardening)."""
 from __future__ import annotations
 
 import argparse
@@ -92,11 +92,11 @@ def run_npm_test() -> None:
 
 
 def find_installed_exe(install_dir: Path) -> Path | None:
-    for name in ("LianYu.exe", "lianyu.exe"):
+    for name in ("YuNian.exe", "yunian.exe"):
         p = install_dir / name
         if p.is_file():
             return p
-    for p in install_dir.rglob("LianYu.exe"):
+    for p in install_dir.rglob("YuNian.exe"):
         return p
     return None
 
@@ -126,7 +126,7 @@ def smoke_launch(installer: Path, *, timeout_sec: int = 45) -> list[str]:
 
         exe = find_installed_exe(install_dir)
         if not exe:
-            failures.append(f"LianYu.exe not found under {install_dir}")
+            failures.append(f"YuNian.exe not found under {install_dir}")
             return failures
 
         subprocess.Popen([str(exe)], cwd=str(exe.parent))
@@ -142,7 +142,7 @@ def smoke_launch(installer: Path, *, timeout_sec: int = 45) -> list[str]:
             tail = new_log[-1500:] if new_log else "(no log)"
             failures.append(f"startup.log missing expected markers within {timeout_sec}s:\n{tail}")
 
-        subprocess.run(["taskkill", "/F", "/IM", "LianYu.exe"], capture_output=True)
+        subprocess.run(["taskkill", "/F", "/IM", "YuNian.exe"], capture_output=True)
     finally:
         shutil.rmtree(install_dir, ignore_errors=True)
 
@@ -192,13 +192,13 @@ def tamper_test(installer: Path) -> list[str]:
     except subprocess.TimeoutExpired:
         failures.append("tampered app did not exit promptly (integrity check may be broken)")
     finally:
-        subprocess.run(["taskkill", "/F", "/IM", "LianYu.exe"], capture_output=True)
+        subprocess.run(["taskkill", "/F", "/IM", "YuNian.exe"], capture_output=True)
         shutil.rmtree(install_dir, ignore_errors=True)
     return failures
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Verify LianYu Electron release")
+    parser = argparse.ArgumentParser(description="Verify YuNian Electron release")
     parser.add_argument("installer", nargs="?", default="")
     parser.add_argument("--skip-smoke", action="store_true")
     parser.add_argument("--skip-tamper", action="store_true")
@@ -212,7 +212,9 @@ def main() -> None:
         import json
 
         version = json.loads(pkg.read_text(encoding="utf-8"))["version"]
-        installer = FRONTEND / "release" / f"v{version}" / f"LianYu Setup {version}.exe"
+        contract = json.loads((ROOT / "scripts" / "release_assets.json").read_text(encoding="utf-8"))
+        installer_name = contract["installer"]["exeName"].replace("{version}", version)
+        installer = FRONTEND / "release" / f"v{version}" / installer_name
 
     if not installer.is_file():
         raise SystemExit(f"Installer not found: {installer}")

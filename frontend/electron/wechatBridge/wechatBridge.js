@@ -1,5 +1,5 @@
 /**
- * WeChat inbound turns → LianYu conversation; outbound text back to ClawBot.
+ * WeChat inbound turns → YuNian conversation; outbound text back to ClawBot.
  */
 import { extractInboundPayload, pickLatestAssistant, shouldSkipWechatProactive } from './wechatProtocol.js'
 import {
@@ -133,7 +133,7 @@ async function relayTurn(inbound) {
     session.host?.sendText({
       toUserId: inbound.toUserId,
       contextToken: inbound.contextToken,
-      text: '请先在恋语设置中配置自己的文本模型，再使用微信 ClawBot',
+      text: '请先在予念设置中配置自己的文本模型，再使用微信 ClawBot',
     })
     return
   }

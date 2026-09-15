@@ -1,5 +1,5 @@
 """
-LianYu ASR service (sherpa-onnx).
+YuNian ASR service (sherpa-onnx).
 
 - POST /transcribe — multipart audio → SenseVoice offline final { "text": "..." }
 - POST /transcribe/pcm — raw int16 LE PCM @ 16k mono → SenseVoice final
@@ -26,7 +26,7 @@ MAX_BYTES = int(os.environ.get("ASR_MAX_BYTES", str(8 * 1024 * 1024)))
 SAMPLE_RATE = 16000
 STREAM_ENABLED = os.environ.get("ASR_STREAM_ENABLED", "true").lower() not in {"0", "false", "no"}
 
-app = FastAPI(title="LianYu ASR", version="2.0.0")
+app = FastAPI(title="YuNian ASR", version="2.0.0")
 _offline: sherpa_onnx.OfflineRecognizer | None = None
 _online: sherpa_onnx.OnlineRecognizer | None = None
 

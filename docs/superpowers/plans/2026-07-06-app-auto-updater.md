@@ -1027,7 +1027,7 @@ Expected：构建成功，无 import 报错。
 ```bash
 npm run electron:build
 ```
-Expected：产出 `frontend/release/v0.2.255/LianYu Setup 0.2.255.exe`，日志含 `GH_TOKEN not set → local build only`。
+Expected：产出 `frontend/release/v0.2.255/YuNian Setup 0.2.255.exe`，日志含 `GH_TOKEN not set → local build only`。
 
 - [ ] **Step 4: 最终提交（如有改动）**
 

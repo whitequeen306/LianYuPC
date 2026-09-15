@@ -1,4 +1,16 @@
-"""Regenerate app icon: crisp multi-size ICO, transparent corners, squircle mask."""
+"""Regenerate app icon from the YuNian rounded-rect artwork.
+
+源图格式：白底（或透明底）+ 圆角方形立绘（2026-09 更名「予念」后的新图标）。
+管线：四角 flood-fill 去掉外围白边 → 轻微腐蚀+羽化修抗锯齿边 → 裁到内容 bbox
+→ 居中方形 → squircle 圆角遮罩（四角透明，与任务栏/托盘圆角对齐）→
+512px PNG（in-app/启动页/favicon）+ 多尺寸 ICO（任务栏/托盘/exe/安装器）。
+
+输出：
+  frontend/public/logo.png                 in-app 透明圆角 logo
+  frontend/build/icon.ico                  electron-builder / dev 托盘 / 管理端
+  frontend/public/icon.ico                 vite 拷进 dist/ 供打包后托盘/窗口取用
+  installer/LianYu.Installer/Assets/       WPF 安装器标题栏 logo + 程序图标
+"""
 from __future__ import annotations
 
 from collections import deque
@@ -13,15 +25,20 @@ OUT_ICO = ROOT / "build" / "icon.ico"
 # 同时往 public/ 放一份 icon.ico：vite 会把 public/ 全量拷进 dist/，于是打包后的
 # asar 里有 dist/icon.ico 可供运行时托盘/窗口图标取用（build/icon.ico 不会进 asar）。
 OUT_ICO_PUBLIC = ROOT / "public" / "icon.ico"
+INSTALLER_ASSETS = ROOT.parent / "installer" / "LianYu.Installer" / "Assets"
+OUT_INSTALLER_PNG = INSTALLER_ASSETS / "logo.png"
+OUT_INSTALLER_ICO = INSTALLER_ASSETS / "icon.ico"
 
-# 品牌粉 #f4a6b5 —— 与前端 --ly-accent / $color-pink-primary 一致。
-# ICO 贴到不透明粉底：杜绝任务栏/托盘透明像素被当暗色合成成"黑球"。
-BRAND_PINK = (244, 166, 181, 255)
+# 判定「白边」的阈值：源图外围是纯白/近白背景
+WHITE_THRESH = 238
+# squircle 圆角比例（沿用旧管线取值，与任务栏圆角视觉对齐）
+MASK_RADIUS_RATIO = 0.223
+OUTPUT_SIZE = 512
 
 ICO_SIZES = [(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (24, 24), (16, 16)]
 
 
-def squircle_mask(size: int, radius_ratio: float = 0.223) -> Image.Image:
+def squircle_mask(size: int, radius_ratio: float = MASK_RADIUS_RATIO) -> Image.Image:
     """iOS-like continuous corner radius."""
     mask = Image.new("L", (size, size), 0)
     draw = ImageDraw.Draw(mask)
@@ -35,29 +52,32 @@ def squircle_mask(size: int, radius_ratio: float = 0.223) -> Image.Image:
     return mask
 
 
-def is_matte_black(r: int, g: int, b: int, a: int) -> bool:
+def is_white(r: int, g: int, b: int, a: int) -> bool:
     if a == 0:
         return True
-    peak = max(r, g, b)
-    if peak > 48:
-        return False
-    spread = peak - min(r, g, b)
-    return spread <= 18
+    return r >= WHITE_THRESH and g >= WHITE_THRESH and b >= WHITE_THRESH
 
 
-def remove_corner_matte(img: Image.Image) -> Image.Image:
-    """Flood-fill opaque black corner matte from edges only."""
+def flood_white_margins(img: Image.Image) -> Image.Image:
+    """从四条边 flood-fill 近白像素 → 透明（仅清外围白边；图内白色爱心/蝴蝶结
+    被立绘包围、不与边缘连通，不受影响）。"""
     rgba = img.convert("RGBA")
     pixels = rgba.load()
     w, h = rgba.size
-    seeds = [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]
-    seen = set()
+    seen = bytearray(w * h)
     queue: deque[tuple[int, int]] = deque()
 
-    for x, y in seeds:
-        if is_matte_black(*pixels[x, y]):
+    def seed(x: int, y: int) -> None:
+        if is_white(*pixels[x, y]) and not seen[y * w + x]:
+            seen[y * w + x] = 1
             queue.append((x, y))
-            seen.add((x, y))
+
+    for x in range(w):
+        seed(x, 0)
+        seed(x, h - 1)
+    for y in range(h):
+        seed(0, y)
+        seed(w - 1, y)
 
     while queue:
         x, y = queue.popleft()
@@ -65,64 +85,29 @@ def remove_corner_matte(img: Image.Image) -> Image.Image:
         for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
             if nx < 0 or ny < 0 or nx >= w or ny >= h:
                 continue
-            if (nx, ny) in seen:
-                continue
-            if is_matte_black(*pixels[nx, ny]):
-                seen.add((nx, ny))
+            if not seen[ny * w + nx] and is_white(*pixels[nx, ny]):
+                seen[ny * w + nx] = 1
                 queue.append((nx, ny))
 
     return rgba
 
 
-def remove_dark_halo(img: Image.Image) -> Image.Image:
-    """Strip dark semi-transparent fringe without touching solid artwork."""
-    rgba = img.convert("RGBA")
-    pixels = rgba.load()
-    w, h = rgba.size
-    for y in range(h):
-        for x in range(w):
-            r, g, b, a = pixels[x, y]
-            if a == 0:
-                continue
-            if a < 220 and max(r, g, b) <= 42:
-                pixels[x, y] = (0, 0, 0, 0)
-    return rgba
-
-
-def peel_dark_edge(img: Image.Image, passes: int = 5, threshold: int = 72) -> Image.Image:
-    """Remove dark matte ring left from the old square black background."""
-    rgba = img.convert("RGBA")
-    pixels = rgba.load()
-    w, h = rgba.size
-    neighbors = ((-1, 0), (1, 0), (0, -1), (0, 1))
-
-    for _ in range(passes):
-        to_clear: list[tuple[int, int]] = []
-        for y in range(h):
-            for x in range(w):
-                r, g, b, a = pixels[x, y]
-                if a == 0 or max(r, g, b) > threshold:
-                    continue
-                for dx, dy in neighbors:
-                    nx, ny = x + dx, y + dy
-                    if nx < 0 or ny < 0 or nx >= w or ny >= h:
-                        to_clear.append((x, y))
-                        break
-                    if pixels[nx, ny][3] == 0:
-                        to_clear.append((x, y))
-                        break
-        if not to_clear:
-            break
-        for x, y in to_clear:
-            pixels[x, y] = (0, 0, 0, 0)
-    return rgba
-
-
-def apply_mask(img: Image.Image, mask: Image.Image) -> Image.Image:
-    rgba = img.convert("RGBA")
-    out = Image.new("RGBA", rgba.size, (0, 0, 0, 0))
-    out.paste(rgba, (0, 0), mask)
-    return out
+def build_icon(src: Path) -> Image.Image:
+    base = Image.open(src).convert("RGBA")
+    cleaned = flood_white_margins(base)
+    # 白边→立绘交界处的抗锯齿像素偏白：alpha 先腐蚀 1px 再羽化，边缘干净不毛边
+    alpha = cleaned.getchannel("A")
+    alpha = alpha.filter(ImageFilter.MinFilter(3)).filter(ImageFilter.GaussianBlur(1.2))
+    cleaned.putalpha(alpha)
+    bbox = alpha.getbbox()
+    if not bbox:
+        raise SystemExit("flood-fill 后没有剩余内容，请检查源图是否为白边圆角图")
+    cleaned = cleaned.crop(bbox)
+    cleaned = center_square(cleaned)
+    mask = squircle_mask(cleaned.size[0])
+    out = Image.new("RGBA", cleaned.size, (0, 0, 0, 0))
+    out.paste(cleaned, (0, 0), mask)
+    return out.resize((OUTPUT_SIZE, OUTPUT_SIZE), Image.Resampling.LANCZOS)
 
 
 def center_square(img: Image.Image) -> Image.Image:
@@ -134,73 +119,34 @@ def center_square(img: Image.Image) -> Image.Image:
     return img.crop((left, top, left + size, top + size))
 
 
-def build_icon(src: Path) -> Image.Image:
-    # 方形图标：不套 squircle 圆角，但源图是黑底，须去黑边（corner matte / dark halo /
-    # dark edge）否则四角与边缘是纯黑不透明像素——即"黑边"。去 matte 后那些区域变透明，
-    # 方形圆角处自然透出底层，无需 squircle mask。
-    base = center_square(Image.open(src).convert("RGBA"))
-    cleaned = remove_corner_matte(base)
-    cleaned = remove_dark_halo(cleaned)
-    cleaned = peel_dark_edge(cleaned)
-    return cleaned.filter(ImageFilter.UnsharpMask(radius=1.0, percent=120, threshold=3))
-
-
-def build_icon_opaque(src: Path) -> Image.Image:
-    """ICO/exe 用：立绘合成到品牌粉底，再套 squircle 圆角遮罩。
-
-    透明立绘在 32px 任务栏/托盘下，透明四角被 Windows 当暗色合成 → 泥黑圆球，
-    故贴到不透明 #f4a6b5 粉底。但方形粉底四角在任务栏圆角遮罩下会残留"粉色方框"，
-    故再套 squircle mask 把四角变透明，与任务栏圆角对齐，形状干净、无边框残留。
-    in-app 的 logo.png 仍用 build_icon()（透明，侧栏已有粉色渐变框托底）。
-    """
-    cleaned = build_icon(src)
-    bg = Image.new("RGBA", cleaned.size, BRAND_PINK)
-    bg.paste(cleaned, (0, 0), cleaned)  # cleaned 的 alpha 当 mask
-    bg = apply_mask(bg, squircle_mask(bg.size[0]))  # 四角透明，去方形粉边
-    return bg
-
-
 def save_png(img: Image.Image, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     img.save(dest, format="PNG", optimize=False, compress_level=3)
 
 
 def save_ico(img: Image.Image, dest: Path) -> None:
-    master = img
-    if master.size[0] < 256:
-        master = img.resize((256, 256), Image.Resampling.LANCZOS)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    master.save(dest, format="ICO", sizes=ICO_SIZES)
-
-
-def ensure_source() -> None:
-    if SOURCE.is_file():
-        return
-    import subprocess
-    from io import BytesIO
-
-    data = subprocess.check_output(["git", "show", "b78e9f4:frontend/public/logo.png"], cwd=ROOT.parent)
-    SOURCE.parent.mkdir(parents=True, exist_ok=True)
-    Image.open(BytesIO(data)).save(SOURCE, format="PNG")
+    img.save(dest, format="ICO", sizes=ICO_SIZES)
 
 
 def main() -> None:
-    ensure_source()
-    # in-app logo.png：透明立绘（侧栏/顶栏已有粉色托底，干净）
-    transparent = build_icon(SOURCE)
-    # ico（taskbar/tray/exe）：不透明粉底立绘，杜绝黑球
-    opaque = build_icon_opaque(SOURCE)
-    save_png(transparent, OUT_PNG)
-    save_ico(opaque, OUT_ICO)
-    save_ico(opaque, OUT_ICO_PUBLIC)
+    if not SOURCE.is_file():
+        raise SystemExit(f"缺少源图 {SOURCE}（白边圆角方形立绘）")
+    icon = build_icon(SOURCE)
+    save_png(icon, OUT_PNG)
+    save_ico(icon, OUT_ICO)
+    save_ico(icon, OUT_ICO_PUBLIC)
+    save_png(icon, OUT_INSTALLER_PNG)
+    save_ico(icon, OUT_INSTALLER_ICO)
 
     from PIL import IcoImagePlugin
 
     entries = IcoImagePlugin.IcoImageFile(OUT_ICO).ico.entry
     dims = [e.dim for e in entries]
-    print(f"Wrote {OUT_PNG} ({transparent.size[0]}px, transparent)")
-    print(f"Wrote {OUT_ICO} with sizes: {dims} (opaque pink bg)")
-    print(f"Wrote {OUT_ICO_PUBLIC} (opaque pink bg)")
+    print(f"Wrote {OUT_PNG} ({OUTPUT_SIZE}px, transparent squircle)")
+    print(f"Wrote {OUT_ICO} with sizes: {dims}")
+    print(f"Wrote {OUT_ICO_PUBLIC}")
+    print(f"Wrote {OUT_INSTALLER_PNG} / {OUT_INSTALLER_ICO}")
 
 
 if __name__ == "__main__":

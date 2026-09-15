@@ -7,11 +7,11 @@ import {
 
 describe('defaultChatExportFileName', () => {
   it('uses the requested Chinese default', () => {
-    expect(defaultChatExportFileName('甘雨')).toBe('与甘雨的聊天记录--恋语.txt')
+    expect(defaultChatExportFileName('甘雨')).toBe('与甘雨的聊天记录--予念.txt')
   })
 
   it('falls back without a character name', () => {
-    expect(defaultChatExportFileName('')).toBe('聊天记录--恋语.txt')
+    expect(defaultChatExportFileName('')).toBe('聊天记录--予念.txt')
   })
 })
 

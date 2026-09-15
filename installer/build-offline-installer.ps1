@@ -18,7 +18,7 @@ if ([string]::IsNullOrWhiteSpace($ElectronUnpacked)) {
   $ElectronUnpacked = "..\frontend\release\v$Version\win-unpacked"
 }
 if ([string]::IsNullOrWhiteSpace($Output)) {
-  $Output = "..\frontend\release\v$Version\LianYu-Setup-$Version.exe"
+  $Output = "..\frontend\release\v$Version\YuNian-Setup-$Version.exe"
 }
 
 function Resolve-BuildPath([string]$Path) {
@@ -31,14 +31,14 @@ function Resolve-BuildPath([string]$Path) {
 $unpacked = Resolve-BuildPath $ElectronUnpacked
 $outputFull = Resolve-BuildPath $Output
 
-if (!(Test-Path (Join-Path $unpacked 'LianYu.exe'))) {
+if (!(Test-Path (Join-Path $unpacked 'YuNian.exe'))) {
   $temporaryUnpacked = Join-Path $env:TEMP "lianyu-electron-release\v$Version\win-unpacked"
-  if (Test-Path (Join-Path $temporaryUnpacked 'LianYu.exe')) {
+  if (Test-Path (Join-Path $temporaryUnpacked 'YuNian.exe')) {
     $unpacked = $temporaryUnpacked
   }
 }
 
-if (!(Test-Path (Join-Path $unpacked 'LianYu.exe'))) {
+if (!(Test-Path (Join-Path $unpacked 'YuNian.exe'))) {
   throw "Electron win-unpacked not found: $unpacked. Run npm run electron:build first."
 }
 
@@ -62,6 +62,6 @@ New-Item -ItemType Directory -Force -Path $payloadDir,(Split-Path $outputFull) |
 Remove-Item -LiteralPath $payload -Force -ErrorAction SilentlyContinue
 Compress-Archive -Path (Join-Path $unpacked '*') -DestinationPath $payload -CompressionLevel Optimal
 & $dotnet publish (Join-Path $project 'LianYu.Installer.csproj') -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:LianYuVersion=$Version
-$published = Join-Path $project "bin\Release\net10.0-windows\win-x64\publish\LianYu-Setup.exe"
+$published = Join-Path $project "bin\Release\net10.0-windows\win-x64\publish\YuNian-Setup.exe"
 Copy-Item -LiteralPath $published -Destination $outputFull -Force
 Write-Host "Offline installer written: $outputFull"

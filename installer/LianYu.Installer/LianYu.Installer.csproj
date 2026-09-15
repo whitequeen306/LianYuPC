@@ -5,7 +5,7 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>LianYu-Setup</AssemblyName>
+    <AssemblyName>YuNian-Setup</AssemblyName>
     <RootNamespace>LianYu.Installer</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\icon.ico</ApplicationIcon>

@@ -154,7 +154,7 @@ Then run a Playwright script against the local frontend server with mocked Momen
 - [ ] **Step 4: Build the Electron package**
 
 Run: `npm run electron:build`
-Expected: Build succeeds and emits `frontend/release/v0.2.278/LianYu Setup 0.2.278.exe`
+Expected: Build succeeds and emits `frontend/release/v0.2.278/YuNian Setup 0.2.278.exe`
 
 ## Self-review
 

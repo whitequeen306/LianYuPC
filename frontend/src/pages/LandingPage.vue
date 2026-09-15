@@ -10,10 +10,10 @@
     <header class="landing-nav" :class="{ 'landing-nav--scrolled': navScrolled }">
       <div class="landing-nav__inner">
         <button type="button" class="landing-nav__brand" @click="scrollTo('hero')">
-          <img :src="APP_LOGO" alt="恋语 LianYu" class="landing-nav__logo" />
+          <img :src="APP_LOGO" alt="予念 YuNian" class="landing-nav__logo" />
           <span class="landing-nav__wordmark">
-            <span class="landing-nav__title">恋语</span>
-            <span class="landing-nav__sub">LianYu</span>
+            <span class="landing-nav__title">予念</span>
+            <span class="landing-nav__sub">YuNian</span>
           </span>
         </button>
 
@@ -105,7 +105,7 @@
           <p class="section__kicker">Capabilities</p>
           <h2 class="section__title">为「在场感」而生的能力</h2>
           <p class="section__desc">
-            从第一句问候到长期记忆，恋语把陪伴拆成可感知的体验——而不是冰冷的对话框。
+            从第一句问候到长期记忆，予念把陪伴拆成可感知的体验——而不是冰冷的对话框。
           </p>
         </header>
 
@@ -177,7 +177,7 @@
             谢谢你愿意停下来，看一看这里。<br>
             我们做的不是更吵的聊天框，而是当你开口时——<strong>真的有人在听、在等、在回应</strong>的你。
           </blockquote>
-          <p class="thanks__sign">—— 恋语团队</p>
+          <p class="thanks__sign">—— 予念团队</p>
           <div class="thanks__chips">
             <span v-for="chip in thanksChips" :key="chip" class="thanks__chip">{{ chip }}</span>
           </div>
@@ -204,14 +204,14 @@
       <div class="landing-footer__inner">
         <span class="landing-footer__brand">
           <img :src="APP_LOGO" alt="" class="landing-footer__logo" aria-hidden="true" />
-          恋语 LianYu
+          予念 YuNian
         </span>
         <nav class="landing-footer__links">
           <button type="button" @click="scrollTo('features')">功能</button>
           <button type="button" @click="scrollTo('cast')">角色</button>
           <button type="button" @click="scrollTo('thanks')">寄语</button>
         </nav>
-        <p class="landing-footer__copy">© {{ year }} LianYu · 陪伴，而非打扰</p>
+        <p class="landing-footer__copy">© {{ year }} YuNian · 陪伴，而非打扰</p>
       </div>
     </footer>
   </div>

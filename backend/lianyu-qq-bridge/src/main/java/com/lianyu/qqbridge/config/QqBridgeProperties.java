@@ -9,7 +9,7 @@ import java.util.List;
 /**
  * QQ 桥配置（前缀 {@code lianyu.qq-bridge}）。默认 {@code enabled=false}。
  * <p>
- * 单人模式（Phase 1）：{@code binding} 把一个 QQ 号路由到一个已有的 LianYu 用户/会话。
+ * 单人模式（Phase 1）：{@code binding} 把一个 QQ 号路由到一个已有的予念用户/会话。
  * provider 须为用户自有 vault 别名；空或 {@code platform} 时 QQ 聊天不可用。
  */
 @Data
@@ -40,9 +40,9 @@ public class QqBridgeProperties {
     public static class Binding {
         /** 仅处理来自该 QQ 号的私聊消息（单人模式白名单）。为 0 表示不限制来源。 */
         private long qqUserId = 0L;
-        /** 路由到的 LianYu 用户 ID（需已存在并拥有 conversationId 对应会话）。 */
+        /** 路由到的予念用户 ID（需已存在并拥有 conversationId 对应会话）。 */
         private long lianyuUserId = 0L;
-        /** 路由到的 LianYu 会话 ID。 */
+        /** 路由到的予念会话 ID。 */
         private long conversationId = 0L;
         /** AI provider：须为用户自有 vault 别名；空或 platform 时 QQ 聊天不可用。 */
         private String provider = "";

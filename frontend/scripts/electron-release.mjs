@@ -46,7 +46,7 @@ execSync('node scripts/prepare-branded-release.mjs', { stdio: 'inherit' })
 
 const tag = `v${pkg.version}`
 const releaseDir = path.join(root, 'release', tag)
-const installerName = `LianYu-Setup-${pkg.version}.exe`
+const installerName = `YuNian-Setup-${pkg.version}.exe`
 const brandedAssets = [
   path.join(releaseDir, installerName),
   path.join(releaseDir, `${installerName}.blockmap`),

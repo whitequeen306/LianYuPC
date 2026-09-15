@@ -20,7 +20,7 @@ public class ReleaseValidationService {
     }
     public void validateSha512(String sha512) { if (sha512 == null || !SHA512.matcher(sha512.trim()).matches()) throw new IllegalArgumentException("SHA-512 校验值无效"); }
     public void validatePackage(String fileName, long size) {
-        if (fileName == null || !fileName.matches("LianYu-Setup-[0-9A-Za-z.+-]+\\.exe")) throw new IllegalArgumentException("安装包文件名不符合规范");
+        if (fileName == null || !fileName.matches("YuNian-Setup-[0-9A-Za-z.+-]+\\.exe")) throw new IllegalArgumentException("安装包文件名不符合规范");
         if (size <= 0 || size > 1024L * 1024L * 1024L) throw new IllegalArgumentException("安装包大小超出限制");
     }
 }

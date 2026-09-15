@@ -12,7 +12,7 @@ const IMAGE_ONLY_PLACEHOLDERS = [
 
 export function defaultChatExportFileName(characterName) {
   const name = String(characterName || '').trim()
-  const stem = name ? `与${name}的聊天记录--恋语` : '聊天记录--恋语'
+  const stem = name ? `与${name}的聊天记录--予念` : '聊天记录--予念'
   return `${stem}.txt`
 }
 

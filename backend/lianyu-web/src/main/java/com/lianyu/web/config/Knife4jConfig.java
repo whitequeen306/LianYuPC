@@ -13,9 +13,9 @@ public class Knife4jConfig {
     public OpenAPI lianYuOpenAPI() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("LianYu-PC API")
+                        .title("YuNian-PC API")
                         .version("0.1.0")
-                        .description("LianYu PC 端 REST API")
+                        .description("YuNian PC 端 REST API")
                         .license(new License().name("Private").url("https://github.com")));
     }
 }

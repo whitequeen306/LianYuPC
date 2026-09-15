@@ -13,7 +13,7 @@ export function useDesktopCloseHint() {
     unsubscribe = api.onCloseHint(async () => {
       try {
         await ElMessageBox.confirm(
-          '关闭后 LianYu 仍会在系统托盘和桌面快捷图标保留，方便随时开聊。可在设置中关闭此行为，或通过托盘彻底退出。',
+          '关闭后 YuNian 仍会在系统托盘和桌面快捷图标保留，方便随时开聊。可在设置中关闭此行为，或通过托盘彻底退出。',
           '已最小化到后台',
           {
             confirmButtonText: '知道了',

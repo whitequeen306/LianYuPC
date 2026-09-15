@@ -1,5 +1,5 @@
 # Remove all release artifacts except the latest installer.
-# Run after closing LianYu / Electron. Locked app.asar may require reboot (see Mark-RebootDelete).
+# Run after closing YuNian / Electron. Locked app.asar may require reboot (see Mark-RebootDelete).
 
 param(
     [string]$ReleaseRoot = (Join-Path $PSScriptRoot "..\frontend\release"),
@@ -8,7 +8,7 @@ param(
 
 $ErrorActionPreference = "SilentlyContinue"
 $ReleaseRoot = (Resolve-Path $ReleaseRoot).Path
-$keepExe = Join-Path $ReleaseRoot "v$KeepVersion\LianYu Setup $KeepVersion.exe"
+$keepExe = Join-Path $ReleaseRoot "v$KeepVersion\YuNian Setup $KeepVersion.exe"
 
 if (-not (Test-Path $keepExe)) {
     Write-Error "Latest installer not found: $keepExe"
@@ -31,7 +31,7 @@ function Mark-RebootDelete([string]$Path) {
     return $ok
 }
 
-$backup = Join-Path $env:TEMP "LianYu-Setup-$KeepVersion.exe"
+$backup = Join-Path $env:TEMP "YuNian-Setup-$KeepVersion.exe"
 Copy-Item -Force $keepExe $backup
 
 Get-ChildItem $ReleaseRoot -Force | ForEach-Object {

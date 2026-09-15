@@ -112,7 +112,7 @@ Expected: No issues found
 - [ ] **Step 3: Build the package**
 
 Run: `npm run electron:build`
-Expected: `frontend/release/v0.2.283/LianYu Setup 0.2.283.exe`
+Expected: `frontend/release/v0.2.283/YuNian Setup 0.2.283.exe`
 
 ## Self-review
 

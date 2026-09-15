@@ -5,8 +5,8 @@ export const MAX_EXPORT_TEXT_CHARS = 20 * 1024 * 1024
 const ILLEGAL_NAME = /[\\/:*?"<>|\u0000-\u001f]/g
 const WIN_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i
 
-export function sanitizeExportFileName(raw, fallback = '聊天记录--恋语.txt') {
-  const fallbackStem = String(fallback).replace(/\.txt$/i, '') || '聊天记录--恋语'
+export function sanitizeExportFileName(raw, fallback = '聊天记录--予念.txt') {
+  const fallbackStem = String(fallback).replace(/\.txt$/i, '') || '聊天记录--予念'
   let name = String(raw || '').trim().replace(/\\/g, '/')
   if (!name) name = `${fallbackStem}.txt`
   const base = name.split('/').filter((part) => part && part !== '.' && part !== '..').pop()

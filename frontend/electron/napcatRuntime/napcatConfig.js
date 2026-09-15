@@ -148,7 +148,7 @@ export function ensureNapCatConfig({
   }
 
   // ---- napcat.json：反检测（bypass）默认全开 ----
-  // NapCat 下载后反检测默认关闭（bypass.* 全 false），LianYu 自动改为全开 +
+  // NapCat 下载后反检测默认关闭（bypass.* 全 false），予念自动改为全开 +
   // o3HookMode=1，用户无需手动到 WebUI 开启。已存在则仅覆盖 bypass 字段和
   // o3HookMode，其余配置（日志级别等）保留用户改动。
   const napcatCfgPath = path.join(configDir, 'napcat.json')

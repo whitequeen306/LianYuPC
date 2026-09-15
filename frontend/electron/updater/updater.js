@@ -407,7 +407,7 @@ function registerIpc() {
 
       const installerDir = path.join(app.getPath('userData'), 'updates')
       fs.mkdirSync(installerDir, { recursive: true })
-      installerPath = path.join(installerDir, `LianYu-Setup-${info.version}.exe`)
+      installerPath = path.join(installerDir, `YuNian-Setup-${info.version}.exe`)
 
       setState({ state: 'downloading', info: { percent: 0 } })
       const startedAt = Date.now()
@@ -437,7 +437,7 @@ function registerIpc() {
     if (!downloadedInstallerPath || !fs.existsSync(downloadedInstallerPath)) {
       return { ok: false, error: 'no downloaded installer' }
     }
-    const versionMatch = path.basename(downloadedInstallerPath).match(/LianYu-Setup-(.+)\.exe$/)
+    const versionMatch = path.basename(downloadedInstallerPath).match(/YuNian-Setup-(.+)\.exe$/)
     const version = versionMatch ? versionMatch[1] : ''
     if (!isValidInstallerVersion(version)) {
       return { ok: false, error: 'invalid installer version' }
@@ -450,7 +450,7 @@ function registerIpc() {
     if (!downloadedInstallerPath || !fs.existsSync(downloadedInstallerPath)) {
       return { ok: false, error: 'no downloaded installer' }
     }
-    const versionMatch = path.basename(downloadedInstallerPath).match(/LianYu-Setup-(.+)\.exe$/)
+    const versionMatch = path.basename(downloadedInstallerPath).match(/YuNian-Setup-(.+)\.exe$/)
     const version = versionMatch ? versionMatch[1] : ''
     try {
       logger.info('updater', `open installer folder: ${downloadedInstallerPath}`)

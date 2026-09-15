@@ -788,7 +788,7 @@ function attachWindowLogging(win, label) {
     log(`${label} did-fail-load code=${errorCode} desc=${errorDescription} url=${validatedURL}`)
     if (label === 'main' && isMainFrame && !isDev) {
       dialog.showErrorBox(
-        'LianYu',
+        'YuNian',
         `主界面加载失败（${errorCode}）。请卸载后重新安装最新版本。\n${errorDescription || ''}`,
       )
     }
@@ -797,7 +797,7 @@ function attachWindowLogging(win, label) {
     log(`${label} render-process-gone reason=${details?.reason} exitCode=${details?.exitCode}`)
     if (label === 'main' && !isDev) {
       dialog.showErrorBox(
-        'LianYu',
+        'YuNian',
         '界面进程异常退出，请重启应用。若反复出现请重新安装最新版本。',
       )
     }
@@ -899,7 +899,7 @@ function ensureTray() {
   if (tray) return tray
 
   tray = new Tray(resolveTrayIcon())
-  tray.setToolTip('LianYu - 恋语')
+  tray.setToolTip('YuNian - 予念')
   tray.setContextMenu(buildTrayMenu())
   tray.on('double-click', () => {
     showMainWindow()
@@ -910,7 +910,7 @@ function ensureTray() {
 function buildTrayMenu() {
   return Menu.buildFromTemplate([
     {
-      label: '打开 LianYu',
+      label: '打开 YuNian',
       click: () => showMainWindow(),
     },
     {
@@ -1032,7 +1032,7 @@ function showLauncherMessageNotification(payload = {}) {
   const name = String(payload.characterName || '她').trim() || '她'
   const body = `${name}给你发消息了哦`
   const notification = new Notification({
-    title: '恋语',
+    title: '予念',
     body,
     silent: false,
   })
@@ -1046,7 +1046,7 @@ function showLauncherMessageNotification(payload = {}) {
 }
 
 /**
- * 注册 Windows toast AUMID 到当前用户注册表，使通知中心/弹窗能正确显示"恋语"名称与 exe 图标。
+ * 注册 Windows toast AUMID 到当前用户注册表，使通知中心/弹窗能正确显示"予念"名称与 exe 图标。
  * 幂等：每次启动覆盖写一次，失败只 warn 不阻断。需在 app ready 后调用（要 exe 路径）。
  */
 function ensureToastAppRegistration() {
@@ -1054,7 +1054,7 @@ function ensureToastAppRegistration() {
   try {
     const exePath = app.getPath('exe')
     const regBase = `HKCU\\Software\\Classes\\AppUserModelId\\${aumid}`
-    execFileSync('reg', ['add', regBase, '/v', 'DisplayName', '/t', 'REG_SZ', '/d', '恋语', '/f'], { windowsHide: true, stdio: 'ignore' })
+    execFileSync('reg', ['add', regBase, '/v', 'DisplayName', '/t', 'REG_SZ', '/d', '予念', '/f'], { windowsHide: true, stdio: 'ignore' })
     execFileSync('reg', ['add', regBase, '/v', 'IconUri', '/t', 'REG_SZ', '/d', exePath, '/f'], { windowsHide: true, stdio: 'ignore' })
   } catch (err) {
     console.warn('ToastAUMID reg failed', err?.message || err)
@@ -1473,7 +1473,7 @@ function createMainWindow() {
     height: 800,
     minWidth: 960,
     minHeight: 640,
-    title: 'LianYu - 恋语',
+    title: 'YuNian - 予念',
     icon: resolveDistPath('icon.ico'),
     backgroundColor: resolveWindowBackgroundColor(appearanceMode),
     ...buildCaptionWindowOptions(),
@@ -1871,7 +1871,7 @@ function createQuickChatShell() {
     height: 560,
     minWidth: 320,
     minHeight: 420,
-    title: 'LianYu 聊天',
+    title: 'YuNian 聊天',
     icon: resolveDistPath('icon.ico'),
     backgroundColor: resolveWindowBackgroundColor(appearance),
     ...buildQuickChatWindowOptions(),
@@ -3211,7 +3211,7 @@ process.on('unhandledRejection', (reason) => {
 
 app.whenReady().then(() => {
   if (process.env.LIANYU_MCP_STDIO_CHILD === '1') {
-    log('refusing nested LianYu process spawned as MCP child')
+    log('refusing nested YuNian process spawned as MCP child')
     app.exit(1)
     return
   }
@@ -3230,7 +3230,7 @@ app.whenReady().then(() => {
   startupMainProfiler.mark('ensureToastAppRegistration:done')
   if (!runtimeSecretsConfigured()) {
     dialog.showErrorBox(
-      'LianYu',
+      'YuNian',
       '客户端配置读取失败，请卸载后重新安装最新版本。若仍失败请联系支持。',
     )
   }

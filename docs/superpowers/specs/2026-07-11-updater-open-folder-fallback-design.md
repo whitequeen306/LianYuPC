@@ -25,7 +25,7 @@ Adopt a manual-install fallback as the default post-download action.
 - The primary button changes from `打开安装向导` to `打开安装包目录`.
 - Clicking the button opens the installer folder in Explorer and highlights the downloaded installer if possible.
 - The app stays open; it does not force-quit itself.
-- The dialog copy explicitly tells the user to double-click the downloaded `LianYu-Setup-x.x.x.exe` file to complete installation.
+- The dialog copy explicitly tells the user to double-click the downloaded `YuNian-Setup-x.x.x.exe` file to complete installation.
 
 ### Target folder
 

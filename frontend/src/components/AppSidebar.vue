@@ -2,7 +2,7 @@
   <aside class="app-sidebar" :class="{ collapsed: settingsStore.sidebarCollapsed }">
     <div class="sidebar-brand" @click="$router.push('/app')">
       <div class="brand-icon">
-        <img :src="APP_LOGO" alt="LianYu" class="brand-logo" />
+        <img :src="APP_LOGO" alt="YuNian" class="brand-logo" />
       </div>
     </div>
 

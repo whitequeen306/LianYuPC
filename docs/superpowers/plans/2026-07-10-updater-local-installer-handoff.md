@@ -18,11 +18,11 @@
 
 - [ ] **Step 1: Add a failing test for staging into userData updates**
 
-Add assertions that the downloaded installer path is `/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe` rather than the temp subdirectory path.
+Add assertions that the downloaded installer path is `/tmp/lianyu-test/updates/YuNian-Setup-0.2.260.exe` rather than the temp subdirectory path.
 
 - [ ] **Step 2: Add a failing test for direct executable launch**
 
-Add assertions that install uses `spawn('/tmp/lianyu-test/updates/LianYu-Setup-0.2.260.exe', [], { detached: true, shell: false, stdio: 'ignore', windowsHide: false })` rather than `cmd.exe /c start`.
+Add assertions that install uses `spawn('/tmp/lianyu-test/updates/YuNian-Setup-0.2.260.exe', [], { detached: true, shell: false, stdio: 'ignore', windowsHide: false })` rather than `cmd.exe /c start`.
 
 - [ ] **Step 3: Run the focused test file and verify it fails for the expected reason**
 

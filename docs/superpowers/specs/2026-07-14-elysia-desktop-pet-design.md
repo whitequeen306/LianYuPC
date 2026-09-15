@@ -2,7 +2,7 @@
 
 ## Goal
 
-Add a new desktop pet for Elysia to the existing LianYu desktop-pet system.
+Add a new desktop pet for Elysia to the existing YuNian desktop-pet system.
 
 This work covers two deliverables:
 

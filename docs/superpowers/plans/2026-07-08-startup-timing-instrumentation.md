@@ -139,7 +139,7 @@ app.whenReady().then(() => {
 
   if (!runtimeSecretsConfigured()) {
     dialog.showErrorBox(
-      'LianYu',
+      'YuNian',
       '客户端配置读取失败，请卸载后重新安装最新版本。若仍失败请联系支持。',
     )
   }

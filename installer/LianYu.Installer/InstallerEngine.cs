@@ -40,7 +40,7 @@ public sealed class InstallerEngine
             CopyDirectory(stageDirectory, options.InstallDirectory, progress, cancellationToken);
             ConfigureShellIntegration(options);
             WriteUninstallEntry(options);
-            progress.Report(new InstallProgress(100, "安装完成", "LianYu.exe", 1, 1, TimeSpan.Zero));
+            progress.Report(new InstallProgress(100, "安装完成", "YuNian.exe", 1, 1, TimeSpan.Zero));
         }
         catch
         {
@@ -59,13 +59,13 @@ public sealed class InstallerEngine
     }
 
     public static string GetDefaultInstallDirectory(bool allUsers) => allUsers
-        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "LianYu")
-        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "LianYu");
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "YuNian")
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "YuNian");
 
     public static void Launch(string installDirectory)
     {
-        var exe = Path.Combine(installDirectory, "LianYu.exe");
-        if (!File.Exists(exe)) throw new FileNotFoundException("安装完成，但没有找到 LianYu.exe。", exe);
+        var exe = Path.Combine(installDirectory, "YuNian.exe");
+        if (!File.Exists(exe)) throw new FileNotFoundException("安装完成，但没有找到 YuNian.exe。", exe);
         Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true, WorkingDirectory = installDirectory });
     }
 
@@ -86,7 +86,7 @@ public sealed class InstallerEngine
     {
         var assembly = Assembly.GetExecutingAssembly();
         await using var payload = assembly.GetManifestResourceStream(PayloadResource)
-            ?? throw new InvalidOperationException("安装包未包含 LianYu 离线程序资源。请先运行 branded-installer 构建脚本。");
+            ?? throw new InvalidOperationException("安装包未包含 予念离线程序资源。请先运行 branded-installer 构建脚本。");
         using var archive = new ZipArchive(payload, ZipArchiveMode.Read);
         var total = archive.Entries.Sum(entry => entry.Length);
         long completed = 0;
@@ -141,30 +141,30 @@ public sealed class InstallerEngine
 
     private static void ConfigureShellIntegration(InstallOptions options)
     {
-        var exe = Path.Combine(options.InstallDirectory, "LianYu.exe");
+        var exe = Path.Combine(options.InstallDirectory, "YuNian.exe");
         if (options.DesktopShortcut)
-            CreateShortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "LianYu.lnk"), exe);
+            CreateShortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "YuNian.lnk"), exe);
         if (options.StartMenuShortcut)
         {
-            var menu = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "LianYu");
+            var menu = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "YuNian");
             Directory.CreateDirectory(menu);
-            CreateShortcut(Path.Combine(menu, "LianYu.lnk"), exe);
+            CreateShortcut(Path.Combine(menu, "YuNian.lnk"), exe);
         }
 
         using var runKey = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
-        if (options.AutoStart) runKey.SetValue("LianYu", $"\"{exe}\"");
-        else runKey.DeleteValue("LianYu", false);
+        if (options.AutoStart) runKey.SetValue("YuNian", $"\"{exe}\"");
+        else runKey.DeleteValue("YuNian", false);
     }
 
     private void WriteUninstallEntry(InstallOptions options)
     {
         var root = options.AllUsers ? Registry.LocalMachine : Registry.CurrentUser;
-        using var key = root.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\LianYu");
-        key.SetValue("DisplayName", "LianYu");
+        using var key = root.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\YuNian");
+        key.SetValue("DisplayName", "YuNian");
         key.SetValue("DisplayVersion", _version);
-        key.SetValue("Publisher", "LianYu");
+        key.SetValue("Publisher", "YuNian");
         key.SetValue("InstallLocation", options.InstallDirectory);
-        key.SetValue("DisplayIcon", Path.Combine(options.InstallDirectory, "LianYu.exe"));
+        key.SetValue("DisplayIcon", Path.Combine(options.InstallDirectory, "YuNian.exe"));
         key.SetValue("NoModify", 1, RegistryValueKind.DWord);
         key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
     }
@@ -184,7 +184,7 @@ public sealed class InstallerEngine
 
     private static void StopRunningApplication()
     {
-        foreach (var process in Process.GetProcessesByName("LianYu"))
+        foreach (var process in Process.GetProcessesByName("YuNian"))
         {
             try { process.Kill(true); process.WaitForExit(4000); } catch { }
         }

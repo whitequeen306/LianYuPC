@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Red-team unpack + secret scan for LianYu Electron NSIS installer."""
+"""Red-team unpack + secret scan for YuNian Electron NSIS installer."""
 from __future__ import annotations
 
 import argparse
@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_INSTALLER = ROOT / "frontend" / "release" / "v0.2.119" / "LianYu Setup 0.2.119.exe"
+DEFAULT_INSTALLER = ROOT / "frontend" / "release" / "v0.2.119" / "YuNian Setup 0.2.119.exe"
 AUDIT_ROOT = ROOT / "release_audit"
 
 SECRET_PATTERNS = [
@@ -514,7 +514,7 @@ def parse_version_from_installer(installer: Path) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Unpack and audit LianYu installer")
+    parser = argparse.ArgumentParser(description="Unpack and audit YuNian installer")
     parser.add_argument("installer", nargs="?", default=str(DEFAULT_INSTALLER))
     parser.add_argument("--version", default="")
     parser.add_argument(

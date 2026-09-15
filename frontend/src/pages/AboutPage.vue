@@ -13,9 +13,9 @@
     <section class="section stagger-item">
       <div class="glass about-card">
         <div class="about-brand">
-          <img :src="APP_LOGO" alt="LianYu" class="about-logo" @click="handleLogoClick" />
+          <img :src="APP_LOGO" alt="YuNian" class="about-logo" @click="handleLogoClick" />
           <div class="about-brand__text">
-            <div class="about-brand__name">恋语 <span class="about-brand__en">LianYu</span></div>
+            <div class="about-brand__name">予念 <span class="about-brand__en">YuNian</span></div>
           </div>
         </div>
         <div class="about-info">
@@ -173,7 +173,7 @@
         </div>
         <div class="dev-group">
           <h3 class="dev-role">其它鸣谢</h3>
-          <p class="dev-item dev-thanks">恋语安卓端全体开发团队以及各位用户</p>
+          <p class="dev-item dev-thanks">予念安卓端全体开发团队以及各位用户</p>
         </div>
       </div>
     </section>
@@ -342,7 +342,7 @@ onMounted(() => {
   }
 })
 
-// 彩蛋：连续点击恋语图标 10 次跳转爱发电赞助页。
+// 彩蛋：连续点击予念图标 10 次跳转爱发电赞助页。
 // 计数窗口 2s，中断则重置，避免误触。
 const SPONSOR_URL = 'https://ifdian.net/a/Lianyuchat'
 const logoClickCount = ref(0)

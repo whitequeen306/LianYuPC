@@ -86,7 +86,7 @@ def main() -> int:
     tts_payload = {
         "model": reg["model"],
         "input": {
-            "text": "你好，这是恋语语音测试。",
+            "text": "你好，这是予念语音测试。",
             "voice": reg["voices"]["raiden"],
             "language_type": "Chinese",
         },

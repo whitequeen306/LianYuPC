@@ -2,7 +2,7 @@
 
 ## Goal
 
-Move the desktop client's automatic update path off the GitHub Releases proxy and onto LianYu's own public MinIO file source, while replacing the inline About-page updater status with a global update dialog.
+Move the desktop client's automatic update path off the GitHub Releases proxy and onto YuNian's own public MinIO file source, while replacing the inline About-page updater status with a global update dialog.
 
 ## Decisions
 
@@ -10,8 +10,8 @@ Move the desktop client's automatic update path off the GitHub Releases proxy an
 2. GitHub Releases remains as a backup publishing channel only.
 3. Update assets are served from existing public file infrastructure:
    - `/api/public/files/updates/latest.yml`
-   - `/api/public/files/updates/LianYu-Setup-x.x.x.exe`
-   - `/api/public/files/updates/LianYu-Setup-x.x.x.exe.blockmap`
+   - `/api/public/files/updates/YuNian-Setup-x.x.x.exe`
+   - `/api/public/files/updates/YuNian-Setup-x.x.x.exe.blockmap`
 4. The public file allowlist will add only `updates/latest.yml`, `updates/*.exe`, and `updates/*.exe.blockmap`; it will not allow arbitrary static files.
 5. The global update dialog owns all visible updater states: update found, downloading, ready to install, installing, and error.
 6. About page keeps only a compact manual “检查更新” entry.

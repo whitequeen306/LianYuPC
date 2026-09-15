@@ -46,8 +46,8 @@
   },
   "build": {
     "appId": "com.lianyu.pc",
-    "productName": "LianYu",
-    "artifactName": "LianYu-Setup-${version}.${ext}",
+    "productName": "YuNian",
+    "artifactName": "YuNian-Setup-${version}.${ext}",
     "directories": {
       "output": "release"
     },
@@ -94,8 +94,8 @@
       "multiLanguageInstaller": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "LianYu",
-      "uninstallDisplayName": "LianYu",
+      "shortcutName": "YuNian",
+      "uninstallDisplayName": "YuNian",
       "deleteAppDataOnUninstall": false,
       "runAfterFinish": true
     }

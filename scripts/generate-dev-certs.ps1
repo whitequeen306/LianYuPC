@@ -23,7 +23,7 @@ $cert = Join-Path $certsDir "server.crt"
     -keyout $key `
     -out $cert `
     -days 365 `
-    -subj "/CN=localhost/O=LianYu-PC/C=CN" `
+    -subj "/CN=localhost/O=YuNian-PC/C=CN" `
     -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
 
 Write-Host "Created:"

@@ -53,37 +53,37 @@ class UpdateAssetRetentionTest(unittest.TestCase):
         module = load_module()
         objects = [
             "updates/latest.yml",
-            "updates/LianYu-Setup-0.2.258.exe",
-            "updates/LianYu-Setup-0.2.258.exe.blockmap",
-            "updates/LianYu-Setup-0.2.259.exe",
-            "updates/LianYu-Setup-0.2.259.exe.blockmap",
-            "updates/LianYu-Setup-0.2.260.exe",
-            "updates/LianYu-Setup-0.2.260.exe.blockmap",
-            "updates/LianYu-Setup-0.2.261.exe",
-            "updates/LianYu-Setup-0.2.261.exe.blockmap",
+            "updates/YuNian-Setup-0.2.258.exe",
+            "updates/YuNian-Setup-0.2.258.exe.blockmap",
+            "updates/YuNian-Setup-0.2.259.exe",
+            "updates/YuNian-Setup-0.2.259.exe.blockmap",
+            "updates/YuNian-Setup-0.2.260.exe",
+            "updates/YuNian-Setup-0.2.260.exe.blockmap",
+            "updates/YuNian-Setup-0.2.261.exe",
+            "updates/YuNian-Setup-0.2.261.exe.blockmap",
             "updates/readme.txt",
         ]
 
         self.assertEqual(
             module.stale_update_objects(objects, keep=3),
             [
-                "updates/LianYu-Setup-0.2.258.exe",
-                "updates/LianYu-Setup-0.2.258.exe.blockmap",
+                "updates/YuNian-Setup-0.2.258.exe",
+                "updates/YuNian-Setup-0.2.258.exe.blockmap",
             ],
         )
 
     def test_stale_update_objects_handles_multi_digit_versions_semantically(self):
         module = load_module()
         objects = [
-            "updates/LianYu-Setup-0.2.9.exe",
-            "updates/LianYu-Setup-0.2.10.exe",
-            "updates/LianYu-Setup-0.2.11.exe",
-            "updates/LianYu-Setup-0.2.12.exe",
+            "updates/YuNian-Setup-0.2.9.exe",
+            "updates/YuNian-Setup-0.2.10.exe",
+            "updates/YuNian-Setup-0.2.11.exe",
+            "updates/YuNian-Setup-0.2.12.exe",
         ]
 
         self.assertEqual(
             module.stale_update_objects(objects, keep=3),
-            ["updates/LianYu-Setup-0.2.9.exe"],
+            ["updates/YuNian-Setup-0.2.9.exe"],
         )
 
     def test_cleanup_old_update_assets_removes_only_stale_install_assets(self):
@@ -92,11 +92,11 @@ class UpdateAssetRetentionTest(unittest.TestCase):
             "\n".join(
                 [
                     "local/lianyu/updates/latest.yml",
-                    "local/lianyu/updates/LianYu-Setup-0.2.258.exe",
-                    "local/lianyu/updates/LianYu-Setup-0.2.258.exe.blockmap",
-                    "local/lianyu/updates/LianYu-Setup-0.2.259.exe",
-                    "local/lianyu/updates/LianYu-Setup-0.2.260.exe",
-                    "local/lianyu/updates/LianYu-Setup-0.2.261.exe",
+                    "local/lianyu/updates/YuNian-Setup-0.2.258.exe",
+                    "local/lianyu/updates/YuNian-Setup-0.2.258.exe.blockmap",
+                    "local/lianyu/updates/YuNian-Setup-0.2.259.exe",
+                    "local/lianyu/updates/YuNian-Setup-0.2.260.exe",
+                    "local/lianyu/updates/YuNian-Setup-0.2.261.exe",
                     "local/lianyu/updates/readme.txt",
                 ]
             )
@@ -106,8 +106,8 @@ class UpdateAssetRetentionTest(unittest.TestCase):
 
         remove_commands = [cmd for cmd in client.commands if "mc rm" in cmd]
         self.assertEqual(len(remove_commands), 2)
-        self.assertIn("local/lianyu/updates/LianYu-Setup-0.2.258.exe", remove_commands[0])
-        self.assertIn("local/lianyu/updates/LianYu-Setup-0.2.258.exe.blockmap", remove_commands[1])
+        self.assertIn("local/lianyu/updates/YuNian-Setup-0.2.258.exe", remove_commands[0])
+        self.assertIn("local/lianyu/updates/YuNian-Setup-0.2.258.exe.blockmap", remove_commands[1])
         self.assertFalse(any("latest.yml" in cmd for cmd in remove_commands))
         self.assertFalse(any("readme.txt" in cmd for cmd in remove_commands))
 

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Add a new desktop pet for Tokisaki Kurumi to the existing LianYu desktop-pet system.
+Add a new desktop pet for Tokisaki Kurumi to the existing YuNian desktop-pet system.
 
 This work covers four deliverables:
 

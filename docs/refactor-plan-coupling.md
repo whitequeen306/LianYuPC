@@ -27,7 +27,7 @@
 ### A. 隐式契约收敛（P0）
 
 #### ☐ 1. 更新资产命名契约 5 处收敛为单一常量源
-- **现状**：`LianYu-Setup-x.y.z.exe(.blockmap)` / `WechatChannel-*.zip` / `AgentEngine-*.zip` 的正则与构造散布 5 处：`frontend/scripts/prepare-branded-release.mjs:12`、`local/ship-release.ps1:127-141`、`scripts/_upload_update_assets.py:25,190-198`、`deploy/api-gateway/nginx.conf:115,136,157`、`frontend/electron/wechatBridge/wechatChannelRelease.js:10`。任一处改格式会**静默破坏更新链**。
+- **现状**：`YuNian-Setup-x.y.z.exe(.blockmap)` / `WechatChannel-*.zip` / `AgentEngine-*.zip` 的正则与构造散布 5 处：`frontend/scripts/prepare-branded-release.mjs:12`、`local/ship-release.ps1:127-141`、`scripts/_upload_update_assets.py:25,190-198`、`deploy/api-gateway/nginx.conf:115,136,157`、`frontend/electron/wechatBridge/wechatChannelRelease.js:10`。任一处改格式会**静默破坏更新链**。
 - **方案**：新增单一常量模块（如 `scripts/release_assets.py` + `frontend/scripts/release-assets.mjs` 共用一个 JSON 定义），nginx 白名单片段由脚本生成或以注释锚定同一来源。
 - **风险**：低（纯常量归一）。验证：本地跑一次 `npm run electron:build` + `_upload_update_assets.py --dry-run`；核对生成的 exe/blockmap/latest.yml 命名不变。
 
@@ -127,7 +127,7 @@
 - `ship-release.ps1:139-141` blockmap「空格→连字符」修复补丁（electron-builder 历史行为差异的技术债）。
 
 #### ☐ 19. nginx 按文件名正则白名单的长期演进
-`LianYu-Setup-*.exe` / `AgentEngine-*.zip` / `WechatChannel-*.zip` 三组正则使「新增一种更新资产类型」必须改 nginx。与第 1 项合并治理：常量归一后，评估改为目录级白名单（`/updates/` 整目录放行）。
+`YuNian-Setup-*.exe` / `AgentEngine-*.zip` / `WechatChannel-*.zip` 三组正则使「新增一种更新资产类型」必须改 nginx。与第 1 项合并治理：常量归一后，评估改为目录级白名单（`/updates/` 整目录放行）。
 
 ---
 

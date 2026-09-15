@@ -1,5 +1,5 @@
 param(
-  [string]$WindowTitle = 'LianYu',
+  [string]$WindowTitle = 'YuNian',
   [string]$OutPath,
   [int]$WaitMs = 28000
 )
@@ -12,7 +12,7 @@ using System;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Text;
-public static class LianYuWinCap {
+public static class YuNianWinCap {
   public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
   [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
@@ -51,10 +51,10 @@ public static class LianYuWinCap {
 "@
 
 Start-Sleep -Milliseconds $WaitMs
-$hwnd = [LianYuWinCap]::FindByTitlePart($WindowTitle)
+$hwnd = [YuNianWinCap]::FindByTitlePart($WindowTitle)
 if ($hwnd -eq [IntPtr]::Zero) {
   Write-Error "Window not found containing title: $WindowTitle"
   exit 2
 }
-[LianYuWinCap]::Capture($hwnd, $OutPath)
+[YuNianWinCap]::Capture($hwnd, $OutPath)
 Write-Output "Captured: $OutPath"

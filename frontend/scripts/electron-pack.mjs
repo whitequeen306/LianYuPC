@@ -153,7 +153,7 @@ const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
 function resolveReleaseOutDir(version) {
   const primary = path.join('release', `v${version}`)
   const primaryFull = path.join(root, primary)
-  const installer = path.join(primaryFull, `LianYu-Setup-${version}.exe`)
+  const installer = path.join(primaryFull, `YuNian-Setup-${version}.exe`)
   if (fs.existsSync(installer)) return primary
 
   const winUnpacked = path.join(primaryFull, 'win-unpacked')
@@ -176,18 +176,18 @@ const builderOutDir = process.platform === 'win32'
   : outDirFull
 fs.mkdirSync(builderOutDir, { recursive: true })
 
-function killLianYuProcesses() {
+function killYuNianProcesses() {
   if (process.platform !== 'win32') return
   try {
-    execSync('taskkill /F /IM LianYu.exe /T', { stdio: 'ignore' })
-    console.log('Stopped running LianYu.exe before packaging')
+    execSync('taskkill /F /IM YuNian.exe /T', { stdio: 'ignore' })
+    console.log('Stopped running YuNian.exe before packaging')
   } catch {
     /* not running */
   }
 }
 
 function removePartialReleaseArtifacts() {
-  const installerName = `LianYu-Setup-${pkg.version}.exe`
+  const installerName = `YuNian-Setup-${pkg.version}.exe`
   if (fs.existsSync(path.join(outDirFull, installerName)) || fs.existsSync(path.join(builderOutDir, installerName))) {
     return
   }
@@ -210,8 +210,8 @@ function removePartialReleaseArtifacts() {
 function copyBuilderArtifactsToRepo() {
   if (builderOutDir === outDirFull) return
   const names = [
-    `LianYu-Setup-${pkg.version}.exe`,
-    `LianYu-Setup-${pkg.version}.exe.blockmap`,
+    `YuNian-Setup-${pkg.version}.exe`,
+    `YuNian-Setup-${pkg.version}.exe.blockmap`,
     'latest.yml',
   ]
   fs.mkdirSync(outDirFull, { recursive: true })
@@ -246,7 +246,7 @@ applyPlainMainPackaging()
 console.log('\n--- Launcher smoke test (pre-pack) ---')
 execSync('node scripts/smoke-launcher.mjs', { stdio: 'inherit', cwd: root })
 
-killLianYuProcesses()
+killYuNianProcesses()
 removePartialReleaseArtifacts()
 
 const outputArg = `--config.directories.output=${builderOutDir.replace(/\\/g, '/')}`
@@ -266,7 +266,7 @@ if (process.env.GH_TOKEN) {
     console.log(`GitHub release ${tag} already exists — reuse`)
   } catch {
     execSync(
-      `gh release create ${tag} --draft --title "${tag}" --notes "LianYu PC ${tag}"`,
+      `gh release create ${tag} --draft --title "${tag}" --notes "YuNian PC ${tag}"`,
       { stdio: 'inherit', env: process.env },
     )
     console.log(`Pre-created draft release ${tag} (avoids dual-draft race)`)
@@ -279,7 +279,7 @@ electronBuilderEnv.NODE_OPTIONS = `${process.env.NODE_OPTIONS || ''} --use-syste
 const builderCmd = `npx electron-builder --win ${outputArg} ${publishArg}`
 const builderAttempts = 3
 for (let attempt = 1; attempt <= builderAttempts; attempt++) {
-  killLianYuProcesses()
+  killYuNianProcesses()
   removePartialReleaseArtifacts()
   try {
     execSync(builderCmd, {
@@ -295,5 +295,5 @@ for (let attempt = 1; attempt <= builderAttempts; attempt++) {
 }
 copyBuilderArtifactsToRepo()
 
-console.log(`\nInstaller: ${outDir}/LianYu-Setup-${pkg.version}.exe`)
+console.log(`\nInstaller: ${outDir}/YuNian-Setup-${pkg.version}.exe`)
 console.log(`API Origin (packed in runtime-secrets.bin): ${packApiOrigin}`)

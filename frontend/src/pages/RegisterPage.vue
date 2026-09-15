@@ -13,10 +13,10 @@
         <div class="art-ring" aria-hidden="true" />
         <div class="art-content">
           <div class="art-icon">
-            <img :src="APP_LOGO" alt="LianYu" class="art-logo" />
+            <img :src="APP_LOGO" alt="YuNian" class="art-logo" />
           </div>
           <h1 class="art-title">初次相遇</h1>
-          <p class="art-subtitle">创建你的 LianYu 账号，开启你的故事</p>
+          <p class="art-subtitle">创建你的 YuNian 账号，开启你的故事</p>
           <div class="art-decorations">
             <span class="deco-dot" />
             <span class="deco-line" />

@@ -12,7 +12,7 @@ describe('installer NSIS hooks', () => {
     const ifSilentIndex = customInit.indexOf('IfSilent 0 doneForceVisibleInstall')
     const setSilentIndex = customInit.indexOf('SetSilent normal')
     const labelIndex = customInit.indexOf('doneForceVisibleInstall:')
-    const taskkillIndex = customInit.indexOf('taskkill /F /IM "LianYu.exe" /T')
+    const taskkillIndex = customInit.indexOf('taskkill /F /IM "YuNian.exe" /T')
     expect(ifSilentIndex).toBeGreaterThan(-1)
     expect(setSilentIndex).toBeGreaterThan(ifSilentIndex)
     expect(labelIndex).toBeGreaterThan(setSilentIndex)

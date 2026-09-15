@@ -1,5 +1,5 @@
 appId: com.lianyu.admin
-productName: LianYu Admin
+productName: YuNian Admin
 artifactName: LianYu-Admin-Setup-${version}.${ext}
 directories:
   output: release
@@ -18,6 +18,6 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: LianYu Admin
+  shortcutName: YuNian Admin
   installerIcon: ../frontend/build/icon.ico
   uninstallerIcon: ../frontend/build/icon.ico

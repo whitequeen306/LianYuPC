@@ -1,5 +1,5 @@
 ---
-name: LianYu Pink Romance
+name: YuNian Pink Romance
 description: >
   Dark, romantic, glassmorphic companion-app aesthetic anchored by rose-pink #f4a6b5
   on warm-plum blacks, with serif/syne typography on auth & landing surfaces, soft
@@ -197,7 +197,7 @@ components:
 
 ## Overview
 
-**LianYu "Pink Romance" (粉恋)** — a dark, romantic, glassmorphic companion-app
+**YuNian "Pink Romance" (粉恋)** — a dark, romantic, glassmorphic companion-app
 aesthetic. The UI evokes an intimate editorial space: warm-plum blacks paired
 with a single soft rose-pink accent `#f4a6b5`, glass surfaces with
 `backdrop-filter: blur`, ambient floating orbs, and serif display type for
@@ -248,7 +248,7 @@ Two-typeface system for elegance; body falls back to system Chinese sans.
   messages, Element Plus components. Base size 15px (0.9375rem), line-height 1.6.
 - **Display serif** (`Noto Serif SC`): Emotional headlines on auth & landing
   pages only. Loaded from Google Fonts (weights 500/600/700).
-- **Brand wordmark** (`Syne`): "LianYu" logo, uppercase, letter-spacing 0.22em.
+- **Brand wordmark** (`Syne`): "YuNian" logo, uppercase, letter-spacing 0.22em.
   Loaded from Google Fonts alongside Noto Serif SC.
 - **Mono** (`JetBrains Mono`): Code blocks in QQ Bridge / About / Settings.
 - **Eyebrow labels**: `body-xs` token — 12px, 500 weight, 0.18em tracking,

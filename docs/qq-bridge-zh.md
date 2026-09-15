@@ -1,8 +1,8 @@
-# LianYu ↔ QQ 桥接（NapCat 正向 WebSocket）
+# YuNian ↔ QQ 桥接（NapCat 正向 WebSocket）
 
-让 LianYu 通过 [NapCat](https://github.com/NapNeko/NapCatQQ) 接入 QQ，把 QQ 私聊 / 群 @ 消息路由进 `ConversationService.sendMessage`，由角色 AI 回复后再发回 QQ。
+让 YuNian 通过 [NapCat](https://github.com/NapNeko/NapCatQQ) 接入 QQ，把 QQ 私聊 / 群 @ 消息路由进 `ConversationService.sendMessage`，由角色 AI 回复后再发回 QQ。
 
-> **当前阶段：Phase 1 —— 单人模式。** 一个 LianYu 用户 ↔ 一个 QQ 号 ↔ 一个会话。
+> **当前阶段：Phase 1 —— 单人模式。** 一个 YuNian 用户 ↔ 一个 QQ 号 ↔ 一个会话。
 > Phase 2（多人公开机器人）见文末路线图，未实现。
 
 ---
@@ -25,7 +25,7 @@ QQ 客户端 ──(QQ 协议)──> NapCat ──(OneBot 11 / 正向 WS)──
                                                         NapCatClient.sendPrivateMsg / sendGroupMsg
 ```
 
-**核心设计：进程内桥接，零侵入主链路。** 桥接器是一个普通 Spring 模块（`lianyu-qq-bridge`），被 `LianYuApplication` 的 `scanBasePackages = "com.lianyu"` 自动扫描。它直接调用 `ConversationService` 的 Service 层方法（这些方法本来就接受 `Long userId` 显式参数），**完全不经过** Controller / `HeaderOnlyTokenFilter` / Sa-Token / `lianyu-token` / nginx。因此对 [安全耦合地图](./security-coupling-map-zh.md) 里的 8 条 lockstep 规则**全部无影响**（见 §3 影响表）。
+**核心设计：进程内桥接，零侵入主链路。** 桥接器是一个普通 Spring 模块（`lianyu-qq-bridge`），被 `YuNianApplication` 的 `scanBasePackages = "com.lianyu"` 自动扫描。它直接调用 `ConversationService` 的 Service 层方法（这些方法本来就接受 `Long userId` 显式参数），**完全不经过** Controller / `HeaderOnlyTokenFilter` / Sa-Token / `lianyu-token` / nginx。因此对 [安全耦合地图](./security-coupling-map-zh.md) 里的 8 条 lockstep 规则**全部无影响**（见 §3 影响表）。
 
 ---
 
@@ -91,7 +91,7 @@ backend/lianyu-qq-bridge/
 1. **禁止给 `lianyu-qq-bridge` 加任何 HTTP 端点**（Controller / `@RestController`）。一旦暴露 HTTP，就接入 nginx + `lianyu-token` + Sa-Token 链，违反 §3 / §4。
 2. **禁止把桥接路径加进 Sa-Token `notMatch` 列表**。桥接根本不经过 Sa-Token，加进去只会制造「为什么 notMatch 里有却没路由」的困惑，并暗示这条路径受 Sa-Token 管辖（其实不是）。
 3. **禁止让桥接器读取 / 生成 / 校验 `lianyu-token`**。`ConversationService` 的 Service 层方法签名是 `(Long userId, ...)`，直接传 Long，这就是绕开 token 的合法入口。
-4. **禁止把 NapCat 二进制打进 LianYu 发行包**。NapCat 许可禁止再分发；部署者自行安装 NapCat。
+4. **禁止把 NapCat 二进制打进 YuNian 发行包**。NapCat 许可禁止再分发；部署者自行安装 NapCat。
 
 ---
 
@@ -110,7 +110,7 @@ lianyu:
       heartbeat-timeout-seconds: 90                # 心跳判活阈值（秒）
     binding:
       qq-user-id: ${LIANYU_QQ_BINDING_QQ_USER_ID:}            # 【单人】白名单 QQ 号
-      lianyu-user-id: ${LIANYU_QQ_BINDING_LIANYU_USER_ID:}    # 映射到的 LianYu 用户
+      lianyu-user-id: ${LIANYU_QQ_BINDING_LIANYU_USER_ID:}    # 映射到的 YuNian 用户
       conversation-id: ${LIANYU_QQ_BINDING_CONVERSATION_ID:}  # 固定复用的会话
       provider: platform                           # 固定 platform（共享运营 key）
       model: ${LIANYU_QQ_BINDING_MODEL:}           # 指定模型；空=走 provider 默认
@@ -130,7 +130,7 @@ lianyu:
 | `napcat.connect-timeout-seconds` | — | `10` | 单次连接 / 重连超时。 |
 | `napcat.heartbeat-timeout-seconds` | — | `90` | 超此秒数未收任何帧即判死并重连（NapCat 默认 30s 心跳，90s = 漏 3 跳）。 |
 | `binding.qq-user-id` | 单人模式必填 | 空 | 仅处理来自此 QQ 的私聊。 |
-| `binding.lianyu-user-id` | 开时必填 | 空 | 映射到的真实 LianYu 用户（其角色 = 对外角色）。 |
+| `binding.lianyu-user-id` | 开时必填 | 空 | 映射到的真实 YuNian 用户（其角色 = 对外角色）。 |
 | `binding.conversation-id` | 开时必填 | 空 | 复用的会话 ID（单人模式固定一个）。 |
 | `binding.provider` | — | `platform` | 固定 `platform`，走运营方共享 key，QQ 用户无需个人 key。 |
 | `binding.model` | 否 | 空 | 指定模型；空走 provider 默认。 |
@@ -167,7 +167,7 @@ lianyu:
 
 ### 5.3 让桥接器连上来
 
-在 LianYu 侧设置环境变量并启用：
+在 YuNian 侧设置环境变量并启用：
 
 ```bash
 # .env（示例，单人模式）
@@ -175,13 +175,13 @@ LIANYU_QQ_BRIDGE_ENABLED=true
 LIANYU_QQ_NAPCAT_WS_URL=ws://127.0.0.1:3001
 LIANYU_QQ_NAPCAT_ACCESS_TOKEN=你在NapCat里填的token
 LIANYU_QQ_BINDING_QQ_USER_ID=10001            # 你的小号 QQ
-LIANYU_QQ_BINDING_LIANYU_USER_ID=1            # LianYu 里已存在的用户
+LIANYU_QQ_BINDING_LIANYU_USER_ID=1            # YuNian 里已存在的用户
 LIANYU_QQ_BINDING_CONVERSATION_ID=42          # 已存在的会话 ID
 # 群聊（可选，逗号分隔）：
 # LIANYU_QQ_BINDING_ALLOW_GROUPS=111,222
 ```
 
-启动 LianYu 后端。日志出现 `NapCatClient connected ... selfId=...` 即成功。用小号给机器人发私聊，角色应回复。
+启动 YuNian 后端。日志出现 `NapCatClient connected ... selfId=...` 即成功。用小号给机器人发私聊，角色应回复。
 
 ---
 
@@ -217,7 +217,7 @@ LIANYU_QQ_BINDING_CONVERSATION_ID=42          # 已存在的会话 ID
 > 仅作规划记录，**当前未实现**。Phase 2 仍须守住 §3 耦合表「未触碰」与 §3 禁止项。
 
 1. **Flyway `V35__create_qq_user_binding.sql`**（**只新增**，符合规则 6）：表 `qq_user_binding(qq_user_id BIGINT PK, lianyu_user_id BIGINT, conversation_id BIGINT, created_at ...)`。
-2. **`QqUserProvisioner`**：首次收到某 QQ 私聊时，自动建 LianYu 用户 + 会话 + 角色克隆，写绑定表。建用户逻辑镜像 `AuthServiceImpl` 现有用户插入（**不改 AuthService**，独立 mapper 调用）。
+2. **`QqUserProvisioner`**：首次收到某 QQ 私聊时，自动建 YuNian 用户 + 会话 + 角色克隆，写绑定表。建用户逻辑镜像 `AuthServiceImpl` 现有用户插入（**不改 AuthService**，独立 mapper 调用）。
 3. **角色克隆**：从模板角色复制一份给新用户，避免共用一个角色导致多人记忆串台。
 4. **群 @ 触发**：群消息 @机器人即触发该 QQ 绑定用户的回合。
 5. **限流 / 黑名单**：防刷；多人下 AI 并发受 `resilience4j.bulkhead.ai-chat` 全局池约束（已存在，无需新增）。
@@ -231,7 +231,7 @@ LIANYU_QQ_BINDING_CONVERSATION_ID=42          # 已存在的会话 ID
 | 启动后无 `connected` 日志 | 检查 `enabled=true`、`ws-url` 可达、NapCat 端口 / token 一致；看 `NapCatClient` 日志的连接异常。 |
 | 连上但发消息无回复 | 私聊：确认发送方 QQ == `binding.qq-user-id`。群聊：确认群号在 `allow-groups` 且消息 @ 了机器人。看 DEBUG 日志是否被过滤。 |
 | 回复只有一段 | `reply.send-all-pieces` 是否 `true`；或 AI 确实只回了一段。 |
-| 一直发兜底文案 | LianYu 侧 AI 调用失败：查 `AiChatService` / 平台 key / `resilience4j` 熔断状态。 |
+| 一直发兜底文案 | YuNian 侧 AI 调用失败：查 `AiChatService` / 平台 key / `resilience4j` 熔断状态。 |
 | NapCat 离线 / QQ 掉线 | NapCat WebUI 看登录状态；小号可能被风控，换号。 |
 
 ---
@@ -240,4 +240,4 @@ LIANYU_QQ_BINDING_CONVERSATION_ID=42          # 已存在的会话 ID
 
 - [OneBot 11 标准](https://github.com/botuniverse/onebot-11)
 - [NapCat 文档](https://napneko.github.io/)
-- [LianYu 安全耦合地图](./security-coupling-map-zh.md)
+- [YuNian 安全耦合地图](./security-coupling-map-zh.md)

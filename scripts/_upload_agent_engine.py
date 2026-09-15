@@ -2,7 +2,7 @@
 """Upload the hosted AgentEngine zip + agent-latest.yml to MinIO updates/.
 
 Unlike Electron installers, the engine is NOT published to GitHub Releases.
-The LianYu client reads /api/public/files/updates/agent-latest.yml, downloads
+The YuNian client reads /api/public/files/updates/agent-latest.yml, downloads
 the zip from the same prefix, verifies sha256, and extracts it locally.
 
 Manifest is written last so clients never see a pointer before the zip exists.

@@ -13,9 +13,9 @@
         <div class="art-ring" aria-hidden="true" />
         <div class="art-content">
           <div class="art-icon">
-            <img :src="APP_LOGO" alt="LianYu" class="art-logo" />
+            <img :src="APP_LOGO" alt="YuNian" class="art-logo" />
           </div>
-          <h1 class="art-title">LianYu</h1>
+          <h1 class="art-title">YuNian</h1>
           <p class="art-subtitle">与心之所向，促膝长谈</p>
           <div class="art-decorations">
             <span class="deco-dot" />
@@ -29,7 +29,7 @@
       <div class="auth-form-panel">
         <div class="form-header form-reveal">
           <h2 class="form-title">欢迎回来</h2>
-          <p class="form-desc">登录你的 LianYu 账号继续对话</p>
+          <p class="form-desc">登录你的 YuNian 账号继续对话</p>
         </div>
 
         <el-form

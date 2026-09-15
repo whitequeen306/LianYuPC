@@ -1,4 +1,4 @@
-# LianYu Admin Management Center Design
+# YuNian Admin Management Center Design
 
 Status: Proposed and interactively approved
 
@@ -7,7 +7,7 @@ Date: 2026-08-24
 ## 1. Objective
 
 Build a Windows desktop management application, distributed as an independent
-EXE, for operating the LianYu platform. The cloud server continues to host only
+EXE, for operating the YuNian platform. The cloud server continues to host only
 backend and infrastructure services; no administrator web UI is deployed.
 
 The management center covers administrator accounts and permissions, users,
@@ -17,7 +17,7 @@ secure, usable operating loop rather than a collection of incomplete screens.
 
 ## 2. Confirmed Decisions
 
-- Build a separate `LianYu Admin.exe`, not a hidden mode in the consumer app.
+- Build a separate `YuNian Admin.exe`, not a hidden mode in the consumer app.
 - Keep the admin client and backend module in the existing monorepo.
 - Add an isolated Spring Boot module and `/api/admin/v1/**` API namespace.
 - Support multiple super administrators and full role-based access control.
@@ -68,7 +68,7 @@ secure, usable operating loop rather than a collection of incomplete screens.
 
 - The admin client does not connect directly to MySQL, Redis, or MinIO.
 - The server does not compile or sign Windows executables.
-- The consumer LianYu client does not contain administrator screens or
+- The consumer YuNian client does not contain administrator screens or
   administrator credentials.
 - Phase 1 does not attempt cross-region infrastructure orchestration.
 
@@ -86,7 +86,7 @@ GitHub tokens, the master encryption key, or provider secrets.
 
 The UI follows `DESIGN.md`: dark-first with equivalent light mode, existing
 color and spacing variables, dense work-focused layouts, fixed navigation, and
-restrained glass surfaces. It uses the LianYu brand without copying the
+restrained glass surfaces. It uses the YuNian brand without copying the
 consumer app's immersive chat composition.
 
 The admin client is an independently composed desktop tool, not a Vben,
