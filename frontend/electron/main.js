@@ -55,6 +55,7 @@ import {
   startQqBridge,
   stopQqBridge,
   getQqBridgeStatus,
+  fanoutQqProactive,
 } from './qqBridge/qqBridge.js'
 import { createQqBridgeCoordinator } from './qqBridge/qqBridgeCoordinator.js'
 import {
@@ -1067,6 +1068,11 @@ function handleProactiveMessageNotification(payload = {}) {
     if (!result?.ok) log(`[wechatBridge] proactive skip: ${result?.reason || 'unknown'}`)
   }).catch((e) => {
     log(`[wechatBridge] proactive fanout error: ${e?.message || e}`)
+  })
+  void fanoutQqProactive(payload || {}).then((result) => {
+    if (!result?.ok) log(`[qqBridge] proactive skip: ${result?.reason || 'unknown'}`)
+  }).catch((e) => {
+    log(`[qqBridge] proactive fanout error: ${e?.message || e}`)
   })
   if (!isMainWindowInBackground()) return
 

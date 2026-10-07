@@ -621,3 +621,140 @@ async function fetchAssistantImageBase64(conversationId) {
   }
   return ''
 }
+
+// ===== 主动消息推送（云端 Proactive → QQ 私聊） =====
+// 链路：云端 persistProactiveReply 落库 + STOMP /user/queue/notifications（type=PROACTIVE_MESSAGE）
+//   → 渲染端 notifications.js notifyProactiveDesktopIfNeeded → IPC desktop:notify-proactive-message
+//   → main.js handleProactiveMessageNotification → fanoutQqProactive。
+// 与微信桥 fanoutWechatProactive 同构但完全独立：QuickChat 与主窗口同时在线时两个 STOMP
+// 连接会各发一次 IPC，去重在 fanoutQqProactive 内做（15s 签名窗口），不碰公共入口。
+
+const PROACTIVE_DEDUP_TTL_MS = 15000
+let recentProactiveSigs = [] // { sig, ts }
+
+/**
+ * 在 sessionMap 里反查某会话对应的 QQ 私聊目标。
+ * 仅匹配 `private:<qq>` 键——服务端只为 SINGLE 会话生成主动消息，群共享会话
+ * （`group:<gid>` 键）不命中即天然不推群。纯函数，便于单测。
+ */
+export function resolveProactiveTargets(sessionMap, conversationId) {
+  const id = conversationId == null ? '' : String(conversationId).trim()
+  if (!id) return []
+  const targets = []
+  for (const [key, convId] of Object.entries(sessionMap || {})) {
+    if (!key.startsWith('private:')) continue
+    if (String(convId).trim() !== id) continue
+    const qq = Number(key.slice('private:'.length))
+    if (Number.isFinite(qq) && qq > 0) targets.push(qq)
+  }
+  return targets
+}
+
+/**
+ * 从消息记录（seq 升序）中选取最新一轮主动回复的全部分段：最后一条 USER 之后的
+ * 全部 ASSISTANT 记录。多段主动回复（App 内多气泡）全发才还原体验；空 content
+ * 的记录（语音类，audioUrl 无文案）跳过。纯函数，便于单测。
+ */
+export function pickProactivePieces(records) {
+  const list = Array.isArray(records) ? records : []
+  let lastUserIdx = -1
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (String(list[i]?.role || '').toUpperCase() === 'USER') {
+      lastUserIdx = i
+      break
+    }
+  }
+  const pieces = []
+  for (let i = lastUserIdx + 1; i < list.length; i++) {
+    const r = list[i]
+    if (String(r?.role || '').toUpperCase() !== 'ASSISTANT') continue
+    const content = String(r?.content || '').trim()
+    if (content) pieces.push(content)
+  }
+  return pieces
+}
+
+/**
+ * 拉取主动消息全文：通知载荷只带 ≤100 字 preview，须按会话拉最新消息页取本轮
+ * 全部分段；拉取失败 / 无记录时回退 preview 单段，保证有话可发。
+ */
+async function fetchProactivePieces(conversationId, payload) {
+  const preview = String(payload?.preview || '').trim()
+  if (!conversationId || !lastApiOrigin || !lastAuthToken) {
+    return preview ? [preview] : []
+  }
+  try {
+    const res = await performApiRequest({
+      method: 'GET',
+      url: `${lastApiOrigin}/api/conversation/${conversationId}/messages?limit=20`,
+      apiOrigin: lastApiOrigin,
+      authToken: lastAuthToken,
+      timeoutMs: 15000,
+    })
+    if (res.status >= 200 && res.status < 300) {
+      const parsed = safeJsonParse(res.data)
+      const records = Array.isArray(parsed?.data?.records)
+        ? parsed.data.records
+        : (Array.isArray(parsed?.records) ? parsed.records : [])
+      const pieces = pickProactivePieces(records)
+      if (pieces.length) return pieces
+    }
+  } catch (e) {
+    log('proactive fetch failed, fallback preview:', e?.message || e)
+  }
+  return preview ? [preview] : []
+}
+
+/**
+ * 把云端主动消息推送到 QQ。目标由 sessionMap 反查（该会话必须是某 QQ 用户聊出来的），
+ * 桥接未运行 / WS 断开 / 会话未绑定 QQ / 无正文时跳过——消息仍留在 App 内，不补发。
+ * 返回 { ok, reason } 供 main.js 记录跳过原因（与微信扇出同风格）。
+ */
+export async function fanoutQqProactive(payload = {}) {
+  try {
+    const incomingId = payload?.conversationId != null ? String(payload.conversationId).trim() : ''
+    const sig = `${incomingId}|${payload?.characterId ?? ''}|${payload?.preview ?? ''}`
+    const now = Date.now()
+    recentProactiveSigs = recentProactiveSigs.filter((e) => now - e.ts < PROACTIVE_DEDUP_TTL_MS)
+    if (recentProactiveSigs.some((e) => e.sig === sig)) {
+      return { ok: false, reason: 'duplicate' }
+    }
+    recentProactiveSigs.push({ sig, ts: now })
+
+    if (!client) return { ok: false, reason: 'bridge_stopped' }
+    const status = client.getStatus?.() || {}
+    if (status.state && status.state !== 'connected' && status.state !== 'ready') {
+      return { ok: false, reason: `ws_${status.state}` }
+    }
+
+    const settings = readQqBridgeSettings()
+    const targets = resolveProactiveTargets(sessionMap, incomingId)
+    if (!targets.length) return { ok: false, reason: 'not_qq_linked' }
+
+    const pieces = await fetchProactivePieces(incomingId, payload)
+    if (!pieces.length) return { ok: false, reason: 'empty' }
+
+    const appendSuffix = bindingCharacterName && settings.reply?.appendCharacterSuffix !== false
+    const segDelayMs = Number(settings.reply?.segmentDelayMs)
+    const delayMs = Number.isFinite(segDelayMs) && segDelayMs >= 0 ? segDelayMs : DEFAULTS.reply.segmentDelayMs
+    const segJitterMs = Number(settings.reply?.segmentJitterMs)
+    const jitterMs = Number.isFinite(segJitterMs) && segJitterMs >= 0 ? segJitterMs : DEFAULTS.reply.segmentJitterMs
+    for (let i = 0; i < pieces.length; i++) {
+      if (!client) break // 桥接中途停止：已发的段不撤回，剩余放弃
+      const seg = appendSuffix
+        ? `${pieces[i]}（本次回复由虚拟角色:${bindingCharacterName}回复）`
+        : pieces[i]
+      for (const qq of targets) {
+        await client.sendPrivateMsg(qq, seg)
+      }
+      if (i < pieces.length - 1) {
+        await sleep(delayMs + Math.floor(Math.random() * (jitterMs + 1)))
+      }
+    }
+    log('proactive sent:', `pieces=${pieces.length}`, `targets=${targets.length}`)
+    return { ok: true }
+  } catch (e) {
+    log('proactive fanout failed:', e?.message || e)
+    return { ok: false, reason: 'send_failed' }
+  }
+}
