@@ -24,6 +24,8 @@ class ToolManagerTest {
     @Mock
     private RecentActivityTool recentActivityTool;
     @Mock
+    private WriteDiaryTool writeDiaryTool;
+    @Mock
     private AgentBridgeService agentBridgeService;
 
     private ToolManager manager;
@@ -31,11 +33,13 @@ class ToolManagerTest {
     @BeforeEach
     void setUp() {
         manager = new ToolManager(
-                timeTool, weatherTool, memorySearchTool, recentActivityTool, agentBridgeService);
+                timeTool, weatherTool, memorySearchTool, recentActivityTool, writeDiaryTool,
+                agentBridgeService);
         ReflectionTestUtils.setField(manager, "chatToolsEnabled", true);
         ReflectionTestUtils.setField(manager, "weatherEnabled", true);
         ReflectionTestUtils.setField(manager, "memoryAgenticEnabled", true);
         ReflectionTestUtils.setField(manager, "recentActivityEnabled", true);
+        ReflectionTestUtils.setField(manager, "writeDiaryEnabled", true);
     }
 
     @Test

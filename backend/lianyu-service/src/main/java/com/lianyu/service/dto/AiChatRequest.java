@@ -48,4 +48,6 @@ public class AiChatRequest {
      * 与前台交互池隔离，避免后台风暴饿死聊天。
      */
     private boolean background;
+    /** 置 true 时本轮不挂载任何服务端工具（如日记生成本身，防 write_diary 递归）。 */
+    private boolean disableChatTools;
 }

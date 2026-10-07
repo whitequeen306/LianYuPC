@@ -31,6 +31,11 @@ class AiBackgroundTaskTest {
 
         AiBackgroundTask diary = AiBackgroundTask.characterDiary(1L, 3L);
         assertEquals(AiBackgroundJobType.CHARACTER_DIARY, diary.type());
+        assertEquals(com.lianyu.dao.entity.CharacterDiary.SOURCE_SCHEDULED, diary.source());
+
+        AiBackgroundTask impromptu = AiBackgroundTask.characterDiaryImpromptu(1L, 3L);
+        assertEquals(AiBackgroundJobType.CHARACTER_DIARY, impromptu.type());
+        assertEquals(com.lianyu.dao.entity.CharacterDiary.SOURCE_IMPROMPTU, impromptu.source());
 
         AiBackgroundTask cold = AiBackgroundTask.coldOpenFollowUp(1L, 2L);
         assertEquals(AiBackgroundJobType.COLD_OPEN_FOLLOWUP, cold.type());

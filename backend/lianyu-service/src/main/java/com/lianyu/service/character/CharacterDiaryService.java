@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lianyu.common.i18n.OutputLanguage;
+import com.lianyu.dao.dto.CharacterDiaryLastDateRow;
+import com.lianyu.dao.dto.ConversationActivityRow;
 import com.lianyu.dao.entity.Character;
 import com.lianyu.dao.entity.CharacterDiary;
 import com.lianyu.dao.entity.Conversation;
@@ -35,8 +37,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -45,19 +49,34 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
-
-
 /**
  * 角色日记服务。
+ *
+ * <p>触发算法（2026-10 重构，解决「聊很久看不到日记」）：
  * <ul>
- *   <li>每天定时为有活跃对话的角色生成一篇内心独白日记</li>
- *   <li>每个角色每天最多 1 篇</li>
+ *   <li>候选 = 当天有过用户消息的 SINGLE 会话（按当天用户消息数降序），不再按会话创建时间扫描；</li>
+ *   <li><b>两天保底</b>：距该角色最后一篇日记（任何来源）≥ {@code min-days-between-diaries} 天
+ *       且当天聊过 → 必写；2 天内写过则按当天聊天量分档概率（light / moderate）；</li>
+ *   <li>上限：每轮全局 {@code max-per-run} + 每用户 {@code max-per-user-per-run}；</li>
+ *   <li>每天 22:00 主扫 + 23:30 补扫（抓 22 点后才聊天的会话），幂等由来源内「每天一篇」去重保证；</li>
+ *   <li>来源互斥各自独立：定时（SCHEDULED）只数 SCHEDULED，即兴（IMPROMPTU，角色聊天中调
+ *       write_diary 工具）只数 IMPROMPTU；保底按任何来源的最后一篇计算；</li>
+ *   <li>素材：当天消息优先（不足则回填最近历史），日记必须引用当天聊过的具体细节。</li>
  * </ul>
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class CharacterDiaryService {
+
+    /** 未达保底时，当天用户消息数达到该值即用 moderate 档概率（否则 light 档）。 */
+    static final int MODERATE_TIER_MIN_MESSAGES = 3;
+    /** 素材：当天消息最多取多少条。 */
+    static final int MATERIAL_TODAY_LIMIT = 40;
+    /** 素材：当天消息少于该条数时，回填最近历史消息作上下文。 */
+    static final int MATERIAL_BACKFILL_THRESHOLD = 10;
+    /** 素材：回填的历史消息最多多少条。 */
+    static final int MATERIAL_BACKFILL_LIMIT = 20;
 
     private final CharacterDiaryMapper diaryMapper;
     private final CharacterMapper characterMapper;
@@ -78,99 +97,145 @@ public class CharacterDiaryService {
     @Value("${lianyu.diary.enabled:true}")
     private boolean diaryEnabled;
 
-    @Value("${lianyu.diary.max-per-run:3}")
-    private int maxPerRun;
-
+    /** 每轮扫描当天最活跃的会话数。 */
     @Value("${lianyu.diary.scan-limit:30}")
     private int scanLimit;
 
-    @Value("${lianyu.diary.content-max-chars:500}")
+    /** 距最后一篇日记（任何来源）≥ 该天数且当天聊过 → 保底必写。 */
+    @Value("${lianyu.diary.min-days-between-diaries:2}")
+    private int minDaysBetweenDiaries;
+
+    /** 未达保底、当天 1~2 条用户消息时的尝试概率。 */
+    @Value("${lianyu.diary.probability-light:0.3}")
+    private double probabilityLight;
+
+    /** 未达保底、当天 ≥3 条用户消息时的尝试概率。 */
+    @Value("${lianyu.diary.probability-moderate:0.5}")
+    private double probabilityModerate;
+
+    /** 每轮全局生成上限（费用走用户各自 vault）。 */
+    @Value("${lianyu.diary.max-per-run:20}")
+    private int maxPerRun;
+
+    /** 每轮单用户上限（多角色用户一晚最多几篇）。 */
+    @Value("${lianyu.diary.max-per-user-per-run:2}")
+    private int maxPerUserPerRun;
+
+    /** 即兴日记（write_diary 工具）每角色每天最多篇数。 */
+    @Value("${lianyu.diary.impromptu-max-per-day:1}")
+    private int impromptuMaxPerDay;
+
+    @Value("${lianyu.diary.content-max-chars:900}")
     private int contentMaxChars;
 
-    /** 每个候选角色尝试生成日记的概率（0~1），默认 60% */
-    @Value("${lianyu.diary.trigger-probability:0.6}")
-    private double diaryTriggerProbability;
-
-    /**
-     * 定时任务：每天 22:00 执行一次，为当天活跃对话的角色生成日记。
-     */
+    /** 主扫：每天 22:00。 */
     @Scheduled(cron = "0 0 22 * * *")
     public void scheduledGenerate() {
+        runScheduledGenerate();
+    }
+
+    /** 补扫：每天 23:30，抓 22 点后才聊天的会话；幂等，已写成的角色自然跳过。 */
+    @Scheduled(cron = "0 30 23 * * *")
+    public void scheduledGenerateLate() {
+        runScheduledGenerate();
+    }
+
+    private void runScheduledGenerate() {
         if (!diaryEnabled) {
             return;
         }
         log.info("Diary generation cron triggered");
         try {
             int count = generateDiaries();
-            log.info("Diary generation completed: {} diaries written", count);
+            log.info("Diary generation completed: {} diaries enqueued", count);
         } catch (Exception e) {
             log.error("Diary generation failed", e);
         }
     }
 
     /**
-     * 手动触发一批日记生成。
+     * 扫描当天活跃会话并入队日记生成任务。
+     * 保底候选（距最后一篇日记 ≥ min-days-between-diaries 天）优先拿名额，
+     * 其余按当天用户消息数降序；受全局与单用户双上限约束。
      */
     public int generateDiaries() {
-        // 找出最近活跃的 SINGLE 会话
-        List<Conversation> conversations = conversationMapper.selectList(
-                new LambdaQueryWrapper<Conversation>()
-                        .eq(Conversation::getMode, "SINGLE")
-                        .isNotNull(Conversation::getCharacterId)
-                        .orderByDesc(Conversation::getCreatedAt)
-                        .last("LIMIT " + Math.max(1, scanLimit)));
-
-        if (conversations.isEmpty()) {
+        LocalDate today = LocalDate.now();
+        LocalDateTime startOfDay = today.atStartOfDay();
+        List<ConversationActivityRow> active = conversationMapper.selectSingleConversationsActiveSince(
+                startOfDay, Math.max(1, scanLimit));
+        if (active.isEmpty()) {
             return 0;
         }
 
-        // 收集所有角色
-        Set<Long> characterIds = new LinkedHashSet<>();
+        Set<Long> candidateCharacterIds = new LinkedHashSet<>();
         Map<Long, Long> charToUser = new HashMap<>();
-        for (Conversation conv : conversations) {
-            if (conv.getCharacterId() != null) {
-                characterIds.add(conv.getCharacterId());
-                charToUser.putIfAbsent(conv.getCharacterId(), conv.getUserId());
+        Map<Long, Long> charToUserMsgs = new HashMap<>();
+        for (ConversationActivityRow row : active) {
+            if (row.getCharacterId() == null || row.getUserId() == null) {
+                continue;
             }
+            candidateCharacterIds.add(row.getCharacterId());
+            charToUser.putIfAbsent(row.getCharacterId(), row.getUserId());
+            charToUserMsgs.putIfAbsent(row.getCharacterId(),
+                    row.getUserMsgCount() == null ? 0L : row.getUserMsgCount());
         }
-
-        if (characterIds.isEmpty()) {
+        if (candidateCharacterIds.isEmpty()) {
             return 0;
         }
 
-        // 检查今天已生成过日记的角色
-        LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
-        Set<Long> alreadyGenerated = new HashSet<>();
+        // 今天已有定时日记的角色跳过（即兴日记不占定时互斥）
+        Set<Long> scheduledToday = new HashSet<>();
         List<CharacterDiary> todayDiaries = diaryMapper.selectList(
                 new LambdaQueryWrapper<CharacterDiary>()
                         .ge(CharacterDiary::getCreatedAt, startOfDay)
-                        .in(CharacterDiary::getCharacterId, characterIds));
+                        .in(CharacterDiary::getCharacterId, candidateCharacterIds));
         for (CharacterDiary d : todayDiaries) {
-            alreadyGenerated.add(d.getCharacterId());
+            if (!CharacterDiary.SOURCE_IMPROMPTU.equals(d.getSource())) {
+                scheduledToday.add(d.getCharacterId());
+            }
+        }
+        candidateCharacterIds.removeAll(scheduledToday);
+        if (candidateCharacterIds.isEmpty()) {
+            return 0;
         }
 
-        // 洗牌随机性
-        List<Long> candidates = new ArrayList<>(characterIds);
-        Collections.shuffle(candidates);
+        // 每角色最后一篇日记（任何来源）→ 两天保底判定
+        Map<Long, LocalDate> lastDiaryDates = new HashMap<>();
+        for (CharacterDiaryLastDateRow r : diaryMapper.selectLastDiaryDates(
+                new ArrayList<>(candidateCharacterIds))) {
+            if (r != null && r.getCharacterId() != null && r.getLastDiaryAt() != null) {
+                lastDiaryDates.put(r.getCharacterId(), r.getLastDiaryAt().toLocalDate());
+            }
+        }
 
+        // 保底候选优先，其后按当天用户消息数降序
+        List<Long> ordered = new ArrayList<>(candidateCharacterIds);
+        ordered.sort(Comparator
+                .comparing((Long cid) -> isForced(lastDiaryDates.get(cid), today) ? 0 : 1)
+                .thenComparing(cid -> charToUserMsgs.getOrDefault(cid, 0L), Comparator.reverseOrder()));
+
+        Map<Long, Integer> perUserCount = new HashMap<>();
         int created = 0;
-        for (Long characterId : candidates) {
+        for (Long characterId : ordered) {
             if (created >= Math.max(1, maxPerRun)) {
                 break;
-            }
-            if (alreadyGenerated.contains(characterId)) {
-                continue;
             }
             Long userId = charToUser.get(characterId);
             if (userId == null) {
                 continue;
             }
-            // 概率触发：不是每个角色每天都写日记（默认 60% 尝试生成）
-            if (!shouldAttemptDiary()) {
+            if (perUserCount.getOrDefault(userId, 0) >= Math.max(1, maxPerUserPerRun)) {
+                continue;
+            }
+            double p = resolveAttemptProbability(charToUserMsgs.getOrDefault(characterId, 0L),
+                    lastDiaryDates.get(characterId), today,
+                    Math.max(0, minDaysBetweenDiaries), probabilityLight, probabilityModerate);
+            if (!roll(p)) {
                 continue;
             }
             try {
                 aiBackgroundPublisher.publish(AiBackgroundTask.characterDiary(userId, characterId));
+                perUserCount.merge(userId, 1, Integer::sum);
                 created++;
             } catch (Exception e) {
                 log.debug("Diary enqueue skipped for charId={}, reason={}", characterId, e.getMessage());
@@ -179,32 +244,42 @@ public class CharacterDiaryService {
         return created;
     }
 
-    /** MQ 消费：生成一篇角色日记。 */
+    /** MQ 消费：生成一篇角色日记（source 为 null 视为定时）。 */
     public void processDiaryJob(AiBackgroundTask task) {
         if (task == null || task.userId() == null || task.characterId() == null) {
             return;
         }
-        CharacterDiary diary = tryGenerateDiary(task.userId(), task.characterId());
+        CharacterDiary diary = tryGenerateDiary(task.userId(), task.characterId(), task.source());
         if (diary != null) {
-            log.info("Diary created: charId={}, title={}", task.characterId(), diary.getTitle());
+            log.info("Diary created: charId={}, source={}, title={}",
+                    task.characterId(), diary.getSource(), diary.getTitle());
         }
     }
 
     // 故意不加 @Transactional：chatBlocking 会调 AI，长事务占住 Hikari 连接拖死前台。
     // 只在最后一步「落库 + 通知」进事务。
-    public CharacterDiary tryGenerateDiary(Long userId, Long characterId) {
+    public CharacterDiary tryGenerateDiary(Long userId, Long characterId, String rawSource) {
+        String source = CharacterDiary.SOURCE_IMPROMPTU.equals(rawSource)
+                ? CharacterDiary.SOURCE_IMPROMPTU
+                : CharacterDiary.SOURCE_SCHEDULED;
         Character character = characterMapper.selectById(characterId);
         if (character == null) {
             return null;
         }
 
-        // 检查今天是否已有日记
-        LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
+        LocalDate today = LocalDate.now();
+        LocalDateTime startOfDay = today.atStartOfDay();
+
+        // 来源内「每天一篇」互斥：定时只数 SCHEDULED（即兴不占），即兴只数 IMPROMPTU（受配额限制）
+        int maxForSource = CharacterDiary.SOURCE_IMPROMPTU.equals(source)
+                ? Math.max(1, impromptuMaxPerDay)
+                : 1;
         Long count = diaryMapper.selectCount(new LambdaQueryWrapper<CharacterDiary>()
                 .eq(CharacterDiary::getCharacterId, characterId)
                 .eq(CharacterDiary::getUserId, userId)
+                .eq(CharacterDiary::getSource, source)
                 .ge(CharacterDiary::getCreatedAt, startOfDay));
-        if (count != null && count > 0) {
+        if (count != null && count >= maxForSource) {
             return null;
         }
 
@@ -219,15 +294,30 @@ public class CharacterDiaryService {
             return null;
         }
 
-        List<Message> recentMessages = messageMapper.selectList(
-                new LambdaQueryWrapper<Message>()
-                        .eq(Message::getConversationId, conversation.getId())
-                        .orderByDesc(Message::getSeq)
-                        .last("LIMIT 20"));
-        if (recentMessages.isEmpty()) {
+        // 硬门槛：今天没聊过就不写——日记必须基于当天的交流
+        Long todayMsgCount = messageMapper.selectCount(new LambdaQueryWrapper<Message>()
+                .eq(Message::getConversationId, conversation.getId())
+                .ge(Message::getCreatedAt, startOfDay));
+        if (todayMsgCount == null || todayMsgCount == 0) {
+            log.debug("Diary skipped: no messages today, conv={}", conversation.getId());
             return null;
         }
-        Collections.reverse(recentMessages);
+
+        // 素材：今天的消息优先，不足时回填最近历史作上下文
+        List<Message> todayMessages = messageMapper.selectList(
+                new LambdaQueryWrapper<Message>()
+                        .eq(Message::getConversationId, conversation.getId())
+                        .ge(Message::getCreatedAt, startOfDay)
+                        .orderByAsc(Message::getSeq)
+                        .last("LIMIT " + MATERIAL_TODAY_LIMIT));
+        List<Message> backfillMessages = todayMessages.size() < MATERIAL_BACKFILL_THRESHOLD
+                ? messageMapper.selectList(new LambdaQueryWrapper<Message>()
+                        .eq(Message::getConversationId, conversation.getId())
+                        .lt(Message::getCreatedAt, startOfDay)
+                        .orderByDesc(Message::getSeq)
+                        .last("LIMIT " + MATERIAL_BACKFILL_LIMIT))
+                : List.of();
+        Collections.reverse(backfillMessages);
 
         String lang = outputLanguageService.resolveForUser(userId);
         String basePrompt = chatTurnFacade.assembleSystemPrompt(
@@ -248,6 +338,7 @@ public class CharacterDiaryService {
 
                     最近の会話を振り返り、今日感じたこと、相手への想い、
                     嬉しかったことや少し寂しかったことを、あなたの性格と話し方で自然に書いてください。
+                    日記には今日話した具体的な話題や細部を必ず織り込んでください。漠然とした気分だけでは書かないでください。
 
                     出力形式（JSONのみ）:
                     {"title":"日記のタイトル（10字以内）","content":"日記本文（400〜800字、段落可、朋友圈よりずっと長く）"}
@@ -259,6 +350,7 @@ public class CharacterDiaryService {
 
                     Reflect on today's conversations: what you felt, what touched you,
                     what made you happy or a little sad. Write naturally in your own voice.
+                    You MUST weave in concrete topics and details from today's conversation; do not write vague moods only.
 
                     Output format (JSON only):
                     {"title":"Diary title (max 10 words)","content":"Diary content (400-800 chars, multi-sentence, longer than moments)"}
@@ -269,6 +361,7 @@ public class CharacterDiaryService {
 
                     回顧今天的對話，你感受到什麼、什麼觸動了你、
                     讓你開心或有點失落的事。用你自己的語氣自然地寫。
+                    日記必須提到今天聊過的具體話題或細節，不要寫成泛泛的心情。
 
                     輸出格式（僅JSON）：
                     {"title":"日記標題（10字以內）","content":"日記內文（400〜800字，自然文體，明顯長於朋友圈）"}
@@ -279,25 +372,14 @@ public class CharacterDiaryService {
 
                     回顾今天的对话，你感受到什么、什么触动了你、
                     让你开心或有点失落的事。用你自己的语气自然地写。
+                    日记必须提到今天聊过的具体话题或细节，不要写成泛泛的心情。
 
                     输出格式（仅JSON）：
                     {"title":"日记标题（10字以内）","content":"日记正文（400~800字，自然文体，明显长于朋友圈）"}
                     """;
         };
 
-        // 构建最近的对话摘要
-        StringBuilder chatSummary = new StringBuilder();
-        chatSummary.append("今日对话片段：\n");
-        for (Message msg : recentMessages) {
-            if (msg.getContent() == null || msg.getContent().isBlank()) {
-                continue;
-            }
-            String roleLabel = "USER".equalsIgnoreCase(msg.getRole()) ? "对方" : "我";
-            String trimmed = msg.getContent().length() > 120
-                    ? msg.getContent().substring(0, 120) + "…"
-                    : msg.getContent();
-            chatSummary.append(roleLabel).append(": ").append(trimmed).append("\n");
-        }
+        String chatSummary = buildDiaryChatMaterial(backfillMessages, todayMessages);
 
         VaultEntryResponse userVault = apiKeyVaultService.resolvePreferredUserVault(userId);
         if (userVault == null) {
@@ -311,6 +393,8 @@ public class CharacterDiaryService {
         aiReq.setModel(userVault.getModelDefault());
         aiReq.setTemperature(0.85);
         aiReq.setBackground(true);
+        // 日记生成本身不再挂工具：防模型在写日记时又调 write_diary 递归入队
+        aiReq.setDisableChatTools(true);
         ChatToolContext.bindTo(aiReq, character);
 
         List<MessageDto> messages = new ArrayList<>();
@@ -347,17 +431,78 @@ public class CharacterDiaryService {
                 return null; // 太短不像日记
             }
 
-            return persistDiary(userId, characterId, character, conversation, title, diaryContent);
+            return persistDiary(userId, characterId, character, conversation, title, diaryContent, source);
         } catch (Exception e) {
             log.debug("Diary generation failed for charId={}, reason={}", characterId, e.getMessage());
             return null;
         }
     }
 
+    /**
+     * 触发档位概率（纯函数，便于单测）：
+     * <ul>
+     *   <li>距最后一篇日记（任何来源）≥ {@code minDaysBetweenDiaries} 天（或从未写过）→ 保底 1.0；</li>
+     *   <li>否则按当天用户消息数分档：≥ {@link #MODERATE_TIER_MIN_MESSAGES} 条用 moderate，否则 light。</li>
+     * </ul>
+     */
+    static double resolveAttemptProbability(long userMsgsToday, LocalDate lastDiaryDate, LocalDate today,
+                                            int minDaysBetweenDiaries,
+                                            double probabilityLight, double probabilityModerate) {
+        if (lastDiaryDate == null
+                || ChronoUnit.DAYS.between(lastDiaryDate, today) >= Math.max(0, minDaysBetweenDiaries)) {
+            return 1.0;
+        }
+        return userMsgsToday >= MODERATE_TIER_MIN_MESSAGES ? probabilityModerate : probabilityLight;
+    }
+
+    private boolean isForced(LocalDate lastDiaryDate, LocalDate today) {
+        return lastDiaryDate == null
+                || ChronoUnit.DAYS.between(lastDiaryDate, today) >= Math.max(0, minDaysBetweenDiaries);
+    }
+
+    private boolean roll(double probability) {
+        if (probability <= 0) {
+            return false;
+        }
+        if (probability >= 1) {
+            return true;
+        }
+        return ThreadLocalRandom.current().nextDouble() < probability;
+    }
+
+    /**
+     * 对话素材摘要（纯函数，便于单测）：回填的历史消息在前作上下文，今天的消息为主体。
+     * 每条截 120 字，按 对方/我 标注角色。
+     */
+    static String buildDiaryChatMaterial(List<Message> backfillMessages, List<Message> todayMessages) {
+        StringBuilder sb = new StringBuilder();
+        if (backfillMessages != null && !backfillMessages.isEmpty()) {
+            sb.append("此前对话片段：\n");
+            appendMessages(sb, backfillMessages);
+        }
+        sb.append("今天（").append(LocalDate.now()).append("）的对话：\n");
+        appendMessages(sb, todayMessages == null ? List.of() : todayMessages);
+        return sb.toString();
+    }
+
+    private static void appendMessages(StringBuilder sb, List<Message> messages) {
+        for (Message msg : messages) {
+            if (msg.getContent() == null || msg.getContent().isBlank()) {
+                continue;
+            }
+            String roleLabel = "USER".equalsIgnoreCase(msg.getRole()) ? "对方" : "我";
+            String trimmed = msg.getContent().length() > 120
+                    ? msg.getContent().substring(0, 120) + "…"
+                    : msg.getContent();
+            sb.append(roleLabel).append(": ").append(trimmed).append("\n");
+        }
+    }
+
     /** 仅最后一步「落库 + 通知」进事务。 */
     @Transactional
     protected CharacterDiary persistDiary(Long userId, Long characterId, Character character,
-                                          Conversation conversation, String title, String diaryContent) {
+                                          Conversation conversation, String title, String diaryContent,
+                                          String source) {
         CharacterDiary diary = new CharacterDiary();
         diary.setCharacterId(characterId);
         diary.setUserId(userId);
@@ -365,6 +510,7 @@ public class CharacterDiaryService {
         diary.setContent(diaryContent);
         diary.setMood(null);
         diary.setConversationId(conversation.getId());
+        diary.setSource(source);
         diaryMapper.insert(diary);
         characterRecentActivityService.evictCache(userId, characterId);
 
@@ -407,17 +553,6 @@ public class CharacterDiaryService {
         return diaryMapper.selectOne(new LambdaQueryWrapper<CharacterDiary>()
                 .eq(CharacterDiary::getId, diaryId)
                 .eq(CharacterDiary::getUserId, userId));
-    }
-
-    private boolean shouldAttemptDiary() {
-        double p = diaryTriggerProbability;
-        if (p <= 0) {
-            return false;
-        }
-        if (p >= 1) {
-            return true;
-        }
-        return ThreadLocalRandom.current().nextDouble() < p;
     }
 
     private String extractJsonObject(String text) {

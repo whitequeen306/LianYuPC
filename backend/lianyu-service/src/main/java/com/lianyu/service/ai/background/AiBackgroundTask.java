@@ -21,7 +21,8 @@ public record AiBackgroundTask(
         List<Long> peerIds,
         String previousCity,
         String newCity,
-        String transcript
+        String transcript,
+        String source
 ) implements Serializable {
 
     public static AiBackgroundTask momentsPeerComment(Long postId,
@@ -32,48 +33,58 @@ public record AiBackgroundTask(
         return new AiBackgroundTask(
                 AiBackgroundJobType.MOMENTS_PEER_COMMENT,
                 null, null, null, postId, null, null, peerCharacterId,
-                peerIndex, successCount, null, peerIds, null, null, null);
+                peerIndex, successCount, null, peerIds, null, null, null, null);
     }
 
     public static AiBackgroundTask momentsAuthorReply(Long postId, Long triggerCommentId, int attempt) {
         return new AiBackgroundTask(
                 AiBackgroundJobType.MOMENTS_AUTHOR_REPLY,
                 null, null, null, postId, triggerCommentId, null, null,
-                null, null, attempt, null, null, null, null);
+                null, null, attempt, null, null, null, null, null);
     }
 
     public static AiBackgroundTask momentsPost(Long userId, Long conversationId, Long characterId) {
         return new AiBackgroundTask(
                 AiBackgroundJobType.MOMENTS_POST,
                 userId, conversationId, characterId, null, null, null, null,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
     }
 
     public static AiBackgroundTask characterDiary(Long userId, Long characterId) {
         return new AiBackgroundTask(
                 AiBackgroundJobType.CHARACTER_DIARY,
                 userId, null, characterId, null, null, null, null,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null,
+                com.lianyu.dao.entity.CharacterDiary.SOURCE_SCHEDULED);
+    }
+
+    /** 角色即兴日记：聊天中调 write_diary 工具触发，与定时互斥各自独立。 */
+    public static AiBackgroundTask characterDiaryImpromptu(Long userId, Long characterId) {
+        return new AiBackgroundTask(
+                AiBackgroundJobType.CHARACTER_DIARY,
+                userId, null, characterId, null, null, null, null,
+                null, null, null, null, null, null, null,
+                com.lianyu.dao.entity.CharacterDiary.SOURCE_IMPROMPTU);
     }
 
     public static AiBackgroundTask coldOpenFollowUp(Long userId, Long conversationId) {
         return new AiBackgroundTask(
                 AiBackgroundJobType.COLD_OPEN_FOLLOWUP,
                 userId, conversationId, null, null, null, null, null,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
     }
 
     public static AiBackgroundTask cityChangeFollowUp(Long userId, String previousCity, String newCity) {
         return new AiBackgroundTask(
                 AiBackgroundJobType.CITY_CHANGE_FOLLOWUP,
                 userId, null, null, null, null, null, null,
-                null, null, null, null, previousCity, newCity, null);
+                null, null, null, null, previousCity, newCity, null, null);
     }
 
     public static AiBackgroundTask voiceCallSummary(Long userId, Long conversationId, Long messageId, String transcript) {
         return new AiBackgroundTask(
                 AiBackgroundJobType.VOICE_CALL_SUMMARY,
                 userId, conversationId, null, null, null, messageId, null,
-                null, null, null, null, null, null, transcript);
+                null, null, null, null, null, null, transcript, null);
     }
 }

@@ -26,6 +26,7 @@ public class ToolManager {
     private final WeatherTool weatherTool;
     private final MemorySearchTool memorySearchTool;
     private final RecentActivityTool recentActivityTool;
+    private final WriteDiaryTool writeDiaryTool;
     private final AgentBridgeService agentBridgeService;
 
     @Value("${lianyu.tools.chat.enabled:true}")
@@ -40,13 +41,17 @@ public class ToolManager {
     @Value("${lianyu.tools.recent-activity.enabled:true}")
     private boolean recentActivityEnabled;
 
+    @Value("${lianyu.tools.write-diary.enabled:true}")
+    private boolean writeDiaryEnabled;
+
     /**
      * 为本次 ChatModel 调用解析 Tool 列表；须已设置 {@link ChatToolContext}。
      * 服务端内置工具之外，若当前用户的桌面工具桥在线，则追加其本地工具
      * （同名时服务端工具优先，本地工具跳过）。
      */
     public List<ToolCallback> resolveToolCallbacks(AiChatRequest request) {
-        if (!chatToolsEnabled || request == null || request.getChatToolCharacterId() == null) {
+        if (!chatToolsEnabled || request == null || request.getChatToolCharacterId() == null
+                || request.isDisableChatTools()) {
             return List.of();
         }
         List<Object> providers = CollUtil.newArrayList(timeTool);
@@ -58,6 +63,9 @@ public class ToolManager {
         }
         if (recentActivityEnabled) {
             providers.add(recentActivityTool);
+        }
+        if (writeDiaryEnabled) {
+            providers.add(writeDiaryTool);
         }
         List<ToolCallback> callbacks = new ArrayList<>(List.of(ToolCallbacks.from(providers.toArray())));
         appendClientBridgeTools(callbacks);
@@ -109,6 +117,11 @@ public class ToolManager {
         if (recentActivityEnabled) {
             sb.append("""
                     - get_my_recent_life：用户问你最近在干嘛、日记/动态写了什么、近况如何时调用；寒暄勿调。""");
+        }
+        if (writeDiaryEnabled) {
+            sb.append("""
+                    - write_diary：只有当你自己真心觉得今天与对方的交流有趣/触动你、想私下写进日记时调用（每天至多一次，异步完成）。
+                      用户直接要求你写日记时也可以调用；寒暄、问答等平淡场景不要调用，调用后不要向用户复述日记内容。""");
         }
         if (hasComputerTask(userId)) {
             sb.append("""

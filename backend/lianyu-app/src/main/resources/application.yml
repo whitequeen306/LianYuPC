@@ -318,6 +318,9 @@ lianyu:
     recent-activity:
       # 角色近况（日记/动态）按需 Tool；关闭后模型无法主动查询近况
       enabled: true
+    write-diary:
+      # 角色即兴写日记 Tool（聊天中觉得今天交流有趣时自行调用，异步后台生成）
+      enabled: true
     agent-bridge:
       # 桌面 Agent 工具桥：客户端注册的本地 MCP 工具经 STOMP 下发本地执行
       enabled: true
@@ -398,11 +401,21 @@ lianyu:
     decay-interval-minutes: 60
 
   diary:
-    # 角色日记
+    # 角色日记触发算法：
+    #   候选 = 当天有过用户消息的 SINGLE 会话（按当天用户消息数降序）；
+    #   距该角色最后一篇日记（任何来源，含即兴）>= min-days-between-diaries 天且当天聊过 -> 保底必写；
+    #   2 天内写过则按当天聊天量分档概率（light = 1~2 条用户消息 / moderate = >=3 条）；
+    #   每天 22:00 主扫 + 23:30 补扫，幂等；上限 = 全局 max-per-run + 单用户 max-per-user-per-run。
+    #   即兴日记（角色聊天中调 write_diary 工具，source=IMPROMPTU）与定时互斥各自独立，
+    #   受 impromptu-max-per-day 配额约束。
     enabled: true
-    trigger-probability: 0.72   # 每个候选角色尝试生成日记的概率
-    max-per-run: 3
-    scan-limit: 30
+    scan-limit: 30              # 每轮扫描当天最活跃的 N 个会话
+    min-days-between-diaries: 2 # 距最后一篇日记(任何来源)>=此天数且当天聊过 -> 保底必写
+    probability-light: 0.3      # 未达保底：当天 1~2 条用户消息
+    probability-moderate: 0.5   # 未达保底：当天 >=3 条用户消息
+    max-per-run: 20             # 每轮全局上限（费用走用户各自 vault）
+    max-per-user-per-run: 2     # 每轮单用户上限
+    impromptu-max-per-day: 1    # 角色即兴(write_diary 工具)每角色每天最多篇数
     content-max-chars: 900
 
   moments:
@@ -458,45 +471,6 @@ lianyu:
     reconcile-min-age-minutes: 1
     reconcile-batch-size: 50
     reconcile-interval-ms: 120000
-
-  # ─── QQ 桥接（NapCat 正向 WebSocket，单人模式）────────────────────────
-  # 总开关默认关闭。开启前请先阅读 docs/qq-bridge-zh.md
-  # enabled=true 时，本进程内启动 OneBot WS 客户端，把 QQ 私聊/群@消息
-  # 路由进 ConversationService.sendMessage（绕开 HTTP / Sa-Token / lianyu-token）。
-  # enabled=false 时，lianyu-qq-bridge 模块所有 Bean 均不装配，对主流程零影响。
-  qq-bridge:
-    enabled: ${LIANYU_QQ_BRIDGE_ENABLED:false}
-    napcat:
-      # NapCat 正向 WebSocket 服务端地址（在 NapCat 网络配置里建的 WebSocket Server）
-      ws-url: ${LIANYU_QQ_NAPCAT_WS_URL:ws://127.0.0.1:3001}
-      # NapCat WebSocket Server 的 access_token（与 NapCat 配置一致；未设则不携带）
-      access-token: ${LIANYU_QQ_NAPCAT_ACCESS_TOKEN:}
-      # 首次连接 / 断线重连时单次连接超时（秒）
-      connect-timeout-seconds: 10
-      # 心跳判活阈值：超过该秒数未收到任何帧即认定连接已死并触发重连
-      heartbeat-timeout-seconds: 90
-    binding:
-      # 【单人模式】绑定的 QQ 号：仅处理来自此 QQ 的私聊消息（其它私聊忽略）
-      qq-user-id: ${LIANYU_QQ_BINDING_QQ_USER_ID:0}
-      # 映射到的予念用户 ID（须为已存在的真实用户；该用户的角色即对外服务的角色）
-      lianyu-user-id: ${LIANYU_QQ_BINDING_LIANYU_USER_ID:0}
-      # 复用的会话 ID（单人模式固定一个会话；请填一个已存在的会话 ID）
-      conversation-id: ${LIANYU_QQ_BINDING_CONVERSATION_ID:0}
-      # AI 提供方：须为用户自有 vault 别名（不再支持 platform）
-      provider: ${LIANYU_QQ_BINDING_PROVIDER:}
-      # 指定模型（为空则走 provider 默认模型）
-      model: ${LIANYU_QQ_BINDING_MODEL:}
-      # 允许接管的群号列表（逗号分隔，如 111,222；留空 = 不处理任何群消息）
-      allow-groups: ${LIANYU_QQ_BINDING_ALLOW_GROUPS:}
-    reply:
-      # 是否把 AI 多段回复全部发回 QQ（false = 只发第一段）
-      send-all-pieces: true
-      # 多段回复之间的发送间隔（毫秒），模拟真人连发，避免刷屏
-      max-piece-gap-ms: 800
-      # 单段回复最大字符数（超出截断，避免超长消息被 QQ 拒收）
-      max-piece-chars: 2000
-      # AI 调用异常 / 无回复时的兜底文案
-      fallback-text: "（……她似乎走神了，稍后再试试）"
 
 management:
   endpoints:
