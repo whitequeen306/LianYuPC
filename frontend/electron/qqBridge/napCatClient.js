@@ -1,7 +1,7 @@
 /**
  * NapCat 正向 WebSocket 客户端（OneBot 11）。
  *
- * 与后端 lianyu-qq-bridge 的 NapCatClient（Java）同构：
+ * 与旧后端桥 lianyu-qq-bridge（已移除）的 NapCatClient（Java）同构：
  * - echo 配对 API 请求/响应（sendApi 返回 Promise<data>）
  * - 收到 post_type==="message" 的事件经 onMessage 回调上抛
  * - 断线指数退避重连（base * 2^min(n,5)，封顶 reconnectMaxMs）

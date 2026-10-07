@@ -2,8 +2,8 @@
  * QQ 桥接配置（B 方案）— 每个用户的桌面端各自保存一份本地配置。
  * 与 desktopSettings.js 同构：userData 下的 JSON 文件 + read/normalize/write。
  *
- * 字段命名与后端 lianyu-qq-bridge（A 形态）的 QqBridgeProperties 保持一致，
- * 便于将来两侧配置互通；provider 默认 "platform"（运营者共享 AI key，QQ 用户无需自有 vault）。
+ * 字段命名沿用旧后端桥 lianyu-qq-bridge（A 形态，已移除）的 QqBridgeProperties；
+ * provider 默认 "platform"（运营者共享 AI key，QQ 用户无需自有 vault）。
  */
 import { app } from 'electron'
 import path from 'path'

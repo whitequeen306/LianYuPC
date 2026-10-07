@@ -216,20 +216,11 @@ flowchart TD
 
 ---
 
-## 9. 进程内扩展模块（如 `lianyu-qq-bridge`）—— 不接入鉴权链的边界规则
+## 9. 进程内扩展模块 —— 历史边界规则（实例已移除）
 
-某些后端模块**不走 HTTP**，而是在本进程内直接调 Service 层方法（签名本就接受 `Long userId` 显式参数），例如 QQ 桥 `QqBridgeTurnHandler` 直接调 `ConversationService.sendMessage(userId, conversationId, req)`。这类模块对上面 8 条 lockstep 规则**全部无影响**，但必须守住以下边界，否则会**新开一条绕过鉴权耦合链的暗道**：
-
-| 规则 | 要求 | 违反后果 |
-|------|------|---------|
-| **禁开 HTTP 端点** | 桥模块内**禁止**任何 `@RestController` / `@RequestMapping` / `@GetMapping` 等。一旦暴露 HTTP，就被拉进 nginx + `lianyu-token` + Sa-Token 链，违反 §3 / §4。 | 未经鉴权的 HTTP 入口直连 Service，等于绕过 `HeaderOnlyTokenFilter` / Sa-Token。 |
-| **禁入 Sa-Token `notMatch`** | 桥根本不经 Sa-Token，**禁止**把任何桥路径加进 `SaTokenConfig` 的 notMatch 列表。 | 制造「notMatch 里有却没路由」的困惑，并暗示该路径受 Sa-Token 管辖（其实不是）。 |
-| **禁读 / 生成 / 校验 `lianyu-token`** | `ConversationService` 的 Service 层方法签名是 `(Long userId, ...)`，直接传 Long 即合法入口；桥**不得**碰 token。 | 重新引入 §4 的 token 6 处耦合，改一处漏一处即鉴权断。 |
-| **禁改已发布 Flyway 迁移** | Phase 1 不建表；Phase 2 只**新增** `V35__`，不改 V1–V34（遵守规则 6）。 | checksum 不匹配 → 启动崩。 |
-| **默认关闭装配** | 用 `@ConditionalOnProperty(lianyu.qq-bridge.enabled, false)` 门控；关 = 模块一个 Bean 都不装配 = 对主流程零影响。 | 默认开则生产环境意外接入 QQ，引入未经验证的运行路径。 |
-
-> 详见 [`docs/qq-bridge-zh.md`](./qq-bridge-zh.md) §3「安全耦合影响表」与「绝对禁止」清单。该桥当前为 Phase 1 单人模式，**默认 `enabled=false`**。
-
+> **历史注记（2026-10）**：本节规则源于已移除的后端桥模块 `lianyu-qq-bridge`（进程内直调 `ConversationService.sendMessage(Long userId, ...)`，绕开 HTTP / Sa-Token / `lianyu-token`）。该模块已从仓库删除，QQ 桥接现由桌面客户端实现（走标准鉴权链路，见 [`docs/qq-bridge-zh.md`](./qq-bridge-zh.md)）。
+>
+> 若未来重新引入任何「不走 HTTP、进程内直调 Service 层」的模块，必须守住原边界规则：**禁开 HTTP 端点、禁入 Sa-Token `notMatch`、禁读/生成/校验 `lianyu-token`、禁改已发布 Flyway 迁移、默认关闭装配**（`@ConditionalOnProperty` 门控，关 = 零 Bean 装配）。违反任意一条都会新开一条绕过鉴权耦合链的暗道。
 ---
 
 *本文件由代码核对生成，作为安全敏感修改前的持久参考。上下文压缩后请重读本文件再动手。*
