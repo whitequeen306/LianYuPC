@@ -652,11 +652,16 @@ export function resolveProactiveTargets(sessionMap, conversationId) {
 
 /**
  * 从消息记录（seq 升序）中选取最新一轮主动回复的全部分段：最后一条 USER 之后的
- * 全部 ASSISTANT 记录。多段主动回复（App 内多气泡）全发才还原体验；空 content
- * 的记录（语音类，audioUrl 无文案）跳过。纯函数，便于单测。
+ * 全部 ASSISTANT 记录；传入 sinceAt（通知创建时刻）时仅保留该时刻之后落库的记录，
+ * 避免把对上一条用户消息的回复重发。多段主动回复（App 内多气泡）全发才还原体验；
+ * 空 content 的记录（语音类，audioUrl 无文案）跳过。纯函数，便于单测。
  */
-export function pickProactivePieces(records) {
+export function pickProactivePieces(records, sinceAt = null) {
   const list = Array.isArray(records) ? records : []
+  // 通知时刻（减 5s 容差）之后的分段才属于本轮主动消息；否则会把对上一条
+  // 用户消息的回复（同样是「最后一条 USER 之后的 assistant 连续段」）重发一遍
+  const cutoff = parseTimeMs(sinceAt)
+  const cutoffMs = cutoff == null ? null : cutoff - 5000
   let lastUserIdx = -1
   for (let i = list.length - 1; i >= 0; i--) {
     if (String(list[i]?.role || '').toUpperCase() === 'USER') {
@@ -669,9 +674,20 @@ export function pickProactivePieces(records) {
     const r = list[i]
     if (String(r?.role || '').toUpperCase() !== 'ASSISTANT') continue
     const content = String(r?.content || '').trim()
-    if (content) pieces.push(content)
+    if (!content) continue
+    if (cutoffMs != null) {
+      const at = parseTimeMs(r?.createdAt)
+      if (at == null || at < cutoffMs) continue
+    }
+    pieces.push(content)
   }
   return pieces
+}
+
+function parseTimeMs(value) {
+  if (value == null || value === '') return null
+  const ms = Date.parse(String(value))
+  return Number.isFinite(ms) ? ms : null
 }
 
 /**
@@ -696,7 +712,7 @@ async function fetchProactivePieces(conversationId, payload) {
       const records = Array.isArray(parsed?.data?.records)
         ? parsed.data.records
         : (Array.isArray(parsed?.records) ? parsed.records : [])
-      const pieces = pickProactivePieces(records)
+      const pieces = pickProactivePieces(records, payload?.notificationAt)
       if (pieces.length) return pieces
     }
   } catch (e) {

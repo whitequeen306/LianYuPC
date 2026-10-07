@@ -118,6 +118,29 @@ describe('pickProactivePieces', () => {
     expect(pickProactivePieces('x')).toEqual([])
   })
 
+  it('sinceAt 过滤：只保留通知时刻之后落库的分段（不重发上一条回复）', () => {
+    const records = [
+      { role: 'USER', content: '在批公文吗', createdAt: '2026-10-07T21:56:30' },
+      { role: 'ASSISTANT', content: '对上一条消息的回复', createdAt: '2026-10-07T21:56:39' },
+      { role: 'ASSISTANT', content: '真正的主动消息', createdAt: '2026-10-07T22:13:21' },
+    ]
+    expect(pickProactivePieces(records, '2026-10-07T22:13:21')).toEqual(['真正的主动消息'])
+  })
+
+  it('sinceAt 带 5s 容差；since 为空时保持旧行为', () => {
+    const records = [
+      { role: 'ASSISTANT', content: '刚好在容差内', createdAt: '2026-10-07T22:12:59' },
+      { role: 'ASSISTANT', content: '太早', createdAt: '2026-10-07T22:10:00' },
+    ]
+    expect(pickProactivePieces(records, '2026-10-07T22:13:00')).toEqual(['刚好在容差内'])
+    expect(pickProactivePieces(records)).toEqual(['刚好在容差内', '太早'])
+  })
+
+  it('sinceAt 存在但记录无 createdAt 时视为早于 cutoff 跳过', () => {
+    const records = [{ role: 'ASSISTANT', content: '无时间戳' }]
+    expect(pickProactivePieces(records, '2026-10-07T22:13:00')).toEqual([])
+  })
+
   it('role 大小写不敏感', () => {
     expect(pickProactivePieces([
       { role: 'user', content: 'a' },

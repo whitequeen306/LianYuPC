@@ -385,6 +385,8 @@ export const useNotificationsStore = defineStore('notifications', () => {
       preview: data?.contentPreview || '',
       conversationId: data?.conversationId ?? null,
       characterId: data?.characterId ?? null,
+      // 通知创建时间：QQ 桥只取该时刻之后落库的分段，避免把对上一条用户消息的回复重发一遍
+      notificationAt: data?.createdAt ?? null,
     })
   }
 
