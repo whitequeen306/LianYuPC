@@ -192,7 +192,9 @@ Python 侧目前**没有** Resilience4j 等价物（按上游熔断/隔舱）、
 | **P1 网关对等层** | `resilience.py`（按上游熔断/隔舱/瞬断重试）+ `language_gate.py`（4 语种检测、有界重生成、永不强制英文）；语言门做成图内有界环 | `a2d4cfb` |
 | **P2 工具循环** | `tools/`（time/weather，声明式能力清单）+ `tool_loop.py`（显式 3 轮上限，A4 解药）+ `/agent/capabilities` 能力端点 | `3d44876` |
 | **A 批 数据访问** | `db.py`（SELECT 守卫的只读层）+ `memory_search`（Java 降级分支语义）+ `get_my_recent_life`（7 天窗口/4 语种/缓存）；characterId+tools 贯穿端口 | `2e1c832` |
-| **P3 准备** | 三模式行为测试 10 个（OFF/SHADOW/AGENT 分派 + AGENT 空结果必回退 Java + 桌面感知三模式）；`scripts/agent-shadow-report.ps1` 漂移率统计 | 见本轮提交 |
+| **P3 准备** | 三模式行为测试 10 个（OFF/SHADOW/AGENT 分派 + AGENT 空结果必回退 Java + 桌面感知三模式）；`scripts/agent-shadow-report.ps1` 漂移率统计 | `fb8fbf6` |
+| **P4a 流式端点** | Python `/agent/chat-stream`（SSE 契约逐字节对齐、不发 pieces、语言门发 replace）+ `gateway.stream_text`（首字前瞬断重试）+ 8 个契约测试；修 wire 字段名与 usage 透传 | 见提交 |
+| **P4b 消费端** | Java `AgentSseParser`（纯函数，13 用例：增量/replace/error/[DONE]/心跳/转义/`\uXXXX`/忽略 pieces） | 见提交 |
 
 **容器级实测结论**：`lianyu-agent` healthy；backend 日志确认 `profile "prod"` 激活；
 gateway TLS → `/api/agent/` → `{"status":"UP"}`；proactive-turn 无凭据 → `no_text_credentials`、user mismatch → 403。
@@ -213,7 +215,7 @@ gateway TLS → `/api/agent/` → `{"status":"UP"}`；proactive-turn 无凭据 �
 | **P1 · 网关对等层**（当前） | `resilience.py`（按 provider\|baseUrl 隔离熔断、前台/后台隔舱、瞬断重试）+ `language_gate.py`（4 语种检测 + 最多 2 次重生成，逐字移植 Java） | 单测覆盖：5xx 重试、熔断打开/半开、语言不符重生成、业务错不计失败 |
 | **P2 · 工具循环** | `tools/` + 图内有界 `recursion_limit`；先做只读工具（time/weather），依赖库的工具等 P5 | 工具轮次超限被截断；与 Java `ToolManager` 行为对照 |
 | **P3 · 灰度切流** | 主动发言族 4 条：`OFF → SHADOW`（观察 diff）→ `AGENT`；**同时**把朋友圈/日记接进来（此时才允许，见 D6） | 漂移率可解释；回退演练通过 |
-| **P4 · 单聊流式** | `SingleTurn` 图 + SSE 契约逐字节保真（`{"content"}`/`{"replace"}`/`{"pieces"}`/`{"error"}`/`[DONE]`）；Java 侧只剩落库+通知 | 新旧链路双跑一致；客户端零改动 |
+| **P4 · 单聊流式** | `SingleTurn` + SSE 契约逐字节保真；Python 端点与 Java 解析器已就绪 | 🟡 **待接线**：`ChatTurnFacade.invokeStream` 在 AGENT 模式改走 `/agent/chat-stream`，增量喂 `AiChatService.StreamCallback`；收尾仍由 `SseChatStreamHelper` 发 pieces/[DONE]（切分必须留在 Java） |
 | **P5 · 记忆子系统** | 读路径（检索/rerank）先迁；写路径改 outbox（MySQL 为准，Milvus 异步投影），修台账 C1/C2 | 双写失败可自愈；命中率可观测 |
 | **P6 · Java 逐域退役** | square → community → moments → admin；或永久保留（按届时成本决定） | java 容器下线或明确保留理由 |
 
