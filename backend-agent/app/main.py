@@ -10,12 +10,16 @@
 
 import logging
 
+from typing import Any
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.config import get_settings
 from app.desktop_observe import DesktopObserveRequest, observe_desktop
 from app.gateway import ModelGateway, decode_png_base64, get_gateway
+from app.stream_chat import DONE_FRAME, sse_error, stream_chat_events
+from app.tools import supported_tool_schemas
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("lianyu-agent")
@@ -120,6 +124,68 @@ async def desktop_observe(
     async with observe_limiter(str(body.user_id)):
         greeting = await observe_desktop(gateway, request=request)
     return DesktopObserveResponse(greeting=greeting)
+
+
+# ─────────────────────────── P4：单聊流式（SSE） ───────────────────────────
+
+
+class ChatStreamBody(BaseModel):
+    """单聊流式请求：Java 已组装好 system 与历史，Python 只做模型调用 + 语言门。"""
+
+    user_id: int = Field(alias="userId")
+    character_id: int | None = Field(default=None, alias="characterId")
+    system: str = ""
+    messages: list[dict[str, Any]] = []
+    text_base_url: str | None = Field(default=None, alias="textBaseUrl")
+    text_api_key: str | None = Field(default=None, alias="textApiKey")
+    text_model: str | None = Field(default=None, alias="textModel")
+    provider: str | None = None
+    expected_language: str | None = Field(default=None, alias="expectedLanguage")
+    temperature: float = 0.8
+    max_tokens: int = 1024
+    tools: list[str] = []
+
+    model_config = {"populate_by_name": True}
+
+
+@app.post("/agent/chat-stream")
+async def chat_stream(
+    body: ChatStreamBody,
+    user_id_header: str | None = Header(default=None, alias="X-User-Id"),
+) -> StreamingResponse:
+    """SSE 流式回复，帧格式与 Java `SseChatStreamHelper` 逐字节对齐。"""
+    if user_id_header and str(body.user_id) != user_id_header:
+        raise HTTPException(status_code=403, detail="user mismatch")
+
+    async def event_source():
+        yield ": connected\n\n"
+        if not body.text_base_url or not body.text_api_key:
+            yield sse_error("未配置文本模型，请在设置中添加")
+            yield DONE_FRAME
+            return
+        messages: list[dict[str, Any]] = []
+        if body.system:
+            messages.append({"role": "system", "content": body.system})
+        messages.extend(body.messages)
+        async for frame in stream_chat_events(
+            get_gateway(),
+            base_url=body.text_base_url,
+            api_key=body.text_api_key,
+            model=body.text_model or "default",
+            messages=messages,
+            temperature=body.temperature,
+            max_tokens=body.max_tokens,
+            provider=body.provider,
+            expected_language=body.expected_language,
+            tools=supported_tool_schemas(body.tools) if body.tools else None,
+        ):
+            yield frame
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ─────────────────────────── 阶段 2：主动发言回合 ───────────────────────────

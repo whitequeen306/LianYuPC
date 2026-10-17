@@ -10,7 +10,8 @@ import json
 import re
 import logging
 from dataclasses import dataclass
-from typing import Any
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator
 
 from app.config import get_settings
 from app.http_client import new_client
@@ -18,10 +19,17 @@ from app.resilience import (
     GatewayRejectedError,
     breaker_registry,
     call_with_transient_retry,
+    is_transient_failure,
     lane,
 )
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def _null_context(client):
+    """把一个已注入的 client 包成 async context manager（不负责关闭）。"""
+    yield client
 
 
 @dataclass(frozen=True)
@@ -111,6 +119,126 @@ class ModelGateway:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": user_text})
         payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        return await self._post_chat(base_url, api_key, payload, provider=provider, lane_name=lane_name)
+
+    async def stream_text(
+        self,
+        *,
+        base_url: str,
+        api_key: str,
+        model: str,
+        messages: list[dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        tools: list[dict[str, Any]] | None = None,
+        provider: str | None = None,
+        lane_name: str = "interactive",
+    ) -> AsyncIterator[str]:
+        """流式取 token 增量（OpenAI SSE）。
+
+        韧性语义与阻塞路径一致：隔舱占槽 + 熔断许可 + 首字前瞬断重试。
+        一旦已经开始吐字就不再重试（重试会重复生成、重复扣 token）。
+        """
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+
+        breaker = breaker_registry().resolve(provider, base_url)
+        async with lane(lane_name):
+            if not await breaker.try_acquire():
+                logger.warning("breaker %s OPEN, fast-fail stream %s", breaker.name, provider or base_url)
+                raise GatewayRejectedError(f"upstream circuit open for {provider or base_url}")
+
+            emitted_any = False
+            try:
+                attempt = 0
+                while True:
+                    attempt += 1
+                    try:
+                        async for delta in self._stream_once(base_url, api_key, payload):
+                            emitted_any = True
+                            yield delta
+                        break
+                    except Exception as exc:  # noqa: BLE001
+                        # 首字前且瞬断 → 重试一次；其余直接抛
+                        if (not emitted_any and attempt < 2
+                                and is_transient_failure(exc)):
+                            logger.warning(
+                                "gateway stream transient failure, retrying (%d/2): %s", attempt, exc
+                            )
+                            continue
+                        raise
+            except BaseException as exc:
+                await breaker.on_error(exc)
+                raise
+            await breaker.on_success()
+
+    async def _stream_once(
+        self, base_url: str, api_key: str, payload: dict[str, Any]
+    ) -> AsyncIterator[str]:
+        url = f"{base_url.rstrip('/')}/chat/completions"
+        headers = {"Authorization": f"Bearer {api_key}"}
+
+        if self._client is not None:
+            client_cm = _null_context(self._client)
+        else:
+            client_cm = new_client()
+
+        async with client_cm as client:
+            try:
+                async with client.stream("POST", url, json=payload, headers=headers) as response:
+                    if response.status_code != 200:
+                        raise ModelGatewayError(f"model gateway http {response.status_code}")
+                    async for line in response.aiter_lines():
+                        if not line:
+                            continue
+                        trimmed = line.strip()
+                        if not trimmed.startswith("data:"):
+                            continue
+                        data = trimmed[5:].strip()
+                        if data == "[DONE]":
+                            return
+                        try:
+                            frame = json.loads(data)
+                        except json.JSONDecodeError:
+                            continue
+                        choices = frame.get("choices") or []
+                        if not choices:
+                            continue
+                        delta = (choices[0].get("delta") or {}).get("content")
+                        if delta:
+                            yield delta
+            except ModelGatewayError:
+                raise
+            except Exception as exc:  # 网络层
+                raise ModelGatewayError(f"model gateway transport error: {exc}") from exc
+
+    async def chat_messages(
+        self,
+        *,
+        base_url: str,
+        api_key: str,
+        model: str,
+        messages: list[dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        provider: str | None = None,
+        lane_name: str = "interactive",
+    ) -> GatewayResult:
+        """按给定 message 列表做一次阻塞调用（语言门纠错、工具循环用）。"""
+        payload: dict[str, Any] = {
             "model": model,
             "messages": messages,
             "temperature": temperature,
