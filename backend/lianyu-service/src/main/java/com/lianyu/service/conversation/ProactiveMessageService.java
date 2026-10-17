@@ -17,6 +17,7 @@ import com.lianyu.dao.mapper.UserMapper;
 import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.PetMeetVoiceCatalog;
 import com.lianyu.service.ai.PetVoiceRegistry;
+import com.lianyu.service.agent.AgentRuntimePort;
 import com.lianyu.service.character.UserAddressingResolver;
 import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
@@ -37,6 +38,7 @@ import com.lianyu.service.tools.ChatToolContext;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -137,11 +139,58 @@ public class ProactiveMessageService {
     private final NotificationService notificationService;
     private final RelationshipStateService relationshipStateService;
     private final ProactiveUnrepliedThrottle proactiveUnrepliedThrottle;
+    /** Strangler 接缝：AGENT 模式下生成段委托 backend-agent；OFF/SHADOW 走原链路。 */
+    private final AgentRuntimePort agentRuntime;
 
     /** persistX 小事务经由代理调用才能让 @Transactional 生效（@Lazy 自注入打破环）。 */
     @Lazy
     @Autowired
     private ProactiveMessageService self;
+
+    /**
+     * 阶段 2 接缝：AGENT 模式下把生成段委托 backend-agent（LangGraph ProactiveTurn 图）。
+     * 成功返回 ChatResult（content=assistantRaw）；OFF/SHADOW 或 agent 失败返回 null，
+     * 调用方继续走 Java 原链路 —— 永远不阻塞、不改变行为面。
+     */
+    private ChatResult tryAgentTurn(long userId, String scene, String persona, String taskBlock,
+                                    List<MessageDto> history, VaultEntryResponse userVault) {
+        try {
+            if (!agentRuntime.agentActive()) {
+                return null;
+            }
+            List<Map<String, String>> historyMaps = new ArrayList<>();
+            for (MessageDto dto : history) {
+                if (dto == null || dto.getRole() == null) {
+                    continue;
+                }
+                historyMaps.add(Map.of(
+                        "role", dto.getRole(),
+                        "content", dto.getContent() == null ? "" : dto.getContent()));
+            }
+            String raw = agentRuntime.proactiveTurn(userId, scene, persona, taskBlock,
+                    historyMaps, userVault.getProvider(), userVault.getModelDefault());
+            if (raw == null || raw.isBlank()) {
+                return null;
+            }
+            log.info("Agent proactive turn served: userId={}, scene={}, chars={}", userId, scene, raw.length());
+            return ChatResult.builder().content(raw).build();
+        } catch (Exception e) {
+            log.warn("Agent proactive turn failed, fallback to Java: {}", e.toString());
+            return null;
+        }
+    }
+
+    /** 历史消息 → 端口历史（role 小写、不含 system；与端口契约一致）。 */
+    private List<MessageDto> historyToDtoList(List<Message> history) {
+        List<MessageDto> dtos = new ArrayList<>();
+        for (Message msg : history) {
+            MessageDto dto = new MessageDto();
+            dto.setRole(msg.getRole().toLowerCase());
+            dto.setContent(msg.getContent());
+            dtos.add(dto);
+        }
+        return dtos;
+    }
 
     @Lazy
     @Autowired
@@ -181,7 +230,22 @@ public class ProactiveMessageService {
         // Long task text must stay in system — models were treating numbered「要求」as user「指令/乱码」。
         prepared.add(conversationService.buildUserMessage(PROACTIVE_USER_TRIGGER));
 
-        ChatTurnResult chatResult = chatTurnFacade.invokeBlocking(ChatTurnCommand.builder()
+        // ── Strangler 接缝：AGENT 模式下生成段委托 backend-agent（LangGraph 图）──
+        // persona 组装本身有 DB/Redis 往返，仅 agent 真正激活时才做，OFF 路径零开销
+        ChatTurnResult agentResult = null;
+        if (agentRuntime.agentActive()) {
+            String agentPersona = proactiveSystemPrompt(userId, character, null, null);
+            ChatResult agentTurn = tryAgentTurn(userId, "PROACTIVE", agentPersona,
+                    buildProactiveTaskSystemSuffix(maxPieces), historyToDtoList(history), userVault);
+            if (agentTurn != null) {
+                agentResult = ChatTurnResult.builder()
+                        .systemPrompt(agentPersona)
+                        .content(agentTurn.getContent())
+                        .totalTokens(agentTurn.getTotalTokens())
+                        .build();
+            }
+        }
+        ChatTurnResult chatResult = agentResult != null ? agentResult : chatTurnFacade.invokeBlocking(ChatTurnCommand.builder()
                 .scene(ChatTurnScene.PROACTIVE)
                 .userId(userId)
                 .conversationId(conversationId)
@@ -277,25 +341,32 @@ public class ProactiveMessageService {
             int maxPieces = Math.min(2, Math.max(1, behavior.maxRepliesPerTurn()));
             String memoryContext = memoryRetriever.retrieveProfileContext(character.getId(), userId);
             String systemPrompt = proactiveSystemPrompt(userId, character, memoryContext, null);
+            String coldOpenTask = String.format("""
+
+                    
+                    
+                    === 破冰任务（系统指令 · 不是用户发来的消息）===
+                    这是你和该用户在本会话里的第一次开口（会话中还没有任何历史消息）。
+                    请主动先发 1～%d 条很短的破冰话，符合口吻与设定，自然一点，避免机械客服腔。
+                    若多条请用空行分隔；不要堆砌长段落。
+                    禁止假装用户发了乱码、指令、报错或任何尚未出现的用户消息。
+                    """, maxPieces);
+
+            // ── Strangler 接缝：AGENT 模式下生成段委托 backend-agent ──
+            ChatResult agentTurn = agentRuntime.agentActive()
+                    ? tryAgentTurn(userId, "COLD_OPEN", systemPrompt, coldOpenTask, List.of(), userVault)
+                    : null;
 
             AiChatRequest aiRequest = new AiChatRequest();
             ChatToolContext.bindTo(aiRequest, character);
             aiRequest.setProvider(userVault.getProvider());
             aiRequest.setModel(userVault.getModelDefault());
             List<MessageDto> allMessages = new ArrayList<>();
-            allMessages.add(conversationService.buildSystemMessage(systemPrompt + String.format("""
-
-
-                    === 破冰任务（系统指令 · 不是用户发来的消息）===
-                    这是你和该用户在本会话里的第一次开口（会话中还没有任何历史消息）。
-                    请主动先发 1～%d 条很短的破冰话，符合口吻与设定，自然一点，避免机械客服腔。
-                    若多条请用空行分隔；不要堆砌长段落。
-                    禁止假装用户发了乱码、指令、报错或任何尚未出现的用户消息。
-                    """, maxPieces)));
+            allMessages.add(conversationService.buildSystemMessage(systemPrompt + coldOpenTask));
             allMessages.add(conversationService.buildUserMessage(PROACTIVE_USER_TRIGGER));
             aiRequest.setMessages(allMessages);
 
-            ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
+            ChatResult chatResult = agentTurn != null ? agentTurn : aiChatService.chatBlocking(userId, aiRequest);
             if (conversationService.findLastMessage(conversationId) != null) {
                 return;
             }
@@ -567,12 +638,7 @@ public class ProactiveMessageService {
         String systemPrompt = proactiveSystemPrompt(userId, character, memoryContext, null);
         List<Message> history = conversationService.getRecentMessages(conversationId, contextWindow);
 
-        AiChatRequest aiRequest = new AiChatRequest();
-        ChatToolContext.bindTo(aiRequest, character);
-        aiRequest.setProvider(userVault.getProvider());
-        aiRequest.setModel(userVault.getModelDefault());
-        List<MessageDto> allMessages = new ArrayList<>();
-        allMessages.add(conversationService.buildSystemMessage(systemPrompt + """
+        String followUpTask = """
 
 
                 === 破冰跟进（系统指令 · 不是用户发来的消息）===
@@ -580,7 +646,20 @@ public class ProactiveMessageService {
                 不要重复上一句的意思，不要过于啰嗦。
                 这是本条场景下系统允许你的**最后一次自动开口**；发完后安静等用户就好。
                 禁止假装用户刚发了乱码、指令、报错或任何未在历史中真实出现的用户消息。
-                """));
+                """;
+
+        // Strangler: AGENT 模式下生成段委托 backend-agent
+        ChatResult agentTurn = agentRuntime.agentActive()
+                ? tryAgentTurn(userId, "COLD_OPEN_FOLLOWUP", systemPrompt, followUpTask,
+                        historyToDtoList(history), userVault)
+                : null;
+
+        AiChatRequest aiRequest = new AiChatRequest();
+        ChatToolContext.bindTo(aiRequest, character);
+        aiRequest.setProvider(userVault.getProvider());
+        aiRequest.setModel(userVault.getModelDefault());
+        List<MessageDto> allMessages = new ArrayList<>();
+        allMessages.add(conversationService.buildSystemMessage(systemPrompt + followUpTask));
         for (Message msg : history) {
             MessageDto dto = new MessageDto();
             dto.setRole(msg.getRole().toLowerCase());
@@ -591,7 +670,7 @@ public class ProactiveMessageService {
 
         aiRequest.setMessages(allMessages);
         aiRequest.setBackground(true);
-        ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
+        ChatResult chatResult = agentTurn != null ? agentTurn : aiChatService.chatBlocking(userId, aiRequest);
         self.persistColdOpenFollowUpReply(userId, conversationId, character, userVault, chatResult);
     }
 
@@ -659,14 +738,10 @@ public class ProactiveMessageService {
         systemPrompt = appendCityChangeContext(systemPrompt, previousCity, newCity);
 
         List<Message> history = conversationService.getRecentMessages(conversationId, contextWindow);
-        AiChatRequest aiRequest = new AiChatRequest();
-        ChatToolContext.bindTo(aiRequest, character);
-        aiRequest.setProvider(userVault.getProvider());
-        aiRequest.setModel(userVault.getModelDefault());
-        List<MessageDto> allMessages = new ArrayList<>();
-        allMessages.add(conversationService.buildSystemMessage(systemPrompt + String.format("""
+        String cityChangeTask = String.format("""
 
-
+                
+                
                 === 城市变更关心（系统指令 · 不是用户发来的消息）===
                 系统检测到用户刚刚把自己的现实所在城市从「%s」改成了「%s」。
                 请主动发一条关心用户的消息，核心要问用户是不是搬家/换城市了、发生什么事了。
@@ -675,7 +750,20 @@ public class ProactiveMessageService {
                 只发 1 条，不要太长；不要重复历史原话。
                 禁止假装用户发了乱码、指令或报错。
                 """, previousCity, newCity, addressing, previousCity, newCity,
-                addressing, previousCity, newCity)));
+                addressing, previousCity, newCity);
+
+        // Strangler: AGENT 模式下生成段委托 backend-agent
+        ChatResult agentTurn = agentRuntime.agentActive()
+                ? tryAgentTurn(userId, "CITY_CHANGE", systemPrompt, cityChangeTask,
+                        historyToDtoList(history), userVault)
+                : null;
+
+        AiChatRequest aiRequest = new AiChatRequest();
+        ChatToolContext.bindTo(aiRequest, character);
+        aiRequest.setProvider(userVault.getProvider());
+        aiRequest.setModel(userVault.getModelDefault());
+        List<MessageDto> allMessages = new ArrayList<>();
+        allMessages.add(conversationService.buildSystemMessage(systemPrompt + cityChangeTask));
         for (Message msg : history) {
             MessageDto dto = new MessageDto();
             dto.setRole(msg.getRole().toLowerCase());
@@ -686,7 +774,7 @@ public class ProactiveMessageService {
         aiRequest.setMessages(allMessages);
         aiRequest.setBackground(true);
 
-        ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
+        ChatResult chatResult = agentTurn != null ? agentTurn : aiChatService.chatBlocking(userId, aiRequest);
         self.persistCityChangeFollowUpReply(userId, conversationId, character, userVault, chatResult, previousCity, newCity);
     }
 

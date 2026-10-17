@@ -6,6 +6,7 @@ import com.lianyu.service.dto.VaultEntryResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -21,7 +22,7 @@ import java.util.Map;
  */
 @Slf4j
 @Service
-public class DesktopObserveOrchestrator {
+public class DesktopObserveOrchestrator implements com.lianyu.service.agent.AgentRuntimePort {
 
     private final VisionChatService visionChatService;
     private final AgentRuntimeClient agentClient;
@@ -122,6 +123,22 @@ public class DesktopObserveOrchestrator {
     private String callProactiveAgent(long userId, String scene, String persona, String taskBlock,
                                       java.util.List<com.lianyu.service.dto.MessageDto> history,
                                       String provider, String model) {
+        java.util.List<Map<String, String>> historyMaps = new java.util.ArrayList<>();
+        if (history != null) {
+            for (com.lianyu.service.dto.MessageDto dto : history) {
+                if (dto == null || dto.getRole() == null) {
+                    continue;
+                }
+                historyMaps.add(Map.of("role", dto.getRole(), "content", dto.getContent() == null ? "" : dto.getContent()));
+            }
+        }
+        return callProactiveAgentMaps(userId, scene, persona, taskBlock, historyMaps, provider, model);
+    }
+
+    /** 端口路径（已是 Map 形态的历史）。 */
+    private String callProactiveAgentMaps(long userId, String scene, String persona, String taskBlock,
+                                          List<Map<String, String>> historyMaps,
+                                          String provider, String model) {
         String textBaseUrl = null;
         String textApiKey = null;
         String textModel = null;
@@ -136,15 +153,6 @@ public class DesktopObserveOrchestrator {
             }
         } catch (Exception e) {
             log.debug("Proactive turn: vault resolve for agent failed: {}", e.toString());
-        }
-        java.util.List<Map<String, String>> historyMaps = new java.util.ArrayList<>();
-        if (history != null) {
-            for (com.lianyu.service.dto.MessageDto dto : history) {
-                if (dto == null || dto.getRole() == null) {
-                    continue;
-                }
-                historyMaps.add(Map.of("role", dto.getRole(), "content", dto.getContent() == null ? "" : dto.getContent()));
-            }
         }
         return agentClient.proactiveTurn(
                 userId, scene, persona, taskBlock, historyMaps, textBaseUrl, textApiKey, textModel);
@@ -177,5 +185,32 @@ public class DesktopObserveOrchestrator {
         log.warn("Shadow observe[{}]: DIFF java={}chars agent={}chars", userId,
                 fromJava == null ? "null" : fromJava.length(),
                 fromAgent == null ? "null" : fromAgent.length());
+    }
+
+    // ── AgentRuntimePort（service 层调用的接缝）──
+
+    @Override
+    public String proactiveTurn(long userId, String scene, String persona, String taskBlock,
+                                List<Map<String, String>> history, String provider, String model) {
+        // 端口语义：仅 AGENT 模式出结果；OFF/SHADOW 返回 null，由调用方走 Java 原链路
+        if (agentClient.properties().mode() != AgentRuntimeProperties.Mode.AGENT) {
+            return null;
+        }
+        String fromAgent = callProactiveAgentMaps(userId, scene, persona, taskBlock, history, provider, model);
+        if (fromAgent == null || fromAgent.isBlank()) {
+            log.info("Proactive turn[{}][{}]: agent empty, fallback to Java", userId, scene);
+            return null;
+        }
+        return fromAgent;
+    }
+
+    @Override
+    public boolean agentActive() {
+        return agentClient.properties().mode() == AgentRuntimeProperties.Mode.AGENT;
+    }
+
+    @Override
+    public String mode() {
+        return agentClient.properties().mode().name();
     }
 }
