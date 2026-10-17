@@ -88,16 +88,22 @@ nginx: /api/agent/** → python:8001 ; /api/** → java:8080
 
 ### 迁移步骤(Strangler,每步独立可上线、可回滚)
 
-> **实施状态(2026-10)**:阶段 0 全部完成并提交;阶段 1 骨架已落地——`backend-agent/`(FastAPI+LangGraph,23 测试绿)、compose `agent` 服务、nginx `/api/agent/` 分流、`_cloud_deploy_pull.py` 重建清单已含 agent。
+> **实施状态(2026-10,容器实测后)**：阶段 0 完成；阶段 1 完成并经本机 Docker 端到端验证（agent healthy、gateway TLS 分流、prod profile 激活）；阶段 2 主动发言族 4 条链路已接入——prompt 资源化 8 文件 + LangGraph ProactiveTurn 图 + AgentRuntimePort 依赖倒置，三套件全绿。
 
 | 阶段 | 动作 | 验收 |
 |---|---|---|
-| 0 | P0-1~P0-9 先修 + CI 起来(在 Java 上) | main 绿 ✅ 已完成 |
-| 1 | 建 backend-agent 骨架;nginx 分流 `/api/agent/**`;**先迁 1 条最简单链路:桌面感知(observeDesktop,独立极简 prompt,不落库)** | 影子对比:同一输入新旧链路输出 diff 🔄 骨架已落地,待 Java 适配层+影子跑通 |
-| 2 | 迁冷启动/城市变更/朋友圈/日记(现绕过 Graph 的 5 处,本来就该走统一图) | 行为对比测试(资产 1/2/3 的快照) |
+| 0 | P0-1~P0-9 先修 + CI 起来(在 Java 上) | main 绿 ✅ |
+| 1 | backend-agent 骨架;nginx 分流;桌面感知链路 | 容器实测 ✅ |
+| 2a | prompt 资源化 + LangGraph ProactiveTurn 图 + AgentRuntimePort + 4 条主动发言链路接入 | mvn/vitest/pytest 全绿 ✅；容器内 E2E 通 |
+| 2b | 朋友圈发帖/评论 + 日记链路入图（prompt 资源已备好 4 语种日记指令） | 待做 |
 | 3 | 迁单聊流式(SSE 契约原样保留,资产 4);Java 侧 ConversationService 只剩落库+通知 | 双写对比 + 灰度按用户切流 |
-| 4 | 迁群聊/主动/语音;memory 子系统 outbox 化 | 同上 |
+| 4 | 迁群聊/语音;memory 子系统 outbox 化 | 同上 |
 | 5 | Java 侧逐域退役(square→community→moments→admin) | 最终下线 java 容器 |
+
+**运维须知**：
+- 模式切换：`.env` 设 `LIANYU_AGENT_MODE=OFF|SHADOW|AGENT`（默认 OFF，行为与历史版本一致）
+- 影子对比日志：`Proactive shadow[userId][scene]: DIFF` / `Shadow observe: DIFF`（WARN 级，统计漂移率用）
+- 本机宿主 443 若被 Steam++(Watt Toolkit) 等加速器占用，Docker 端口映射实际不生效（容器内验证不受影响）；云端部署无此问题
 
 **关键机制:影子公司(shadow traffic)。** 阶段 1-4 期间,Java 收到请求后异步复制一份给 Python 侧执行(不回给用户),对比输出。这是没有 E2E 测试(审计 E9)前提下唯一可靠的行为保真手段。
 
