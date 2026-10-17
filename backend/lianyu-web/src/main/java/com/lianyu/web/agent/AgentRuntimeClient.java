@@ -34,11 +34,17 @@ public class AgentRuntimeClient {
     private final AgentRuntimeProperties properties;
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
+    /** 流式出站（对齐红线 §10：流式必须用 reactor-netty + 读间隙超时）。 */
+    private final org.springframework.web.reactive.function.client.WebClient webClient;
 
     public AgentRuntimeClient(AgentRuntimeProperties properties, ObjectMapper objectMapper) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.restClient = SsrfPinningClientFactory.defaultRestClientBuilder()
+                .baseUrl(properties.baseUrl())
+                .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .build();
+        this.webClient = SsrfPinningClientFactory.defaultWebClientBuilder()
                 .baseUrl(properties.baseUrl())
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .build();
@@ -195,6 +201,51 @@ public class AgentRuntimeClient {
             log.warn("Agent runtime proactiveTurnResult failed (degraded to null): {}", e.toString());
             return null;
         }
+    }
+
+    /**
+     * 单聊流式：把 Python 的 SSE 行序列交给 {@code sink} 逐行处理。
+     *
+     * <p>返回 {@link reactor.core.publisher.Flux}，由调用方订阅并把行喂给
+     * {@code AgentStreamBridge.Relay}；`[DONE]` 与收尾由 Java 侧决定（切分在 Java）。
+     *
+     * @return 行 Flux；未激活 AGENT 模式时返回空 Flux
+     */
+    public reactor.core.publisher.Flux<String> streamChat(long userId,
+                                String system,
+                                List<Map<String, String>> messages,
+                                String textBaseUrl,
+                                String textApiKey,
+                                String textModel,
+                                String provider,
+                                String expectedLanguage,
+                                Long characterId,
+                                List<String> tools,
+                                double temperature,
+                                int maxTokens) {
+        if (!properties.agentActive()) {
+            return reactor.core.publisher.Flux.empty();
+        }
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("userId", userId);
+        body.put("system", system == null ? "" : system);
+        body.put("messages", messages == null ? List.of() : messages);
+        body.put("textBaseUrl", textBaseUrl == null ? "" : textBaseUrl);
+        body.put("textApiKey", textApiKey == null ? "" : textApiKey);
+        body.put("textModel", textModel == null ? "" : textModel);
+        body.put("provider", provider == null ? "" : provider);
+        body.put("expectedLanguage", expectedLanguage == null ? "" : expectedLanguage);
+        body.put("characterId", characterId == null ? 0L : characterId);
+        body.put("tools", tools == null ? List.of() : tools);
+        body.put("temperature", temperature);
+        body.put("maxTokens", maxTokens);
+
+        return webClient.post()
+                .uri("/agent/chat-stream")
+                .header("X-User-Id", String.valueOf(userId))
+                .bodyValue(body)
+                .retrieve()
+                .bodyToFlux(String.class);
     }
 
     public AgentRuntimeProperties properties() {

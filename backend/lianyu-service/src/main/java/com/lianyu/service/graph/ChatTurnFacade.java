@@ -36,6 +36,13 @@ public class ChatTurnFacade {
     private final VisionChatService visionChatService;
     private final ChatTurnPromptAssembler promptAssembler;
 
+    /**
+     * 单聊流式的 agent 端口（可选）。非 final + required=false：
+     * 单测与裁剪部署没有 web 层时保持 null，等价 OFF 模式。
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.service.agent.AgentStreamPort agentStreamPort;
+
     public String assembleSystemPrompt(ChatTurnCommand command) {
         OverAllState state = runAssemble(command);
         return new ChatTurnState(state).systemPrompt();
