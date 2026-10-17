@@ -18,6 +18,7 @@ import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.PetMeetVoiceCatalog;
 import com.lianyu.service.ai.PetVoiceRegistry;
 import com.lianyu.service.agent.AgentRuntimePort;
+import com.lianyu.service.agent.AgentTurnResult;
 import com.lianyu.service.character.UserAddressingResolver;
 import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
@@ -168,13 +169,17 @@ public class ProactiveMessageService {
                         "role", dto.getRole(),
                         "content", dto.getContent() == null ? "" : dto.getContent()));
             }
-            String raw = agentRuntime.proactiveTurn(userId, scene, persona, taskBlock,
+            AgentTurnResult turn = agentRuntime.proactiveTurn(userId, scene, persona, taskBlock,
                     historyMaps, userVault.getProvider(), userVault.getModelDefault(), characterId);
-            if (raw == null || raw.isBlank()) {
+            if (turn == null || !turn.isUsable()) {
                 return null;
             }
-            log.info("Agent proactive turn served: userId={}, scene={}, chars={}", userId, scene, raw.length());
-            return ChatResult.builder().content(raw).build();
+            log.info("Agent proactive turn served: userId={}, scene={}, chars={}, tokens={}",
+                    userId, scene, turn.content().length(), turn.totalTokens());
+            return ChatResult.builder()
+                    .content(turn.content())
+                    .totalTokens(turn.totalTokens())
+                    .build();
         } catch (Exception e) {
             log.warn("Agent proactive turn failed, fallback to Java: {}", e.toString());
             return null;

@@ -24,6 +24,13 @@ import org.springframework.web.client.RestClient;
 @EnableConfigurationProperties(AgentRuntimeProperties.class)
 public class AgentRuntimeClient {
 
+    /**
+     * 主动发言链路在 Java 侧会挂的只读工具（对齐 ToolManager.resolveToolCallbacks）。
+     * 不含 write_diary / computer_task：Python 侧未实现（总纲 D9），声明了会造成行为落差。
+     */
+    private static final List<String> PROACTIVE_TOOLS = List.of(
+            "get_current_time", "get_weather", "memory_search", "get_my_recent_life");
+
     private final AgentRuntimeProperties properties;
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
@@ -130,6 +137,62 @@ public class AgentRuntimeClient {
             return raw.isMissingNode() || raw.isNull() ? null : raw.asText();
         } catch (Exception e) {
             log.warn("Agent runtime proactiveTurn failed (degraded to null): {}", e.toString());
+            return null;
+        }
+    }
+
+    /**
+     * 与 {@link #proactiveTurn} 同一请求，但带回 usage。
+     * AGENT 模式下用它，避免 token 统计丢失；SHADOW 对比仍可用简化版。
+     */
+    public com.lianyu.service.agent.AgentTurnResult proactiveTurnResult(long userId,
+                                String scene,
+                                String persona,
+                                String taskBlock,
+                                List<Map<String, String>> history,
+                                String provider,
+                                String model,
+                                String expectedLanguage,
+                                Long characterId) {
+        if (!properties.agentActive()) {
+            return null;
+        }
+        List<String> tools = PROACTIVE_TOOLS;
+        try {
+            Map<String, Object> body = new java.util.LinkedHashMap<>();
+            body.put("userId", userId);
+            body.put("scene", scene == null ? "PROACTIVE" : scene);
+            body.put("persona", persona == null ? "" : persona);
+            body.put("taskBlock", taskBlock == null ? "" : taskBlock);
+            body.put("history", history == null ? List.of() : history);
+            body.put("provider", provider == null ? "" : provider);
+            body.put("expectedLanguage", expectedLanguage == null ? "" : expectedLanguage);
+            body.put("characterId", characterId == null ? 0L : characterId);
+            body.put("tools", tools);
+            String response = restClient.post()
+                    .uri("/agent/proactive-turn")
+                    .header("X-User-Id", String.valueOf(userId))
+                    .body(body)
+                    .retrieve()
+                    .body(String.class);
+            JsonNode root = objectMapper.readTree(response == null ? "{}" : response);
+            if (root.hasNonNull("error")) {
+                log.warn("Agent runtime proactiveTurn error: {}", root.path("error").asText());
+                return null;
+            }
+            JsonNode raw = root.path("assistantRaw");
+            String content = raw.isMissingNode() || raw.isNull() ? null : raw.asText();
+            JsonNode total = root.path("totalTokens");
+            Integer totalTokens = total.isMissingNode() || total.isNull() ? null : total.asInt();
+            JsonNode rounds = root.path("toolRounds");
+            JsonNode truncated = root.path("toolTruncated");
+            if (rounds.asInt(0) > 0 || truncated.asBoolean(false)) {
+                log.info("Agent proactiveTurn meta: userId={}, scene={}, toolRounds={}, truncated={}",
+                        userId, scene, rounds.asInt(0), truncated.asBoolean(false));
+            }
+            return new com.lianyu.service.agent.AgentTurnResult(content, totalTokens);
+        } catch (Exception e) {
+            log.warn("Agent runtime proactiveTurnResult failed (degraded to null): {}", e.toString());
             return null;
         }
     }

@@ -68,7 +68,7 @@ class DesktopObserveOrchestratorTest {
     @Test
     void portReturnsNullInOffMode() {
         when(agentClient.properties()).thenReturn(props(AgentRuntimeProperties.Mode.OFF));
-        String result = orchestrator.proactiveTurn(1L, "PROACTIVE", "persona", "task",
+        com.lianyu.service.agent.AgentTurnResult result = orchestrator.proactiveTurn(1L, "PROACTIVE", "persona", "task",
                 List.of(Map.of("role", "user", "content", "hi")), "dashscope", "m", 7L);
         assertNull(result);
         assertFalse(orchestrator.agentActive());
@@ -81,7 +81,7 @@ class DesktopObserveOrchestratorTest {
     @Test
     void portReturnsNullInShadowMode() {
         when(agentClient.properties()).thenReturn(props(AgentRuntimeProperties.Mode.SHADOW));
-        String result = orchestrator.proactiveTurn(1L, "PROACTIVE", "persona", "task",
+        com.lianyu.service.agent.AgentTurnResult result = orchestrator.proactiveTurn(1L, "PROACTIVE", "persona", "task",
                 List.of(Map.of("role", "user", "content", "hi")), "dashscope", "m", 7L);
         // SHADOW 由 Java 出结果；端口只负责 AGENT 分派
         assertNull(result);
@@ -91,20 +91,21 @@ class DesktopObserveOrchestratorTest {
     @Test
     void portReturnsAgentContentInAgentMode() {
         when(agentClient.properties()).thenReturn(props(AgentRuntimeProperties.Mode.AGENT));
-        when(agentClient.proactiveTurn(anyLong(), anyString(), anyString(), anyString(), anyList(),
-                anyString(), anyString(), anyString(), anyString(), org.mockito.ArgumentMatchers.nullable(String.class), any(), anyList()))
-                .thenReturn("今晚早点睡呀");
-        String result = orchestrator.proactiveTurn(1L, "PROACTIVE", "persona", "task",
+        when(agentClient.proactiveTurnResult(anyLong(), anyString(), anyString(), anyString(), anyList(),
+                anyString(), anyString(), org.mockito.ArgumentMatchers.nullable(String.class), any()))
+                .thenReturn(new com.lianyu.service.agent.AgentTurnResult("今晚早点睡呀", 42));
+        com.lianyu.service.agent.AgentTurnResult result = orchestrator.proactiveTurn(1L, "PROACTIVE", "persona", "task",
                 List.of(Map.of("role", "user", "content", "hi")), "dashscope", "m", 7L);
-        assertEquals("今晚早点睡呀", result);
+        assertEquals("今晚早点睡呀", result.content());
+        assertEquals(42, result.totalTokens());
         assertTrue(orchestrator.agentActive());
     }
 
     @Test
     void portReturnsNullWhenAgentEmptySoCallerFallsBack() {
         when(agentClient.properties()).thenReturn(props(AgentRuntimeProperties.Mode.AGENT));
-        when(agentClient.proactiveTurn(anyLong(), anyString(), anyString(), anyString(), anyList(),
-                anyString(), anyString(), anyString(), anyString(), org.mockito.ArgumentMatchers.nullable(String.class), any(), anyList()))
+        when(agentClient.proactiveTurnResult(anyLong(), anyString(), anyString(), anyString(), anyList(),
+                anyString(), anyString(), org.mockito.ArgumentMatchers.nullable(String.class), any()))
                 .thenReturn(null);
         // 关键安全网：返回 null → service 侧继续走 Java 原链路
         assertNull(orchestrator.proactiveTurn(1L, "PROACTIVE", "persona", "task",
@@ -114,9 +115,9 @@ class DesktopObserveOrchestratorTest {
     @Test
     void portReturnsNullWhenAgentBlank() {
         when(agentClient.properties()).thenReturn(props(AgentRuntimeProperties.Mode.AGENT));
-        when(agentClient.proactiveTurn(anyLong(), anyString(), anyString(), anyString(), anyList(),
-                anyString(), anyString(), anyString(), anyString(), org.mockito.ArgumentMatchers.nullable(String.class), any(), anyList()))
-                .thenReturn("   ");
+        when(agentClient.proactiveTurnResult(anyLong(), anyString(), anyString(), anyString(), anyList(),
+                anyString(), anyString(), org.mockito.ArgumentMatchers.nullable(String.class), any()))
+                .thenReturn(new com.lianyu.service.agent.AgentTurnResult("   ", null));
         assertNull(orchestrator.proactiveTurn(1L, "PROACTIVE", "persona", "task",
                 List.of(Map.of("role", "user", "content", "hi")), "dashscope", "m", 7L));
     }

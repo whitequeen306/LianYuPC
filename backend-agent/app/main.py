@@ -153,8 +153,19 @@ class ProactiveTurnBody(BaseModel):
 
 
 class ProactiveTurnResponse(BaseModel):
-    assistant_raw: str | None = None
+    # 必须带 alias：FastAPI 默认 response_model_by_alias=True，
+    # 无 alias 的字段会以 snake_case 输出，Java 侧读 assistantRaw 会永远拿不到（AGENT 会静默回退）。
+    assistant_raw: str | None = Field(default=None, alias="assistantRaw")
     error: str | None = None
+    # 用量与执行元信息：Java 侧据此落库 token 统计（AGENT 模式不能丢这份数据）
+    prompt_tokens: int | None = Field(default=None, alias="promptTokens")
+    completion_tokens: int | None = Field(default=None, alias="completionTokens")
+    total_tokens: int | None = Field(default=None, alias="totalTokens")
+    language_retries: int | None = Field(default=None, alias="languageRetries")
+    tool_rounds: int | None = Field(default=None, alias="toolRounds")
+    tool_truncated: bool | None = Field(default=None, alias="toolTruncated")
+
+    model_config = {"populate_by_name": True}
 
 
 @app.post("/agent/proactive-turn", response_model=ProactiveTurnResponse)
@@ -189,4 +200,17 @@ async def proactive_turn(
     final = await graph.ainvoke(state, config={"recursion_limit": 10})
     if final.get("error"):
         return ProactiveTurnResponse(error=final["error"])
-    return ProactiveTurnResponse(assistant_raw=final.get("assistant_raw"))
+    prompt_tokens = final.get("prompt_tokens")
+    completion_tokens = final.get("completion_tokens")
+    total = None
+    if prompt_tokens is not None or completion_tokens is not None:
+        total = (prompt_tokens or 0) + (completion_tokens or 0)
+    return ProactiveTurnResponse(
+        assistant_raw=final.get("assistant_raw"),
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total,
+        language_retries=final.get("language_retries"),
+        tool_rounds=final.get("tool_rounds"),
+        tool_truncated=final.get("tool_truncated"),
+    )

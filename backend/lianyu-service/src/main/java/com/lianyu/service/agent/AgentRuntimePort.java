@@ -23,7 +23,7 @@ public interface AgentRuntimePort {
      * @param history   近窗历史（不含 system；role 小写 user/assistant）
      * @return assistantRaw，或 null（无凭据/失败/关闭）
      */
-    String proactiveTurn(long userId,
+    AgentTurnResult proactiveTurn(long userId,
                          String scene,
                          String persona,
                          String taskBlock,

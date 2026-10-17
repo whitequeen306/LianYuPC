@@ -83,3 +83,58 @@ def test_capabilities_declares_missing_tools():
     assert body["circuitBreaker"] is True
     assert body["toolLoop"] is True
     assert body["maxToolRounds"] >= 1
+
+
+def test_proactive_response_carries_usage(monkeypatch):
+    """成功路径必须带回 usage —— AGENT 模式丢 token 统计属数据质量回归。"""
+    class FakeGraph:
+        async def ainvoke(self, state, config=None):
+            return {
+                "assistant_raw": "今晚早点睡",
+                "prompt_tokens": 120,
+                "completion_tokens": 18,
+                "language_retries": 1,
+                "tool_rounds": 2,
+                "tool_truncated": False,
+            }
+
+    import app.graphs.proactive_turn as graph_module
+
+    monkeypatch.setattr(graph_module, "build_proactive_graph", lambda gateway: FakeGraph())
+
+    response = client.post(
+        "/agent/proactive-turn",
+        json={
+            "userId": 1,
+            "scene": "PROACTIVE",
+            "persona": "p",
+            "taskBlock": "t",
+            "history": [],
+            "characterId": 3,
+            "tools": ["get_current_time"],
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["assistantRaw"] == "今晚早点睡"
+    assert body["promptTokens"] == 120
+    assert body["completionTokens"] == 18
+    assert body["totalTokens"] == 138          # 两侧相加
+    assert body["languageRetries"] == 1
+    assert body["toolRounds"] == 2
+    assert body["toolTruncated"] is False
+
+
+def test_assistant_raw_uses_camel_case_wire_name():
+    """回归：response 必须输出 assistantRaw（camelCase）。
+
+    FastAPI 默认 response_model_by_alias=True；无 alias 的字段会变成 snake_case，
+    而 Java 侧读的是 assistantRaw —— 曾因此让 AGENT 模式静默回退 Java（真实线上隐患）。
+    """
+    response = client.post(
+        "/agent/proactive-turn",
+        json={"userId": 1, "persona": "p", "history": []},
+    )
+    body = response.json()
+    assert "assistantRaw" in body
+    assert "assistant_raw" not in body

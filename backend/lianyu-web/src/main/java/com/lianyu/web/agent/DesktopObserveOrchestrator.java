@@ -163,14 +163,16 @@ public class DesktopObserveOrchestrator implements com.lianyu.service.agent.Agen
     // ── AgentRuntimePort（service 层调用的接缝）──
 
     @Override
-    public String proactiveTurn(long userId, String scene, String persona, String taskBlock,
-                                List<Map<String, String>> history, String provider, String model, Long characterId) {
+    public com.lianyu.service.agent.AgentTurnResult proactiveTurn(long userId, String scene, String persona,
+                                String taskBlock, List<Map<String, String>> history,
+                                String provider, String model, Long characterId) {
         // 端口语义：仅 AGENT 模式出结果；OFF/SHADOW 返回 null，由调用方走 Java 原链路
         if (agentClient.properties().mode() != AgentRuntimeProperties.Mode.AGENT) {
             return null;
         }
-        String fromAgent = callProactiveAgentMaps(userId, scene, persona, taskBlock, history, provider, model, null, characterId);
-        if (fromAgent == null || fromAgent.isBlank()) {
+        com.lianyu.service.agent.AgentTurnResult fromAgent = agentClient.proactiveTurnResult(
+                userId, scene, persona, taskBlock, history, provider, model, null, characterId);
+        if (fromAgent == null || !fromAgent.isUsable()) {
             log.info("Proactive turn[{}][{}]: agent empty, fallback to Java", userId, scene);
             return null;
         }
