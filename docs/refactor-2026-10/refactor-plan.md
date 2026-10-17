@@ -215,7 +215,7 @@ gateway TLS → `/api/agent/` → `{"status":"UP"}`；proactive-turn 无凭据 �
 | **P1 · 网关对等层**（当前） | `resilience.py`（按 provider\|baseUrl 隔离熔断、前台/后台隔舱、瞬断重试）+ `language_gate.py`（4 语种检测 + 最多 2 次重生成，逐字移植 Java） | 单测覆盖：5xx 重试、熔断打开/半开、语言不符重生成、业务错不计失败 |
 | **P2 · 工具循环** | `tools/` + 图内有界 `recursion_limit`；先做只读工具（time/weather），依赖库的工具等 P5 | 工具轮次超限被截断；与 Java `ToolManager` 行为对照 |
 | **P3 · 灰度切流** | 主动发言族 4 条：`OFF → SHADOW`（观察 diff）→ `AGENT`；**同时**把朋友圈/日记接进来（此时才允许，见 D6） | 漂移率可解释；回退演练通过 |
-| **P4 · 单聊流式** | `SingleTurn` + SSE 契约逐字节保真；Python 端点与 Java 解析器已就绪 | 🟡 **待接线**：`ChatTurnFacade.invokeStream` 在 AGENT 模式改走 `/agent/chat-stream`，增量喂 `AiChatService.StreamCallback`；收尾仍由 `SseChatStreamHelper` 发 pieces/[DONE]（切分必须留在 Java） |
+| **P4 · 单聊流式** | Python `/agent/chat-stream` + Java `AgentStreamBridge`（增量中继）+ `AgentStreamPort` 接线到 `ChatTurnFacade` | ✅ 代码完成：AGENT 模式纯文本流走 Python，图片仍走 Java，任何异常/null 回落 Java；**待真实链路验证**（需本地 vault 解密后实跑） |
 | **P5 · 记忆子系统** | 读路径（检索/rerank）先迁；写路径改 outbox（MySQL 为准，Milvus 异步投影），修台账 C1/C2 | 双写失败可自愈；命中率可观测 |
 | **P6 · Java 逐域退役** | square → community → moments → admin；或永久保留（按届时成本决定） | java 容器下线或明确保留理由 |
 
