@@ -86,6 +86,34 @@ services:
       asr:
         condition: service_healthy
 
+  # Agent 运行时（FastAPI + LangGraph，strangler 阶段 1：桌面感知等 agent 链路）
+  # 仅内网：经 api-gateway 分流 /api/agent/**，不对外暴露端口
+  agent:
+    build:
+      context: ./backend-agent
+      dockerfile: Dockerfile
+    image: lianyu-pc/agent:${APP_REVISION:-dev}
+    container_name: lianyu-agent
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # 与 Java lianyu.ai.multimodal.* 同源：Stage 1 视觉模型凭据
+      LIANYU_AGENT_MULTIMODAL_ENABLED: "true"
+      LIANYU_AGENT_MULTIMODAL_BASE_URL: ${MULTIMODAL_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      LIANYU_AGENT_MULTIMODAL_API_KEY: ${MULTIMODAL_API_KEY:-${DASHSCOPE_API_KEY:-}}
+      LIANYU_AGENT_MULTIMODAL_MODEL: ${MULTIMODAL_MODEL:-qwen3.7-flash}
+      LIANYU_AGENT_SHADOW_MODE: ${LIANYU_AGENT_SHADOW_MODE:-false}
+      TZ: Asia/Shanghai
+    mem_limit: 512m
+    cpus: "1.0"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/agent/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
   # 中文 ASR（SenseVoice final + Zipformer stream，仅内网供 backend 调用）
   asr:
     build:

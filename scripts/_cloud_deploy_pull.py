@@ -52,7 +52,8 @@ def main() -> None:
     client.connect(HOST, username=USER, password=password, timeout=30)
 
     run(client, "cd /opt/lianyu && git pull origin main")
-    run(client, "cd /opt/lianyu && docker compose up -d --build asr backend api-gateway", timeout=1800)
+    # agent = FastAPI/LangGraph 运行时（strangler 阶段 1 起加入重建清单）
+    run(client, "cd /opt/lianyu && docker compose up -d --build asr backend agent api-gateway", timeout=1800)
     run(
         client,
         "cd /opt/lianyu && set -a && . ./.env && set +a && "

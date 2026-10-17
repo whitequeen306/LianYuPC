@@ -88,10 +88,12 @@ nginx: /api/agent/** → python:8001 ; /api/** → java:8080
 
 ### 迁移步骤(Strangler,每步独立可上线、可回滚)
 
+> **实施状态(2026-10)**:阶段 0 全部完成并提交;阶段 1 骨架已落地——`backend-agent/`(FastAPI+LangGraph,23 测试绿)、compose `agent` 服务、nginx `/api/agent/` 分流、`_cloud_deploy_pull.py` 重建清单已含 agent。
+
 | 阶段 | 动作 | 验收 |
 |---|---|---|
-| 0 | P0-1~P0-9 先修 + CI 起来(在 Java 上) | main 绿 |
-| 1 | 建 backend-agent 骨架;nginx 分流 `/api/agent/**`;**先迁 1 条最简单链路:桌面感知(observeDesktop,独立极简 prompt,不落库)** | 影子对比:同一输入新旧链路输出 diff |
+| 0 | P0-1~P0-9 先修 + CI 起来(在 Java 上) | main 绿 ✅ 已完成 |
+| 1 | 建 backend-agent 骨架;nginx 分流 `/api/agent/**`;**先迁 1 条最简单链路:桌面感知(observeDesktop,独立极简 prompt,不落库)** | 影子对比:同一输入新旧链路输出 diff 🔄 骨架已落地,待 Java 适配层+影子跑通 |
 | 2 | 迁冷启动/城市变更/朋友圈/日记(现绕过 Graph 的 5 处,本来就该走统一图) | 行为对比测试(资产 1/2/3 的快照) |
 | 3 | 迁单聊流式(SSE 契约原样保留,资产 4);Java 侧 ConversationService 只剩落库+通知 | 双写对比 + 灰度按用户切流 |
 | 4 | 迁群聊/主动/语音;memory 子系统 outbox 化 | 同上 |
