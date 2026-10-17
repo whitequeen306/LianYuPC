@@ -152,6 +152,20 @@ Python 侧目前**没有** Resilience4j 等价物（按上游熔断/隔舱）、
 **D7 · Python 在 P5 前不直连数据库**（2026-10）
 避免两套数据访问栈并行；也让「事务红线」在迁移期自动成立。记忆子系统的 outbox 化放到 P5。
 
+**D8 · 社区功能整站下线，动态接替其导航主位**（2026-10-17，产品变更）
+产品收敛为「私域陪伴」，公开社区与定位冲突。执行口径：
+- 后端删干净：`service/community` 整包、Controller、7 个 DTO、3 entity、3 mapper、4 测试、
+  2 个 MQ 队列、3 个通知方法、`communityPushEnabled` 设置项、`uploadCommunityImage`、
+  `moderateCommunityContent`、`/users/{id}/community-posts` 端点
+- 前端删干净：`CommunityPage`、`api/community`、`communityShareDraft`、`CommunityPostCard`、
+  分享到社区整套（选消息/截图/上传/跳转）、社区动态列表、`COMMUNITY_*` 通知处理、四语种文案
+- 导航：`AppDock` 右主位 community → **moments**（动态从滚轮菜单提到主位）；`AppSidebar` 同理
+- 保留并移位：`CharacterShowcase`（角色橱窗）、`ProfilePostList`（通用列表容器）→ `components/`
+- 数据库：`V53__drop_community.sql` 删三张表并清理 `COMMUNITY_*` 站内通知
+  - **一次性不可逆操作**，迁移文件头已写备份命令；上线前应先导出
+- 「分享聊天截图」随社区一并移除（它是社区投稿能力）；如日后需要，可基于
+  `moments` 增加图片投稿后重做，无需恢复社区
+
 ---
 
 ## 5. 已完成（进度台账）
@@ -165,6 +179,8 @@ Python 侧目前**没有** Resilience4j 等价物（按上游熔断/隔舱）、
 | **P1 容器实测** | Dockerfile 换官方镜像（ghcr 不可达）、nginx rewrite 去 `/api` 前缀（404 根因） | `18d1091` |
 | **P2a 主动发言族** | prompt 资源化 8 文件 + LangGraph `ProactiveTurn` 图 + `AgentRuntimePort` 依赖倒置 + **4 条链路接入**（定时主动/冷启动/破冰跟进/城市变更） | `410165f`、`eedbe3b` |
 | 收尾 | compose 模式开关、文档回写 | `4de4d0f`、`876abac` |
+| **总纲定稿** | 新总纲取代 `refactor-plan-coupling.md` 与 `rewrite-options.md`；顺带修正 7 处悬空文档引用 | `093b7a1` |
+| **社区下线** | 后端整包 + 队列 + 通知 + 设置项 + 端点；前端页面/api/组件/分享流/通知/i18n 全删；动态接替 dock 主位；`V53` 删三表 | `74552b2` |
 
 **容器级实测结论**：`lianyu-agent` healthy；backend 日志确认 `profile "prod"` 激活；
 gateway TLS → `/api/agent/` → `{"status":"UP"}`；proactive-turn 无凭据 → `no_text_credentials`、user mismatch → 403。

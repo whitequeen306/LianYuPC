@@ -147,7 +147,7 @@ public class MomentsService {
                 .build();
     }
 
-    /** Owner-only archive of user-authored moments posts (not community). */
+    /** Owner-only archive of user-authored moments posts. */
     public MomentFeedResponse listMyUserPosts(Long userId, Long cursor, int limit) {
         int realLimit = Math.min(Math.max(1, limit), 50);
         LambdaQueryWrapper<MomentsPost> qw = new LambdaQueryWrapper<MomentsPost>()

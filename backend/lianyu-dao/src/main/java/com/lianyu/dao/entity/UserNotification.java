@@ -17,7 +17,7 @@ public class UserNotification {
     private Long userId;
     private Long conversationId;
     private Long characterId;
-    /** Public URL for toast avatar (character or community actor). */
+    /** Public URL for toast avatar (character actor). */
     private String actorAvatarUrl;
     private String title;
     private String contentPreview;

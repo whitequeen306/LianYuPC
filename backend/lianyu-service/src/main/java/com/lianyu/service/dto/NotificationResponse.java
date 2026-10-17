@@ -14,7 +14,7 @@ public class NotificationResponse {
     private String type;
     private Long conversationId;
     private Long characterId;
-    /** Public avatar URL for in-app toast (character or community actor). */
+    /** Public avatar URL for in-app toast (character actor). */
     private String actorAvatarUrl;
     private String title;
     private String contentPreview;

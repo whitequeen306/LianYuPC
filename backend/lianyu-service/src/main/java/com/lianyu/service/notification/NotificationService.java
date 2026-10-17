@@ -377,8 +377,8 @@ public class NotificationService {
     }
 
     /**
-     * Community notifications keep {@code characterId = null}; character-linked rows whose
-     * character was deleted (pre-fix orphans) must not stay in the actionable backlog.
+     * Character-linked rows whose character was deleted (pre-fix orphans) must not stay
+     * in the actionable backlog; rows without a characterId are always kept.
      */
     private void excludeOrphanedCharacterNotifications(LambdaQueryWrapper<UserNotification> qw) {
         qw.and(w -> w.isNull(UserNotification::getCharacterId)
