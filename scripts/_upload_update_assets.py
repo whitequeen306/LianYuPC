@@ -22,7 +22,7 @@ BUCKET = "lianyu"
 RETENTION_RELEASES = 3
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
-# 命名契约唯一真相源：scripts/release_assets.json（docs/refactor-plan-coupling.md 项1）
+# 命名契约唯一真相源：scripts/release_assets.json（docs/refactor-2026-10/refactor-plan.md §11（原耦合审查项 1））
 with open(ROOT / "scripts" / "release_assets.json", encoding="utf-8") as _f:
     _ASSETS = json.load(_f)
 REPO = _ASSETS["installer"]["ghRepo"]

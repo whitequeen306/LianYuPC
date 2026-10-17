@@ -5,8 +5,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /**
  * backend-agent（FastAPI/LangGraph）运行时对接配置。
  *
- * <p>Strangler 阶段 1（docs/refactor-2026-10/rewrite-options.md）：Java 仍是唯一对外入口，
- * 按模式把桌面感知链路转发/影子到 Python 侧。
+ * <p>Strangler 三模式（docs/refactor-2026-10/refactor-plan.md §3.4）：Java 仍是唯一对外入口，
+ * 按模式把 AI 链路转发/影子到 Python 侧。
  */
 @ConfigurationProperties(prefix = "lianyu.agent")
 public record AgentRuntimeProperties(

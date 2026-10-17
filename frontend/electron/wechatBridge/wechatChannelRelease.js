@@ -5,7 +5,8 @@
 import { app } from 'electron'
 import path from 'path'
 import fs from 'fs'
-// 命名契约唯一真相源：scripts/release_assets.json（构建期内联，见 docs/refactor-plan-coupling.md 项1）
+// 命名契约唯一真相源：scripts/release_assets.json（构建期内联，
+// 见 docs/refactor-2026-10/refactor-plan.md §11（原耦合审查项 1））
 import releaseAssets from '../../../scripts/release_assets.json'
 
 const _channel = releaseAssets.wechatChannel

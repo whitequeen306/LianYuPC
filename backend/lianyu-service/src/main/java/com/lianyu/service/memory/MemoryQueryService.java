@@ -19,7 +19,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
- * 用户侧记忆查询/删除（从 MemoryController 下沉，docs/refactor-plan-coupling.md 项11）：
+ * 用户侧记忆查询/删除（从 MemoryController 下沉，docs/refactor-2026-10/refactor-plan.md §11（原耦合审查项 11））：
  * 查询组装、越权过滤与 Milvus 向量清理属于业务逻辑，Controller 只留协议壳。
  */
 @Service

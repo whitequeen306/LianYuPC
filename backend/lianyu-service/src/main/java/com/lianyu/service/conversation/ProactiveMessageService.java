@@ -50,7 +50,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 主动消息 / 破冰 / 固定语音 / 城市变更关心（从 ConversationService 拆出，docs/refactor-plan-coupling.md 项5）。
+ * 主动消息 / 破冰 / 固定语音 / 城市变更关心（从 ConversationService 拆出，docs/refactor-2026-10/refactor-plan.md §11（原耦合审查项 5））。
  *
  * <p>依赖方向：ProactiveMessageService → ConversationService（复用会话归属校验、seq、消息落库等
  * 共享辅助），反向无依赖。慢调用（AI / chatTurnFacade.invokeBlocking）一律在事务外，

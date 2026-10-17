@@ -249,7 +249,7 @@ lianyu:
     base-url: ${LIANYU_ASR_BASE_URL:http://asr:8080}
     max-bytes: 8388608
   agent:
-    # Strangler 阶段 1（docs/refactor-2026-10/rewrite-options.md）：
+    # Strangler 三模式（docs/refactor-2026-10/refactor-plan.md §3.4）：
     # OFF    = 纯 Java（默认，行为与历史版本完全一致）
     # SHADOW = Java 出结果 + Python 影子跑并记录 diff（观察期）
     # AGENT  = Python 出结果 + Java 兜底（灰度切流）

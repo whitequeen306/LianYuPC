@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard the update-asset naming contract (docs/refactor-plan-coupling.md item 1).
+"""Guard the update-asset naming contract (docs/refactor-2026-10/refactor-plan.md §11 (原耦合审查项 1)).
 
 Verifies that:
 1. scripts/release_assets.json patterns compile.

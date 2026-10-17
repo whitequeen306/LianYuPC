@@ -23,7 +23,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * 角色情绪状态 / 日记的查询组装（从 CharacterStateController 下沉，
- * docs/refactor-plan-coupling.md 项11）：Mapper 查询与视图组装属业务逻辑，Controller 只留协议壳。
+ * docs/refactor-2026-10/refactor-plan.md §11（原耦合审查项 11））：Mapper 查询与视图组装属业务逻辑，Controller 只留协议壳。
  */
 @Slf4j
 @Service
