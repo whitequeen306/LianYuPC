@@ -1,10 +1,14 @@
 # backend-agent 生产镜像（阶段 1：仅内网 8001，经 api-gateway 分流）
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
-ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
+# 用官方 python 镜像 + pip 装 uv，避免 ghcr.io 在部分网络下不可达
+FROM python:3.12-slim-bookworm AS builder
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy \
+    PIP_DEFAULT_TIMEOUT=120 PIP_NO_CACHE_DIR=1
 WORKDIR /app
+RUN pip install --no-cache-dir uv
 COPY pyproject.toml ./
+COPY uv.lock ./
 COPY app ./app
-RUN uv sync --frozen --no-install-project --no-dev || uv sync --no-dev
+RUN uv sync --frozen --no-install-project --no-dev
 
 FROM python:3.12-slim-bookworm
 WORKDIR /app
