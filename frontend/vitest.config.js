@@ -15,6 +15,7 @@ export default defineConfig({
     // electron 主进程代码同为产品代码，纳入测试覆盖，测试文件与其被测模块同目录
     include: [
       'src/**/__tests__/**/*.test.js',
+      'shared/**/__tests__/**/*.test.js',
       'electron/**/__tests__/**/*.test.js',
     ],
   },

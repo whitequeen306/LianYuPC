@@ -1,5 +1,8 @@
+import { createSseAccumulator } from '../../shared/sseParser'
+
 /**
  * Read SSE assistant reply from a fetch Response body.
+ * 解析逻辑单源于 shared/sseParser（主进程 qqBridge/wechatBridge 同源）。
  * @param {Response} response
  * @param {{ signal?: AbortSignal }} [options]
  * @returns {Promise<{ fullContent: string, pieces: string[] | null }>}
@@ -12,8 +15,7 @@ export async function drainAssistantStream(response, options = {}) {
   }
   const decoder = new TextDecoder()
   let buffer = ''
-  let fullContent = ''
-  let serverPieces = null
+  const acc = createSseAccumulator()
 
   try {
     while (true) {
@@ -28,33 +30,12 @@ export async function drainAssistantStream(response, options = {}) {
       buffer = parts.pop() || ''
 
       for (const line of parts) {
-        const trimmed = line.trim()
-        if (!trimmed.startsWith('data:')) continue
-        const data = trimmed.slice(5).trim()
-        if (!data || data === '[DONE]') continue
-        try {
-          const payload = JSON.parse(data)
-          if (payload.error) {
-            throw new Error(payload.error)
-          }
-          if (payload.content) {
-            fullContent += payload.content
-          }
-          if (payload.replace) {
-            fullContent = payload.replace
-          }
-          if (Array.isArray(payload.pieces) && payload.pieces.length) {
-            serverPieces = payload.pieces.map(p => String(p ?? '').trim()).filter(Boolean)
-          }
-        } catch (e) {
-          if (e instanceof SyntaxError) continue
-          throw e
-        }
+        acc.feed(line)
       }
     }
   } finally {
     reader.releaseLock()
   }
 
-  return { fullContent, pieces: serverPieces }
+  return acc.result()
 }

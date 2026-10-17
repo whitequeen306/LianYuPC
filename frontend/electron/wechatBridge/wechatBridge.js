@@ -2,6 +2,7 @@
  * WeChat inbound turns → YuNian conversation; outbound text back to ClawBot.
  */
 import { extractInboundPayload, pickLatestAssistant, shouldSkipWechatProactive } from './wechatProtocol.js'
+import { parseSseStream as parseSseStreamShared } from '../../shared/sseParser.js'
 import {
   clearWechatLastPeer,
   readWechatBridgeSettings,
@@ -73,21 +74,11 @@ function unwrap(res, path) {
   return body
 }
 
+/**
+ * 解析整条 SSE 文本。实现单源于 shared/sseParser（qqBridge / 渲染进程同源）。
+ */
 function parseSseStream(raw) {
-  const out = { pieces: [], replace: '', content: '', error: '' }
-  const text = String(raw || '')
-  for (const block of text.split(/\n\n+/)) {
-    const dataLines = block.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim())
-    const payload = dataLines.join('\n')
-    if (!payload || payload === '[DONE]') continue
-    let obj
-    try { obj = JSON.parse(payload) } catch { continue }
-    if (Array.isArray(obj.pieces) && obj.pieces.length) out.pieces = obj.pieces.map((s) => String(s ?? ''))
-    if (typeof obj.replace === 'string') out.replace = obj.replace
-    if (typeof obj.content === 'string') out.content += obj.content
-    if (typeof obj.error === 'string' && obj.error) out.error = obj.error
-  }
-  return out
+  return parseSseStreamShared(raw)
 }
 
 function buildMultipartBuffer(fieldName, filename, buf, mime) {

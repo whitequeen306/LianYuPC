@@ -14,6 +14,7 @@ import { createNapCatClient } from './napCatClient.js'
 import { extractMessageContent, resolveReplyTarget, resolveSender } from './messageExtractor.js'
 import { performApiRequest } from '../apiProxy.js'
 import { isAllowedByBinding, readQqBridgeSettings, writeQqBridgeSettings, DEFAULTS } from './qqBridgeSettings.js'
+import { parseSseStream as parseSseStreamShared } from '../../shared/sseParser.js'
 import { app } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -409,30 +410,10 @@ function safeJsonParse(raw) {
 
 /**
  * 解析整条 SSE 文本，提取分段信息。
- * 后端流式端点依次推送：{"content":"<delta>"}（逐 token）、{"replace":"<全文>"}（语言校正）、
- * {"replace":"<规范化>","pieces":["段1",...]}（beforeStreamComplete 的分段，[DONE] 前）、
- * {"error":"<msg>"}（失败）以及 : keep-alive 注释行。bridge 只关心最终 pieces/replace/error。
+ * 实现单源于 shared/sseParser（渲染进程 drainAssistantStream 同源）。
  */
 function parseSseStream(raw) {
-  const out = { pieces: [], replace: '', content: '', error: '' }
-  if (typeof raw !== 'string' || !raw) return out
-  for (const block of raw.split(/\r?\n\r?\n/)) {
-    const dataLines = []
-    for (const line of block.split(/\r?\n/)) {
-      if (line.startsWith(':')) continue // 注释行（心跳）
-      if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''))
-    }
-    if (!dataLines.length) continue
-    const dataStr = dataLines.join('\n')
-    if (dataStr === '[DONE]') continue
-    const obj = safeJsonParse(dataStr)
-    if (!obj) continue
-    if (Array.isArray(obj.pieces) && obj.pieces.length) out.pieces = obj.pieces.map(s => String(s ?? ''))
-    if (typeof obj.replace === 'string') out.replace = obj.replace
-    if (typeof obj.content === 'string') out.content += obj.content
-    if (typeof obj.error === 'string' && obj.error) out.error = obj.error
-  }
-  return out
+  return parseSseStreamShared(raw)
 }
 
 function sleep(ms) {
