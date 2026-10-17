@@ -41,6 +41,26 @@ public class AiStreamExecutorConfig {
         return build("ai-bg-", corePoolSize, maxPoolSize, queueCapacity);
     }
 
+    /**
+     * 默认 @Async 执行器。容器内已有多个 TaskExecutor bean 时，若缺少名为
+     * {@code taskExecutor} 的 bean 且无 AsyncConfigurer，Spring 会回落到
+     * SimpleAsyncTaskExecutor（每任务新建线程、无池化无上限）。@Async
+     * 调用点（SessionSummaryService / MomentsCommentOrchestrator）应落在本池。
+     */
+    @Bean(name = {"taskExecutor", "applicationTaskExecutor"})
+    public TaskExecutor taskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setThreadNamePrefix("app-async-");
+        executor.setCorePoolSize(4);
+        executor.setMaxPoolSize(16);
+        executor.setQueueCapacity(200);
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(15);
+        executor.initialize();
+        return executor;
+    }
+
     private static TaskExecutor build(String prefix, int core, int max, int queue) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setThreadNamePrefix(prefix);

@@ -36,24 +36,17 @@ public class VoiceWebSocketConfig implements WebSocketConfigurer {
                             ServerHttpResponse response,
                             WebSocketHandler wsHandler,
                             Map<String, Object> attributes) {
+                        // 首帧认证模式：握手不带凭据（浏览器原生 WS 无法带自定义 header），
+                        // token 由客户端连上后以 {"type":"auth","token":...} 首帧提交，
+                        // 认证在 VoiceDuplexHandler 中完成，未认证会话不允许 startSession/二进制上行。
+                        // query 传 token 仅作旧客户端兼容回退（会进 nginx access log，将在客户端全面切换后移除）。
                         String query = request.getURI().getQuery();
                         String token = extractToken(query);
-                        if (token == null || token.isBlank()) {
-                            log.warn("Voice WS rejected: missing token");
-                            return false;
+                        if (token != null && !token.isBlank()) {
+                            return bindToken(token, attributes);
                         }
-                        try {
-                            Object loginId = StpUtil.getLoginIdByToken(token);
-                            if (loginId == null) {
-                                log.warn("Voice WS rejected: invalid token");
-                                return false;
-                            }
-                            attributes.put("userId", Long.parseLong(loginId.toString()));
-                            return true;
-                        } catch (Exception e) {
-                            log.warn("Voice WS rejected: {}", e.getMessage());
-                            return false;
-                        }
+                        log.info("Voice WS handshake without credential, awaiting first-frame auth");
+                        return true;
                     }
 
                     @Override
@@ -66,6 +59,23 @@ public class VoiceWebSocketConfig implements WebSocketConfigurer {
                     }
                 })
                 .setAllowedOriginPatterns(allowedOriginPatterns.split(","));
+    }
+
+    /** 校验 token 并把 userId 写入会话属性；返回是否认证通过。供 VoiceDuplexHandler 首帧认证复用。 */
+    public static boolean bindToken(String token, Map<String, Object> attributes) {
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        try {
+            Object loginId = StpUtil.getLoginIdByToken(token);
+            if (loginId == null) {
+                return false;
+            }
+            attributes.put("userId", Long.parseLong(loginId.toString()));
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private static String extractToken(String query) {

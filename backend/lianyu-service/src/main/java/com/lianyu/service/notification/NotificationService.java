@@ -25,6 +25,8 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 @Slf4j
@@ -166,21 +168,44 @@ public class NotificationService {
         notificationMapper.insert(notification);
 
         NotificationResponse response = toResponse(notification);
-        Long unread = getUnreadCountRaw(userId);
-        messagingTemplate.convertAndSendToUser(userId.toString(), "/queue/notifications", response);
-        messagingTemplate.convertAndSendToUser(userId.toString(), "/queue/notification-unread",
-                new UnreadCountResponse(unread));
-
-        if (pushEnabled && hasAnySubscription(userId)) {
-            rabbitTemplate.convertAndSend(EXCHANGE, RK_EVENT_BROADCAST,
-                    new PushNotifyTask(
-                            userId,
-                            notification.getTitle(),
-                            notification.getContentPreview(),
-                            conversationId
-                    ));
-        }
+        // 事务红线：STOMP 推送与 MQ 发布不随当前事务回滚「已推送未落库」的幽灵通知。
+        // 有事务时挂到 afterCommit；无事务调用方（多数后台链路）立即推送。
+        pushAfterCommit(userId, conversationId, notification, response);
         return response;
+    }
+
+    private void pushAfterCommit(Long userId, Long conversationId,
+                                 UserNotification notification, NotificationResponse response) {
+        Runnable push = () -> {
+            try {
+                Long unread = getUnreadCountRaw(userId);
+                messagingTemplate.convertAndSendToUser(userId.toString(), "/queue/notifications", response);
+                messagingTemplate.convertAndSendToUser(userId.toString(), "/queue/notification-unread",
+                        new UnreadCountResponse(unread));
+                if (pushEnabled && hasAnySubscription(userId)) {
+                    rabbitTemplate.convertAndSend(EXCHANGE, RK_EVENT_BROADCAST,
+                            new PushNotifyTask(
+                                    userId,
+                                    notification.getTitle(),
+                                    notification.getContentPreview(),
+                                    conversationId
+                            ));
+                }
+            } catch (Exception e) {
+                log.warn("Notification push deferred task failed: userId={}, type={}",
+                        userId, notification.getType(), e);
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    push.run();
+                }
+            });
+        } else {
+            push.run();
+        }
     }
 
     /**

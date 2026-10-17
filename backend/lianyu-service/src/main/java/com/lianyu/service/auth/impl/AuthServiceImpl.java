@@ -34,8 +34,18 @@ public class AuthServiceImpl implements AuthService {
     private final FileStorageService fileStorageService;
 
     @Override
-    @Transactional
     public LoginResponse register(RegisterRequest request) {
+        // 事务边界：注册落库走短事务，StpUtil.login（Redis 登录态写入）放事务外，
+        // 避免回滚后 token 已发出的幽灵登录；幂等重登路径同理。
+        Long userId = registerInTx(request);
+        User user = findUser(userId);
+        StpUtil.login(user.getId());
+        log.info("User registered: {}", user.getUsername());
+        return toLoginResponse(user);
+    }
+
+    @Transactional
+    protected Long registerInTx(RegisterRequest request) {
         User existing = userMapper.selectOne(new LambdaQueryWrapper<User>()
                 .eq(User::getUsername, request.getUsername()));
         if (existing != null) {
@@ -44,8 +54,7 @@ public class AuthServiceImpl implements AuthService {
             }
             // 上次注册可能已在服务端成功，但客户端未收到响应；密码一致则直接登录
             log.info("Register idempotent login: username={}", existing.getUsername());
-            StpUtil.login(existing.getId());
-            return toLoginResponse(existing);
+            return existing.getId();
         }
 
         User user = new User();
@@ -53,10 +62,7 @@ public class AuthServiceImpl implements AuthService {
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         user.setNickname(resolveNickname(request.getNickname()));
         userMapper.insert(user);
-        log.info("User registered: {}", user.getUsername());
-
-        StpUtil.login(user.getId());
-        return toLoginResponse(user);
+        return user.getId();
     }
 
     @Override
@@ -107,14 +113,32 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    @Transactional
     public UserProfile uploadAvatar(Long userId, MultipartFile file) {
+        // 事务红线：MinIO 上传（60s 超时）不进 @Transactional，否则慢上传会占住 Hikari 连接。
+        // 顺序：先落对象存储 → 短事务落库 → 失败回滚对象；旧头像清理放事务提交后。
+        String uploadedUrl = fileStorageService.uploadAvatar(file);
+        String previousAvatarUrl;
+        try {
+            previousAvatarUrl = persistAvatarUrl(userId, uploadedUrl);
+        } catch (RuntimeException e) {
+            // DB 失败时清掉刚上传的孤儿对象，避免 MinIO 悬挂垃圾
+            String orphanKey = FileStorageService.extractObjectKey(uploadedUrl);
+            if (orphanKey != null) {
+                fileStorageService.deleteObjectQuietly(orphanKey);
+            }
+            throw e;
+        }
+        deleteStoredAvatarIfReplaced(previousAvatarUrl, uploadedUrl);
+        return toProfile(findUser(userId));
+    }
+
+    @Transactional
+    protected String persistAvatarUrl(Long userId, String avatarUrl) {
         User user = findUser(userId);
         String previousAvatarUrl = user.getAvatarUrl();
-        user.setAvatarUrl(fileStorageService.uploadAvatar(file));
+        user.setAvatarUrl(avatarUrl);
         userMapper.updateById(user);
-        deleteStoredAvatarIfReplaced(previousAvatarUrl, user.getAvatarUrl());
-        return toProfile(user);
+        return previousAvatarUrl;
     }
 
     private void deleteStoredAvatarIfReplaced(String previousUrl, String newUrl) {

@@ -43,6 +43,9 @@ services:
     env_file:
       - .env
     environment:
+      # 生产容器必须跑 prod profile（关文档 / WS origin 白名单 / prod CORS）；
+      # 本地 compose 联调如需 dev 行为，在 .env 覆盖 SPRING_PROFILES_ACTIVE=dev
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       REDIS_HOST: redis

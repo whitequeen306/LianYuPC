@@ -2,7 +2,9 @@ spring:
   application:
     name: lianyu-pc
   profiles:
-    active: dev
+    # 默认 dev；生产必须经 docker-compose 注入 SPRING_PROFILES_ACTIVE=prod，
+    # 否则 application-prod.yml 的关文档 / WS origin 白名单 / prod CORS 全部不生效。
+    active: ${SPRING_PROFILES_ACTIVE:dev}
   # 本地 IDE / mvn 启动时自动加载仓库根目录 .env（Docker 仍用 compose env_file）
   config:
     import: >-

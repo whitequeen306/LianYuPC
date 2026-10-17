@@ -147,7 +147,9 @@ export function useVoiceDuplex() {
     if (!token) {
       throw new Error('未登录')
     }
-    const url = `${buildVoiceWsUrl()}?token=${encodeURIComponent(token)}`
+    // 首帧认证：URL 不再携带 token（避免进入服务器访问日志），
+    // 连接建立后先发 {"type":"auth","token":...}，等 ready 才算就绪。
+    const url = buildVoiceWsUrl()
     await new Promise((resolve, reject) => {
       const socket = new WebSocket(url)
       ws = socket
@@ -157,9 +159,12 @@ export function useVoiceDuplex() {
         try { socket.close() } catch { /* ignore */ }
       }, 12000)
       socket.onopen = () => {
-        clearTimeout(timer)
-        connected.value = true
-        resolve()
+        try {
+          socket.send(JSON.stringify({ type: 'auth', token }))
+        } catch (e) {
+          clearTimeout(timer)
+          reject(e)
+        }
       }
       socket.onerror = () => {
         clearTimeout(timer)
@@ -169,9 +174,25 @@ export function useVoiceDuplex() {
         connected.value = false
       }
       socket.onmessage = (ev) => {
-        if (typeof ev.data === 'string') {
-          handleServerMessage(ev.data)
+        if (typeof ev.data !== 'string') {
+          return
         }
+        try {
+          const msg = JSON.parse(ev.data)
+          if (msg?.type === 'ready') {
+            clearTimeout(timer)
+            connected.value = true
+            resolve()
+            return
+          }
+          if (msg?.type === 'error' && !connected.value) {
+            clearTimeout(timer)
+            reject(new Error(String(msg.message || '语音通道认证失败')))
+            try { socket.close() } catch { /* ignore */ }
+            return
+          }
+        } catch { /* 非 JSON 帧，交给统一处理 */ }
+        handleServerMessage(ev.data)
       }
     })
   }

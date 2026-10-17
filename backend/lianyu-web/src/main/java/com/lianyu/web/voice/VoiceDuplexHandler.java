@@ -48,12 +48,25 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
-        Long userId = (Long) session.getAttributes().get("userId");
-        if (userId == null || !duplexEnabled) {
+        states.put(session.getId(), new SessionState());
+        if (session.getAttributes().get("userId") != null) {
+            // 旧客户端：握手 query 已带 token 并在拦截器完成认证
+            markAuthenticated(session, states.get(session.getId()));
+        } else if (!duplexEnabled) {
             closeQuietly(session, CloseStatus.NOT_ACCEPTABLE);
+        }
+        // 其余情况：等待首帧 {"type":"auth","token":...}；未认证前不发 ready、不受理任何业务帧
+    }
+
+    private void markAuthenticated(WebSocketSession session, SessionState state) {
+        Long userId = (Long) session.getAttributes().get("userId");
+        state.userId = userId == null ? 0L : userId;
+        state.authenticated = true;
+        if (state.userId <= 0 || !duplexEnabled) {
+            closeQuietly(session, CloseStatus.NOT_ACCEPTABLE);
+            states.remove(session.getId());
             return;
         }
-        states.put(session.getId(), new SessionState(userId));
         send(session, event("ready", n -> n.put("duplex", true)));
     }
 
@@ -66,6 +79,25 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
         try {
             JsonNode root = objectMapper.readTree(message.getPayload());
             String type = root.path("type").asText("");
+            if (!state.authenticated) {
+                if ("auth".equals(type)) {
+                    String token = root.path("token").asText("");
+                    if (com.lianyu.web.config.VoiceWebSocketConfig.bindToken(token, session.getAttributes())) {
+                        markAuthenticated(session, state);
+                    } else {
+                        log.warn("Voice WS first-frame auth failed");
+                        send(session, error("UNAUTHORIZED", "语音连接认证失败"));
+                        closeQuietly(session, CloseStatus.NOT_ACCEPTABLE);
+                        states.remove(session.getId());
+                    }
+                } else {
+                    // 未认证连接的第一个非 auth 帧：直接拒绝，避免泄露任何业务信号
+                    log.warn("Voice WS frame before auth, dropping");
+                    closeQuietly(session, CloseStatus.POLICY_VIOLATION);
+                    states.remove(session.getId());
+                }
+                return;
+            }
             switch (type) {
                 case "session.start" -> startSession(session, state, root);
                 case "session.end" -> endSession(state);
@@ -98,7 +130,7 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
     @Override
     protected void handleBinaryMessage(WebSocketSession session, BinaryMessage message) {
         SessionState state = states.get(session.getId());
-        if (state == null) {
+        if (state == null || !state.authenticated) {
             return;
         }
         ByteBuffer payload = message.getPayload();
@@ -221,12 +253,12 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
     }
 
     private static final class SessionState {
-        final long userId;
+        long userId;
+        boolean authenticated;
         VoiceDictationSession dictation;
         VoiceCallDuplexSession call;
 
-        SessionState(long userId) {
-            this.userId = userId;
+        SessionState() {
         }
     }
 }

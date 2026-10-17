@@ -85,6 +85,49 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(Result.fail(ErrorCode.BAD_REQUEST, msg));
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Result<Void>> handleIllegalArgument(IllegalArgumentException e,
+                                                              HttpServletRequest request,
+                                                              HttpServletResponse response) {
+        if (shouldSkipJsonErrorBody(request, response)) {
+            return null;
+        }
+        // admin 链路用 IllegalArgumentException 表达「业务参数/状态不合法」（如支持码无效），
+        // 必须是 400 而不是兜底 500，否则前端无法区分错误类别
+        log.warn("Illegal argument: {}", e.getMessage());
+        return ResponseEntity.badRequest().body(Result.fail(ErrorCode.BAD_REQUEST, e.getMessage()));
+    }
+
+    @ExceptionHandler(SecurityException.class)
+    public ResponseEntity<Result<Void>> handleSecurity(SecurityException e,
+                                                       HttpServletRequest request,
+                                                       HttpServletResponse response) {
+        if (shouldSkipJsonErrorBody(request, response)) {
+            return null;
+        }
+        // AdminAuthorizationService.require 权限不足时抛 SecurityException → 403
+        log.warn("Security exception: {}", e.getMessage());
+        return ResponseEntity.status(403).body(Result.fail(ErrorCode.FORBIDDEN, e.getMessage()));
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<Result<Void>> handleIllegalState(IllegalStateException e,
+                                                           HttpServletRequest request,
+                                                           HttpServletResponse response) {
+        if (shouldSkipJsonErrorBody(request, response)) {
+            return null;
+        }
+        // admin 会话失效/撤销（AdminAuthorizationService）用 IllegalStateException 表达 → 401
+        String msg = e.getMessage() == null ? "" : e.getMessage();
+        int status = msg.contains("会话") || msg.contains("登录") ? 401 : 500;
+        if (status == 500) {
+            log.error("Illegal state: {} - {}", e.getClass().getSimpleName(), e.getMessage());
+            return ResponseEntity.status(500).body(Result.fail(ErrorCode.INTERNAL_ERROR));
+        }
+        log.warn("Illegal state (auth): {}", e.getMessage());
+        return ResponseEntity.status(status).body(Result.fail(ErrorCode.UNAUTHORIZED, e.getMessage()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Result<Void>> handleUnknown(Exception e, HttpServletRequest request,
                                                        HttpServletResponse response) {
