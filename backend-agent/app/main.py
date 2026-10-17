@@ -91,3 +91,64 @@ async def desktop_observe(
     async with observe_limiter(str(body.user_id)):
         greeting = await observe_desktop(gateway, request=request)
     return DesktopObserveResponse(greeting=greeting)
+
+
+# ─────────────────────────── 阶段 2：主动发言回合 ───────────────────────────
+
+
+class ProactiveTurnBody(BaseModel):
+    """主动发言生成请求（冷启动/跟进/城市变更/定时主动共用一张图）。
+
+    Java 侧职责（不在 Python 重复）：vault 解析、人设 system 组装（ChatTurnPromptAssembler）、
+    历史取窗、任务块选择、落库与通知。Python 只做「装配+模型调用」。
+    """
+
+    user_id: int = Field(alias="userId")
+    scene: str = "PROACTIVE"
+    persona: str                      # Java 组装好的 system 主体
+    task_block: str = ""              # 资源化任务块（可空：SHADOW 对比时也可由 Python 渲染）
+    history: list[dict[str, str]] = []
+    user_trigger: str = "（系统触发主动发言，用户未发送新消息。）"
+    text_base_url: str | None = Field(default=None, alias="textBaseUrl")
+    text_api_key: str | None = Field(default=None, alias="textApiKey")
+    text_model: str | None = Field(default=None, alias="textModel")
+    temperature: float = 0.8
+    max_tokens: int | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+class ProactiveTurnResponse(BaseModel):
+    assistant_raw: str | None = None
+    error: str | None = None
+
+
+@app.post("/agent/proactive-turn", response_model=ProactiveTurnResponse)
+async def proactive_turn(
+    body: ProactiveTurnBody,
+    user_id_header: str | None = Header(default=None, alias="X-User-Id"),
+) -> ProactiveTurnResponse:
+    if user_id_header and str(body.user_id) != user_id_header:
+        raise HTTPException(status_code=403, detail="user mismatch")
+
+    from app.graphs.proactive_turn import build_proactive_graph
+
+    graph = build_proactive_graph(get_gateway())
+    state = {
+        "user_id": body.user_id,
+        "scene": body.scene,
+        "persona": body.persona,
+        "task_block": body.task_block,
+        "history": body.history,
+        "user_trigger": body.user_trigger,
+        "text_base_url": body.text_base_url or "",
+        "text_api_key": body.text_api_key or "",
+        "text_model": body.text_model or "",
+        "temperature": body.temperature,
+    }
+    if body.max_tokens:
+        state["max_tokens"] = body.max_tokens
+    final = await graph.ainvoke(state, config={"recursion_limit": 10})
+    if final.get("error"):
+        return ProactiveTurnResponse(error=final["error"])
+    return ProactiveTurnResponse(assistant_raw=final.get("assistant_raw"))

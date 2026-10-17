@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     # 并发护栏（对齐 Java ai-chat bulkhead 语义：占槽上限 + 快速失败）
     desktop_observe_max_concurrency: int = 8
 
+    # 主动发言链路（对齐 Java lianyu.chat.max-replies-per-turn 的生成预算）
+    proactive_max_tokens: int = 1024
+
     # 影子对比模式：true 时记录请求/响应到日志供新旧链路 diff
     shadow_mode: bool = False
 

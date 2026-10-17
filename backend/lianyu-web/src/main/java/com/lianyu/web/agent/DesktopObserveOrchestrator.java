@@ -6,6 +6,8 @@ import com.lianyu.service.dto.VaultEntryResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
+
 /**
  * 桌面感知链路的 strangler 编排：Java 老链路 + Python 新链路，按 mode 分派。
  *
@@ -83,6 +85,83 @@ public class DesktopObserveOrchestrator {
         }
         return agentClient.desktopObserve(
                 userId, imageBase64, windowTitle, persona, textBaseUrl, textApiKey, textModel);
+    }
+
+    /**
+     * 主动发言回合的 strangler 编排（阶段 2）。
+     *
+     * @param javaSupplier Java 侧生成函数（ChatTurnFacade / AiChatService 原链路）
+     * @return 最终 assistantRaw；两侧都失败返回 null（语义同 Java 原实现）
+     */
+    public String proactiveTurn(long userId,
+                                String scene,
+                                String persona,
+                                String taskBlock,
+                                java.util.List<com.lianyu.service.dto.MessageDto> history,
+                                String provider,
+                                String model,
+                                java.util.function.Supplier<String> javaSupplier) {
+        AgentRuntimeProperties.Mode mode = agentClient.properties().mode();
+        if (mode == AgentRuntimeProperties.Mode.AGENT) {
+            String fromAgent = callProactiveAgent(userId, scene, persona, taskBlock, history, provider, model);
+            if (fromAgent != null && !fromAgent.isBlank()) {
+                return fromAgent;
+            }
+            log.info("Proactive turn[{}]: agent mode empty, falling back to Java", userId);
+        }
+
+        String fromJava = javaSupplier.get();
+
+        if (mode == AgentRuntimeProperties.Mode.SHADOW) {
+            String fromAgent = callProactiveAgent(userId, scene, persona, taskBlock, history, provider, model);
+            recordProactiveDiff(userId, scene, fromJava, fromAgent);
+        }
+        return fromJava;
+    }
+
+    private String callProactiveAgent(long userId, String scene, String persona, String taskBlock,
+                                      java.util.List<com.lianyu.service.dto.MessageDto> history,
+                                      String provider, String model) {
+        String textBaseUrl = null;
+        String textApiKey = null;
+        String textModel = null;
+        try {
+            VaultEntryResponse vault = vaultService.resolveForChat(userId, provider);
+            if (vault != null) {
+                textBaseUrl = vault.getBaseUrl();
+                textApiKey = vault.getId() != null
+                        ? vaultService.decryptKeyForChat(vault.getId())
+                        : vault.getApiKey();
+                textModel = model != null && !model.isBlank() ? model.trim() : vault.getModelDefault();
+            }
+        } catch (Exception e) {
+            log.debug("Proactive turn: vault resolve for agent failed: {}", e.toString());
+        }
+        java.util.List<Map<String, String>> historyMaps = new java.util.ArrayList<>();
+        if (history != null) {
+            for (com.lianyu.service.dto.MessageDto dto : history) {
+                if (dto == null || dto.getRole() == null) {
+                    continue;
+                }
+                historyMaps.add(Map.of("role", dto.getRole(), "content", dto.getContent() == null ? "" : dto.getContent()));
+            }
+        }
+        return agentClient.proactiveTurn(
+                userId, scene, persona, taskBlock, historyMaps, textBaseUrl, textApiKey, textModel);
+    }
+
+    private void recordProactiveDiff(long userId, String scene, String fromJava, String fromAgent) {
+        if (fromJava == null && fromAgent == null) {
+            log.info("Proactive shadow[{}][{}]: both-null", userId, scene);
+            return;
+        }
+        if (fromJava != null && fromAgent != null && fromJava.equals(fromAgent)) {
+            log.info("Proactive shadow[{}][{}]: match ({} chars)", userId, scene, fromJava.length());
+            return;
+        }
+        log.warn("Proactive shadow[{}][{}]: DIFF java={}chars agent={}chars", userId, scene,
+                fromJava == null ? "null" : fromJava.length(),
+                fromAgent == null ? "null" : fromAgent.length());
     }
 
     private void recordShadowDiff(long userId, String fromJava, String fromAgent) {

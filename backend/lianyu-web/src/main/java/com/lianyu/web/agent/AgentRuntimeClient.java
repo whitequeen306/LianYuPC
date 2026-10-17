@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lianyu.ai.SsrfPinningClientFactory;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -72,6 +73,52 @@ public class AgentRuntimeClient {
             return greeting.isMissingNode() || greeting.isNull() ? null : greeting.asText();
         } catch (Exception e) {
             log.warn("Agent runtime desktopObserve failed (degraded to null): {}", e.toString());
+            return null;
+        }
+    }
+
+    /**
+     * 调用主动发言回合图（阶段 2：冷启动/跟进/城市变更/定时主动共用）。
+     * Java 侧完成人设 system 组装与任务块选择；Python 侧做装配 + 模型调用。
+     *
+     * @return assistantRaw 或 null（任何失败静默降级，绝不影响主链路）
+     */
+    public String proactiveTurn(long userId,
+                                String scene,
+                                String persona,
+                                String taskBlock,
+                                List<Map<String, String>> history,
+                                String textBaseUrl,
+                                String textApiKey,
+                                String textModel) {
+        if (!properties.agentActive()) {
+            return null;
+        }
+        try {
+            Map<String, Object> body = Map.of(
+                    "userId", userId,
+                    "scene", scene == null ? "PROACTIVE" : scene,
+                    "persona", persona == null ? "" : persona,
+                    "taskBlock", taskBlock == null ? "" : taskBlock,
+                    "history", history == null ? List.of() : history,
+                    "textBaseUrl", textBaseUrl == null ? "" : textBaseUrl,
+                    "textApiKey", textApiKey == null ? "" : textApiKey,
+                    "textModel", textModel == null ? "" : textModel);
+            String response = restClient.post()
+                    .uri("/agent/proactive-turn")
+                    .header("X-User-Id", String.valueOf(userId))
+                    .body(body)
+                    .retrieve()
+                    .body(String.class);
+            JsonNode root = objectMapper.readTree(response == null ? "{}" : response);
+            if (root.hasNonNull("error")) {
+                log.warn("Agent runtime proactiveTurn error: {}", root.path("error").asText());
+                return null;
+            }
+            JsonNode raw = root.path("assistantRaw");
+            return raw.isMissingNode() || raw.isNull() ? null : raw.asText();
+        } catch (Exception e) {
+            log.warn("Agent runtime proactiveTurn failed (degraded to null): {}", e.toString());
             return null;
         }
     }

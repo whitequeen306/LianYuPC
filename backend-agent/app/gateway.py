@@ -81,22 +81,59 @@ class ModelGateway:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        return await self._post_chat(base_url, api_key, payload)
+
+    async def chat_sync(
+        self,
+        *,
+        base_url: str,
+        api_key: str,
+        model: str,
+        system: str | None,
+        user_text: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> GatewayResult:
+        """纯文本对话（LangGraph 节点用）。"""
+        messages: list[dict[str, Any]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": user_text})
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        return await self._post_chat(base_url, api_key, payload)
+
+    async def _post_chat(self, base_url: str, api_key: str, payload: dict[str, Any]) -> GatewayResult:
         url = f"{base_url.rstrip('/')}/chat/completions"
         headers = {"Authorization": f"Bearer {api_key}"}
 
         try:
             if self._client is not None:
                 response = await self._client.post(url, json=payload, headers=headers)
-                status, body = response.status_code, response.json()
+                status = response.status_code
+                try:
+                    body = response.json()
+                except Exception:
+                    body = None
             else:
                 async with new_client() as client:
                     response = await client.post(url, json=payload, headers=headers)
-                    status, body = response.status_code, response.json()
+                    status = response.status_code
+                    try:
+                        body = response.json()
+                    except Exception:
+                        body = None
         except Exception as exc:  # 网络层失败：连接拒绝/DNS/读超时
             raise ModelGatewayError(f"model gateway transport error: {exc}") from exc
 
         if status != 200:
             raise ModelGatewayError(f"model gateway http {status}")
+        if not isinstance(body, dict):
+            raise ModelGatewayError("model gateway malformed response")
         try:
             choice = body["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
