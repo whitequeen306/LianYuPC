@@ -44,7 +44,7 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useSettingsStore } from '@/stores/settings'
-import { Setting, UserFilled, HomeFilled, Grid, User, ChatDotRound, PictureRounded, ChatLineSquare, Notebook, Collection } from '@element-plus/icons-vue'
+import { Setting, UserFilled, HomeFilled, Grid, User, ChatDotRound, PictureRounded, Notebook, Collection } from '@element-plus/icons-vue'
 import { APP_LOGO } from '@/constants/brand.js'
 
 const route = useRoute()
@@ -55,7 +55,6 @@ const navItems = computed(() => [
   { path: '/app', label: t('nav.home'), icon: HomeFilled },
   { path: '/app/characters', label: t('nav.characters'), icon: User },
   { path: '/app/character-square', label: t('nav.characterSquare'), icon: Grid },
-  { path: '/app/community', label: t('nav.community'), icon: ChatLineSquare },
   { path: '/app/moments', label: t('nav.moments'), icon: PictureRounded },
   { path: '/app/group-chat', label: t('nav.groupChat'), icon: ChatDotRound },
   { path: '/app/diary', label: t('nav.diary'), icon: Notebook },

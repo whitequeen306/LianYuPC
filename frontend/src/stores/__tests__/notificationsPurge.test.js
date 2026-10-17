@@ -6,7 +6,7 @@ describe('filterOutCharacterNotifications', () => {
     const list = [
       { id: 1, characterId: 9, type: 'PROACTIVE_MESSAGE', read: false },
       { id: 2, characterId: 8, type: 'MOMENT_NEW', read: false },
-      { id: 3, characterId: null, type: 'COMMUNITY_POST_NEW', read: false },
+      { id: 3, characterId: null, type: 'MOMENT_COMMENT', read: false },
       { id: 4, characterId: '9', type: 'DIARY_NEW', read: true },
     ]
 

@@ -60,7 +60,6 @@ public class UserPublicProfileService {
         UserSettingsResolver.VisionSource vs = UserSettingsResolver.visionSource(user.getSettingsJson());
         return UserSettingsResponse.builder()
                 .showCharactersOnProfile(UserSettingsResolver.showCharactersOnProfile(user.getSettingsJson()))
-                .communityPushEnabled(UserSettingsResolver.communityPushEnabled(user.getSettingsJson()))
                 .visionSourceMode(vs.mode())
                 .visionSourceProvider(vs.provider())
                 .build();
@@ -73,11 +72,6 @@ public class UserPublicProfileService {
         if (request.getShowCharactersOnProfile() != null) {
             user.setSettingsJson(UserSettingsResolver.withShowCharacters(
                     user.getSettingsJson(), request.getShowCharactersOnProfile()));
-            dirty = true;
-        }
-        if (request.getCommunityPushEnabled() != null) {
-            user.setSettingsJson(UserSettingsResolver.withCommunityPushEnabled(
-                    user.getSettingsJson(), request.getCommunityPushEnabled()));
             dirty = true;
         }
         if (request.getVisionSourceMode() != null) {

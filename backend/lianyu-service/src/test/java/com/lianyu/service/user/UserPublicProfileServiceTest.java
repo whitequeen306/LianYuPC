@@ -27,15 +27,6 @@ class UserPublicProfileServiceTest {
     }
 
     @Test
-    void communityPushDefaultsTrueUntilExplicitlyDisabled() {
-        assertTrue(UserSettingsResolver.communityPushEnabled(null));
-        assertTrue(UserSettingsResolver.communityPushEnabled(
-                UserSettingsResolver.withCommunityPushEnabled(null, true)));
-        assertFalse(UserSettingsResolver.communityPushEnabled(
-                UserSettingsResolver.withCommunityPushEnabled(null, false)));
-    }
-
-    @Test
     void visionSourceDefaultsToPlatform() {
         assertEquals("platform", UserSettingsResolver.visionSource(null).mode());
         assertEquals(null, UserSettingsResolver.visionSource(null).provider());

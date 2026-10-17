@@ -117,30 +117,6 @@ public class NotificationService {
                 resolveCharacterAvatarUrl(characterId));
     }
 
-    /**
-     * Other users' community posts. {@code postId} is stored in conversationId for deep-link routing.
-     */
-    public NotificationResponse notifyCommunityPostNew(Long userId, Long postId, String actorName,
-                                                       String preview, String actorAvatarUrl) {
-        String speaker = (actorName == null || actorName.isBlank()) ? "有人" : actorName;
-        return createAndPushNotification(userId, postId, null,
-                speaker + " 发布了社区动态", preview, "COMMUNITY_POST_NEW", actorAvatarUrl);
-    }
-
-    public NotificationResponse notifyCommunityLike(Long userId, Long postId, String actorName,
-                                                    String preview, String actorAvatarUrl) {
-        String speaker = (actorName == null || actorName.isBlank()) ? "有人" : actorName;
-        return createAndPushNotification(userId, postId, null,
-                speaker + " 赞了你的社区动态", preview, "COMMUNITY_LIKE", actorAvatarUrl);
-    }
-
-    public NotificationResponse notifyCommunityComment(Long userId, Long postId, String actorName,
-                                                       String preview, String actorAvatarUrl) {
-        String speaker = (actorName == null || actorName.isBlank()) ? "有人" : actorName;
-        return createAndPushNotification(userId, postId, null,
-                speaker + " 评论了你的社区动态", preview, "COMMUNITY_COMMENT", actorAvatarUrl);
-    }
-
     private NotificationResponse createAndPushNotification(Long userId,
                                                          Long conversationId,
                                                          Long characterId,

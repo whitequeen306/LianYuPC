@@ -9,8 +9,6 @@ import java.util.Map;
 public final class UserSettingsResolver {
 
     public static final String KEY_SHOW_CHARACTERS_ON_PROFILE = "showCharactersOnProfile";
-    /** Default ON: missing key means the user still accepts community post toasts. */
-    public static final String KEY_COMMUNITY_PUSH_ENABLED = "communityPushEnabled";
     /** 识图来源：platform（平台默认 qwen3.7-flash）| followText（跟随文本 Provider 一次调用）| provider（指定识图 Provider） */
     public static final String KEY_VISION_SOURCE_MODE = "visionSourceMode";
     /** mode=provider 时，purpose=vision 的 vault 别名 */
@@ -27,19 +25,9 @@ public final class UserSettingsResolver {
         return resolveBoolean(settings, KEY_SHOW_CHARACTERS_ON_PROFILE, false);
     }
 
-    public static boolean communityPushEnabled(Map<String, Object> settings) {
-        return resolveBoolean(settings, KEY_COMMUNITY_PUSH_ENABLED, true);
-    }
-
     public static Map<String, Object> withShowCharacters(Map<String, Object> existing, boolean value) {
         Map<String, Object> next = existing == null ? new HashMap<>() : new HashMap<>(existing);
         next.put(KEY_SHOW_CHARACTERS_ON_PROFILE, value);
-        return next;
-    }
-
-    public static Map<String, Object> withCommunityPushEnabled(Map<String, Object> existing, boolean value) {
-        Map<String, Object> next = existing == null ? new HashMap<>() : new HashMap<>(existing);
-        next.put(KEY_COMMUNITY_PUSH_ENABLED, value);
         return next;
     }
 

@@ -3,7 +3,7 @@
     <header class="page-header stagger-item">
       <div>
         <h1 class="page-title">{{ profile?.nickname || '用户主页' }}</h1>
-        <p class="page-desc">社区动态与角色橱窗</p>
+        <p class="page-desc">角色橱窗</p>
       </div>
     </header>
 
@@ -13,7 +13,7 @@
         <el-icon v-else :size="36"><UserFilled /></el-icon>
       </div>
       <div class="profile-hero__meta">
-        <span class="profile-hero__eyebrow">社区用户</span>
+        <span class="profile-hero__eyebrow">用户</span>
         <h2>{{ profile.nickname }}</h2>
       </div>
     </section>
@@ -27,28 +27,6 @@
       @select="onShowcaseSelect"
     />
 
-    <ProfilePostList
-      class="stagger-item"
-      title="社区动态"
-      :desc="communityPostsDesc"
-      :items="posts"
-      :loading="loading"
-      :loading-more="loadingMore"
-      :has-more="hasMore"
-      empty-text="还没有社区动态"
-      @load-more="loadMore"
-    >
-      <template #default="{ items }">
-        <CommunityPostCard
-          v-for="post in items"
-          :key="post.id"
-          :post="post"
-          :show-comments="openCommentsId === post.id"
-          @like="onLike"
-          @toggle-comments="toggleComments"
-        />
-      </template>
-    </ProfilePostList>
   </div>
 </template>
 
@@ -57,11 +35,8 @@ import { onMounted, ref, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { UserFilled } from '@element-plus/icons-vue'
-import CharacterShowcase from '@/components/community/CharacterShowcase.vue'
-import ProfilePostList from '@/components/community/ProfilePostList.vue'
-import CommunityPostCard from '@/components/community/CommunityPostCard.vue'
-import { fetchPublicUserProfile, fetchUserCommunityPosts } from '@/api/users'
-import { toggleCommunityLike } from '@/api/community'
+import CharacterShowcase from '@/components/CharacterShowcase.vue'
+import { fetchPublicUserProfile } from '@/api/users'
 import { resolveMediaUrl } from '@/utils/media'
 import { useUserStore } from '@/stores/user'
 
@@ -70,21 +45,15 @@ const router = useRouter()
 const userStore = useUserStore()
 
 const profile = ref(null)
-const posts = ref([])
-const cursor = ref(null)
-const hasMore = ref(false)
-const loading = ref(false)
-const loadingMore = ref(false)
-const openCommentsId = ref(null)
 const selectedCharacterId = ref(null)
 
-const communityPostsDesc = computed(() => {
-  if (!selectedCharacterId.value) return ''
-  const match = (profile.value?.characters || []).find((c) => c.characterId === selectedCharacterId.value)
-  return match ? `筛选：${match.name} 相关动态` : '筛选中的角色相关动态'
-})
+// 橱窗选中高亮（社区下线后不再按角色筛选动态，仅保留视觉选中态）
+function onShowcaseSelect(characterId) {
+  selectedCharacterId.value = selectedCharacterId.value === characterId ? null : characterId
+}
 
 watch(() => route.params.userId, () => {
+  selectedCharacterId.value = null
   loadAll()
 })
 
@@ -101,7 +70,6 @@ async function loadAll() {
   loading.value = true
   try {
     profile.value = await fetchPublicUserProfile(userId)
-    await loadPosts(userId)
   } catch (e) {
     ElMessage.error(e?.message || '加载失败')
   } finally {
@@ -109,61 +77,10 @@ async function loadAll() {
   }
 }
 
-async function loadPosts(userId) {
-  const params = { limit: 5 }
-  if (selectedCharacterId.value) {
-    params.characterId = selectedCharacterId.value
-  }
-  const data = await fetchUserCommunityPosts(userId, params)
-  posts.value = data?.items || []
-  cursor.value = data?.nextCursor || null
-  hasMore.value = !!data?.hasMore
-}
 
-async function loadMore() {
-  if (!hasMore.value || loadingMore.value) return
-  loadingMore.value = true
-  try {
-    const userId = Number(route.params.userId)
-    const params = { cursor: cursor.value, limit: 10 }
-    if (selectedCharacterId.value) {
-      params.characterId = selectedCharacterId.value
-    }
-    const data = await fetchUserCommunityPosts(userId, params)
-    posts.value = [...posts.value, ...(data?.items || [])]
-    cursor.value = data?.nextCursor || null
-    hasMore.value = !!data?.hasMore
-  } finally {
-    loadingMore.value = false
-  }
-}
 
-function onShowcaseSelect(characterId) {
-  selectedCharacterId.value = characterId
-  cursor.value = null
-  const userId = Number(route.params.userId)
-  if (!userId) return
-  loading.value = true
-  loadPosts(userId)
-    .catch((e) => ElMessage.error(e?.message || '加载失败'))
-    .finally(() => {
-      loading.value = false
-    })
-}
 
-async function onLike(post) {
-  try {
-    const res = await toggleCommunityLike(post.id)
-    post.likedByMe = !!res?.liked
-    post.likeCount = res?.likeCount ?? post.likeCount
-  } catch (e) {
-    ElMessage.error(e?.message || '操作失败')
-  }
-}
 
-function toggleComments(post) {
-  openCommentsId.value = openCommentsId.value === post.id ? null : post.id
-}
 </script>
 
 <style lang="scss" scoped>

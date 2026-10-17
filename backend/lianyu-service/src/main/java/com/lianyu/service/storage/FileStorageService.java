@@ -31,7 +31,6 @@ public class FileStorageService {
 
     private static final String AVATAR_PATH = "avatars/";
     private static final String CHAT_IMAGE_PATH = "chat-images/";
-    private static final String COMMUNITY_IMAGE_PATH = "community-images/";
     private static final String CHAT_VOICE_PATH = "chat-voice/";
     private static final String CUSTOM_VOICE_PATH = "custom-voices/";
     private static final String SQUARE_AVATAR_PATH = "square-avatars/";
@@ -49,7 +48,7 @@ public class FileStorageService {
     private static final Pattern SAFE_PET_ID = Pattern.compile("^[a-z0-9-]{1,32}$");
     private static final Pattern SAFE_USER_ID = Pattern.compile("^[0-9]{1,20}$");
     private static final Pattern SAFE_OBJECT_KEY = Pattern.compile(
-            "^(avatars/[a-zA-Z0-9._-]+|chat-images/[a-zA-Z0-9._-]+|community-images/[a-zA-Z0-9._-]+|chat-voice/[a-z0-9-]+/[a-zA-Z0-9._-]+|custom-voices/[0-9]+/[a-zA-Z0-9._-]+|square-avatars/[a-z0-9._-]+|square-avatars-thumb/[a-z0-9._-]+|updates/(latest\\.yml|agent-latest\\.yml|wechat-channel-latest\\.yml|[a-zA-Z0-9._-]+\\.exe|[a-zA-Z0-9._-]+\\.exe\\.blockmap|AgentEngine-hosted-win-x64-[0-9]+\\.[0-9]+\\.[0-9]+\\.zip|WechatChannel-win-x64-[0-9]+\\.[0-9]+\\.[0-9]+\\.zip))$"
+            "^(avatars/[a-zA-Z0-9._-]+|chat-images/[a-zA-Z0-9._-]+|chat-voice/[a-z0-9-]+/[a-zA-Z0-9._-]+|custom-voices/[0-9]+/[a-zA-Z0-9._-]+|square-avatars/[a-z0-9._-]+|square-avatars-thumb/[a-z0-9._-]+|updates/(latest\\.yml|agent-latest\\.yml|wechat-channel-latest\\.yml|[a-zA-Z0-9._-]+\\.exe|[a-zA-Z0-9._-]+\\.exe\\.blockmap|AgentEngine-hosted-win-x64-[0-9]+\\.[0-9]+\\.[0-9]+\\.zip|WechatChannel-win-x64-[0-9]+\\.[0-9]+\\.[0-9]+\\.zip))$"
     );
 
     public String uploadAvatar(MultipartFile file) {
@@ -279,10 +278,6 @@ public class FileStorageService {
         return uploadImageToPath(file, CHAT_IMAGE_PATH, "Chat");
     }
 
-    public String uploadCommunityImage(MultipartFile file) {
-        return uploadImageToPath(file, COMMUNITY_IMAGE_PATH, "Community");
-    }
-
     private String uploadImageToPath(MultipartFile file, String pathPrefix, String logLabel) {
         validateChatImage(file);
         try {
@@ -482,7 +477,7 @@ public class FileStorageService {
             return stored;
         }
         for (String prefix : new String[]{
-                AVATAR_PATH, CHAT_IMAGE_PATH, COMMUNITY_IMAGE_PATH, CHAT_VOICE_PATH, CUSTOM_VOICE_PATH,
+                AVATAR_PATH, CHAT_IMAGE_PATH, CHAT_VOICE_PATH, CUSTOM_VOICE_PATH,
                 SQUARE_AVATAR_PATH, SQUARE_AVATAR_THUMB_PATH, UPDATES_PATH}) {
             int idx = stored.indexOf(prefix);
             if (idx >= 0) {
@@ -523,7 +518,6 @@ public class FileStorageService {
         }
         String lowerKey = objectKey.toLowerCase();
         if (lowerKey.startsWith(AVATAR_PATH) || lowerKey.startsWith(CHAT_IMAGE_PATH)
-                || lowerKey.startsWith(COMMUNITY_IMAGE_PATH)
                 || lowerKey.startsWith(SQUARE_AVATAR_PATH) || lowerKey.startsWith(SQUARE_AVATAR_THUMB_PATH)) {
             if (storedContentType != null) {
                 String normalized = storedContentType.toLowerCase();

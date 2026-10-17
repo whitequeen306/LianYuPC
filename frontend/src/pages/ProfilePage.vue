@@ -96,31 +96,6 @@
 
     <ProfilePostList
       class="stagger-item"
-      title="社区动态"
-      :desc="communityPostsDesc"
-      :items="communityPosts"
-      :loading="communityLoading"
-      :loading-more="communityLoadingMore"
-      :has-more="communityHasMore"
-      empty-text="还没有社区动态"
-      @load-more="loadMoreCommunity"
-    >
-      <template #default="{ items }">
-        <CommunityPostCard
-          v-for="post in items"
-          :key="post.id"
-          :post="post"
-          :show-comments="openCommentsId === post.id"
-          allow-delete
-          @like="onCommunityLike"
-          @toggle-comments="toggleComments"
-          @delete="onCommunityDelete"
-        />
-      </template>
-    </ProfilePostList>
-
-    <ProfilePostList
-      class="stagger-item"
       title="我对角色发的动态"
       desc="仅自己可见的角色朋友圈归档"
       :items="momentPosts"
@@ -198,11 +173,9 @@ import { useUserStore } from '@/stores/user'
 import { useCharactersStore } from '@/stores/characters'
 import { resolveMediaUrl } from '@/utils/media'
 import { formatFeedTime } from '@/utils/feedTime'
-import CharacterShowcase from '@/components/community/CharacterShowcase.vue'
-import ProfilePostList from '@/components/community/ProfilePostList.vue'
-import CommunityPostCard from '@/components/community/CommunityPostCard.vue'
-import { fetchUserCommunityPosts, getMyUserSettings, updateMyUserSettings } from '@/api/users'
-import { deleteCommunityPost, toggleCommunityLike } from '@/api/community'
+import CharacterShowcase from '@/components/CharacterShowcase.vue'
+import ProfilePostList from '@/components/ProfilePostList.vue'
+import { getMyUserSettings, updateMyUserSettings } from '@/api/users'
 import { fetchMyMomentPosts } from '@/api/moments'
 
 const userStore = useUserStore()
@@ -220,11 +193,6 @@ const localPreviewUrl = ref('')
 
 const showCharactersOnProfile = ref(false)
 const settingsSaving = ref(false)
-const communityPosts = ref([])
-const communityCursor = ref(null)
-const communityHasMore = ref(false)
-const communityLoading = ref(false)
-const communityLoadingMore = ref(false)
 const selectedCharacterId = ref(null)
 const momentPosts = ref([])
 const momentsCursor = ref(null)
@@ -243,13 +211,6 @@ const showcaseCharacters = computed(() =>
   }))
 )
 
-const communityPostsDesc = computed(() => {
-  if (!selectedCharacterId.value) {
-    return '你在社区发布的动态（含审核中）'
-  }
-  const match = showcaseCharacters.value.find((c) => c.characterId === selectedCharacterId.value)
-  return match ? `筛选：${match.name} 相关动态` : '筛选中的角色相关动态'
-})
 
 function companionshipDays(createdAt) {
   if (!createdAt) return 1
@@ -322,7 +283,6 @@ onMounted(async () => {
   await Promise.all([
     loadPrivacySettings(),
     charactersStore.fetchList().catch(() => []),
-    loadCommunityPosts(),
     loadMomentPosts()
   ])
   if (route.hash === '#password') {
@@ -336,7 +296,6 @@ onActivated(() => {
   if (firstActivation) { firstActivation = false; return }
   userStore.fetchProfile().catch(() => {})
   loadPrivacySettings()
-  loadCommunityPosts()
   loadMomentPosts()
 })
 
@@ -363,49 +322,10 @@ async function savePrivacySettings(value) {
   }
 }
 
-async function loadCommunityPosts() {
-  if (!userStore.userId) return
-  communityLoading.value = true
-  try {
-    const params = { limit: 5 }
-    if (selectedCharacterId.value) {
-      params.characterId = selectedCharacterId.value
-    }
-    const data = await fetchUserCommunityPosts(userStore.userId, params)
-    communityPosts.value = data?.items || []
-    communityCursor.value = data?.nextCursor || null
-    communityHasMore.value = !!data?.hasMore
-  } catch {
-    communityPosts.value = []
-  } finally {
-    communityLoading.value = false
-  }
-}
 
-async function loadMoreCommunity() {
-  if (!communityHasMore.value || communityLoadingMore.value) return
-  communityLoadingMore.value = true
-  try {
-    const params = {
-      cursor: communityCursor.value,
-      limit: 10
-    }
-    if (selectedCharacterId.value) {
-      params.characterId = selectedCharacterId.value
-    }
-    const data = await fetchUserCommunityPosts(userStore.userId, params)
-    communityPosts.value = [...communityPosts.value, ...(data?.items || [])]
-    communityCursor.value = data?.nextCursor || null
-    communityHasMore.value = !!data?.hasMore
-  } finally {
-    communityLoadingMore.value = false
-  }
-}
 
 function onShowcaseSelect(characterId) {
   selectedCharacterId.value = characterId
-  communityCursor.value = null
-  loadCommunityPosts()
 }
 
 async function loadMomentPosts() {
@@ -435,29 +355,11 @@ async function loadMoreMoments() {
   }
 }
 
-async function onCommunityLike(post) {
-  try {
-    const res = await toggleCommunityLike(post.id)
-    post.likedByMe = !!res?.liked
-    post.likeCount = res?.likeCount ?? post.likeCount
-  } catch (e) {
-    ElMessage.error(e?.message || '操作失败')
-  }
-}
 
 function toggleComments(post) {
   openCommentsId.value = openCommentsId.value === post.id ? null : post.id
 }
 
-async function onCommunityDelete(post) {
-  try {
-    await ElMessageBox.confirm('确定删除这条社区动态？', '删除确认', { type: 'warning' })
-    await deleteCommunityPost(post.id)
-    communityPosts.value = communityPosts.value.filter((p) => p.id !== post.id)
-  } catch (e) {
-    if (e !== 'cancel') ElMessage.error(e?.message || '删除失败')
-  }
-}
 
 onDeactivated(() => {
   passwordForm.oldPassword = ''

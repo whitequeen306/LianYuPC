@@ -122,7 +122,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { gsap } from 'gsap'
-import { Compass, HomeFilled, ChatLineRound, Grid, PictureRounded, ChatDotRound, Notebook, Collection, UserFilled, Setting, ChatLineSquare } from '@element-plus/icons-vue'
+import { Compass, HomeFilled, ChatLineRound, Grid, PictureRounded, ChatDotRound, Notebook, Collection, UserFilled, Setting } from '@element-plus/icons-vue'
 import OnboardingHintBubble from '@/components/OnboardingHintBubble.vue'
 import { useOnboardingHint } from '@/composables/useOnboardingHint'
 
@@ -155,11 +155,11 @@ const primaryLeft = computed(() => [
 
 const primaryRight = computed(() => [
   { path: '/app/character-square', label: t('nav.characterSquare'), icon: Grid },
-  { path: '/app/community', label: t('nav.community'), icon: ChatLineSquare }
+  // 社区下线后，动态接替其主位（原在滚轮菜单内）
+  { path: '/app/moments', label: t('nav.moments'), icon: PictureRounded }
 ])
 
 const wheelItems = computed(() => [
-  { path: '/app/moments', label: t('nav.moments'), icon: PictureRounded },
   { path: '/app/group-chat', label: t('nav.groupChat'), icon: ChatDotRound },
   { path: '/app/diary', label: t('nav.diary'), icon: Notebook },
   { path: '/app/memory', label: t('nav.memory'), icon: Collection },

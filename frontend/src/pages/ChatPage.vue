@@ -16,22 +16,22 @@
       </div>
 
       <header v-if="activeCharacter && !isCompact" class="gal-header">
-        <button type="button" class="gal-header__back" @click="selectionMode ? exitShareMode() : goBack()">
+        <button type="button" class="gal-header__back" @click="goBack()">
           <el-icon :size="18"><ArrowLeft /></el-icon>
         </button>
         <div class="gal-header__meta">
-          <h2 class="gal-header__name" :class="{ 'is-typing': showHeaderTyping && !selectionMode }">
-            {{ selectionMode ? `已选 ${selectedMessageIds.size} 条` : headerTitle }}
+          <h2 class="gal-header__name" :class="{ 'is-typing': showHeaderTyping }">
+            {{ headerTitle }}
           </h2>
           <EmotionBadge
-            v-if="emotionState && !selectionMode"
+            v-if="emotionState"
             :current-emotion="emotionState.currentEmotion"
             :emotion-intensity="emotionState.emotionIntensity"
             :status-text="emotionState.statusText"
           />
         </div>
         <button
-          v-if="!selectionMode && voiceCallEnabled"
+          v-if="voiceCallEnabled"
           type="button"
           class="gal-header__call"
           @click="openVoiceCall"
@@ -39,21 +39,12 @@
           通话
         </button>
         <button
-          v-if="!selectionMode"
           type="button"
           class="gal-header__share"
           :disabled="exportingChat"
           @click="exportChatTranscript"
         >
           {{ t('chat.export') }}
-        </button>
-        <button
-          v-if="!selectionMode"
-          type="button"
-          class="gal-header__share"
-          @click="enterShareMode"
-        >
-          分享
         </button>
         <div class="gal-header__drag-region" aria-hidden="true" />
       </header>
@@ -90,20 +81,9 @@
             :data-msg-id="item.id"
             :class="[
               item.role === 'user' ? 'gal-log__item--user' : 'gal-log__item--hero',
-              { 'is-group-start': item._firstOfGroup, 'is-share-selectable': shareSelectable(item), 'is-share-selected': isMessageSelected(item) }
+              { 'is-group-start': item._firstOfGroup }
             ]"
-            @click="selectionMode && shareSelectable(item) ? toggleShareSelection(item) : undefined"
           >
-          <button
-            v-if="selectionMode && shareSelectable(item)"
-            type="button"
-            class="gal-share-check"
-            :class="{ 'is-checked': isMessageSelected(item) }"
-            :aria-pressed="isMessageSelected(item)"
-            @click.stop="toggleShareSelection(item)"
-          >
-            <span class="gal-share-check__mark" />
-          </button>
           <template v-if="item.role !== 'user'">
             <div
               v-if="item._firstOfGroup"
@@ -197,22 +177,7 @@
         </button>
       </div>
 
-      <div v-if="selectionMode" class="gal-share-bar glass-strong">
-        <span class="gal-share-bar__hint">将公开到社区，请确认所选内容</span>
-        <div class="gal-share-bar__actions">
-          <el-button @click="exitShareMode">取消</el-button>
-          <el-button
-            type="primary"
-            :disabled="selectedMessageIds.size === 0"
-            :loading="shareCapturing"
-            @click="confirmShareToCommunity"
-          >
-            分享到社区
-          </el-button>
-        </div>
-      </div>
-
-      <div v-else class="gal-input glass-strong">
+      <div class="gal-input glass-strong">
         <div v-if="pendingImageUrl" class="image-preview-row">
           <div class="image-preview">
             <img :src="resolveMediaUrl(pendingImageUrl)" alt="" />
@@ -393,19 +358,11 @@ import { useVoiceDuplex } from '@/composables/useVoiceDuplex'
 import { typewriteText } from '@/utils/voiceResponse'
 import { getPetVoiceRate, getPetVoiceVolume } from '@/constants/petCatalog'
 import {
-  isShareSelectableMessage,
-  saveCommunityShareDraft,
-  buildChatImageShareDraft,
-  COMMUNITY_SHARE_MAX_MESSAGES
-} from '@/utils/communityShareDraft'
-import {
   defaultChatExportFileName,
   fetchAllConversationMessages,
   formatChatTranscript,
   saveChatTranscriptFile,
 } from '@/utils/exportChatTranscript'
-import { captureChatShareScreenshot } from '@/utils/captureChatShareScreenshot'
-import { uploadCommunityImage } from '@/api/community'
 import { isElectronApp } from '@/utils/electron'
 import { stripInnerThoughts, resolveShowInnerThoughts } from '@/utils/innerThoughtFilter'
 import { isVoiceCallTurnMessage, isVoiceCallSummaryMessage } from '@/constants/voiceCallMarkers'
@@ -454,18 +411,9 @@ const messages = ref([])
 const imageViewerVisible = ref(false)
 const imageViewerUrlList = ref([])
 const imageViewerInitialIndex = ref(0)
-const selectionMode = ref(false)
-const selectedMessageIds = ref(new Set())
-const shareCapturing = ref(false)
 const exportingChat = ref(false)
 
-function shareSelectable(item) {
-  return isShareSelectableMessage(item)
-}
 
-function isMessageSelected(item) {
-  return selectedMessageIds.value.has(Number(item.id))
-}
 
 async function exportChatTranscript() {
   if (exportingChat.value || !currentConvId.value) return
@@ -499,72 +447,6 @@ async function exportChatTranscript() {
     ElMessage.error(humanizeError(e, t('chat.exportFailed')))
   } finally {
     exportingChat.value = false
-  }
-}
-
-function enterShareMode() {
-  selectionMode.value = true
-  selectedMessageIds.value = new Set()
-}
-
-function exitShareMode() {
-  selectionMode.value = false
-  selectedMessageIds.value = new Set()
-}
-
-function toggleShareSelection(item) {
-  if (!shareSelectable(item)) return
-  const next = new Set(selectedMessageIds.value)
-  const id = Number(item.id)
-  if (next.has(id)) {
-    next.delete(id)
-  } else {
-    if (next.size >= COMMUNITY_SHARE_MAX_MESSAGES) {
-      ElMessage.warning(`最多选择 ${COMMUNITY_SHARE_MAX_MESSAGES} 条消息`)
-      return
-    }
-    next.add(id)
-  }
-  selectedMessageIds.value = next
-}
-
-async function confirmShareToCommunity() {
-  if (!selectedMessageIds.value.size || shareCapturing.value) return
-  if (!isElectronApp()) {
-    ElMessage.warning('请在桌面客户端分享对话')
-    return
-  }
-  if (!msgListRef.value) {
-    ElMessage.warning('聊天区域未就绪，请稍后再试')
-    return
-  }
-
-  shareCapturing.value = true
-  try {
-    const blob = await captureChatShareScreenshot(msgListRef.value, selectedMessageIds.value)
-    const file = new File([blob], `chat-share-${Date.now()}.png`, { type: 'image/png' })
-    let res
-    try {
-      res = await uploadCommunityImage(file)
-    } catch (uploadErr) {
-      uploadErr.stage = 'upload'
-      throw uploadErr
-    }
-    if (!res?.imageUrl) {
-      throw new Error('上传失败')
-    }
-
-    saveCommunityShareDraft(buildChatImageShareDraft({
-      imageUrl: res.imageUrl,
-      linkedCharacterId: activeCharacter.value?.id || null
-    }))
-    exitShareMode()
-    router.push('/app/community')
-  } catch (e) {
-    const stage = e?.stage === 'upload' ? '上传失败' : '对话截屏失败'
-    ElMessage.error(e?.message ? `${stage}：${e.message}` : stage)
-  } finally {
-    shareCapturing.value = false
   }
 }
 
@@ -925,7 +807,6 @@ onMounted(async () => {
 })
 
 watch(() => route.params.id, async (id) => {
-  exitShareMode()
   if (id) {
     setActiveChatConversationId(Number(id))
     skipBounceOnce = true
@@ -1966,14 +1847,7 @@ function formatTime(ts) {
   gap: $space-3;
   width: 100%;
 
-  &.is-share-selectable {
-    cursor: pointer;
-  }
 
-  &.is-share-selected {
-    border-radius: $radius-md;
-    background: color-mix(in srgb, var(--ly-accent) 8%, transparent);
-  }
 
   /* 换发言人/跨时间分段时，组首拉开间距；组内连发收紧 */
   &.is-group-start:not(:first-child) {
@@ -1981,62 +1855,10 @@ function formatTime(ts) {
   }
 }
 
-.gal-share-check {
-  width: 22px;
-  height: 22px;
-  flex-shrink: 0;
-  margin-bottom: 6px;
-  border-radius: $radius-full;
-  border: 1px solid color-mix(in srgb, var(--ly-accent) 35%, transparent);
-  background: var(--ly-bg-elevated);
-  display: grid;
-  place-items: center;
-  padding: 0;
-  cursor: pointer;
-  transition:
-    border-color 0.22s cubic-bezier(0.23, 1, 0.32, 1),
-    background 0.22s cubic-bezier(0.23, 1, 0.32, 1);
 
-  &.is-checked {
-    border-color: var(--ly-accent);
-    background: color-mix(in srgb, var(--ly-accent) 18%, transparent);
-  }
-}
 
-.gal-share-check__mark {
-  width: 10px;
-  height: 10px;
-  border-radius: $radius-full;
-  background: transparent;
-  transition: background 0.22s cubic-bezier(0.23, 1, 0.32, 1);
 
-  .is-checked & {
-    background: var(--ly-accent);
-  }
-}
 
-.gal-share-bar {
-  position: relative;
-  z-index: 4;
-  flex-shrink: 0;
-  margin: 0 $space-4 $space-3;
-  padding: $space-4;
-  border-radius: $radius-lg;
-  display: flex;
-  flex-direction: column;
-  gap: $space-3;
-}
-
-.gal-share-bar__hint {
-  font-size: $font-size-sm;
-  color: var(--ly-text-secondary);
-}
-
-.gal-share-bar__actions {
-  display: flex;
-  gap: $space-2;
-  justify-content: flex-end;
-}
 
 .gal-log__item--user {
   flex-direction: row;
@@ -2424,10 +2246,5 @@ function formatTime(ts) {
 
 <style lang="scss">
 html.is-capturing-share {
-  .gal-share-check,
-  .gal-share-bar {
-    visibility: hidden !important;
-    pointer-events: none !important;
-  }
 }
 </style>
