@@ -54,6 +54,9 @@ services:
       MILVUS_HOST: milvus
       LIANYU_ASR_BASE_URL: http://asr:8080
       SERVER_PORT: 8080
+      # Strangler 阶段 2：agent 运行时模式（OFF/SHADOW/AGENT），见 docs/refactor-2026-10/
+      LIANYU_AGENT_MODE: ${LIANYU_AGENT_MODE:-OFF}
+      LIANYU_AGENT_BASE_URL: ${LIANYU_AGENT_BASE_URL:-http://agent:8001}
       TZ: Asia/Shanghai
       # 与 Dockerfile ENTRYPOINT 双保险：出站优先 IPv4，避免 DashScope AAAA 不通导致 TTS 失败
       JAVA_TOOL_OPTIONS: "-Djava.net.preferIPv4Addresses=true"
