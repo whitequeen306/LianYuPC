@@ -104,7 +104,7 @@ public class DesktopObserveOrchestrator implements com.lianyu.service.agent.Agen
                                 java.util.function.Supplier<String> javaSupplier) {
         AgentRuntimeProperties.Mode mode = agentClient.properties().mode();
         if (mode == AgentRuntimeProperties.Mode.AGENT) {
-            String fromAgent = callProactiveAgent(userId, scene, persona, taskBlock, history, provider, model);
+            String fromAgent = callProactiveAgent(userId, scene, persona, taskBlock, history, provider, model, null);
             if (fromAgent != null && !fromAgent.isBlank()) {
                 return fromAgent;
             }
@@ -114,7 +114,7 @@ public class DesktopObserveOrchestrator implements com.lianyu.service.agent.Agen
         String fromJava = javaSupplier.get();
 
         if (mode == AgentRuntimeProperties.Mode.SHADOW) {
-            String fromAgent = callProactiveAgent(userId, scene, persona, taskBlock, history, provider, model);
+            String fromAgent = callProactiveAgent(userId, scene, persona, taskBlock, history, provider, model, null);
             recordProactiveDiff(userId, scene, fromJava, fromAgent);
         }
         return fromJava;
@@ -122,7 +122,7 @@ public class DesktopObserveOrchestrator implements com.lianyu.service.agent.Agen
 
     private String callProactiveAgent(long userId, String scene, String persona, String taskBlock,
                                       java.util.List<com.lianyu.service.dto.MessageDto> history,
-                                      String provider, String model) {
+                                      String provider, String model, String expectedLanguage) {
         java.util.List<Map<String, String>> historyMaps = new java.util.ArrayList<>();
         if (history != null) {
             for (com.lianyu.service.dto.MessageDto dto : history) {
@@ -132,13 +132,14 @@ public class DesktopObserveOrchestrator implements com.lianyu.service.agent.Agen
                 historyMaps.add(Map.of("role", dto.getRole(), "content", dto.getContent() == null ? "" : dto.getContent()));
             }
         }
-        return callProactiveAgentMaps(userId, scene, persona, taskBlock, historyMaps, provider, model);
+        return callProactiveAgentMaps(userId, scene, persona, taskBlock, historyMaps, provider, model, expectedLanguage);
     }
 
     /** 端口路径（已是 Map 形态的历史）。 */
     private String callProactiveAgentMaps(long userId, String scene, String persona, String taskBlock,
                                           List<Map<String, String>> historyMaps,
-                                          String provider, String model) {
+                                          String provider, String model,
+                                          String expectedLanguage) {
         String textBaseUrl = null;
         String textApiKey = null;
         String textModel = null;
@@ -155,7 +156,8 @@ public class DesktopObserveOrchestrator implements com.lianyu.service.agent.Agen
             log.debug("Proactive turn: vault resolve for agent failed: {}", e.toString());
         }
         return agentClient.proactiveTurn(
-                userId, scene, persona, taskBlock, historyMaps, textBaseUrl, textApiKey, textModel);
+                userId, scene, persona, taskBlock, historyMaps, textBaseUrl, textApiKey, textModel,
+                provider, expectedLanguage);
     }
 
     private void recordProactiveDiff(long userId, String scene, String fromJava, String fromAgent) {
@@ -196,7 +198,7 @@ public class DesktopObserveOrchestrator implements com.lianyu.service.agent.Agen
         if (agentClient.properties().mode() != AgentRuntimeProperties.Mode.AGENT) {
             return null;
         }
-        String fromAgent = callProactiveAgentMaps(userId, scene, persona, taskBlock, history, provider, model);
+        String fromAgent = callProactiveAgentMaps(userId, scene, persona, taskBlock, history, provider, model, null);
         if (fromAgent == null || fromAgent.isBlank()) {
             log.info("Proactive turn[{}][{}]: agent empty, fallback to Java", userId, scene);
             return null;

@@ -14,6 +14,12 @@ from typing import Any
 
 from app.config import get_settings
 from app.http_client import new_client
+from app.resilience import (
+    GatewayRejectedError,
+    breaker_registry,
+    call_with_transient_retry,
+    lane,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +66,8 @@ class ModelGateway:
         parts: list[Part],
         temperature: float,
         max_tokens: int,
+        provider: str | None = None,
+        lane_name: str = "interactive",
     ) -> GatewayResult:
         messages: list[dict[str, Any]] = []
         if system:
@@ -81,7 +89,7 @@ class ModelGateway:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
-        return await self._post_chat(base_url, api_key, payload)
+        return await self._post_chat(base_url, api_key, payload, provider=provider, lane_name=lane_name)
 
     async def chat_sync(
         self,
@@ -93,6 +101,8 @@ class ModelGateway:
         user_text: str,
         temperature: float,
         max_tokens: int,
+        provider: str | None = None,
+        lane_name: str = "interactive",
     ) -> GatewayResult:
         """纯文本对话（LangGraph 节点用）。"""
         messages: list[dict[str, Any]] = []
@@ -105,9 +115,35 @@ class ModelGateway:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
-        return await self._post_chat(base_url, api_key, payload)
+        return await self._post_chat(base_url, api_key, payload, provider=provider, lane_name=lane_name)
 
-    async def _post_chat(self, base_url: str, api_key: str, payload: dict[str, Any]) -> GatewayResult:
+    async def _post_chat(self, base_url: str, api_key: str, payload: dict[str, Any],
+                         *, provider: str | None = None, lane_name: str = "interactive") -> GatewayResult:
+        """唯一出站路径：隔舱 → 熔断 → 瞬断重试 → HTTP。
+
+        顺序对齐 Java `AiChatService.chatStream/chatBlocking`：
+        先拿 bulkhead（快速失败），再拿上游 breaker 许可，再发请求；
+        breaker 只观察**最终**结果（重试发生在许可内，与 Java 的 executeCallable 一致）。
+        """
+        breaker = breaker_registry().resolve(provider, base_url)
+        async with lane(lane_name):
+            if not await breaker.try_acquire():
+                logger.warning("breaker %s OPEN, fast-fail %s", breaker.name, provider or base_url)
+                raise GatewayRejectedError(
+                    f"upstream circuit open for {provider or base_url}"
+                )
+            try:
+                result = await call_with_transient_retry(
+                    lambda: self._do_post(base_url, api_key, payload),
+                    label=f"gateway({provider or base_url})",
+                )
+            except BaseException as exc:
+                await breaker.on_error(exc)
+                raise
+            await breaker.on_success()
+            return result
+
+    async def _do_post(self, base_url: str, api_key: str, payload: dict[str, Any]) -> GatewayResult:
         url = f"{base_url.rstrip('/')}/chat/completions"
         headers = {"Authorization": f"Bearer {api_key}"}
 

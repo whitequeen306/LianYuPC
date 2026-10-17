@@ -34,6 +34,15 @@ class Settings(BaseSettings):
     # 主动发言链路（对齐 Java lianyu.chat.max-replies-per-turn 的生成预算）
     proactive_max_tokens: int = 1024
 
+    # 隔舱（对齐 application.yml resilience4j.bulkhead：ai-chat 80/5s、ai-background 6/2s）
+    bulkhead_interactive: int = 80
+    bulkhead_interactive_wait: float = 5.0
+    bulkhead_background: int = 6
+    bulkhead_background_wait: float = 2.0
+
+    # 语言门（对齐 AiChatService.LANGUAGE_GATE_MAX_RETRIES = 2）
+    language_gate_max_retries: int = 2
+
     # 影子对比模式：true 时记录请求/响应到日志供新旧链路 diff
     shadow_mode: bool = False
 

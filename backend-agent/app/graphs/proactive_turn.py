@@ -15,6 +15,15 @@ from typing import Annotated, Any, Literal, TypedDict
 
 from app.config import get_settings
 from app.gateway import GatewayResult, ModelGateway, ModelGatewayError, TextPart
+from app.language_gate import (
+    correction_instruction,
+    matches_expected,
+    should_enforce_language_gate,
+)
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ProactiveTurnState(TypedDict, total=False):
@@ -40,6 +49,12 @@ class ProactiveTurnState(TypedDict, total=False):
     error: str
     # ── internal（assemble 节点产出，invoke 节点消费）──
     messages: list[dict[str, str]]
+    provider: str | None
+    # ── 语言门 ──
+    expected_language: str
+    language_retries: int
+    language_ok: bool
+    language_exhausted: bool
 
 
 def _merge_history(left: list | None, right: list | None) -> list:
@@ -90,6 +105,8 @@ def build_proactive_graph(gateway: ModelGateway):
                 user_text="\n".join(convo) if convo else (state.get("user_trigger") or ""),
                 temperature=state.get("temperature", 0.8),
                 max_tokens=state.get("max_tokens", settings.proactive_max_tokens),
+                provider=state.get("provider"),
+                lane_name="background",
             )
         except ModelGatewayError as exc:
             return {"error": str(exc)}
@@ -99,12 +116,50 @@ def build_proactive_graph(gateway: ModelGateway):
             "completion_tokens": result.completion_tokens,
         }
 
+    # ── 语言门：图内有界环（Java 是 while 循环，这里换成条件边 + 计数器）──
+
+    def check_language(state: ProactiveTurnState) -> dict[str, Any]:
+        """判定本轮输出是否满足期望语言。不满足且未超次数 → 交给 regenerate。"""
+        content = state.get("assistant_raw") or ""
+        expected = state.get("expected_language") or ""
+        retries = int(state.get("language_retries") or 0)
+        settings = get_settings()
+
+        if not content.strip() or not should_enforce_language_gate(expected):
+            return {"language_ok": True}
+        if matches_expected(content, expected):
+            return {"language_ok": True}
+        if retries >= settings.language_gate_max_retries:
+            logger.warning(
+                "language gate exhausted (%d retries), expected=%s, keep as-is",
+                retries, expected,
+            )
+            return {"language_ok": True, "language_exhausted": True}
+        return {"language_ok": False}
+
+    def should_regenerate(state: ProactiveTurnState) -> Literal["retry", "end"]:
+        return "end" if state.get("language_ok", True) else "retry"
+
+    def regenerate(state: ProactiveTurnState) -> dict[str, Any]:
+        """对齐 Java appendLanguageCorrectionMessages：追加 assistant 原文 + 纠错指令，重跑 invoke。"""
+        messages = list(state.get("messages") or [])
+        messages.append({"role": "assistant", "content": state.get("assistant_raw") or ""})
+        messages.append({
+            "role": "user",
+            "content": correction_instruction(state.get("expected_language") or ""),
+        })
+        retries = int(state.get("language_retries") or 0) + 1
+        logger.info("language gate retry %d, expected=%s", retries, state.get("expected_language"))
+        return {"messages": messages, "language_retries": retries, "language_ok": True}
+
     def skip(state: ProactiveTurnState) -> dict[str, Any]:
         return {"error": "no_text_credentials"}
 
     graph = StateGraph(ProactiveTurnState)
     graph.add_node("assemble", assemble)
     graph.add_node("invoke", invoke)
+    graph.add_node("check_language", check_language)
+    graph.add_node("regenerate", regenerate)
     graph.add_node("skip", skip)
     graph.add_edge(START, "assemble")
     graph.add_conditional_edges(
@@ -112,7 +167,13 @@ def build_proactive_graph(gateway: ModelGateway):
         should_invoke,
         {"invoke": "invoke", "skip": "skip"},
     )
-    graph.add_edge("invoke", END)
+    graph.add_edge("invoke", "check_language")
+    graph.add_conditional_edges(
+        "check_language",
+        should_regenerate,
+        {"retry": "regenerate", "end": END},
+    )
+    graph.add_edge("regenerate", "invoke")
     graph.add_edge("skip", END)
     return graph.compile()
 

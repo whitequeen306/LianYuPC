@@ -112,6 +112,8 @@ class ProactiveTurnBody(BaseModel):
     text_base_url: str | None = Field(default=None, alias="textBaseUrl")
     text_api_key: str | None = Field(default=None, alias="textApiKey")
     text_model: str | None = Field(default=None, alias="textModel")
+    provider: str | None = None
+    expected_language: str | None = Field(default=None, alias="expectedLanguage")
     temperature: float = 0.8
     max_tokens: int | None = None
 
@@ -144,6 +146,8 @@ async def proactive_turn(
         "text_base_url": body.text_base_url or "",
         "text_api_key": body.text_api_key or "",
         "text_model": body.text_model or "",
+        "provider": body.provider or "",
+        "expected_language": body.expected_language or "",
         "temperature": body.temperature,
     }
     if body.max_tokens:

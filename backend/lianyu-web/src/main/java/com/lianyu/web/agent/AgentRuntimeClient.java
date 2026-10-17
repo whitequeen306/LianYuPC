@@ -90,7 +90,9 @@ public class AgentRuntimeClient {
                                 List<Map<String, String>> history,
                                 String textBaseUrl,
                                 String textApiKey,
-                                String textModel) {
+                                String textModel,
+                                String provider,
+                                String expectedLanguage) {
         if (!properties.agentActive()) {
             return null;
         }
@@ -103,7 +105,11 @@ public class AgentRuntimeClient {
                     "history", history == null ? List.of() : history,
                     "textBaseUrl", textBaseUrl == null ? "" : textBaseUrl,
                     "textApiKey", textApiKey == null ? "" : textApiKey,
-                    "textModel", textModel == null ? "" : textModel);
+                    "textModel", textModel == null ? "" : textModel,
+                    // provider 用于 Python 侧按上游隔离熔断（对齐 UpstreamCircuitBreakerFactory）
+                    "provider", provider == null ? "" : provider,
+                    // expectedLanguage 为空表示不走语言门（对齐 Java setExpectedLanguage 未设的语义）
+                    "expectedLanguage", expectedLanguage == null ? "" : expectedLanguage);
             String response = restClient.post()
                     .uri("/agent/proactive-turn")
                     .header("X-User-Id", String.valueOf(userId))
