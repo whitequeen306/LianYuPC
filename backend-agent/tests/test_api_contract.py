@@ -73,9 +73,12 @@ def test_capabilities_declares_missing_tools():
     response = client.get("/agent/capabilities")
     assert response.status_code == 200
     body = response.json()
-    assert set(body["supportedTools"]) == {"get_current_time", "get_weather"}
-    assert "memory_search" in body["missingTools"]
+    assert set(body["supportedTools"]) == {
+        "get_current_time", "get_weather", "memory_search", "get_my_recent_life"
+    }
+    assert "memory_search" not in body["missingTools"]
     assert "write_diary" in body["missingTools"]
+    assert "computer_task" in body["missingTools"]
     assert body["languageGate"] is True
     assert body["circuitBreaker"] is True
     assert body["toolLoop"] is True

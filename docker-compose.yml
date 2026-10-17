@@ -107,7 +107,19 @@ services:
       LIANYU_AGENT_MULTIMODAL_API_KEY: ${MULTIMODAL_API_KEY:-${DASHSCOPE_API_KEY:-}}
       LIANYU_AGENT_MULTIMODAL_MODEL: ${MULTIMODAL_MODEL:-qwen3.7-flash}
       LIANYU_AGENT_SHADOW_MODE: ${LIANYU_AGENT_SHADOW_MODE:-false}
+      # 只读数据访问（总纲 D7）：memory_search / get_my_recent_life 需要
+      LIANYU_AGENT_MYSQL_HOST: mysql
+      LIANYU_AGENT_MYSQL_PORT: "3306"
+      LIANYU_AGENT_MYSQL_USER: ${MYSQL_USER:-lianyu}
+      LIANYU_AGENT_MYSQL_PASSWORD: ${MYSQL_PASSWORD:-}
+      LIANYU_AGENT_MYSQL_DATABASE: lianyu
+      LIANYU_AGENT_REDIS_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/0
       TZ: Asia/Shanghai
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     mem_limit: 512m
     cpus: "1.0"
     healthcheck:

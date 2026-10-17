@@ -78,6 +78,7 @@ async def run_tool_loop(
     provider: str | None = None,
     lane_name: str = "background",
     max_rounds: int | None = None,
+    tool_context: dict[str, Any] | None = None,
 ) -> ToolLoopResult:
     """跑一轮「模型 → 工具 → 模型」循环，最多 `max_rounds` 轮工具调用。"""
     settings = get_settings()
@@ -146,8 +147,13 @@ async def run_tool_loop(
             if spec is None:
                 output = f"工具 {name} 不可用"
             else:
+                # 上下文（userId/characterId/language）由调用方注入，对齐 Java ChatToolContext；
+                # 模型看不到这些键，也不参与 schema。
+                merged = dict(arguments if isinstance(arguments, dict) else {})
+                if tool_context:
+                    merged.update(tool_context)
                 try:
-                    output = await spec.handler(arguments if isinstance(arguments, dict) else {})
+                    output = await spec.handler(merged)
                 except (httpx.HTTPError, RuntimeError) as exc:
                     logger.warning("tool %s failed: %s", name, exc)
                     output = f"工具 {name} 调用失败：{exc}"

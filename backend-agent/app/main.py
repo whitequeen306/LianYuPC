@@ -141,8 +141,11 @@ class ProactiveTurnBody(BaseModel):
     text_base_url: str | None = Field(default=None, alias="textBaseUrl")
     text_api_key: str | None = Field(default=None, alias="textApiKey")
     text_model: str | None = Field(default=None, alias="textModel")
+    character_id: int | None = Field(default=None, alias="characterId")
     provider: str | None = None
     expected_language: str | None = Field(default=None, alias="expectedLanguage")
+    # Java 声明本条链路需要哪些工具；Python 只执行 supportedTools 内的（其余被忽略并记日志）
+    tools: list[str] = []
     temperature: float = 0.8
     max_tokens: int | None = None
 
@@ -177,6 +180,8 @@ async def proactive_turn(
         "text_model": body.text_model or "",
         "provider": body.provider or "",
         "expected_language": body.expected_language or "",
+        "character_id": body.character_id or 0,
+        "tools": body.tools or [],
         "temperature": body.temperature,
     }
     if body.max_tokens:

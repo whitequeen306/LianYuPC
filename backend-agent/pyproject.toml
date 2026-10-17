@@ -13,6 +13,9 @@ dependencies = [
     "langchain-core>=0.3.28",
     # Windows 开发机无系统 IANA 时区库；Linux 镜像自带，显式声明保证两端一致
     "tzdata>=2024.2",
+    # 只读数据访问（总纲 D7）：MySQL 只读查询 + Redis 缓存读取
+    "aiomysql>=0.2.0",
+    "redis>=5.2",
 ]
 
 [dependency-groups]

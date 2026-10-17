@@ -52,6 +52,30 @@ class Settings(BaseSettings):
     # Python 侧显式设上限并在日志/测试中固化
     max_tool_rounds: int = 3
 
+    # 只读数据访问（总纲 D7：Python 只读 MySQL/Redis，不写）
+    mysql_host: str = "mysql"
+    mysql_port: int = 3306
+    mysql_user: str = "lianyu"
+    mysql_password: str = ""
+    mysql_database: str = "lianyu"
+    mysql_pool_size: int = 4
+    mysql_timeout_seconds: float = 10.0
+    redis_url: str = "redis://redis:6379/0"
+    redis_timeout_seconds: float = 5.0
+
+    # 记忆检索参数（对齐 Java lianyu.memory.*）
+    memory_importance_threshold: float = 0.5
+    memory_search_candidate_count: int = 20
+    memory_like_boost_limit: int = 5
+    memory_tool_top_k: int = 5
+    memory_semantic_ttl_minutes: float = 15.0
+    memory_recent_ttl_minutes: float = 60.0
+
+    # 角色近况（对齐 CharacterRecentActivityService）
+    recent_activity_cache_hours: float = 1.0
+    recent_activity_max_lines: int = 5
+    recent_activity_snippet_chars: int = 40
+
     # 影子对比模式：true 时记录请求/响应到日志供新旧链路 diff
     shadow_mode: bool = False
 

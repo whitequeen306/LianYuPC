@@ -55,6 +55,11 @@ class ProactiveTurnState(TypedDict, total=False):
     language_retries: int
     language_ok: bool
     language_exhausted: bool
+    # ── 工具 ──
+    tools: list[str]
+    tool_rounds: int
+    tool_truncated: bool
+    character_id: int
 
 
 def _merge_history(left: list | None, right: list | None) -> list:
@@ -87,6 +92,34 @@ def build_proactive_graph(gateway: ModelGateway):
     async def invoke(state: ProactiveTurnState) -> dict[str, Any]:
         settings = get_settings()
         messages = state["messages"]
+        tools = state.get("tools") or []
+        if tools:
+            # 有工具：走有界工具循环（模型↔工具，最多 max_tool_rounds 轮）
+            from app.tool_loop import run_tool_loop
+
+            loop = await run_tool_loop(
+                gateway,
+                base_url=state["text_base_url"],
+                api_key=state["text_api_key"],
+                model=state.get("text_model") or "default",
+                messages=messages,
+                tool_names=tools,
+                temperature=state.get("temperature", 0.8),
+                max_tokens=state.get("max_tokens", settings.proactive_max_tokens),
+                provider=state.get("provider"),
+                lane_name="background",
+                tool_context={
+                    "_user_id": state.get("user_id"),
+                    "_character_id": state.get("character_id"),
+                    "_language": state.get("expected_language") or "zh",
+                },
+            )
+            return {
+                "assistant_raw": loop.content,
+                "tool_rounds": loop.rounds,
+                "tool_truncated": loop.truncated,
+            }
+
         # ModelGateway 契约：system 单独传，其余消息折叠为纯文本序列
         system = None
         convo: list[str] = []

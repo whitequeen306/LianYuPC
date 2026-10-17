@@ -153,7 +153,8 @@ public class ProactiveMessageService {
      * 调用方继续走 Java 原链路 —— 永远不阻塞、不改变行为面。
      */
     private ChatResult tryAgentTurn(long userId, String scene, String persona, String taskBlock,
-                                    List<MessageDto> history, VaultEntryResponse userVault) {
+                                    List<MessageDto> history, VaultEntryResponse userVault,
+                                    Long characterId) {
         try {
             if (!agentRuntime.agentActive()) {
                 return null;
@@ -168,7 +169,7 @@ public class ProactiveMessageService {
                         "content", dto.getContent() == null ? "" : dto.getContent()));
             }
             String raw = agentRuntime.proactiveTurn(userId, scene, persona, taskBlock,
-                    historyMaps, userVault.getProvider(), userVault.getModelDefault());
+                    historyMaps, userVault.getProvider(), userVault.getModelDefault(), characterId);
             if (raw == null || raw.isBlank()) {
                 return null;
             }
@@ -236,7 +237,8 @@ public class ProactiveMessageService {
         if (agentRuntime.agentActive()) {
             String agentPersona = proactiveSystemPrompt(userId, character, null, null);
             ChatResult agentTurn = tryAgentTurn(userId, "PROACTIVE", agentPersona,
-                    buildProactiveTaskSystemSuffix(maxPieces), historyToDtoList(history), userVault);
+                    buildProactiveTaskSystemSuffix(maxPieces), historyToDtoList(history), userVault,
+                character.getId());
             if (agentTurn != null) {
                 agentResult = ChatTurnResult.builder()
                         .systemPrompt(agentPersona)
@@ -354,7 +356,8 @@ public class ProactiveMessageService {
 
             // ── Strangler 接缝：AGENT 模式下生成段委托 backend-agent ──
             ChatResult agentTurn = agentRuntime.agentActive()
-                    ? tryAgentTurn(userId, "COLD_OPEN", systemPrompt, coldOpenTask, List.of(), userVault)
+                    ? tryAgentTurn(userId, "COLD_OPEN", systemPrompt, coldOpenTask, List.of(), userVault,
+                            character.getId())
                     : null;
 
             AiChatRequest aiRequest = new AiChatRequest();
@@ -651,7 +654,7 @@ public class ProactiveMessageService {
         // Strangler: AGENT 模式下生成段委托 backend-agent
         ChatResult agentTurn = agentRuntime.agentActive()
                 ? tryAgentTurn(userId, "COLD_OPEN_FOLLOWUP", systemPrompt, followUpTask,
-                        historyToDtoList(history), userVault)
+                        historyToDtoList(history), userVault, character.getId())
                 : null;
 
         AiChatRequest aiRequest = new AiChatRequest();
@@ -755,7 +758,7 @@ public class ProactiveMessageService {
         // Strangler: AGENT 模式下生成段委托 backend-agent
         ChatResult agentTurn = agentRuntime.agentActive()
                 ? tryAgentTurn(userId, "CITY_CHANGE", systemPrompt, cityChangeTask,
-                        historyToDtoList(history), userVault)
+                        historyToDtoList(history), userVault, character.getId())
                 : null;
 
         AiChatRequest aiRequest = new AiChatRequest();

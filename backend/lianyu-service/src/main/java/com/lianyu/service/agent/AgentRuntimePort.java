@@ -29,7 +29,8 @@ public interface AgentRuntimePort {
                          String taskBlock,
                          List<Map<String, String>> history,
                          String provider,
-                         String model);
+                         String model,
+                         Long characterId);
 
     /** 运行时是否处于 AGENT 模式（Python 出结果）。SHADOW 时返回 false（Java 出结果）。 */
     boolean agentActive();

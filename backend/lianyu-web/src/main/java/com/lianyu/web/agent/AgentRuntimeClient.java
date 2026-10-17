@@ -54,14 +54,14 @@ public class AgentRuntimeClient {
             return null;
         }
         try {
-            Map<String, Object> body = Map.of(
-                    "userId", userId,
-                    "imageBase64", imageBase64 == null ? "" : imageBase64,
-                    "windowTitle", windowTitle == null ? "" : windowTitle,
-                    "persona", persona == null ? "" : persona,
-                    "textBaseUrl", textBaseUrl == null ? "" : textBaseUrl,
-                    "textApiKey", textApiKey == null ? "" : textApiKey,
-                    "textModel", textModel == null ? "" : textModel);
+            Map<String, Object> body = new java.util.LinkedHashMap<>();
+            body.put("userId", userId);
+            body.put("imageBase64", imageBase64 == null ? "" : imageBase64);
+            body.put("windowTitle", windowTitle == null ? "" : windowTitle);
+            body.put("persona", persona == null ? "" : persona);
+            body.put("textBaseUrl", textBaseUrl == null ? "" : textBaseUrl);
+            body.put("textApiKey", textApiKey == null ? "" : textApiKey);
+            body.put("textModel", textModel == null ? "" : textModel);
             String response = restClient.post()
                     .uri("/agent/desktop-observe")
                     .header("X-User-Id", String.valueOf(userId))
@@ -92,24 +92,29 @@ public class AgentRuntimeClient {
                                 String textApiKey,
                                 String textModel,
                                 String provider,
-                                String expectedLanguage) {
+                                String expectedLanguage,
+                                Long characterId,
+                                List<String> tools) {
         if (!properties.agentActive()) {
             return null;
         }
         try {
-            Map<String, Object> body = Map.of(
-                    "userId", userId,
-                    "scene", scene == null ? "PROACTIVE" : scene,
-                    "persona", persona == null ? "" : persona,
-                    "taskBlock", taskBlock == null ? "" : taskBlock,
-                    "history", history == null ? List.of() : history,
-                    "textBaseUrl", textBaseUrl == null ? "" : textBaseUrl,
-                    "textApiKey", textApiKey == null ? "" : textApiKey,
-                    "textModel", textModel == null ? "" : textModel,
-                    // provider 用于 Python 侧按上游隔离熔断（对齐 UpstreamCircuitBreakerFactory）
-                    "provider", provider == null ? "" : provider,
-                    // expectedLanguage 为空表示不走语言门（对齐 Java setExpectedLanguage 未设的语义）
-                    "expectedLanguage", expectedLanguage == null ? "" : expectedLanguage);
+            Map<String, Object> body = new java.util.LinkedHashMap<>();
+            body.put("userId", userId);
+            body.put("scene", scene == null ? "PROACTIVE" : scene);
+            body.put("persona", persona == null ? "" : persona);
+            body.put("taskBlock", taskBlock == null ? "" : taskBlock);
+            body.put("history", history == null ? List.of() : history);
+            body.put("textBaseUrl", textBaseUrl == null ? "" : textBaseUrl);
+            body.put("textApiKey", textApiKey == null ? "" : textApiKey);
+            body.put("textModel", textModel == null ? "" : textModel);
+            // provider 用于 Python 侧按上游隔离熔断（对齐 UpstreamCircuitBreakerFactory）
+            body.put("provider", provider == null ? "" : provider);
+            // expectedLanguage 为空表示不走语言门（对齐 setExpectedLanguage 未设的语义）
+            body.put("expectedLanguage", expectedLanguage == null ? "" : expectedLanguage);
+            // characterId / tools：Python 侧工具上下文与可执行工具集
+            body.put("characterId", characterId == null ? 0L : characterId);
+            body.put("tools", tools == null ? List.of() : tools);
             String response = restClient.post()
                     .uri("/agent/proactive-turn")
                     .header("X-User-Id", String.valueOf(userId))

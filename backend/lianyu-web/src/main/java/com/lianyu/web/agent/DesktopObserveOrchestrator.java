@@ -88,41 +88,9 @@ public class DesktopObserveOrchestrator implements com.lianyu.service.agent.Agen
                 userId, imageBase64, windowTitle, persona, textBaseUrl, textApiKey, textModel);
     }
 
-    /**
-     * 主动发言回合的 strangler 编排（阶段 2）。
-     *
-     * @param javaSupplier Java 侧生成函数（ChatTurnFacade / AiChatService 原链路）
-     * @return 最终 assistantRaw；两侧都失败返回 null（语义同 Java 原实现）
-     */
-    public String proactiveTurn(long userId,
-                                String scene,
-                                String persona,
-                                String taskBlock,
-                                java.util.List<com.lianyu.service.dto.MessageDto> history,
-                                String provider,
-                                String model,
-                                java.util.function.Supplier<String> javaSupplier) {
-        AgentRuntimeProperties.Mode mode = agentClient.properties().mode();
-        if (mode == AgentRuntimeProperties.Mode.AGENT) {
-            String fromAgent = callProactiveAgent(userId, scene, persona, taskBlock, history, provider, model, null);
-            if (fromAgent != null && !fromAgent.isBlank()) {
-                return fromAgent;
-            }
-            log.info("Proactive turn[{}]: agent mode empty, falling back to Java", userId);
-        }
-
-        String fromJava = javaSupplier.get();
-
-        if (mode == AgentRuntimeProperties.Mode.SHADOW) {
-            String fromAgent = callProactiveAgent(userId, scene, persona, taskBlock, history, provider, model, null);
-            recordProactiveDiff(userId, scene, fromJava, fromAgent);
-        }
-        return fromJava;
-    }
-
     private String callProactiveAgent(long userId, String scene, String persona, String taskBlock,
                                       java.util.List<com.lianyu.service.dto.MessageDto> history,
-                                      String provider, String model, String expectedLanguage) {
+                                      String provider, String model, String expectedLanguage, Long characterId) {
         java.util.List<Map<String, String>> historyMaps = new java.util.ArrayList<>();
         if (history != null) {
             for (com.lianyu.service.dto.MessageDto dto : history) {
@@ -132,14 +100,14 @@ public class DesktopObserveOrchestrator implements com.lianyu.service.agent.Agen
                 historyMaps.add(Map.of("role", dto.getRole(), "content", dto.getContent() == null ? "" : dto.getContent()));
             }
         }
-        return callProactiveAgentMaps(userId, scene, persona, taskBlock, historyMaps, provider, model, expectedLanguage);
+        return callProactiveAgentMaps(userId, scene, persona, taskBlock, historyMaps, provider, model, expectedLanguage, characterId);
     }
 
     /** 端口路径（已是 Map 形态的历史）。 */
     private String callProactiveAgentMaps(long userId, String scene, String persona, String taskBlock,
                                           List<Map<String, String>> historyMaps,
                                           String provider, String model,
-                                          String expectedLanguage) {
+                                          String expectedLanguage, Long characterId) {
         String textBaseUrl = null;
         String textApiKey = null;
         String textModel = null;
@@ -155,9 +123,12 @@ public class DesktopObserveOrchestrator implements com.lianyu.service.agent.Agen
         } catch (Exception e) {
             log.debug("Proactive turn: vault resolve for agent failed: {}", e.toString());
         }
+        // 主动发言链路在 Java 侧会挂的只读工具（对齐 ToolManager.resolveToolCallbacks）。
+        // 不含 write_diary / computer_task：Python 侧尚未实现，不应声明。
+        List<String> tools = List.of("get_current_time", "get_weather", "memory_search", "get_my_recent_life");
         return agentClient.proactiveTurn(
                 userId, scene, persona, taskBlock, historyMaps, textBaseUrl, textApiKey, textModel,
-                provider, expectedLanguage);
+                provider, expectedLanguage, characterId, tools);
     }
 
     private void recordProactiveDiff(long userId, String scene, String fromJava, String fromAgent) {
@@ -193,12 +164,12 @@ public class DesktopObserveOrchestrator implements com.lianyu.service.agent.Agen
 
     @Override
     public String proactiveTurn(long userId, String scene, String persona, String taskBlock,
-                                List<Map<String, String>> history, String provider, String model) {
+                                List<Map<String, String>> history, String provider, String model, Long characterId) {
         // 端口语义：仅 AGENT 模式出结果；OFF/SHADOW 返回 null，由调用方走 Java 原链路
         if (agentClient.properties().mode() != AgentRuntimeProperties.Mode.AGENT) {
             return null;
         }
-        String fromAgent = callProactiveAgentMaps(userId, scene, persona, taskBlock, history, provider, model, null);
+        String fromAgent = callProactiveAgentMaps(userId, scene, persona, taskBlock, history, provider, model, null, characterId);
         if (fromAgent == null || fromAgent.isBlank()) {
             log.info("Proactive turn[{}][{}]: agent empty, fallback to Java", userId, scene);
             return null;

@@ -8,7 +8,8 @@ public class NoopAgentRuntimePort implements AgentRuntimePort {
 
     @Override
     public String proactiveTurn(long userId, String scene, String persona, String taskBlock,
-                                List<Map<String, String>> history, String provider, String model) {
+                                List<Map<String, String>> history, String provider, String model,
+                                Long characterId) {
         return null;
     }
 

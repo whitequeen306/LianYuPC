@@ -37,8 +37,10 @@ def _client():
 
 
 def test_supported_tools_are_declared():
-    """先只声明无外部依赖的两个工具（memory_search / recent_life / write_diary / computer_task 待 P5）。"""
-    assert supported_tool_names() == frozenset({"get_current_time", "get_weather"})
+    """四个只读工具已支持；write_diary（MQ）/ computer_task（STOMP）仍待实现。"""
+    assert supported_tool_names() == frozenset(
+        {"get_current_time", "get_weather", "memory_search", "get_my_recent_life"}
+    )
 
 
 def test_tool_schema_shape_is_openai_compatible():
