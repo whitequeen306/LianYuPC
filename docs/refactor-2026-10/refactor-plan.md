@@ -166,6 +166,14 @@ Python 侧目前**没有** Resilience4j 等价物（按上游熔断/隔舱）、
 - 「分享聊天截图」随社区一并移除（它是社区投稿能力）；如日后需要，可基于
   `moments` 增加图片投稿后重做，无需恢复社区
 
+**D9 · `write_diary` 暂不在 Python 侧实现**（2026-10-17）
+写日记要入 RabbitMQ（`ai.background`），属**写路径**；Python 侧要保持「只读」（D7）。
+两条路都不好：复制 Java 的 MQ 消息契约（`AiBackgroundTask` 跨语言对齐，格式一漂就静默失败）、
+或新增 Java 内部端点 + 共享密钥 + nginx 封堵（引入新的攻击面）。
+→ 决定：AGENT 模式下主动发言链路**不声明** `write_diary`（Java 侧 tools 清单里已排除），
+模型自然不会调用；即兴日记能力继续由 Java 链路承担。待 P5（记忆写路径 outbox 化）
+时一并解决：届时要么给 agent 一个受控写通道，要么把日记触发留在 Java。
+
 ---
 
 ## 5. 已完成（进度台账）
@@ -184,6 +192,7 @@ Python 侧目前**没有** Resilience4j 等价物（按上游熔断/隔舱）、
 | **P1 网关对等层** | `resilience.py`（按上游熔断/隔舱/瞬断重试）+ `language_gate.py`（4 语种检测、有界重生成、永不强制英文）；语言门做成图内有界环 | `a2d4cfb` |
 | **P2 工具循环** | `tools/`（time/weather，声明式能力清单）+ `tool_loop.py`（显式 3 轮上限，A4 解药）+ `/agent/capabilities` 能力端点 | `3d44876` |
 | **A 批 数据访问** | `db.py`（SELECT 守卫的只读层）+ `memory_search`（Java 降级分支语义）+ `get_my_recent_life`（7 天窗口/4 语种/缓存）；characterId+tools 贯穿端口 | `2e1c832` |
+| **P3 准备** | 三模式行为测试 10 个（OFF/SHADOW/AGENT 分派 + AGENT 空结果必回退 Java + 桌面感知三模式）；`scripts/agent-shadow-report.ps1` 漂移率统计 | 见本轮提交 |
 
 **容器级实测结论**：`lianyu-agent` healthy；backend 日志确认 `profile "prod"` 激活；
 gateway TLS → `/api/agent/` → `{"status":"UP"}`；proactive-turn 无凭据 → `no_text_credentials`、user mismatch → 403。
@@ -263,6 +272,18 @@ LIANYU_AGENT_MODE=OFF         # 回滚（一步到位）
 观察期看两类日志统计漂移率：
 - `Shadow observe[userId]: match|DIFF`
 - `Proactive shadow[userId][scene]: match|DIFF`
+
+一键统计（自动读 backend 容器日志、算漂移率、打印 DIFF 样例）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/agent-shadow-report.ps1
+# 自定义窗口与样例数
+powershell -ExecutionPolicy Bypass -File scripts/agent-shadow-report.ps1 -Tail 20000 -Samples 10
+```
+
+> 判读口径：漂移率 = DIFF /（match + DIFF），**不含 both-null**。
+> 30% 以下视为可接受（LLM 输出天然非确定），70% 以上应排查（多半是凭据/模型/提示词不一致）。
+> 注意：DIFF 只比较长度与空值，不看语义——定位具体差异需同时看 `docker logs lianyu-agent`。
 
 ### 7.4 发版
 
