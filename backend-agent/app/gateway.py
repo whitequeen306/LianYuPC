@@ -44,6 +44,7 @@ class GatewayResult:
     content: str
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
+    tool_calls: list[dict[str, Any]] | None = None
 
 
 class ModelGatewayError(Exception):
@@ -117,6 +118,18 @@ class ModelGateway:
         }
         return await self._post_chat(base_url, api_key, payload, provider=provider, lane_name=lane_name)
 
+    async def chat_payload(
+        self,
+        *,
+        base_url: str,
+        api_key: str,
+        payload: dict[str, Any],
+        provider: str | None = None,
+        lane_name: str = "interactive",
+    ) -> GatewayResult:
+        """原样透传 payload（工具调用需要自定义 	ools / 	ool_choice）。"""
+        return await self._post_chat(base_url, api_key, payload, provider=provider, lane_name=lane_name)
+
     async def _post_chat(self, base_url: str, api_key: str, payload: dict[str, Any],
                          *, provider: str | None = None, lane_name: str = "interactive") -> GatewayResult:
         """唯一出站路径：隔舱 → 熔断 → 瞬断重试 → HTTP。
@@ -175,10 +188,13 @@ class ModelGateway:
         except (KeyError, IndexError, TypeError) as exc:
             raise ModelGatewayError("model gateway malformed response") from exc
         usage = body.get("usage") or {}
+        message = body["choices"][0].get("message") or {}
+        tool_calls = message.get("tool_calls")
         return GatewayResult(
             content=choice or "",
             prompt_tokens=usage.get("prompt_tokens"),
             completion_tokens=usage.get("completion_tokens"),
+            tool_calls=tool_calls if isinstance(tool_calls, list) else None,
         )
 
 

@@ -16,10 +16,15 @@ def outbound_timeout() -> httpx.Timeout:
 
 
 def new_client(base_url: str | None = None) -> httpx.AsyncClient:
-    """唯一合法的出站 AsyncClient 构造入口。"""
-    return httpx.AsyncClient(
-        base_url=base_url,
-        timeout=outbound_timeout(),
+    """唯一合法的出站 AsyncClient 构造入口。
+
+    注意：base_url 为空时必须**不传**该参数（httpx 不接受显式 None）。
+    """
+    kwargs: dict = {
+        "timeout": outbound_timeout(),
         # DashScope AAAA 兼容：对齐 Java -Djava.net.preferIPv4Addresses=true
-        transport=httpx.AsyncHTTPTransport(local_address="0.0.0.0"),
-    )
+        "transport": httpx.AsyncHTTPTransport(local_address="0.0.0.0"),
+    }
+    if base_url:
+        kwargs["base_url"] = base_url
+    return httpx.AsyncClient(**kwargs)

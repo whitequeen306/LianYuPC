@@ -181,6 +181,8 @@ Python 侧目前**没有** Resilience4j 等价物（按上游熔断/隔舱）、
 | 收尾 | compose 模式开关、文档回写 | `4de4d0f`、`876abac` |
 | **总纲定稿** | 新总纲取代 `refactor-plan-coupling.md` 与 `rewrite-options.md`；顺带修正 7 处悬空文档引用 | `093b7a1` |
 | **社区下线** | 后端整包 + 队列 + 通知 + 设置项 + 端点；前端页面/api/组件/分享流/通知/i18n 全删；动态接替 dock 主位；`V53` 删三表 | `74552b2` |
+| **P1 网关对等层** | `resilience.py`（按上游熔断/隔舱/瞬断重试）+ `language_gate.py`（4 语种检测、有界重生成、永不强制英文）；语言门做成图内有界环 | `a2d4cfb` |
+| **P2 工具循环** | `tools/`（time/weather，声明式能力清单）+ `tool_loop.py`（显式 3 轮上限，A4 解药）+ `/agent/capabilities` 能力端点 | 见本轮提交 |
 
 **容器级实测结论**：`lianyu-agent` healthy；backend 日志确认 `profile "prod"` 激活；
 gateway TLS → `/api/agent/` → `{"status":"UP"}`；proactive-turn 无凭据 → `no_text_credentials`、user mismatch → 403。
@@ -285,8 +287,8 @@ LIANYU_AGENT_MODE=OFF         # 回滚（一步到位）
 
 | # | 缺口 | 影响 | 处置 |
 |---|---|---|---|
-| 1 | Python 无工具循环 | `AGENT` 模式下需工具的链路会降级（丢 memory_search / write_diary / computer_task） | P2 补齐前不切 AGENT（D6） |
-| 2 | Python 无语言门 | 多语种用户的回复可能语言漂移 | P1 补齐 |
+| 1 | Python 工具集不完整 | `memory_search` / `get_my_recent_life` / `write_diary` / `computer_task` 需 MySQL、Milvus、MQ、STOMP，Python 现只有 `get_current_time` / `get_weather` | `/agent/capabilities` 已诚实上报 `missingTools`；Java 侧切 AGENT 前必须校验，依赖缺失工具的链路**不得**路由到 Python |
+| 2 | ~~Python 无语言门~~ | 已补齐（P1）：4 语种检测 + 最多 2 次重生成 + 永不强制英文，图内有界环 | ✅ `a2d4cfb` |
 | 3 | Python 无数据库访问 | 记忆/关系/情绪仍在 Java 组装 persona | 有意为之（D7），P5 再议 |
 | 4 | 影子 diff 只是「长度对比」 | 漂移率统计粗糙，不能定位语义差异 | P3 前加可选的文本相似度指标 |
 | 5 | 本机宿主 443 可能被加速器占用 | 宿主机 curl 打不到 gateway（容器内不受影响） | 已在 §7.2 用容器内验证规避 |

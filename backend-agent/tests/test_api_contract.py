@@ -66,3 +66,17 @@ def test_accepts_stage2_credentials_field_names():
     # 无真实上游（fake 地址连不通）→ Stage 2 静默降级 None，但证明契约字段被接受
     assert response.status_code == 200
     assert response.json() == {"greeting": None}
+
+
+def test_capabilities_declares_missing_tools():
+    """能力端点必须诚实报告缺口，供 Java 侧做路由校验。"""
+    response = client.get("/agent/capabilities")
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body["supportedTools"]) == {"get_current_time", "get_weather"}
+    assert "memory_search" in body["missingTools"]
+    assert "write_diary" in body["missingTools"]
+    assert body["languageGate"] is True
+    assert body["circuitBreaker"] is True
+    assert body["toolLoop"] is True
+    assert body["maxToolRounds"] >= 1

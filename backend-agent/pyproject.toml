@@ -11,6 +11,8 @@ dependencies = [
     "httpx>=0.27",
     "langgraph>=0.2.60",
     "langchain-core>=0.3.28",
+    # Windows 开发机无系统 IANA 时区库；Linux 镜像自带，显式声明保证两端一致
+    "tzdata>=2024.2",
 ]
 
 [dependency-groups]

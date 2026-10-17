@@ -43,6 +43,15 @@ class Settings(BaseSettings):
     # 语言门（对齐 AiChatService.LANGUAGE_GATE_MAX_RETRIES = 2）
     language_gate_max_retries: int = 2
 
+    # 工具（对齐 Java lianyu.tools.*）
+    time_zone: str = "Asia/Shanghai"
+    default_city: str = "上海"
+    weather_base_url: str = "https://wttr.in"
+    weather_cache_minutes: float = 15.0
+    # 工具循环上限：Java 侧是框架内部递归**无计数器**（审计 A4），
+    # Python 侧显式设上限并在日志/测试中固化
+    max_tool_rounds: int = 3
+
     # 影子对比模式：true 时记录请求/响应到日志供新旧链路 diff
     shadow_mode: bool = False
 

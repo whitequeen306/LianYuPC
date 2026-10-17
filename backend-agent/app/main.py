@@ -59,6 +59,35 @@ async def health() -> dict[str, str]:
     return {"status": "UP"}
 
 
+@app.get("/agent/capabilities")
+async def capabilities() -> dict[str, object]:
+    """运行时可能力清单 —— Java 适配层切 AGENT 前必须校验。
+
+    `missingTools` 里的工具在 Python 侧尚未实现；Java 链路若依赖它们，
+    就**不应**路由到 Python（否则相对 Java 会降级，见总纲 §9 缺口 1）。
+    """
+    from app.tools import supported_tool_names
+
+    java_tools = [
+        "get_current_time",
+        "get_weather",
+        "memory_search",
+        "get_my_recent_life",
+        "write_diary",
+        "computer_task",
+    ]
+    supported = sorted(supported_tool_names())
+    return {
+        "version": app.version,
+        "supportedTools": supported,
+        "missingTools": [t for t in java_tools if t not in supported],
+        "languageGate": True,
+        "circuitBreaker": True,
+        "toolLoop": True,
+        "maxToolRounds": get_settings().max_tool_rounds,
+    }
+
+
 @app.post("/agent/desktop-observe", response_model=DesktopObserveResponse)
 async def desktop_observe(
     body: DesktopObserveBody,
