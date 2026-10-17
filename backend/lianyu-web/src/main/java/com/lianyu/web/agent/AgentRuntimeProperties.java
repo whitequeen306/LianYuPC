@@ -1,0 +1,34 @@
+package com.lianyu.web.agent;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+/**
+ * backend-agent（FastAPI/LangGraph）运行时对接配置。
+ *
+ * <p>Strangler 阶段 1（docs/refactor-2026-10/rewrite-options.md）：Java 仍是唯一对外入口，
+ * 按模式把桌面感知链路转发/影子到 Python 侧。
+ */
+@ConfigurationProperties(prefix = "lianyu.agent")
+public record AgentRuntimeProperties(
+        /** off=纯 Java；shadow=Java 出结果、Python 影子跑并记录 diff；agent=Python 出结果、Java 兜底 */
+        Mode mode,
+        /** 容器内地址（compose service agent），仅内网可信 */
+        String baseUrl,
+        /** 影子对比记录阈值：两端结果不一致时 WARN */
+        boolean logDiff) {
+
+    public enum Mode { OFF, SHADOW, AGENT }
+
+    public AgentRuntimeProperties {
+        if (mode == null) {
+            mode = Mode.OFF;
+        }
+        if (baseUrl == null || baseUrl.isBlank()) {
+            baseUrl = "http://agent:8001";
+        }
+    }
+
+    public boolean agentActive() {
+        return mode == Mode.SHADOW || mode == Mode.AGENT;
+    }
+}

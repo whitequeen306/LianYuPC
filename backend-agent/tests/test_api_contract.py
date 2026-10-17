@@ -47,3 +47,22 @@ def test_shape_contract():
         json={"userId": 1, "imageBase64": FAKE_PNG, "windowTitle": None, "persona": None},
     )
     assert set(body.json().keys()) == {"greeting"}
+
+
+def test_accepts_stage2_credentials_field_names():
+    """Java 适配层转发体字段名（textBaseUrl/textApiKey/textModel）可被解析。"""
+    response = client.post(
+        "/agent/desktop-observe",
+        json={
+            "userId": 1,
+            "imageBase64": FAKE_PNG,
+            "windowTitle": "vscode",
+            "persona": "p",
+            "textBaseUrl": "https://fake/v1",
+            "textApiKey": "k",
+            "textModel": "m",
+        },
+    )
+    # 无真实上游（fake 地址连不通）→ Stage 2 静默降级 None，但证明契约字段被接受
+    assert response.status_code == 200
+    assert response.json() == {"greeting": None}

@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.lianyu.web.util.ClientIpResolver;
+import com.lianyu.web.agent.DesktopObserveOrchestrator;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -37,17 +38,20 @@ public class ObserveController {
     private final DashScopeTtsService dashScopeTtsService;
     private final AuthRateLimiter authRateLimiter;
     private final ClientIpResolver clientIpResolver;
+    private final DesktopObserveOrchestrator desktopObserveOrchestrator;
 
     public ObserveController(AiChatService aiChatService,
                              VisionChatService visionChatService,
                              DashScopeTtsService dashScopeTtsService,
                              AuthRateLimiter authRateLimiter,
-                             ClientIpResolver clientIpResolver) {
+                             ClientIpResolver clientIpResolver,
+                             DesktopObserveOrchestrator desktopObserveOrchestrator) {
         this.aiChatService = aiChatService;
         this.visionChatService = visionChatService;
         this.dashScopeTtsService = dashScopeTtsService;
         this.authRateLimiter = authRateLimiter;
         this.clientIpResolver = clientIpResolver;
+        this.desktopObserveOrchestrator = desktopObserveOrchestrator;
     }
 
     @PostMapping("/observe")
@@ -65,7 +69,8 @@ public class ObserveController {
         }
 
         try {
-            String greeting = visionChatService.observeDesktop(
+            // Strangler 编排：OFF=纯 Java；SHADOW=Java 出结果+Python 影子记 diff；AGENT=Python 优先+Java 兜底
+            String greeting = desktopObserveOrchestrator.observe(
                     userId, request.getImageBase64(), request.getWindowTitle(), request.getPersona(),
                     request.getProvider(), request.getModel());
             if (greeting == null || greeting.isBlank()) {

@@ -35,14 +35,15 @@ def observe_limiter(key: str) -> asyncio.Semaphore:
 
 
 class DesktopObserveBody(BaseModel):
-    """与 Java ObserveController 入参对齐（imageBase64/windowTitle/persona/provider/model）。"""
+    """Java 适配层转发体：vault 解析后的 Stage 2 凭据以显式字段传入（仅内网可信）。"""
 
     user_id: int = Field(alias="userId")
     image_base64: str = Field(alias="imageBase64")
     window_title: str | None = Field(default=None, alias="windowTitle")
     persona: str | None = None
-    provider: str | None = None
-    model: str | None = None
+    text_base_url: str | None = Field(default=None, alias="textBaseUrl")
+    text_api_key: str | None = Field(default=None, alias="textApiKey")
+    text_model: str | None = Field(default=None, alias="textModel")
 
     model_config = {"populate_by_name": True}
 
@@ -83,8 +84,9 @@ async def desktop_observe(
         image_base64=body.image_base64,
         window_title=body.window_title,
         persona=body.persona,
-        provider=body.provider,
-        model=body.model,
+        text_base_url=body.text_base_url,
+        text_api_key=body.text_api_key,
+        text_model=body.text_model,
     )
     async with observe_limiter(str(body.user_id)):
         greeting = await observe_desktop(gateway, request=request)

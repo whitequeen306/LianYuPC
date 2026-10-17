@@ -5,10 +5,12 @@ import static org.mockito.Mockito.mock;
 
 import cn.dev33.satoken.exception.SaTokenContextException;
 import com.lianyu.service.ai.AiChatService;
+import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.ai.DashScopeTtsService;
 import com.lianyu.service.ai.VisionChatService;
 import com.lianyu.service.auth.AuthRateLimiter;
 import com.lianyu.service.dto.ObserveDesktopRequest;
+import com.lianyu.web.agent.DesktopObserveOrchestrator;
 import com.lianyu.web.util.ClientIpResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
@@ -23,7 +25,8 @@ class ObserveControllerSecurityTest {
             mock(VisionChatService.class),
             mock(DashScopeTtsService.class),
             mock(AuthRateLimiter.class),
-            mock(ClientIpResolver.class));
+            mock(ClientIpResolver.class),
+            mock(DesktopObserveOrchestrator.class));
 
     ObserveDesktopRequest request = new ObserveDesktopRequest();
     request.setImageBase64("dGVzdA==");

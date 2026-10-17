@@ -21,8 +21,11 @@ class DesktopObserveRequest:
     image_base64: str
     window_title: str | None
     persona: str | None
-    provider: str | None = None
-    model: str | None = None
+    # Stage 2 文本模型凭据：由 Java 适配层解析用户 vault（resolveVault）后显式传入，
+    # Python 侧不做密钥管理（strangler 阶段 1 的信任边界：仅内网，agent 无对外端口）。
+    text_base_url: str | None = None
+    text_api_key: str | None = None
+    text_model: str | None = None
 
 
 def build_desktop_greeting_prompt(
@@ -78,20 +81,18 @@ async def observe_desktop(
         analysis.sub_intent,
     )
 
-    # Stage 2：文本模型生成问候。
-    # Java 侧此处走用户 vault（resolveVault）——strangler 阶段 1 仍由 Java 侧承担 vault 解析，
-    # 通过请求参数注入 base_url/api_key/model（由 Java 适配层传入），Python 侧不做密钥管理。
-    stage2 = DesktopStage2Credentials.from_request(request)
-    if stage2 is None:
+    # Stage 2：文本模型生成问候（凭据由 Java 适配层从用户 vault 解析后传入）
+    if not request.text_base_url or not request.text_api_key:
         logger.warning("Desktop observe: stage-2 credentials absent, skip greeting")
         return None
+    text_model = (request.text_model or "").strip() or "default"
 
     greeting_prompt = build_desktop_greeting_prompt(request.persona, request.window_title, analysis)
     try:
         result: GatewayResult = await gateway.chat(
-            base_url=stage2.base_url,
-            api_key=stage2.api_key,
-            model=stage2.model,
+            base_url=request.text_base_url,
+            api_key=request.text_api_key,
+            model=text_model,
             system=None,
             parts=[TextPart(text=greeting_prompt)],
             temperature=0.8,
@@ -109,30 +110,8 @@ async def observe_desktop(
     return greeting
 
 
-@dataclass(frozen=True)
-class DesktopStage2Credentials:
-    base_url: str
-    api_key: str
-    model: str
-
-    @classmethod
-    def from_request(cls, request: DesktopObserveRequest) -> "DesktopStage2Credentials | None":
-        # 阶段 1 由 Java 适配层解析用户 vault 后传入；未传则放弃 Stage 2
-        base_url = (request.provider or "").strip()
-        api_key = (request.model or "").strip()
-        if not base_url or not api_key:
-            return None
-        return cls(base_url=base_url, api_key=api_key, model="default")
-
-
-def run_observe_sync(gateway: ModelGateway, request: DesktopObserveRequest) -> str | None:
-    """同步包装，供 Java 侧经 HTTP 调用后（或测试）直接使用。"""
-    return asyncio.run(observe_desktop(gateway, request=request))
-
-
 __all__ = [
     "DesktopObserveRequest",
-    "DesktopStage2Credentials",
     "build_desktop_greeting_prompt",
     "observe_desktop",
     "run_observe_sync",
