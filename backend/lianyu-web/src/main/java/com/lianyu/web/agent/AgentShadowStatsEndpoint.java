@@ -24,31 +24,57 @@ public class AgentShadowStatsEndpoint {
     private final AgentShadowStats stats;
 
     private final AgentRuntimeClient client;
+    private final com.lianyu.service.graph.ChatTurnPromptAssembler promptAssembler;
+    private final PromptShadowComparator comparator;
 
-    public AgentShadowStatsEndpoint(AgentShadowStats stats, AgentRuntimeClient client) {
+    public AgentShadowStatsEndpoint(AgentShadowStats stats,
+                                    AgentRuntimeClient client,
+                                    com.lianyu.service.graph.ChatTurnPromptAssembler promptAssembler,
+                                    PromptShadowComparator comparator) {
         this.stats = stats;
         this.client = client;
+        this.promptAssembler = promptAssembler;
+        this.comparator = comparator;
     }
 
     /**
-     * 接线自检：真实调用一次 Python 的 `/agent/prompt/assemble`，确认
-     * 「Java → agent → 组装结果」这条链路在容器内可用。
+     * 跨语言一致性自检：**真实调用 Java 的 assemble()**，再把同样的输入发给 Python，
+     * 比对两边产出的 system prompt。
      *
-     * <p>**不是漂移检测**：它只证明链路通、Python 能返回结构完整的 prompt。
-     * 真实漂移必须在 SHADOW 模式下由真实对话触发（那时才有 Java 侧基准）。
+     * <p>与 `plumbingCheck` 的区别：那个只证明「Python 能返回 prompt」，这个证明
+     * 「Java 与 Python 组装出来的**内容**一致」。用固定角色 fixture、空记忆/关系块，
+     * 所以它验的是**组装逻辑**，不含真实数据 —— 真实数据仍需 SHADOW 下跑真实对话。
      */
     @WriteOperation
     public Map<String, Object> plumbingCheck() {
         Map<String, Object> result = new LinkedHashMap<>();
         try {
+            com.lianyu.dao.entity.Character character = new com.lianyu.dao.entity.Character();
+            character.setId(999_999L);
+            character.setName("影子自检");
+            character.setSettings(new LinkedHashMap<>(Map.of("personality", "温柔但有点固执")));
+
+            com.lianyu.service.graph.ChatTurnPromptAssembler.AssembledPrompt assembled =
+                    promptAssembler.assemble(com.lianyu.ai.graph.ChatTurnScene.MOMENTS,
+                            0L, null, character, "", "", "", null);
+            String javaPrompt = assembled.systemPrompt();
+
+            String memoryContext = String.join("\n\n",
+                    java.util.stream.Stream.of(assembled.memoryBlock(),
+                                    assembled.relationshipBlock(), assembled.sessionSummaryBlock())
+                            .filter(s -> s != null && !s.isBlank())
+                            .toList());
+
             AssemblySnapshot snapshot = new AssemblySnapshot(
-                    "影子自检", Map.of("personality", "温柔"), null,
-                    "", "", "", "zh", false, true, 2, false, null, null, "none");
+                    character.getName(), character.getSettings(), null,
+                    memoryContext, "", "", assembled.outputLanguage(),
+                    false, true, 2, false, null, null, "style_only");
+
             String response = client.postJson("/agent/prompt/assemble", 0L,
                     PromptShadowComparator.bodyOf(snapshot, 0L));
             if (response == null) {
                 result.put("reachable", false);
-                result.put("reason", "no response (agent down or timeout)");
+                result.put("reason", "no response from agent");
                 return result;
             }
             com.fasterxml.jackson.databind.JsonNode root = client.readTree(response);
@@ -57,12 +83,20 @@ public class AgentShadowStatsEndpoint {
                 result.put("reason", root.path("error").asText());
                 return result;
             }
-            String prompt = root.path("systemPrompt").asText("");
+            String pythonPrompt = root.path("systemPrompt").asText("");
+            PromptShadowComparator.Diff diff =
+                    PromptShadowComparator.compare(javaPrompt, pythonPrompt);
+            if (diff.equal()) {
+                stats.recordMatch("prompt");
+            } else {
+                stats.recordDiff("prompt");
+            }
             result.put("reachable", true);
-            result.put("chars", prompt.length());
-            result.put("hasGuard", prompt.contains("安全与边界"));
-            result.put("hasReplyRules", prompt.contains("回复规则："));
-            result.put("hasPersona", prompt.contains("影子自检"));
+            result.put("equal", diff.equal());
+            result.put("javaChars", diff.javaLength());
+            result.put("pythonChars", diff.pythonLength());
+            result.put("firstDiffAt", diff.firstDiffAt());
+            result.put("channelStats", stats.snapshot());
             return result;
         } catch (Exception e) {
             result.put("reachable", false);
@@ -70,6 +104,7 @@ public class AgentShadowStatsEndpoint {
             return result;
         }
     }
+
 
     @ReadOperation
     public Map<String, Object> shadow() {
