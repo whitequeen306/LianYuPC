@@ -96,6 +96,27 @@ Python 侧没有任何解密实现（全仓 grep 无 jasypt/decrypt）。
 只是转发，见 `AgentMemoryAdapter`）。所以 P6 不把这一条算作待办，而是
 **划为「长期保留」**。
 
+## 四点六、P5.6 之后的前置条件变化（2026-10-18）
+
+P5.6 把 prompt 的**组装与数据读取都搬到了 Python**，因此 P6-d 的前置条件发生实质变化：
+
+| 组件 | 之前 | 现在 |
+|---|---|---|
+| 提示词组装 | Java 独占 | Python 已等价（三场景逐字节一致） |
+| 记忆块数据 | Java 读 | Python 读 `memory_meta` |
+| 关系块数据 | Java 读 | Python 读 `relationship_state` / `relationship_event` |
+| 情绪块数据 | Java 读 | Python 读 `character_state` |
+| 会话摘要 | Java 读 | Python 读 Redis `session:summary:*`（写入仍归 Java） |
+
+**仍未解除的前置**：
+1. **工具提示**：`toolManager.buildToolsPromptHint(userId)` 依赖角色的工具配置，
+   Python 未读取 —— 目前由 Java 计算后传入
+2. **真实流量验证**：parity 用的是固定 fixture（user 7 / character 999999），
+   只证明「相同数据下等价」，不证明「线上数据下等价」。差异可能来自
+   Milvus 近似检索、缓存时序、并发读写
+3. **OFF 模式**：`ChatTurnGraph` 在 OFF/SHADOW 下仍使用 Java 组装，
+   删任何 Java 记忆/关系/情绪类都会破坏 OFF 路径
+
 ## 五、进度与剩下的事
 
 已完成：
