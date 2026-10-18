@@ -1,7 +1,7 @@
 {
   "placeholders" : {
-    "mention" : "{{MENTION}}",
     "name" : "{{NAME}}",
+    "mention" : "{{MENTION}}",
     "other" : "{{OTHER}}"
   },
   "outputLanguage" : {
