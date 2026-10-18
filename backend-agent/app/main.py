@@ -21,6 +21,7 @@ from app.config import get_settings
 from app.desktop_observe import DesktopObserveRequest, observe_desktop
 from app.gateway import ModelGateway, decode_png_base64, get_gateway
 from app.stream_chat import DONE_FRAME, sse_error, stream_chat_events
+from app.system_prompt import assemble_scene_prompt
 from app.image_chat import chat_with_image
 from app.text_turn import complete_text
 from app.tools import supported_tool_schemas
@@ -226,6 +227,62 @@ async def chat_stream(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ─────────────────────────── P5.5：system prompt 组装 ───────────────────────────
+
+
+class PromptAssembleBody(BaseModel):
+    """Java 把已取好的数据块传进来，Python 只做组装（数据取数仍在 Java）。"""
+
+    user_id: int = Field(alias="userId")
+    character_name: str = Field(default="", alias="characterName")
+    settings: dict[str, Any] = {}
+    prompt_template: str | None = Field(default=None, alias="promptTemplate")
+    memory_context: str = Field(default="", alias="memoryContext")
+    tool_hint: str = Field(default="", alias="toolHint")
+    emotion_block: str = Field(default="", alias="emotionBlock")
+    output_language: str | None = Field(default="zh", alias="outputLanguage")
+    enable_chat_tools: bool = Field(default=False, alias="enableChatTools")
+    show_inner_thoughts: bool = Field(default=True, alias="showInnerThoughts")
+    max_pieces: int = Field(default=2, alias="maxPieces")
+    include_time: bool = Field(default=True, alias="includeTime")
+    time_fact: str | None = Field(default=None, alias="timeFact")
+    city: str | None = None
+    after_base: str = Field(default="full", alias="afterBase")
+
+    model_config = {"populate_by_name": True}
+
+
+@app.post("/agent/prompt/assemble")
+async def prompt_assemble(
+    body: PromptAssembleBody,
+    user_id_header: str | None = Header(default=None, alias="X-User-Id"),
+) -> dict[str, Any]:
+    """返回 {systemPrompt}。SHADOW 模式下 Java 用它与自己组装的结果比对。"""
+    if user_id_header and str(body.user_id) != user_id_header:
+        raise HTTPException(status_code=403, detail="user mismatch")
+    try:
+        prompt = assemble_scene_prompt(
+            character_name=body.character_name,
+            settings=body.settings,
+            prompt_template=body.prompt_template,
+            memory_context=body.memory_context,
+            tool_hint=body.tool_hint,
+            emotion_block=body.emotion_block,
+            output_language=body.output_language,
+            enable_chat_tools=body.enable_chat_tools,
+            show_inner_thoughts=body.show_inner_thoughts,
+            max_pieces=body.max_pieces,
+            include_time=body.include_time,
+            time_fact=body.time_fact,
+            city=body.city,
+            after_base=body.after_base,
+        )
+    except Exception as exc:  # noqa: BLE001 - 组装失败返回错误码，Java 记录后忽略
+        logger.warning("prompt assemble failed: %s", exc)
+        return {"error": "assemble_failed"}
+    return {"systemPrompt": prompt}
 
 
 # ─────────────────────────── 图片消息回合（两段式） ───────────────────────────

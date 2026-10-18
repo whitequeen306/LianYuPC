@@ -23,7 +23,12 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from app.character_prompt import build_default_prompt, extract_persona
-from app.prompt_assembly import natural_style_block
+from app.prompt_assembly import (
+    append_city_context,
+    append_natural_style,
+    append_time_context,
+    natural_style_block,
+)
 from app.prompt_fragments import fragment
 from app.reply_rules import render_reply_rules
 from app.rule_templates import render_output_language_rules
@@ -119,6 +124,57 @@ def build_system_prompt(
     return prompt
 
 
+def assemble_scene_prompt(
+    *,
+    character_name: str,
+    settings: Mapping[str, Any] | None,
+    prompt_template: str | None,
+    memory_context: str = "",
+    tool_hint: str = "",
+    emotion_block: str = "",
+    output_language: str | None = "zh",
+    enable_chat_tools: bool = False,
+    show_inner_thoughts: bool = True,
+    max_pieces: int = 2,
+    include_time: bool = True,
+    time_fact: str | None = None,
+    city: str | None = None,
+    after_base: str = "full",
+) -> str:
+    """镜像 `ChatTurnPromptAssembler.assemble()` 的场景顺序。
+
+    `after_base` 对应 Java 的三个分支：
+      - "full"       ：时间锚点 → 城市 → 晚安 → 自然风格（includeTimeCityGoodnight）
+      - "style_only" ：只追加自然风格（MOMENTS / DIARY）
+      - "none"       ：什么都不加（VOICE_CALL）
+
+    晚安模式的**触发判断**留在调用方（依赖当前时刻与用户输入），
+    这里只负责「已决定要加时」的拼接。
+    """
+    prompt = build_system_prompt(
+        character_name=character_name,
+        settings=settings,
+        prompt_template=prompt_template,
+        memory_context=memory_context,
+        tool_hint=tool_hint,
+        emotion_block=emotion_block,
+        output_language=output_language,
+        enable_chat_tools=enable_chat_tools,
+        show_inner_thoughts=show_inner_thoughts,
+        max_pieces=max_pieces,
+    )
+    if after_base == "none":
+        return prompt
+    if after_base == "style_only":
+        return append_natural_style(prompt, output_language, show_inner_thoughts)
+    # full：时间锚点 → 城市（可能为空）→ 自然风格
+    if include_time and time_fact is not None:
+        prompt = append_time_context(prompt, time_fact)
+    if city:
+        prompt = append_city_context(prompt, city)
+    return append_natural_style(prompt, output_language, show_inner_thoughts)
+
+
 def natural_style_suffix(output_language: str | None, show_inner_thoughts: bool = True) -> str:
     """场景层追加的自然风格块（ChatTurnPromptAssembler 负责，不在 buildSystemPrompt 内）。"""
     return natural_style_block(output_language, show_inner_thoughts)
@@ -128,6 +184,7 @@ __all__ = [
     "MEMORY_HEADER",
     "build_system_prompt",
     "addressing_hint_block",
+    "assemble_scene_prompt",
     "build_user_addressing_rule",
     "natural_style_suffix",
 ]

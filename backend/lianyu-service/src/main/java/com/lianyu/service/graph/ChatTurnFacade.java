@@ -43,6 +43,13 @@ public class ChatTurnFacade {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.lianyu.service.agent.AgentStreamPort agentStreamPort;
 
+    /** SHADOW 模式下的 prompt 级影子比对（未接线时为 null，等价关闭）。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.service.agent.PromptShadowPort promptShadowPort;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.service.tools.TimeTool shadowTimeTool;
+
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.lianyu.service.agent.AgentImagePort agentImagePort;
 
@@ -145,6 +152,58 @@ public class ChatTurnFacade {
                 extraSystemSuffix,
                 groupExtras
         ).systemPrompt();
+    }
+
+    /**
+     * SHADOW 模式下把「Java 刚组装的 prompt」与「Python 组装的 prompt」比对。
+     * 任何异常都在端口实现里被吞掉；此处再包一层以防端口本身抛错。
+     */
+    private void dispatchPromptShadow(ChatTurnCommand command, OverAllState state,
+                                      ChatTurnState turn, Character character,
+                                      List<MessageDto> messages) {
+        if (promptShadowPort == null || character == null) {
+            return;
+        }
+        try {
+            String memoryContext = joinBlocks(
+                    state.value(ChatTurnKeys.MEMORY_BLOCK, String.class).orElse(""),
+                    state.value(ChatTurnKeys.RELATIONSHIP_BLOCK, String.class).orElse(""),
+                    state.value(ChatTurnKeys.SESSION_SUMMARY_BLOCK, String.class).orElse(""));
+            String timeFact = shadowTimeTool != null ? shadowTimeTool.readCurrentTimeFact() : null;
+            com.lianyu.service.agent.AssemblySnapshot snapshot =
+                    new com.lianyu.service.agent.AssemblySnapshot(
+                            character.getName(),
+                            character.getSettings(),
+                            character.getPromptTemplate(),
+                            memoryContext,
+                            "",
+                            "",
+                            turn.outputLanguage(),
+                            turn.scene().enableChatTools(),
+                            com.lianyu.service.character.CharacterPreferenceResolver
+                                    .showInnerThoughts(character),
+                            2,
+                            turn.scene().includeTime(),
+                            timeFact,
+                            null,
+                            "full");
+            promptShadowPort.compareAsync(command.getUserId(), snapshot, turn.systemPrompt());
+        } catch (Exception e) {
+            log.debug("Prompt shadow dispatch failed: {}", e.toString());
+        }
+    }
+
+    private static String joinBlocks(String a, String b, String c) {
+        StringBuilder sb = new StringBuilder();
+        for (String part : new String[]{a, b, c}) {
+            if (part != null && !part.isBlank()) {
+                if (sb.length() > 0) {
+                    sb.append("\n\n");
+                }
+                sb.append(part);
+            }
+        }
+        return sb.toString();
     }
 
     private OverAllState runAssemble(ChatTurnCommand command) {
