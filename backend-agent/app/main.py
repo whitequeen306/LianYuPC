@@ -188,6 +188,54 @@ async def chat_stream(
     )
 
 
+# ─────────────────────────── P5：记忆写入（Python 侧接管） ───────────────────────────
+
+
+class MemoryItem(BaseModel):
+    summary: str
+    memory_type: str = Field(default="FACT", alias="memoryType")
+    importance: float = 0.5
+    source_msg_ids: list[int] = Field(default_factory=list, alias="sourceMsgIds")
+
+    model_config = {"populate_by_name": True}
+
+
+class MemoryWriteBody(BaseModel):
+    user_id: int = Field(alias="userId")
+    character_id: int = Field(alias="characterId")
+    memories: list[MemoryItem] = []
+
+    model_config = {"populate_by_name": True}
+
+
+@app.post("/agent/memory/write")
+async def memory_write(
+    body: MemoryWriteBody,
+    user_id_header: str | None = Header(default=None, alias="X-User-Id"),
+) -> dict[str, Any]:
+    """写入抽取好的记忆（去重 + 合并 + outbox 入队），整批单事务。"""
+    if user_id_header and str(body.user_id) != user_id_header:
+        raise HTTPException(status_code=403, detail="user mismatch")
+
+    from app.memory.writer import MemoryInput, write_memories
+
+    inputs = [
+        MemoryInput(
+            summary=item.summary,
+            memory_type=item.memory_type,
+            importance=item.importance,
+            source_msg_ids=tuple(item.source_msg_ids or ()),
+        )
+        for item in body.memories
+    ]
+    try:
+        outcome = await write_memories(body.user_id, body.character_id, inputs)
+    except Exception as exc:  # noqa: BLE001 - 写失败要显式返回，便于 Java 回退
+        logger.warning("memory write failed: %s", exc)
+        raise HTTPException(status_code=500, detail="memory write failed") from exc
+    return outcome.as_dict()
+
+
 # ─────────────────────────── 阶段 2：主动发言回合 ───────────────────────────
 
 
