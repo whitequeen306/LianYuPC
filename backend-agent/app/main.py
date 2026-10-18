@@ -21,6 +21,7 @@ from app.config import get_settings
 from app.desktop_observe import DesktopObserveRequest, observe_desktop
 from app.gateway import ModelGateway, decode_png_base64, get_gateway
 from app.stream_chat import DONE_FRAME, sse_error, stream_chat_events
+from app.image_chat import chat_with_image
 from app.text_turn import complete_text
 from app.tools import supported_tool_schemas
 
@@ -224,6 +225,64 @@ async def chat_stream(
         event_source(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ─────────────────────────── 图片消息回合（两段式） ───────────────────────────
+
+
+class ChatImageBody(BaseModel):
+    """图片消息：Java 已从对象存储读出字节并以 base64 传来（不引入 URL 下载面）。"""
+
+    user_id: int = Field(alias="userId")
+    character_id: int | None = Field(default=None, alias="characterId")
+    image_png_base64: str = Field(alias="imagePngBase64")
+    system: str = ""
+    messages: list[dict[str, Any]] = []
+    text_base_url: str | None = Field(default=None, alias="textBaseUrl")
+    text_api_key: str | None = Field(default=None, alias="textApiKey")
+    text_model: str | None = Field(default=None, alias="textModel")
+    vision_base_url: str | None = Field(default=None, alias="visionBaseUrl")
+    vision_api_key: str | None = Field(default=None, alias="visionApiKey")
+    vision_model: str | None = Field(default=None, alias="visionModel")
+    provider: str | None = None
+    temperature: float = 0.8
+    max_tokens: int = 1024
+
+    model_config = {"populate_by_name": True}
+
+
+@app.post("/agent/chat-image")
+async def chat_image(
+    body: ChatImageBody,
+    user_id_header: str | None = Header(default=None, alias="X-User-Id"),
+) -> dict[str, Any]:
+    """识图 + 生成（阻塞），返回 {content, imageDescription}；失败返回 error 码。"""
+    if user_id_header and str(body.user_id) != user_id_header:
+        raise HTTPException(status_code=403, detail="user mismatch")
+    settings = get_settings()
+    if not body.text_base_url or not body.text_api_key:
+        return {"error": "no_text_credentials"}
+    vision_base = body.vision_base_url or settings.multimodal_base_url
+    vision_key = body.vision_api_key or settings.multimodal_api_key
+    vision_model = body.vision_model or settings.multimodal_model
+    if not vision_base or not vision_key:
+        return {"error": "no_vision_credentials"}
+
+    return await chat_with_image(
+        get_gateway(),
+        image_png_base64=body.image_png_base64,
+        vision_base_url=vision_base,
+        vision_api_key=vision_key,
+        vision_model=vision_model,
+        base_url=body.text_base_url,
+        api_key=body.text_api_key,
+        model=body.text_model or "default",
+        system=body.system,
+        messages=body.messages,
+        temperature=body.temperature,
+        max_tokens=body.max_tokens,
+        provider=body.provider,
     )
 
 

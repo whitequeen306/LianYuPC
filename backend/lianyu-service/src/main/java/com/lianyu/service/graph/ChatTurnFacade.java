@@ -43,6 +43,9 @@ public class ChatTurnFacade {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.lianyu.service.agent.AgentStreamPort agentStreamPort;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.service.agent.AgentImagePort agentImagePort;
+
     public String assembleSystemPrompt(ChatTurnCommand command) {
         OverAllState state = runAssemble(command);
         return new ChatTurnState(state).systemPrompt();
@@ -77,9 +80,46 @@ public class ChatTurnFacade {
         boolean hasImage = request.getImageUrl() != null && !request.getImageUrl().isBlank();
         log.info("ChatTurn stream assembled: scene={} messages={} hasImage={}",
                 turn.scene(), messages.size(), hasImage);
-        return hasImage
-                ? visionChatService.chatImageStream(command.getUserId(), request, callback)
-                : aiChatService.chatStream(command.getUserId(), request, callback);
+        if (hasImage) {
+            // Strangler: 图片消息优先交给 agent（Java 负责取图并转 base64）
+            if (agentImagePort != null) {
+                try {
+                    SseEmitter viaAgent = agentImagePort.streamIfActive(
+                            command.getUserId(), turn.systemPrompt(), messages, request.getImageUrl(),
+                            request.getProvider(), request.getModel(),
+                            request.getMaxTokens() == null ? 1024 : request.getMaxTokens(), callback);
+                    if (viaAgent != null) {
+                        log.info("ChatTurn image stream served by agent runtime: scene={}", turn.scene());
+                        return viaAgent;
+                    }
+                } catch (Exception e) {
+                    log.warn("Agent image dispatch failed, fallback to Java: {}", e.toString());
+                }
+            }
+            return visionChatService.chatImageStream(command.getUserId(), request, callback);
+        }
+        // Strangler: AGENT 模式下纯文本流交给 Python；返回 null 表示未接管 → 走 Java 原链路
+        if (agentStreamPort != null) {
+            try {
+                SseEmitter agentEmitter = agentStreamPort.streamIfActive(
+                        command.getUserId(),
+                        turn.systemPrompt(),
+                        request.getMessages(),
+                        request.getProvider(),
+                        request.getModel(),
+                        request.getExpectedLanguage(),
+                        character == null ? null : character.getId(),
+                        request.getMaxTokens() == null ? 1024 : request.getMaxTokens(),
+                        callback);
+                if (agentEmitter != null) {
+                    log.info("ChatTurn stream served by agent runtime: scene={}", turn.scene());
+                    return agentEmitter;
+                }
+            } catch (Exception e) {
+                log.warn("Agent stream dispatch failed, fallback to Java: {}", e.toString());
+            }
+        }
+        return aiChatService.chatStream(command.getUserId(), request, callback);
     }
 
     /**
