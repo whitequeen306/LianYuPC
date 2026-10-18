@@ -113,6 +113,18 @@ public class PromptShadowComparator {
                 }
                 // 只打印「哪些段不同」，不含 prompt 正文
                 log.warn("Prompt shadow[{}] segments DIFF: {}", userId, bad);
+                // 段名序列（不含正文）：用于定位「多段/少段/顺序不同」
+                java.util.List<String> javaNames = new java.util.ArrayList<>();
+                for (java.util.Map.Entry<String, String> e : splitSegments(javaPrompt)) {
+                    javaNames.add(e.getKey() + ":" + e.getValue().length());
+                }
+                java.util.List<String> pyNames = new java.util.ArrayList<>();
+                for (java.util.Map.Entry<String, String> e : splitSegments(pythonPrompt)) {
+                    pyNames.add(e.getKey() + ":" + e.getValue().length());
+                }
+
+                log.warn("Prompt shadow[{}] javaSegs={}", userId, javaNames);
+                log.warn("Prompt shadow[{}] pySegs={}", userId, pyNames);
             }
         }
         return diff;
@@ -176,6 +188,17 @@ public class PromptShadowComparator {
         }
         segments.add(java.util.Map.entry(currentName, body.toString()));
         return segments;
+    }
+
+    private static String snippet(String text, int from, int len) {
+        if (text == null) {
+            return "";
+        }
+        int end = Math.min(text.length(), from + len);
+        if (from >= end) {
+            return "";
+        }
+        return text.substring(from, end).replace("\n", "\\n");
     }
 
     /** 组装请求体（字段名与 Python 端 alias 一致）。 */
