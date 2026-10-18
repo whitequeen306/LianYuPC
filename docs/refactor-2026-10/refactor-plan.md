@@ -200,6 +200,7 @@ Python 侧目前**没有** Resilience4j 等价物（按上游熔断/隔舱）、
 | **记忆 outbox** | `memory_outbox` 表 + relay（幂等/指数退避/死信）+ 写入改事务内入队；真实 Milvus 端到端验证 | `9586f9c` |
 | **Python 接管记忆写** | 白名单写层（只允许 INSERT 两张表）+ writer（source_hash 对齐 Java）+ `/agent/memory/write`；跨语言契约 bug（PREFERENCE 不在 Java 枚举）修复 | `e721a05` |
 | **记忆抽取迁 Python** | 规则槽位 + LLM 抽取（prompt 逐字一致）+ 合并闸门；/agent/memory/extract-write 一步抽取并写入；修正 source_hash 只含 msgId 导致多槽位互相覆盖 | `24d9564` |
+| **图片流迁 Python** | `image_chat.py` 两段式（识图→生成）+ `AgentImagePort/Adapter`（Java 取字节转 base64）；顺带修复 facade 丢失的文本 agent 分支 | 见提交 |
 | **relay 迁 Python（单写者）** | `milvus_store.py` 契约对齐 Java + `memory/relay.py`（认领/退避/死信/上游不可用不烧重试）+ lifespan 后台循环；Java relay 默认关闭 | 见提交 |
 | **3 条非 Graph 链路下沉** | 通用文本端口 `AgentTextPort` + `/agent/text/complete`（支持 history）：日记、朋友圈发帖、朋友圈评论全部接通，任何 null/异常回退 Java | `1d681b4`、`f948b65` |
 
