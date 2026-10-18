@@ -42,9 +42,22 @@ def describe_dimension(dimension: str, score: int) -> str:
     return labels[band_index]
 
 
+# 合法阶段枚举（对齐 Java RelationshipPhase）
+KNOWN_PHASES = ("TESTING", "FAMILIAR", "DEPENDENT", "INJURED", "REPAIRING", "STABLE_INTIMATE")
+DEFAULT_PHASE = "TESTING"
+
+
 def format_phase(phase: str | None) -> str:
-    """对齐 `snapshot.phase().name().toLowerCase().replace('_','-')`。"""
-    return (phase or "").lower().replace("_", "-")
+    """对齐 `snapshot.phase().name().toLowerCase().replace('_','-')`。
+
+    非法值回退到 `DEFAULT_PHASE`（Java 侧枚举映射失败时会走默认快照）。
+    不校验的话，脏数据会让 Python 产出 Java 永远不会生成的 prompt ——
+    这类差异在 parity 比对里就是一次「无法解释的漂移」。
+    """
+    normalized = (phase or "").strip().upper()
+    if normalized not in KNOWN_PHASES:
+        normalized = DEFAULT_PHASE
+    return normalized.lower().replace("_", "-")
 
 
 def build_relationship_context(
@@ -70,6 +83,8 @@ def build_relationship_context(
 
 
 __all__ = [
+    "DEFAULT_PHASE",
+    "KNOWN_PHASES",
     "EMPTY_EVENTS_LINE",
     "LABELS",
     "build_relationship_context",

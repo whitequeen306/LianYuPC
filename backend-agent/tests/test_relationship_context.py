@@ -61,6 +61,9 @@ def test_empty_events_branch_matches_java(golden):
 
 
 def test_phase_formatting():
-    assert rc.format_phase("CLOSE_FRIEND") == "close-friend"
-    assert rc.format_phase("STRANGER") == "stranger"
-    assert rc.format_phase(None) == ""
+    assert rc.format_phase("STABLE_INTIMATE") == "stable-intimate"
+    assert rc.format_phase("FAMILIAR") == "familiar"
+    # 非法/空值回退到 Java 的默认阶段，避免产出 Java 永不生成的 prompt
+    assert rc.format_phase("CLOSE_FRIEND") == "testing"
+    assert rc.format_phase("STRANGER") == "testing"
+    assert rc.format_phase(None) == "testing"

@@ -21,6 +21,9 @@ import org.springframework.stereotype.Component;
 @Endpoint(id = "agentshadow")
 public class AgentShadowStatsEndpoint {
 
+    /** 影子自检固定使用 user 7 + character 999999（种子数据见 P5.6 文档）。 */
+    private static final long FIXTURE_USER_ID = 7L;
+
     private final AgentShadowStats stats;
 
     private final AgentRuntimeClient client;
@@ -51,12 +54,13 @@ public class AgentShadowStatsEndpoint {
         try {
             com.lianyu.dao.entity.Character character = new com.lianyu.dao.entity.Character();
             character.setId(999_999L);
+            character.setOwnerUserId(7L);
             character.setName("影子自检");
             character.setSettings(new LinkedHashMap<>(Map.of("personality", "温柔但有点固执")));
 
             com.lianyu.service.graph.ChatTurnPromptAssembler.AssembledPrompt assembled =
                     promptAssembler.assemble(com.lianyu.ai.graph.ChatTurnScene.MOMENTS,
-                            0L, null, character, "", "", "", null);
+                            FIXTURE_USER_ID, null, character, "", "", "", null);
             String javaPrompt = assembled.systemPrompt();
 
             String memoryContext = String.join("\n\n",
@@ -67,11 +71,15 @@ public class AgentShadowStatsEndpoint {
 
             AssemblySnapshot snapshot = new AssemblySnapshot(
                     character.getName(), character.getSettings(), null,
-                    memoryContext, "", "", assembled.outputLanguage(),
+                    "", "", "", assembled.outputLanguage(),
                     false, true, 2, false, null, null, "style_only");
 
-            String response = client.postJson("/agent/prompt/assemble", 0L,
-                    PromptShadowComparator.bodyOf(snapshot, 0L));
+            // P5.6：让 Python 自己读库组装（useInternalData），而不是接收 Java 传的块
+            Map<String, Object> body = new LinkedHashMap<>(snapshot.toBody());
+            body.put("userId", FIXTURE_USER_ID);
+            body.put("useInternalData", true);
+            body.put("characterId", character.getId());
+            String response = client.postJson("/agent/prompt/assemble", FIXTURE_USER_ID, body);
             if (response == null) {
                 result.put("reachable", false);
                 result.put("reason", "no response from agent");

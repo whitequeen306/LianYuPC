@@ -250,6 +250,10 @@ class PromptAssembleBody(BaseModel):
     time_fact: str | None = Field(default=None, alias="timeFact")
     city: str | None = None
     after_base: str = Field(default="full", alias="afterBase")
+    # 为 true 时忽略传入的数据块，由 Python 自己读库（P5.6）
+    use_internal_data: bool = Field(default=False, alias="useInternalData")
+    character_id: int | None = Field(default=None, alias="characterId")
+    conversation_id: int | None = Field(default=None, alias="conversationId")
 
     model_config = {"populate_by_name": True}
 
@@ -263,20 +267,42 @@ async def prompt_assemble(
     if user_id_header and str(body.user_id) != user_id_header:
         raise HTTPException(status_code=403, detail="user mismatch")
     try:
+        memory_context = body.memory_context
+        emotion_block = body.emotion_block
+        city = body.city
+        if body.use_internal_data:
+            from app.data_readers import load_emotion, load_memory_context
+            from app.emotion_block import format_emotion_block
+
+            memory_context = await load_memory_context(
+                body.user_id, body.character_id or 0, body.conversation_id) or ""
+            emotion = await load_emotion(body.character_id or 0, body.user_id)
+            emotion_block = format_emotion_block(
+                lang=body.output_language,
+                current_emotion=(emotion or {}).get("current_emotion"),
+                emotion_intensity=(emotion or {}).get("emotion_intensity"),
+                status_text=(emotion or {}).get("status_text"),
+                previous_emotion=(emotion or {}).get("previous_emotion"),
+            ) if emotion else ""
+            # 城市：与 Java 同一判断（city_mode == real 且城市非空）
+            if not city and str(body.settings.get("city_mode") or "") == "real":
+                raw_city = body.settings.get("city")
+                city = str(raw_city).strip() or None
+
         prompt = assemble_scene_prompt(
             character_name=body.character_name,
             settings=body.settings,
             prompt_template=body.prompt_template,
-            memory_context=body.memory_context,
+            memory_context=memory_context,
             tool_hint=body.tool_hint,
-            emotion_block=body.emotion_block,
+            emotion_block=emotion_block,
             output_language=body.output_language,
             enable_chat_tools=body.enable_chat_tools,
             show_inner_thoughts=body.show_inner_thoughts,
             max_pieces=body.max_pieces,
             include_time=body.include_time,
             time_fact=body.time_fact,
-            city=body.city,
+            city=city,
             after_base=body.after_base,
         )
     except Exception as exc:  # noqa: BLE001 - 组装失败返回错误码，Java 记录后忽略
