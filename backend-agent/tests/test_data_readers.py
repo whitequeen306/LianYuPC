@@ -29,14 +29,14 @@ def fake_db(monkeypatch):
 @pytest.mark.asyncio
 async def test_load_relationship_returns_raw_fields(fake_db):
     fake_db["rows"]["FROM relationship_state"] = [{
-        "phase": "CLOSE_FRIEND", "trust_score": 80, "intimacy_score": 70,
+        "phase": "TESTING", "trust_score": 80, "intimacy_score": 70,
         "security_score": 60, "anticipation_score": 50,
     }]
     fake_db["rows"]["FROM relationship_event"] = [
         {"summary": "一起看流星雨"}, {"summary": "吵过一次架"},
     ]
     data = await dr.load_relationship(7, 3)
-    assert data["phase"] == "CLOSE_FRIEND"
+    assert data["phase"] == "TESTING"
     assert data["trust"] == 80
     assert data["events"] == ["一起看流星雨", "吵过一次架"]
 
@@ -114,7 +114,7 @@ async def test_load_memory_context_joins_three_blocks(fake_db):
         {"summary": "【长期记忆/姓名】小林", "memory_type": "FACT", "importance": 0.9},
     ]
     fake_db["rows"]["FROM relationship_state"] = [{
-        "phase": "CLOSE_FRIEND", "trust_score": 80, "intimacy_score": 70,
+        "phase": "TESTING", "trust_score": 80, "intimacy_score": 70,
         "security_score": 60, "anticipation_score": 50,
     }]
     fake_db["rows"]["FROM relationship_event"] = [{"summary": "一起看流星雨"}]
@@ -123,7 +123,7 @@ async def test_load_memory_context_joins_three_blocks(fake_db):
     block = await dr.load_memory_context(7, 3, conversation_id=42)
 
     assert "[用户画像]" in block
-    assert "关系阶段: close-friend" in block
+    assert "关系阶段: testing" in block  # 非法 phase 回退为 Java 的默认 TESTING
     assert "本次对话 Earlier 摘要" in block
     # 顺序：记忆 → 关系 → 摘要
     assert block.index("[用户画像]") < block.index("关系阶段") < block.index("Earlier 摘要")
