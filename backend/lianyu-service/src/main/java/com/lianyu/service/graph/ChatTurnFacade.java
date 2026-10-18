@@ -51,6 +51,9 @@ public class ChatTurnFacade {
     private com.lianyu.service.tools.TimeTool shadowTimeTool;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.service.tools.ToolManager shadowToolManager;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.lianyu.service.agent.AgentImagePort agentImagePort;
 
     public String assembleSystemPrompt(ChatTurnCommand command) {
@@ -188,7 +191,10 @@ public class ChatTurnFacade {
                             character.getSettings(),
                             character.getPromptTemplate(),
                             memoryContext,
-                            "",
+                            // 工具提示依赖角色工具配置与桌面桥接状态（Java 侧运行时），目前由 Java 计算后传入
+                            turn.scene().enableChatTools() && shadowToolManager != null
+                                    ? shadowToolManager.buildToolsPromptHint(command.getUserId())
+                                    : "",
                             "",
                             turn.outputLanguage(),
                             turn.scene().enableChatTools(),
