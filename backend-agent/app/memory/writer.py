@@ -59,10 +59,19 @@ class WriteOutcome:
                 "skipped": self.skipped, "ids": self.ids}
 
 
-def compute_source_ids_hash(source_ids: Iterable[int]) -> str:
-    """对齐 Java `computeSourceIdsHash`：排序后逗号拼接再 SHA-256。"""
+def compute_source_ids_hash(source_ids: Iterable[int], summary: str = "") -> str:
+    """来源消息哈希。
+
+    相对 Java 旧实现的修正：旧版只哈希 sorted(ids)，导致**同一条消息里的多个槽位**
+    （如「我叫阿澈，我喜欢冰美式」同时抽出姓名与爱好）互相覆盖 —— 后写的会把先写的
+    顶掉，用户只会看到其中一条。现在把 summary 也纳入哈希：
+      - 同一条消息 + 不同内容 → 两条不同记忆（正常）
+      - 同一条消息 + 相同内容 → 仍然去重（幂等）
+    Java 侧 `MemoryWriter.computeSourceIdsHash` 已同步改成同样的规则。
+    """
     joined = ",".join(str(x) for x in sorted(source_ids))
-    return hashlib.sha256(joined.encode("utf-8")).hexdigest()
+    payload = f"{joined}|{summary.strip()}" if summary else joined
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def compute_legacy_hash(user_id: int, character_id: int, summary: str) -> str:
@@ -71,7 +80,7 @@ def compute_legacy_hash(user_id: int, character_id: int, summary: str) -> str:
 
 
 def resolve_source_hash(user_id: int, character_id: int, source_ids: tuple[int, ...], summary: str) -> str:
-    return compute_source_ids_hash(source_ids) if source_ids else compute_legacy_hash(
+    return compute_source_ids_hash(source_ids, summary) if source_ids else compute_legacy_hash(
         user_id, character_id, summary)
 
 

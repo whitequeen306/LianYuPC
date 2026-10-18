@@ -49,10 +49,16 @@ def test_write_guard_allows_only_whitelisted_tables(sql):
 # ── 哈希必须与 Java 一致 ──
 
 
-def test_source_ids_hash_matches_java():
-    # Java: 排序后逗号拼接 → SHA-256
+def test_source_ids_hash_includes_summary():
+    """哈希含 summary：同消息不同槽位不再互相覆盖；同内容仍幂等。"""
+    # 不传 summary 时退化为老规则（兼容性）
     assert w.compute_source_ids_hash([3, 1, 2]) == hashlib.sha256(b"1,2,3").hexdigest()
-    assert w.compute_source_ids_hash([5]) == hashlib.sha256(b"5").hexdigest()
+    # 传 summary 时纳入
+    assert w.compute_source_ids_hash([1], "我叫阿澈") == hashlib.sha256("1|我叫阿澈".encode()).hexdigest()
+    # 同消息 + 不同内容 → 不同哈希（两条记忆）
+    assert w.compute_source_ids_hash([1], "我叫阿澈") != w.compute_source_ids_hash([1], "我喜欢冰美式")
+    # 同消息 + 同内容 → 相同（幂等）
+    assert w.compute_source_ids_hash([1], "我叫阿澈") == w.compute_source_ids_hash([1], " 我叫阿澈 ")
 
 
 def test_legacy_hash_matches_java_format():
@@ -62,7 +68,7 @@ def test_legacy_hash_matches_java_format():
 
 def test_resolve_source_hash_prefers_ids():
     with_ids = w.resolve_source_hash(7, 3, (10, 11), "用户喜欢猫")
-    assert with_ids == w.compute_source_ids_hash([10, 11])
+    assert with_ids == w.compute_source_ids_hash([10, 11], "用户喜欢猫")
     without = w.resolve_source_hash(7, 3, (), "用户喜欢猫")
     assert without == w.compute_legacy_hash(7, 3, "用户喜欢猫")
 
@@ -119,7 +125,7 @@ async def test_new_memory_inserts_meta_and_outbox(fake_db):
     # 新记忆不写 vec_id（由 relay 投影后回填）
     meta_params = fake_db["executed"][0][1]
     assert meta_params[5] == "[11]"          # source_msg_ids 以 JSON 写入
-    assert meta_params[6] == w.compute_source_ids_hash([11])
+    assert meta_params[6] == w.compute_source_ids_hash([11], "用户喜欢猫")
 
 
 @pytest.mark.asyncio

@@ -253,6 +253,67 @@ class MemoryWriteBody(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class MemoryExtractBody(BaseModel):
+    """抽取 + 写入一步到位：Java 只需把最近消息与凭据递过来。"""
+
+    user_id: int = Field(alias="userId")
+    character_id: int = Field(alias="characterId")
+    messages: list[dict[str, Any]] = []
+    text_base_url: str | None = Field(default=None, alias="textBaseUrl")
+    text_api_key: str | None = Field(default=None, alias="textApiKey")
+    text_model: str | None = Field(default=None, alias="textModel")
+    provider: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+@app.post("/agent/memory/extract-write")
+async def memory_extract_write(
+    body: MemoryExtractBody,
+    user_id_header: str | None = Header(default=None, alias="X-User-Id"),
+) -> dict[str, Any]:
+    """规则 + LLM 抽取，过闸后直接写入（去重/合并/outbox 入队），整批单事务。"""
+    if user_id_header and str(body.user_id) != user_id_header:
+        raise HTTPException(status_code=403, detail="user mismatch")
+
+    from app.memory.extract import extract_all
+    from app.memory.writer import MemoryInput, write_memories
+
+    try:
+        extracted = await extract_all(
+            get_gateway(),
+            messages=body.messages,
+            base_url=body.text_base_url,
+            api_key=body.text_api_key,
+            model=body.text_model,
+            provider=body.provider,
+        )
+    except Exception as exc:  # noqa: BLE001 - 抽取失败降级为不写
+        logger.warning("memory extract failed: %s", exc)
+        return {"created": 0, "updated": 0, "skipped": 0, "ids": [], "error": "extract_failed"}
+
+    if not extracted:
+        return {"created": 0, "updated": 0, "skipped": 0, "ids": [], "extracted": 0}
+
+    inputs = [
+        MemoryInput(
+            summary=m.summary,
+            memory_type=m.memory_type,
+            importance=m.importance,
+            source_msg_ids=(m.source_msg_id,) if m.source_msg_id else (),
+        )
+        for m in extracted
+    ]
+    try:
+        outcome = await write_memories(body.user_id, body.character_id, inputs)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("memory write failed: %s", exc)
+        raise HTTPException(status_code=500, detail="memory write failed") from exc
+    result = outcome.as_dict()
+    result["extracted"] = len(extracted)
+    return result
+
+
 @app.post("/agent/memory/write")
 async def memory_write(
     body: MemoryWriteBody,
