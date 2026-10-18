@@ -240,12 +240,16 @@ public class CharacterStateService {
      */
     public String buildEmotionBlock(Long characterId, Long userId, String outputLanguage) {
         CharacterState state = getOrCreate(characterId, userId);
+        return formatEmotionBlock(state, OutputLanguage.fromCode(outputLanguage));
+    }
+
+    /** 纯格式化（无 IO）：便于快照比对，行为与原先完全一致。 */
+    static String formatEmotionBlock(CharacterState state, OutputLanguage lang) {
         String emotion = state.getCurrentEmotion() != null ? state.getCurrentEmotion() : "平静";
         int intensity = state.getEmotionIntensity() != null ? state.getEmotionIntensity() : 50;
         String status = state.getStatusText() != null ? state.getStatusText() : "";
         String previous = state.getPreviousEmotion() != null ? state.getPreviousEmotion() : "";
 
-        OutputLanguage lang = OutputLanguage.fromCode(outputLanguage);
         String intensityDesc = intensityLabel(lang, intensity);
         String behaviorGuide = emotionBehaviorGuide(lang, emotion, intensity);
         String header = emotionHeader(lang);
