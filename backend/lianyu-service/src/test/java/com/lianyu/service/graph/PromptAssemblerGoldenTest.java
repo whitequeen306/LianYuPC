@@ -60,6 +60,10 @@ class PromptAssemblerGoldenTest {
 
     @Test
     void dumpGoldenPrompts() throws Exception {
+        com.lianyu.service.support.OutputLanguageService languageService =
+                new com.lianyu.service.support.OutputLanguageService(
+                        mock(org.springframework.data.redis.core.StringRedisTemplate.class));
+
         TimeTool timeTool = mock(TimeTool.class);
         String timeFact = "当前真实时间：2026-10-18 22:00:00（周日）\n当前时段：晚上（21:00-23:00）";
         when(timeTool.readCurrentTimeFact()).thenReturn(timeFact);
@@ -84,9 +88,6 @@ class PromptAssemblerGoldenTest {
         out.put("cityContext", cityContext);
 
         // 自然口语风格块（四语种 × 是否显示内心独白）：来自 OutputLanguageService 的真实 switch
-        com.lianyu.service.support.OutputLanguageService languageService =
-                new com.lianyu.service.support.OutputLanguageService(
-                        mock(org.springframework.data.redis.core.StringRedisTemplate.class));
         Map<String, String> naturalStyle = new LinkedHashMap<>();
         for (String lang : new String[]{"ja", "en", "zh-TW", "zh"}) {
             for (boolean inner : new boolean[]{true, false}) {
@@ -95,6 +96,26 @@ class PromptAssemblerGoldenTest {
             }
         }
         out.put("naturalStyleBlocks", naturalStyle);
+
+        // 端到端组合：按 assemble() 的真实顺序串起已迁段落
+        // base(桩) → 时间锚点 → 城市权威 → 自然风格（不含晚安：它依赖真实时钟，无法稳定快照）
+        ChatTurnPromptAssembler assemblerWithRealLang = new ChatTurnPromptAssembler(
+                mock(CharacterPromptBuilder.class),
+                mock(MemoryRetriever.class),
+                mock(RelationshipStateService.class),
+                mock(SessionSummaryService.class),
+                languageService,
+                timeTool,
+                mock(CharacterChatBehaviorResolver.class),
+                mock(ProactiveRealWorldContextService.class));
+        // 真实顺序：时间锚点 → 城市权威 → 自然风格
+        String timeAndCity = invoke(assembler, "appendCurrentRealCityContext",
+                new Class<?>[]{String.class, Character.class}, timeContext, character);
+        String composed = invoke(assemblerWithRealLang, "enforceNaturalChatStyle",
+                new Class<?>[]{String.class, String.class, boolean.class},
+                timeAndCity, "zh", true);
+        out.put("composedPrompt", composed);
+        out.put("composedOrder", "base->timeContext->cityContext->naturalStyle(zh,inner=true)");
 
         Path target = Path.of("..", "..", "backend-agent", "app", "prompts", "assembler_golden.json");
         Files.createDirectories(target.getParent());

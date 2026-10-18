@@ -82,6 +82,29 @@ def append_natural_style(base_prompt: str, lang: str | None,
     return prompt + natural_style_block(lang, show_inner_thoughts)
 
 
+def compose_prompt(base_prompt: str,
+                   time_fact: str | None = None,
+                   city: str | None = None,
+                   lang: str | None = "zh",
+                   show_inner_thoughts: bool = True) -> str:
+    """按 Java `assemble()` 的真实顺序组合已迁移的段落。
+
+    顺序（对应 ChatTurnPromptAssembler.assemble 第 97-105 行）：
+        base → 时间锚点（includeTime）→ 城市权威 → 自然风格
+    晚安模式不在此处：它依赖「当前是否深夜」，属运行时判断，由调用方决定是否追加。
+
+    未包含：记忆块 / 关系块 / 会话摘要块 —— 它们要拼接在 **base 内部**
+    （`buildSystemPrompt(character, memoryContext, ...)`），不是 base 之后，
+    所以本函数只组合 base 之后的部分。
+    """
+    prompt = base_prompt or ""
+    if time_fact is not None:
+        prompt = append_time_context(prompt, time_fact)
+    if city is not None:
+        prompt = append_city_context(prompt, city)
+    return append_natural_style(prompt, lang, show_inner_thoughts)
+
+
 def normalize_language(lang: str | None) -> str:
     """把 Java 的 OutputLanguage 代码归一成本模块的键。"""
     code = (lang or "zh").strip().lower().replace("_", "-")
@@ -117,6 +140,7 @@ def contains_goodnight_keyword(text: str | None) -> bool:
 
 
 __all__ = [
+    "compose_prompt",
     "append_natural_style",
     "natural_style_block",
     "GOODNIGHT_KEYWORDS",

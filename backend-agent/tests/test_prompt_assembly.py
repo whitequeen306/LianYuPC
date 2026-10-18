@@ -143,3 +143,38 @@ def test_append_natural_style_is_pure_concat():
 
 def test_append_natural_style_treats_none_base_as_empty():
     assert pa.append_natural_style(None, "zh", True) == pa.natural_style_block("zh", True)
+
+# ── 端到端组合（积木能否拼起来）──
+
+
+def test_composed_prompt_matches_java_byte_for_byte(golden):
+    """按 Java assemble() 的真实顺序串联已迁段落，与 Java 输出逐字节比对。"""
+    actual = pa.compose_prompt(
+        golden["base"],
+        time_fact=golden["timeFact"],
+        city=golden["city"],
+        lang="zh",
+        show_inner_thoughts=True,
+    )
+    assert actual == golden["composedPrompt"]
+
+
+def test_composed_order_matches_java(golden):
+    actual = pa.compose_prompt(golden["base"], time_fact=golden["timeFact"],
+                               city=golden["city"], lang="zh")
+    t = actual.index("=== 当前真实环境")
+    c = actual.index("=== 用户当前所在现实城市")
+    s = actual.index("表达要求：")
+    assert t < c < s, "顺序必须是 时间锚点 → 城市权威 → 自然风格"
+
+
+def test_compose_skips_optional_segments():
+    base_only = pa.compose_prompt("BASE", lang="zh")
+    assert base_only.startswith("BASE")
+    with_time = pa.compose_prompt("BASE", time_fact="T", lang="zh")
+    assert len(with_time) > len(base_only)
+
+
+def test_compose_handles_none_base():
+    out = pa.compose_prompt(None, lang="en")
+    assert out == pa.natural_style_block("en", True)
