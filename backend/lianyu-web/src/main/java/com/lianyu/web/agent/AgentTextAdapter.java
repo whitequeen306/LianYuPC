@@ -25,6 +25,7 @@ public class AgentTextAdapter implements AgentTextPort {
     @Override
     public String complete(long userId,
                            String systemPrompt,
+                           java.util.List<com.lianyu.service.dto.MessageDto> history,
                            String userText,
                            String provider,
                            String model,
@@ -57,6 +58,18 @@ public class AgentTextAdapter implements AgentTextPort {
         body.put("userId", userId);
         body.put("system", systemPrompt == null ? "" : systemPrompt);
         body.put("userText", userText == null ? "" : userText);
+        java.util.List<java.util.Map<String, String>> payloadHistory = new java.util.ArrayList<>();
+        if (history != null) {
+            for (com.lianyu.service.dto.MessageDto dto : history) {
+                if (dto == null || "system".equalsIgnoreCase(dto.getRole())) {
+                    continue;  // system 单独传，不重复
+                }
+                payloadHistory.add(java.util.Map.of(
+                        "role", dto.getRole() == null ? "user" : dto.getRole().toLowerCase(),
+                        "content", dto.getContent() == null ? "" : dto.getContent()));
+            }
+        }
+        body.put("history", payloadHistory);
         body.put("textBaseUrl", baseUrl);
         body.put("textApiKey", apiKey);
         body.put("textModel", resolvedModel);

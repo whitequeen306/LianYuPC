@@ -66,6 +66,10 @@ public class MomentsService {
     private final UserMapper userMapper;
     private final AiChatService aiChatService;
     private final ApiKeyVaultService apiKeyVaultService;
+
+    /** Optional: AGENT mode delegates model calls to backend-agent (null => fallback to Java). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.service.agent.AgentTextPort agentTextPort;
     private final com.lianyu.service.graph.ChatTurnFacade chatTurnFacade;
     private final CharacterPromptBuilder promptBuilder;
     private final MemoryRetriever memoryRetriever;
@@ -459,6 +463,15 @@ public class MomentsService {
         messages.add(messageDto("user", userInstruction));
         aiRequest.setMessages(messages);
         try {
+            // Strangler: AGENT mode delegates this model call to backend-agent; null => fallback
+            if (agentTextPort != null) {
+                String viaAgent = agentTextPort.complete(userId, systemPrompt, history, userInstruction,
+                        userVault.getProvider(), userVault.getModelDefault(), 0.9);
+                if (viaAgent != null && !viaAgent.isBlank()) {
+                    log.info("Moments post served by agent runtime: userId={}", userId);
+                    return sanitizeCharacterMomentText(viaAgent);
+                }
+            }
             ChatResult result = aiChatService.chatBlocking(userId, aiRequest);
             return sanitizeCharacterMomentText(result.getContent());
         } catch (Exception e) {

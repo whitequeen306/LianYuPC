@@ -30,6 +30,7 @@ async def complete_text(
     model: str,
     system: str,
     user_text: str,
+    history: list[dict[str, str]] | None = None,
     temperature: float,
     max_tokens: int | None = None,
     provider: str | None = None,
@@ -40,6 +41,9 @@ async def complete_text(
     messages: list[dict[str, str]] = []
     if system:
         messages.append({"role": "system", "content": system})
+    for item in (history or []):
+        role = (item.get("role") or "user").lower()
+        messages.append({"role": role, "content": item.get("content") or ""})
     messages.append({"role": "user", "content": user_text})
 
     try:

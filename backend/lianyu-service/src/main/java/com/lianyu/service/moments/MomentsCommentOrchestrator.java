@@ -52,6 +52,10 @@ public class MomentsCommentOrchestrator {
     private final CharacterMapper characterMapper;
     private final MomentsCommentService momentsCommentService;
     private final AiChatService aiChatService;
+
+    /** Optional: AGENT mode delegates model calls to backend-agent (null => fallback to Java). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.service.agent.AgentTextPort agentTextPort;
     private final ApiKeyVaultService apiKeyVaultService;
     private final com.lianyu.service.graph.ChatTurnFacade chatTurnFacade;
     private final CharacterPromptBuilder promptBuilder;
@@ -766,6 +770,15 @@ public class MomentsCommentOrchestrator {
         req.setExpectedLanguage(lang);
 
         try {
+            // Strangler: AGENT mode delegates this model call to backend-agent; null => fallback
+            if (agentTextPort != null) {
+                String viaAgent = agentTextPort.complete(userId, systemPrompt, instruction,
+                        userVault.getProvider(), userVault.getModelDefault(), 0.9);
+                if (viaAgent != null && !viaAgent.isBlank()) {
+                    log.info("Moments comment served by agent runtime: character={}", character.getName());
+                    return sanitize(viaAgent);
+                }
+            }
             ChatResult result = aiChatService.chatBlocking(userId, req);
             return sanitize(result.getContent());
         } catch (Exception e) {

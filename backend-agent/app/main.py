@@ -198,6 +198,8 @@ class TextCompleteBody(BaseModel):
     user_id: int = Field(alias="userId")
     system: str = ""
     user_text: str = Field(alias="userText")
+    # 可选历史（朋友圈发帖/评论需要），按原序插在 system 与 userText 之间
+    history: list[dict[str, Any]] = []
     text_base_url: str | None = Field(default=None, alias="textBaseUrl")
     text_api_key: str | None = Field(default=None, alias="textApiKey")
     text_model: str | None = Field(default=None, alias="textModel")
@@ -224,6 +226,7 @@ async def text_complete(
         model=body.text_model or "default",
         system=body.system,
         user_text=body.user_text,
+        history=body.history or None,
         temperature=body.temperature,
         max_tokens=body.max_tokens,
         provider=body.provider,

@@ -12,10 +12,24 @@ package com.lianyu.service.agent;
 public interface AgentTextPort {
 
     /**
+     * 无历史的快捷形式。
+     *
+     * @return 模型原始文本；null 表示未接管/失败，调用方应回退
+     */
+    default String complete(long userId, String systemPrompt, String userText,
+                            String provider, String model, double temperature) {
+        return complete(userId, systemPrompt, java.util.List.of(), userText,
+                provider, model, temperature);
+    }
+
+    /**
+     * 带历史的完整形式（朋友圈发帖/评论需要在 system 与指令之间插入历史）。
+     *
      * @return 模型原始文本；null 表示未接管/失败，调用方应回退
      */
     String complete(long userId,
                     String systemPrompt,
+                    java.util.List<com.lianyu.service.dto.MessageDto> history,
                     String userText,
                     String provider,
                     String model,
