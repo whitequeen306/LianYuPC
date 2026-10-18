@@ -146,7 +146,9 @@ def assemble_scene_prompt(
     `after_base` 对应 Java 的三个分支：
       - "full"       ：时间锚点 → 城市 → 晚安 → 自然风格（includeTimeCityGoodnight）
       - "style_only" ：只追加自然风格（MOMENTS / DIARY）
-      - "none"       ：什么都不加（VOICE_CALL）
+      - "time_only"  ：只追加时间锚点（VOICE_CALL —— 场景 includeTime() 为 true
+                       但 includeTimeCityGoodnight() 为 false，且不加自然风格块）
+      - "none"       ：什么都不加
 
     晚安模式的**触发判断**留在调用方（依赖当前时刻与用户输入），
     这里只负责「已决定要加时」的拼接。
@@ -164,6 +166,10 @@ def assemble_scene_prompt(
         max_pieces=max_pieces,
     )
     if after_base == "none":
+        return prompt
+    if after_base == "time_only":
+        if include_time and time_fact is not None:
+            prompt = append_time_context(prompt, time_fact)
         return prompt
     if after_base == "style_only":
         return append_natural_style(prompt, output_language, show_inner_thoughts)

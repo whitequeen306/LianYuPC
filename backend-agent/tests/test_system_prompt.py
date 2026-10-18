@@ -102,3 +102,38 @@ def test_addressing_block_per_language():
     for lang in ("zh", "zh-TW", "ja", "en"):
         assert sp.addressing_hint_block("小林", lang).strip()
         assert "{{NAME}}" not in sp.addressing_hint_block("小林", lang)
+# ── 场景分支：time_only（VOICE_CALL）──
+
+
+E2E = Path(__file__).resolve().parent.parent / "app" / "prompts" / "end_to_end_golden.json"
+
+
+@pytest.fixture(scope="module")
+def time_fact() -> str:
+    return json.loads(E2E.read_text(encoding="utf-8"))["timeFact"]
+
+
+def test_time_only_appends_time_but_not_style(time_fact):
+    """VOICE_CALL：includeTime 为 true 但不加自然风格块 —— 曾因 afterBase="none"
+    提前 return 导致整段时间锚点丢失（276 字符差异）。"""
+    base = sp.build_system_prompt(
+        character_name="小林", settings=SETTINGS, prompt_template=None,
+        output_language="zh", enable_chat_tools=False)
+    with_time = sp.assemble_scene_prompt(
+        character_name="小林", settings=SETTINGS, prompt_template=None,
+        output_language="zh", enable_chat_tools=False,
+        include_time=True, time_fact=time_fact, after_base="time_only")
+
+    assert "当前真实环境" in with_time
+    assert time_fact in with_time
+    assert "表达要求" not in with_time, "VOICE_CALL 不应追加自然风格块"
+    assert len(with_time) > len(base)
+
+
+def test_none_branch_has_no_time_and_no_style(time_fact):
+    out = sp.assemble_scene_prompt(
+        character_name="小林", settings=SETTINGS, prompt_template=None,
+        output_language="zh", enable_chat_tools=False,
+        include_time=True, time_fact=time_fact, after_base="none")
+    assert "当前真实环境" not in out
+    assert "表达要求" not in out

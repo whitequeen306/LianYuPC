@@ -116,7 +116,9 @@ public class AgentShadowStatsEndpoint {
                     || scene == com.lianyu.ai.graph.ChatTurnScene.PROACTIVE;
             boolean styleOnly = scene == com.lianyu.ai.graph.ChatTurnScene.MOMENTS
                     || scene == com.lianyu.ai.graph.ChatTurnScene.DIARY;
-            String afterBase = full ? "full" : (styleOnly ? "style_only" : "none");
+            String afterBase = full ? "full"
+                    : (styleOnly ? "style_only"
+                    : (scene == com.lianyu.ai.graph.ChatTurnScene.VOICE_CALL ? "time_only" : "none"));
             boolean includeTime = full || scene == com.lianyu.ai.graph.ChatTurnScene.VOICE_CALL;
             boolean tools = scene.enableChatTools();
             boolean inner = scene != com.lianyu.ai.graph.ChatTurnScene.VOICE_CALL;
