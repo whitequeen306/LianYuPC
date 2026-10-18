@@ -87,6 +87,7 @@ public class ChatTurnFacade {
         @SuppressWarnings("unchecked")
         List<MessageDto> messages = state.value(ChatTurnKeys.MESSAGE_DTOS, List.class).orElse(List.of());
         AiChatRequest request = InvokeModelNode.buildRequest(state, turn, character, messages);
+        dispatchPromptShadow(command, state, turn, character, messages);
         boolean hasImage = request.getImageUrl() != null && !request.getImageUrl().isBlank();
         log.info("ChatTurn stream assembled: scene={} messages={} hasImage={}",
                 turn.scene(), messages.size(), hasImage);
@@ -164,6 +165,8 @@ public class ChatTurnFacade {
     private void dispatchPromptShadow(ChatTurnCommand command, OverAllState state,
                                       ChatTurnState turn, Character character,
                                       List<MessageDto> messages) {
+        log.info("Prompt shadow dispatch: port={} character={}",
+                promptShadowPort != null, character != null);
         if (promptShadowPort == null || character == null) {
             return;
         }
