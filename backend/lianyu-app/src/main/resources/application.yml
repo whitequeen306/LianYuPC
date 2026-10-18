@@ -486,7 +486,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,agentshadow
   endpoint:
     health:
       show-details: when_authorized
