@@ -17,6 +17,7 @@ from app.config import get_settings
 from app.db import cache_get_json, cache_put_json, fetch_all
 from app.memory import rerank as rerank_docs
 from app.memory.vector_cache import rank_by_vector
+from app import milvus_store
 from app.tools.registry import ToolSpec, register
 
 logger = logging.getLogger(__name__)
@@ -91,6 +92,20 @@ async def search_semantic(
     cached = await cache_get_json(key, field)
     if isinstance(cached, list):
         return cached[:limit]
+
+    # 一级：Milvus 向量检索（与 Java 同源，真实语义召回）
+    from app.memory.embedding import embed
+    query_vectors = await embed([query.strip()])
+    if query_vectors:
+        hits = milvus_store.search(user_id, character_id, query_vectors[0], top_k=max(limit * 2, 6))
+        summaries_from_milvus = [summary for summary, _t, _s in hits if summary.strip()]
+        if summaries_from_milvus:
+            ordered_hits = await rerank_docs(query, summaries_from_milvus, top_n=limit)
+            result = [f"- {text}" for _i, text, _s in ordered_hits] if ordered_hits else \
+                     [f"- {text}" for text in summaries_from_milvus][:limit]
+            await cache_put_json(key, result, settings.memory_semantic_ttl_minutes * 60, field=field)
+            logger.info("memory_search via milvus: userId=%s, hits=%d", user_id, len(result))
+            return result
 
     try:
         base = await _fetch_by_importance(
