@@ -1,0 +1,9 @@
+{
+  "namePlaceholder" : "{{NAME}}",
+  "blocks" : {
+    "zh" : "\n\n=== 用户称呼（强制） ===\n用户当前名字是「{{NAME}}」。与用户说话只用这个名字；不要用对话记录里的旧称呼叫用户；一条回复里不要新旧称呼混用（例如先说旧名再说新名）。",
+    "zh-TW" : "\n\n=== 用戶稱呼（強制） ===\n用戶當前名字是「{{NAME}}」。與用戶說話只用這個名字；不要用對話記錄裡的舊稱呼叫用戶；一條回覆裡不要新舊稱呼混用（例如先說舊名再說新名）。",
+    "ja" : "\n\n=== ユーザーの呼び方（必須） ===\nユーザーの現在の名前は「{{NAME}}」。返信ではこの名前だけで呼ぶこと。会話履歴に出てくる古い呼び方でユーザーを呼ばない。1つの返信で新旧の呼び方を混ぜない。",
+    "en" : "\n\n=== How to address the user (mandatory) ===\nThe user's current name is \"{{NAME}}\". Use only this name when addressing them. Do not use outdated names from chat history. Never mix old and new names in one reply."
+  }
+}

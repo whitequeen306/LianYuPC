@@ -38,6 +38,8 @@ TARGETS = [
     "lianyu-service/src/main/java/com/lianyu/service/rules/hooks/ReplyBehaviorRuleHook.java",
     "lianyu-service/src/main/java/com/lianyu/service/rules/hooks/OutputLanguageRuleHook.java",
     "lianyu-service/src/main/java/com/lianyu/service/rules/hooks/GroupChatRuleHook.java",
+    # 安全边界块（promptGuardBlock）：每条 system prompt 结尾都会追加
+    "lianyu-common/src/main/java/com/lianyu/common/util/UserInputSanitizer.java",
 ]
 
 _BLOCK_OPEN = '"""'
