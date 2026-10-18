@@ -80,6 +80,16 @@ class Settings(BaseSettings):
     rerank_api_key: str = ""
     rerank_model: str = "gte-rerank-v2"
     # 进程内向量检索（Milvus 缺失时的真实语义召回）
+    # Milvus（与 Java lianyu.memory.milvus.* 对齐）
+    milvus_host: str = "milvus"
+    milvus_port: int = 19530
+    milvus_collection: str = "memory_vectors_v2"
+    milvus_timeout_seconds: float = 10.0
+    # outbox relay（Python 侧单写者）
+    relay_enabled: bool = True
+    relay_interval_seconds: float = 5.0
+    relay_batch_size: int = 20
+    relay_max_attempts: int = 8
     memory_vector_ttl_hours: float = 168.0
     memory_vector_max_candidates: int = 50
 

@@ -56,6 +56,8 @@ services:
       SERVER_PORT: 8080
       # Strangler 阶段 2：agent 运行时模式（OFF/SHADOW/AGENT），见 docs/refactor-2026-10/
       LIANYU_AGENT_MODE: ${LIANYU_AGENT_MODE:-OFF}
+      # outbox 投影由 Python relay 独占（记忆域单写者）；Java relay 保留但默认关闭
+      LIANYU_MEMORY_OUTBOX_ENABLED: ${LIANYU_MEMORY_OUTBOX_ENABLED:-false}
       LIANYU_AGENT_BASE_URL: ${LIANYU_AGENT_BASE_URL:-http://agent:8001}
       TZ: Asia/Shanghai
       # 与 Dockerfile ENTRYPOINT 双保险：出站优先 IPv4，避免 DashScope AAAA 不通导致 TTS 失败
@@ -119,6 +121,9 @@ services:
       LIANYU_AGENT_EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       LIANYU_AGENT_EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-v3}
       LIANYU_AGENT_RERANK_API_KEY: ${RERANKER_API_KEY:-}
+      LIANYU_AGENT_MILVUS_HOST: milvus
+      LIANYU_AGENT_MILVUS_PORT: "19530"
+      LIANYU_AGENT_RELAY_ENABLED: ${LIANYU_AGENT_RELAY_ENABLED:-true}
       LIANYU_AGENT_RERANK_BASE_URL: ${RERANKER_BASE_URL:-https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank}
       TZ: Asia/Shanghai
     depends_on:

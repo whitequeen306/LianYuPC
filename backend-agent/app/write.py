@@ -33,9 +33,22 @@ class WriteNotAllowed(RuntimeError):
     """试图写入白名单外的表，或使用非 INSERT 语句。"""
 
 
+_ALLOWED_UPDATES = (
+    "update memory_meta set milvus_vec_id = %s where id = %s",
+    "update memory_outbox set status = %s",
+    "update memory_outbox set attempts = %s",
+    "update memory_outbox set next_attempt_at",
+)
+
+
 def _assert_allowed(sql: str) -> None:
     normalized = " ".join((sql or "").split())
     lower = normalized.lower()
+    if lower.startswith("update "):
+        # 只放行 relay 的两类状态更新（前缀匹配，参数仍是占位符）
+        if any(lower.startswith(prefix) for prefix in _ALLOWED_UPDATES):
+            return
+        raise WriteNotAllowed(f"update not allowed on the write pool: {sql[:80]}")
     if not lower.startswith("insert into "):
         raise WriteNotAllowed(f"only INSERT is allowed on the write pool: {sql[:60]}")
     # 取出表名（支持反引号）
@@ -66,6 +79,16 @@ async def transaction() -> AsyncIterator[aiomysql.Cursor]:
         raise
     finally:
         connection_pool.release(conn)
+
+
+async def execute_write(cursor: aiomysql.Cursor, sql: str, params: tuple[Any, ...] = ()) -> int:
+    """执行白名单内的 INSERT/UPDATE，返回影响行数。
+
+    UPDATE 只允许 `memory_meta SET milvus_vec_id` 与 `memory_outbox SET status/attempts/...`，
+    都是 relay 的状态机更新，语句硬编码在服务层（不含用户输入拼接）。
+    """
+    _assert_allowed(sql)
+    return int(await cursor.execute(sql, params) or 0)
 
 
 async def insert_returning_id(cursor: aiomysql.Cursor, sql: str, params: tuple[Any, ...]) -> int:

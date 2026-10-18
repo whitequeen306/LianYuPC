@@ -16,6 +16,8 @@ dependencies = [
     # 只读数据访问（总纲 D7）：MySQL 只读查询 + Redis 缓存读取
     "aiomysql>=0.2.0",
     "redis>=5.2",
+    # 记忆写路径：向量投影（Python 侧接管 relay）
+    "pymilvus>=2.4",
 ]
 
 [dependency-groups]

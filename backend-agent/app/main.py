@@ -11,6 +11,8 @@
 import logging
 
 from typing import Any
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -25,7 +27,35 @@ from app.tools import supported_tool_schemas
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("lianyu-agent")
 
-app = FastAPI(title="YuNian Agent Runtime", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """启动 outbox relay 后台循环（Python 侧单写者）。"""
+    task = None
+    settings = get_settings()
+    if settings.relay_enabled:
+        task = asyncio.create_task(_relay_loop())
+    yield
+    if task is not None:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+
+async def _relay_loop() -> None:
+    from app.memory.relay import drain_once
+
+    settings = get_settings()
+    while True:
+        try:
+            stats = await drain_once()
+            if stats["picked"]:
+                logger.info("memory relay: %s", stats)
+        except Exception as exc:  # noqa: BLE001 - 后台循环不能因单次失败退出
+            logger.warning("memory relay cycle failed: %s", exc)
+        await asyncio.sleep(max(1.0, settings.relay_interval_seconds))
+
+
+app = FastAPI(title="YuNian Agent Runtime", version="0.1.0", lifespan=lifespan)
 
 # 进程级并发护栏（对齐 Java ObserveController 的双维度限流之一：占槽上限）
 import asyncio
@@ -312,6 +342,21 @@ async def memory_extract_write(
     result = outcome.as_dict()
     result["extracted"] = len(extracted)
     return result
+
+
+@app.post("/agent/memory/relay/drain")
+async def memory_relay_drain() -> dict[str, int]:
+    """手动触发一次 outbox 投影（运维/排障用）。"""
+    from app.memory.relay import drain_once
+
+    return await drain_once()
+
+
+@app.post("/agent/memory/relay/requeue")
+async def memory_relay_requeue() -> dict[str, int]:
+    from app.memory.relay import requeue_stuck
+
+    return {"requeued": await requeue_stuck()}
 
 
 @app.post("/agent/memory/write")
