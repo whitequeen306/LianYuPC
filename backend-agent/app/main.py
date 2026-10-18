@@ -39,6 +39,14 @@ async def lifespan(app: FastAPI):
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
+    # 优雅关闭：连接池与 Redis 不关会在长跑/热重启时留下句柄
+    # （日志里出现过 aiomysql Connection.__del__ 的未关闭警告）
+    from app.db import close as close_db
+
+    try:
+        await close_db()
+    except Exception as exc:  # noqa: BLE001 - 关闭失败不应阻止进程退出
+        logger.warning("shutdown: close db resources failed: %s", exc)
 
 
 async def _relay_loop() -> None:
