@@ -254,6 +254,8 @@ class PromptAssembleBody(BaseModel):
     use_internal_data: bool = Field(default=False, alias="useInternalData")
     character_id: int | None = Field(default=None, alias="characterId")
     conversation_id: int | None = Field(default=None, alias="conversationId")
+    # 场景名（SINGLE/GROUP/MOMENTS/DIARY/PROACTIVE/VOICE_CALL）：决定哪些块参与组装
+    scene: str | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -274,8 +276,13 @@ async def prompt_assemble(
             from app.data_readers import load_emotion, load_memory_context
             from app.emotion_block import format_emotion_block
 
+            scene = (body.scene or "SINGLE").strip().upper()
             memory_context = await load_memory_context(
-                body.user_id, body.character_id or 0, body.conversation_id) or ""
+                body.user_id, body.character_id or 0, body.conversation_id,
+                include_memory=scene != "VOICE_CALL",
+                include_relationship=scene in {"SINGLE", "PROACTIVE", "MOMENTS", "DIARY"},
+                include_session=scene in {"SINGLE", "PROACTIVE"},
+            ) or ""
             emotion = await load_emotion(body.character_id or 0, body.user_id)
             emotion_block = format_emotion_block(
                 lang=body.output_language,

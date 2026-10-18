@@ -73,7 +73,10 @@ async def load_emotion(character_id: int, user_id: int) -> dict[str, Any] | None
 
 
 async def load_memory_context(user_id: int, character_id: int,
-                            conversation_id: int | None = None) -> str | None:
+                            conversation_id: int | None = None,
+                            include_memory: bool = True,
+                            include_relationship: bool = True,
+                            include_session: bool = True) -> str | None:
     """记忆 + 关系 + 会话摘要的连接结果（对齐 Java `joinBlocks`）。
 
     复用 `profile_context` 的格式化；关系块与会话摘要块分别由各自模块产出。
@@ -84,18 +87,21 @@ async def load_memory_context(user_id: int, character_id: int,
 
     parts: list[str] = []
 
-    metas = await fetch_all(
-        "SELECT summary, memory_type, importance FROM memory_meta "
-        "WHERE character_id = %s AND user_id = %s AND importance >= %s "
-        "ORDER BY importance DESC, created_at DESC LIMIT %s",
-        (character_id, user_id, get_settings().memory_importance_threshold,
-         get_settings().memory_search_candidate_count),
-    )
+    if not include_memory:
+        metas = []
+    else:
+        metas = await fetch_all(
+            "SELECT summary, memory_type, importance FROM memory_meta "
+            "WHERE character_id = %s AND user_id = %s AND importance >= %s "
+            "ORDER BY importance DESC, created_at DESC LIMIT %s",
+            (character_id, user_id, get_settings().memory_importance_threshold,
+             get_settings().memory_search_candidate_count),
+        )
     memory_block = build_profile_context([(m["summary"], m["memory_type"]) for m in metas])
     if memory_block:
         parts.append(memory_block)
 
-    relationship = await load_relationship(user_id, character_id)
+    relationship = await load_relationship(user_id, character_id) if include_relationship else None
     if relationship:
         parts.append(build_relationship_context(
             phase=relationship["phase"], trust=relationship["trust"],
@@ -103,7 +109,8 @@ async def load_memory_context(user_id: int, character_id: int,
             anticipation=relationship["anticipation"], recent_events=relationship["events"],
         ))
 
-    summary = format_session_summary(await load_session_summary(conversation_id))
+    summary = format_session_summary(
+        await load_session_summary(conversation_id) if include_session else None)
     if summary:
         parts.append(summary)
 
