@@ -90,6 +90,8 @@ class Settings(BaseSettings):
     relay_interval_seconds: float = 5.0
     relay_batch_size: int = 20
     relay_max_attempts: int = 8
+    # 关系块：最近事件条数（对齐 Java listRecentEventSummaries 的 limit）
+    relationship_recent_events: int = 5
     memory_vector_ttl_hours: float = 168.0
     memory_vector_max_candidates: int = 50
 
