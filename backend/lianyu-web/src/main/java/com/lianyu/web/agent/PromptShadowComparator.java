@@ -40,10 +40,25 @@ public class PromptShadowComparator {
     private final AgentRuntimeClient client;
     private final AgentShadowStats shadowStats;
 
+    /**
+     * 掩掉**易变片段**再比对：时间事实（两边各读一次，跨分钟必然不同）。
+     *
+     * <p>不掩掉的话，每分钟边界都会产生一次假差异，漂移率会虚高且无法解释。
+     * 掩码只替换时间行本身，不改变结构 —— 真正的结构差异仍会被发现。
+     */
+    public static String maskVolatile(String prompt) {
+        if (prompt == null || prompt.isEmpty()) {
+            return prompt == null ? "" : prompt;
+        }
+        return prompt
+                .replaceAll("(?m)^当前真实时间：.*$", "当前真实时间：<masked>")
+                .replaceAll("(?m)^当前时段：.*$", "当前时段：<masked>");
+    }
+
     /** 纯比较：容易被单测覆盖，不需要网络。 */
     public static Diff compare(String javaPrompt, String pythonPrompt) {
-        String left = javaPrompt == null ? "" : javaPrompt;
-        String right = pythonPrompt == null ? "" : pythonPrompt;
+        String left = maskVolatile(javaPrompt == null ? "" : javaPrompt);
+        String right = maskVolatile(pythonPrompt == null ? "" : pythonPrompt);
         if (left.equals(right)) {
             return new Diff(true, left.length(), right.length(), -1);
         }

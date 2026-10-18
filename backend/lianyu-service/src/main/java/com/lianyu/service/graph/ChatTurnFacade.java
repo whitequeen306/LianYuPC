@@ -170,6 +170,18 @@ public class ChatTurnFacade {
                     state.value(ChatTurnKeys.RELATIONSHIP_BLOCK, String.class).orElse(""),
                     state.value(ChatTurnKeys.SESSION_SUMMARY_BLOCK, String.class).orElse(""));
             String timeFact = shadowTimeTool != null ? shadowTimeTool.readCurrentTimeFact() : null;
+            // 城市：与 Java appendCurrentRealCityContext 同一套判断（real 模式且城市非空才追加）
+            Map<String, Object> settings = character.getSettings();
+            String city = com.lianyu.service.character.CharacterCitySettingsService.MODE_REAL
+                    .equals(com.lianyu.service.character.CharacterCitySettingsService
+                            .resolveCityMode(settings))
+                    ? com.lianyu.service.character.CharacterCitySettingsService.resolveRealCity(settings)
+                    : null;
+            String afterBase = switch (turn.scene()) {
+                case MOMENTS, DIARY -> "style_only";
+                case VOICE_CALL -> "none";
+                default -> "full";
+            };
             com.lianyu.service.agent.AssemblySnapshot snapshot =
                     new com.lianyu.service.agent.AssemblySnapshot(
                             character.getName(),
@@ -185,8 +197,8 @@ public class ChatTurnFacade {
                             2,
                             turn.scene().includeTime(),
                             timeFact,
-                            null,
-                            "full");
+                            city,
+                            afterBase);
             promptShadowPort.compareAsync(command.getUserId(), snapshot, turn.systemPrompt());
         } catch (Exception e) {
             log.debug("Prompt shadow dispatch failed: {}", e.toString());

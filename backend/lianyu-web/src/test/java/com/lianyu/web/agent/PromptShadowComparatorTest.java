@@ -140,4 +140,47 @@ class PromptShadowComparatorTest {
         assertTrue(body.containsKey("afterBase"));
         assertEquals("full", body.get("afterBase"));
     }
+
+    // ── 易变片段掩码 ──
+
+    @Test
+    void maskHidesTimeFactLines() {
+        String prompt = "前缀\n当前真实时间：2026-10-18 15:00:00（周六）\n当前时段：下午（13:00-18:00）\n后缀";
+        String masked = PromptShadowComparator.maskVolatile(prompt);
+        assertTrue(masked.contains("当前真实时间：<masked>"));
+        assertTrue(masked.contains("当前时段：<masked>"));
+        assertFalse(masked.contains("15:00:00"));
+        assertTrue(masked.contains("前缀") && masked.contains("后缀"));
+    }
+
+    @Test
+    void timeDriftAloneIsNotADiff() {
+        String javaPrompt = "A\n当前真实时间：2026-10-18 15:00:00（周六）\n当前时段：下午\nB";
+        String pythonPrompt = "A\n当前真实时间：2026-10-18 15:01:02（周六）\n当前时段：下午\nB";
+        assertTrue(PromptShadowComparator.compare(javaPrompt, pythonPrompt).equal(),
+                "仅时间不同不应算漂移（两边各自读时钟）");
+    }
+
+    @Test
+    void structuralDiffStillDetectedAfterMasking() {
+        String javaPrompt = "A\n当前真实时间：2026-10-18 15:00:00\nB";
+        String pythonPrompt = "A\n当前真实时间：2026-10-18 15:00:00\nC";
+        assertFalse(PromptShadowComparator.compare(javaPrompt, pythonPrompt).equal());
+    }
+
+    @Test
+    void maskHandlesNullAndEmpty() {
+        assertEquals("", PromptShadowComparator.maskVolatile(null));
+        assertEquals("", PromptShadowComparator.maskVolatile(""));
+    }
+
+    @Test
+    void lengthsAreReportedForComparedText() {
+        // 长度与差异位置都基于「掩码后」的文本 —— 掩码才是实际比较对象
+        String javaPrompt = "A\n当前真实时间：2026-10-18 15:00:00\nC";
+        String pythonPrompt = "A\n当前真实时间：2026-10-18 15:01:00\nC";
+        PromptShadowComparator.Diff diff = PromptShadowComparator.compare(javaPrompt, pythonPrompt);
+        assertEquals(PromptShadowComparator.maskVolatile(javaPrompt).length(), diff.javaLength());
+        assertTrue(diff.equal(), "时间不同但掩码后相同 → 不算漂移");
+    }
 }
