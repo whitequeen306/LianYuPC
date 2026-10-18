@@ -28,6 +28,10 @@ public class DesktopObserveOrchestrator implements com.lianyu.service.agent.Agen
     private final AgentRuntimeClient agentClient;
     private final ApiKeyVaultService vaultService;
 
+    /** SHADOW 漂移率统计（可选注入，单测可不提供）。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private AgentShadowStats shadowStats;
+
     public DesktopObserveOrchestrator(VisionChatService visionChatService,
                                       AgentRuntimeClient agentClient,
                                       ApiKeyVaultService vaultService) {
@@ -132,32 +136,58 @@ public class DesktopObserveOrchestrator implements com.lianyu.service.agent.Agen
     }
 
     private void recordProactiveDiff(long userId, String scene, String fromJava, String fromAgent) {
+        String channel = "proactive:" + scene;
         if (fromJava == null && fromAgent == null) {
             log.info("Proactive shadow[{}][{}]: both-null", userId, scene);
+            statBothNull(channel);
             return;
         }
         if (fromJava != null && fromAgent != null && fromJava.equals(fromAgent)) {
             log.info("Proactive shadow[{}][{}]: match ({} chars)", userId, scene, fromJava.length());
+            statMatch(channel);
             return;
         }
         log.warn("Proactive shadow[{}][{}]: DIFF java={}chars agent={}chars", userId, scene,
                 fromJava == null ? "null" : fromJava.length(),
                 fromAgent == null ? "null" : fromAgent.length());
+        statDiff(channel);
+    }
+
+
+    private void statMatch(String channel) {
+        if (shadowStats != null) {
+            shadowStats.recordMatch(channel);
+        }
+    }
+
+    private void statDiff(String channel) {
+        if (shadowStats != null) {
+            shadowStats.recordDiff(channel);
+        }
+    }
+
+    private void statBothNull(String channel) {
+        if (shadowStats != null) {
+            shadowStats.recordBothNull(channel);
+        }
     }
 
     private void recordShadowDiff(long userId, String fromJava, String fromAgent) {
         if (fromJava == null && fromAgent == null) {
             log.info("Shadow observe[{}]: both-null", userId);
+            statBothNull("observe");
             return;
         }
         if (fromJava != null && fromAgent != null && fromJava.equals(fromAgent)) {
             log.info("Shadow observe[{}]: match ({} chars)", userId, fromJava.length());
+            statMatch("observe");
             return;
         }
-        // LLM 生成天然非确定：不等价不算事故，只记 WARN 供人工/脚本统计漂移率
+        // LLM 生成天然非确定：不等价不算事故，只记 WARN 供脚本/指标统计漂移率
         log.warn("Shadow observe[{}]: DIFF java={}chars agent={}chars", userId,
                 fromJava == null ? "null" : fromJava.length(),
                 fromAgent == null ? "null" : fromAgent.length());
+        statDiff("observe");
     }
 
     // ── AgentRuntimePort（service 层调用的接缝）──

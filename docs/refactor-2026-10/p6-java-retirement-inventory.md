@@ -56,7 +56,7 @@
 | **P6-b** | `MemoryMilvusSyncService` 的自动 resync | Python 侧补「全量对账」命令 |
 | **P6-c** | `MemoryExtractionService` / `MemoryLlmExtractor` / `MemoryExtractionHeuristics` / `MemoryOutboxService` | OFF 模式退役 + MQ 入口迁 Python |
 | **P6-d** | `MemoryWriter` / `MemoryVectorStore` / `MemoryCacheService` / `MemoryRetriever` | 需先让 `ChatTurnGraph` 的 prompt 注入改读 Python 产出的缓存 |
-| **P6-e** | `MemoryConsumer`（MQ） | Python 接 RabbitMQ（当前只有 HTTP 触发） |
+| **P6-e** | `MemoryConsumer`（MQ） | ❌ **不可执行（本轮结论修正）**，见下方「MQ 为何不该迁」 |
 
 ## 四、为什么现在不继续删
 
@@ -69,11 +69,43 @@
 3. 移除 `OFF` 默认与回退分支
 4. 然后本清单的 P6-b..P6-e 才能逐项执行
 
-## 五、当前可直接做、且不破坏 OFF 的两件事
+## 四点五、MQ 为何不该迁到 Python（本轮实测结论）
 
-1. **给 Python 补全量对账**（`/agent/memory/reconcile`）：扫描 `memory_meta` 中
-   `milvus_vec_id` 为空或指向不存在向量的行并重新投影 —— 这才是
-   `MemoryMilvusSyncService` 的等价能力，补齐后 P6-b 可执行。
-2. **Python 接 MQ**：把 `MemoryConsumer` 的入口迁过来，补齐后 P6-e 可执行。
+原计划是「Python 接 RabbitMQ，然后退役 `MemoryConsumer`」。读代码后否掉了：
 
-两件事都不需要动 OFF 路径，属于纯增量。
+```java
+@RabbitListener(queues = "memory.summary.queue")
+public void onMemorySummaryTask(MemoryWriter.MemorySummaryTask task) { ... }
+// MemorySummaryTask 只带 (conversationId, characterId, userId, provider, model)
+```
+
+**消息里没有凭据**。抽取需要调用户自己的模型，而 API Key 存在
+`api_key_vault.api_key_encrypted`，由 Java 用 Jasypt（`LIANYU_MASTER_KEY`）解密 ——
+Python 侧没有任何解密实现（全仓 grep 无 jasypt/decrypt）。
+
+三条替代路都更差：
+
+| 方案 | 问题 |
+|---|---|
+| Python 只做规则抽取 | 丢掉 LLM 抽取的事实，质量实质下降 |
+| Python 实现 Jasypt 解密 | 主密钥要进 agent 容器，扩大泄露面；跨语言复刻加密易错 |
+| Python 调 Java 内部接口取明文 Key | 新增高价值攻击面（一个内网接口能吐所有用户的 Key） |
+
+**结论：`MemoryConsumer` 保留在 Java 是正确的边界** —— 凭据解密本就该由持有主密钥的
+那一侧负责。记忆的「抽取+写入」已经由 Python 执行（Java 消费者在 AGENT 模式下
+只是转发，见 `AgentMemoryAdapter`）。所以 P6 不把这一条算作待办，而是
+**划为「长期保留」**。
+
+## 五、进度与剩下的事
+
+已完成：
+1. ✅ **Python 全量对账**（`POST /agent/memory/reconcile`）—— 补齐了
+   `MemoryMilvusSyncService` 的等价能力，容器实测修复 2 条缺失向量的历史记忆。
+   P6-b 的前置条件已满足（等 OFF 退役后再删）。
+2. ✅ **SHADOW 漂移率指标**（`AgentShadowStats`）—— 每 5 分钟打一次
+   `Shadow drift[channel]: match=… diff=… both-null=… drift=…%`。
+   这是从 SHADOW 走向 AGENT 的依据，此前只有逐条日志。
+
+剩下（都需要真实流量，不是代码问题）：
+- 在 SHADOW 下跑出漂移率数据 → 决定是否切 AGENT
+- AGENT 稳定后移除 OFF 默认值 → 才能执行 P6-b..P6-d
