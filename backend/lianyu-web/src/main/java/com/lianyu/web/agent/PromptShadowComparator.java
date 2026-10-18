@@ -123,6 +123,7 @@ public class PromptShadowComparator {
                     pyNames.add(e.getKey() + ":" + e.getValue().length());
                 }
 
+
                 log.warn("Prompt shadow[{}] javaSegs={}", userId, javaNames);
                 log.warn("Prompt shadow[{}] pySegs={}", userId, pyNames);
             }

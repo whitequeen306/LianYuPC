@@ -54,6 +54,16 @@ public class ChatTurnFacade {
     private com.lianyu.service.tools.ToolManager shadowToolManager;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.service.character.CharacterChatBehaviorResolver shadowBehaviorResolver;
+
+    /** 影子比对需要完整角色（settings 决定行为），按 id 回库取一次 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.dao.mapper.CharacterMapper shadowCharacterMapper;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.service.character.CharacterStateService shadowCharacterStateService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.lianyu.service.agent.AgentImagePort agentImagePort;
 
     public String assembleSystemPrompt(ChatTurnCommand command) {
@@ -162,21 +172,25 @@ public class ChatTurnFacade {
      * SHADOW 模式下把「Java 刚组装的 prompt」与「Python 组装的 prompt」比对。
      * 任何异常都在端口实现里被吞掉；此处再包一层以防端口本身抛错。
      */
+    /**
+     * SHADOW 模式下的 prompt 级影子比对：把 Java 刚组装的 prompt 与 Python 自读组装的结果比对。
+     *
+     * <p>快照必须包含 Java 组装时用到的**全部输入**，否则会出现「稳定少一段」的假阳性：
+     * 工具提示、城市、气泡上限、场景分支都曾因为漏传而产生 100% 的假漂移。
+     */
     private void dispatchPromptShadow(ChatTurnCommand command, OverAllState state,
-                                      ChatTurnState turn, Character character,
+                                      ChatTurnState turn, Character characterRef,
                                       List<MessageDto> messages) {
-        log.info("Prompt shadow dispatch: port={} character={}",
-                promptShadowPort != null, character != null);
-        if (promptShadowPort == null || character == null) {
+        if (promptShadowPort == null || characterRef == null) {
             return;
         }
         try {
+            Character character = resolveFullCharacter(characterRef, state);
             String memoryContext = joinBlocks(
                     state.value(ChatTurnKeys.MEMORY_BLOCK, String.class).orElse(""),
                     state.value(ChatTurnKeys.RELATIONSHIP_BLOCK, String.class).orElse(""),
                     state.value(ChatTurnKeys.SESSION_SUMMARY_BLOCK, String.class).orElse(""));
             String timeFact = shadowTimeTool != null ? shadowTimeTool.readCurrentTimeFact() : null;
-            // 城市：与 Java appendCurrentRealCityContext 同一套判断（real 模式且城市非空才追加）
             Map<String, Object> settings = character.getSettings();
             String city = com.lianyu.service.character.CharacterCitySettingsService.MODE_REAL
                     .equals(com.lianyu.service.character.CharacterCitySettingsService
@@ -185,16 +199,18 @@ public class ChatTurnFacade {
                     : null;
             String afterBase = switch (turn.scene()) {
                 case MOMENTS, DIARY -> "style_only";
-                case VOICE_CALL -> "none";
+                case VOICE_CALL -> "time_only";
                 default -> "full";
             };
+            int maxPieces = shadowBehaviorResolver != null
+                    ? shadowBehaviorResolver.resolve(character).maxRepliesPerTurn()
+                    : 2;
             com.lianyu.service.agent.AssemblySnapshot snapshot =
                     new com.lianyu.service.agent.AssemblySnapshot(
                             character.getName(),
                             character.getSettings(),
                             character.getPromptTemplate(),
                             memoryContext,
-                            // 工具提示依赖角色工具配置与桌面桥接状态（Java 侧运行时），目前由 Java 计算后传入
                             turn.scene().enableChatTools() && shadowToolManager != null
                                     ? shadowToolManager.buildToolsPromptHint(command.getUserId())
                                     : "",
@@ -203,7 +219,7 @@ public class ChatTurnFacade {
                             turn.scene().enableChatTools(),
                             com.lianyu.service.character.CharacterPreferenceResolver
                                     .showInnerThoughts(character),
-                            2,
+                            maxPieces,
                             turn.scene().includeTime(),
                             timeFact,
                             city,
@@ -218,7 +234,32 @@ public class ChatTurnFacade {
         }
     }
 
-    /** 真实请求下的分段比对开关（默认开）：只打印「哪一段不同」，不含正文。 */
+    /**
+     * 图状态里的 characterRef 是精简引用（settings 可能为空），行为解析会因此回落到默认值。
+     * 用数据库里的完整角色还原，保证与组装时同源。
+     */
+    private Character resolveFullCharacter(Character characterRef, OverAllState state) {
+        Character probe = new Character();
+        probe.setId(characterRef.getId());
+        probe.setName(characterRef.getName());
+        probe.setOwnerUserId(characterRef.getOwnerUserId());
+        probe.setPromptTemplate(characterRef.getPromptTemplate());
+        Map<String, Object> settings = characterRef.getSettings();
+        if ((settings == null || settings.isEmpty()) && shadowCharacterMapper != null
+                && characterRef.getId() != null) {
+            Character full = shadowCharacterMapper.selectById(characterRef.getId());
+            if (full != null) {
+                settings = full.getSettings();
+                probe.setPromptTemplate(full.getPromptTemplate());
+                probe.setOwnerUserId(full.getOwnerUserId());
+            }
+        }
+        if (settings == null || settings.isEmpty()) {
+            settings = state.value(ChatTurnKeys.TOOL_CHARACTER_SETTINGS, Map.class).orElse(null);
+        }
+        probe.setSettings(settings);
+        return probe;
+    }
     private static String joinBlocks(String a, String b, String c) {
         StringBuilder sb = new StringBuilder();
         for (String part : new String[]{a, b, c}) {

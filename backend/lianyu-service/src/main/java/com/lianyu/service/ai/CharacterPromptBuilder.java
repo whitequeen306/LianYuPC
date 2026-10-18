@@ -17,9 +17,11 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 @Component
+@Slf4j
 @RequiredArgsConstructor
 public class CharacterPromptBuilder {
 
@@ -83,6 +85,7 @@ public class CharacterPromptBuilder {
         }
 
         CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
+        log.info("[TMP] builder maxPieces={} charId={}", behavior.maxRepliesPerTurn(), character.getId());
         String replyRules = promptRuleEngine.render(
                 PromptRuleSlot.REPLY_BEHAVIOR,
                 PromptRuleContext.forReply(outputLanguage, persona, behavior, showInnerThoughts)

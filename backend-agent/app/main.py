@@ -283,14 +283,17 @@ async def prompt_assemble(
                 include_relationship=scene in {"SINGLE", "PROACTIVE", "MOMENTS", "DIARY"},
                 include_session=scene in {"SINGLE", "PROACTIVE"},
             ) or ""
-            emotion = await load_emotion(body.character_id or 0, body.user_id)
-            emotion_block = format_emotion_block(
-                lang=body.output_language,
-                current_emotion=(emotion or {}).get("current_emotion"),
-                emotion_intensity=(emotion or {}).get("emotion_intensity"),
-                status_text=(emotion or {}).get("status_text"),
-                previous_emotion=(emotion or {}).get("previous_emotion"),
-            ) if emotion else ""
+            # 显式传入的情绪块优先：调用方可能在「组装同一时刻」同步取好快照，
+            # 比这里现读更接近 Java 实际使用的值（情绪会被本轮对话更新）。
+            if not emotion_block:
+                emotion = await load_emotion(body.character_id or 0, body.user_id)
+                emotion_block = format_emotion_block(
+                    lang=body.output_language,
+                    current_emotion=(emotion or {}).get("current_emotion"),
+                    emotion_intensity=(emotion or {}).get("emotion_intensity"),
+                    status_text=(emotion or {}).get("status_text"),
+                    previous_emotion=(emotion or {}).get("previous_emotion"),
+                ) if emotion else ""
             # 城市：与 Java 同一判断（city_mode == real 且城市非空）
             if not city and str(body.settings.get("city_mode") or "") == "real":
                 raw_city = body.settings.get("city")
