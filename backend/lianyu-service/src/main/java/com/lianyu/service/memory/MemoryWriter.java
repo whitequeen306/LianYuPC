@@ -46,7 +46,7 @@ public class MemoryWriter {
     private final MemoryCacheService memoryCacheService;
     private final MemoryExtractionService memoryExtractionService;
     private final MemoryVectorStore memoryVectorStore;
-    private final MemoryMilvusSyncService memoryMilvusSyncService;
+    private final MemoryOutboxService memoryOutboxService;
     private final StringRedisTemplate redisTemplate;
     private final ScheduledExecutorService rescheduleExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "memory-summary-reschedule");
@@ -109,7 +109,8 @@ public class MemoryWriter {
                 if (saved != null
                         && saved.getId() != null
                         && (saved.getMilvusVecId() == null || saved.getMilvusVecId().isBlank())) {
-                    memoryMilvusSyncService.repairOne(saved.getId());
+                    // 向量投影交给 outbox relay（幂等重试），不在业务线程里等 Milvus
+                    memoryOutboxService.enqueueUpsert(saved.getId());
                 }
             }
 
@@ -151,8 +152,19 @@ public class MemoryWriter {
         return ENQUEUE_DEBOUNCE_PREFIX + conversationId + ":" + characterId;
     }
 
+    /**
+     * @deprecated 直接用 vecId 删除会绕过 outbox：Milvus 失败时删除意图永久丢失，
+     * 留下「行已删、向量仍在」的幽灵记忆。新代码请用
+     * {@link #deleteVectorForMemory(Long, String)}。
+     */
+    @Deprecated
     public void deleteVectors(List<String> vectorIds) {
         memoryVectorStore.delete(vectorIds);
+    }
+
+    /** 删除某条记忆的向量：只入队，由 relay 幂等执行（失败会重试）。 */
+    public void deleteVectorForMemory(Long memoryId, String vecId) {
+        memoryOutboxService.enqueueDelete(memoryId, vecId);
     }
 
     private MemoryUpsertOutcome upsertTypedMemory(MemorySummaryTask task,
@@ -183,15 +195,8 @@ public class MemoryWriter {
                 throw e;
             }
 
-            String vecId = memoryVectorStore.insert(
-                    task.characterId(), task.userId(), meta.getId(), summary, memoryType);
-            if (vecId != null) {
-                meta.setMilvusVecId(vecId);
-                memoryMetaMapper.updateById(meta);
-            } else {
-                log.warn("Milvus insert returned null: memoryId={}, convCharacter={}/{}",
-                        meta.getId(), task.characterId(), task.userId());
-            }
+            // 只入队，不等 Milvus：投影失败由 relay 指数退避重试（审计 C2）
+            memoryOutboxService.enqueueUpsert(meta.getId());
             return new MemoryUpsertOutcome(MemoryUpsertResult.CREATED, meta);
         }
 
@@ -213,19 +218,12 @@ public class MemoryWriter {
         existing.setImportance(importanceValue);
         existing.setSourceMsgIds(mergeSourceIds(existing.getSourceMsgIds(), sourceIds));
         existing.setSourceHash(sourceHash);
+        // 向量已过期：先清空本地引用，由 relay 重新投影
+        existing.setMilvusVecId(null);
         memoryMetaMapper.updateById(existing);
 
-        if (oldVecId != null && !oldVecId.isBlank()) {
-            memoryVectorStore.delete(List.of(oldVecId));
-        }
-        String vecId = memoryVectorStore.insert(
-                task.characterId(), task.userId(), existing.getId(), summary, memoryType);
-        if (vecId != null) {
-            existing.setMilvusVecId(vecId);
-            memoryMetaMapper.updateById(existing);
-        } else {
-            log.warn("Milvus insert returned null on update: memoryId={}", existing.getId());
-        }
+        memoryOutboxService.enqueueDelete(existing.getId(), oldVecId);
+        memoryOutboxService.enqueueUpsert(existing.getId());
         return new MemoryUpsertOutcome(MemoryUpsertResult.UPDATED, existing);
     }
 

@@ -45,7 +45,7 @@ class MemoryWriterDebounceTest {
                 mock(MemoryCacheService.class),
                 mock(MemoryExtractionService.class),
                 mock(MemoryVectorStore.class),
-                mock(MemoryMilvusSyncService.class),
+                mock(MemoryOutboxService.class),
                 redisTemplate);
     }
 

@@ -119,7 +119,8 @@ public class MemoryQueryService {
             return Result.fail(404, "记忆不存在");
         }
 
-        memoryWriter.deleteVectors(meta.getMilvusVecId() == null ? List.of() : List.of(meta.getMilvusVecId()));
+        // 删除意图与删行同事务落库：行删了但向量没删会导致「幽灵记忆」仍被检索到
+        memoryWriter.deleteVectorForMemory(id, meta.getMilvusVecId());
         memoryMetaMapper.deleteById(id);
         memoryCacheService.invalidate(userId, meta.getCharacterId());
         return Result.ok();
