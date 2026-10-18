@@ -18,6 +18,10 @@ public class RerankerService {
 
     private final AiConfig aiConfig;
     private final ApiKeyVaultService vaultService;
+
+    /** 可用配置覆盖；为空时用 DashScope 默认地址。 */
+    @org.springframework.beans.factory.annotation.Value("${lianyu.memory.rerank-url:}")
+    private String rerankUrl;
     private final ObjectMapper objectMapper;
 
     public RerankerService(AiConfig aiConfig, ApiKeyVaultService vaultService, ObjectMapper objectMapper) {

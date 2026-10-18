@@ -194,7 +194,9 @@ Python 侧目前**没有** Resilience4j 等价物（按上游熔断/隔舱）、
 | **A 批 数据访问** | `db.py`（SELECT 守卫的只读层）+ `memory_search`（Java 降级分支语义）+ `get_my_recent_life`（7 天窗口/4 语种/缓存）；characterId+tools 贯穿端口 | `2e1c832` |
 | **P3 准备** | 三模式行为测试 10 个（OFF/SHADOW/AGENT 分派 + AGENT 空结果必回退 Java + 桌面感知三模式）；`scripts/agent-shadow-report.ps1` 漂移率统计 | `fb8fbf6` |
 | **P4a 流式端点** | Python `/agent/chat-stream`（SSE 契约逐字节对齐、不发 pieces、语言门发 replace）+ `gateway.stream_text`（首字前瞬断重试）+ 8 个契约测试；修 wire 字段名与 usage 透传 | 见提交 |
-| **P4b 消费端** | Java `AgentSseParser`（纯函数，13 用例：增量/replace/error/[DONE]/心跳/转义/`\uXXXX`/忽略 pieces） | 见提交 |
+| **P4b 消费端** | Java `AgentSseParser`（纯函数，13 用例）+ `AgentStreamBridge`（增量中继）+ `AgentStreamPort` 接线 `ChatTurnFacade` | `c4a4231`、`3af7755` |
+| **P5 读路径** | `memory/embedding.py`（向量化 + rerank，base_url 可配置）+ `memory/vector_cache.py`（Redis 缓存向量 + 进程内余弦，Milvus 缺失时的真实语义召回）+ 三级召回 | `d35c459` |
+| **审计 C3 修复** | Java `RerankerService` 重排地址改为可配置（原为硬编码 DashScope + 用户 vault key，非 DashScope 用户必然 401 后静默降级成原序） | 见提交 |
 
 **容器级实测结论**：`lianyu-agent` healthy；backend 日志确认 `profile "prod"` 激活；
 gateway TLS → `/api/agent/` → `{"status":"UP"}`；proactive-turn 无凭据 → `no_text_credentials`、user mismatch → 403。
