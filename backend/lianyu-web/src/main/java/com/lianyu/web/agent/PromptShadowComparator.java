@@ -79,7 +79,7 @@ public class PromptShadowComparator {
         if (javaPrompt == null) {
             return null;
         }
-        String response = client.postJson("/agent/prompt/assemble", userId, snapshot.toBody());
+        String response = client.postJson("/agent/prompt/assemble", userId, bodyOf(snapshot, userId));
         if (response == null) {
             return null;
         }
