@@ -426,6 +426,14 @@ async def memory_relay_requeue() -> dict[str, int]:
     return {"requeued": await requeue_stuck()}
 
 
+@app.post("/agent/memory/reconcile")
+async def memory_reconcile(limit: int = 500) -> dict[str, int]:
+    """全量对账：修复 vec_id 缺失的记忆（等价 Java startup resync）。"""
+    from app.memory.relay import reconcile
+
+    return await reconcile(limit=limit)
+
+
 @app.post("/agent/memory/write")
 async def memory_write(
     body: MemoryWriteBody,

@@ -19,6 +19,7 @@ def fake(monkeypatch):
         "vec_id": "vec-new",
         "delete_ok": True,
         "embed": [[0.1, 0.2]],
+        "reconcile_rows": [],
         "meta": {"id": 11, "character_id": 3, "user_id": 7, "summary": "用户喜欢猫",
                  "memory_type": "FACT", "milvus_vec_id": None},
     }
@@ -26,6 +27,8 @@ def fake(monkeypatch):
     async def fake_fetch_all(sql, params=()):
         if "FROM memory_outbox" in sql:
             return state["rows"]
+        if "milvus_vec_id IS NULL" in sql:      # reconcile 的候选查询
+            return state["reconcile_rows"]
         if "FROM memory_meta" in sql:
             return [state["meta"]] if state["meta"] else []
         return []
@@ -142,3 +145,34 @@ async def test_empty_outbox_is_noop(fake):
     stats = await relay.drain_once()
     assert stats["picked"] == 0
     assert fake["executed"] == []
+
+# ── 全量对账（等价 Java MemoryMilvusSyncService）──
+
+
+@pytest.mark.asyncio
+async def test_reconcile_repairs_missing_vec_id(fake):
+    fake["reconcile_rows"] = [{"id": 11, "summary": "用户喜欢猫", "milvus_vec_id": None}]
+    stats = await relay.reconcile(limit=10)
+
+    assert "candidates" in stats
+    assert stats["candidates"] >= 0
+    assert stats["repaired"] + stats["failed"] == stats["candidates"]
+
+
+@pytest.mark.asyncio
+async def test_reconcile_empty_is_noop(fake):
+    fake["reconcile_rows"] = []
+    stats = await relay.reconcile()
+    assert stats == {"candidates": 0, "repaired": 0, "failed": 0}
+
+
+@pytest.mark.asyncio
+async def test_reconcile_counts_failure_without_crashing(fake, monkeypatch):
+    fake["reconcile_rows"] = [{"id": 11, "summary": "用户喜欢猫", "milvus_vec_id": None}]
+
+    async def boom(memory_id):
+        raise RuntimeError("milvus down")
+
+    monkeypatch.setattr(relay, "project_upsert", boom)
+    stats = await relay.reconcile()
+    assert stats["failed"] == 1

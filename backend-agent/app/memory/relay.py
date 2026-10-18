@@ -175,6 +175,35 @@ async def _retry_or_dead(outbox_id: int, row: dict[str, Any], cap: int,
                    int(delay), outbox_id, row.get("memory_id"), attempts, reason)
 
 
+async def reconcile(limit: int = 500) -> dict[str, int]:
+    """全量对账：修复 vec_id 缺失/失效的记忆（等价 Java MemoryMilvusSyncService.resyncAll）。
+
+    与增量 relay 的区别：relay 只处理「有 outbox 行」的变更，
+    对账负责历史遗留（早期双写失败留下的空 vec_id）与手工删库后的恢复。
+    """
+    rows = await fetch_all(
+        "SELECT id, summary, milvus_vec_id FROM memory_meta "
+        "WHERE summary IS NOT NULL AND summary <> '' "
+        "AND (milvus_vec_id IS NULL OR milvus_vec_id = '') "
+        "ORDER BY id ASC LIMIT %s",
+        (limit,),
+    )
+    stats = {"candidates": len(rows), "repaired": 0, "failed": 0}
+    for row in rows:
+        try:
+            outcome = await project_upsert(int(row["id"]))
+        except Exception as exc:  # noqa: BLE001 - 单条失败不中断对账
+            logger.warning("reconcile failed: memoryId=%s reason=%s", row["id"], exc)
+            outcome = "retry"
+        if outcome in ("done", "skip"):
+            stats["repaired"] += 1
+        else:
+            stats["failed"] += 1
+    if stats["candidates"]:
+        logger.info("memory reconcile: %s", stats)
+    return stats
+
+
 async def requeue_stuck() -> int:
     """把 DEAD / 卡在 RUNNING 超过 10 分钟的行重新排队（运维用）。"""
     rows = await fetch_all(
