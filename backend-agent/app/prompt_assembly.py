@@ -59,6 +59,29 @@ def append_city_context(base_prompt: str, city: str) -> str:
     )
 
 
+# 自然口语风格块（OutputLanguageService.buildNaturalStyleBlock）
+# 键：(语言, 是否允许内心独白) → fragments.json 中的行号
+_NATURAL_STYLE_LINES = {
+    ("ja", True): 162, ("ja", False): 167,
+    ("en", True): 172, ("en", False): 177,
+    ("zh-tw", True): 182, ("zh-tw", False): 187,
+    ("zh", True): 192, ("zh", False): 197,
+}
+
+
+def natural_style_block(lang: str | None, show_inner_thoughts: bool = True) -> str:
+    """对齐 OutputLanguageService.buildNaturalStyleBlock（四语种 × 内心独白开关）。"""
+    key = (normalize_language(lang), bool(show_inner_thoughts))
+    return fragment("OutputLanguageService.java", _NATURAL_STYLE_LINES[key])
+
+
+def append_natural_style(base_prompt: str, lang: str | None,
+                         show_inner_thoughts: bool = True) -> str:
+    """对齐 ChatTurnPromptAssembler.enforceNaturalChatStyle。"""
+    prompt = base_prompt or ""
+    return prompt + natural_style_block(lang, show_inner_thoughts)
+
+
 def normalize_language(lang: str | None) -> str:
     """把 Java 的 OutputLanguage 代码归一成本模块的键。"""
     code = (lang or "zh").strip().lower().replace("_", "-")
@@ -94,6 +117,8 @@ def contains_goodnight_keyword(text: str | None) -> bool:
 
 
 __all__ = [
+    "append_natural_style",
+    "natural_style_block",
     "GOODNIGHT_KEYWORDS",
     "append_city_context",
     "append_goodnight_context",

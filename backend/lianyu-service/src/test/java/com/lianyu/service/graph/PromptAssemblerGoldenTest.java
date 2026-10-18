@@ -83,6 +83,19 @@ class PromptAssemblerGoldenTest {
         out.put("city", "上海");
         out.put("cityContext", cityContext);
 
+        // 自然口语风格块（四语种 × 是否显示内心独白）：来自 OutputLanguageService 的真实 switch
+        com.lianyu.service.support.OutputLanguageService languageService =
+                new com.lianyu.service.support.OutputLanguageService(
+                        mock(org.springframework.data.redis.core.StringRedisTemplate.class));
+        Map<String, String> naturalStyle = new LinkedHashMap<>();
+        for (String lang : new String[]{"ja", "en", "zh-TW", "zh"}) {
+            for (boolean inner : new boolean[]{true, false}) {
+                naturalStyle.put(lang + "|" + inner,
+                        languageService.buildNaturalStyleBlock(lang, inner));
+            }
+        }
+        out.put("naturalStyleBlocks", naturalStyle);
+
         Path target = Path.of("..", "..", "backend-agent", "app", "prompts", "assembler_golden.json");
         Files.createDirectories(target.getParent());
         Files.writeString(target, new ObjectMapper().writerWithDefaultPrettyPrinter()

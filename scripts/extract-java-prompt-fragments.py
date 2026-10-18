@@ -32,6 +32,7 @@ OUT = ROOT / "backend-agent" / "app" / "prompts" / "fragments.json"
 TARGETS = [
     "lianyu-service/src/main/java/com/lianyu/service/graph/ChatTurnPromptAssembler.java",
     "lianyu-service/src/main/java/com/lianyu/service/ai/CharacterPromptBuilder.java",
+    "lianyu-service/src/main/java/com/lianyu/service/support/OutputLanguageService.java",
 ]
 
 _BLOCK_OPEN = '"""'

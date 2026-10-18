@@ -116,3 +116,30 @@ def test_appenders_are_pure_and_do_not_mutate_base():
     pa.append_city_context(base, "C")
     pa.append_goodnight_context(base, "zh")
     assert base == "BASE"
+
+# ── 自然口语风格块（四语种 × 内心独白开关）──
+
+
+@pytest.mark.parametrize("lang", ["ja", "en", "zh-TW", "zh"])
+@pytest.mark.parametrize("show_inner", [True, False])
+def test_natural_style_matches_java_byte_for_byte(golden, lang, show_inner):
+    expected = golden["naturalStyleBlocks"][f"{lang}|{str(show_inner).lower()}"]
+    assert pa.natural_style_block(lang, show_inner) == expected
+
+
+def test_natural_style_allows_inner_thoughts_mentions_parentheses():
+    with_inner = pa.natural_style_block("zh", True)
+    without_inner = pa.natural_style_block("zh", False)
+    assert "心理活动" in with_inner
+    assert "禁止输出括号内心独白" in without_inner
+    assert with_inner != without_inner
+
+
+def test_append_natural_style_is_pure_concat():
+    out = pa.append_natural_style("BASE", "en", False)
+    assert out.startswith("BASE")
+    assert out.endswith(pa.natural_style_block("en", False))
+
+
+def test_append_natural_style_treats_none_base_as_empty():
+    assert pa.append_natural_style(None, "zh", True) == pa.natural_style_block("zh", True)

@@ -53,6 +53,54 @@
       "line": 71,
       "text": "\n记忆优先级：上述记忆是用户最新、最准确的资料。\n若本对话历史里出现过与之矛盾的用户自称（例如旧名字、旧喜好），必须以记忆为准，不要继续沿用历史中的过时说法。",
       "source": "lianyu-service/src/main/java/com/lianyu/service/ai/CharacterPromptBuilder.java"
+    },
+    {
+      "file": "OutputLanguageService.java",
+      "line": 162,
+      "text": "\n表現要件：\n- 心の声・内面の独白は括弧で短く書いてよい（例「（本当はちょっと気になってる）」）\n- 動作・表情・身振りの括弧描写（例「（微笑）」「（ため息）」）は書かない\n- ユーザーが日本語で話しているのに英語など他言語で返さない",
+      "source": "lianyu-service/src/main/java/com/lianyu/service/support/OutputLanguageService.java"
+    },
+    {
+      "file": "OutputLanguageService.java",
+      "line": 167,
+      "text": "\n表現要件：\n- 括弧での心の声・内面独白は禁止。口に出す言葉だけ書く\n- ユーザーが日本語で話しているのに英語など他言語で返さない",
+      "source": "lianyu-service/src/main/java/com/lianyu/service/support/OutputLanguageService.java"
+    },
+    {
+      "file": "OutputLanguageService.java",
+      "line": 172,
+      "text": "\nStyle:\n- Inner thoughts may appear briefly in parentheses (e.g. \"(I actually care more than I'm letting on)\")\n- Do not use parentheses for physical actions or expressions (e.g. \"(smiles)\", \"(sighs)\")\n- Reply only in English unless the user clearly switched languages",
+      "source": "lianyu-service/src/main/java/com/lianyu/service/support/OutputLanguageService.java"
+    },
+    {
+      "file": "OutputLanguageService.java",
+      "line": 177,
+      "text": "\nStyle:\n- Do not use parenthetical inner monologue; only write spoken dialogue\n- Reply only in English unless the user clearly switched languages",
+      "source": "lianyu-service/src/main/java/com/lianyu/service/support/OutputLanguageService.java"
+    },
+    {
+      "file": "OutputLanguageService.java",
+      "line": 182,
+      "text": "\n表達要求：\n- 心理活動、內心獨白可用括號簡短寫出（如「（其實有點在意）」「（這傢伙怎麼又來了）」），與說出口的話區分開\n- 不要用括號寫動作、表情、肢體語言（如「（微笑）」「（嘆氣）」「（轉身離開）」）\n- 禁止無故夾雜英文/日文等其他語言；必須用繁體中文表述",
+      "source": "lianyu-service/src/main/java/com/lianyu/service/support/OutputLanguageService.java"
+    },
+    {
+      "file": "OutputLanguageService.java",
+      "line": 187,
+      "text": "\n表達要求：\n- 禁止輸出括號內心獨白，只寫說出口的話\n- 禁止無故夾雜英文/日文等其他語言；必須用繁體中文表述",
+      "source": "lianyu-service/src/main/java/com/lianyu/service/support/OutputLanguageService.java"
+    },
+    {
+      "file": "OutputLanguageService.java",
+      "line": 192,
+      "text": "\n表达要求：\n- 心理活动、内心独白可用括号简短写出（如「（其实有点在意）」「（这家伙怎么又来了）」），与说出口的话区分开\n- 不要用括号写动作、表情、肢体语言（如「（微笑）」「（叹气）」「（转身离开）」）\n- 禁止无故夹杂英文/日文等其他语言；必须用简体中文表述",
+      "source": "lianyu-service/src/main/java/com/lianyu/service/support/OutputLanguageService.java"
+    },
+    {
+      "file": "OutputLanguageService.java",
+      "line": 197,
+      "text": "\n表达要求：\n- 禁止输出括号内心独白，只写说出口的话\n- 禁止无故夹杂英文/日文等其他语言；必须用简体中文表述",
+      "source": "lianyu-service/src/main/java/com/lianyu/service/support/OutputLanguageService.java"
     }
   ]
 }
