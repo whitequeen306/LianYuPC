@@ -199,6 +199,7 @@ Python 侧目前**没有** Resilience4j 等价物（按上游熔断/隔舱）、
 | **审计 C3 修复** | Java `RerankerService` 重排地址改为可配置（原为硬编码 DashScope + 用户 vault key，非 DashScope 用户必然 401 后静默降级成原序） | `2ffec9a` |
 | **记忆 outbox** | `memory_outbox` 表 + relay（幂等/指数退避/死信）+ 写入改事务内入队；真实 Milvus 端到端验证 | `9586f9c` |
 | **Python 接管记忆写** | 白名单写层（只允许 INSERT 两张表）+ writer（source_hash 对齐 Java）+ `/agent/memory/write`；跨语言契约 bug（PREFERENCE 不在 Java 枚举）修复 | `e721a05` |
+| **记忆抽取迁 Python** | 规则槽位 + LLM 抽取（prompt 逐字一致）+ 合并闸门；/agent/memory/extract-write 一步抽取并写入；修正 source_hash 只含 msgId 导致多槽位互相覆盖 | `24d9564` |
 | **3 条非 Graph 链路下沉** | 通用文本端口 `AgentTextPort` + `/agent/text/complete`（支持 history）：日记、朋友圈发帖、朋友圈评论全部接通，任何 null/异常回退 Java | `1d681b4`、`f948b65` |
 
 **容器级实测结论**：`lianyu-agent` healthy；backend 日志确认 `profile "prod"` 激活；

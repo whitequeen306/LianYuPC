@@ -47,6 +47,10 @@ public class MemoryWriter {
     private final MemoryExtractionService memoryExtractionService;
     private final MemoryVectorStore memoryVectorStore;
     private final MemoryOutboxService memoryOutboxService;
+
+    /** 可选：AGENT 模式下把「抽取 + 写入」整体交给 backend-agent（null => Java 原链路）。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.service.agent.AgentMemoryPort agentMemoryPort;
     private final StringRedisTemplate redisTemplate;
     private final ScheduledExecutorService rescheduleExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "memory-summary-reschedule");
@@ -81,6 +85,13 @@ public class MemoryWriter {
             }
 
             Collections.reverse(recentMsgs);
+            // Strangler: AGENT 模式下抽取与写入整体交给 Python（同一事务、同一哈希规则）
+            if (agentMemoryPort != null && agentMemoryPort.extractAndWriteIfActive(
+                    task.userId(), task.characterId(), toPortMessages(recentMsgs),
+                    task.provider(), task.model())) {
+                memoryCacheService.invalidate(task.userId(), task.characterId());
+                return;
+            }
             List<ExtractedMemory> extracted = memoryExtractionService.extract(recentMsgs, task);
             if (extracted.isEmpty()) {
                 log.debug("Skip memory write: no extracted memories, convId={}", task.conversationId());
@@ -130,6 +141,19 @@ public class MemoryWriter {
     private void sendSummaryTask(MemorySummaryTask task) {
         rabbitTemplate.convertAndSend(EXCHANGE, ROUTING_KEY, task);
     }
+
+    private java.util.List<com.lianyu.service.agent.AgentMemoryPort.AgentMemoryMessage> toPortMessages(
+            java.util.List<com.lianyu.dao.entity.Message> messages) {
+        java.util.List<com.lianyu.service.agent.AgentMemoryPort.AgentMemoryMessage> out = new java.util.ArrayList<>();
+        for (com.lianyu.dao.entity.Message m : messages) {
+            if (m != null && m.getContent() != null && !m.getContent().isBlank()) {
+                out.add(new com.lianyu.service.agent.AgentMemoryPort.AgentMemoryMessage(
+                        m.getId(), m.getRole(), m.getContent()));
+            }
+        }
+        return out;
+    }
+
 
     private void maybeReschedule(MemorySummaryTask task) {
         String debounceKey = debounceKey(task.conversationId(), task.characterId());
