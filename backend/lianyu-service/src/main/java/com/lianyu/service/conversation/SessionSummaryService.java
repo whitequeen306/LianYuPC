@@ -39,16 +39,7 @@ public class SessionSummaryService {
         if (state == null || StrUtil.isBlank(state.getText())) {
             return null;
         }
-        return """
-
-                
-                === 本次对话 Earlier 摘要 ===
-                """
-                + state.getText().trim()
-                + """
-                
-                
-                说明：摘要描述本次聊天中较早的内容；与用户最近几条消息冲突时，以最近消息为准。""";
+        return formatPrompt(state.getText());
     }
 
     @Async
@@ -176,5 +167,22 @@ public class SessionSummaryService {
 
     private static String redisKey(Long conversationId) {
         return REDIS_KEY_PREFIX + conversationId;
+    }
+
+    /** 纯格式化（无 IO）：便于快照比对，行为与原先完全一致。 */
+    static String formatPrompt(String text) {
+        if (text == null || text.strip().isEmpty()) {
+            return null;
+        }
+        return """
+
+                
+                === 本次对话 Earlier 摘要 ===
+                """
+                + text.trim()
+                + """
+                
+                
+                说明：摘要描述本次聊天中较早的内容；与用户最近几条消息冲突时，以最近消息为准。""";
     }
 }
