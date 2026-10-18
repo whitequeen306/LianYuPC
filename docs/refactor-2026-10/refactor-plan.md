@@ -196,7 +196,10 @@ Python 侧目前**没有** Resilience4j 等价物（按上游熔断/隔舱）、
 | **P4a 流式端点** | Python `/agent/chat-stream`（SSE 契约逐字节对齐、不发 pieces、语言门发 replace）+ `gateway.stream_text`（首字前瞬断重试）+ 8 个契约测试；修 wire 字段名与 usage 透传 | 见提交 |
 | **P4b 消费端** | Java `AgentSseParser`（纯函数，13 用例）+ `AgentStreamBridge`（增量中继）+ `AgentStreamPort` 接线 `ChatTurnFacade` | `c4a4231`、`3af7755` |
 | **P5 读路径** | `memory/embedding.py`（向量化 + rerank，base_url 可配置）+ `memory/vector_cache.py`（Redis 缓存向量 + 进程内余弦，Milvus 缺失时的真实语义召回）+ 三级召回 | `d35c459` |
-| **审计 C3 修复** | Java `RerankerService` 重排地址改为可配置（原为硬编码 DashScope + 用户 vault key，非 DashScope 用户必然 401 后静默降级成原序） | 见提交 |
+| **审计 C3 修复** | Java `RerankerService` 重排地址改为可配置（原为硬编码 DashScope + 用户 vault key，非 DashScope 用户必然 401 后静默降级成原序） | `2ffec9a` |
+| **记忆 outbox** | `memory_outbox` 表 + relay（幂等/指数退避/死信）+ 写入改事务内入队；真实 Milvus 端到端验证 | `9586f9c` |
+| **Python 接管记忆写** | 白名单写层（只允许 INSERT 两张表）+ writer（source_hash 对齐 Java）+ `/agent/memory/write`；跨语言契约 bug（PREFERENCE 不在 Java 枚举）修复 | `e721a05` |
+| **3 条非 Graph 链路下沉** | 通用文本端口 `AgentTextPort` + `/agent/text/complete`（支持 history）：日记、朋友圈发帖、朋友圈评论全部接通，任何 null/异常回退 Java | `1d681b4`、`f948b65` |
 
 **容器级实测结论**：`lianyu-agent` healthy；backend 日志确认 `profile "prod"` 激活；
 gateway TLS → `/api/agent/` → `{"status":"UP"}`；proactive-turn 无凭据 → `no_text_credentials`、user mismatch → 403。
