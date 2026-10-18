@@ -38,7 +38,7 @@ class PromptShadowComparatorTest {
         comparator = new PromptShadowComparator(client, stats);
         snapshot = new AssemblySnapshot("小林", Map.of("personality", "温柔"), null,
                 "记忆块", "工具提示", "情绪块", "zh", true, true, 2,
-                true, "时间事实", "上海", "full");
+                true, "时间事实", "上海", "full", false, null, null, null);
     }
 
     @Test
@@ -182,5 +182,54 @@ class PromptShadowComparatorTest {
         PromptShadowComparator.Diff diff = PromptShadowComparator.compare(javaPrompt, pythonPrompt);
         assertEquals(PromptShadowComparator.maskVolatile(javaPrompt).length(), diff.javaLength());
         assertTrue(diff.equal(), "时间不同但掩码后相同 → 不算漂移");
+    }
+
+    // ── 分段差异定位 ──
+
+    @Test
+    void segmentsAlignByHeaderAndFlagDifferentBlock() {
+        String javaPrompt = "preamble text\n=== 关于用户的记忆 ===\n记忆A\n=== 当前情绪状态 ===\n开心\n";
+        String pythonPrompt = "preamble text\n=== 关于用户的记忆 ===\n记忆A\n=== 当前情绪状态 ===\n难过\n";
+        var segments = PromptShadowComparator.segmentDiff(javaPrompt, pythonPrompt);
+
+        assertEquals(3, segments.size(), "preamble + 两个 === 段");
+        assertTrue(segments.get(0).equal());
+        assertTrue(segments.get(1).equal(), "记忆段相同");
+        assertFalse(segments.get(2).equal(), "情绪段应被标记为不同");
+        assertTrue(segments.get(2).name().contains("当前情绪状态"));
+    }
+
+    @Test
+    void segmentsHandleBracketHeaders() {
+        String javaPrompt = "[用户画像]\n- a\n[近期情绪线索]\n- b\n";
+        String pythonPrompt = "[用户画像]\n- a\n[近期情绪线索]\n- c\n";
+        var segments = PromptShadowComparator.segmentDiff(javaPrompt, pythonPrompt);
+        assertTrue(segments.get(0).equal());
+        assertTrue(segments.get(1).equal());
+        assertFalse(segments.get(2).equal());
+    }
+
+    @Test
+    void segmentsReportMissingBlock() {
+        String javaPrompt = "base\n=== 当前真实环境 ===\ntime\n";
+        String pythonPrompt = "base\n";
+        var segments = PromptShadowComparator.segmentDiff(javaPrompt, pythonPrompt);
+        assertFalse(segments.get(1).equal());
+        assertEquals(0, segments.get(1).pythonChars());
+    }
+
+    @Test
+    void segmentsEqualForIdenticalPrompts() {
+        String prompt = "a\n=== x ===\nb\n";
+        assertTrue(PromptShadowComparator.segmentDiff(prompt, prompt).stream()
+                .allMatch(PromptShadowComparator.SegmentDiff::equal));
+    }
+
+    @Test
+    void segmentDescribeHasNoPromptBody() {
+        String javaPrompt = "base\n=== x ===\nsecret java body\n";
+        String pythonPrompt = "base\n=== x ===\nsecret py body\n";
+        var segment = PromptShadowComparator.segmentDiff(javaPrompt, pythonPrompt).get(1);
+        assertFalse(segment.describe().contains("secret"), "日志不得包含 prompt 正文");
     }
 }

@@ -198,13 +198,18 @@ public class ChatTurnFacade {
                             turn.scene().includeTime(),
                             timeFact,
                             city,
-                            afterBase);
+                            afterBase,
+                            true,
+                            turn.scene().name(),
+                            character.getId(),
+                            command.getConversationId());
             promptShadowPort.compareAsync(command.getUserId(), snapshot, turn.systemPrompt());
         } catch (Exception e) {
             log.debug("Prompt shadow dispatch failed: {}", e.toString());
         }
     }
 
+    /** 真实请求下的分段比对开关（默认开）：只打印「哪一段不同」，不含正文。 */
     private static String joinBlocks(String a, String b, String c) {
         StringBuilder sb = new StringBuilder();
         for (String part : new String[]{a, b, c}) {

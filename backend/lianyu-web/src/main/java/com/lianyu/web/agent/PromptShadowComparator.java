@@ -76,6 +76,14 @@ public class PromptShadowComparator {
      * @return 比较结果；Python 不可用时返回 null
      */
     public Diff compareWithAgent(long userId, AssemblySnapshot snapshot, String javaPrompt) {
+        return compareWithAgent(userId, snapshot, javaPrompt, false);
+    }
+
+    /**
+     * @param reportSegments 为 true 时把分段结果写进日志（真实请求下用于定位）
+     */
+    public Diff compareWithAgent(long userId, AssemblySnapshot snapshot, String javaPrompt,
+                                 boolean reportSegments) {
         if (javaPrompt == null) {
             return null;
         }
@@ -96,8 +104,78 @@ public class PromptShadowComparator {
         } else {
             shadowStats.recordDiff("prompt");
             log.warn("Prompt shadow[{}]: {}", userId, diff.describe());
+            if (reportSegments) {
+                java.util.List<String> bad = new java.util.ArrayList<>();
+                for (SegmentDiff segment : segmentDiff(javaPrompt, pythonPrompt)) {
+                    if (!segment.equal()) {
+                        bad.add(segment.describe());
+                    }
+                }
+                // 只打印「哪些段不同」，不含 prompt 正文
+                log.warn("Prompt shadow[{}] segments DIFF: {}", userId, bad);
+            }
         }
         return diff;
+    }
+
+    /** 分段差异：定位「哪一段不同」，而不只是「第几个字符不同」。 */
+    public record SegmentDiff(String name, boolean equal, int javaChars, int pythonChars, int firstDiffAt) {
+        public String describe() {
+            return equal
+                    ? name + " match(" + javaChars + ")"
+                    : name + " DIFF java=" + javaChars + " py=" + pythonChars + " at=" + firstDiffAt;
+        }
+    }
+
+    /** 段落分隔标记：以 "=== " 开头的行，或 "[...]" 形式的块标题。 */
+    private static final java.util.regex.Pattern SEGMENT_HEADER =
+            java.util.regex.Pattern.compile("^(=== .*?===\\s*$|\\[[^\\]]+\\]\\s*$)");
+
+    /**
+     * 按段落切分并逐段比对。
+     *
+     * <p>为什么需要：整串 diff 只能给出「第 172 个字符不同」，而排查时真正想知道的是
+     * 「记忆块不一样，还是情绪块不一样」。分段后差异会直接落到具体块上。
+     *
+     * <p>切分只依赖**两侧共有的标题行**（`=== … ===` 或 `[标签]`），
+     * 因此中英日不同语言的标题也能自然对齐 —— 只要两边用同一套模板。
+     */
+    public static java.util.List<SegmentDiff> segmentDiff(String javaPrompt, String pythonPrompt) {
+        java.util.List<SegmentDiff> result = new java.util.ArrayList<>();
+        java.util.List<java.util.Map.Entry<String, String>> left = splitSegments(javaPrompt);
+        java.util.List<java.util.Map.Entry<String, String>> right = splitSegments(pythonPrompt);
+
+        int count = Math.max(left.size(), right.size());
+        for (int i = 0; i < count; i++) {
+            java.util.Map.Entry<String, String> l = i < left.size() ? left.get(i) : null;
+            java.util.Map.Entry<String, String> r = i < right.size() ? right.get(i) : null;
+            String name = l != null ? l.getKey() : (r != null ? r.getKey() : "#" + i);
+            String lv = l != null ? l.getValue() : "";
+            String rv = r != null ? r.getValue() : "";
+            Diff diff = compare(lv, rv);
+            result.add(new SegmentDiff(name, diff.equal(), diff.javaLength(), diff.pythonLength(),
+                    diff.firstDiffAt()));
+        }
+        return result;
+    }
+
+    /** 切分为 (标题, 正文) 列表；第一段的标题为 `<preamble>`。 */
+    static java.util.List<java.util.Map.Entry<String, String>> splitSegments(String prompt) {
+        java.util.List<java.util.Map.Entry<String, String>> segments = new java.util.ArrayList<>();
+        String text = prompt == null ? "" : prompt;
+        String currentName = "<preamble>";
+        StringBuilder body = new StringBuilder();
+        for (String line : text.split("\n", -1)) {
+            if (SEGMENT_HEADER.matcher(line.trim()).matches()) {
+                segments.add(java.util.Map.entry(currentName, body.toString()));
+                currentName = line.trim();
+                body.setLength(0);
+            } else {
+                body.append(line).append('\n');
+            }
+        }
+        segments.add(java.util.Map.entry(currentName, body.toString()));
+        return segments;
     }
 
     /** 组装请求体（字段名与 Python 端 alias 一致）。 */

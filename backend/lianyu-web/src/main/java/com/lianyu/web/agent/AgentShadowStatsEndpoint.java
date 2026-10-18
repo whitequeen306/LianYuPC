@@ -173,6 +173,12 @@ public class AgentShadowStatsEndpoint {
             out.put("javaChars", diff.javaLength());
             out.put("pythonChars", diff.pythonLength());
             out.put("firstDiffAt", diff.firstDiffAt());
+            java.util.List<String> segments = new java.util.ArrayList<>();
+            for (PromptShadowComparator.SegmentDiff segment
+                    : PromptShadowComparator.segmentDiff(javaPrompt, pythonPrompt)) {
+                segments.add(segment.describe());
+            }
+            out.put("segments", segments);
             return out;
         } catch (Exception e) {
             out.put("reachable", false);

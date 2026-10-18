@@ -51,7 +51,7 @@ public class PromptShadowAdapter implements PromptShadowPort {
         try {
             CompletableFuture.runAsync(() -> {
                 try {
-                    comparator.compareWithAgent(userId, snapshot, javaPrompt);
+                    comparator.compareWithAgent(userId, snapshot, javaPrompt, true);
                 } catch (Exception e) {
                     // 影子比对永不影响主链路
                     log.debug("Prompt shadow failed silently: {}", e.toString());

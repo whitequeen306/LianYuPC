@@ -39,7 +39,11 @@ public record AssemblySnapshot(
         boolean includeTime,
         String timeFact,
         String city,
-        String afterBase) {
+        String afterBase,
+        boolean useInternalData,
+        String scene,
+        Long characterId,
+        Long conversationId) {
 
     public Map<String, Object> toBody() {
         Map<String, Object> body = new LinkedHashMap<>();
@@ -57,6 +61,16 @@ public record AssemblySnapshot(
         body.put("timeFact", timeFact);
         body.put("city", city);
         body.put("afterBase", afterBase == null ? "full" : afterBase);
+        body.put("useInternalData", useInternalData);
+        if (scene != null) {
+            body.put("scene", scene);
+        }
+        if (characterId != null) {
+            body.put("characterId", characterId);
+        }
+        if (conversationId != null) {
+            body.put("conversationId", conversationId);
+        }
         return body;
     }
 }
