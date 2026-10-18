@@ -71,6 +71,18 @@ class Settings(BaseSettings):
     memory_semantic_ttl_minutes: float = 15.0
     memory_recent_ttl_minutes: float = 60.0
 
+    # 向量化 / 重排（P5 读路径）。base_url 可配置：修掉 Java 侧硬编码 DashScope 地址的缺陷
+    embedding_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    embedding_api_key: str = ""
+    embedding_model: str = "text-embedding-v3"
+    embedding_dim: int = 1024
+    rerank_base_url: str = "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
+    rerank_api_key: str = ""
+    rerank_model: str = "gte-rerank-v2"
+    # 进程内向量检索（Milvus 缺失时的真实语义召回）
+    memory_vector_ttl_hours: float = 168.0
+    memory_vector_max_candidates: int = 50
+
     # 角色近况（对齐 CharacterRecentActivityService）
     recent_activity_cache_hours: float = 1.0
     recent_activity_max_lines: int = 5

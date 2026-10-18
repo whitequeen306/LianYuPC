@@ -114,6 +114,12 @@ services:
       LIANYU_AGENT_MYSQL_PASSWORD: ${MYSQL_PASSWORD:-}
       LIANYU_AGENT_MYSQL_DATABASE: lianyu
       LIANYU_AGENT_REDIS_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/0
+      # 记忆读路径：向量化 + 重排（P5）
+      LIANYU_AGENT_EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      LIANYU_AGENT_EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      LIANYU_AGENT_EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-v3}
+      LIANYU_AGENT_RERANK_API_KEY: ${RERANKER_API_KEY:-}
+      LIANYU_AGENT_RERANK_BASE_URL: ${RERANKER_BASE_URL:-https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank}
       TZ: Asia/Shanghai
     depends_on:
       mysql:

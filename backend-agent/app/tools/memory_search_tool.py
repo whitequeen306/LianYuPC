@@ -15,6 +15,8 @@ from typing import Any
 
 from app.config import get_settings
 from app.db import cache_get_json, cache_put_json, fetch_all
+from app.memory import rerank as rerank_docs
+from app.memory.vector_cache import rank_by_vector
 from app.tools.registry import ToolSpec, register
 
 logger = logging.getLogger(__name__)
@@ -108,10 +110,28 @@ async def search_semantic(
         logger.warning("memory search db failed: %s", exc)
         return []
 
-    summaries = [
-        f"- {row['summary']}" for row in rows
+    candidates = [
+        (row.get("id"), str(row["summary"]).strip()) for row in rows
         if row.get("summary") and str(row["summary"]).strip()
-    ][:limit]
+    ]
+    if not candidates:
+        return []
+
+    # 三级召回，逐级降级（任一级失败都不打断对话）：
+    #   1) 向量语义召回（Redis 缓存向量 + 进程内余弦，无需 Milvus）
+    #   2) rerank 精排
+    #   3) 保持 MySQL 顺序（重要性降序，对齐 Java 的 0.5 分兜底）
+    ranked = await rank_by_vector(query, candidates)
+    if ranked:
+        pool = [text for _id, text, _score in ranked]
+    else:
+        pool = [text for _id, text in candidates]
+
+    ordered = await rerank_docs(query, pool, top_n=limit)
+    if ordered:
+        summaries = [f"- {text}" for _idx, text, _score in ordered][:limit]
+    else:
+        summaries = [f"- {text}" for text in pool][:limit]
     if not summaries:
         return []
     await cache_put_json(key, summaries, settings.memory_semantic_ttl_minutes * 60, field=field)
