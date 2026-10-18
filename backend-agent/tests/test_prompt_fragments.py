@@ -95,3 +95,43 @@ def test_unknown_fragment_raises_with_hint():
 def test_fragment_lookup_by_source_and_line():
     text = fragment("ChatTurnPromptAssembler.java", 165)
     assert "硬性要求" in text
+
+# ── 覆盖度护栏：prompt 正文主要不在 CharacterPromptBuilder，而在规则 hook ──
+
+
+HOOK_FILES = (
+    "ReplyBehaviorRuleHook.java",
+    "OutputLanguageRuleHook.java",
+    "GroupChatRuleHook.java",
+)
+
+
+def test_rule_hook_files_are_in_baseline():
+    """这四个文件才是 prompt 正文的主战场，缺一个基线就不完整。"""
+    files = {source for (source, _line) in all_fragments()}
+    for hook in HOOK_FILES:
+        assert hook in files, f"{hook} 未纳入片段基线"
+
+
+def test_reply_behavior_has_expected_volume():
+    """回复行为规则按 4 语种 × 内心独白开关展开，体量必须足够。"""
+    blocks = [t for (src, _l), t in all_fragments().items() if src == "ReplyBehaviorRuleHook.java"]
+    assert len(blocks) >= 20, f"ReplyBehaviorRuleHook 只抽到 {len(blocks)} 块，疑似漏抽"
+    assert sum(len(b) for b in blocks) > 3000
+
+
+def test_empty_fragments_are_intentional_and_rare():
+    """Java 里存在有意为空的文本块（某个变体不加规则文本）。
+
+    这类空块必须保留 —— 它表示「该分支不追加任何文本」，
+    与「抽取器漏抽」是两回事。这里限制数量，防止漏抽被误当成有意为空。
+    """
+    empties = [(src, line) for (src, line), text in all_fragments().items() if not text.strip()]
+    assert len(empties) <= 6, f"空片段过多（{len(empties)}），疑似抽取器出错：{empties}"
+    for source, line in empties:
+        assert source == "ReplyBehaviorRuleHook.java", f"意外来源的空片段：{source}:{line}"
+
+
+def test_total_baseline_volume():
+    total = sum(len(t) for t in all_fragments().values())
+    assert total > 8000, f"基线总字数只有 {total}，疑似抽取器漏抽"

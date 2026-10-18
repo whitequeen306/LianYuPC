@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -33,6 +34,10 @@ TARGETS = [
     "lianyu-service/src/main/java/com/lianyu/service/graph/ChatTurnPromptAssembler.java",
     "lianyu-service/src/main/java/com/lianyu/service/ai/CharacterPromptBuilder.java",
     "lianyu-service/src/main/java/com/lianyu/service/support/OutputLanguageService.java",
+    # 规则 hook：prompt 正文主要在这里（ReplyBehavior 一个文件就有 41 个文本块）
+    "lianyu-service/src/main/java/com/lianyu/service/rules/hooks/ReplyBehaviorRuleHook.java",
+    "lianyu-service/src/main/java/com/lianyu/service/rules/hooks/OutputLanguageRuleHook.java",
+    "lianyu-service/src/main/java/com/lianyu/service/rules/hooks/GroupChatRuleHook.java",
 ]
 
 _BLOCK_OPEN = '"""'
@@ -86,6 +91,12 @@ def extract(path: Path) -> list[dict]:
 
 
 def main() -> int:
+    # Windows 控制台默认 GBK，日文/居中点在打印时会 UnicodeEncodeError；
+    # 这里只影响日志输出，不影响写文件（文件始终 UTF-8）。
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        pass
     collected: list[dict] = []
     for rel in TARGETS:
         path = JAVA_ROOT / rel
