@@ -86,6 +86,11 @@ public class CharacterDiaryService {
     private final ApiKeyVaultService apiKeyVaultService;
     private final com.lianyu.service.graph.ChatTurnFacade chatTurnFacade;
     private final CharacterPromptBuilder promptBuilder;
+
+    /** Optional: AGENT mode delegates the model call to backend-agent (null => fallback to Java). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.service.agent.AgentTextPort agentTextPort;
+
     private final MemoryRetriever memoryRetriever;
     private final OutputLanguageService outputLanguageService;
     private final ObjectMapper objectMapper;
@@ -409,11 +414,24 @@ public class CharacterDiaryService {
         aiReq.setMessages(messages);
 
         try {
-            ChatResult result = aiChatService.chatBlocking(userId, aiReq);
-            if (result == null) {
-                return null;
+            String content = null;
+            // Strangler: AGENT mode delegates this model call to backend-agent; null => fallback
+            if (agentTextPort != null) {
+                content = agentTextPort.complete(
+                        userId, basePrompt, instruction + "\n\n" + chatSummary,
+                        userVault.getProvider(), userVault.getModelDefault(), 0.85);
+                if (content != null) {
+                    log.info("Diary turn served by agent runtime: userId={}, characterId={}",
+                            userId, character.getId());
+                }
             }
-            String content = result.getContent();
+            if (content == null || content.isBlank()) {
+                ChatResult result = aiChatService.chatBlocking(userId, aiReq);
+                if (result == null) {
+                    return null;
+                }
+                content = result.getContent();
+            }
             if (content == null || content.isBlank()) {
                 return null;
             }

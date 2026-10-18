@@ -248,6 +248,30 @@ public class AgentRuntimeClient {
                 .bodyToFlux(String.class);
     }
 
+    /** 通用 POST：返回响应体字符串，失败返回 null（不抛）。 */
+    public String postJson(String uri, long userId, Map<String, Object> body) {
+        try {
+            return restClient.post()
+                    .uri(uri)
+                    .header("X-User-Id", String.valueOf(userId))
+                    .body(body)
+                    .retrieve()
+                    .body(String.class);
+        } catch (Exception e) {
+            log.warn("Agent runtime POST {} failed: {}", uri, e.toString());
+            return null;
+        }
+    }
+
+    /** 解析 JSON；失败返回空对象，调用方用 path() 取值。 */
+    public com.fasterxml.jackson.databind.JsonNode readTree(String raw) {
+        try {
+            return objectMapper.readTree(raw == null ? "{}" : raw);
+        } catch (Exception e) {
+            return objectMapper.createObjectNode();
+        }
+    }
+
     public AgentRuntimeProperties properties() {
         return properties;
     }

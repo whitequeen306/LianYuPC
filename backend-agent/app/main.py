@@ -19,6 +19,7 @@ from app.config import get_settings
 from app.desktop_observe import DesktopObserveRequest, observe_desktop
 from app.gateway import ModelGateway, decode_png_base64, get_gateway
 from app.stream_chat import DONE_FRAME, sse_error, stream_chat_events
+from app.text_turn import complete_text
 from app.tools import supported_tool_schemas
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -185,6 +186,47 @@ async def chat_stream(
         event_source(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ─────────────────────────── 通用阻塞文本回合 ───────────────────────────
+
+
+class TextCompleteBody(BaseModel):
+    """Java 已组装好 system + user 文本，只有一次模型调用需要执行。"""
+
+    user_id: int = Field(alias="userId")
+    system: str = ""
+    user_text: str = Field(alias="userText")
+    text_base_url: str | None = Field(default=None, alias="textBaseUrl")
+    text_api_key: str | None = Field(default=None, alias="textApiKey")
+    text_model: str | None = Field(default=None, alias="textModel")
+    provider: str | None = None
+    temperature: float = 0.85
+    max_tokens: int | None = Field(default=None, alias="maxTokens")
+
+    model_config = {"populate_by_name": True}
+
+
+@app.post("/agent/text/complete")
+async def text_complete(
+    body: TextCompleteBody,
+    user_id_header: str | None = Header(default=None, alias="X-User-Id"),
+) -> dict[str, Any]:
+    if user_id_header and str(body.user_id) != user_id_header:
+        raise HTTPException(status_code=403, detail="user mismatch")
+    if not body.text_base_url or not body.text_api_key:
+        return {"error": "no_text_credentials"}
+    return await complete_text(
+        get_gateway(),
+        base_url=body.text_base_url,
+        api_key=body.text_api_key,
+        model=body.text_model or "default",
+        system=body.system,
+        user_text=body.user_text,
+        temperature=body.temperature,
+        max_tokens=body.max_tokens,
+        provider=body.provider,
     )
 
 
