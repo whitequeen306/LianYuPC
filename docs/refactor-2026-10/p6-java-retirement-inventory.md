@@ -53,7 +53,7 @@
 | 阶段 | 可删内容 | 前置条件 |
 |---|---|---|
 | **P6-a** | ✅ 已删：`MemoryOutboxRelay` + 测试 | Python relay 独占投影（已完成） |
-| **P6-b** | `MemoryMilvusSyncService` 的自动 resync | Python 侧补「全量对账」命令 |
+| **P6-b** | ✅ 已删：`MemoryMilvusSyncService` + `milvus.resync-on-startup` 配置 | Python `POST /agent/memory/reconcile` 等价（容器实测修复 2 条） |
 | **P6-c** | `MemoryExtractionService` / `MemoryLlmExtractor` / `MemoryExtractionHeuristics` / `MemoryOutboxService` | OFF 模式退役 + MQ 入口迁 Python |
 | **P6-d** | `MemoryWriter` / `MemoryVectorStore` / `MemoryCacheService` / `MemoryRetriever` | 需先让 `ChatTurnGraph` 的 prompt 注入改读 Python 产出的缓存 |
 | **P6-e** | `MemoryConsumer`（MQ） | ❌ **不可执行（本轮结论修正）**，见下方「MQ 为何不该迁」 |
