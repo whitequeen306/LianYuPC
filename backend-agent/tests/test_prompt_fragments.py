@@ -77,9 +77,10 @@ def test_city_authority_fragment_present():
     assert "不得沿用历史里的旧城市" in joined or "不要沿用历史里的旧城市" in joined
 
 
-def test_fragments_have_no_leading_indent_and_no_trailing_newline():
+def test_fragments_have_no_leading_indent_and_at_most_one_trailing_newline():
+    """Java text block 规则：定界行独占一行时，换行属于内容（最多一个）。"""
     for (source, line), text in all_fragments().items():
-        assert not text.endswith("\n"), f"{source}:{line} 不应以换行结尾（Java text block 规则）"
+        assert not text.endswith("\n\n"), f"{source}:{line} 不应以多个换行结尾"
         for row in text.split("\n"):
             if row:
                 assert not row.startswith("    "), f"{source}:{line} 仍有未去缩进的行"

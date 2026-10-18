@@ -3,7 +3,7 @@
     {
       "file": "ChatTurnPromptAssembler.java",
       "line": 161,
-      "text": "\n\n=== 当前真实环境（最高优先级 · 时间锚点） ===",
+      "text": "\n\n=== 当前真实环境（最高优先级 · 时间锚点） ===\n",
       "source": "lianyu-service/src/main/java/com/lianyu/service/graph/ChatTurnPromptAssembler.java"
     },
     {
@@ -15,7 +15,7 @@
     {
       "file": "ChatTurnPromptAssembler.java",
       "line": 183,
-      "text": "\n\n=== 用户当前所在现实城市（权威） ===",
+      "text": "\n\n=== 用户当前所在现实城市（权威） ===\n",
       "source": "lianyu-service/src/main/java/com/lianyu/service/graph/ChatTurnPromptAssembler.java"
     },
     {

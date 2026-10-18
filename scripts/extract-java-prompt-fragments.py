@@ -43,9 +43,10 @@ def strip_java_text_block(raw: str) -> str:
         raise ValueError("unsupported escape (\\s or line continuation) in prompt block")
 
     lines = raw.split("\n")
-    # 结尾定界行独占一行时，块内容不以换行结束
+    # 结尾定界行独占一行时：只去掉它的缩进，**保留其前面的换行**
+    # （JLS 3.10.6：内容到定界行开头为止，换行属于内容；行首空白由缩进处理去掉）
     if lines and lines[-1].strip() == "":
-        lines = lines[:-1]
+        lines[-1] = ""
 
     indents = [
         len(line) - len(line.lstrip())
