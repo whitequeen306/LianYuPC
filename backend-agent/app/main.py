@@ -273,7 +273,11 @@ async def prompt_assemble(
         emotion_block = body.emotion_block
         city = body.city
         if body.use_internal_data:
-            from app.data_readers import load_emotion, load_memory_context
+            from app.data_readers import (
+                load_character_owner,
+                load_emotion,
+                load_memory_context,
+            )
             from app.emotion_block import format_emotion_block
 
             scene = (body.scene or "SINGLE").strip().upper()
@@ -286,7 +290,9 @@ async def prompt_assemble(
             # 显式传入的情绪块优先：调用方可能在「组装同一时刻」同步取好快照，
             # 比这里现读更接近 Java 实际使用的值（情绪会被本轮对话更新）。
             if not emotion_block:
-                emotion = await load_emotion(body.character_id or 0, body.user_id)
+                # 情绪按角色所有者维度存储，与 Java 保持一致
+                owner_id = await load_character_owner(body.character_id or 0) or body.user_id
+                emotion = await load_emotion(body.character_id or 0, owner_id)
                 emotion_block = format_emotion_block(
                     lang=body.output_language,
                     current_emotion=(emotion or {}).get("current_emotion"),

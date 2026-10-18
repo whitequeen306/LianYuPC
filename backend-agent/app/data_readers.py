@@ -52,6 +52,22 @@ async def load_relationship(user_id: int, character_id: int) -> dict[str, Any] |
     }
 
 
+async def load_character_owner(character_id: int) -> int | None:
+    """角色的所有者 id。
+
+    情绪状态在 Java 侧是按 **(character_id, owner_user_id)** 存的，不是按会话用户。
+    用请求者 id 去读会读到另一行（或读不到），在影子比对里表现为「情绪块内容不同」。
+    """
+    if not character_id:
+        return None
+    rows = await fetch_all(
+        "SELECT owner_user_id FROM `character` WHERE id = %s LIMIT 1", (character_id,))
+    if not rows:
+        return None
+    owner = rows[0].get("owner_user_id")
+    return int(owner) if owner is not None else None
+
+
 async def load_emotion(character_id: int, user_id: int) -> dict[str, Any] | None:
     """返回情绪状态原始字段；无行返回 None。"""
     if not character_id or not user_id:
@@ -140,4 +156,5 @@ async def load_session_summary(conversation_id: int | None) -> str | None:
     return None
 
 
-__all__ = ["load_emotion", "load_memory_context", "load_relationship", "load_session_summary"]
+__all__ = ["load_character_owner", "load_emotion", "load_memory_context",
+           "load_relationship", "load_session_summary"]
