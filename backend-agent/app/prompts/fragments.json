@@ -1,0 +1,58 @@
+{
+  "blocks": [
+    {
+      "file": "ChatTurnPromptAssembler.java",
+      "line": 161,
+      "text": "\n\n=== 当前真实环境（最高优先级 · 时间锚点） ===",
+      "source": "lianyu-service/src/main/java/com/lianyu/service/graph/ChatTurnPromptAssembler.java"
+    },
+    {
+      "file": "ChatTurnPromptAssembler.java",
+      "line": 165,
+      "text": "\n硬性要求：\n1. 「现在」的时段、星期、日期、早晚安问候，只能依据本条「当前真实时间 / 当前时段」，禁止用对话历史推断。\n2. 历史里出现过的「早上好 / 晚安 / 午安」等只代表当时，绝不代表现在；即使早上聊过「早上好」，晚上也绝不能再说早上好。\n3. 涉及时间的词语（早上好、晚上好、今天、昨晚、现在几点等）必须与本条时段一致；不确定就不要主动用时段问候。\n4. 不要为了接续旧话题而复读过时问候；可自然提起「早上聊过的事」，但措辞必须符合现在的时段。",
+      "source": "lianyu-service/src/main/java/com/lianyu/service/graph/ChatTurnPromptAssembler.java"
+    },
+    {
+      "file": "ChatTurnPromptAssembler.java",
+      "line": 183,
+      "text": "\n\n=== 用户当前所在现实城市（权威） ===",
+      "source": "lianyu-service/src/main/java/com/lianyu/service/graph/ChatTurnPromptAssembler.java"
+    },
+    {
+      "file": "ChatTurnPromptAssembler.java",
+      "line": 187,
+      "text": "\n注意：对话历史中若提到用户还在其他城市、或基于旧城市的天气/当地情况，一律视为过时信息。\n涉及用户所在地、搬迁、当地天气与时区等，必须以本条中的当前城市为准，不要沿用历史里的旧城市。",
+      "source": "lianyu-service/src/main/java/com/lianyu/service/graph/ChatTurnPromptAssembler.java"
+    },
+    {
+      "file": "ChatTurnPromptAssembler.java",
+      "line": 201,
+      "text": "\n=== おやすみモード（最優先） ===\nユーザーが「おやすみ」を言った。あなたはとても優しく、落ち着いた口調で応答する。\n静かに相手を眠りに誘い、短く温かいおやすみの言葉をかける。長文は避け、1〜3文で。\n子守唄や寝物語を求められたら短く応じてもよい。",
+      "source": "lianyu-service/src/main/java/com/lianyu/service/graph/ChatTurnPromptAssembler.java"
+    },
+    {
+      "file": "ChatTurnPromptAssembler.java",
+      "line": 207,
+      "text": "\n=== Goodnight Mode (Highest Priority) ===\nThe user just said goodnight. Respond with your gentlest, most soothing voice.\nHelp them drift off to sleep with a short, warm goodnight message. Keep it to 1-3 sentences.\nIf they ask for a lullaby or bedtime story, you may provide a short one.",
+      "source": "lianyu-service/src/main/java/com/lianyu/service/graph/ChatTurnPromptAssembler.java"
+    },
+    {
+      "file": "ChatTurnPromptAssembler.java",
+      "line": 213,
+      "text": "\n=== 晚安模式（最高優先） ===\n用戶剛剛說了晚安。用你最溫柔、最平靜的語氣回應。\n輕輕哄對方入睡，送上一句溫暖的晚安。控制在1-3句話，不要長篇大論。\n如果對方想聽睡前故事或搖籃曲，可以簡短回應。",
+      "source": "lianyu-service/src/main/java/com/lianyu/service/graph/ChatTurnPromptAssembler.java"
+    },
+    {
+      "file": "ChatTurnPromptAssembler.java",
+      "line": 219,
+      "text": "\n=== 晚安模式（最高优先级） ===\n用户刚刚说了晚安。用你最温柔、最平静的语气回应。\n轻轻哄对方入睡，送上一句温暖的晚安。控制在1-3句话，不要长篇大论。\n如果对方想听睡前故事或摇篮曲，可以简短回应。",
+      "source": "lianyu-service/src/main/java/com/lianyu/service/graph/ChatTurnPromptAssembler.java"
+    },
+    {
+      "file": "CharacterPromptBuilder.java",
+      "line": 71,
+      "text": "\n记忆优先级：上述记忆是用户最新、最准确的资料。\n若本对话历史里出现过与之矛盾的用户自称（例如旧名字、旧喜好），必须以记忆为准，不要继续沿用历史中的过时说法。",
+      "source": "lianyu-service/src/main/java/com/lianyu/service/ai/CharacterPromptBuilder.java"
+    }
+  ]
+}
