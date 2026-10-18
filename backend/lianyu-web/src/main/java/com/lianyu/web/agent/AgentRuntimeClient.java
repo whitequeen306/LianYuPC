@@ -263,6 +263,25 @@ public class AgentRuntimeClient {
         }
     }
 
+    /**
+     * 轻量健康探测（GET /agent/health）。
+     *
+     * <p>用于 AGENT 模式下的**前置判断**：agent 宕机时立刻回退 Java，
+     * 而不是等到流式请求发起后才失败（那时已经无法回退了）。
+     */
+    public boolean isHealthy() {
+        try {
+            String body = restClient.get()
+                    .uri("/agent/health")
+                    .retrieve()
+                    .body(String.class);
+            return body != null && body.contains("UP");
+        } catch (Exception e) {
+            log.debug("Agent health probe failed: {}", e.toString());
+            return false;
+        }
+    }
+
     /** 解析 JSON；失败返回空对象，调用方用 path() 取值。 */
     public com.fasterxml.jackson.databind.JsonNode readTree(String raw) {
         try {

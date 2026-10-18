@@ -31,6 +31,7 @@ class AgentPromptAssemblyAdapterTest {
 
     private AgentRuntimeClient client() {
         AgentRuntimeClient client = mock(AgentRuntimeClient.class);
+        when(client.isHealthy()).thenReturn(true);
         when(client.readTree(anyString())).thenAnswer(inv -> om.readTree((String) inv.getArgument(0)));
         return client;
     }

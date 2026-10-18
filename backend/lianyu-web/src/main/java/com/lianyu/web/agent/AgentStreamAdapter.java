@@ -45,6 +45,11 @@ public class AgentStreamAdapter implements AgentStreamPort {
         if (client.properties().mode() != AgentRuntimeProperties.Mode.AGENT) {
             return null;
         }
+        // 前置健康检查：agent 不可用时立刻回退 Java，避免「已发出流式请求后无法回退」。
+        // 结果缓存 3 秒，避免每条消息都探测。
+        if (!reachable()) {
+            return null;
+        }
         String baseUrl;
         String apiKey;
         String resolvedModel;
@@ -97,4 +102,17 @@ public class AgentStreamAdapter implements AgentStreamPort {
                         relay::finish);
         return emitter;
     }
-}
+    // ── 健康探测（3 秒缓存）──
+
+    private volatile boolean healthy;
+    private volatile long healthyCheckedAt;
+
+    private boolean reachable() {
+        long now = System.currentTimeMillis();
+        if (now - healthyCheckedAt < 3_000L) {
+            return healthy;
+        }
+        healthy = client.isHealthy();
+        healthyCheckedAt = now;
+        return healthy;
+    }}

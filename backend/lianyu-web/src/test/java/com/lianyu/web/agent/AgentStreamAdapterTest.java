@@ -37,6 +37,7 @@ class AgentStreamAdapterTest {
     @BeforeEach
     void setUp() {
         client = mock(AgentRuntimeClient.class);
+        when(client.isHealthy()).thenReturn(true);
         bridge = mock(AgentStreamBridge.class);
         vaultService = mock(ApiKeyVaultService.class);
         adapter = new AgentStreamAdapter(client, bridge, vaultService);

@@ -35,6 +35,9 @@ public class AgentPromptAssemblyAdapter implements PromptAssemblyPort {
         if (!agentMode || request == null) {
             return null;
         }
+        if (!reachable()) {
+            return null;
+        }
         try {
             String response = client.postJson("/agent/prompt/assemble",
                     request.userId(), bodyOf(request));
@@ -89,4 +92,17 @@ public class AgentPromptAssemblyAdapter implements PromptAssemblyPort {
         }
         return body;
     }
-}
+    // ── 健康探测（3 秒缓存）：agent 不可用时直接回退，避免每条消息都等超时 ──
+
+    private volatile boolean healthy;
+    private volatile long healthyCheckedAt;
+
+    private boolean reachable() {
+        long now = System.currentTimeMillis();
+        if (now - healthyCheckedAt < 3_000L) {
+            return healthy;
+        }
+        healthy = client.isHealthy();
+        healthyCheckedAt = now;
+        return healthy;
+    }}
