@@ -189,6 +189,9 @@ services:
     image: nginx:1.27-alpine
     container_name: lianyu-agent-lb
     restart: unless-stopped
+    # 仅绑回环：巡检脚本（宿主机）可达，公网不可达（agent 只服务内网）
+    ports:
+      - "127.0.0.1:18001:8001"
     volumes:
       - ./deploy/agent-lb/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
