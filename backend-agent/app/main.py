@@ -199,28 +199,45 @@ async def chat_stream(
         raise HTTPException(status_code=403, detail="user mismatch")
 
     async def event_source():
-        yield ": connected\n\n"
-        if not body.text_base_url or not body.text_api_key:
-            yield sse_error("未配置文本模型，请在设置中添加")
+        frames = 0
+        try:
+            yield ": connected\n\n"
+            if not body.text_base_url or not body.text_api_key:
+                logger.warning("chat-stream: missing model config (base=%s key=%s)",
+                               bool(body.text_base_url), bool(body.text_api_key))
+                yield sse_error("未配置文本模型，请在设置中添加")
+                yield DONE_FRAME
+                return
+            messages: list[dict[str, Any]] = []
+            if body.system:
+                messages.append({"role": "system", "content": body.system})
+            messages.extend(body.messages)
+            logger.info("chat-stream start: user=%s model=%s msgs=%d system=%d",
+                        body.user_id, body.text_model, len(messages),
+                        len(body.system or ""))
+            async for frame in stream_chat_events(
+                get_gateway(),
+                base_url=body.text_base_url,
+                api_key=body.text_api_key,
+                model=body.text_model or "default",
+                messages=messages,
+                temperature=body.temperature,
+                max_tokens=body.max_tokens,
+                provider=body.provider,
+                expected_language=body.expected_language,
+                tools=supported_tool_schemas(body.tools) if body.tools else None,
+            ):
+                frames += 1
+                if frames <= 3:
+                    logger.info("chat-stream frame[%d]=%s", frames,
+                                frame[:160].replace("\n", "\\n"))
+                yield frame
+            logger.info("chat-stream done: user=%s frames=%d", body.user_id, frames)
+        except Exception as exc:  # noqa: BLE001 - 生成器异常必须可见，否则上游只看到空回复
+            logger.warning("chat-stream failed: user=%s frames=%d err=%r",
+                           body.user_id, frames, exc)
+            yield sse_error("生成失败，请重试")
             yield DONE_FRAME
-            return
-        messages: list[dict[str, Any]] = []
-        if body.system:
-            messages.append({"role": "system", "content": body.system})
-        messages.extend(body.messages)
-        async for frame in stream_chat_events(
-            get_gateway(),
-            base_url=body.text_base_url,
-            api_key=body.text_api_key,
-            model=body.text_model or "default",
-            messages=messages,
-            temperature=body.temperature,
-            max_tokens=body.max_tokens,
-            provider=body.provider,
-            expected_language=body.expected_language,
-            tools=supported_tool_schemas(body.tools) if body.tools else None,
-        ):
-            yield frame
 
     return StreamingResponse(
         event_source(),
@@ -302,7 +319,7 @@ async def session_summary(
     except Exception as exc:  # noqa: BLE001
         logger.warning("session summary failed: %s", exc)
         return {"error": "summary_failed"}
-    return {"text": (result.text or "").strip()}
+    return {"text": (result.content or "").strip()}
 
 # ─────────────────────────── 阻塞对话（群聊/语音/日记/摘要/judge） ───────────────────────────
 
@@ -344,7 +361,7 @@ async def text_chat(
     except Exception as exc:  # noqa: BLE001
         logger.warning("agent text chat failed: %s", exc)
         return {"error": "chat_failed"}
-    return {"content": result.text, "provider": result.provider}
+    return {"content": result.content, "provider": body.provider}
 
 # ─────────────────────────── P5.5：system prompt 组装 ───────────────────────────
 

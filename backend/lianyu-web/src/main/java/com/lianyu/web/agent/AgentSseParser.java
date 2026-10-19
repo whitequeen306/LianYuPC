@@ -40,10 +40,16 @@ public final class AgentSseParser {
         if (trimmed.isEmpty() || trimmed.startsWith(":")) {
             return new Event(Event.Type.IGNORED, null);
         }
-        if (!trimmed.startsWith("data:")) {
+        // Spring 的 SSE 解码器（bodyToFlux(String.class)）会**剥掉** `data:` 前缀，
+        // 直接给出载荷；而 nginx/直连场景下有时会保留前缀。两种形态都要支持。
+        String data;
+        if (trimmed.startsWith("data:")) {
+            data = trimmed.substring("data:".length()).trim();
+        } else if (trimmed.startsWith("{") || "[DONE]".equals(trimmed)) {
+            data = trimmed;
+        } else {
             return new Event(Event.Type.IGNORED, null);
         }
-        String data = trimmed.substring("data:".length()).trim();
         if (data.isEmpty()) {
             return new Event(Event.Type.IGNORED, null);
         }
