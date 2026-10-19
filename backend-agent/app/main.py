@@ -229,6 +229,81 @@ async def chat_stream(
     )
 
 
+# ─────────────────────────── 会话摘要生成（合并 / 压缩） ───────────────────────────
+
+SUMMARY_MERGE_SYSTEM = (
+    "你是会话摘要合并器。把「已有摘要」和「新增对话」合并成一份更完整的摘要。\n"
+    "必须保留所有未完成的约定、计划（含时间/地点/做什么）。\n"
+    "删除寒暄、重复、已完结的小事。不要编造。只输出合并后的摘要正文。"
+)
+
+SUMMARY_COMPRESS_SYSTEM = (
+    "你是会话摘要压缩器。将输入摘要压缩到更短，但不丢失关键信息。\n"
+    "必须保留所有未完成的约定、计划（含时间/地点/做什么）。\n"
+    "删除寒暄、重复、已完结的小事。不要编造。只输出压缩后的摘要正文。"
+)
+
+
+class SessionSummaryBody(BaseModel):
+    """摘要生成：Java 只传结构化数据（凭据 + 消息 + 已有摘要），文案在 Python。"""
+
+    user_id: int = Field(alias="userId")
+    base_url: str = Field(alias="baseUrl")
+    api_key: str = Field(alias="apiKey")
+    model: str
+    mode: str = "merge"                     # merge | compress
+    existing_summary: str = Field(default="", alias="existingSummary")
+    messages: list[dict[str, Any]] = []
+    target_chars: int = Field(default=600, alias="targetChars")
+
+    model_config = {"populate_by_name": True}
+
+
+def _format_summary_messages(messages: list[dict[str, Any]]) -> str:
+    lines: list[str] = []
+    for message in messages:
+        role = str(message.get("role") or "")
+        content = str(message.get("content") or "").strip()
+        if not content:
+            continue
+        label = "用户" if role.upper() == "USER" else "角色"
+        lines.append(f"{label}：{content}")
+    return "\n".join(lines)
+
+
+@app.post("/agent/session-summary")
+async def session_summary(
+    body: SessionSummaryBody,
+    user_id_header: str | None = Header(default=None, alias="X-User-Id"),
+) -> dict[str, Any]:
+    """返回 {text}。失败返回 {error}，由 Java 侧回退。"""
+    if user_id_header and str(body.user_id) != user_id_header:
+        raise HTTPException(status_code=403, detail="user mismatch")
+    try:
+        if body.mode == "compress":
+            system = SUMMARY_COMPRESS_SYSTEM
+            user_content = (
+                f"请将以下摘要压缩到约 {body.target_chars} 字以内：\n\n"
+                f"{body.existing_summary}"
+            )
+        else:
+            system = SUMMARY_MERGE_SYSTEM
+            dialog = _format_summary_messages(body.messages)
+            user_content = (
+                f"已有摘要：\n{body.existing_summary or '（空）'}\n\n"
+                f"新增对话：\n{dialog}"
+            )
+        result = await gateway.chat_messages(
+            base_url=body.base_url, api_key=body.api_key, model=body.model,
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": user_content}],
+            temperature=0.1, max_tokens=1024, provider=None,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("session summary failed: %s", exc)
+        return {"error": "summary_failed"}
+    return {"text": (result.text or "").strip()}
+
 # ─────────────────────────── 阻塞对话（群聊/语音/日记/摘要/judge） ───────────────────────────
 
 

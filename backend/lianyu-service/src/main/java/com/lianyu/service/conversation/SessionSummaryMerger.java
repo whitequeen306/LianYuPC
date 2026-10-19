@@ -22,6 +22,10 @@ public class SessionSummaryMerger {
     private final SessionSummaryProperties properties;
     private final ApiKeyVaultService apiKeyVaultService;
 
+    /** AGENT 模式下摘要文案与模型调用交给 Python（null => 回退本地）。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.service.agent.SessionSummaryPort sessionSummaryPort;
+
     public String merge(Long userId, String provider, String model,
                         String existingSummary, List<Message> pendingMessages) {
         if (pendingMessages == null || pendingMessages.isEmpty()) {
@@ -242,5 +246,24 @@ public class SessionSummaryMerger {
             }
         }
         return next;
+    }
+    /** 交给 Python 生成；返回 null 表示回退本地实现。 */
+    private String tryAgent(Long userId, String provider, String model, String mode,
+                            String existingSummary, java.util.List<Message> messages,
+                            int targetChars) {
+        if (sessionSummaryPort == null) {
+            return null;
+        }
+        java.util.List<com.lianyu.service.agent.SessionSummaryPort.SummaryMessage> payload =
+                new java.util.ArrayList<>();
+        for (Message message : messages) {
+            if (message == null) {
+                continue;
+            }
+            payload.add(new com.lianyu.service.agent.SessionSummaryPort.SummaryMessage(
+                    message.getRole(), message.getContent()));
+        }
+        return sessionSummaryPort.generate(userId, provider, model, mode,
+                existingSummary, payload, targetChars);
     }
 }
