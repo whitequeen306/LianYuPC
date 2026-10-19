@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 /**
- * Strangler 三模式行为测试（切流安全性依据）。
+ * Strangler 两模式行为测试（切流安全性依据）。
  *
  * <p>为什么必须有：`AGENT` 模式一旦把「Python 结果为空」当成正常返回，
  * 用户就会看到空回复。本测试固化「AGENT 空结果必须回退 Java」这条安全网。
@@ -53,7 +53,7 @@ class DesktopObserveOrchestratorTest {
     }
 
     private static AgentRuntimeProperties props(AgentRuntimeProperties.Mode mode) {
-        return new AgentRuntimeProperties(mode, "http://agent:8001", true);
+        return new AgentRuntimeProperties(mode, "http://agent:8001");
     }
 
     private List<MessageDto> history() {
@@ -76,16 +76,6 @@ class DesktopObserveOrchestratorTest {
                 anyLong(), anyString(), anyString(), anyString(), anyList(),
                 anyString(), anyString(), anyString(),
                 anyString(), org.mockito.ArgumentMatchers.nullable(String.class), any(), anyList());
-    }
-
-    @Test
-    void portReturnsNullInShadowMode() {
-        when(agentClient.properties()).thenReturn(props(AgentRuntimeProperties.Mode.SHADOW));
-        com.lianyu.service.agent.AgentTurnResult result = orchestrator.proactiveTurn(1L, "PROACTIVE", "persona", "task",
-                List.of(Map.of("role", "user", "content", "hi")), "dashscope", "m", 7L);
-        // SHADOW 由 Java 出结果；端口只负责 AGENT 分派
-        assertNull(result);
-        assertFalse(orchestrator.agentActive());
     }
 
     @Test
@@ -124,11 +114,11 @@ class DesktopObserveOrchestratorTest {
 
     @Test
     void modeReportedForLogging() {
-        when(agentClient.properties()).thenReturn(props(AgentRuntimeProperties.Mode.SHADOW));
-        assertEquals("SHADOW", orchestrator.mode());
+        when(agentClient.properties()).thenReturn(props(AgentRuntimeProperties.Mode.OFF));
+        assertEquals("OFF", orchestrator.mode());
     }
 
-    // ── 桌面感知：三模式分派 ──
+    // ── 桌面感知：两模式分派 ──
 
     @Test
     void observe_offMode_usesJavaOnly() {
@@ -162,16 +152,4 @@ class DesktopObserveOrchestratorTest {
         assertEquals("java 兜底", orchestrator.observe(1L, "img", "t", "p", "dashscope", "m"));
     }
 
-    @Test
-    void observe_shadowMode_returnsJavaButAlsoRunsAgent() {
-        when(agentClient.properties()).thenReturn(props(AgentRuntimeProperties.Mode.SHADOW));
-        when(visionChatService.observeDesktop(1L, "img", "t", "p", "dashscope", "m"))
-                .thenReturn("java 结果");
-        when(agentClient.desktopObserve(anyLong(), anyString(), anyString(), anyString(),
-                anyString(), anyString(), anyString())).thenReturn("agent 结果");
-        String result = orchestrator.observe(1L, "img", "t", "p", "dashscope", "m");
-        assertEquals("java 结果", result);
-        verify(agentClient).desktopObserve(eq(1L), eq("img"), eq("t"), eq("p"),
-                anyString(), anyString(), anyString());
-    }
 }

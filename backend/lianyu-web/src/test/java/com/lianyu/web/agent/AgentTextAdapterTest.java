@@ -46,7 +46,7 @@ class AgentTextAdapterTest {
     }
 
     private static AgentRuntimeProperties props(AgentRuntimeProperties.Mode mode) {
-        return new AgentRuntimeProperties(mode, "http://agent:8001", true);
+        return new AgentRuntimeProperties(mode, "http://agent:8001");
     }
 
     @Test
@@ -54,12 +54,6 @@ class AgentTextAdapterTest {
         when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.OFF));
         assertNull(adapter.complete(1L, "sys", "user", "dashscope", "m", 0.85));
         verify(client, never()).postJson(anyString(), anyLong(), anyMap());
-    }
-
-    @Test
-    void shadowModeDoesNotTakeOver() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.SHADOW));
-        assertNull(adapter.complete(1L, "sys", "user", "dashscope", "m", 0.85));
     }
 
     @Test

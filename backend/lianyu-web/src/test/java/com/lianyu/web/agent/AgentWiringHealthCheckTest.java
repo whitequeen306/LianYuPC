@@ -35,7 +35,7 @@ class AgentWiringHealthCheckTest {
                                          boolean withStream, boolean withText,
                                          boolean withMemory, boolean withImage) {
         AgentRuntimeClient client = mock(AgentRuntimeClient.class);
-        when(client.properties()).thenReturn(new AgentRuntimeProperties(mode, "http://agent:8001", true));
+        when(client.properties()).thenReturn(new AgentRuntimeProperties(mode, "http://agent:8001"));
         return new AgentWiringHealthCheck(
                 client,
                 provider(mock(AgentRuntimePort.class)),
@@ -64,9 +64,8 @@ class AgentWiringHealthCheckTest {
     }
 
     @Test
-    void notAgentModeInOffOrShadow() {
+    void notAgentModeInOff() {
         assertFalse(build(AgentRuntimeProperties.Mode.OFF, true, true, true, true).isAgentMode());
-        assertFalse(build(AgentRuntimeProperties.Mode.SHADOW, true, true, true, true).isAgentMode());
     }
 
     @Test
@@ -83,7 +82,7 @@ class AgentWiringHealthCheckTest {
     @Test
     void startupCheckIsSafeInAnyMode() {
         // 不抛异常即可（日志分支由上面断言覆盖）
-        build(AgentRuntimeProperties.Mode.SHADOW, false, false, false, false).checkOnStartup();
+        build(AgentRuntimeProperties.Mode.OFF, false, false, false, false).checkOnStartup();
         build(AgentRuntimeProperties.Mode.AGENT, true, true, true, true).checkOnStartup();
         build(AgentRuntimeProperties.Mode.AGENT, false, false, false, false).checkOnStartup();
     }

@@ -56,7 +56,7 @@ class AgentStreamAdapterTest {
     }
 
     private static AgentRuntimeProperties props(AgentRuntimeProperties.Mode mode) {
-        return new AgentRuntimeProperties(mode, "http://agent:8001", true);
+        return new AgentRuntimeProperties(mode, "http://agent:8001");
     }
 
     private SseEmitter call() {
@@ -69,12 +69,6 @@ class AgentStreamAdapterTest {
         assertNull(call());
         verify(client, never()).streamChat(anyLong(), anyString(), any(), anyString(), anyString(),
                 anyString(), anyString(), anyString(), any(), any(), any(Double.class), any(Integer.class));
-    }
-
-    @Test
-    void doesNotTakeOverInShadowMode() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.SHADOW));
-        assertNull(call());
     }
 
     @Test

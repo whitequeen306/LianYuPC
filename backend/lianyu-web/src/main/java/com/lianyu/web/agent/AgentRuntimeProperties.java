@@ -5,19 +5,17 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /**
  * backend-agent（FastAPI/LangGraph）运行时对接配置。
  *
- * <p>Strangler 三模式（docs/refactor-2026-10/refactor-plan.md §3.4）：Java 仍是唯一对外入口，
- * 按模式把 AI 链路转发/影子到 Python 侧。
+ * <p>Strangler 灰度开关（docs/refactor-2026-10/refactor-plan.md §3.4）：Java 仍是唯一对外入口，
+ * 按模式把 AI 链路转发到 Python 侧。
  */
 @ConfigurationProperties(prefix = "lianyu.agent")
 public record AgentRuntimeProperties(
-        /** off=纯 Java；shadow=Java 出结果、Python 影子跑并记录 diff；agent=Python 出结果、Java 兜底 */
+        /** off=纯 Java；agent=Python 出结果、Java 兜底 */
         Mode mode,
         /** 容器内地址（compose service agent），仅内网可信 */
-        String baseUrl,
-        /** 影子对比记录阈值：两端结果不一致时 WARN */
-        boolean logDiff) {
+        String baseUrl) {
 
-    public enum Mode { OFF, SHADOW, AGENT }
+    public enum Mode { OFF, AGENT }
 
     public AgentRuntimeProperties {
         if (mode == null) {
@@ -29,6 +27,6 @@ public record AgentRuntimeProperties(
     }
 
     public boolean agentActive() {
-        return mode == Mode.SHADOW || mode == Mode.AGENT;
+        return mode == Mode.AGENT;
     }
 }

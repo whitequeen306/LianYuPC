@@ -57,7 +57,7 @@ public class AgentWiringHealthCheck {
         Map<String, Boolean> report = inspect();
         boolean agentMode = isAgentMode();
         if (!agentMode) {
-            log.info("Agent mode OFF/SHADOW — wiring check skipped (ports={})", report);
+            log.info("Agent mode OFF — wiring check skipped (ports={})", report);
             return;
         }
         List<String> missing = new ArrayList<>();

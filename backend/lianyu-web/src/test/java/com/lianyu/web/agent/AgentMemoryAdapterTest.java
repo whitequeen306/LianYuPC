@@ -38,7 +38,7 @@ class AgentMemoryAdapterTest {
     }
 
     private static AgentRuntimeProperties props(AgentRuntimeProperties.Mode mode) {
-        return new AgentRuntimeProperties(mode, "http://agent:8001", true);
+        return new AgentRuntimeProperties(mode, "http://agent:8001");
     }
 
     private static List<AgentMemoryMessage> messages() {
@@ -64,12 +64,6 @@ class AgentMemoryAdapterTest {
         when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.OFF));
         assertFalse(adapter.extractAndWriteIfActive(1L, 3L, messages(), "dashscope", "m"));
         verify(client, never()).postJson(anyString(), anyLong(), anyMap());
-    }
-
-    @Test
-    void shadowModeDoesNotTakeOver() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.SHADOW));
-        assertFalse(adapter.extractAndWriteIfActive(1L, 3L, messages(), "dashscope", "m"));
     }
 
     @Test

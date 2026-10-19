@@ -14,11 +14,10 @@ import java.util.Map;
  *
  * <ul>
  *   <li>OFF    —— 纯 Java（现状，默认）</li>
- *   <li>SHADOW —— Java 出结果返回给用户；Python 同步影子跑一次，仅记录 diff</li>
  *   <li>AGENT  —— Python 出结果；Python 失败/为空时回退 Java（灰度安全网）</li>
  * </ul>
  *
- * <p>行为保真约束：三种模式下用户可见结果在 Python 链路完全稳定前，等价于现状。
+ * <p>行为保真约束：在 Python 链路完全稳定前，用户可见结果等价于现状。
  */
 @Slf4j
 @Service
@@ -27,10 +26,6 @@ public class DesktopObserveOrchestrator implements com.lianyu.service.agent.Agen
     private final VisionChatService visionChatService;
     private final AgentRuntimeClient agentClient;
     private final ApiKeyVaultService vaultService;
-
-    /** SHADOW 漂移率统计（可选注入，单测可不提供）。 */
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private AgentShadowStats shadowStats;
 
     public DesktopObserveOrchestrator(VisionChatService visionChatService,
                                       AgentRuntimeClient agentClient,
@@ -59,14 +54,8 @@ public class DesktopObserveOrchestrator implements com.lianyu.service.agent.Agen
             // fall through to Java
         }
 
-        String fromJava = visionChatService.observeDesktop(
+        return visionChatService.observeDesktop(
                 userId, imageBase64, windowTitle, persona, provider, model);
-
-        if (mode == AgentRuntimeProperties.Mode.SHADOW) {
-            String fromAgent = callAgent(userId, imageBase64, windowTitle, persona, provider, model);
-            recordShadowDiff(userId, fromJava, fromAgent);
-        }
-        return fromJava;
     }
 
     private String callAgent(long userId, String imageBase64, String windowTitle,
@@ -133,61 +122,6 @@ public class DesktopObserveOrchestrator implements com.lianyu.service.agent.Agen
         return agentClient.proactiveTurn(
                 userId, scene, persona, taskBlock, historyMaps, textBaseUrl, textApiKey, textModel,
                 provider, expectedLanguage, characterId, tools);
-    }
-
-    private void recordProactiveDiff(long userId, String scene, String fromJava, String fromAgent) {
-        String channel = "proactive:" + scene;
-        if (fromJava == null && fromAgent == null) {
-            log.info("Proactive shadow[{}][{}]: both-null", userId, scene);
-            statBothNull(channel);
-            return;
-        }
-        if (fromJava != null && fromAgent != null && fromJava.equals(fromAgent)) {
-            log.info("Proactive shadow[{}][{}]: match ({} chars)", userId, scene, fromJava.length());
-            statMatch(channel);
-            return;
-        }
-        log.warn("Proactive shadow[{}][{}]: DIFF java={}chars agent={}chars", userId, scene,
-                fromJava == null ? "null" : fromJava.length(),
-                fromAgent == null ? "null" : fromAgent.length());
-        statDiff(channel);
-    }
-
-
-    private void statMatch(String channel) {
-        if (shadowStats != null) {
-            shadowStats.recordMatch(channel);
-        }
-    }
-
-    private void statDiff(String channel) {
-        if (shadowStats != null) {
-            shadowStats.recordDiff(channel);
-        }
-    }
-
-    private void statBothNull(String channel) {
-        if (shadowStats != null) {
-            shadowStats.recordBothNull(channel);
-        }
-    }
-
-    private void recordShadowDiff(long userId, String fromJava, String fromAgent) {
-        if (fromJava == null && fromAgent == null) {
-            log.info("Shadow observe[{}]: both-null", userId);
-            statBothNull("observe");
-            return;
-        }
-        if (fromJava != null && fromAgent != null && fromJava.equals(fromAgent)) {
-            log.info("Shadow observe[{}]: match ({} chars)", userId, fromJava.length());
-            statMatch("observe");
-            return;
-        }
-        // LLM 生成天然非确定：不等价不算事故，只记 WARN 供脚本/指标统计漂移率
-        log.warn("Shadow observe[{}]: DIFF java={}chars agent={}chars", userId,
-                fromJava == null ? "null" : fromJava.length(),
-                fromAgent == null ? "null" : fromAgent.length());
-        statDiff("observe");
     }
 
     // ── AgentRuntimePort（service 层调用的接缝）──
