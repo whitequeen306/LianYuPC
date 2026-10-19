@@ -25,7 +25,6 @@ public class MemoryExtractionService {
     private static final int MAX_SUMMARY_LENGTH = 120;
 
     private final MemoryExtractionHeuristics heuristics;
-    private final MemoryLlmExtractor llmExtractor;
 
     @Value("${lianyu.memory.extraction.enabled:true}")
     private boolean extractionEnabled;
@@ -47,14 +46,8 @@ public class MemoryExtractionService {
             merged.add(toExtracted(memory));
         }
 
-        if (extractionEnabled && shouldCallLlm(messages, heuristicMemories)) {
-            List<ExtractedMemory> llmMemories = llmExtractor.extract(task, messages);
-            for (ExtractedMemory memory : llmMemories) {
-                if (!isDuplicateSummary(merged, memory.summary())) {
-                    merged.add(memory);
-                }
-            }
-        }
+        // AI 抽取已迁 Python（`/agent/memory/extract-write`）。
+        // 这里只保留确定性启发式：Java 不再调用任何模型。
 
         return applyGates(merged);
     }

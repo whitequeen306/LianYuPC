@@ -18,14 +18,12 @@ import org.springframework.test.util.ReflectionTestUtils;
 class MemoryExtractionServiceTest {
 
     private MemoryExtractionHeuristics heuristics;
-    private MemoryLlmExtractor llmExtractor;
     private MemoryExtractionService service;
 
     @BeforeEach
     void setUp() {
         heuristics = new MemoryExtractionHeuristics();
-        llmExtractor = mock(MemoryLlmExtractor.class);
-        service = new MemoryExtractionService(heuristics, llmExtractor);
+        service = new MemoryExtractionService(heuristics);
         ReflectionTestUtils.setField(service, "extractionEnabled", true);
         ReflectionTestUtils.setField(service, "importanceThreshold", 0.5);
         ReflectionTestUtils.setField(service, "maxMemoriesPerTurn", 3);
@@ -33,7 +31,6 @@ class MemoryExtractionServiceTest {
 
     @Test
     void extract_usesRegexForProfileFact() {
-        when(llmExtractor.extract(any(), anyList())).thenReturn(List.of());
 
         Message msg = new Message();
         msg.setId(10L);
@@ -48,7 +45,6 @@ class MemoryExtractionServiceTest {
 
     @Test
     void extract_nameVariants_writeStructuredProfile() {
-        when(llmExtractor.extract(any(), anyList())).thenReturn(List.of());
 
         assertNameExtracted("请叫我小明", "【长期记忆/姓名】小明");
         assertNameExtracted("my name is Bob", "【长期记忆/姓名】Bob");
@@ -57,7 +53,6 @@ class MemoryExtractionServiceTest {
 
     @Test
     void extract_nameFact_notOverwrittenByKeywordMemory() {
-        when(llmExtractor.extract(any(), anyList())).thenReturn(List.of());
 
         Message msg = new Message();
         msg.setId(20L);
@@ -76,7 +71,6 @@ class MemoryExtractionServiceTest {
 
     @Test
     void extract_ritualNickname_alsoWritesName() {
-        when(llmExtractor.extract(any(), anyList())).thenReturn(List.of());
 
         Message msg = new Message();
         msg.setId(21L);
@@ -99,24 +93,9 @@ class MemoryExtractionServiceTest {
         assertTrue(result.stream().anyMatch(m -> expectedSummary.equals(m.summary())), content);
     }
 
-    @Test
-    void extract_filtersLowImportanceFromLlm() {
-        when(llmExtractor.extract(any(MemorySummaryTask.class), anyList())).thenReturn(List.of(
-                new ExtractedMemory("临时琐事", MemoryType.FACT, 11L, 0.2)));
-
-        Message msg = new Message();
-        msg.setId(11L);
-        msg.setRole("USER");
-        msg.setContent("嗯嗯好的");
-
-        List<ExtractedMemory> result = service.extract(List.of(msg), new MemorySummaryTask(1L, 2L, 3L, "p", null));
-
-        assertEquals(0, result.size());
-    }
 
     @Test
     void extract_rejectsQuestionLikeProfileValue() {
-        when(llmExtractor.extract(any(), anyList())).thenReturn(List.of());
 
         Message msg = new Message();
         msg.setId(12L);

@@ -26,8 +26,8 @@ class JavaAiLogicRatchetTest {
 
     /** 迁移基线（只允许下降）。 */
     private static final int BASELINE_PROMPT_TEXTS = 10;
-    private static final int BASELINE_MODEL_CALLS = 26;
-    private static final int BASELINE_AI_CLASSES = 9;
+    private static final int BASELINE_MODEL_CALLS = 25;
+    private static final int BASELINE_AI_CLASSES = 8;
 
     /** 允许保留：三条基础设施 seam。 */
     private static final Set<String> ALLOWED_FILES = Set.of(
