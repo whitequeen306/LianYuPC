@@ -1,84 +1,73 @@
 # OFF 模式退役路线（Python 单一维护）
 
-> 目标：Java 只保留 CRUD / 社交 / 管理 / 凭据解密 / 桌面桥接，**AI 逻辑 100% 在 Python**。
-> 本文记录「还差什么」「按什么顺序做」「每个阶段怎么验收和回滚」。
+> 目标：Java 只保留 CRUD / 社交 / 管理 / **加解密 / 桌面桥接会话 / 事务落库**，
+> AI 逻辑 100% 在 Python。本文记录「还差什么」「按什么顺序做」「怎么验收和回滚」。
 
-## 一、当前仍由 Java 执行的 AI 路径（实测 + 代码定位）
+## 一、状态总览（滚动更新）
 
-| 路径 | 位置 | 现状 |
+| 能力 | 归属 | 状态 |
 |---|---|---|
-| 单聊文本模型调用 | `ChatTurnFacade` → `AgentStreamAdapter` | ✅ Python（AGENT 模式） |
-| 单聊 prompt 组装 | `AssemblePromptNode` → `PromptAssemblyPort` | ✅ Python |
-| 图片两段式 | `AgentImageAdapter` | ✅ Python |
-| 记忆抽取/写入/去重/投影/检索 | `AgentMemoryAdapter` + Python relay | ✅ Python |
-| 桌面感知 / 主动发言 | `DesktopObserveOrchestrator` / proactive | ✅ Python |
-| **群聊模型调用** | `GroupChatService:1017` `aiChatService.chatBlocking` | ❌ Java |
-| **语音通话回合** | `VoiceCallService` | ❌ Java |
-| **阻塞调用统一入口** | `AiChatService.chatBlocking/chatStream` | ❌ Java |
-| **记忆 MQ 消费者** | `MemoryConsumer`（19 行） | ❌ Java（Jasypt 主密钥） |
-| **工具提示文本** | `ToolManager.buildToolsPromptHint` | ❌ Java（依赖桌面桥接内存态） |
-| **OFF 模式的组装/取数** | `ChatTurnPromptAssembler` / `MemoryRetriever` / `CharacterPromptBuilder` / `RelationshipStateService` / `CharacterStateService` / `SessionSummaryService` | ❌ Java（回退路径所需） |
+| prompt 组装（全部块） | Python | ✅ 真实流量 9 段逐字节一致 |
+| 工具提示文案 | Python | ✅ Java 只传 flags |
+| 单聊流式模型调用 | Python | ✅ AGENT 模式 |
+| 阻塞模型调用（13 处） | Python | ✅ 已分流（单测覆盖，群聊/语音待真实流量验证） |
+| 被动消息模型调用 | Python | ✅ |
+| 记忆抽取/写入/投影/检索 | Python | ✅（Java 转发 + 回退） |
+| 会话摘要生成（合并/压缩） | Python | ✅ |
+| **agent 高可用** | — | ✅ **双实例 + nginx LB（本轮完成）** |
+| Java 侧 AI 代码 | Java | ❌ 10 处 prompt 文本 / 27 模型调用 / 9 个 AI 类（全部是 OFF 回退） |
 
-## 二、新增遥测：JAVA_AI_PATH
+## 二、残留为什么不能立刻删
 
-`AiChatService.chatStream` / `chatBlocking` 在 AGENT 模式下会打印：
+`mvn test` 里的 `JavaAiLogicRatchetTest` 用「棘轮」守住基线（只允许变少）：
 
-```
-JAVA_AI_PATH=chatStream (AGENT 模式下仍由 Java 调用模型)
-JAVA_AI_PATH=chatBlocking (AGENT 模式下仍由 Java 调用模型)
-```
+    prompt 文本 ≤ 10 处 | 模型调用 ≤ 27 处 | 已知 AI 类 ≤ 9 个
 
-用途：**能枚举才能删除**。跑一轮群聊/语音后，日志里出现哪些路径，就是下一阶段要迁的清单。
+逐个核实的归属：
 
-实测：单聊回复走 `ChatTurn stream served by agent runtime`，无 `JAVA_AI_PATH` → 单聊已完全由 Python 承担。
+| 类 | AGENT 模式是否使用 | 何时可删 |
+|---|---|---|
+| `ChatTurnPromptAssembler` / `CharacterPromptBuilder` | 否（OFF 组装） | OFF 退役 |
+| `MemoryRetriever` / `RelationshipStateService` / `CharacterStateService` | 否（Python 自读） | OFF 退役 |
+| `SessionSummaryService` / `SessionSummaryMerger` | 仅回退 | OFF 退役 |
+| `MemoryLlmExtractor` | 仅回退 | OFF 退役 |
+| `ToolManager.buildToolsPromptHint` | 否（仅 OFF 组装调用） | OFF 退役 |
+| `AiChatService.chat*` / `ChatModelFactory` | 仅回退 | OFF 退役 |
 
-## 三、阶段与验收
+**结论：它们就是 OFF 模式的定义，删了等于删掉回退。**
 
-### P6-2 群聊模型调用迁 Python（下一步）
-- 需要 `AgentTextPort` 支持**多轮 messages**（当前只接受 system + 单条 user）
-- 保留群聊的「谁说话/说几条」编排在 Java（那是产品逻辑），只把**模型调用**交出去
-- 验收：群聊 3 人场景下 `JAVA_AI_PATH=chatBlocking` 消失，回复内容与 Java 版本抽样一致
-- 回滚：模式切 SHADOW（Java 继续出话），比对记录
+## 三、删除 OFF 的判定条件
 
-### P6-3 语音通话回合
-- 实时性要求最高，优先做「一次性 blocking 回合」，流式后续再议
-- 验收：一轮通话 5 个回合无超时，`JAVA_AI_PATH` 消失
-- 回滚：同上
-
-### P6-4 记忆 MQ 消费者
-- 阻塞点：Jasypt 主密钥只在 Java
-- 方案 A（推荐）：Java 暴露**内网**凭据代理接口（`/internal/vault/plain`），Python 拿明文 key 后自行调用模型；解密逻辑仍只有 Java 一份
-- 方案 B：把主密钥交给 Python（安全面扩大，不推荐）
-- 验收：停掉 Java 消费者后，新记忆仍能在 30s 内完成抽取与投影
-
-### P6-5 工具提示
-- 阻塞点：`hasComputerTask` 依赖 Java 进程内的桥接会话（内存态，90s TTL）
-- 方案：Java 只传 **flags + 工具名列表**，文案模板放 Python（Java 删除文案拼接）
-- 验收：SINGLE 场景工具段逐字节一致（当前已通过「Java 传整段」实现一致，此步是把文案所有权转移）
-
-### P6-6 删除 OFF 模式
-前置条件（全部满足才可执行）：
-1. P6-2 / P6-3 / P6-4 / P6-5 完成
+1. `JavaAiLogicRatchetTest` 基线可下调 → 前提是下面几条都成立
 2. AGENT 模式下连续 7 天 `prompt` 通道 `diff=0`
-3. agent 宕机回退演练通过（已有）
-4. 双实例部署验证（消除单点）
+3. 双实例 agent + LB 已上线（✅ 已完成）
+4. 极限演练：停 agent → 停 agent2 → 双实例全挂时行为已知、可接受
 
-执行顺序：
-1. `LIANYU_AGENT_MODE` 默认值改为 `AGENT`
-2. 保留 SHADOW 模式一个版本周期（只读比对，不出话）
-3. 删除 Java AI 类：`ChatTurnPromptAssembler`、`CharacterPromptBuilder`、`MemoryRetriever`、`RelationshipStateService`、`CharacterStateService`、`SessionSummaryService`、`ToolManager` 文案部分
-4. 删除 `OFF` 分支与相关配置
+## 四、删 OFF 的执行顺序
 
-## 四、保留的永久 seam（不算重复实现）
+1. `LIANYU_AGENT_MODE` 默认值改 `AGENT`
+2. 观察一个版本周期（保留 SHADOW 能力做只读比对）
+3. 集中删除（一次性，按依赖顺序）：
+   - `CharacterPromptBuilder` + `ChatTurnPromptAssembler` + `PromptsRuleEngine` + 各 RuleHook
+   - `MemoryRetriever` / `RelationshipStateService` / `CharacterStateService`（仅读路径）
+   - `SessionSummaryMerger` 本地实现
+   - `MemoryLlmExtractor`
+   - `ToolManager.buildToolsPromptHint`
+   - `AiChatService` 内的模型调用分支 + `ChatModelFactory`
+4. 下调 `JavaAiLogicRatchetTest` 基线到 0/0/0
+5. 删除 `OFF` 枚举与相关配置、`NoopAgentRuntimePort`
+
+## 五、保留的永久 seam
 
 | seam | 原因 |
 |---|---|
-| 凭据解密 | 主密钥在 Java，Jasypt 生态 |
-| 桌面桥接会话 | 进程内内存态 + WebSocket 长连接 |
-| 落库/事务 | Java 是写入权威（记忆域除外，已单写者 Python） |
+| 加解密（`ApiKeyVaultService` / `JasyptUtil`） | 主密钥在 Java，Python 拿明文 key 调模型 |
+| 桌面桥接（`AgentBridgeService`） | 进程内 WebSocket 长连接 + 90s 心跳 |
+| 事务/落库 | Java 是业务写入权威（记忆域已单写者 Python） |
 
-## 五、风险
+## 六、已知风险
 
-- 群聊/语音迁移属于**用户可见**变更，必须先 SHADOW 跑出 diff=0 再切
-- 删除 OFF 模式后，agent 故障时不再有「完整 Java 兜底」，只有「快速失败 + 重试」；
-  因此双实例部署是硬前提
+- 群聊/语音的**编排**（谁说话、说几条）仍在 Java：那是产品规则，不是 AI 文本，保留
+- 阻塞调用接管尚未经过真实群聊/语音流量验证（STOMP WebSocket 入口难测）
+- LB 为被动健康检查，切换窗口 ≤10s
+- `agent2` 关闭 relay（单写者语义），若要多实例并行需引入 leader 选举
