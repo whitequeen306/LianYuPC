@@ -99,6 +99,19 @@ class AgentPromptAssemblyAdapterTest {
     }
 
     @Test
+    void nullStringFieldsAreSentAsEmptyStrings() {
+        PromptAssemblyRequest request = new PromptAssemblyRequest(
+                7L, 51L, 53L, "甘雨", Map.of(), null,
+                "SINGLE", "zh", "full", true, null, true, true, 1, "",
+                Map.of("chat", false), null, null, 0, null, null);
+        Map<String, Object> body = AgentPromptAssemblyAdapter.bodyOf(request);
+        assertEquals("", body.get("lastUserMessage"));
+        assertEquals("", body.get("extraSystemSuffix"));
+        assertEquals("", body.get("groupOtherCharacters"));
+        assertEquals("", body.get("groupMention"));
+    }
+
+    @Test
     void nullRequestIsIgnored() {
         AgentRuntimeClient client = client();
         assertNull(new AgentPromptAssemblyAdapter(client).assembleIfEnabled(null));

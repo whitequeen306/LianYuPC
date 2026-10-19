@@ -40,6 +40,10 @@
 5. **`afterBase` 场景映射错误**：GROUP 被当成 `full` 会多注入时间/城市/自然风格 → 已按 `ChatTurnScene` 的 include 标志逐项映射
 6. **`timeFact` 为空时 Python 直接跳过时间锚点** → 已改为「显式传入优先，缺省由 Python 读当前时间」
 7. **群聊附加段未随 agent 组装传递** → `PromptAssemblyRequest` 增加 `groupMaxPieces/groupOtherCharacters/groupMention`，Python 侧用 `render_group_chat_rules` 拼接
+8. **`extraSystemSuffix=null` → Python 422**：Moments/Diary/Proactive 传 null，Pydantic 要求 string
+   → 适配层统一 `null → ""`
+9. **主动发言漏传凭据**：`proactiveTurnResult` 只传 provider/model，Python 报 `no_text_credentials`
+   → 补 `textBaseUrl/textApiKey/textModel`（vault 解密仍在 Java）
 
 共同点：**都是「未被调用的代码路径」**。删除前必须保证被删路径有真实流量覆盖，
 否则删完才发现坏，且坏在更底层。
@@ -60,5 +64,32 @@
 - ✅ `pytest` 全绿（1024）
 - ✅ `vitest` 全绿（450）
 - ✅ `powershell scripts/check-java-ai-free.ps1 -Mode strict` 通过
-- ⏳ 真实对话 20 条：回复有内容、无 `JAVA_AI_PATH` 日志
-  （`JAVA_AI_PATH` 日志本身已随 Java 模型调用一起删除）
+- ✅ 真实对话 40 条（两轮 × 20 条，经 Java 完整链路）
+- ✅ SSE 流式（内容帧 + `pieces` + `[DONE]`）
+- ✅ 主动发言冷启动（2 条，含 Python 读取的真实天气块）
+- ✅ 角色生成 / 角色导入（Java 解密 vault → Python 模型 → Java 解析）
+- ✅ 日志无 `JAVA_AI_PATH`、无 422、无 5xx
+
+## 真实链路验证方法（2026-10-19）
+
+```powershell
+# 重建并启动
+docker compose build backend agent
+docker compose up -d backend agent agent2
+# 观察启动自检
+docker logs lianyu-backend | Select-String "all ports wired"
+```
+
+验证覆盖：
+
+| 链路 | 结果 |
+|---|---|
+| 注册 → 创建 vault（真实 DashScope Key）→ 创建角色 → 创建会话 | ✅ |
+| 阻塞对话 20 条 × 2 轮 | 40/40 非空，无错误 |
+| `POST /api/conversation/{id}/messages/stream` | 内容帧 + `pieces` + `[DONE]` |
+| 空会话打开 → 主动发言 | 冷启动 2 条（含上海天气事实） |
+| `POST /api/character/generate` / `/import/analyze` | 200，字段完整 |
+| `POST /agent/text/chat` 直连 20 条 | 20/20 非空，usage 正常 |
+
+> 真实对话中观察到部分回复是括号动作描写而非台词，这是模型风格/角色规则问题，
+> 不是空回复或链路故障；测试断言的是「非空且无 error」。

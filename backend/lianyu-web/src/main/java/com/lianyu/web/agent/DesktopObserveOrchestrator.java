@@ -113,8 +113,24 @@ public class DesktopObserveOrchestrator implements com.lianyu.service.agent.Agen
     public com.lianyu.service.agent.AgentTurnResult proactiveTurn(long userId, String scene, String persona,
                                 String taskBlock, List<Map<String, String>> history,
                                 String provider, String model, Long characterId) {
+        String textBaseUrl = null;
+        String textApiKey = null;
+        String textModel = null;
+        try {
+            VaultEntryResponse vault = vaultService.resolveForChat(userId, provider);
+            if (vault != null) {
+                textBaseUrl = vault.getBaseUrl();
+                textApiKey = vault.getId() != null
+                        ? vaultService.decryptKeyForChat(vault.getId())
+                        : vault.getApiKey();
+                textModel = model != null && !model.isBlank() ? model.trim() : vault.getModelDefault();
+            }
+        } catch (Exception e) {
+            log.debug("Proactive turn: vault resolve for agent failed: {}", e.toString());
+        }
         com.lianyu.service.agent.AgentTurnResult fromAgent = agentClient.proactiveTurnResult(
-                userId, scene, persona, taskBlock, history, provider, model, null, characterId);
+                userId, scene, persona, taskBlock, history, textBaseUrl, textApiKey, textModel,
+                provider, model, null, characterId);
         if (fromAgent == null || !fromAgent.isUsable()) {
             log.info("Proactive turn[{}][{}]: agent empty, fallback to Java", userId, scene);
             return null;

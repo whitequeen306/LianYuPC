@@ -44,7 +44,8 @@ class DesktopObserveOrchestratorTest {
     @Test
     void portReturnsAgentContent() {
         when(agentClient.proactiveTurnResult(anyLong(), anyString(), anyString(), anyString(), anyList(),
-                anyString(), anyString(), org.mockito.ArgumentMatchers.nullable(String.class), any()))
+                anyString(), anyString(), anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.nullable(String.class), any()))
                 .thenReturn(new com.lianyu.service.agent.AgentTurnResult("今晚早点睡呀", 42));
         com.lianyu.service.agent.AgentTurnResult result = orchestrator.proactiveTurn(1L, "PROACTIVE", "persona", "task",
                 List.of(Map.of("role", "user", "content", "hi")), "dashscope", "m", 7L);
@@ -56,7 +57,8 @@ class DesktopObserveOrchestratorTest {
     @Test
     void portReturnsNullWhenAgentEmpty() {
         when(agentClient.proactiveTurnResult(anyLong(), anyString(), anyString(), anyString(), anyList(),
-                anyString(), anyString(), org.mockito.ArgumentMatchers.nullable(String.class), any()))
+                anyString(), anyString(), anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.nullable(String.class), any()))
                 .thenReturn(null);
         assertNull(orchestrator.proactiveTurn(1L, "PROACTIVE", "persona", "task",
                 List.of(Map.of("role", "user", "content", "hi")), "dashscope", "m", 7L));
@@ -65,7 +67,8 @@ class DesktopObserveOrchestratorTest {
     @Test
     void portReturnsNullWhenAgentBlank() {
         when(agentClient.proactiveTurnResult(anyLong(), anyString(), anyString(), anyString(), anyList(),
-                anyString(), anyString(), org.mockito.ArgumentMatchers.nullable(String.class), any()))
+                anyString(), anyString(), anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.nullable(String.class), any()))
                 .thenReturn(new com.lianyu.service.agent.AgentTurnResult("   ", null));
         assertNull(orchestrator.proactiveTurn(1L, "PROACTIVE", "persona", "task",
                 List.of(Map.of("role", "user", "content", "hi")), "dashscope", "m", 7L));

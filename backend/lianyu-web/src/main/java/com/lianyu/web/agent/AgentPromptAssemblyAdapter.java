@@ -82,11 +82,11 @@ public class AgentPromptAssemblyAdapter implements PromptAssemblyPort {
         // 让 Python 自己读记忆/关系/情绪/摘要
         body.put("useInternalData", true);
         body.put("scene", request.scene());
-        body.put("lastUserMessage", request.lastUserMessage());
-        body.put("extraSystemSuffix", request.extraSystemSuffix());
+        body.put("lastUserMessage", nvl(request.lastUserMessage()));
+        body.put("extraSystemSuffix", nvl(request.extraSystemSuffix()));
         body.put("groupMaxPieces", request.groupMaxPieces());
-        body.put("groupOtherCharacters", request.groupOtherCharacters());
-        body.put("groupMention", request.groupMention());
+        body.put("groupOtherCharacters", nvl(request.groupOtherCharacters()));
+        body.put("groupMention", nvl(request.groupMention()));
         if (request.characterId() != null) {
             body.put("characterId", request.characterId());
         }
@@ -95,6 +95,11 @@ public class AgentPromptAssemblyAdapter implements PromptAssemblyPort {
         }
         return body;
     }
+
+    private static String nvl(String value) {
+        return value == null ? "" : value;
+    }
+
     // ── 健康探测（3 秒缓存）：agent 不可用时直接回退，避免每条消息都等超时 ──
 
     private volatile boolean healthy;

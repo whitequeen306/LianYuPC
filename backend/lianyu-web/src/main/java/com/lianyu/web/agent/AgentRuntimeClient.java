@@ -156,6 +156,9 @@ public class AgentRuntimeClient {
                                 String persona,
                                 String taskBlock,
                                 List<Map<String, String>> history,
+                                String textBaseUrl,
+                                String textApiKey,
+                                String textModel,
                                 String provider,
                                 String model,
                                 String expectedLanguage,
@@ -171,6 +174,10 @@ public class AgentRuntimeClient {
             body.put("persona", persona == null ? "" : persona);
             body.put("taskBlock", taskBlock == null ? "" : taskBlock);
             body.put("history", history == null ? List.of() : history);
+            // 凭据必须随请求传入：Python 侧没有主密钥，不能自己去解密 vault
+            body.put("textBaseUrl", textBaseUrl == null ? "" : textBaseUrl);
+            body.put("textApiKey", textApiKey == null ? "" : textApiKey);
+            body.put("textModel", textModel == null ? "" : textModel);
             body.put("provider", provider == null ? "" : provider);
             body.put("expectedLanguage", expectedLanguage == null ? "" : expectedLanguage);
             body.put("characterId", characterId == null ? 0L : characterId);
