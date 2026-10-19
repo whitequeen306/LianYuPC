@@ -135,7 +135,9 @@ public class AgentShadowStatsEndpoint {
             body.put("settings", character.getSettings());
             body.put("promptTemplate", null);
             body.put("memoryContext", "");
-            body.put("toolHint", toolHint);
+            body.put("toolHint", "");
+            body.put("toolFlags", tools && toolManager != null
+                    ? toolManager.promptHintFlags(FIXTURE_USER_ID) : java.util.Map.of("chat", false));
             body.put("emotionBlock", "");
             body.put("outputLanguage", assembled.outputLanguage());
             body.put("enableChatTools", tools);

@@ -38,7 +38,7 @@ class PromptShadowComparatorTest {
         comparator = new PromptShadowComparator(client, stats);
         snapshot = new AssemblySnapshot("小林", Map.of("personality", "温柔"), null,
                 "记忆块", "工具提示", "情绪块", "zh", true, true, 2,
-                true, "时间事实", "上海", "full", false, null, null, null);
+                true, "时间事实", "上海", "full", false, null, null, null, null, null);
     }
 
     @Test

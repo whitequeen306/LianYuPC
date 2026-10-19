@@ -43,7 +43,9 @@ public record AssemblySnapshot(
         boolean useInternalData,
         String scene,
         Long characterId,
-        Long conversationId) {
+        Long conversationId,
+        Long characterOwnerId,
+        java.util.Map<String, Object> toolFlags) {
 
     public Map<String, Object> toBody() {
         Map<String, Object> body = new LinkedHashMap<>();
@@ -52,6 +54,12 @@ public record AssemblySnapshot(
         body.put("promptTemplate", promptTemplate);
         body.put("memoryContext", memoryContext == null ? "" : memoryContext);
         body.put("toolHint", toolHint == null ? "" : toolHint);
+        if (characterOwnerId != null) {
+            body.put("characterOwnerId", characterOwnerId);
+        }
+        if (toolFlags != null) {
+            body.put("toolFlags", toolFlags);
+        }
         body.put("emotionBlock", emotionBlock == null ? "" : emotionBlock);
         body.put("outputLanguage", outputLanguage == null ? "zh" : outputLanguage);
         body.put("enableChatTools", enableChatTools);

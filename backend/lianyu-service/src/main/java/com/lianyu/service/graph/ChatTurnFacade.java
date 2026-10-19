@@ -211,9 +211,7 @@ public class ChatTurnFacade {
                             character.getSettings(),
                             character.getPromptTemplate(),
                             memoryContext,
-                            turn.scene().enableChatTools() && shadowToolManager != null
-                                    ? shadowToolManager.buildToolsPromptHint(command.getUserId())
-                                    : "",
+                            "",
                             "",
                             turn.outputLanguage(),
                             turn.scene().enableChatTools(),
@@ -227,7 +225,11 @@ public class ChatTurnFacade {
                             true,
                             turn.scene().name(),
                             character.getId(),
-                            command.getConversationId());
+                            command.getConversationId(),
+                            character.getOwnerUserId(),
+                            turn.scene().enableChatTools() && shadowToolManager != null
+                                    ? shadowToolManager.promptHintFlags(command.getUserId())
+                                    : java.util.Map.of("chat", false));
             promptShadowPort.compareAsync(command.getUserId(), snapshot, turn.systemPrompt());
         } catch (Exception e) {
             log.debug("Prompt shadow dispatch failed: {}", e.toString());
