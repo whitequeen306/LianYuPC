@@ -19,7 +19,8 @@ import org.mockito.Mockito;
  */
 class ToolHintGoldenTest {
 
-    private static final Path OUT = Path.of("../../backend-agent/app/prompts/tool_hints_golden.json");
+    private static final Path OUT = Path.of(System.getProperty("user.dir"))
+            .resolve("../../backend-agent/app/prompts/tool_hints_golden.json").normalize();
 
     @Test
     void dumpAllFlagCombinations() throws Exception {
