@@ -27,13 +27,18 @@ public class PromptShadowAdapter implements PromptShadowPort {
     private final PromptShadowComparator comparator;
     private final ExecutorService executor;
     private final AtomicInteger dropped = new AtomicInteger();
+    private final boolean shadowMode;
 
     public PromptShadowAdapter(
             PromptShadowComparator comparator,
             @Autowired(required = false) AgentRuntimeClient client,
-            @Value("${lianyu.agent.prompt-shadow.enabled:true}") boolean enabled) {
+            @Value("${lianyu.agent.prompt-shadow.enabled:true}") boolean enabled,
+            @Value("${lianyu.agent.mode:OFF}") String mode) {
         this.comparator = comparator;
-        this.executor = enabled
+        // 影子比对只在 SHADOW 模式有意义：AGENT 模式下 Java 已直接用 Python 的 prompt，
+        // 比对自己等于自己（白跑一次 HTTP）。
+        this.shadowMode = "SHADOW".equalsIgnoreCase(mode);
+        this.executor = enabled && shadowMode
                 ? Executors.newFixedThreadPool(1, r -> {
                     Thread thread = new Thread(r, "prompt-shadow");
                     thread.setDaemon(true);
