@@ -93,6 +93,7 @@ public class AgentStreamAdapter implements AgentStreamPort {
         log.info("Agent stream dispatched: userId={}, messages={}, model={}", userId, payloadMessages.size(), resolvedModel);
         client.streamChat(userId, systemPrompt, payloadMessages, baseUrl, apiKey, resolvedModel,
                         provider, expectedLanguage, characterId, CHAT_TOOLS, 0.8, maxTokens)
+
                 .subscribe(
                         relay::accept,
                         error -> {
