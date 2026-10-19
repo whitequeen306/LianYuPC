@@ -25,10 +25,14 @@ from typing import Any, Mapping
 from app.character_prompt import build_default_prompt, extract_persona
 from app.prompt_assembly import (
     append_city_context,
+    append_goodnight_context,
     append_natural_style,
     append_time_context,
+    contains_goodnight_keyword,
+    is_goodnight_time,
     natural_style_block,
 )
+from app.tools.time_tool import read_current_time_fact
 from app.prompt_fragments import fragment
 from app.reply_rules import render_reply_rules
 from app.rule_templates import render_output_language_rules
@@ -140,6 +144,8 @@ def assemble_scene_prompt(
     time_fact: str | None = None,
     city: str | None = None,
     after_base: str = "full",
+    last_user_message: str | None = None,
+    now=None,
 ) -> str:
     """镜像 `ChatTurnPromptAssembler.assemble()` 的场景顺序。
 
@@ -165,6 +171,9 @@ def assemble_scene_prompt(
         show_inner_thoughts=show_inner_thoughts,
         max_pieces=max_pieces,
     )
+    # Java 侧 includeTime 时总会读一次真实时间；显式传入优先（便于跨端逐字节比对）
+    if include_time and time_fact is None:
+        time_fact = read_current_time_fact()
     if after_base == "none":
         return prompt
     if after_base == "time_only":
@@ -173,11 +182,13 @@ def assemble_scene_prompt(
         return prompt
     if after_base == "style_only":
         return append_natural_style(prompt, output_language, show_inner_thoughts)
-    # full：时间锚点 → 城市（可能为空）→ 自然风格
+    # full：时间锚点 → 城市（可能为空）→ 晚安 → 自然风格
     if include_time and time_fact is not None:
         prompt = append_time_context(prompt, time_fact)
     if city:
         prompt = append_city_context(prompt, city)
+    if is_goodnight_time(now) and contains_goodnight_keyword(last_user_message):
+        prompt = append_goodnight_context(prompt, output_language)
     return append_natural_style(prompt, output_language, show_inner_thoughts)
 
 

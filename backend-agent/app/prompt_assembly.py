@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from app.prompt_fragments import fragment
 
 # Java: ChatTurnPromptAssembler.java 行号定位的片段
@@ -139,6 +141,16 @@ def contains_goodnight_keyword(text: str | None) -> bool:
     return any(keyword.lower() in lowered for keyword in GOODNIGHT_KEYWORDS)
 
 
+def is_goodnight_time(now: datetime | None = None) -> bool:
+    """对齐 Java `isGoodnightTime`：23:00–07:59 视为深夜。
+
+    `now` 仅供测试注入；生产走服务器本地时区，与 Java `LocalTime.now()` 一致。
+    """
+    current = now or datetime.now()
+    minutes = current.hour * 60 + current.minute
+    return minutes >= 23 * 60 or minutes < 8 * 60
+
+
 __all__ = [
     "compose_prompt",
     "append_natural_style",
@@ -149,5 +161,6 @@ __all__ = [
     "append_time_context",
     "contains_goodnight_keyword",
     "goodnight_block",
+    "is_goodnight_time",
     "normalize_language",
 ]

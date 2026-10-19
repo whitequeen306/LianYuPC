@@ -394,6 +394,14 @@ class PromptAssembleBody(BaseModel):
     scene: str | None = None
     last_user_message: str | None = Field(default=None, alias="lastUserMessage")
     session_summary: str | None = Field(default=None, alias="sessionSummary")
+    # 群聊附加段（对齐 ChatTurnPromptAssembler.GroupExtras）
+    group_max_pieces: int = Field(default=0, alias="groupMaxPieces")
+    group_other_characters: str = Field(default="", alias="groupOtherCharacters")
+    group_mention: str = Field(default="", alias="groupMention")
+    # 调用方额外 system 后缀（Java 不再拼接任何 prompt 文本）
+    extra_system_suffix: str = Field(default="", alias="extraSystemSuffix")
+    # 主动开口前的真实环境块（时间 + 天气）
+    prefetch_real_world: bool = Field(default=True, alias="prefetchRealWorld")
 
     model_config = {"populate_by_name": True}
 
@@ -410,6 +418,7 @@ async def prompt_assemble(
         memory_context = body.memory_context
         emotion_block = body.emotion_block
         city = body.city
+        scene = (body.scene or "SINGLE").strip().upper()
         # 工具提示：Java 只传开关事实，文案由 Python 生成（Java 侧已删文案）
         tool_hint = body.tool_hint
         if body.tool_flags is not None:
@@ -423,7 +432,6 @@ async def prompt_assemble(
             )
             from app.emotion_block import format_emotion_block
 
-            scene = (body.scene or "SINGLE").strip().upper()
             # 显式传入的记忆块优先：本轮可能刚写入新记忆（抽取/关系事件是异步的），
             # 现读会拿到更新的值，与 Java 组装时用的快照不一致 → 假漂移。
             if not memory_context:
@@ -448,8 +456,10 @@ async def prompt_assemble(
                     status_text=(emotion or {}).get("status_text"),
                     previous_emotion=(emotion or {}).get("previous_emotion"),
                 ) if emotion else ""
-            # 城市：与 Java 同一判断（city_mode == real 且城市非空）
-            if not city and str(body.settings.get("city_mode") or "") == "real":
+            # 城市：与 Java 同一判断（city_mode 非 fictional，且城市非空）
+            city_mode = str(body.settings.get("city_mode") or "real").strip().lower()
+            fictional_legacy = body.settings.get("use_fictional_city")
+            if not city and city_mode != "fictional" and not fictional_legacy:
                 raw_city = body.settings.get("city")
                 city = str(raw_city).strip() or None
 
@@ -468,7 +478,29 @@ async def prompt_assemble(
             time_fact=body.time_fact,
             city=city,
             after_base=body.after_base,
+            last_user_message=body.last_user_message,
         )
+        # 群聊附加段：顺序与 Java `ChatTurnPromptAssembler.assemble` 一致（自然风格之后）
+        if scene == "GROUP":
+            from app.rule_templates import render_group_chat_rules
+
+            group_rules = render_group_chat_rules(
+                body.output_language,
+                body.character_name,
+                body.group_other_characters,
+                body.group_mention,
+                body.group_max_pieces or body.max_pieces,
+                body.show_inner_thoughts,
+            )
+            if group_rules.strip():
+                prompt += "\n\n" + group_rules
+        # 主动开口真实环境块（时间天气），在群聊之后、调用方后缀之前
+        if scene == "PROACTIVE" and body.prefetch_real_world:
+            from app.proactive_context import build_proactive_real_world_block
+
+            prompt += await build_proactive_real_world_block(body.settings)
+        if body.extra_system_suffix:
+            prompt += body.extra_system_suffix
     except Exception as exc:  # noqa: BLE001 - 组装失败返回错误码，Java 记录后忽略
         logger.warning("prompt assemble failed: %s", exc)
         return {"error": "assemble_failed"}
@@ -575,6 +607,77 @@ async def text_complete(
         max_tokens=body.max_tokens,
         provider=body.provider,
     )
+
+
+# ─────────────────────────── 角色设定生成 / 抽取 ───────────────────────────
+
+
+class CharacterGenerateBody(BaseModel):
+    """角色生成：Java 负责输入清洗与 vault 解密，Python 负责 prompt + 模型调用。"""
+
+    user_id: int = Field(alias="userId")
+    base_url: str = Field(alias="baseUrl")
+    api_key: str = Field(alias="apiKey")
+    model: str
+    description: str
+    provider: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+class CharacterImportBody(BaseModel):
+    """角色抽取：Java 已清洗/截断材料，Python 负责 prompt + 模型调用。"""
+
+    user_id: int = Field(alias="userId")
+    base_url: str = Field(alias="baseUrl")
+    api_key: str = Field(alias="apiKey")
+    model: str
+    prepared_source: str = Field(alias="preparedSource")
+    user_addressing: str = Field(default="", alias="userAddressing")
+    provider: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+@app.post("/agent/character/generate")
+async def character_generate(
+    body: CharacterGenerateBody,
+    user_id_header: str | None = Header(default=None, alias="X-User-Id"),
+) -> dict[str, Any]:
+    if user_id_header and str(body.user_id) != user_id_header:
+        raise HTTPException(status_code=403, detail="user mismatch")
+    from app.character_generation import generate_character
+
+    try:
+        content, model = await generate_character(
+            get_gateway(), base_url=body.base_url, api_key=body.api_key,
+            model=body.model, description=body.description, provider=body.provider,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("character generate failed: %s", exc)
+        return {"error": "generate_failed"}
+    return {"content": content, "model": model}
+
+
+@app.post("/agent/character/import")
+async def character_import(
+    body: CharacterImportBody,
+    user_id_header: str | None = Header(default=None, alias="X-User-Id"),
+) -> dict[str, Any]:
+    if user_id_header and str(body.user_id) != user_id_header:
+        raise HTTPException(status_code=403, detail="user mismatch")
+    from app.character_generation import import_character
+
+    try:
+        content, model = await import_character(
+            get_gateway(), base_url=body.base_url, api_key=body.api_key,
+            model=body.model, prepared_source=body.prepared_source,
+            user_addressing=body.user_addressing, provider=body.provider,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("character import failed: %s", exc)
+        return {"error": "import_failed"}
+    return {"content": content, "model": model}
 
 
 # ─────────────────────────── P5：记忆写入（Python 侧接管） ───────────────────────────
