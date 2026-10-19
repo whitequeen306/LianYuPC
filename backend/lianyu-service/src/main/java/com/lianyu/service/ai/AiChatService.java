@@ -79,6 +79,16 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @Service
 public class AiChatService {
 
+    @Value("${lianyu.agent.mode:OFF}")
+    private String agentModeRaw;
+
+    private boolean agentMode;
+
+    @jakarta.annotation.PostConstruct
+    void initAgentMode() {
+        agentMode = "AGENT".equalsIgnoreCase(agentModeRaw);
+    }
+
     private final ApiKeyVaultService vaultService;
     private final ToolManager toolManager;
     private final ObjectMapper objectMapper;
@@ -129,6 +139,10 @@ public class AiChatService {
     }
 
     public SseEmitter chatStream(Long userId, AiChatRequest request, StreamCallback callback) {
+        if (agentMode) {
+            // 退休清单用：AGENT 模式下仍走 Java 原生模型调用的路径
+            log.warn("JAVA_AI_PATH=chatStream (AGENT 模式下仍由 Java 调用模型)");
+        }
         // 流式聊天始终走前台池；后台任务不得占用 SSE 槽位。
         final Bulkhead lane = resilience.interactiveBulkhead();
         if (!lane.tryAcquirePermission()) {
@@ -437,6 +451,10 @@ public class AiChatService {
     }
 
     public ChatResult chatBlocking(Long userId, AiChatRequest request) {
+        if (agentMode) {
+            // 群聊/语音/judge 等阻塞调用目前仍走 Java —— 这是 OFF 退役的主要障碍
+            log.warn("JAVA_AI_PATH=chatBlocking (AGENT 模式下仍由 Java 调用模型)");
+        }
         final Bulkhead lane = resilience.resolveBulkhead(request);
         final Executor pool = resilience.resolveAiExecutor(request);
         try {
