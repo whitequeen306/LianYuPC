@@ -88,32 +88,143 @@ async def load_emotion(character_id: int, user_id: int) -> dict[str, Any] | None
     }
 
 
+async def _load_recent_rows(character_id: int, user_id: int) -> list[dict[str, Any]]:
+    """基础候选：与 Java `loadRecentMemoryMetas` 的 SQL 分支一致。"""
+    return await fetch_all(
+        "SELECT id, summary, memory_type, importance FROM memory_meta "
+        "WHERE character_id = %s AND user_id = %s AND importance >= %s "
+        "ORDER BY importance DESC, created_at DESC LIMIT %s",
+        (character_id, user_id, get_settings().memory_importance_threshold,
+         get_settings().memory_search_candidate_count),
+    )
+
+
+PROFILE_PREFIX = "【长期记忆/"
+
+
+def _extract_profile_slot(summary: str | None) -> str | None:
+    """对齐 Java `extractProfileSlot`：取 `【长期记忆/<slot>】` 中的 slot。"""
+    if not summary or not summary.startswith(PROFILE_PREFIX):
+        return None
+    end = summary.find("】")
+    if end <= len(PROFILE_PREFIX):
+        return None
+    return summary[len(PROFILE_PREFIX):end]
+
+
+async def _load_profile_facts(character_id: int, user_id: int) -> list[dict[str, Any]]:
+    """长期画像事实：对齐 Java `loadProfileFactMetas`。
+
+    Java 的语义是「**每个 slot 保留最新一条**」（按 created_at 倒序取 80 条后去重），
+    不是简单的 importance 排序 —— 这个细节会直接改变画像块内容。
+    """
+    rows = await fetch_all(
+        "SELECT id, summary, memory_type, importance FROM memory_meta "
+        "WHERE character_id = %s AND user_id = %s AND summary LIKE %s "
+        "ORDER BY created_at DESC LIMIT 80",
+        (character_id, user_id, PROFILE_PREFIX + "%"),
+    )
+    latest_by_slot: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        slot = _extract_profile_slot(row.get("summary"))
+        if slot is not None and slot not in latest_by_slot:
+            latest_by_slot[slot] = row
+    return list(latest_by_slot.values())
+
+
+def _pick_like_keyword(text: str | None) -> str | None:
+    """对齐 Java `pickLikeKeyword`：短于 4 字不 boost；取首个 2-12 字 token。"""
+    if not text or len(text) < 4:
+        return None
+    for token in text.split():
+        trimmed = token.strip()
+        if 2 <= len(trimmed) <= 12:
+            return trimmed
+    return text[:12] if len(text) > 12 else text
+
+
+async def _load_like_boosted(character_id: int, user_id: int,
+                             last_user_message: str | None) -> list[dict[str, Any]]:
+    keyword = _pick_like_keyword(last_user_message)
+    if keyword is None:
+        return []
+    return await fetch_all(
+        "SELECT id, summary, memory_type, importance FROM memory_meta "
+        "WHERE character_id = %s AND user_id = %s AND importance >= %s AND summary LIKE %s "
+        "ORDER BY importance DESC, created_at DESC LIMIT %s",
+        (character_id, user_id, get_settings().memory_importance_threshold,
+         f"%{keyword}%", 5),
+    )
+
+
+TYPE_LABELS = (
+    ("FACT", "用户画像"),
+    ("EMOTION", "近期情绪线索"),
+    ("RELATION", "关系事件"),
+    ("RITUAL", "专属仪式"),
+)
+
+
+def _render_profile_block(rows: list[dict[str, Any]]) -> str | None:
+    """按类型分组渲染，保持顺序并去重 —— 对齐 Java `joinByType`。"""
+    parts: list[str] = []
+    for memory_type, label in TYPE_LABELS:
+        seen: set[str] = set()
+        lines: list[str] = []
+        for row in rows:
+            if str(row.get("memory_type") or "").upper() != memory_type:
+                continue
+            summary = str(row.get("summary") or "").strip()
+            if not summary or summary in seen:
+                continue
+            seen.add(summary)
+            lines.append("- " + summary)
+        if lines:
+            parts.append("[" + label + "]\n" + "\n".join(lines))
+    return "\n\n".join(parts) if parts else None
+
+
+async def load_profile_block(character_id: int, user_id: int,
+                             last_user_message: str | None = None) -> str | None:
+    """记忆画像块：镜像 Java `retrieveProfileContext` 的取数与合并顺序。
+
+    顺序很重要：**长期画像事实优先**，再追加基础候选里未出现过的条目，
+    最后补充按关键词 LIKE 命中的条目（同样去重）。
+    Java 侧 `joinByType` 用 `distinct()` 保序去重，所以合并顺序会改变最终内容。
+    """
+    facts = await _load_profile_facts(character_id, user_id)
+    base = await _load_recent_rows(character_id, user_id)
+    boosted = await _load_like_boosted(character_id, user_id, last_user_message)
+
+    merged: list[dict[str, Any]] = []
+    seen_ids: set[int] = set()
+    for row in [*facts, *base, *boosted]:
+        row_id = row.get("id")
+        if row_id is not None:
+            if int(row_id) in seen_ids:
+                continue
+            seen_ids.add(int(row_id))
+        merged.append(row)
+    return _render_profile_block(merged)
+
+
 async def load_memory_context(user_id: int, character_id: int,
                             conversation_id: int | None = None,
                             include_memory: bool = True,
                             include_relationship: bool = True,
-                            include_session: bool = True) -> str | None:
+                            include_session: bool = True,
+                            last_user_message: str | None = None) -> str | None:
     """记忆 + 关系 + 会话摘要的连接结果（对齐 Java `joinBlocks`）。
 
-    复用 `profile_context` 的格式化；关系块与会话摘要块分别由各自模块产出。
+    记忆块复用与 Java 相同的取数策略（见 `load_profile_block`）。
     """
-    from app.memory.profile_context import build_profile_context
     from app.relationship_context import build_relationship_context
     from app.session_summary_block import format_session_summary
 
     parts: list[str] = []
 
-    if not include_memory:
-        metas = []
-    else:
-        metas = await fetch_all(
-            "SELECT summary, memory_type, importance FROM memory_meta "
-            "WHERE character_id = %s AND user_id = %s AND importance >= %s "
-            "ORDER BY importance DESC, created_at DESC LIMIT %s",
-            (character_id, user_id, get_settings().memory_importance_threshold,
-             get_settings().memory_search_candidate_count),
-        )
-    memory_block = build_profile_context([(m["summary"], m["memory_type"]) for m in metas])
+    memory_block = (await load_profile_block(character_id, user_id, last_user_message)
+                    if include_memory else None)
     if memory_block:
         parts.append(memory_block)
 
@@ -131,7 +242,6 @@ async def load_memory_context(user_id: int, character_id: int,
         parts.append(summary)
 
     return "\n\n".join(parts) if parts else None
-
 
 SESSION_SUMMARY_KEY_PREFIX = "session:summary:"
 

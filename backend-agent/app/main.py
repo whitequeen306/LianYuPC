@@ -375,6 +375,7 @@ class PromptAssembleBody(BaseModel):
     conversation_id: int | None = Field(default=None, alias="conversationId")
     # 场景名（SINGLE/GROUP/MOMENTS/DIARY/PROACTIVE/VOICE_CALL）：决定哪些块参与组装
     scene: str | None = None
+    last_user_message: str | None = Field(default=None, alias="lastUserMessage")
 
     model_config = {"populate_by_name": True}
 
