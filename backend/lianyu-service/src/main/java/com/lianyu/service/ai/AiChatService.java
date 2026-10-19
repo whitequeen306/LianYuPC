@@ -82,6 +82,9 @@ public class AiChatService {
     @Value("${lianyu.agent.mode:OFF}")
     private String agentModeRaw;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.service.agent.AgentBlockingPort agentBlockingPort;
+
     private boolean agentMode;
 
     @jakarta.annotation.PostConstruct
@@ -451,6 +454,18 @@ public class AiChatService {
     }
 
     public ChatResult chatBlocking(Long userId, AiChatRequest request) {
+        // 阻塞调用（群聊/语音/日记/摘要/judge）：AGENT 模式下优先交给 Python。
+        // 带工具或图片的请求暂不接管（工具执行仍在 Java），保持行为不变。
+        if (agentMode && agentBlockingPort != null
+                && request.getChatToolCharacterId() == null
+                && request.getImageUrl() == null) {
+            String agentContent = agentBlockingPort.complete(
+                    userId, request.getMessages(), request.getProvider(),
+                    request.getModel(), request.getTemperature(), request.getMaxTokens());
+            if (agentContent != null) {
+                return ChatResult.ofContent(agentContent);
+            }
+        }
         if (agentMode) {
             // 群聊/语音/judge 等阻塞调用目前仍走 Java —— 这是 OFF 退役的主要障碍
             log.warn("JAVA_AI_PATH=chatBlocking (AGENT 模式下仍由 Java 调用模型)");

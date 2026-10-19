@@ -229,6 +229,48 @@ async def chat_stream(
     )
 
 
+# ─────────────────────────── 阻塞对话（群聊/语音/日记/摘要/judge） ───────────────────────────
+
+
+class TextChatBody(BaseModel):
+    """给 Java 的阻塞调用：Java 解密凭据后传入，Python 只负责调用模型。"""
+
+    user_id: int = Field(alias="userId")
+    base_url: str = Field(alias="baseUrl")
+    api_key: str = Field(alias="apiKey")
+    model: str
+    messages: list[dict[str, Any]]
+    temperature: float = 0.7
+    max_tokens: int = Field(default=1024, alias="maxTokens")
+    provider: str | None = None
+    expected_language: str | None = Field(default=None, alias="expectedLanguage")
+
+    model_config = {"populate_by_name": True}
+
+
+@app.post("/agent/text/chat")
+async def text_chat(
+    body: TextChatBody,
+    user_id_header: str | None = Header(default=None, alias="X-User-Id"),
+) -> dict[str, Any]:
+    """一次阻塞对话。返回 {content}；失败返回 {error}（Java 侧回退）。"""
+    if user_id_header and str(body.user_id) != user_id_header:
+        raise HTTPException(status_code=403, detail="user mismatch")
+    try:
+        result = await gateway.chat_messages(
+            base_url=body.base_url,
+            api_key=body.api_key,
+            model=body.model,
+            messages=body.messages,
+            temperature=body.temperature,
+            max_tokens=body.max_tokens,
+            provider=body.provider,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("agent text chat failed: %s", exc)
+        return {"error": "chat_failed"}
+    return {"content": result.text, "provider": result.provider}
+
 # ─────────────────────────── P5.5：system prompt 组装 ───────────────────────────
 
 
