@@ -142,4 +142,18 @@ public class ToolManager {
         return agentBridgeService.availableTools(userId).stream()
                 .anyMatch(t -> "computer_task".equals(t.name()));
     }
+    /**
+     * 工具提示的开关事实（agent 侧据此生成文案，Java 不再拼接文本）。
+     *
+     * <p>`computer` 依赖桌面桥接的实时会话（进程内内存态），只能由 Java 提供。
+     */
+    public java.util.Map<String, Object> promptHintFlags(Long userId) {
+        java.util.Map<String, Object> flags = new java.util.LinkedHashMap<>();
+        flags.put("chat", chatToolsEnabled);
+        flags.put("memory", memoryAgenticEnabled);
+        flags.put("recent", recentActivityEnabled);
+        flags.put("diary", writeDiaryEnabled);
+        flags.put("computer", hasComputerTask(userId));
+        return flags;
+    }
 }

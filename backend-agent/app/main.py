@@ -293,6 +293,8 @@ class PromptAssembleBody(BaseModel):
     city: str | None = None
     after_base: str = Field(default="full", alias="afterBase")
     # 为 true 时忽略传入的数据块，由 Python 自己读库（P5.6）
+    # 工具提示由 Python 按开关组合生成（Java 只传 flags）
+    tool_flags: dict[str, Any] | None = Field(default=None, alias="toolFlags")
     use_internal_data: bool = Field(default=False, alias="useInternalData")
     character_id: int | None = Field(default=None, alias="characterId")
     conversation_id: int | None = Field(default=None, alias="conversationId")

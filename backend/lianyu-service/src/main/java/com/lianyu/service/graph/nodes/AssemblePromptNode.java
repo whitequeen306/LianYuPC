@@ -85,8 +85,10 @@ public class AssemblePromptNode implements NodeAction {
                 case VOICE_CALL -> "time_only";
                 default -> "full";
             };
-            String toolHint = scene.enableChatTools() && toolManager != null
-                    ? toolManager.buildToolsPromptHint(turn.userId()) : "";
+            // 文案由 Python 生成；Java 只提供开关事实
+            java.util.Map<String, Object> toolFlags = scene.enableChatTools() && toolManager != null
+                    ? toolManager.promptHintFlags(turn.userId())
+                    : java.util.Map.of("chat", false);
             return promptAssemblyPort.assembleIfEnabled(
                     new com.lianyu.service.agent.PromptAssemblyRequest(
                             turn.userId(),
@@ -105,7 +107,8 @@ public class AssemblePromptNode implements NodeAction {
                                     .showInnerThoughts(character),
                             behaviorResolver != null
                                     ? behaviorResolver.resolve(character).maxRepliesPerTurn() : 2,
-                            toolHint));
+                            "",
+                            toolFlags));
         } catch (Exception e) {
             log.warn("Agent prompt assembly threw ({}), fallback to Java", e.toString());
             return null;

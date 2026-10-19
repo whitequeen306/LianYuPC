@@ -34,5 +34,6 @@ public record PromptAssemblyRequest(
         boolean enableChatTools,
         boolean showInnerThoughts,
         int maxPieces,
-        String toolHint) {
+        String toolHint,
+        java.util.Map<String, Object> toolFlags) {
 }
