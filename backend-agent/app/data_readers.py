@@ -213,7 +213,8 @@ async def load_memory_context(user_id: int, character_id: int,
                             include_memory: bool = True,
                             include_relationship: bool = True,
                             include_session: bool = True,
-                            last_user_message: str | None = None) -> str | None:
+                            last_user_message: str | None = None,
+                            session_summary_override: str | None = None) -> str | None:
     """记忆 + 关系 + 会话摘要的连接结果（对齐 Java `joinBlocks`）。
 
     记忆块复用与 Java 相同的取数策略（见 `load_profile_block`）。
@@ -236,8 +237,10 @@ async def load_memory_context(user_id: int, character_id: int,
             anticipation=relationship["anticipation"], recent_events=relationship["events"],
         ))
 
+    # 显式传入优先：摘要在本轮可能被更新，异步读会拿到新值造成假差异
     summary = format_session_summary(
-        await load_session_summary(conversation_id) if include_session else None)
+        session_summary_override if session_summary_override is not None
+        else (await load_session_summary(conversation_id) if include_session else None))
     if summary:
         parts.append(summary)
 

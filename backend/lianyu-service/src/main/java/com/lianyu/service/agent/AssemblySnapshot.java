@@ -46,7 +46,8 @@ public record AssemblySnapshot(
         Long conversationId,
         Long characterOwnerId,
         java.util.Map<String, Object> toolFlags,
-        String lastUserMessage) {
+        String lastUserMessage,
+        String sessionSummary) {
 
     public Map<String, Object> toBody() {
         Map<String, Object> body = new LinkedHashMap<>();

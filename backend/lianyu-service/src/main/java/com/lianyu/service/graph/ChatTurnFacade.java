@@ -230,7 +230,8 @@ public class ChatTurnFacade {
                             turn.scene().enableChatTools() && shadowToolManager != null
                                     ? shadowToolManager.promptHintFlags(command.getUserId())
                                     : java.util.Map.of("chat", false),
-                            turn.rawUserText());
+                            turn.rawUserText(),
+                            state.value(ChatTurnKeys.SESSION_SUMMARY_BLOCK, String.class).orElse(null));
 
             promptShadowPort.compareAsync(command.getUserId(), snapshot, turn.systemPrompt());
         } catch (Exception e) {
