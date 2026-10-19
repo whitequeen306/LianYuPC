@@ -24,10 +24,10 @@ import org.junit.jupiter.api.Test;
  */
 class JavaAiLogicRatchetTest {
 
-    /** 迁移基线（只允许下降）。 */
-    private static final int BASELINE_PROMPT_TEXTS = 10;
-    private static final int BASELINE_MODEL_CALLS = 25;
-    private static final int BASELINE_AI_CLASSES = 8;
+    /** 终局基线：OFF 退役后 Java 零 AI 逻辑。 */
+    private static final int BASELINE_PROMPT_TEXTS = 0;
+    private static final int BASELINE_MODEL_CALLS = 0;
+    private static final int BASELINE_AI_CLASSES = 0;
 
     /** 允许保留：三条基础设施 seam。 */
     private static final Set<String> ALLOWED_FILES = Set.of(
@@ -51,12 +51,8 @@ class JavaAiLogicRatchetTest {
             Pattern.compile("ChatClient\\.builder"),
             Pattern.compile("springframework\\.ai\\.chat\\.model"));
 
-    private static final Set<String> KNOWN_AI_CLASSES = Set.of(
-            "ChatTurnPromptAssembler.java", "CharacterPromptBuilder.java",
-            "MemoryRetriever.java", "RelationshipStateService.java",
-            "CharacterStateService.java", "SessionSummaryService.java",
-            "SessionSummaryMerger.java", "MemoryLlmExtractor.java", "ToolManager.java",
-            "PromptsRuleEngine.java", "LanguageGateService.java");
+    /** OFF 退役后所有已知 AI 类都已清理/迁移；留空表示清单彻底清零。 */
+    private static final Set<String> KNOWN_AI_CLASSES = Set.of();
 
     /** 从测试模块出发找到 backend 根（lianyu-web 的上一级）。 */
     private static Path backendRoot() {

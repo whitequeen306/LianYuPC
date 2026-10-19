@@ -32,11 +32,11 @@ public interface AgentRuntimePort {
                          String model,
                          Long characterId);
 
-    /** 运行时是否处于 AGENT 模式（Python 出结果）。SHADOW 时返回 false（Java 出结果）。 */
+    /** OFF 退役后始终为 true；保留方法便于调用点/日志过渡。 */
     boolean agentActive();
 
-    /** 三模式名（OFF/SHADOW/AGENT），用于日志与分派；实现缺失时视为 OFF。 */
+    /** 运行路径名，用于日志（固定 AGENT）。 */
     default String mode() {
-        return "OFF";
+        return "AGENT";
     }
 }

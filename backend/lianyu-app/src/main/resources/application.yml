@@ -248,10 +248,7 @@ lianyu:
     base-url: ${LIANYU_ASR_BASE_URL:http://asr:8080}
     max-bytes: 8388608
   agent:
-    # Strangler 灰度开关（docs/refactor-2026-10/refactor-plan.md §3.4）：
-    # OFF   = 纯 Java（回滚开关）
-    # AGENT = Python 出结果 + Java 兜底（灰度切流）
-    mode: ${LIANYU_AGENT_MODE:OFF}
+    # OFF 已退役：所有 AI 调用都在 backend-agent（Python）。
     base-url: ${LIANYU_AGENT_BASE_URL:http://agent:8001}
   voice:
     duplex:

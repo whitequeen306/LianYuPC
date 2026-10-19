@@ -10,7 +10,7 @@ import com.lianyu.dao.mapper.CharacterDiaryMapper;
 import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.MessageMapper;
-import com.lianyu.service.ai.AiChatService;
+import com.lianyu.service.agent.AgentTextPort;
 import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.ai.background.AiBackgroundPublisher;
 import com.lianyu.service.ai.background.AiBackgroundTask;
@@ -18,7 +18,6 @@ import com.lianyu.service.dto.ChatResult;
 import com.lianyu.service.dto.MessageDto;
 import com.lianyu.service.dto.VaultEntryResponse;
 import com.lianyu.service.graph.ChatTurnFacade;
-import com.lianyu.service.memory.MemoryRetriever;
 import com.lianyu.service.notification.NotificationService;
 import com.lianyu.service.relationship.RelationshipStateService;
 import com.lianyu.service.support.OutputLanguageService;
@@ -39,8 +38,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -52,7 +53,7 @@ class CharacterDiaryServiceTest {
     private CharacterMapper characterMapper;
     private ConversationMapper conversationMapper;
     private MessageMapper messageMapper;
-    private AiChatService aiChatService;
+    private AgentTextPort agentTextPort;
     private ApiKeyVaultService apiKeyVaultService;
     private ChatTurnFacade chatTurnFacade;
     private OutputLanguageService outputLanguageService;
@@ -67,7 +68,7 @@ class CharacterDiaryServiceTest {
         characterMapper = mock(CharacterMapper.class);
         conversationMapper = mock(ConversationMapper.class);
         messageMapper = mock(MessageMapper.class);
-        aiChatService = mock(AiChatService.class);
+        agentTextPort = mock(AgentTextPort.class);
         apiKeyVaultService = mock(ApiKeyVaultService.class);
         chatTurnFacade = mock(ChatTurnFacade.class);
         outputLanguageService = mock(OutputLanguageService.class);
@@ -76,9 +77,8 @@ class CharacterDiaryServiceTest {
         aiBackgroundPublisher = mock(AiBackgroundPublisher.class);
         service = new CharacterDiaryService(
                 diaryMapper, characterMapper, conversationMapper, messageMapper,
-                aiChatService, apiKeyVaultService, chatTurnFacade,
-                mock(com.lianyu.service.ai.CharacterPromptBuilder.class),
-                mock(MemoryRetriever.class), outputLanguageService,
+                apiKeyVaultService, chatTurnFacade,
+                outputLanguageService,
                 new ObjectMapper(), mock(RelationshipStateService.class),
                 notificationService, characterRecentActivityService, aiBackgroundPublisher);
 
@@ -91,6 +91,7 @@ class CharacterDiaryServiceTest {
         ReflectionTestUtils.setField(service, "maxPerUserPerRun", 2);
         ReflectionTestUtils.setField(service, "impromptuMaxPerDay", 1);
         ReflectionTestUtils.setField(service, "contentMaxChars", 900);
+        ReflectionTestUtils.setField(service, "agentTextPort", agentTextPort);
     }
 
     private ConversationActivityRow activity(Long convId, Long userId, Long characterId, long userMsgs) {
@@ -268,8 +269,8 @@ class CharacterDiaryServiceTest {
         when(apiKeyVaultService.resolvePreferredUserVault(10L)).thenReturn(vault);
 
         String diaryJson = "{\"title\":\"火锅\",\"content\":\"" + "今天一起聊了火锅的事，" .repeat(10) + "\"}";
-        when(aiChatService.chatBlocking(anyLong(), any())).thenReturn(
-                ChatResult.builder().content(diaryJson).build());
+        when(agentTextPort.complete(anyLong(), anyString(), anyString(), anyString(), anyString(), anyDouble()))
+                .thenReturn(diaryJson);
 
     }
 
@@ -282,12 +283,12 @@ class CharacterDiaryServiceTest {
         verify(diaryMapper).insert(any(CharacterDiary.class));
         verify(notificationService).notifyDiaryNew(anyLong(), anyLong(), anyLong(), any(), any());
 
-        org.mockito.ArgumentCaptor<com.lianyu.service.dto.AiChatRequest> reqCaptor =
-                org.mockito.ArgumentCaptor.forClass(com.lianyu.service.dto.AiChatRequest.class);
-        verify(aiChatService).chatBlocking(anyLong(), reqCaptor.capture());
-        assertTrue(reqCaptor.getValue().isDisableChatTools());
+        org.mockito.ArgumentCaptor<String> userTextCaptor =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(agentTextPort).complete(anyLong(), anyString(), userTextCaptor.capture(),
+                anyString(), anyString(), anyDouble());
         // 素材须包含今天的对话
-        String userContent = reqCaptor.getValue().getMessages().get(1).getContent();
+        String userContent = userTextCaptor.getValue();
         assertTrue(userContent.contains("今天（"));
         assertTrue(userContent.contains("今天聊到的细节"));
     }

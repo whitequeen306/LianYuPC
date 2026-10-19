@@ -27,7 +27,8 @@ class AgentPromptAssemblyAdapterTest {
     private PromptAssemblyRequest request() {
         return new PromptAssemblyRequest(7L, 51L, 53L, "甘雨", Map.of("city", "上海"), null,
                 "SINGLE", "zh", "full", true, null, true, true, 1, "",
-                Map.of("chat", true, "memory", true, "recent", true, "diary", true, "computer", false));
+                Map.of("chat", true, "memory", true, "recent", true, "diary", true, "computer", false),
+                "你好", "\n\n后缀", 0, "", "");
     }
 
     private AgentRuntimeClient client() {
@@ -43,18 +44,9 @@ class AgentPromptAssemblyAdapterTest {
         when(client.postJson(anyString(), anyLong(), anyMap()))
                 .thenReturn("{\"systemPrompt\":\"来自 Python 的 prompt\"}");
 
-        var adapter = new AgentPromptAssemblyAdapter(client, "AGENT");
+        var adapter = new AgentPromptAssemblyAdapter(client);
 
         assertEquals("来自 Python 的 prompt", adapter.assembleIfEnabled(request()));
-    }
-
-    @Test
-    void offModeNeverCallsAgent() {
-        AgentRuntimeClient client = client();
-        var adapter = new AgentPromptAssemblyAdapter(client, "OFF");
-
-        assertNull(adapter.assembleIfEnabled(request()));
-        verify(client, never()).postJson(anyString(), anyLong(), anyMap());
     }
 
     @Test
@@ -63,7 +55,7 @@ class AgentPromptAssemblyAdapterTest {
         when(client.postJson(anyString(), anyLong(), anyMap()))
                 .thenReturn("{\"error\":\"assemble_failed\"}");
 
-        assertNull(new AgentPromptAssemblyAdapter(client, "AGENT").assembleIfEnabled(request()));
+        assertNull(new AgentPromptAssemblyAdapter(client).assembleIfEnabled(request()));
     }
 
     @Test
@@ -72,7 +64,7 @@ class AgentPromptAssemblyAdapterTest {
         when(client.postJson(anyString(), anyLong(), anyMap()))
                 .thenReturn("{\"systemPrompt\":\"  \"}");
 
-        assertNull(new AgentPromptAssemblyAdapter(client, "AGENT").assembleIfEnabled(request()));
+        assertNull(new AgentPromptAssemblyAdapter(client).assembleIfEnabled(request()));
     }
 
     @Test
@@ -80,7 +72,7 @@ class AgentPromptAssemblyAdapterTest {
         AgentRuntimeClient client = client();
         when(client.postJson(anyString(), anyLong(), anyMap())).thenReturn(null);
 
-        assertNull(new AgentPromptAssemblyAdapter(client, "AGENT").assembleIfEnabled(request()));
+        assertNull(new AgentPromptAssemblyAdapter(client).assembleIfEnabled(request()));
     }
 
     @Test
@@ -89,7 +81,7 @@ class AgentPromptAssemblyAdapterTest {
         when(client.postJson(anyString(), anyLong(), anyMap()))
                 .thenThrow(new IllegalStateException("boom"));
 
-        assertNull(new AgentPromptAssemblyAdapter(client, "AGENT").assembleIfEnabled(request()));
+        assertNull(new AgentPromptAssemblyAdapter(client).assembleIfEnabled(request()));
     }
 
     @Test
@@ -102,12 +94,14 @@ class AgentPromptAssemblyAdapterTest {
         assertEquals(7L, body.get("userId"));
         assertEquals(1, body.get("maxPieces"));
         assertTrue(body.containsKey("toolHint"));
+        assertEquals("你好", body.get("lastUserMessage"));
+        assertEquals("\n\n后缀", body.get("extraSystemSuffix"));
     }
 
     @Test
     void nullRequestIsIgnored() {
         AgentRuntimeClient client = client();
-        assertNull(new AgentPromptAssemblyAdapter(client, "AGENT").assembleIfEnabled(null));
+        assertNull(new AgentPromptAssemblyAdapter(client).assembleIfEnabled(null));
         verify(client, never()).postJson(anyString(), anyLong(), anyMap());
     }
 }

@@ -14,8 +14,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * SSE 下发与收尾的统一出口（chunk/replace/心跳/[DONE]/错误事件）。
- * 供 AiChatService（纯文本流）与 VisionChatService（图片流）共用，保证两条链路
- * 的收尾顺序一致：先 callback.beforeStreamComplete，再 [DONE]，再 complete，最后 onComplete。
+ * 供文本流与图片流共用，保证两条链路的收尾顺序一致：
+ * 先 callback.beforeStreamComplete，再 [DONE]，再 complete，最后 onComplete。
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -48,7 +48,7 @@ public class SseChatStreamHelper {
         }
     }
 
-    public void finishSseSuccess(SseEmitter emitter, String fullContent, AiChatService.StreamCallback callback) {
+    public void finishSseSuccess(SseEmitter emitter, String fullContent, com.lianyu.service.agent.AgentStreamCallback callback) {
         try {
             if (callback != null) {
                 callback.beforeStreamComplete(emitter, fullContent);
@@ -65,7 +65,7 @@ public class SseChatStreamHelper {
     }
 
     public void finishSseError(SseEmitter emitter, String message, String partialContent,
-                               AiChatService.StreamCallback callback) {
+                               com.lianyu.service.agent.AgentStreamCallback callback) {
         try {
             Map<String, String> payload = new LinkedHashMap<>();
             payload.put("error", message);

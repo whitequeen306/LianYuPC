@@ -2,8 +2,6 @@ package com.lianyu.web.controller;
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.lianyu.common.base.Result;
-import com.lianyu.service.ai.AiChatService;
-import com.lianyu.service.ai.VisionChatService;
 import com.lianyu.service.ai.DashScopeTtsService;
 import com.lianyu.service.auth.AuthRateLimiter;
 import com.lianyu.service.dto.ObserveDesktopRequest;
@@ -33,21 +31,15 @@ public class ObserveController {
     private static final int OBSERVE_PER_USER_PER_HOUR = 10;
     private static final int OBSERVE_PER_IP_PER_HOUR = 30;
 
-    private final AiChatService aiChatService;
-    private final VisionChatService visionChatService;
     private final DashScopeTtsService dashScopeTtsService;
     private final AuthRateLimiter authRateLimiter;
     private final ClientIpResolver clientIpResolver;
     private final DesktopObserveOrchestrator desktopObserveOrchestrator;
 
-    public ObserveController(AiChatService aiChatService,
-                             VisionChatService visionChatService,
-                             DashScopeTtsService dashScopeTtsService,
+    public ObserveController(DashScopeTtsService dashScopeTtsService,
                              AuthRateLimiter authRateLimiter,
                              ClientIpResolver clientIpResolver,
                              DesktopObserveOrchestrator desktopObserveOrchestrator) {
-        this.aiChatService = aiChatService;
-        this.visionChatService = visionChatService;
         this.dashScopeTtsService = dashScopeTtsService;
         this.authRateLimiter = authRateLimiter;
         this.clientIpResolver = clientIpResolver;
@@ -69,7 +61,6 @@ public class ObserveController {
         }
 
         try {
-            // Strangler 编排：OFF=纯 Java；SHADOW=Java 出结果+Python 影子记 diff；AGENT=Python 优先+Java 兜底
             String greeting = desktopObserveOrchestrator.observe(
                     userId, request.getImageBase64(), request.getWindowTitle(), request.getPersona(),
                     request.getProvider(), request.getModel());

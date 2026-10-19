@@ -6,29 +6,37 @@ import com.lianyu.ai.graph.ChatTurnKeys;
 import com.lianyu.ai.graph.ChatTurnScene;
 import com.lianyu.ai.graph.ChatTurnState;
 import com.lianyu.dao.entity.Character;
-import com.lianyu.service.graph.ChatTurnPromptAssembler;
+import com.lianyu.service.agent.PromptAssemblyPort;
+import com.lianyu.service.agent.PromptAssemblyRequest;
+import com.lianyu.service.character.CharacterChatBehavior;
+import com.lianyu.service.character.CharacterChatBehaviorResolver;
+import com.lianyu.service.character.CharacterPreferenceResolver;
+import com.lianyu.service.graph.ChatTurnGroupExtras;
+import com.lianyu.service.support.OutputLanguageService;
+import com.lianyu.service.tools.TimeTool;
+import com.lianyu.service.tools.ToolManager;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+/**
+ * prompt 组装节点：**只调 agent**，Java 侧不再保留组装回退。
+ *
+ * <p>OFF 退役后，组装失败即报错（而不是静默切回 Java）。这样缺能力会立刻暴露，
+ * 不会出现「看起来在跑、其实走了另一条腿」的静默降级。
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class AssemblePromptNode implements NodeAction {
 
-    private final ChatTurnPromptAssembler promptAssembler;
-
-    /** AGENT 模式下由 Python 接管组装；为 null 或返回 null 时回退 Java。 */
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.lianyu.service.agent.PromptAssemblyPort promptAssemblyPort;
-
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.lianyu.service.tools.ToolManager toolManager;
-
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.lianyu.service.character.CharacterChatBehaviorResolver behaviorResolver;
+    private final PromptAssemblyPort promptAssemblyPort;
+    private final OutputLanguageService outputLanguageService;
+    private final TimeTool timeTool;
+    private final ToolManager toolManager;
+    private final CharacterChatBehaviorResolver behaviorResolver;
 
     @Override
     public Map<String, Object> apply(OverAllState state) {
@@ -38,118 +46,88 @@ public class AssemblePromptNode implements NodeAction {
             throw new IllegalStateException("ChatTurn missing characterRef");
         }
         ChatTurnScene scene = turn.scene();
-        ChatTurnPromptAssembler.GroupExtras groupExtras =
-                state.value(ChatTurnKeys.GROUP_EXTRAS, ChatTurnPromptAssembler.GroupExtras.class).orElse(null);
+        ChatTurnGroupExtras groupExtras =
+                state.value(ChatTurnKeys.GROUP_EXTRAS, ChatTurnGroupExtras.class).orElse(null);
 
-        // 先问 agent（AGENT 模式）：成功就**跳过 Java 全量组装**，省掉重复的记忆检索/关系查询。
-        // 拿不到（非 AGENT / 不健康 / 失败）时才走 Java，保证行为不变。
-        String agentPrompt = tryAgentFirst(turn, character, scene);
-        ChatTurnPromptAssembler.AssembledPrompt assembled = agentPrompt != null
-                ? null
-                : promptAssembler.assemble(scene, turn.userId(), turn.conversationId(), character,
-                        turn.rawUserText(), turn.modelUserText(), turn.extraSystemSuffix(), groupExtras);
-
-        String systemPrompt = agentPrompt != null ? agentPrompt : assembled.systemPrompt();
+        String outputLanguage = outputLanguageService.resolveForRequest(
+                turn.userId(), turn.rawUserText());
+        String systemPrompt = assemble(turn, character, scene, groupExtras, outputLanguage);
+        if (systemPrompt == null || systemPrompt.isBlank()) {
+            throw new IllegalStateException(
+                    "agent prompt assembly returned blank: scene=" + scene
+                            + ", characterId=" + character.getId());
+        }
 
         Map<String, Object> updates = new HashMap<>();
         updates.put(ChatTurnKeys.SYSTEM_PROMPT, systemPrompt);
-        if (assembled != null) {
-            updates.put(ChatTurnKeys.MEMORY_BLOCK, assembled.memoryBlock());
-            updates.put(ChatTurnKeys.RELATIONSHIP_BLOCK, assembled.relationshipBlock());
-            updates.put(ChatTurnKeys.SESSION_SUMMARY_BLOCK, assembled.sessionSummaryBlock());
-            updates.put(ChatTurnKeys.OUTPUT_LANGUAGE, assembled.outputLanguage());
-        }
-        log.info("node=assemblePrompt scene={} characterId={} promptChars={} source={}",
-                scene, character.getId(), systemPrompt.length(),
-                agentPrompt != null ? "agent" : "java");
+        updates.put(ChatTurnKeys.OUTPUT_LANGUAGE, outputLanguage);
+        log.info("node=assemblePrompt scene={} characterId={} promptChars={} source=agent",
+                scene, character.getId(), systemPrompt.length());
         return updates;
     }
 
-    /**
-     * AGENT 模式下让 Python 组装（它自己读记忆/关系/情绪/摘要）。
-     * 任何失败都返回 null —— 调用方用 Java 结果兜底。
-     */
-    private String tryAgentAssembly(ChatTurnState turn, Character character,
-                                    ChatTurnScene scene,
-                                    ChatTurnPromptAssembler.AssembledPrompt assembled) {
-        if (promptAssemblyPort == null) {
-            return null;
-        }
+    private String assemble(ChatTurnState turn,
+                            Character character,
+                            ChatTurnScene scene,
+                            ChatTurnGroupExtras groupExtras,
+                            String outputLanguage) {
+        boolean includeTime = scene.includeTime();
+        String timeFact = includeTime ? timeTool.readCurrentTimeFact() : null;
+        Map<String, Object> toolFlags = scene.enableChatTools()
+                ? toolManager.promptHintFlags(turn.userId())
+                : Map.of("chat", false);
+        CharacterChatBehavior behavior = behaviorResolver.resolve(character);
+        int maxPieces = groupExtras != null && groupExtras.maxPieces() > 0
+                ? groupExtras.maxPieces()
+                : behavior.maxRepliesPerTurn();
+        boolean showInnerThoughts = scene != ChatTurnScene.VOICE_CALL
+                && CharacterPreferenceResolver.showInnerThoughts(character);
+        String memoryText = turn.modelUserText() == null || turn.modelUserText().isBlank()
+                ? turn.rawUserText()
+                : turn.modelUserText();
+
+        PromptAssemblyRequest request = new PromptAssemblyRequest(
+                turn.userId(),
+                character.getId(),
+                turn.conversationId(),
+                character.getName(),
+                character.getSettings(),
+                character.getPromptTemplate(),
+                scene.name(),
+                outputLanguage,
+                afterBaseOf(scene),
+                includeTime,
+                timeFact,
+                scene.enableChatTools(),
+                showInnerThoughts,
+                maxPieces,
+                "",
+                toolFlags,
+                memoryText,
+                turn.extraSystemSuffix(),
+                groupExtras == null ? 0 : groupExtras.maxPieces(),
+                groupExtras == null ? "" : groupExtras.otherCharactersLine(),
+                groupExtras == null ? "" : groupExtras.mentionCtx());
         try {
-            String afterBase = switch (scene) {
-                case MOMENTS, DIARY -> "style_only";
-                case VOICE_CALL -> "time_only";
-                default -> "full";
-            };
-            // 文案由 Python 生成；Java 只提供开关事实
-            java.util.Map<String, Object> toolFlags = scene.enableChatTools() && toolManager != null
-                    ? toolManager.promptHintFlags(turn.userId())
-                    : java.util.Map.of("chat", false);
-            return promptAssemblyPort.assembleIfEnabled(
-                    new com.lianyu.service.agent.PromptAssemblyRequest(
-                            turn.userId(),
-                            character.getId(),
-                            turn.conversationId(),
-                            character.getName(),
-                            character.getSettings(),
-                            character.getPromptTemplate(),
-                            scene.name(),
-                            assembled.outputLanguage(),
-                            afterBase,
-                            scene.includeTime(),
-                            null,
-                            scene.enableChatTools(),
-                            com.lianyu.service.character.CharacterPreferenceResolver
-                                    .showInnerThoughts(character),
-                            behaviorResolver != null
-                                    ? behaviorResolver.resolve(character).maxRepliesPerTurn() : 2,
-                            "",
-                            toolFlags));
+            return promptAssemblyPort.assembleIfEnabled(request);
         } catch (Exception e) {
-            log.warn("Agent prompt assembly threw ({}), fallback to Java", e.toString());
-            return null;
+            throw new IllegalStateException(
+                    "agent prompt assembly failed: scene=" + scene
+                            + ", characterId=" + character.getId(), e);
         }
     }
-    /**
-     * AGENT 模式下让 Python 组装（它自读记忆/关系/情绪/摘要）。
-     * 成功返回 prompt；失败返回 null，调用方回退 Java 组装。
-     */
-    private String tryAgentFirst(ChatTurnState turn, Character character, ChatTurnScene scene) {
-        if (promptAssemblyPort == null) {
-            return null;
+
+    /** 与 Java 原 assemble() 的场景分支逐一对应：GROUP 不属于 full。 */
+    private static String afterBaseOf(ChatTurnScene scene) {
+        if (scene.includeTimeCityGoodnight()) {
+            return "full";
         }
-        try {
-            String afterBase = switch (scene) {
-                case MOMENTS, DIARY -> "style_only";
-                case VOICE_CALL -> "time_only";
-                default -> "full";
-            };
-            java.util.Map<String, Object> toolFlags = scene.enableChatTools() && toolManager != null
-                    ? toolManager.promptHintFlags(turn.userId())
-                    : java.util.Map.of("chat", false);
-            return promptAssemblyPort.assembleIfEnabled(
-                    new com.lianyu.service.agent.PromptAssemblyRequest(
-                            turn.userId(),
-                            character.getId(),
-                            turn.conversationId(),
-                            character.getName(),
-                            character.getSettings(),
-                            character.getPromptTemplate(),
-                            scene.name(),
-                            turn.outputLanguage(),
-                            afterBase,
-                            scene.includeTime(),
-                            null,
-                            scene.enableChatTools(),
-                            com.lianyu.service.character.CharacterPreferenceResolver
-                                    .showInnerThoughts(character),
-                            behaviorResolver != null
-                                    ? behaviorResolver.resolve(character).maxRepliesPerTurn() : 2,
-                            "",
-                            toolFlags));
-        } catch (Exception e) {
-            log.warn("Agent prompt assembly threw ({}), fallback to Java", e.toString());
-            return null;
+        if (scene == ChatTurnScene.MOMENTS || scene == ChatTurnScene.DIARY) {
+            return "style_only";
         }
+        if (scene == ChatTurnScene.VOICE_CALL) {
+            return "time_only";
+        }
+        return "none";
     }
 }

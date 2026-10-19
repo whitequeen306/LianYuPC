@@ -17,10 +17,8 @@ import com.lianyu.dao.mapper.GroupMemberMapper;
 import com.lianyu.dao.mapper.MessageMapper;
 import com.lianyu.dao.mapper.UserMapper;
 import com.lianyu.ai.graph.ChatTurnScene;
-import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.ai.AssistantReplyService;
-import com.lianyu.service.ai.CharacterPromptBuilder;
 import com.lianyu.service.ai.PetMeetVoiceCatalog;
 import com.lianyu.service.ai.PetVoiceRegistry;
 import com.lianyu.service.graph.ChatTurnCommand;
@@ -34,7 +32,6 @@ import com.lianyu.service.character.CharacterPreferenceResolver;
 import com.lianyu.service.character.CharacterStateService;
 import com.lianyu.service.character.UserAddressingResolver;
 import com.lianyu.service.dto.*;
-import com.lianyu.service.memory.MemoryRetriever;
 import com.lianyu.service.memory.MemoryWriter;
 import com.lianyu.service.notification.NotificationService;
 import com.lianyu.service.relationship.RelationshipStateService;
@@ -78,10 +75,8 @@ public class ConversationService {
     private final MessageMapper messageMapper;
     private final GroupMemberMapper groupMemberMapper;
     private final CharacterMapper characterMapper;
-    private final AiChatService aiChatService;
     private final ApiKeyVaultService apiKeyVaultService;
     private final ChatTurnFacade chatTurnFacade;
-    private final CharacterPromptBuilder promptBuilder;
     private final MemoryWriter memoryWriter;
     private final StringRedisTemplate redisTemplate;
     private final FileStorageService fileStorageService;
@@ -351,7 +346,7 @@ public class ConversationService {
 
         final Character streamCharacter = character;
         final CharacterChatBehavior streamBehavior = chatBehaviorResolver.resolve(character);
-        AiChatService.StreamCallback callback = new AiChatService.StreamCallback() {
+        com.lianyu.service.agent.AgentStreamCallback callback = new com.lianyu.service.agent.AgentStreamCallback() {
             @Override
             public void onVisionComplete(String imageDescription) {
                 if (hasImage) {

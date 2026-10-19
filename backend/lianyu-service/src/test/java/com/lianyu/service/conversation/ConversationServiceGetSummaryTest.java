@@ -16,13 +16,10 @@ import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.GroupMemberMapper;
 import com.lianyu.dao.mapper.MessageMapper;
 import com.lianyu.dao.mapper.UserMapper;
-import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.AssistantReplyService;
-import com.lianyu.service.ai.CharacterPromptBuilder;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
 import com.lianyu.service.character.CharacterStateService;
 import com.lianyu.service.dto.ConversationResponse;
-import com.lianyu.service.memory.MemoryRetriever;
 import com.lianyu.service.memory.MemoryWriter;
 import com.lianyu.service.notification.NotificationService;
 import com.lianyu.service.relationship.RelationshipStateService;
@@ -45,9 +42,6 @@ class ConversationServiceGetSummaryTest {
     @Mock private GroupMemberMapper groupMemberMapper;
     @Mock private CharacterMapper characterMapper;
     @Mock private UserMapper userMapper;
-    @Mock private AiChatService aiChatService;
-    @Mock private CharacterPromptBuilder promptBuilder;
-    @Mock private MemoryRetriever memoryRetriever;
     @Mock private MemoryWriter memoryWriter;
     @Mock private StringRedisTemplate redisTemplate;
     @Mock private FileStorageService fileStorageService;
@@ -72,10 +66,8 @@ class ConversationServiceGetSummaryTest {
                 messageMapper,
                 groupMemberMapper,
                 characterMapper,
-                aiChatService,
                 mock(com.lianyu.service.ai.ApiKeyVaultService.class),
                 null,
-                promptBuilder,
                 memoryWriter,
                 redisTemplate,
                 fileStorageService,

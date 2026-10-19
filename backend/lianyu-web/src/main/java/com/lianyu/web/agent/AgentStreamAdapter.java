@@ -41,11 +41,8 @@ public class AgentStreamAdapter implements AgentStreamPort {
                                      String expectedLanguage,
                                      Long characterId,
                                      int maxTokens,
-                                     AiChatService.StreamCallback callback) {
-        if (client.properties().mode() != AgentRuntimeProperties.Mode.AGENT) {
-            return null;
-        }
-        // 前置健康检查：agent 不可用时立刻回退 Java，避免「已发出流式请求后无法回退」。
+                                     com.lianyu.service.agent.AgentStreamCallback callback) {
+        // 前置健康检查：agent 不可用时立刻失败，避免「已发出流式请求后才失败」。
         // 结果缓存 3 秒，避免每条消息都探测。
         if (!reachable()) {
             return null;

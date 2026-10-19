@@ -30,8 +30,7 @@ class AgentSessionSummaryAdapterTest {
     @BeforeEach
     void setUp() {
         client = mock(AgentRuntimeClient.class);
-        when(client.properties()).thenReturn(new AgentRuntimeProperties(
-                AgentRuntimeProperties.Mode.AGENT, "http://agent:8001"));
+        when(client.properties()).thenReturn(new AgentRuntimeProperties("http://agent:8001"));
         when(client.isHealthy()).thenReturn(true);
         when(client.readTree(anyString())).thenAnswer(inv -> om.readTree((String) inv.getArgument(0)));
         vaultService = mock(ApiKeyVaultService.class);

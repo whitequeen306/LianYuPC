@@ -2,8 +2,10 @@ package com.lianyu.web.controller;
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.lianyu.common.base.Result;
+import com.lianyu.service.agent.AgentBlockingPort;
+import com.lianyu.service.agent.AgentChatResult;
+import com.lianyu.service.agent.AgentStreamPort;
 import com.lianyu.service.ai.AiChatQuotaService;
-import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.ModelCatalogService;
 import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.dto.AiChatRequest;
@@ -37,7 +39,8 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AiController {
 
-    private final AiChatService aiChatService;
+    private final AgentStreamPort agentStreamPort;
+    private final AgentBlockingPort agentBlockingPort;
     private final ModelCatalogService modelCatalogService;
     private final ApiKeyVaultService vaultService;
     private final AiChatQuotaService aiChatQuotaService;
@@ -47,7 +50,28 @@ public class AiController {
     public SseEmitter chatStream(@Valid @RequestBody AiChatRequest request) {
         long userId = StpUtil.getLoginIdAsLong();
         aiChatQuotaService.assertDirectChatAllowed(userId);
-        return aiChatService.chatStream(userId, request);
+        String system = "";
+        java.util.List<com.lianyu.service.dto.MessageDto> messages = request.getMessages();
+        if (messages != null && !messages.isEmpty()
+                && "system".equalsIgnoreCase(messages.get(0).getRole())) {
+            system = messages.get(0).getContent();
+            messages = messages.subList(1, messages.size());
+        }
+        SseEmitter emitter = agentStreamPort.streamIfActive(
+                userId,
+                system,
+                messages,
+                request.getProvider(),
+                request.getModel(),
+                request.getExpectedLanguage(),
+                request.getChatToolCharacterId(),
+                request.getMaxTokens() == null ? 1024 : request.getMaxTokens(),
+                null);
+        if (emitter == null) {
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.AI_PROVIDER_ERROR, "消息发送失败，请稍后再试");
+        }
+        return emitter;
     }
 
     @Operation(summary = "非流式对话")
@@ -55,7 +79,23 @@ public class AiController {
     public Result<ChatResult> chat(@Valid @RequestBody AiChatRequest request) {
         long userId = StpUtil.getLoginIdAsLong();
         aiChatQuotaService.assertDirectChatAllowed(userId);
-        return Result.ok(aiChatService.chatBlocking(userId, request));
+        AgentChatResult result = agentBlockingPort.complete(
+                userId,
+                request.getMessages(),
+                request.getProvider(),
+                request.getModel(),
+                request.getTemperature(),
+                request.getMaxTokens());
+        if (result == null) {
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.AI_PROVIDER_ERROR, "消息发送失败，请稍后再试");
+        }
+        return Result.ok(ChatResult.builder()
+                .content(result.content())
+                .promptTokens(result.promptTokens())
+                .completionTokens(result.completionTokens())
+                .totalTokens(result.totalTokens())
+                .build());
     }
 
     @Operation(summary = "获取 provider 模型列表")

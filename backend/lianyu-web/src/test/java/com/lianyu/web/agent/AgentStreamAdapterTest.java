@@ -32,7 +32,7 @@ class AgentStreamAdapterTest {
     private AgentStreamBridge bridge;
     private ApiKeyVaultService vaultService;
     private AgentStreamAdapter adapter;
-    private AiChatService.StreamCallback callback;
+    private com.lianyu.service.agent.AgentStreamCallback callback;
 
     @BeforeEach
     void setUp() {
@@ -41,7 +41,7 @@ class AgentStreamAdapterTest {
         bridge = mock(AgentStreamBridge.class);
         vaultService = mock(ApiKeyVaultService.class);
         adapter = new AgentStreamAdapter(client, bridge, vaultService);
-        callback = mock(AiChatService.StreamCallback.class);
+        callback = mock(com.lianyu.service.agent.AgentStreamCallback.class);
         when(bridge.newRelay(any(), any())).thenReturn(mock(AgentStreamBridge.Relay.class));
     }
 
@@ -55,8 +55,8 @@ class AgentStreamAdapterTest {
         return List.of(system, user);
     }
 
-    private static AgentRuntimeProperties props(AgentRuntimeProperties.Mode mode) {
-        return new AgentRuntimeProperties(mode, "http://agent:8001");
+    private static AgentRuntimeProperties props() {
+        return new AgentRuntimeProperties("http://agent:8001");
     }
 
     private SseEmitter call() {
@@ -64,16 +64,8 @@ class AgentStreamAdapterTest {
     }
 
     @Test
-    void doesNotTakeOverInOffMode() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.OFF));
-        assertNull(call());
-        verify(client, never()).streamChat(anyLong(), anyString(), any(), anyString(), anyString(),
-                anyString(), anyString(), anyString(), any(), any(), any(Double.class), any(Integer.class));
-    }
-
-    @Test
     void doesNotTakeOverWhenVaultMissing() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.AGENT));
+        when(client.properties()).thenReturn(props());
         when(vaultService.resolveForChat(anyLong(), any())).thenReturn(null);
         // 无用户文本模型 → 交给 Java（那边会给出准确错误文案）
         assertNull(call());
@@ -81,14 +73,14 @@ class AgentStreamAdapterTest {
 
     @Test
     void doesNotTakeOverWhenVaultResolveThrows() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.AGENT));
+        when(client.properties()).thenReturn(props());
         when(vaultService.resolveForChat(anyLong(), any())).thenThrow(new IllegalStateException("decrypt failed"));
         assertNull(call());
     }
 
     @Test
     void doesNotTakeOverWhenCredentialsBlank() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.AGENT));
+        when(client.properties()).thenReturn(props());
         when(vaultService.resolveForChat(anyLong(), any())).thenReturn(
                 VaultEntryResponse.builder().provider("dashscope").baseUrl("  ").apiKey("k").build());
         assertNull(call());
@@ -96,7 +88,7 @@ class AgentStreamAdapterTest {
 
     @Test
     void takesOverInAgentModeAndDropsSystemFromPayload() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.AGENT));
+        when(client.properties()).thenReturn(props());
         when(vaultService.resolveForChat(anyLong(), any())).thenReturn(
                 VaultEntryResponse.builder().provider("dashscope").baseUrl("https://fake/v1")
                         .apiKey("k").modelDefault("m").build());

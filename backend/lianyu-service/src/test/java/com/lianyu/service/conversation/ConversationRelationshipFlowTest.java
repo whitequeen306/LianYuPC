@@ -17,10 +17,8 @@ import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.GroupMemberMapper;
 import com.lianyu.dao.mapper.MessageMapper;
-import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.AssistantReplyService;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lianyu.service.ai.CharacterPromptBuilder;
 import com.lianyu.service.graph.ChatTurnCommand;
 import com.lianyu.service.graph.ChatTurnFacade;
 import com.lianyu.service.graph.ChatTurnResult;
@@ -30,7 +28,6 @@ import com.lianyu.service.character.CharacterStateService;
 import com.lianyu.service.dto.ChatResult;
 import com.lianyu.service.dto.MessageResponse;
 import com.lianyu.service.dto.SendMessageRequest;
-import com.lianyu.service.memory.MemoryRetriever;
 import com.lianyu.service.memory.MemoryWriter;
 import com.lianyu.service.notification.NotificationService;
 import com.lianyu.service.relationship.RelationshipStateService;
@@ -51,10 +48,7 @@ class ConversationRelationshipFlowTest {
         MessageMapper messageMapper = mock(MessageMapper.class);
         GroupMemberMapper groupMemberMapper = mock(GroupMemberMapper.class);
         CharacterMapper characterMapper = mock(CharacterMapper.class);
-        AiChatService aiChatService = mock(AiChatService.class);
         ChatTurnFacade chatTurnFacade = mock(ChatTurnFacade.class);
-        CharacterPromptBuilder promptBuilder = mock(CharacterPromptBuilder.class);
-        MemoryRetriever memoryRetriever = mock(MemoryRetriever.class);
         MemoryWriter memoryWriter = mock(MemoryWriter.class);
         StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
         @SuppressWarnings("unchecked")
@@ -79,10 +73,8 @@ class ConversationRelationshipFlowTest {
                 messageMapper,
                 groupMemberMapper,
                 characterMapper,
-                aiChatService,
                 mock(com.lianyu.service.ai.ApiKeyVaultService.class),
                 chatTurnFacade,
-                promptBuilder,
                 memoryWriter,
                 redisTemplate,
                 fileStorageService,

@@ -47,8 +47,7 @@ class AgentBlockingAdapterTest {
     @BeforeEach
     void setUp() {
         client = mock(AgentRuntimeClient.class);
-        when(client.properties()).thenReturn(new AgentRuntimeProperties(
-                AgentRuntimeProperties.Mode.AGENT, "http://agent:8001"));
+        when(client.properties()).thenReturn(new AgentRuntimeProperties("http://agent:8001"));
         when(client.isHealthy()).thenReturn(true);
         when(client.readTree(anyString())).thenAnswer(inv -> om.readTree((String) inv.getArgument(0)));
         vaultService = mock(ApiKeyVaultService.class);
@@ -64,7 +63,7 @@ class AgentBlockingAdapterTest {
         when(client.postJson(anyString(), anyLong(), anyMap()))
                 .thenReturn("{\"content\":\"你好呀\"}");
 
-        assertEquals("你好呀", adapter.complete(7L, messages(), "p", null, 0.5, 512));
+        assertEquals("你好呀", adapter.complete(7L, messages(), "p", null, 0.5, 512).content());
     }
 
     @Test
@@ -80,7 +79,7 @@ class AgentBlockingAdapterTest {
             return "{\"content\":\"ok\"}";
         });
 
-        assertEquals("ok", adapter.complete(7L, messages(), "p", null, 0.5, 512));
+        assertEquals("ok", adapter.complete(7L, messages(), "p", null, 0.5, 512).content());
     }
 
     @Test

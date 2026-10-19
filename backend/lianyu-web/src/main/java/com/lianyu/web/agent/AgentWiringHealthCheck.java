@@ -86,10 +86,6 @@ public class AgentWiringHealthCheck {
     }
 
     public boolean isAgentMode() {
-        try {
-            return client.properties().mode() == AgentRuntimeProperties.Mode.AGENT;
-        } catch (Exception e) {
-            return false;
-        }
+        return true;
     }
 }

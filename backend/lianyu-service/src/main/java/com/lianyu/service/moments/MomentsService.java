@@ -13,20 +13,16 @@ import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.MessageMapper;
 import com.lianyu.dao.mapper.MomentsPostMapper;
 import com.lianyu.dao.mapper.UserMapper;
-import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.ApiKeyVaultService;
-import com.lianyu.service.ai.CharacterPromptBuilder;
 import com.lianyu.service.ai.background.AiBackgroundPublisher;
 import com.lianyu.service.ai.background.AiBackgroundTask;
 import com.lianyu.service.character.CharacterPreferenceResolver;
 import com.lianyu.service.character.CharacterRecentActivityService;
 import com.lianyu.service.dto.*;
-import com.lianyu.service.memory.MemoryRetriever;
 import com.lianyu.service.notification.NotificationService;
 import com.lianyu.service.relationship.RelationshipStateService;
 import com.lianyu.service.storage.FileStorageService;
 import com.lianyu.service.support.OutputLanguageService;
-import com.lianyu.service.tools.ChatToolContext;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -64,15 +60,12 @@ public class MomentsService {
     private final MessageMapper messageMapper;
     private final CharacterMapper characterMapper;
     private final UserMapper userMapper;
-    private final AiChatService aiChatService;
     private final ApiKeyVaultService apiKeyVaultService;
 
     /** Optional: AGENT mode delegates model calls to backend-agent (null => fallback to Java). */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.lianyu.service.agent.AgentTextPort agentTextPort;
     private final com.lianyu.service.graph.ChatTurnFacade chatTurnFacade;
-    private final CharacterPromptBuilder promptBuilder;
-    private final MemoryRetriever memoryRetriever;
     private final NotificationService notificationService;
     private final OutputLanguageService outputLanguageService;
     private final StringRedisTemplate redisTemplate;
@@ -374,8 +367,7 @@ public class MomentsService {
     }
 
     private GeneratedMoment generateMoodMoment(Long userId, Character character) {
-        String memoryContext = memoryRetriever.retrieveProfileContext(character.getId(), userId);
-        String systemPrompt = buildSystemPrompt(userId, character, memoryContext, null);
+        String systemPrompt = buildSystemPrompt(userId, character, null);
         String content = callMomentModel(userId, character, systemPrompt, List.of(), """
                 请以该角色身份发一条像真人随手发的社交动态（第一人称）。
                 主题：日常生活里的具体小事——通勤、吃饭、天气、逛街、追剧、晒太阳、加班、堵车、偶遇等；写看得见摸得着的生活细节，语气像真的在记录今天，不要架空剧情或堆砌世界观设定。
@@ -392,8 +384,7 @@ public class MomentsService {
         if (history.isEmpty()) {
             return generateMoodMoment(userId, character);
         }
-        String memoryContext = memoryRetriever.retrieveProfileContext(character.getId(), userId);
-        String systemPrompt = buildSystemPrompt(userId, character, memoryContext, null);
+        String systemPrompt = buildSystemPrompt(userId, character, null);
         List<MessageDto> histDtos = history.stream().map(this::toMessageDto).toList();
         String content = callMomentModel(userId, character, systemPrompt, histDtos, """
                 请以该角色身份发一条像真人随手发的社交动态（第一人称）。
@@ -452,35 +443,24 @@ public class MomentsService {
             log.debug("Moments AI generation skipped: no user text model, userId={}", userId);
             return null;
         }
-        AiChatRequest aiRequest = new AiChatRequest();
-        aiRequest.setProvider(userVault.getProvider());
-        aiRequest.setModel(userVault.getModelDefault());
-        aiRequest.setBackground(true);
-        ChatToolContext.bindTo(aiRequest, character);
-        List<MessageDto> messages = new ArrayList<>();
-        messages.add(messageDto("system", systemPrompt));
-        messages.addAll(history);
-        messages.add(messageDto("user", userInstruction));
-        aiRequest.setMessages(messages);
         try {
-            // Strangler: AGENT mode delegates this model call to backend-agent; null => fallback
-            if (agentTextPort != null) {
-                String viaAgent = agentTextPort.complete(userId, systemPrompt, history, userInstruction,
-                        userVault.getProvider(), userVault.getModelDefault(), 0.9);
-                if (viaAgent != null && !viaAgent.isBlank()) {
-                    log.info("Moments post served by agent runtime: userId={}", userId);
-                    return sanitizeCharacterMomentText(viaAgent);
-                }
+            if (agentTextPort == null) {
+                return null;
             }
-            ChatResult result = aiChatService.chatBlocking(userId, aiRequest);
-            return sanitizeCharacterMomentText(result.getContent());
+            String viaAgent = agentTextPort.complete(userId, systemPrompt, history, userInstruction,
+                    userVault.getProvider(), userVault.getModelDefault(), 0.9);
+            if (viaAgent == null || viaAgent.isBlank()) {
+                return null;
+            }
+            log.info("Moments post served by agent runtime: userId={}", userId);
+            return sanitizeCharacterMomentText(viaAgent);
         } catch (Exception e) {
             log.debug("Moments AI generation failed: {}", e.getMessage());
             return null;
         }
     }
 
-    private String buildSystemPrompt(Long userId, Character character, String memoryContext, String userInput) {
+    private String buildSystemPrompt(Long userId, Character character, String userInput) {
         return chatTurnFacade.assembleSystemPrompt(
                 com.lianyu.ai.graph.ChatTurnScene.MOMENTS,
                 userId,
@@ -560,12 +540,6 @@ public class MomentsService {
         return dto;
     }
 
-    private MessageDto messageDto(String role, String content) {
-        MessageDto dto = new MessageDto();
-        dto.setRole(role);
-        dto.setContent(content);
-        return dto;
-    }
 
     private MomentPostResponse toResponse(MomentsPost row, Character character) {
         return toResponse(row, character, null);

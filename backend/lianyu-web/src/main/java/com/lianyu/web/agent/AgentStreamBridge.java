@@ -1,6 +1,5 @@
 package com.lianyu.web.agent;
 
-import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.SseChatStreamHelper;
 import java.io.IOException;
 import java.util.List;
@@ -28,12 +27,12 @@ public class AgentStreamBridge {
     private final SseChatStreamHelper sseHelper;
 
     /** 增量中继：一次流式对话一个实例（非线程安全，按流独占）。 */
-    public Relay newRelay(SseEmitter emitter, AiChatService.StreamCallback callback) {
+    public Relay newRelay(SseEmitter emitter, com.lianyu.service.agent.AgentStreamCallback callback) {
         return new Relay(emitter, callback);
     }
 
     /** 便捷入口（测试/离线回放用）：一次性喂完整行序列并收尾。 */
-    public void consume(List<String> lines, SseEmitter emitter, AiChatService.StreamCallback callback) {
+    public void consume(List<String> lines, SseEmitter emitter, com.lianyu.service.agent.AgentStreamCallback callback) {
         Relay relay = newRelay(emitter, callback);
         for (String line : lines) {
             if (!relay.accept(line)) {
@@ -46,13 +45,13 @@ public class AgentStreamBridge {
     public class Relay {
 
         private final SseEmitter emitter;
-        private final AiChatService.StreamCallback callback;
+        private final com.lianyu.service.agent.AgentStreamCallback callback;
         private final StringBuilder content = new StringBuilder();
         private String lastReplacement;
         private String errorMessage;
         private boolean closed;
 
-        Relay(SseEmitter emitter, AiChatService.StreamCallback callback) {
+        Relay(SseEmitter emitter, com.lianyu.service.agent.AgentStreamCallback callback) {
             this.emitter = emitter;
             this.callback = callback;
         }

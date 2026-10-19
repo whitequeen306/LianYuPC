@@ -14,7 +14,10 @@ import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.CharacterSquareTemplateMapper;
 import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.MessageMapper;
-import com.lianyu.service.ai.AiChatService;
+import com.lianyu.service.agent.AgentBlockingPort;
+import com.lianyu.service.agent.AgentChatResult;
+import com.lianyu.service.agent.AgentTextPort;
+import com.lianyu.service.agent.AgentTextStreamPort;
 import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.ai.AsrService;
 import com.lianyu.service.ai.DashScopeTtsService;
@@ -84,7 +87,9 @@ public class VoiceCallService {
     private final AsrService asrService;
     private final PetVoiceRegistry petVoiceRegistry;
     private final DashScopeTtsService dashScopeTtsService;
-    private final AiChatService aiChatService;
+    private final AgentBlockingPort agentBlockingPort;
+    private final AgentTextStreamPort agentTextStreamPort;
+    private final AgentTextPort agentTextPort;
     private final ApiKeyVaultService apiKeyVaultService;
     private final ChatTurnFacade chatTurnFacade;
     private final MemoryWriter memoryWriter;
@@ -359,7 +364,16 @@ public class VoiceCallService {
             Long userId,
             AiChatRequest aiRequest,
             java.util.function.Consumer<String> onDelta) {
-        return aiChatService.streamTokens(userId, aiRequest, onDelta);
+        String system = "";
+        List<MessageDto> messages = aiRequest.getMessages();
+        if (messages != null && !messages.isEmpty()
+                && "system".equalsIgnoreCase(messages.get(0).getRole())) {
+            system = messages.get(0).getContent();
+            messages = messages.subList(1, messages.size());
+        }
+        return agentTextStreamPort.stream(
+                userId, system, messages, aiRequest.getProvider(), aiRequest.getModel(),
+                aiRequest.getExpectedLanguage(), onDelta);
     }
 
     public String clampReply(String spoken) {
@@ -479,8 +493,13 @@ public class VoiceCallService {
         }
         AiChatRequest aiRequest = buildVoiceAiRequest(
                 userId, conversationId, character, history, userText, userVault);
-        ChatResult chatResult = aiChatService.chatBlocking(userId, aiRequest);
-        String raw = chatResult.getContent() == null ? "" : chatResult.getContent().trim();
+        AgentChatResult chatResult = agentBlockingPort.complete(
+                userId, aiRequest.getMessages(), aiRequest.getProvider(), aiRequest.getModel(),
+                aiRequest.getTemperature(), aiRequest.getMaxTokens());
+        if (chatResult == null) {
+            return "我在听，你再说一遍。";
+        }
+        String raw = chatResult.content() == null ? "" : chatResult.content().trim();
         String spoken = InnerThoughtFilter.strip(raw);
         if (spoken.isBlank() && !raw.isBlank()) {
             log.warn("Voice call reply became empty after stripping inner thoughts, rawLen={}", raw.length());
@@ -553,18 +572,15 @@ public class VoiceCallService {
             return null;
         }
         try {
-            AiChatRequest aiRequest = new AiChatRequest();
-            aiRequest.setProvider(userVault.getProvider());
-            aiRequest.setModel(userVault.getModelDefault());
-            aiRequest.setBackground(true);
-            List<MessageDto> messages = new ArrayList<>();
-            messages.add(messageDto("system",
+            String content = agentTextPort.complete(
+                    userId,
                     "你是通话摘要助手。根据语音通话片段，用一句中文概括双方大概聊了什么。"
-                            + "要求：不超过36字；不要引号；不要换行；不要出现「摘要」「总结」字样；只输出概括正文。"));
-            messages.add(messageDto("user", transcript));
-            aiRequest.setMessages(messages);
-            ChatResult result = aiChatService.chatBlocking(userId, aiRequest);
-            String raw = result.getContent() == null ? "" : result.getContent().trim()
+                            + "要求：不超过36字；不要引号；不要换行；不要出现「摘要」「总结」字样；只输出概括正文。",
+                    transcript, userVault.getProvider(), userVault.getModelDefault(), 0.3);
+            if (content == null) {
+                return null;
+            }
+            String raw = content.trim()
                     .replace('\n', ' ')
                     .replace("\"", "")
                     .replace("「", "")

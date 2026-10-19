@@ -5,28 +5,20 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /**
  * backend-agent（FastAPI/LangGraph）运行时对接配置。
  *
- * <p>Strangler 灰度开关（docs/refactor-2026-10/refactor-plan.md §3.4）：Java 仍是唯一对外入口，
- * 按模式把 AI 链路转发到 Python 侧。
+ * <p>OFF 退役后只有一条运行路径：所有 AI 调用都走 Python，Java 保留事务/落库/加解密。
+ * `baseUrl` 是容器内地址（compose service agent），仅内网可信。
  */
 @ConfigurationProperties(prefix = "lianyu.agent")
-public record AgentRuntimeProperties(
-        /** off=纯 Java；agent=Python 出结果、Java 兜底 */
-        Mode mode,
-        /** 容器内地址（compose service agent），仅内网可信 */
-        String baseUrl) {
-
-    public enum Mode { OFF, AGENT }
+public record AgentRuntimeProperties(String baseUrl) {
 
     public AgentRuntimeProperties {
-        if (mode == null) {
-            mode = Mode.OFF;
-        }
         if (baseUrl == null || baseUrl.isBlank()) {
             baseUrl = "http://agent:8001";
         }
     }
 
+    /** 兼容旧调用点：OFF 已退役，运行时始终启用 agent。 */
     public boolean agentActive() {
-        return mode == Mode.AGENT;
+        return true;
     }
 }

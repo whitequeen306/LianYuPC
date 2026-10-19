@@ -21,18 +21,14 @@ import org.springframework.stereotype.Component;
 public class AgentPromptAssemblyAdapter implements PromptAssemblyPort {
 
     private final AgentRuntimeClient client;
-    private final boolean agentMode;
 
-    public AgentPromptAssemblyAdapter(
-            AgentRuntimeClient client,
-            @Value("${lianyu.agent.mode:OFF}") String mode) {
+    public AgentPromptAssemblyAdapter(AgentRuntimeClient client) {
         this.client = client;
-        this.agentMode = "AGENT".equalsIgnoreCase(mode);
     }
 
     @Override
     public String assembleIfEnabled(PromptAssemblyRequest request) {
-        if (!agentMode || request == null) {
+        if (request == null) {
             return null;
         }
         if (!reachable()) {
@@ -86,6 +82,11 @@ public class AgentPromptAssemblyAdapter implements PromptAssemblyPort {
         // 让 Python 自己读记忆/关系/情绪/摘要
         body.put("useInternalData", true);
         body.put("scene", request.scene());
+        body.put("lastUserMessage", request.lastUserMessage());
+        body.put("extraSystemSuffix", request.extraSystemSuffix());
+        body.put("groupMaxPieces", request.groupMaxPieces());
+        body.put("groupOtherCharacters", request.groupOtherCharacters());
+        body.put("groupMention", request.groupMention());
         if (request.characterId() != null) {
             body.put("characterId", request.characterId());
         }

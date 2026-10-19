@@ -47,7 +47,6 @@ public class ModelCatalogService {
     private final ApiKeyVaultService vaultService;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
-    private final ChatModelFactory chatModelFactory;
 
     @Value("${spring.ai.openai.base-url:}")
     private String platformBaseUrl;
@@ -157,10 +156,24 @@ public class ModelCatalogService {
         return models;
     }
 
+    /** Spring AI 会自动追加 /v1，Base URL 不应以 /v1 结尾，否则会变成 /v1/v1/... 导致 404。 */
+    private String normalizeOpenAiBaseUrl(String baseUrl) {
+        String resolved = (baseUrl != null && !baseUrl.isBlank()) ? baseUrl : platformBaseUrl;
+        if (resolved == null || resolved.isBlank()) {
+            throw new IllegalStateException(
+                    "OpenAI-compatible base URL not configured. Set vault base_url or OPENAI_BASE_URL.");
+        }
+        String trimmed = resolved.replaceAll("/$", "");
+        if (trimmed.endsWith("/v1")) {
+            return trimmed.substring(0, trimmed.length() - 3);
+        }
+        return trimmed;
+    }
+
     private List<ModelEntryDto> fetchOpenAiCompatibleModels(VaultEntryResponse vault, String apiKey) {
         String vaultBaseUrl = vault.getBaseUrl();
         boolean userSupplied = vaultBaseUrl != null && !vaultBaseUrl.isBlank();
-        String base = chatModelFactory.normalizeOpenAiBaseUrl(userSupplied ? vaultBaseUrl : platformBaseUrl);
+        String base = normalizeOpenAiBaseUrl(userSupplied ? vaultBaseUrl : platformBaseUrl);
         String url = base + "/v1/models";
 
         // 用户自填非受信 base_url 固定已校验 IP 防 DNS 重绑定 SSRF；受信端点用带超时的默认客户端（防对端挂起无限 park 线程）

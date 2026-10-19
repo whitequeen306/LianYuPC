@@ -3,6 +3,8 @@ package com.lianyu.service.character;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lianyu.common.base.ErrorCode;
+import com.lianyu.common.exception.BusinessException;
 import com.lianyu.common.i18n.OutputLanguage;
 import com.lianyu.dao.dto.CharacterDiaryLastDateRow;
 import com.lianyu.dao.dto.ConversationActivityRow;
@@ -14,20 +16,14 @@ import com.lianyu.dao.mapper.CharacterDiaryMapper;
 import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.MessageMapper;
-import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.ApiKeyVaultService;
-import com.lianyu.service.ai.CharacterPromptBuilder;
 import com.lianyu.service.ai.background.AiBackgroundPublisher;
 import com.lianyu.service.ai.background.AiBackgroundTask;
-import com.lianyu.service.dto.AiChatRequest;
-import com.lianyu.service.dto.ChatResult;
 import com.lianyu.service.dto.MessageDto;
 import com.lianyu.service.dto.VaultEntryResponse;
-import com.lianyu.service.memory.MemoryRetriever;
 import com.lianyu.service.relationship.RelationshipStateService;
 import com.lianyu.service.notification.NotificationService;
 import com.lianyu.service.support.OutputLanguageService;
-import com.lianyu.service.tools.ChatToolContext;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -82,16 +78,13 @@ public class CharacterDiaryService {
     private final CharacterMapper characterMapper;
     private final ConversationMapper conversationMapper;
     private final MessageMapper messageMapper;
-    private final AiChatService aiChatService;
     private final ApiKeyVaultService apiKeyVaultService;
     private final com.lianyu.service.graph.ChatTurnFacade chatTurnFacade;
-    private final CharacterPromptBuilder promptBuilder;
 
     /** Optional: AGENT mode delegates the model call to backend-agent (null => fallback to Java). */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.lianyu.service.agent.AgentTextPort agentTextPort;
 
-    private final MemoryRetriever memoryRetriever;
     private final OutputLanguageService outputLanguageService;
     private final ObjectMapper objectMapper;
     private final RelationshipStateService relationshipStateService;
@@ -393,47 +386,15 @@ public class CharacterDiaryService {
             return null;
         }
 
-        AiChatRequest aiReq = new AiChatRequest();
-        aiReq.setProvider(userVault.getProvider());
-        aiReq.setModel(userVault.getModelDefault());
-        aiReq.setTemperature(0.85);
-        aiReq.setBackground(true);
-        // 日记生成本身不再挂工具：防模型在写日记时又调 write_diary 递归入队
-        aiReq.setDisableChatTools(true);
-        ChatToolContext.bindTo(aiReq, character);
-
-        List<MessageDto> messages = new ArrayList<>();
-        MessageDto sys = new MessageDto();
-        sys.setRole("system");
-        sys.setContent(basePrompt);
-        messages.add(sys);
-        MessageDto user = new MessageDto();
-        user.setRole("user");
-        user.setContent(instruction + "\n\n" + chatSummary);
-        messages.add(user);
-        aiReq.setMessages(messages);
-
         try {
-            String content = null;
-            // Strangler: AGENT mode delegates this model call to backend-agent; null => fallback
-            if (agentTextPort != null) {
-                content = agentTextPort.complete(
-                        userId, basePrompt, instruction + "\n\n" + chatSummary,
-                        userVault.getProvider(), userVault.getModelDefault(), 0.85);
-                if (content != null) {
-                    log.info("Diary turn served by agent runtime: userId={}, characterId={}",
-                            userId, character.getId());
-                }
+            if (agentTextPort == null) {
+                throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "日记生成服务不可用");
             }
+            String content = agentTextPort.complete(
+                    userId, basePrompt, instruction + "\n\n" + chatSummary,
+                    userVault.getProvider(), userVault.getModelDefault(), 0.85);
             if (content == null || content.isBlank()) {
-                ChatResult result = aiChatService.chatBlocking(userId, aiReq);
-                if (result == null) {
-                    return null;
-                }
-                content = result.getContent();
-            }
-            if (content == null || content.isBlank()) {
-                return null;
+                throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "日记生成失败，请稍后再试");
             }
 
             String json = extractJsonObject(content.trim());

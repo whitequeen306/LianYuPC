@@ -54,8 +54,7 @@ services:
       MILVUS_HOST: milvus
       LIANYU_ASR_BASE_URL: http://asr:8080
       SERVER_PORT: 8080
-      # Strangler 阶段 2：agent 运行时模式（OFF/SHADOW/AGENT），见 docs/refactor-2026-10/
-      LIANYU_AGENT_MODE: ${LIANYU_AGENT_MODE:-AGENT}
+      # OFF 已退役：agent 运行时始终启用
       # outbox 投影由 Python relay 独占（记忆域单写者）；Java relay 保留但默认关闭
       LIANYU_MEMORY_OUTBOX_ENABLED: ${LIANYU_MEMORY_OUTBOX_ENABLED:-false}
       LIANYU_AGENT_BASE_URL: ${LIANYU_AGENT_BASE_URL:-http://agent-lb:8001}

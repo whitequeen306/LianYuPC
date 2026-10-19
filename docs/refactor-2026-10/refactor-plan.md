@@ -114,13 +114,16 @@ backend-agent/app/
 | 三模式开关 | `LIANYU_AGENT_MODE=OFF\|SHADOW\|AGENT`（默认 OFF） | 任何 agent 失败**静默回退 Java 原链路**，绝不阻塞用户 |
 | 职责切分 | Java：vault 解析、人设组装、历史取窗、落库、通知；Python：装配 + 模型调用 | **Python 不碰 MySQL/Redis**（阶段 P5 前），事务红线天然不破 |
 
-### 3.4 三模式语义
+### 3.4 三模式语义（历史）
+
+> 2026-10-19：`OFF` / `SHADOW` 已退役，`LIANYU_AGENT_MODE` 已删除。
+> 当前只有一条路径：Python 出结果；失败即报错，Java 无模型回退。
 
 | 模式 | 行为 | 用途 |
 |---|---|---|
-| `OFF` | 纯 Java，与历史版本逐字节一致 | 默认；出问题立刻退回 |
-| `SHADOW` | Java 出结果给用户 + Python 同请求影子跑，记 diff | 观察期，统计漂移率 |
-| `AGENT` | Python 出结果；为空/失败回退 Java | 切流 |
+| `OFF` | 纯 Java，与历史版本逐字节一致 | ❌ 已删除 |
+| `SHADOW` | Java 出结果给用户 + Python 同请求影子跑，记 diff | ❌ 已删除 |
+| `AGENT` | Python 出结果 | ✅ 唯一路径 |
 
 ---
 
@@ -203,6 +206,7 @@ Python 侧目前**没有** Resilience4j 等价物（按上游熔断/隔舱）、
 | **图片流迁 Python** | `image_chat.py` 两段式（识图→生成）+ `AgentImagePort/Adapter`（Java 取字节转 base64）；顺带修复 facade 丢失的文本 agent 分支 | 见提交 |
 | **relay 迁 Python（单写者）** | `milvus_store.py` 契约对齐 Java + `memory/relay.py`（认领/退避/死信/上游不可用不烧重试）+ lifespan 后台循环；Java relay 默认关闭 | 见提交 |
 | **3 条非 Graph 链路下沉** | 通用文本端口 `AgentTextPort` + `/agent/text/complete`（支持 history）：日记、朋友圈发帖、朋友圈评论全部接通，任何 null/异常回退 Java | `1d681b4`、`f948b65` |
+| **OFF 退役（终局）** | 移除 SHADOW；prompt 组装/记忆关系情绪读路径/工具提示/模型调用全部迁 Python 或删除；新增 `/agent/character/*`；删除 `Mode`/`NoopAgentRuntimePort`/`LIANYU_AGENT_MODE`；棘轮 `0/0/0` | 本轮提交 |
 
 **容器级实测结论**：`lianyu-agent` healthy；backend 日志确认 `profile "prod"` 激活；
 gateway TLS → `/api/agent/` → `{"status":"UP"}`；proactive-turn 无凭据 → `no_text_credentials`、user mismatch → 403。
@@ -270,16 +274,12 @@ docker ps --filter name=lianyu --format "{{.Names}} {{.Status}}"   # agent 应 h
 docker logs lianyu-backend | Select-String "profile is active"     # 应为 prod
 ```
 
-### 7.3 灰度切换
+### 7.3 灰度切换（已退役）
 
-```powershell
-# .env
-LIANYU_AGENT_MODE=SHADOW      # 观察期
-LIANYU_AGENT_MODE=AGENT       # 切流
-LIANYU_AGENT_MODE=OFF         # 回滚（一步到位）
-```
+OFF/SHADOW 已于 2026-10-19 删除，`LIANYU_AGENT_MODE` 不再存在。
+回滚只能回滚部署版本（`local/ship-release.ps1`），不能再切回 Java 模型路径。
 
-观察期看两类日志统计漂移率：
+历史观察期日志（已随 SHADOW 代码删除）：
 - `Shadow observe[userId]: match|DIFF`
 - `Proactive shadow[userId][scene]: match|DIFF`
 

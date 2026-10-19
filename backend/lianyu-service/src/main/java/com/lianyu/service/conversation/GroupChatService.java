@@ -15,18 +15,15 @@ import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.GroupMemberMapper;
 import com.lianyu.dao.mapper.MessageMapper;
-import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.ai.AssistantReplyService;
 import com.lianyu.service.ai.AssistantReplySplitter;
-import com.lianyu.service.ai.CharacterPromptBuilder;
 import com.lianyu.service.ai.InnerThoughtFilter;
 import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
 import com.lianyu.service.character.CharacterPreferenceResolver;
 import com.lianyu.service.character.CharacterService;
 import com.lianyu.service.dto.*;
-import com.lianyu.service.memory.MemoryRetriever;
 import com.lianyu.service.notification.NotificationService;
 import com.lianyu.service.storage.FileStorageService;
 import com.lianyu.service.support.OutputLanguageService;
@@ -64,12 +61,10 @@ public class GroupChatService {
     private final GroupMemberMapper groupMemberMapper;
     private final CharacterMapper characterMapper;
     private final MessageMapper messageMapper;
-    private final AiChatService aiChatService;
+    private final com.lianyu.service.agent.AgentBlockingPort agentBlockingPort;
     private final ApiKeyVaultService apiKeyVaultService;
     private final com.lianyu.service.graph.ChatTurnFacade chatTurnFacade;
-    private final CharacterPromptBuilder promptBuilder;
     private final OutputLanguageService outputLanguageService;
-    private final MemoryRetriever memoryRetriever;
     private final SimpMessagingTemplate messagingTemplate;
     private final StringRedisTemplate redisTemplate;
     private final FileStorageService fileStorageService;
@@ -290,7 +285,7 @@ public class GroupChatService {
 
                             禁止假装用户刚发了乱码、指令、报错或任何未在历史中真实出现的用户消息。
                             """)
-                    .groupExtras(new com.lianyu.service.graph.ChatTurnPromptAssembler.GroupExtras(
+                    .groupExtras(new com.lianyu.service.graph.ChatTurnGroupExtras(
                             maxPieces, othersLine, mentionCtx))
                     .streaming(false)
                     .build());
@@ -538,7 +533,7 @@ public class GroupChatService {
                     .rawUserText(request.getContent())
                     .modelUserText(request.getModelContentForAi())
                     .preparedMessages(allMsgs)
-                    .groupExtras(new com.lianyu.service.graph.ChatTurnPromptAssembler.GroupExtras(
+                    .groupExtras(new com.lianyu.service.graph.ChatTurnGroupExtras(
                             maxPieces, othersLine, mentionCtx))
                     .streaming(false)
                     .build());
@@ -1004,21 +999,14 @@ public class GroupChatService {
                     + "\n当前消息: " + content
                     + "\n最近上下文:\n" + ctx;
 
-            AiChatRequest judgeReq = new AiChatRequest();
-            judgeReq.setProvider(request.getProvider());
-            judgeReq.setBackground(true);
-            judgeReq.setModel(request.getModel());
-            judgeReq.setTemperature(0.1);
-            judgeReq.setMessages(List.of(
-                    buildSystemMessage(systemPrompt),
-                    buildUserMessage(userPrompt)
-            ));
-
-            ChatResult result = aiChatService.chatBlocking(userId, judgeReq);
-            if (result == null || result.getContent() == null || result.getContent().isBlank()) {
+            com.lianyu.service.agent.AgentChatResult result = agentBlockingPort.complete(
+                    userId,
+                    List.of(buildSystemMessage(systemPrompt), buildUserMessage(userPrompt)),
+                    request.getProvider(), request.getModel(), 0.1, null);
+            if (result == null || result.content() == null || result.content().isBlank()) {
                 return null;
             }
-            String json = extractJsonObject(result.getContent().trim());
+            String json = extractJsonObject(result.content().trim());
             JsonNode root = objectMapper.readTree(json);
             boolean should = root.path("shouldMention").asBoolean(false);
             String target = root.path("target").asText("NONE");

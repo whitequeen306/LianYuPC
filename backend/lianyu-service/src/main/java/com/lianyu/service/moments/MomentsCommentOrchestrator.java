@@ -9,19 +9,13 @@ import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.MomentsCommentMapper;
 import com.lianyu.dao.mapper.MomentsInteractionStateMapper;
 import com.lianyu.dao.mapper.MomentsPostMapper;
-import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.ApiKeyVaultService;
-import com.lianyu.service.ai.CharacterPromptBuilder;
 import com.lianyu.service.ai.background.AiBackgroundPublisher;
 import com.lianyu.service.ai.background.AiBackgroundTask;
 import com.lianyu.service.character.CharacterPreferenceResolver;
-import com.lianyu.service.dto.AiChatRequest;
-import com.lianyu.service.dto.ChatResult;
 import com.lianyu.service.dto.MessageDto;
 import com.lianyu.service.dto.VaultEntryResponse;
-import com.lianyu.service.memory.MemoryRetriever;
 import com.lianyu.service.support.OutputLanguageService;
-import com.lianyu.service.tools.ChatToolContext;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -51,15 +45,12 @@ public class MomentsCommentOrchestrator {
     private final MomentsInteractionStateMapper interactionStateMapper;
     private final CharacterMapper characterMapper;
     private final MomentsCommentService momentsCommentService;
-    private final AiChatService aiChatService;
 
     /** Optional: AGENT mode delegates model calls to backend-agent (null => fallback to Java). */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.lianyu.service.agent.AgentTextPort agentTextPort;
     private final ApiKeyVaultService apiKeyVaultService;
     private final com.lianyu.service.graph.ChatTurnFacade chatTurnFacade;
-    private final CharacterPromptBuilder promptBuilder;
-    private final MemoryRetriever memoryRetriever;
     private final OutputLanguageService outputLanguageService;
     private final StringRedisTemplate redisTemplate;
     private final ScheduledExecutorService scheduledExecutorService;
@@ -70,11 +61,8 @@ public class MomentsCommentOrchestrator {
                                       MomentsInteractionStateMapper interactionStateMapper,
                                       CharacterMapper characterMapper,
                                       @Lazy MomentsCommentService momentsCommentService,
-                                      AiChatService aiChatService,
                                       ApiKeyVaultService apiKeyVaultService,
                                       com.lianyu.service.graph.ChatTurnFacade chatTurnFacade,
-                                      CharacterPromptBuilder promptBuilder,
-                                      MemoryRetriever memoryRetriever,
                                       OutputLanguageService outputLanguageService,
                                       StringRedisTemplate redisTemplate,
                                       ScheduledExecutorService scheduledExecutorService,
@@ -84,11 +72,8 @@ public class MomentsCommentOrchestrator {
         this.interactionStateMapper = interactionStateMapper;
         this.characterMapper = characterMapper;
         this.momentsCommentService = momentsCommentService;
-        this.aiChatService = aiChatService;
         this.apiKeyVaultService = apiKeyVaultService;
         this.chatTurnFacade = chatTurnFacade;
-        this.promptBuilder = promptBuilder;
-        this.memoryRetriever = memoryRetriever;
         this.outputLanguageService = outputLanguageService;
         this.redisTemplate = redisTemplate;
         this.scheduledExecutorService = scheduledExecutorService;
@@ -752,35 +737,17 @@ public class MomentsCommentOrchestrator {
             log.debug("Moments comment AI skipped: no user text model, userId={}", userId);
             return null;
         }
-        AiChatRequest req = new AiChatRequest();
-        req.setProvider(userVault.getProvider());
-        req.setModel(userVault.getModelDefault());
-        req.setBackground(true);
-        ChatToolContext.bindTo(req, character);
-        List<MessageDto> messages = new ArrayList<>();
-        MessageDto sys = new MessageDto();
-        sys.setRole("system");
-        sys.setContent(systemPrompt);
-        messages.add(sys);
-        MessageDto user = new MessageDto();
-        user.setRole("user");
-        user.setContent(instruction);
-        messages.add(user);
-        req.setMessages(messages);
-        req.setExpectedLanguage(lang);
-
         try {
-            // Strangler: AGENT mode delegates this model call to backend-agent; null => fallback
-            if (agentTextPort != null) {
-                String viaAgent = agentTextPort.complete(userId, systemPrompt, instruction,
-                        userVault.getProvider(), userVault.getModelDefault(), 0.9);
-                if (viaAgent != null && !viaAgent.isBlank()) {
-                    log.info("Moments comment served by agent runtime: character={}", character.getName());
-                    return sanitize(viaAgent);
-                }
+            if (agentTextPort == null) {
+                return null;
             }
-            ChatResult result = aiChatService.chatBlocking(userId, req);
-            return sanitize(result.getContent());
+            String viaAgent = agentTextPort.complete(userId, systemPrompt, instruction,
+                    userVault.getProvider(), userVault.getModelDefault(), 0.9);
+            if (viaAgent == null || viaAgent.isBlank()) {
+                return null;
+            }
+            log.info("Moments comment served by agent runtime: character={}", character.getName());
+            return sanitize(viaAgent);
         } catch (Exception e) {
             log.debug("Moments comment AI failed: character={}, reason={}", character.getName(), e.getMessage());
             return null;

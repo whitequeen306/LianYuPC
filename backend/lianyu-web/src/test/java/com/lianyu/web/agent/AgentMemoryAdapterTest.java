@@ -37,8 +37,8 @@ class AgentMemoryAdapterTest {
         adapter = new AgentMemoryAdapter(client, vaultService);
     }
 
-    private static AgentRuntimeProperties props(AgentRuntimeProperties.Mode mode) {
-        return new AgentRuntimeProperties(mode, "http://agent:8001");
+    private static AgentRuntimeProperties props() {
+        return new AgentRuntimeProperties("http://agent:8001");
     }
 
     private static List<AgentMemoryMessage> messages() {
@@ -60,27 +60,20 @@ class AgentMemoryAdapterTest {
     }
 
     @Test
-    void offModeDoesNotTakeOver() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.OFF));
-        assertFalse(adapter.extractAndWriteIfActive(1L, 3L, messages(), "dashscope", "m"));
-        verify(client, never()).postJson(anyString(), anyLong(), anyMap());
-    }
-
-    @Test
     void emptyMessagesDoesNotTakeOver() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.AGENT));
+        when(client.properties()).thenReturn(props());
         assertFalse(adapter.extractAndWriteIfActive(1L, 3L, List.of(), "dashscope", "m"));
     }
 
     @Test
     void nullCharacterDoesNotTakeOver() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.AGENT));
+        when(client.properties()).thenReturn(props());
         assertFalse(adapter.extractAndWriteIfActive(1L, null, messages(), "dashscope", "m"));
     }
 
     @Test
     void missingVaultDoesNotTakeOver() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.AGENT));
+        when(client.properties()).thenReturn(props());
         when(vaultService.resolveForChat(anyLong(), any())).thenReturn(null);
         when(vaultService.resolvePreferredUserVault(anyLong())).thenReturn(null);
         assertFalse(adapter.extractAndWriteIfActive(1L, 3L, messages(), "dashscope", "m"));
@@ -88,7 +81,7 @@ class AgentMemoryAdapterTest {
 
     @Test
     void networkFailureFallsBack() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.AGENT));
+        when(client.properties()).thenReturn(props());
         stubVault();
         when(client.postJson(anyString(), anyLong(), anyMap())).thenReturn(null);
         assertFalse(adapter.extractAndWriteIfActive(1L, 3L, messages(), "dashscope", "m"));
@@ -96,7 +89,7 @@ class AgentMemoryAdapterTest {
 
     @Test
     void agentErrorFallsBack() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.AGENT));
+        when(client.properties()).thenReturn(props());
         stubVault();
         stubReadTree();
         when(client.postJson(anyString(), anyLong(), anyMap()))
@@ -106,7 +99,7 @@ class AgentMemoryAdapterTest {
 
     @Test
     void agentSuccessTakesOver() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.AGENT));
+        when(client.properties()).thenReturn(props());
         stubVault();
         stubReadTree();
         when(client.postJson(anyString(), anyLong(), anyMap()))

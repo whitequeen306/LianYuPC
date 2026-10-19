@@ -31,27 +31,11 @@ def test_fragments_file_exists():
     assert FRAGMENTS_PATH.exists(), "先运行 scripts/extract-java-prompt-fragments.py"
 
 
-def test_regenerating_produces_identical_output(tmp_path):
-    """防漂移：Java prompt 改动后未重新生成 → 这里失败。"""
-    committed = json.loads(FRAGMENTS_PATH.read_text(encoding="utf-8"))
-
-    before = FRAGMENTS_PATH.read_text(encoding="utf-8")
-    try:
-        subprocess.run(
-            [sys.executable, str(GENERATOR)],
-            cwd=str(ROOT),
-            check=True,
-            capture_output=True,
-        )
-        regenerated = FRAGMENTS_PATH.read_text(encoding="utf-8")
-    finally:
-        FRAGMENTS_PATH.write_text(before, encoding="utf-8")
-
-    assert regenerated == before, (
-        "fragments.json 与 Java 源码不一致：请重新运行 "
-        "scripts/extract-java-prompt-fragments.py 并提交"
-    )
-    assert json.loads(regenerated) == committed
+def test_fragments_file_is_valid_json():
+    """Java prompt 源码已删除，fragments.json 是冻结基线（Python 唯一 prompt 来源）。"""
+    payload = json.loads(FRAGMENTS_PATH.read_text(encoding="utf-8"))
+    assert payload
+    assert all("text" in block for block in payload.get("blocks", []))
 
 
 def test_goodnight_variants_present_for_four_languages():

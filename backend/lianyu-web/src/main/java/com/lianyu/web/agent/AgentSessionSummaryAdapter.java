@@ -35,8 +35,7 @@ public class AgentSessionSummaryAdapter implements SessionSummaryPort {
     public String generate(long userId, String provider, String model, String mode,
                            String existingSummary, List<SummaryMessage> messages,
                            int targetChars) {
-        if (client.properties().mode() != AgentRuntimeProperties.Mode.AGENT
-                || vaultService == null) {
+        if (vaultService == null) {
             return null;
         }
         if (!reachable()) {

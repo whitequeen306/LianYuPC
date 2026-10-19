@@ -25,7 +25,6 @@ public class RelationshipStateService {
 
     private final RelationshipStateMapper relationshipStateMapper;
     private final RelationshipEventMapper relationshipEventMapper;
-    private final RelationshipContextAssembler relationshipContextAssembler;
     private final RelationshipInnerSpaceAssembler relationshipInnerSpaceAssembler;
 
     public RelationshipSnapshot getSnapshot(Long userId, Long characterId) {
@@ -57,11 +56,6 @@ public class RelationshipStateService {
             }
         }
         return map;
-    }
-
-    public String buildPromptContext(Long userId, Long characterId) {
-        RelationshipSnapshot snapshot = getSnapshot(userId, characterId);
-        return relationshipContextAssembler.assemble(snapshot, listRecentEventSummaries(userId, characterId, 5));
     }
 
     public RelationshipInnerSpace buildInnerSpace(Long userId, Long characterId) {

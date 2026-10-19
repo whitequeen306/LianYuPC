@@ -33,7 +33,7 @@ public class ChatTurnCommand {
     /** 若非空则跳过内部 history→MessageDto 转换，直接使用。 */
     List<MessageDto> preparedMessages;
     String extraSystemSuffix;
-    ChatTurnPromptAssembler.GroupExtras groupExtras;
+    ChatTurnGroupExtras groupExtras;
     boolean streaming;
     StreamTokenConsumer streamSink;
     Map<String, Object> toolCharacterSettings;

@@ -45,34 +45,27 @@ class AgentTextAdapterTest {
         });
     }
 
-    private static AgentRuntimeProperties props(AgentRuntimeProperties.Mode mode) {
-        return new AgentRuntimeProperties(mode, "http://agent:8001");
-    }
-
-    @Test
-    void offModeDoesNotTakeOver() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.OFF));
-        assertNull(adapter.complete(1L, "sys", "user", "dashscope", "m", 0.85));
-        verify(client, never()).postJson(anyString(), anyLong(), anyMap());
+    private static AgentRuntimeProperties props() {
+        return new AgentRuntimeProperties("http://agent:8001");
     }
 
     @Test
     void missingVaultDoesNotTakeOver() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.AGENT));
+        when(client.properties()).thenReturn(props());
         when(vaultService.resolveForChat(anyLong(), any())).thenReturn(null);
         assertNull(adapter.complete(1L, "sys", "user", "dashscope", "m", 0.85));
     }
 
     @Test
     void vaultExceptionDoesNotTakeOver() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.AGENT));
+        when(client.properties()).thenReturn(props());
         when(vaultService.resolveForChat(anyLong(), any())).thenThrow(new IllegalStateException("decrypt"));
         assertNull(adapter.complete(1L, "sys", "user", "dashscope", "m", 0.85));
     }
 
     @Test
     void agentModeReturnsContent() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.AGENT));
+        when(client.properties()).thenReturn(props());
         when(vaultService.resolveForChat(anyLong(), any())).thenReturn(
                 VaultEntryResponse.builder().provider("dashscope").baseUrl("https://fake/v1")
                         .apiKey("k").modelDefault("m").build());
@@ -86,7 +79,7 @@ class AgentTextAdapterTest {
 
     @Test
     void agentErrorFallsBackToJava() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.AGENT));
+        when(client.properties()).thenReturn(props());
         when(vaultService.resolveForChat(anyLong(), any())).thenReturn(
                 VaultEntryResponse.builder().provider("dashscope").baseUrl("https://fake/v1")
                         .apiKey("k").modelDefault("m").build());
@@ -98,7 +91,7 @@ class AgentTextAdapterTest {
 
     @Test
     void nullResponseFallsBackToJava() {
-        when(client.properties()).thenReturn(props(AgentRuntimeProperties.Mode.AGENT));
+        when(client.properties()).thenReturn(props());
         when(vaultService.resolveForChat(anyLong(), any())).thenReturn(
                 VaultEntryResponse.builder().provider("dashscope").baseUrl("https://fake/v1")
                         .apiKey("k").modelDefault("m").build());

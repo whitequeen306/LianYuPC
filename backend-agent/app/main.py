@@ -361,7 +361,17 @@ async def text_chat(
     except Exception as exc:  # noqa: BLE001
         logger.warning("agent text chat failed: %s", exc)
         return {"error": "chat_failed"}
-    return {"content": result.content, "provider": body.provider}
+    return {
+        "content": result.content,
+        "provider": body.provider,
+        "promptTokens": result.prompt_tokens,
+        "completionTokens": result.completion_tokens,
+        "totalTokens": (
+            (result.prompt_tokens or 0) + (result.completion_tokens or 0)
+            if result.prompt_tokens is not None or result.completion_tokens is not None
+            else None
+        ),
+    }
 
 # ─────────────────────────── P5.5：system prompt 组装 ───────────────────────────
 

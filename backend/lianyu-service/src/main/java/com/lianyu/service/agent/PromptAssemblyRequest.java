@@ -18,6 +18,11 @@ package com.lianyu.service.agent;
  * @param showInnerThoughts 是否允许括号内心独白
  * @param maxPieces      单轮最多气泡数
  * @param toolHint       工具提示（依赖 Java 运行时桌面桥接状态）
+ * @param lastUserMessage 本轮用户文本（晚安模式触发判断）
+ * @param extraSystemSuffix 调用方附加的 system 后缀（Java 不再拼接 prompt 文本）
+ * @param groupMaxPieces 群聊单轮气泡上限
+ * @param groupOtherCharacters 群聊其他角色描述行
+ * @param groupMention   群聊 @ 上下文
  */
 public record PromptAssemblyRequest(
         long userId,
@@ -35,5 +40,10 @@ public record PromptAssemblyRequest(
         boolean showInnerThoughts,
         int maxPieces,
         String toolHint,
-        java.util.Map<String, Object> toolFlags) {
+        java.util.Map<String, Object> toolFlags,
+        String lastUserMessage,
+        String extraSystemSuffix,
+        int groupMaxPieces,
+        String groupOtherCharacters,
+        String groupMention) {
 }

@@ -14,7 +14,6 @@ import com.lianyu.dao.mapper.CharacterSquareTemplateMapper;
 import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.MessageMapper;
 import com.lianyu.dao.mapper.UserMapper;
-import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.ai.PetMeetVoiceCatalog;
 import com.lianyu.service.ai.PetVoiceRegistry;
 import com.lianyu.service.agent.AgentRuntimePort;
@@ -22,20 +21,15 @@ import com.lianyu.service.agent.AgentTurnResult;
 import com.lianyu.service.character.UserAddressingResolver;
 import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
-import com.lianyu.service.dto.AiChatRequest;
 import com.lianyu.service.dto.ChatResult;
 import com.lianyu.service.dto.MessageDto;
 import com.lianyu.service.dto.MessageResponse;
 import com.lianyu.service.dto.VaultEntryResponse;
 import com.lianyu.service.graph.ChatTurnFacade;
-import com.lianyu.service.graph.ChatTurnCommand;
 import com.lianyu.service.graph.ChatTurnResult;
 import com.lianyu.ai.graph.ChatTurnScene;
-import com.lianyu.service.memory.MemoryRetriever;
 import com.lianyu.service.memory.MemoryWriter;
 import com.lianyu.service.notification.NotificationService;
-import com.lianyu.service.relationship.RelationshipStateService;
-import com.lianyu.service.tools.ChatToolContext;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -109,7 +103,7 @@ public class ProactiveMessageService {
     }
 
     /** 单聊主动开口（含破冰/跟进）：走 PROACTIVE scene（含真实时间/天气块）。 */
-    private String proactiveSystemPrompt(Long userId, Character character, String memoryContext, String userInput) {
+    private String proactiveSystemPrompt(Long userId, Character character, String userInput) {
         return chatTurnFacade.assembleSystemPrompt(
                 ChatTurnScene.PROACTIVE,
                 userId,
@@ -129,16 +123,13 @@ public class ProactiveMessageService {
     private final CharacterMapper characterMapper;
     private final CharacterSquareTemplateMapper squareTemplateMapper;
     private final UserMapper userMapper;
-    private final AiChatService aiChatService;
     private final ChatTurnFacade chatTurnFacade;
     private final PetMeetVoiceCatalog petMeetVoiceCatalog;
     private final PetVoiceRegistry petVoiceRegistry;
-    private final MemoryRetriever memoryRetriever;
     private final MemoryWriter memoryWriter;
     private final StringRedisTemplate redisTemplate;
     private final CharacterChatBehaviorResolver chatBehaviorResolver;
     private final NotificationService notificationService;
-    private final RelationshipStateService relationshipStateService;
     private final ProactiveUnrepliedThrottle proactiveUnrepliedThrottle;
     /** Strangler 接缝：AGENT 模式下生成段委托 backend-agent；OFF/SHADOW 走原链路。 */
     private final AgentRuntimePort agentRuntime;
@@ -224,48 +215,19 @@ public class ProactiveMessageService {
         List<Message> history = conversationService.getRecentMessages(conversationId, contextWindow);
         CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
         int maxPieces = behavior.maxRepliesPerTurn();
-        List<MessageDto> prepared = new ArrayList<>();
-        prepared.add(conversationService.buildSystemMessage(""));
-        for (Message msg : history) {
-            MessageDto dto = new MessageDto();
-            dto.setRole(msg.getRole().toLowerCase());
-            dto.setContent(msg.getContent());
-            prepared.add(dto);
-        }
-        // Providers often require a trailing user turn; keep it a short system trigger only.
-        // Long task text must stay in system — models were treating numbered「要求」as user「指令/乱码」。
-        prepared.add(conversationService.buildUserMessage(PROACTIVE_USER_TRIGGER));
-
-        // ── Strangler 接缝：AGENT 模式下生成段委托 backend-agent（LangGraph 图）──
-        // persona 组装本身有 DB/Redis 往返，仅 agent 真正激活时才做，OFF 路径零开销
-        ChatTurnResult agentResult = null;
-        if (agentRuntime.agentActive()) {
-            String agentPersona = proactiveSystemPrompt(userId, character, null, null);
-            ChatResult agentTurn = tryAgentTurn(userId, "PROACTIVE", agentPersona,
-                    buildProactiveTaskSystemSuffix(maxPieces), historyToDtoList(history), userVault,
+        String agentPersona = proactiveSystemPrompt(userId, character, null);
+        ChatResult agentTurn = tryAgentTurn(userId, "PROACTIVE", agentPersona,
+                buildProactiveTaskSystemSuffix(maxPieces), historyToDtoList(history), userVault,
                 character.getId());
-            if (agentTurn != null) {
-                agentResult = ChatTurnResult.builder()
-                        .systemPrompt(agentPersona)
-                        .content(agentTurn.getContent())
-                        .totalTokens(agentTurn.getTotalTokens())
-                        .build();
-            }
+        if (agentTurn == null) {
+            log.info("Proactive message skipped: agent returned no content, convId={}", conversationId);
+            return List.of();
         }
-        ChatTurnResult chatResult = agentResult != null ? agentResult : chatTurnFacade.invokeBlocking(ChatTurnCommand.builder()
-                .scene(ChatTurnScene.PROACTIVE)
-                .userId(userId)
-                .conversationId(conversationId)
-                .character(character)
-                .provider(userVault.getProvider())
-                .model(userVault.getModelDefault())
-                .rawUserText(null)
-                .modelUserText(null)
-                .preparedMessages(prepared)
-                .historyMessages(history)
-                .extraSystemSuffix(buildProactiveTaskSystemSuffix(maxPieces))
-                .streaming(false)
-                .build());
+        ChatTurnResult chatResult = ChatTurnResult.builder()
+                .systemPrompt(agentPersona)
+                .content(agentTurn.getContent())
+                .totalTokens(agentTurn.getTotalTokens())
+                .build();
         return self.persistProactiveReply(userId, conversationId, character, userVault, chatResult, maxPieces);
     }
 
@@ -346,8 +308,7 @@ public class ProactiveMessageService {
             CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
             // Cold-open text: 1–2 short lines (not the full chat burst budget).
             int maxPieces = Math.min(2, Math.max(1, behavior.maxRepliesPerTurn()));
-            String memoryContext = memoryRetriever.retrieveProfileContext(character.getId(), userId);
-            String systemPrompt = proactiveSystemPrompt(userId, character, memoryContext, null);
+            String systemPrompt = proactiveSystemPrompt(userId, character, null);
             String coldOpenTask = String.format("""
 
                     
@@ -359,22 +320,13 @@ public class ProactiveMessageService {
                     禁止假装用户发了乱码、指令、报错或任何尚未出现的用户消息。
                     """, maxPieces);
 
-            // ── Strangler 接缝：AGENT 模式下生成段委托 backend-agent ──
-            ChatResult agentTurn = agentRuntime.agentActive()
-                    ? tryAgentTurn(userId, "COLD_OPEN", systemPrompt, coldOpenTask, List.of(), userVault,
-                            character.getId())
-                    : null;
-
-            AiChatRequest aiRequest = new AiChatRequest();
-            ChatToolContext.bindTo(aiRequest, character);
-            aiRequest.setProvider(userVault.getProvider());
-            aiRequest.setModel(userVault.getModelDefault());
-            List<MessageDto> allMessages = new ArrayList<>();
-            allMessages.add(conversationService.buildSystemMessage(systemPrompt + coldOpenTask));
-            allMessages.add(conversationService.buildUserMessage(PROACTIVE_USER_TRIGGER));
-            aiRequest.setMessages(allMessages);
-
-            ChatResult chatResult = agentTurn != null ? agentTurn : aiChatService.chatBlocking(userId, aiRequest);
+            ChatResult chatResult = tryAgentTurn(
+                    userId, "COLD_OPEN", systemPrompt, coldOpenTask, List.of(), userVault,
+                    character.getId());
+            if (chatResult == null) {
+                log.info("Cold open skipped: agent returned no content, convId={}", conversationId);
+                return;
+            }
             if (conversationService.findLastMessage(conversationId) != null) {
                 return;
             }
@@ -642,8 +594,7 @@ public class ProactiveMessageService {
             return;
         }
 
-        String memoryContext = memoryRetriever.retrieveProfileContext(character.getId(), userId);
-        String systemPrompt = proactiveSystemPrompt(userId, character, memoryContext, null);
+        String systemPrompt = proactiveSystemPrompt(userId, character, null);
         List<Message> history = conversationService.getRecentMessages(conversationId, contextWindow);
 
         String followUpTask = """
@@ -656,29 +607,13 @@ public class ProactiveMessageService {
                 禁止假装用户刚发了乱码、指令、报错或任何未在历史中真实出现的用户消息。
                 """;
 
-        // Strangler: AGENT 模式下生成段委托 backend-agent
-        ChatResult agentTurn = agentRuntime.agentActive()
-                ? tryAgentTurn(userId, "COLD_OPEN_FOLLOWUP", systemPrompt, followUpTask,
-                        historyToDtoList(history), userVault, character.getId())
-                : null;
-
-        AiChatRequest aiRequest = new AiChatRequest();
-        ChatToolContext.bindTo(aiRequest, character);
-        aiRequest.setProvider(userVault.getProvider());
-        aiRequest.setModel(userVault.getModelDefault());
-        List<MessageDto> allMessages = new ArrayList<>();
-        allMessages.add(conversationService.buildSystemMessage(systemPrompt + followUpTask));
-        for (Message msg : history) {
-            MessageDto dto = new MessageDto();
-            dto.setRole(msg.getRole().toLowerCase());
-            dto.setContent(msg.getContent());
-            allMessages.add(dto);
+        ChatResult chatResult = tryAgentTurn(
+                userId, "COLD_OPEN_FOLLOWUP", systemPrompt, followUpTask,
+                historyToDtoList(history), userVault, character.getId());
+        if (chatResult == null) {
+            log.info("Cold open follow-up skipped: agent returned no content, convId={}", conversationId);
+            return;
         }
-        allMessages.add(conversationService.buildUserMessage(PROACTIVE_USER_TRIGGER));
-
-        aiRequest.setMessages(allMessages);
-        aiRequest.setBackground(true);
-        ChatResult chatResult = agentTurn != null ? agentTurn : aiChatService.chatBlocking(userId, aiRequest);
         self.persistColdOpenFollowUpReply(userId, conversationId, character, userVault, chatResult);
     }
 
@@ -736,13 +671,9 @@ public class ProactiveMessageService {
             return;
         }
 
-        String memoryContext = memoryRetriever.retrieveProfileContext(character.getId(), userId);
-        String relationshipContext = relationshipStateService.buildPromptContext(userId, character.getId());
-        String mergedMemory = memoryContext == null ? relationshipContext
-                : memoryContext + "\n\n" + relationshipContext;
-        String addressing = resolveUserAddressing(userId, memoryContext);
+        String addressing = resolveUserAddressing(userId, null);
 
-        String systemPrompt = proactiveSystemPrompt(userId, character, mergedMemory, null);
+        String systemPrompt = proactiveSystemPrompt(userId, character, null);
         systemPrompt = appendCityChangeContext(systemPrompt, previousCity, newCity);
 
         List<Message> history = conversationService.getRecentMessages(conversationId, contextWindow);
@@ -760,29 +691,13 @@ public class ProactiveMessageService {
                 """, previousCity, newCity, addressing, previousCity, newCity,
                 addressing, previousCity, newCity);
 
-        // Strangler: AGENT 模式下生成段委托 backend-agent
-        ChatResult agentTurn = agentRuntime.agentActive()
-                ? tryAgentTurn(userId, "CITY_CHANGE", systemPrompt, cityChangeTask,
-                        historyToDtoList(history), userVault, character.getId())
-                : null;
-
-        AiChatRequest aiRequest = new AiChatRequest();
-        ChatToolContext.bindTo(aiRequest, character);
-        aiRequest.setProvider(userVault.getProvider());
-        aiRequest.setModel(userVault.getModelDefault());
-        List<MessageDto> allMessages = new ArrayList<>();
-        allMessages.add(conversationService.buildSystemMessage(systemPrompt + cityChangeTask));
-        for (Message msg : history) {
-            MessageDto dto = new MessageDto();
-            dto.setRole(msg.getRole().toLowerCase());
-            dto.setContent(msg.getContent());
-            allMessages.add(dto);
+        ChatResult chatResult = tryAgentTurn(
+                userId, "CITY_CHANGE", systemPrompt, cityChangeTask,
+                historyToDtoList(history), userVault, character.getId());
+        if (chatResult == null) {
+            log.info("City change follow-up skipped: agent returned no content, convId={}", conversationId);
+            return;
         }
-        allMessages.add(conversationService.buildUserMessage(PROACTIVE_USER_TRIGGER));
-        aiRequest.setMessages(allMessages);
-        aiRequest.setBackground(true);
-
-        ChatResult chatResult = agentTurn != null ? agentTurn : aiChatService.chatBlocking(userId, aiRequest);
         self.persistCityChangeFollowUpReply(userId, conversationId, character, userVault, chatResult, previousCity, newCity);
     }
 

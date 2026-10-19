@@ -75,20 +75,9 @@ $modelCallPatterns = @(
     'springframework\.ai\.chat\.model'
 )
 
-# ── 规则 3：已知 AI 类（迁移完成后应为空）──
-$knownAiClasses = @(
-    'ChatTurnPromptAssembler.java',
-    'CharacterPromptBuilder.java',
-    'MemoryRetriever.java',
-    'RelationshipStateService.java',
-    'CharacterStateService.java',
-    'SessionSummaryService.java',
-    'SessionSummaryMerger.java',
-    'MemoryLlmExtractor.java',
-    'ToolManager.java',
-    'PromptsRuleEngine.java',
-    'LanguageGateService.java'
-)
+# ── 规则 3：已知 AI 类（OFF 退役后清单已清零）──
+# 保留机制：以后若出现新的「AI 逻辑类」，把类名加回这里，strict 会立刻失败。
+$knownAiClasses = @()
 
 $promptHits = New-Object System.Collections.Generic.List[object]
 $modelHits = New-Object System.Collections.Generic.List[object]

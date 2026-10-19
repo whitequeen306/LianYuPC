@@ -35,10 +35,10 @@ public class AgentBlockingAdapter implements AgentBlockingPort {
     }
 
     @Override
-    public String complete(long userId, List<MessageDto> messages, String provider, String model,
-                           Double temperature, Integer maxTokens) {
-        if (client.properties().mode() != AgentRuntimeProperties.Mode.AGENT
-                || vaultService == null || messages == null || messages.isEmpty()) {
+    public com.lianyu.service.agent.AgentChatResult complete(
+            long userId, List<MessageDto> messages, String provider, String model,
+            Double temperature, Integer maxTokens) {
+        if (vaultService == null || messages == null || messages.isEmpty()) {
             return null;
         }
         if (!reachable()) {
@@ -88,11 +88,20 @@ public class AgentBlockingAdapter implements AgentBlockingPort {
                 return null;
             }
             log.debug("Agent blocking ok: chars={}", content.length());
-            return content;
+            Integer promptTokens = intOrNull(root, "promptTokens");
+            Integer completionTokens = intOrNull(root, "completionTokens");
+            Integer totalTokens = intOrNull(root, "totalTokens");
+            return new com.lianyu.service.agent.AgentChatResult(
+                    content, promptTokens, completionTokens, totalTokens, null);
         } catch (Exception e) {
             log.warn("Agent blocking failed ({}), fallback to Java", e.toString());
             return null;
         }
+    }
+
+    static Integer intOrNull(com.fasterxml.jackson.databind.JsonNode root, String field) {
+        com.fasterxml.jackson.databind.JsonNode node = root.path(field);
+        return node.isMissingNode() || node.isNull() ? null : node.asInt();
     }
 
     static List<Map<String, String>> toPayload(List<MessageDto> messages) {

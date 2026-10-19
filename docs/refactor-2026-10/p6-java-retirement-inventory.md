@@ -1,5 +1,10 @@
 # P6 · Java 域退役清单（可判定版）
 
+> **2026-10-19 更新**：OFF/SHADOW 已退役，本文「OFF 模式依赖」一列已失效。
+> prompt 组装、记忆/关系/情绪读路径、模型调用均已迁 Python；
+> 当前基线见 [`java-ai-inventory.md`](./java-ai-inventory.md)。
+> 记忆写入/MQ/事务仍按本文结论保留在 Java。
+
 > 目的：把「哪些 Java 代码可以在 Python 稳定后删除」变成可核对的清单，
 > 而不是凭印象删。每一条都标注 **OFF 模式是否还依赖它** —— 只要还依赖，
 > 现在就删会让 `LIANYU_AGENT_MODE=OFF` 直接坏掉。

@@ -71,7 +71,6 @@ class RelationshipStateServiceTest {
         RelationshipStateService service = new RelationshipStateService(
                 stateMapper,
                 eventMapper,
-                new RelationshipContextAssembler(),
                 new RelationshipInnerSpaceAssembler());
 
         RelationshipInnerSpace innerSpace = service.buildInnerSpace(3L, 5L);

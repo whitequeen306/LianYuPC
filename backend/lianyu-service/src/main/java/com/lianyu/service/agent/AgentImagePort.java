@@ -1,6 +1,5 @@
 package com.lianyu.service.agent;
 
-import com.lianyu.service.ai.AiChatService;
 import com.lianyu.service.dto.MessageDto;
 import java.util.List;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -16,6 +15,19 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  */
 public interface AgentImagePort {
 
+    /**
+     * 阻塞图片回合（非流式单聊 / 群聊等）。
+     *
+     * @return 回复与识图描述；null 表示失败
+     */
+    AgentChatResult completeIfActive(long userId,
+                                     String systemPrompt,
+                                     List<MessageDto> messages,
+                                     String imageUrl,
+                                     String provider,
+                                     String model,
+                                     int maxTokens);
+
     SseEmitter streamIfActive(long userId,
                               String systemPrompt,
                               List<MessageDto> messages,
@@ -23,5 +35,5 @@ public interface AgentImagePort {
                               String provider,
                               String model,
                               int maxTokens,
-                              AiChatService.StreamCallback callback);
+                              AgentStreamCallback callback);
 }

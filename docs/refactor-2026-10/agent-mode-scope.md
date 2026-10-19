@@ -1,5 +1,9 @@
 # AGENT 模式到底替换了什么（代码追踪）
 
+> **历史文档（2026-10-18 快照）**：OFF/SHADOW 已于 2026-10-19 退役，
+> 当前 Java 已无模型调用与 prompt 组装；本文保留当时的追踪结论用于对照。
+> 最新状态见 [`off-retirement-plan.md`](./off-retirement-plan.md)。
+
 > 结论先行：`LIANYU_AGENT_MODE=AGENT` **只替换「模型调用」这一步**。
 > 提示词组装、记忆检索、关系/情绪注入、落库、通知、多气泡切分**全部仍在 Java**。
 

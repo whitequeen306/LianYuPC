@@ -20,9 +20,8 @@ import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.GroupMemberMapper;
 import com.lianyu.dao.mapper.MessageMapper;
 import com.lianyu.dao.mapper.UserMapper;
-import com.lianyu.service.ai.AiChatService;
+import com.lianyu.service.agent.AgentStreamCallback;
 import com.lianyu.service.ai.AssistantReplyService;
-import com.lianyu.service.ai.CharacterPromptBuilder;
 import com.lianyu.service.graph.ChatTurnFacade;
 import com.lianyu.common.exception.BusinessException;
 import com.lianyu.common.base.ErrorCode;
@@ -30,7 +29,6 @@ import com.lianyu.service.character.CharacterChatBehaviorResolver;
 import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterStateService;
 import com.lianyu.service.dto.SendMessageRequest;
-import com.lianyu.service.memory.MemoryRetriever;
 import com.lianyu.service.memory.MemoryWriter;
 import com.lianyu.service.notification.NotificationService;
 import com.lianyu.service.relationship.RelationshipStateService;
@@ -60,12 +58,9 @@ class ConversationServiceStreamErrorTest {
     @Mock private CharacterMapper characterMapper;
     @Mock private com.lianyu.dao.mapper.CharacterSquareTemplateMapper squareTemplateMapper;
     @Mock private UserMapper userMapper;
-    @Mock private AiChatService aiChatService;
     @Mock private com.lianyu.service.ai.PetMeetVoiceCatalog petMeetVoiceCatalog;
     @Mock private com.lianyu.service.ai.PetVoiceRegistry petVoiceRegistry;
     @Mock private ChatTurnFacade chatTurnFacade;
-    @Mock private CharacterPromptBuilder promptBuilder;
-    @Mock private MemoryRetriever memoryRetriever;
     @Mock private MemoryWriter memoryWriter;
     @Mock private StringRedisTemplate redisTemplate;
     @Mock private ValueOperations<String, String> valueOperations;
@@ -91,10 +86,8 @@ class ConversationServiceStreamErrorTest {
                 messageMapper,
                 groupMemberMapper,
                 characterMapper,
-                aiChatService,
                 mock(com.lianyu.service.ai.ApiKeyVaultService.class),
                 chatTurnFacade,
-                promptBuilder,
                 memoryWriter,
                 redisTemplate,
                 fileStorageService,
@@ -135,7 +128,7 @@ class ConversationServiceStreamErrorTest {
         when(messageMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
         when(chatBehaviorResolver.resolve(any())).thenReturn(new CharacterChatBehavior(3, true, 60, 0.9, 55, 65, null));
 
-        ArgumentCaptor<AiChatService.StreamCallback> callbackCaptor = ArgumentCaptor.forClass(AiChatService.StreamCallback.class);
+        ArgumentCaptor<AgentStreamCallback> callbackCaptor = ArgumentCaptor.forClass(AgentStreamCallback.class);
         when(chatTurnFacade.invokeStream(any(), callbackCaptor.capture())).thenReturn(new SseEmitter());
 
         SendMessageRequest request = new SendMessageRequest();
@@ -174,7 +167,7 @@ class ConversationServiceStreamErrorTest {
         when(messageMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
         when(chatBehaviorResolver.resolve(any())).thenReturn(new CharacterChatBehavior(3, true, 60, 0.9, 55, 65, null));
 
-        ArgumentCaptor<AiChatService.StreamCallback> callbackCaptor = ArgumentCaptor.forClass(AiChatService.StreamCallback.class);
+        ArgumentCaptor<AgentStreamCallback> callbackCaptor = ArgumentCaptor.forClass(AgentStreamCallback.class);
         when(chatTurnFacade.invokeStream(any(), callbackCaptor.capture())).thenReturn(new SseEmitter());
 
         SendMessageRequest request = new SendMessageRequest();
@@ -217,7 +210,7 @@ class ConversationServiceStreamErrorTest {
                 .thenReturn(new AssistantReplyService.ProcessedReply("complete reply", List.of("complete reply")));
         when(valueOperations.increment(anyString(), eq(1L))).thenReturn(100L, 101L);
 
-        ArgumentCaptor<AiChatService.StreamCallback> callbackCaptor = ArgumentCaptor.forClass(AiChatService.StreamCallback.class);
+        ArgumentCaptor<AgentStreamCallback> callbackCaptor = ArgumentCaptor.forClass(AgentStreamCallback.class);
         when(chatTurnFacade.invokeStream(any(), callbackCaptor.capture())).thenReturn(new SseEmitter());
 
         SendMessageRequest request = new SendMessageRequest();

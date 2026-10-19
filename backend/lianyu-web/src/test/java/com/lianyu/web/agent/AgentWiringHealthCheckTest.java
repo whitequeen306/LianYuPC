@@ -16,11 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 
 /**
- * 接线自检测试。
- *
- * <p>它守的是「模式说 AGENT，但实际没接线」这类静默故障：
- * 第 5 轮 `ChatTurnFacade` 的文本分支被误删，所有单测仍全绿，
- * 因为没人验证调用点存在。
+ * 接线自检测试：守「模式说 AGENT，但实际没接线」这类静默故障。
  */
 class AgentWiringHealthCheckTest {
 
@@ -31,11 +27,10 @@ class AgentWiringHealthCheckTest {
         return p;
     }
 
-    private AgentWiringHealthCheck build(AgentRuntimeProperties.Mode mode,
-                                         boolean withStream, boolean withText,
+    private AgentWiringHealthCheck build(boolean withStream, boolean withText,
                                          boolean withMemory, boolean withImage) {
         AgentRuntimeClient client = mock(AgentRuntimeClient.class);
-        when(client.properties()).thenReturn(new AgentRuntimeProperties(mode, "http://agent:8001"));
+        when(client.properties()).thenReturn(new AgentRuntimeProperties("http://agent:8001"));
         return new AgentWiringHealthCheck(
                 client,
                 provider(mock(AgentRuntimePort.class)),
@@ -46,9 +41,8 @@ class AgentWiringHealthCheckTest {
     }
 
     @Test
-    void reportsMissingPortsInAgentMode() {
-        AgentWiringHealthCheck check = build(AgentRuntimeProperties.Mode.AGENT,
-                false, true, true, true);
+    void reportsMissingPorts() {
+        AgentWiringHealthCheck check = build(false, true, true, true);
         Map<String, Boolean> report = check.inspect();
 
         assertTrue(check.isAgentMode());
@@ -57,33 +51,23 @@ class AgentWiringHealthCheckTest {
     }
 
     @Test
-    void allWiredInAgentMode() {
-        AgentWiringHealthCheck check = build(AgentRuntimeProperties.Mode.AGENT,
-                true, true, true, true);
+    void allWired() {
+        AgentWiringHealthCheck check = build(true, true, true, true);
         assertTrue(check.inspect().values().stream().allMatch(Boolean::booleanValue));
     }
 
     @Test
-    void notAgentModeInOff() {
-        assertFalse(build(AgentRuntimeProperties.Mode.OFF, true, true, true, true).isAgentMode());
-    }
-
-    @Test
     void inspectDoesNotThrowWhenEverythingMissing() {
-        AgentWiringHealthCheck check = build(AgentRuntimeProperties.Mode.AGENT,
-                false, false, false, false);
+        AgentWiringHealthCheck check = build(false, false, false, false);
         Map<String, Boolean> report = check.inspect();
         assertEquals(5, report.size());
-        // runtimePort 始终存在（本测试固定注入），其余四个应全为缺失
         assertTrue(report.get("proactiveTurn(AgentRuntimePort)"));
         assertEquals(1, report.values().stream().filter(Boolean::booleanValue).count());
     }
 
     @Test
-    void startupCheckIsSafeInAnyMode() {
-        // 不抛异常即可（日志分支由上面断言覆盖）
-        build(AgentRuntimeProperties.Mode.OFF, false, false, false, false).checkOnStartup();
-        build(AgentRuntimeProperties.Mode.AGENT, true, true, true, true).checkOnStartup();
-        build(AgentRuntimeProperties.Mode.AGENT, false, false, false, false).checkOnStartup();
+    void startupCheckIsSafe() {
+        build(false, false, false, false).checkOnStartup();
+        build(true, true, true, true).checkOnStartup();
     }
 }

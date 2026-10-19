@@ -58,7 +58,7 @@ class AgentStreamBridgeTest {
         }
     }
 
-    static class RecordingCallback implements AiChatService.StreamCallback {
+    static class RecordingCallback implements com.lianyu.service.agent.AgentStreamCallback {
         String completedContent;
         Throwable completedError;
         int beforeCompleteCalls;

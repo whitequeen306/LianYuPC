@@ -6,8 +6,8 @@ import java.util.List;
 /**
  * 阻塞式对话端口：群聊 / 语音 / 日记 / 会话摘要 / judge 等「一次性取整段回复」的场景。
  *
- * <p>返回 {@code null} 表示未接管（非 AGENT 模式、agent 不可用、失败），
- * 调用方必须回退到 Java 原实现。实现方**不得抛异常**。
+ * <p>返回 {@code null} 表示 agent 不可用或失败；OFF 退役后调用方必须报错，
+ * 不再回退 Java 模型。
  */
 public interface AgentBlockingPort {
 
@@ -16,8 +16,8 @@ public interface AgentBlockingPort {
      * @param model       模型名，null 时用 vault 默认
      * @param temperature 温度
      * @param maxTokens   最大 token
-     * @return 回复正文；null 表示回退
+     * @return 回复与 usage；null 表示失败
      */
-    String complete(long userId, List<MessageDto> messages, String provider, String model,
-                    Double temperature, Integer maxTokens);
+    AgentChatResult complete(long userId, List<MessageDto> messages, String provider, String model,
+                             Double temperature, Integer maxTokens);
 }

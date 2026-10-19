@@ -5,6 +5,7 @@ import static org.mockito.Mockito.when;
 
 import com.lianyu.service.tools.bridge.AgentBridgeService;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,8 +21,6 @@ class ToolManagerTest {
     @Mock
     private WeatherTool weatherTool;
     @Mock
-    private MemorySearchTool memorySearchTool;
-    @Mock
     private RecentActivityTool recentActivityTool;
     @Mock
     private WriteDiaryTool writeDiaryTool;
@@ -33,34 +32,29 @@ class ToolManagerTest {
     @BeforeEach
     void setUp() {
         manager = new ToolManager(
-                timeTool, weatherTool, memorySearchTool, recentActivityTool, writeDiaryTool,
+                timeTool, weatherTool, recentActivityTool, writeDiaryTool,
                 agentBridgeService);
         ReflectionTestUtils.setField(manager, "chatToolsEnabled", true);
-        ReflectionTestUtils.setField(manager, "weatherEnabled", true);
         ReflectionTestUtils.setField(manager, "memoryAgenticEnabled", true);
         ReflectionTestUtils.setField(manager, "recentActivityEnabled", true);
         ReflectionTestUtils.setField(manager, "writeDiaryEnabled", true);
     }
 
     @Test
-    void hintWithoutDesktopBridgeDoesNotMentionComputerTask() {
+    void flagsWithoutDesktopBridgeMarkComputerFalse() {
         when(agentBridgeService.availableTools(7L)).thenReturn(List.of());
-        String hint = manager.buildToolsPromptHint(7L);
-        assertThat(hint).contains("get_current_time");
-        assertThat(hint).doesNotContain("computer_task");
-        assertThat(hint).contains("避免每条寒暄都调");
-        assertThat(hint).doesNotContain("避免每条消息都调用");
+        Map<String, Object> flags = manager.promptHintFlags(7L);
+        assertThat(flags).containsEntry("chat", true)
+                .containsEntry("memory", true)
+                .containsEntry("recent", true)
+                .containsEntry("diary", true)
+                .containsEntry("computer", false);
     }
 
     @Test
-    void hintWithComputerTaskRequiresSameTurnCallOnFollowUp() {
+    void flagsWithComputerTaskMarkComputerTrue() {
         when(agentBridgeService.availableTools(7L)).thenReturn(List.of(
                 new AgentBridgeService.ClientTool("computer_task", "desc", "{}", false)));
-        String hint = manager.buildToolsPromptHint(7L);
-        assertThat(hint).contains("computer_task");
-        assertThat(hint).contains("本轮必须调用");
-        assertThat(hint).contains("禁止只回复");
-        assertThat(hint).contains("改口换任务");
-        assertThat(hint).doesNotContain("避免每条消息都调用");
+        assertThat(manager.promptHintFlags(7L)).containsEntry("computer", true);
     }
 }

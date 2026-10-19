@@ -8,8 +8,7 @@ import com.lianyu.ai.graph.ChatTurnState;
 import com.lianyu.common.base.ErrorCode;
 import com.lianyu.common.exception.BusinessException;
 import com.lianyu.dao.entity.Character;
-import com.lianyu.service.ai.AiChatService;
-import com.lianyu.service.ai.VisionChatService;
+import com.lianyu.service.agent.PromptAssemblyRequest;
 import com.lianyu.service.dto.AiChatRequest;
 import com.lianyu.service.dto.MessageDto;
 import com.lianyu.service.graph.nodes.InvokeModelNode;
@@ -32,19 +31,13 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class ChatTurnFacade {
 
     private final CompiledGraph chatTurnGraph;
-    private final AiChatService aiChatService;
-    private final VisionChatService visionChatService;
-    private final ChatTurnPromptAssembler promptAssembler;
-
-    /**
-     * 单聊流式的 agent 端口（可选）。非 final + required=false：
-     * 单测与裁剪部署没有 web 层时保持 null，等价 OFF 模式。
-     */
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.lianyu.service.agent.AgentStreamPort agentStreamPort;
-
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.lianyu.service.agent.AgentImagePort agentImagePort;
+    private final com.lianyu.service.agent.PromptAssemblyPort promptAssemblyPort;
+    private final com.lianyu.service.agent.AgentStreamPort agentStreamPort;
+    private final com.lianyu.service.agent.AgentImagePort agentImagePort;
+    private final com.lianyu.service.support.OutputLanguageService outputLanguageService;
+    private final com.lianyu.service.tools.TimeTool timeTool;
+    private final com.lianyu.service.tools.ToolManager toolManager;
+    private final com.lianyu.service.character.CharacterChatBehaviorResolver behaviorResolver;
 
     public String assembleSystemPrompt(ChatTurnCommand command) {
         OverAllState state = runAssemble(command);
@@ -68,9 +61,9 @@ public class ChatTurnFacade {
     }
 
     /**
-     * Assemble prompt/messages via Graph, then stream through {@link AiChatService}.
+     * Assemble prompt/messages via Graph, then stream through the agent ports.
      */
-    public SseEmitter invokeStream(ChatTurnCommand command, AiChatService.StreamCallback callback) {
+    public SseEmitter invokeStream(ChatTurnCommand command, com.lianyu.service.agent.AgentStreamCallback callback) {
         OverAllState state = runAssemble(command);
         ChatTurnState turn = new ChatTurnState(state);
         Character character = (Character) turn.characterRef();
@@ -80,50 +73,47 @@ public class ChatTurnFacade {
         boolean hasImage = request.getImageUrl() != null && !request.getImageUrl().isBlank();
         log.info("ChatTurn stream assembled: scene={} messages={} hasImage={}",
                 turn.scene(), messages.size(), hasImage);
-        if (hasImage) {
-            // Strangler: 图片消息优先交给 agent（Java 负责取图并转 base64）
-            if (agentImagePort != null) {
-                try {
-                    SseEmitter viaAgent = agentImagePort.streamIfActive(
-                            command.getUserId(), turn.systemPrompt(), messages, request.getImageUrl(),
-                            request.getProvider(), request.getModel(),
-                            request.getMaxTokens() == null ? 1024 : request.getMaxTokens(), callback);
-                    if (viaAgent != null) {
-                        log.info("ChatTurn image stream served by agent runtime: scene={}", turn.scene());
-                        return viaAgent;
-                    }
-                } catch (Exception e) {
-                    log.warn("Agent image dispatch failed, fallback to Java: {}", e.toString());
+        try {
+            if (hasImage) {
+                SseEmitter viaAgent = agentImagePort.streamIfActive(
+                        command.getUserId(), turn.systemPrompt(), messages, request.getImageUrl(),
+                        request.getProvider(), request.getModel(),
+                        request.getMaxTokens() == null ? 1024 : request.getMaxTokens(), callback);
+                if (viaAgent == null) {
+                    throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
+                            "图片消息发送失败，请稍后再试");
                 }
+                log.info("ChatTurn image stream served by agent runtime: scene={}", turn.scene());
+                return viaAgent;
             }
-            return visionChatService.chatImageStream(command.getUserId(), request, callback);
-        }
-        // Strangler: AGENT 模式下纯文本流交给 Python；返回 null 表示未接管 → 走 Java 原链路
-        if (agentStreamPort != null) {
-            try {
-                SseEmitter agentEmitter = agentStreamPort.streamIfActive(
-                        command.getUserId(),
-                        turn.systemPrompt(),
-                        request.getMessages(),
-                        request.getProvider(),
-                        request.getModel(),
-                        request.getExpectedLanguage(),
-                        character == null ? null : character.getId(),
-                        request.getMaxTokens() == null ? 1024 : request.getMaxTokens(),
-                        callback);
-                if (agentEmitter != null) {
-                    log.info("ChatTurn stream served by agent runtime: scene={}", turn.scene());
-                    return agentEmitter;
-                }
-            } catch (Exception e) {
-                log.warn("Agent stream dispatch failed, fallback to Java: {}", e.toString());
+            SseEmitter agentEmitter = agentStreamPort.streamIfActive(
+                    command.getUserId(),
+                    turn.systemPrompt(),
+                    request.getMessages(),
+                    request.getProvider(),
+                    request.getModel(),
+                    request.getExpectedLanguage(),
+                    character == null ? null : character.getId(),
+                    request.getMaxTokens() == null ? 1024 : request.getMaxTokens(),
+                    callback);
+            if (agentEmitter == null) {
+                throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
+                        "消息发送失败，请稍后再试");
             }
+            log.info("ChatTurn stream served by agent runtime: scene={}", turn.scene());
+            return agentEmitter;
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("Agent stream dispatch failed: {}", e.toString());
+            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "消息发送失败，请稍后再试", e);
         }
-        return aiChatService.chatStream(command.getUserId(), request, callback);
     }
 
     /**
-     * Convenience for Moments/Diary/Group that only need scene-aware system prompt.
+     * Convenience for Moments/Diary/Group/Voice/Proactive that only need a scene-aware system prompt.
+     *
+     * <p>只调 agent；失败直接抛错（OFF 退役后不再静默回退 Java 组装）。
      */
     public String assembleSystemPrompt(
             ChatTurnScene scene,
@@ -133,18 +123,68 @@ public class ChatTurnFacade {
             String userInputForLang,
             String lastUserMessageForMemory,
             String extraSystemSuffix,
-            ChatTurnPromptAssembler.GroupExtras groupExtras
+            ChatTurnGroupExtras groupExtras
     ) {
-        return promptAssembler.assemble(
-                scene,
+        String outputLanguage = outputLanguageService.resolveForRequest(userId, userInputForLang);
+        boolean includeTime = scene.includeTime();
+        String timeFact = includeTime ? timeTool.readCurrentTimeFact() : null;
+        boolean tools = scene.enableChatTools();
+        int behaviorMax = behaviorResolver.resolve(character).maxRepliesPerTurn();
+        int maxPieces = groupExtras != null && groupExtras.maxPieces() > 0
+                ? groupExtras.maxPieces()
+                : behaviorMax;
+        String memoryText = lastUserMessageForMemory == null || lastUserMessageForMemory.isBlank()
+                ? userInputForLang
+                : lastUserMessageForMemory;
+        PromptAssemblyRequest request = new PromptAssemblyRequest(
                 userId,
+                character.getId(),
                 conversationId,
-                character,
-                userInputForLang,
-                lastUserMessageForMemory,
+                character.getName(),
+                character.getSettings(),
+                character.getPromptTemplate(),
+                scene.name(),
+                outputLanguage,
+                afterBaseOf(scene),
+                includeTime,
+                timeFact,
+                tools,
+                scene != ChatTurnScene.VOICE_CALL
+                        && com.lianyu.service.character.CharacterPreferenceResolver
+                                .showInnerThoughts(character),
+                maxPieces,
+                "",
+                tools ? toolManager.promptHintFlags(userId) : Map.of("chat", false),
+                memoryText,
                 extraSystemSuffix,
-                groupExtras
-        ).systemPrompt();
+                groupExtras == null ? 0 : groupExtras.maxPieces(),
+                groupExtras == null ? "" : groupExtras.otherCharactersLine(),
+                groupExtras == null ? "" : groupExtras.mentionCtx());
+        String prompt;
+        try {
+            prompt = promptAssemblyPort.assembleIfEnabled(request);
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
+                    "prompt 组装失败，请稍后再试", e);
+        }
+        if (prompt == null || prompt.isBlank()) {
+            throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR,
+                    "prompt 组装失败，请稍后再试");
+        }
+        return prompt;
+    }
+
+    private static String afterBaseOf(ChatTurnScene scene) {
+        if (scene.includeTimeCityGoodnight()) {
+            return "full";
+        }
+        if (scene == ChatTurnScene.MOMENTS || scene == ChatTurnScene.DIARY) {
+            return "style_only";
+        }
+        if (scene == ChatTurnScene.VOICE_CALL) {
+            return "time_only";
+        }
+        return "none";
     }
 
     private OverAllState runAssemble(ChatTurnCommand command) {
