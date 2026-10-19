@@ -58,7 +58,7 @@ services:
       LIANYU_AGENT_MODE: ${LIANYU_AGENT_MODE:-OFF}
       # outbox 投影由 Python relay 独占（记忆域单写者）；Java relay 保留但默认关闭
       LIANYU_MEMORY_OUTBOX_ENABLED: ${LIANYU_MEMORY_OUTBOX_ENABLED:-false}
-      LIANYU_AGENT_BASE_URL: ${LIANYU_AGENT_BASE_URL:-http://agent:8001}
+      LIANYU_AGENT_BASE_URL: ${LIANYU_AGENT_BASE_URL:-http://agent-lb:8001}
       TZ: Asia/Shanghai
       # 与 Dockerfile ENTRYPOINT 双保险：出站优先 IPv4，避免 DashScope AAAA 不通导致 TTS 失败
       JAVA_TOOL_OPTIONS: "-Djava.net.preferIPv4Addresses=true"
@@ -140,6 +140,61 @@ services:
       retries: 3
       start_period: 15s
 
+  # agent 第二个实例：与 agent 完全同构，只用于高可用（OFF 退役的前置条件）
+  agent2:
+    build:
+      context: ./backend-agent
+      dockerfile: Dockerfile
+    image: lianyu-pc/agent:${APP_REVISION:-dev}
+    container_name: lianyu-agent-2
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      LIANYU_AGENT_MULTIMODAL_ENABLED: "true"
+      LIANYU_AGENT_MULTIMODAL_BASE_URL: ${MULTIMODAL_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      LIANYU_AGENT_MULTIMODAL_API_KEY: ${MULTIMODAL_API_KEY:-${DASHSCOPE_API_KEY:-}}
+      LIANYU_AGENT_MULTIMODAL_MODEL: ${MULTIMODAL_MODEL:-qwen3.7-flash}
+      LIANYU_AGENT_SHADOW_MODE: ${LIANYU_AGENT_SHADOW_MODE:-false}
+      LIANYU_AGENT_MYSQL_HOST: mysql
+      LIANYU_AGENT_MYSQL_PORT: "3306"
+      LIANYU_AGENT_MYSQL_USER: ${MYSQL_USER:-lianyu}
+      LIANYU_AGENT_MYSQL_PASSWORD: ${MYSQL_PASSWORD:-}
+      LIANYU_AGENT_MYSQL_DATABASE: lianyu
+      LIANYU_AGENT_REDIS_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/0
+      LIANYU_AGENT_EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      LIANYU_AGENT_EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      LIANYU_AGENT_EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-v3}
+      LIANYU_AGENT_RERANK_API_KEY: ${RERANKER_API_KEY:-}
+      LIANYU_AGENT_MILVUS_HOST: milvus
+      LIANYU_AGENT_MILVUS_PORT: "19530"
+      LIANYU_AGENT_RELAY_ENABLED: "false"
+      LIANYU_AGENT_RERANK_BASE_URL: ${RERANKER_BASE_URL:-https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank}
+      TZ: Asia/Shanghai
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: 512m
+    cpus: "1.0"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/agent/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # agent 内部负载均衡：Java 只认识这个地址，一个实例挂了自动切另一个
+  agent-lb:
+    image: nginx:1.27-alpine
+    container_name: lianyu-agent-lb
+    restart: unless-stopped
+    volumes:
+      - ./deploy/agent-lb/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - agent
+      - agent2
   # 中文 ASR（SenseVoice final + Zipformer stream，仅内网供 backend 调用）
   asr:
     build:
