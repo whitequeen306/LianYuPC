@@ -11,7 +11,8 @@
 
 - 现后端：Spring Boot 3.5.5 + Spring AI 1.1.2 + Spring AI Alibaba Graph 1.1.2.2（SAA 官方已停更约 7 个月）
 - 审计基线：commit `0580a07`（v0.2.367）
-- 当前进度：P0 止血 / P1 agent 骨架 / P2a 主动发言族 4 条链路已落地，详见总纲 §5
+- 当前进度：P0 止血 / P1 agent 骨架 / P2a 主动发言族 / P5 prompt 与记忆读路径 / P6 OFF 退役已落地；
+  Java 侧 AI 逻辑基线 `0/0/0`，详见 [`off-retirement-plan.md`](./off-retirement-plan.md) 与总纲 §5
 
 ## 已被本文档取代的历史文档
 
