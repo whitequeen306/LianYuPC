@@ -293,7 +293,7 @@ async def session_summary(
                 f"已有摘要：\n{body.existing_summary or '（空）'}\n\n"
                 f"新增对话：\n{dialog}"
             )
-        result = await gateway.chat_messages(
+        result = await get_gateway().chat_messages(
             base_url=body.base_url, api_key=body.api_key, model=body.model,
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": user_content}],
@@ -332,7 +332,7 @@ async def text_chat(
     if user_id_header and str(body.user_id) != user_id_header:
         raise HTTPException(status_code=403, detail="user mismatch")
     try:
-        result = await gateway.chat_messages(
+        result = await get_gateway().chat_messages(
             base_url=body.base_url,
             api_key=body.api_key,
             model=body.model,
