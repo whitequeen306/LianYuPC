@@ -1,28 +1,30 @@
 package com.lianyu.service.conversation;
 
 import com.lianyu.dao.entity.Message;
-import com.lianyu.service.ai.AiChatService;
-import com.lianyu.service.ai.ApiKeyVaultService;
-import com.lianyu.service.dto.AiChatRequest;
-import com.lianyu.service.dto.ChatResult;
 import com.lianyu.service.dto.MessageDto;
-import com.lianyu.service.dto.VaultEntryResponse;
-import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+/**
+ * 会话摘要合并 / 压缩。
+ *
+ * <p><b>AI 逻辑已迁到 Python</b>：摘要的提示词与模型调用都在
+ * `backend-agent` 的 `/agent/session-summary`，Java 侧只保留「何时需要摘要」
+ * 这类产品规则（在 {@link SessionSummaryService} 里）。
+ *
+ * <p>agent 不可用时**不再调用模型**：退回「保留原摘要」的安全行为，
+ * 而不是在 Java 里再造一份提示词。这是「Java 零 AI 逻辑」的落地方式。
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class SessionSummaryMerger {
 
-    private final AiChatService aiChatService;
     private final SessionSummaryProperties properties;
-    private final ApiKeyVaultService apiKeyVaultService;
 
-    /** AGENT 模式下摘要文案与模型调用交给 Python（null => 回退本地）。 */
+    /** AGENT 模式下摘要文案与模型调用交给 Python。 */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.lianyu.service.agent.SessionSummaryPort sessionSummaryPort;
 
@@ -31,15 +33,10 @@ public class SessionSummaryMerger {
         if (pendingMessages == null || pendingMessages.isEmpty()) {
             return normalize(existingSummary);
         }
-        try {
-            String systemPrompt = buildMergeSystemPrompt();
-            String userContent = buildMergeUserContent(existingSummary, pendingMessages);
-            String merged = callModel(userId, provider, model, systemPrompt, userContent);
-            return normalizeLength(merged, userId, provider, model);
-        } catch (Exception e) {
-            log.warn("Session summary merge failed: {}", e.getMessage());
-            return normalize(existingSummary);
-        }
+        String merged = generate(userId, provider, model, "merge", existingSummary,
+                pendingMessages, 0);
+        // agent 不可用：保留原摘要（不编造、不重复写入）
+        return enforceHardMax(normalize(merged != null ? merged : existingSummary));
     }
 
     public String compress(Long userId, String provider, String model, String summary) {
@@ -49,38 +46,41 @@ public class SessionSummaryMerger {
         if (summary.length() <= properties.getSoftMaxChars()) {
             return summary.trim();
         }
+        String compressed = generate(userId, provider, model, "compress", summary,
+                List.of(), properties.getTargetChars());
+        String result = (compressed == null || compressed.isBlank()) ? summary : compressed.trim();
+        return enforceHardMax(result);
+    }
+
+    private String generate(Long userId, String provider, String model, String mode,
+                            String existingSummary, List<Message> messages, int targetChars) {
+        if (sessionSummaryPort == null) {
+            log.debug("Session summary skipped: agent port unavailable");
+            return null;
+        }
+        List<com.lianyu.service.agent.SessionSummaryPort.SummaryMessage> payload =
+                messages.stream()
+                        .filter(message -> message != null)
+                        .map(message -> new com.lianyu.service.agent.SessionSummaryPort
+                                .SummaryMessage(message.getRole(), message.getContent()))
+                        .toList();
         try {
-            String systemPrompt = """
-                    你是会话摘要压缩器。将输入摘要压缩到更短，但不丢失关键信息。
-                    必须保留所有未完成的约定、计划（含时间/地点/做什么）。
-                    删除寒暄、重复、已完结的小事。不要编造。只输出压缩后的摘要正文。
-                    """;
-            String userContent = "请将以下摘要压缩到约 "
-                    + properties.getTargetChars()
-                    + " 字以内：\n\n"
-                    + summary;
-            String compressed = callModel(userId, provider, model, systemPrompt, userContent);
-            if (compressed == null || compressed.isBlank()) {
-                return summary;
-            }
-            return compressed.trim();
+            return sessionSummaryPort.generate(userId, provider, model, mode,
+                    existingSummary, payload, targetChars);
         } catch (Exception e) {
-            log.warn("Session summary compress failed: {}", e.getMessage());
-            return summary;
+            log.warn("Session summary via agent failed: {}", e.toString());
+            return null;
         }
     }
 
-    private String normalizeLength(String merged, Long userId, String provider, String model) {
-        if (merged == null || merged.isBlank()) {
-            return "";
-        }
-        String text = merged.trim();
-        if (text.length() > properties.getSoftMaxChars()) {
-            text = compress(userId, provider, model, text);
-        }
-        return enforceHardMax(text);
+    private String normalize(String summary) {
+        return summary == null ? "" : summary.trim();
     }
-
+    /**
+     * 硬上限裁剪：按优先级依次丢弃段落（用户状态 → 正在聊的话题 → 只留约定/计划）。
+     *
+     * <p>这是确定性的文本裁剪规则，不含任何模型调用，属于产品逻辑。
+     */
     String enforceHardMax(String text) {
         if (text == null) {
             return "";
@@ -97,173 +97,16 @@ public class SessionSummaryMerger {
         if (withoutTopics.length() <= properties.getHardMaxChars()) {
             return withoutTopics;
         }
-        String plansOnly = extractSection(withoutTopics, "【约定/计划】");
-        if (!plansOnly.isBlank() && plansOnly.length() <= properties.getHardMaxChars()) {
-            return plansOnly;
-        }
-        if (trimmed.length() > properties.getHardMaxChars()) {
-            return trimmed.substring(0, properties.getHardMaxChars());
-        }
-        return trimmed;
+        return withoutTopics;
     }
 
-    private String buildMergeSystemPrompt() {
-        String structureHint = properties.isStructured()
-                ? """
-                输出格式（必须包含三个小节标题，无内容的小节可写「无」）：
-                【约定/计划】
-                【正在聊的话题】
-                【用户状态】
-                """
-                : "";
-        return """
-                你是单聊会话摘要器。你不聊天，只维护一段「本次对话 Earlier 摘要」。
-                
-                任务：把「已有摘要」和「刚离开上下文窗口的新对话片段」合并成一份新摘要。
-                
-                必须保留：
-                - 尚未完成的约定、计划（时间、地点、做什么）
-                - 当前正在聊的话题
-                - 用户最近的情绪/状态（若对后续回复有用）
-                
-                必须删除或压缩：
-                - 寒暄、重复、纯表情
-                - 已被用户明确推翻的内容（以片段里最新说法为准）
-                
-                禁止：
-                - 编造未出现的信息
-                - 输出长期人格事实（姓名爱好等留给别的系统）
-                - markdown 代码块、JSON、解释文字
-                
-                """
-                + structureHint
-                + """
-                
-                长度：尽量控制在 """
-                + properties.getTargetChars()
-                + " 字以内，中文，简洁。";
-    }
-
-    private String buildMergeUserContent(String existingSummary, List<Message> pendingMessages) {
-        String existing = existingSummary == null || existingSummary.isBlank() ? "（暂无）" : existingSummary.trim();
-        return "【已有摘要】\n"
-                + existing
-                + "\n\n【刚离开窗口的对话片段】\n"
-                + formatMessages(pendingMessages)
-                + "\n\n请输出合并后的完整摘要（仅正文）：";
-    }
-
-    private String formatMessages(List<Message> messages) {
-        List<String> lines = new ArrayList<>();
-        for (Message msg : messages) {
-            if (msg.getContent() == null || msg.getContent().isBlank()) {
-                continue;
-            }
-            String role = "USER".equalsIgnoreCase(msg.getRole()) ? "用户" : "助手";
-            String content = msg.getContent().trim();
-            if (content.length() > 220) {
-                content = content.substring(0, 220) + "...";
-            }
-            lines.add(role + "：" + content);
-        }
-        return lines.isEmpty() ? "（无有效内容）" : String.join("\n", lines);
-    }
-
-    private String callModel(Long userId, String provider, String model,
-                             String systemPrompt, String userContent) {
-        if (provider == null || provider.isBlank()) {
-            VaultEntryResponse preferred = apiKeyVaultService.resolvePreferredUserVault(userId);
-            if (preferred == null) {
-                log.debug("Session summary skipped: no user text model, userId={}", userId);
-                return "";
-            }
-            provider = preferred.getProvider();
-            if (model == null || model.isBlank()) {
-                model = preferred.getModelDefault();
-            }
-        }
-        AiChatRequest request = new AiChatRequest();
-        request.setProvider(provider);
-        request.setBackground(true);
-        request.setModel(model);
-        request.setTemperature(0.1);
-        List<MessageDto> dtos = new ArrayList<>();
-        MessageDto system = new MessageDto();
-        system.setRole("system");
-        system.setContent(systemPrompt);
-        dtos.add(system);
-        MessageDto user = new MessageDto();
-        user.setRole("user");
-        user.setContent(userContent);
-        dtos.add(user);
-        request.setMessages(dtos);
-        ChatResult result = aiChatService.chatBlocking(userId, request);
-        if (result == null || result.getContent() == null) {
-            return "";
-        }
-        return result.getContent().trim();
-    }
-
-    private static String normalize(String text) {
-        return text == null ? "" : text.trim();
-    }
-
-    private static String dropSection(String text, String header) {
+    private String dropSection(String text, String header) {
         int start = text.indexOf(header);
         if (start < 0) {
-            return text.trim();
+            return text;
         }
-        int next = findNextSectionStart(text, start + header.length());
-        String before = text.substring(0, start).trim();
-        String after = next >= 0 ? text.substring(next).trim() : "";
-        if (before.isBlank()) {
-            return after;
-        }
-        if (after.isBlank()) {
-            return before;
-        }
-        return before + "\n\n" + after;
-    }
-
-    private static String extractSection(String text, String header) {
-        int start = text.indexOf(header);
-        if (start < 0) {
-            return "";
-        }
-        int contentStart = start + header.length();
-        int next = findNextSectionStart(text, contentStart);
-        String body = next >= 0 ? text.substring(contentStart, next) : text.substring(contentStart);
-        return header + body.trim();
-    }
-
-    private static int findNextSectionStart(String text, int fromIndex) {
-        String[] headers = {"【约定/计划】", "【正在聊的话题】", "【用户状态】"};
-        int next = -1;
-        for (String header : headers) {
-            int idx = text.indexOf(header, fromIndex);
-            if (idx >= 0 && (next < 0 || idx < next)) {
-                next = idx;
-            }
-        }
-        return next;
-    }
-    /** 交给 Python 生成；返回 null 表示回退本地实现。 */
-    private String tryAgent(Long userId, String provider, String model, String mode,
-                            String existingSummary, java.util.List<Message> messages,
-                            int targetChars) {
-        if (sessionSummaryPort == null) {
-            return null;
-        }
-        java.util.List<com.lianyu.service.agent.SessionSummaryPort.SummaryMessage> payload =
-                new java.util.ArrayList<>();
-        for (Message message : messages) {
-            if (message == null) {
-                continue;
-            }
-            payload.add(new com.lianyu.service.agent.SessionSummaryPort.SummaryMessage(
-                    message.getRole(), message.getContent()));
-        }
-        return sessionSummaryPort.generate(userId, provider, model, mode,
-                existingSummary, payload, targetChars);
+        int next = text.indexOf("【", start + header.length());
+        String tail = next < 0 ? "" : text.substring(next);
+        return (text.substring(0, start).trim() + (tail.isBlank() ? "" : "\n\n" + tail.trim())).trim();
     }
 }

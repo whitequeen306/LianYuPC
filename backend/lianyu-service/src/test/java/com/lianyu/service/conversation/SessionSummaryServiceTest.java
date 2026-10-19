@@ -153,7 +153,7 @@ class SessionSummaryServiceTest {
 
     @Test
     void mergerEnforceHardMaxDropsSectionsInPriorityOrder() {
-        SessionSummaryMerger hardMerger = new SessionSummaryMerger(null, properties, null);
+        SessionSummaryMerger hardMerger = new SessionSummaryMerger(properties);
         properties.setHardMaxChars(80);
         String longSummary = """
                 【约定/计划】
