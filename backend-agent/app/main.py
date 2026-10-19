@@ -391,6 +391,11 @@ async def prompt_assemble(
         memory_context = body.memory_context
         emotion_block = body.emotion_block
         city = body.city
+        # 工具提示：Java 只传开关事实，文案由 Python 生成（Java 侧已删文案）
+        tool_hint = body.tool_hint
+        if body.tool_flags is not None:
+            from app.tools_hint import build_from_flags
+            tool_hint = build_from_flags(body.tool_flags)
         if body.use_internal_data:
             from app.data_readers import (
                 load_character_owner,
@@ -429,7 +434,7 @@ async def prompt_assemble(
             settings=body.settings,
             prompt_template=body.prompt_template,
             memory_context=memory_context,
-            tool_hint=body.tool_hint,
+            tool_hint=tool_hint,
             emotion_block=emotion_block,
             output_language=body.output_language,
             enable_chat_tools=body.enable_chat_tools,
