@@ -10,8 +10,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  * <p>取图（对象存储 → 字节 → base64）由实现方负责，端口只描述语义，
  * 这样 service 层不依赖 web 层也不依赖存储细节。
  *
- * @return null 表示未接管（非 AGENT 模式 / 凭据缺失 / 取图失败 / Python 不可用），
- *         调用方必须回退 {@code VisionChatService}
+ * @return null 表示失败（凭据缺失 / 取图失败 / Python 不可用）；OFF 退役后调用方直接报错
  */
 public interface AgentImagePort {
 

@@ -50,16 +50,28 @@ public class AiController {
     public SseEmitter chatStream(@Valid @RequestBody AiChatRequest request) {
         long userId = StpUtil.getLoginIdAsLong();
         aiChatQuotaService.assertDirectChatAllowed(userId);
-        String system = "";
-        java.util.List<com.lianyu.service.dto.MessageDto> messages = request.getMessages();
-        if (messages != null && !messages.isEmpty()
-                && "system".equalsIgnoreCase(messages.get(0).getRole())) {
-            system = messages.get(0).getContent();
-            messages = messages.subList(1, messages.size());
+        StringBuilder system = new StringBuilder();
+        java.util.List<com.lianyu.service.dto.MessageDto> messages = new java.util.ArrayList<>();
+        if (request.getMessages() != null) {
+            for (com.lianyu.service.dto.MessageDto message : request.getMessages()) {
+                if (message == null) {
+                    continue;
+                }
+                if ("system".equalsIgnoreCase(message.getRole())) {
+                    if (message.getContent() != null && !message.getContent().isBlank()) {
+                        if (!system.isEmpty()) {
+                            system.append("\n\n");
+                        }
+                        system.append(message.getContent());
+                    }
+                } else {
+                    messages.add(message);
+                }
+            }
         }
         SseEmitter emitter = agentStreamPort.streamIfActive(
                 userId,
-                system,
+                system.toString(),
                 messages,
                 request.getProvider(),
                 request.getModel(),

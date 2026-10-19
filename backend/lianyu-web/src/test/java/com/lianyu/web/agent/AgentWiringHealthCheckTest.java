@@ -29,10 +29,7 @@ class AgentWiringHealthCheckTest {
 
     private AgentWiringHealthCheck build(boolean withStream, boolean withText,
                                          boolean withMemory, boolean withImage) {
-        AgentRuntimeClient client = mock(AgentRuntimeClient.class);
-        when(client.properties()).thenReturn(new AgentRuntimeProperties("http://agent:8001"));
         return new AgentWiringHealthCheck(
-                client,
                 provider(mock(AgentRuntimePort.class)),
                 provider(withStream ? mock(AgentStreamPort.class) : null),
                 provider(withText ? mock(AgentTextPort.class) : null),

@@ -104,7 +104,16 @@ async def chat_with_image(
     content = (result.content or "").strip()
     if not content:
         return {"error": "empty_content"}
-    return {"content": content, "imageDescription": description}
+    total = None
+    if result.prompt_tokens is not None or result.completion_tokens is not None:
+        total = (result.prompt_tokens or 0) + (result.completion_tokens or 0)
+    return {
+        "content": content,
+        "imageDescription": description,
+        "promptTokens": result.prompt_tokens,
+        "completionTokens": result.completion_tokens,
+        "totalTokens": total,
+    }
 
 
 __all__ = ["build_image_context", "chat_with_image"]

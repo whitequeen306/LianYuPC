@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
  * <p>凭据仍由 Java 解密（`ApiKeyVaultService`），随请求传给 agent ——
  * 这是「加解密留在 Java」这条 seam 的体现。
  *
- * <p>失败语义：任何异常/错误响应/空内容都返回 {@code null}，调用方回退 Java。
+ * <p>失败语义：任何异常/错误响应/空内容都返回 {@code null}，调用方直接报错。
  */
 @Slf4j
 @Component

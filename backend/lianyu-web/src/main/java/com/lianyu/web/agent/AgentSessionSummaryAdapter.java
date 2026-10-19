@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
  * 会话摘要交给 Python 生成（合并 / 压缩）。
  *
  * <p>摘要文案属于 AI 文本，必须只在 Python 存在；Java 侧保留的回退实现
- * 只在 agent 不可用时使用，随 OFF 模式一起退役。
+ * 摘要文案与模型调用在 Python；Java 只负责产品规则与写入 Redis。
  */
 @Slf4j
 @Component

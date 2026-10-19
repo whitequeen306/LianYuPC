@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 /**
  * {@link AgentTextPort} 实现：解析用户 vault → 调 Python `/agent/text/complete`。
  *
- * <p>任何异常都返回 null，让调用方回退 Java 原链路（与其它 agent 链路一致）。
+ * <p>任何异常都返回 null，由调用方决定报错（OFF 退役后无 Java 回退）。
  */
 @Slf4j
 @Component

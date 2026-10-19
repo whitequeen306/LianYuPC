@@ -30,20 +30,17 @@ import org.springframework.stereotype.Component;
 @Component
 public class AgentWiringHealthCheck {
 
-    private final AgentRuntimeClient client;
     private final ObjectProvider<AgentRuntimePort> runtimePort;
     private final ObjectProvider<AgentStreamPort> streamPort;
     private final ObjectProvider<AgentTextPort> textPort;
     private final ObjectProvider<AgentMemoryPort> memoryPort;
     private final ObjectProvider<AgentImagePort> imagePort;
 
-    public AgentWiringHealthCheck(AgentRuntimeClient client,
-                                  ObjectProvider<AgentRuntimePort> runtimePort,
+    public AgentWiringHealthCheck(ObjectProvider<AgentRuntimePort> runtimePort,
                                   ObjectProvider<AgentStreamPort> streamPort,
                                   ObjectProvider<AgentTextPort> textPort,
                                   ObjectProvider<AgentMemoryPort> memoryPort,
                                   ObjectProvider<AgentImagePort> imagePort) {
-        this.client = client;
         this.runtimePort = runtimePort;
         this.streamPort = streamPort;
         this.textPort = textPort;
@@ -55,11 +52,6 @@ public class AgentWiringHealthCheck {
     @EventListener(ApplicationReadyEvent.class)
     public void checkOnStartup() {
         Map<String, Boolean> report = inspect();
-        boolean agentMode = isAgentMode();
-        if (!agentMode) {
-            log.info("Agent mode OFF — wiring check skipped (ports={})", report);
-            return;
-        }
         List<String> missing = new ArrayList<>();
         report.forEach((name, present) -> {
             if (!present) {
@@ -67,10 +59,10 @@ public class AgentWiringHealthCheck {
             }
         });
         if (missing.isEmpty()) {
-            log.info("Agent mode AGENT — all ports wired: {}", report);
+            log.info("Agent runtime — all ports wired: {}", report);
             return;
         }
-        log.error("Agent mode AGENT but ports missing: {} — those chains will silently run on Java",
+        log.error("Agent runtime ports missing: {} — those chains will fail instead of falling back",
                 missing);
     }
 
