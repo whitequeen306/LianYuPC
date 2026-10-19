@@ -95,3 +95,39 @@ def test_city_optional(golden):
     prompt = client.post("/agent/prompt/assemble", json=body).json()["systemPrompt"]
     assert "用户当前所在现实城市" not in prompt
     assert "当前真实环境" in prompt
+
+
+def test_group_scene_skips_time_and_appends_group_rules(golden):
+    body = payload(golden, "zh")
+    body.update({
+        "scene": "GROUP",
+        "afterBase": "none",
+        "groupMaxPieces": 2,
+        "groupOtherCharacters": "其他角色：阿明",
+        "groupMention": "@小林",
+    })
+    prompt = client.post("/agent/prompt/assemble", json=body).json()["systemPrompt"]
+    assert "当前真实环境" not in prompt
+    assert "用户当前所在现实城市" not in prompt
+    assert "群聊" in prompt
+    assert "阿明" in prompt
+
+
+def test_extra_system_suffix_is_appended_last(golden):
+    body = payload(golden, "zh")
+    body["extraSystemSuffix"] = "\n\n[[EXTRA]]"
+    prompt = client.post("/agent/prompt/assemble", json=body).json()["systemPrompt"]
+    assert prompt.endswith("[[EXTRA]]")
+
+
+def test_proactive_scene_appends_real_world_block(golden, monkeypatch):
+    body = payload(golden, "zh")
+    body["scene"] = "PROACTIVE"
+
+    async def fake_block(settings, **_kwargs):
+        return "\n\n[[REAL_WORLD]]"
+
+    monkeypatch.setattr(
+        "app.proactive_context.build_proactive_real_world_block", fake_block)
+    prompt = client.post("/agent/prompt/assemble", json=body).json()["systemPrompt"]
+    assert prompt.endswith("[[REAL_WORLD]]")

@@ -1,7 +1,9 @@
 """角色设定生成 / 抽取：prompt 与模型调用（含 DeepSeek 回退）。"""
 
 import pytest
+from fastapi.testclient import TestClient
 
+from app.main import app
 from app.character_generation import (
     GENERATE_SYSTEM,
     GENERATION_QUALITY_RULES,
@@ -81,3 +83,25 @@ async def test_import_uses_import_prompt():
         gateway, base_url="https://api.example/v1", api_key="k", model="m",
         prepared_source="人设卡", user_addressing="")
     assert content == '{"name":"甲"}'
+
+
+def test_generate_endpoint_contract(monkeypatch):
+    client = TestClient(app)
+    monkeypatch.setattr("app.main.get_gateway", lambda: _Gateway(['{"name":"甲"}']))
+    response = client.post("/agent/character/generate", json={
+        "userId": 7, "baseUrl": "https://api.example/v1", "apiKey": "k",
+        "model": "m", "description": "一个原创角色",
+    })
+    assert response.status_code == 200
+    body = response.json()
+    assert body["content"] == '{"name":"甲"}'
+    assert body["model"] == "m"
+
+
+def test_character_endpoint_rejects_user_mismatch():
+    client = TestClient(app)
+    response = client.post("/agent/character/import", json={
+        "userId": 7, "baseUrl": "https://api.example/v1", "apiKey": "k",
+        "model": "m", "preparedSource": "人设卡",
+    }, headers={"X-User-Id": "8"})
+    assert response.status_code == 403
