@@ -407,12 +407,17 @@ async def prompt_assemble(
             from app.emotion_block import format_emotion_block
 
             scene = (body.scene or "SINGLE").strip().upper()
-            memory_context = await load_memory_context(
-                body.user_id, body.character_id or 0, body.conversation_id,
-                include_memory=scene != "VOICE_CALL",
-                include_relationship=scene in {"SINGLE", "PROACTIVE", "MOMENTS", "DIARY"},
-                include_session=scene in {"SINGLE", "PROACTIVE"},
-            ) or ""
+            # 显式传入的记忆块优先：本轮可能刚写入新记忆（抽取/关系事件是异步的），
+            # 现读会拿到更新的值，与 Java 组装时用的快照不一致 → 假漂移。
+            if not memory_context:
+                memory_context = await load_memory_context(
+                    body.user_id, body.character_id or 0, body.conversation_id,
+                    include_memory=scene != "VOICE_CALL",
+                    include_relationship=scene in {"SINGLE", "PROACTIVE", "MOMENTS", "DIARY"},
+                    include_session=scene in {"SINGLE", "PROACTIVE"},
+                    last_user_message=body.last_user_message,
+                    session_summary_override=body.session_summary,
+                ) or ""
             # 显式传入的情绪块优先：调用方可能在「组装同一时刻」同步取好快照，
             # 比这里现读更接近 Java 实际使用的值（情绪会被本轮对话更新）。
             if not emotion_block:
