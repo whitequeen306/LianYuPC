@@ -48,6 +48,16 @@
 - 提交：`174e55a`
 - 验证：停一台后 8/8 探测 200，6/6 真实对话成功
 
+### 3. agent 重启窗口丢后台任务（部署后发现 → 已修）
+
+- 现象：`11:35:39` 一条 MOMENTS_POST 失败（`prompt 组装失败`），该任务直接进 DLQ——容器工厂
+  `defaultRequeueRejected(false)`，失败不重投
+- 实证：失败在 `03:35:39.458`，agent 应用就绪在 `03:35:39.892`——**0.4 秒启动竞态**
+- 修复（`90c200e`）：`AiBackgroundConsumer` 对「agent 侧暂时不可用」错误做**有界重试**
+  （3 次，1.5s/3s 递增退避）；业务错误仍立即失败进 DLQ
+- 验证：新增 8 个单测（重试成功 / 非瞬态立即失败 / 3 次耗尽后抛出 / cause 链识别）；
+  `mvn test` BUILD SUCCESS；已部署生产（镜像创建时间晚于提交时间，parity 仍 ALL_PASS）
+
 ## 四、部署后验证
 
 ### parity 巡检（生产容器内跑）
@@ -91,13 +101,21 @@ tail: {"replace":"...","pieces":["...","..."]} + [DONE]
 
 ## 五、已知遗留（未修，需决策）
 
-1. **agent 重启窗口内的在途后台任务会失败一次**
-   - 证据：`03:35:39.458` MOMENTS_POST 失败（prompt 组装失败）vs agent `03:35:39.892` 就绪，差 0.4 秒；该 MOMENTS_POST 前后共 5 次，只失败这 1 次
-   - 性质：启动竞态，非持续故障。滚动更新 agent 时可能出现单条后台任务丢失
-   - 选项：后台消费者对「prompt 组装失败」做一次重试；或更新 agent 时短暂停 backend；或接受
-
+1. ~~**agent 重启窗口内的在途后台任务会失败一次**~~ → **已修**（`90c200e`，有界重试），见 §三.3
 2. **测试数据留在生产**
    - 账号 `hjkl`：vault 381（存有生产 DASHSCOPE key，加密）、角色 950、会话 900 + 21 条消息
    - 如不需要可自行删除（删除 vault 前确认没有其他客户端在用）
-
 3. **旧镜像未清理**：按计划等 24h 观察期后再删。
+
+## 六、观察工具
+
+```powershell
+# 24h 观察期任意时刻跑（读 .env 的 DEPLOY_SSH_PASSWORD）
+python scripts/ops/prod_error_watch.py --hours 24
+# 短窗口
+python scripts/ops/prod_error_watch.py --minutes 30
+```
+
+判定阈值（脚本内置）：`JAVA_AI_PATH=0`、`agent http 500=0`、`proactiveTurnResult failed=0`；
+`prompt 组装失败` 允许重启窗口内极少量；`AI background job failed` 应为 0
+（有重试后，瞬态错误会先出现 `retry in` 日志）。
