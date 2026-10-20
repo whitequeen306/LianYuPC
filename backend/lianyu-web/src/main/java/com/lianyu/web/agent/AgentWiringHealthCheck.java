@@ -5,6 +5,7 @@ import com.lianyu.service.agent.AgentMemoryPort;
 import com.lianyu.service.agent.AgentRuntimePort;
 import com.lianyu.service.agent.AgentStreamPort;
 import com.lianyu.service.agent.AgentTextPort;
+import com.lianyu.service.agent.ChatTurnPort;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -35,17 +36,20 @@ public class AgentWiringHealthCheck {
     private final ObjectProvider<AgentTextPort> textPort;
     private final ObjectProvider<AgentMemoryPort> memoryPort;
     private final ObjectProvider<AgentImagePort> imagePort;
+    private final ObjectProvider<ChatTurnPort> chatTurnPort;
 
     public AgentWiringHealthCheck(ObjectProvider<AgentRuntimePort> runtimePort,
                                   ObjectProvider<AgentStreamPort> streamPort,
                                   ObjectProvider<AgentTextPort> textPort,
                                   ObjectProvider<AgentMemoryPort> memoryPort,
-                                  ObjectProvider<AgentImagePort> imagePort) {
+                                  ObjectProvider<AgentImagePort> imagePort,
+                                  ObjectProvider<ChatTurnPort> chatTurnPort) {
         this.runtimePort = runtimePort;
         this.streamPort = streamPort;
         this.textPort = textPort;
         this.memoryPort = memoryPort;
         this.imagePort = imagePort;
+        this.chatTurnPort = chatTurnPort;
     }
 
     @Order(200)
@@ -74,6 +78,7 @@ public class AgentWiringHealthCheck {
         report.put("text(AgentTextPort)", textPort.getIfAvailable() != null);
         report.put("memory(AgentMemoryPort)", memoryPort.getIfAvailable() != null);
         report.put("image(AgentImagePort)", imagePort.getIfAvailable() != null);
+        report.put("chatTurn(ChatTurnPort)", chatTurnPort.getIfAvailable() != null);
         return report;
     }
 

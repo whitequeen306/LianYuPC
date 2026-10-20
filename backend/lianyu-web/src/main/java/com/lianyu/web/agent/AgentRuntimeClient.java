@@ -255,9 +255,26 @@ public class AgentRuntimeClient {
                 .bodyToFlux(String.class);
     }
 
+    /**
+     * 通用流式 POST：把 Python 的 SSE 行序列交给调用方（帧解析与收尾在 Java 侧）。
+     *
+     * <p>与 {@link #streamChat} 同一出站策略（reactor-netty + 读间隙超时，红线 §10），
+     * 区别只是 uri 与 body 由调用方给 —— 聊天回合端点的入参形状不同。
+     */
+    public reactor.core.publisher.Flux<String> postStream(String uri, long userId, Map<String, Object> body) {
+        if (!properties.agentActive()) {
+            return reactor.core.publisher.Flux.empty();
+        }
+        return webClient.post()
+                .uri(uri)
+                .header("X-User-Id", String.valueOf(userId))
+                .bodyValue(body)
+                .retrieve()
+                .bodyToFlux(String.class);
+    }
+
     /** 通用 POST：返回响应体字符串，失败返回 null（不抛）。 */
-    public String postJson(String uri, long userId, Map<String, Object> body) {
-        try {
+    public String postJson(String uri, long userId, Map<String, Object> body) {        try {
             return restClient.post()
                     .uri(uri)
                     .header("X-User-Id", String.valueOf(userId))
