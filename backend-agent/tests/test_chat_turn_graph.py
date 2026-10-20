@@ -79,3 +79,54 @@ def test_inspect_endpoint_returns_error_shape_on_failure(monkeypatch):
     )
     assert resp.status_code == 200
     assert resp.json() == {"error": "chat_turn_failed"}
+
+# ── 流式图 ──
+
+
+def test_stream_graph_has_stream_node():
+    from app.chat_turn import build_chat_turn_stream_graph
+
+    graph = build_chat_turn_stream_graph()
+    nodes = set(graph.get_graph().nodes)
+    assert {"assemble_prompt", "assemble_messages", "invoke_model_stream"} <= nodes
+
+
+@pytest.mark.asyncio
+async def test_stream_graph_forwards_frames(monkeypatch):
+    """节点内的 SSE 帧必须经 astream(custom) 原样透出。"""
+    from app import chat_turn
+
+    frames = [
+        'data:{"content":"你"}\n\n',
+        'data:{"content":"好"}\n\n',
+        "data:[DONE]\n\n",
+    ]
+
+    async def fake_events(*_args, **_kwargs):
+        for frame in frames:
+            yield frame
+
+    monkeypatch.setattr("app.stream_chat.stream_chat_events", fake_events)
+    monkeypatch.setattr(chat_turn, "assemble_prompt", _fake_assemble)
+
+    out = []
+    async for chunk in chat_turn.run_chat_turn_stream(
+        {"user_id": 1, "scene": "SINGLE", "user_text": "hi",
+         "history": [], "invoke": True, "expected_language": "zh"}
+    ):
+        out.append(chunk)
+    assert out == frames
+
+
+async def _fake_assemble(_state):
+    return {"system_prompt": "SYS"}
+
+
+@pytest.mark.asyncio
+async def test_stream_endpoint_rejects_user_mismatch():
+    resp = client.post(
+        "/agent/chat-turn/stream",
+        json={"userId": 7, "scene": "SINGLE", "userText": "hi"},
+        headers={"X-User-Id": "8"},
+    )
+    assert resp.status_code == 403

@@ -430,6 +430,46 @@ async def chat_turn_inspect(
         "content": state.get("content") or "",
     }
 
+
+@app.post("/agent/chat-turn/stream")
+async def chat_turn_stream(
+    body: ChatTurnInspectBody,
+    user_id_header: str | None = Header(default=None, alias="X-User-Id"),
+) -> StreamingResponse:
+    """LangGraph 编排 + 流式回复（切换 Java 前的验证端点）。
+
+    与 `/agent/chat-stream` 帧格式一致；区别是 **prompt 与 messages 由 Python 图自己组装**，
+    Java 只需传原始输入 + 解密后的凭据。
+    """
+    if user_id_header and str(body.user_id) != user_id_header:
+        raise HTTPException(status_code=403, detail="user mismatch")
+
+    payload = body.model_dump(by_alias=False)
+    payload["invoke"] = True
+
+    async def event_source():
+        frames = 0
+        try:
+            yield ": connected\n\n"
+            from app.chat_turn import run_chat_turn_stream
+
+            async for frame in run_chat_turn_stream(payload):
+                frames += 1
+                yield frame
+            logger.info("chat-turn stream done: user=%s frames=%d", body.user_id, frames)
+        except Exception as exc:  # noqa: BLE001 - 生成器异常必须可见，否则上游只看到空回复
+            logger.warning("chat-turn stream failed: user=%s frames=%d err=%r",
+                           body.user_id, frames, exc)
+            yield sse_error("生成失败，请重试")
+            yield DONE_FRAME
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 # ─────────────────────────── P5.5：system prompt 组装 ───────────────────────────
 
 

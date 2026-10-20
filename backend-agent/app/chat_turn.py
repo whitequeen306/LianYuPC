@@ -65,6 +65,7 @@ class ChatTurnState(TypedDict, total=False):
     show_inner_thoughts: bool | None
     max_pieces: int | None
     current_user_message_id: int | None
+    expected_language: str | None
     history: list[dict[str, Any]]
     provider: str | None
     base_url: str
@@ -254,4 +255,59 @@ async def run_chat_turn(payload: dict[str, Any]) -> ChatTurnState:
     return await graph.ainvoke(payload)  # type: ignore[return-value]
 
 
-__all__ = ["ChatTurnState", "build_chat_turn_graph", "run_chat_turn"]
+async def invoke_model_stream(state: ChatTurnState) -> dict[str, Any]:
+    """节点 3（流式版）：把模型增量逐帧写出，供 `/agent/chat-turn/stream` 转发。
+
+    用 LangGraph 的 `get_stream_writer()` 透出到 `astream(stream_mode="custom")`；
+    帧格式复用 `stream_chat_events`，与既有 `/agent/chat-stream` 一致，
+    Java 侧解析器无需改动。
+    """
+    from langgraph.config import get_stream_writer
+
+    from app.stream_chat import stream_chat_events
+
+    writer = get_stream_writer()
+    async for frame in stream_chat_events(
+        get_gateway(),
+        base_url=state.get("base_url") or "",
+        api_key=state.get("api_key") or "",
+        model=state.get("model") or "",
+        messages=state.get("messages") or [],
+        temperature=state.get("temperature", 0.8),
+        max_tokens=state.get("max_tokens", 1024),
+        provider=state.get("provider"),
+        expected_language=state.get("expected_language"),
+    ):
+        writer({"frame": frame})
+    return {}
+
+
+def build_chat_turn_stream_graph():
+    """流式图：前两个节点与对照版相同，第三个节点逐帧透出。"""
+    graph = StateGraph(ChatTurnState)
+    graph.add_node("assemble_prompt", assemble_prompt)
+    graph.add_node("assemble_messages", assemble_messages)
+    graph.add_node("invoke_model_stream", invoke_model_stream)
+    graph.add_edge(START, "assemble_prompt")
+    graph.add_edge("assemble_prompt", "assemble_messages")
+    graph.add_edge("assemble_messages", "invoke_model_stream")
+    graph.add_edge("invoke_model_stream", END)
+    return graph.compile()
+
+
+async def run_chat_turn_stream(payload: dict[str, Any]):
+    """跑流式图，逐帧产出 SSE 文本（`data: {...}` 与 `data: [DONE]`）。"""
+    graph = build_chat_turn_stream_graph()
+    async for chunk in graph.astream(payload, stream_mode="custom"):
+        frame = (chunk or {}).get("frame")
+        if frame:
+            yield frame
+
+
+__all__ = [
+    "ChatTurnState",
+    "build_chat_turn_graph",
+    "build_chat_turn_stream_graph",
+    "run_chat_turn",
+    "run_chat_turn_stream",
+]
