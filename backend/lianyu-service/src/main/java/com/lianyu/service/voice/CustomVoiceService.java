@@ -9,7 +9,7 @@ import com.lianyu.dao.entity.UserCustomVoice;
 import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.UserCustomVoiceMapper;
 import com.lianyu.security.util.JasyptUtil;
-import com.lianyu.service.ai.DashScopeVoiceEnrollmentClient;
+import com.lianyu.service.agent.VoiceEnrollmentPort;
 import com.lianyu.service.dto.CustomVoiceResponse;
 import com.lianyu.service.storage.FileStorageService;
 import com.lianyu.service.voice.CustomVoiceAudioValidator.ValidatedSample;
@@ -27,7 +27,7 @@ public class CustomVoiceService {
     private final UserCustomVoiceMapper customVoiceMapper;
     private final CharacterMapper characterMapper;
     private final FileStorageService fileStorageService;
-    private final DashScopeVoiceEnrollmentClient enrollmentClient;
+    private final VoiceEnrollmentPort enrollmentPort;
     private final JasyptUtil jasyptUtil;
 
     public CustomVoiceResponse get(Long userId, Long characterId) {
@@ -195,11 +195,11 @@ public class CustomVoiceService {
 
         String preferred = "u" + row.getUserId() + "_c" + character.getId();
         try {
-            String httpVoice = enrollmentClient.createVoice(
-                    key, base, httpModel, preferred,
+            String httpVoice = enrollmentPort.createVoice(
+                    row.getUserId(), key, base, httpModel, preferred,
                     sample.bytes(), sample.contentType(), "zh");
-            String rtVoice = enrollmentClient.createVoice(
-                    key, base, realtimeModel, preferred + "_rt",
+            String rtVoice = enrollmentPort.createVoice(
+                    row.getUserId(), key, base, realtimeModel, preferred + "_rt",
                     sample.bytes(), sample.contentType(), "zh");
             row.setHttpVoiceId(httpVoice);
             row.setRealtimeVoiceId(rtVoice);
@@ -240,8 +240,8 @@ public class CustomVoiceService {
             String base = row.getEndpoint() == null || row.getEndpoint().isBlank()
                     ? DashScopeCloudEndpointValidator.DEFAULT_BASE
                     : row.getEndpoint();
-            enrollmentClient.deleteVoiceQuietly(key, base, row.getHttpVoiceId());
-            enrollmentClient.deleteVoiceQuietly(key, base, row.getRealtimeVoiceId());
+            enrollmentPort.deleteVoiceQuietly(row.getUserId(), key, base, row.getHttpVoiceId());
+            enrollmentPort.deleteVoiceQuietly(row.getUserId(), key, base, row.getRealtimeVoiceId());
         }
     }
 

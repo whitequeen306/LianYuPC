@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.lianyu.common.util.UserInputSanitizer;
 import com.lianyu.service.ai.AsrStreamClient;
 import com.lianyu.service.ai.DashScopeTtsRealtimeService;
-import com.lianyu.service.ai.DashScopeTtsService;
+import com.lianyu.service.agent.TtsPort;
 import com.lianyu.service.ai.InnerThoughtFilter;
 import com.lianyu.service.conversation.VoiceCallService;
 import com.lianyu.service.dto.AiChatRequest;
@@ -39,7 +39,7 @@ public class VoiceCallDuplexSession {
     private final long conversationId;
     private final VoiceCallService voiceCallService;
     private final DashScopeTtsRealtimeService ttsRealtimeService;
-    private final DashScopeTtsService ttsHttpService;
+    private final VoiceSynthesisService voiceSynthesisService;
     private final AsrStreamClient.Session asr;
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicBoolean turnBusy = new AtomicBoolean(false);
@@ -72,14 +72,14 @@ public class VoiceCallDuplexSession {
             VoiceCallService voiceCallService,
             AsrStreamClient asrStreamClient,
             DashScopeTtsRealtimeService ttsRealtimeService,
-            DashScopeTtsService ttsHttpService) {
+            VoiceSynthesisService voiceSynthesisService) {
         this.sink = sink;
         this.objectMapper = objectMapper;
         this.userId = userId;
         this.conversationId = conversationId;
         this.voiceCallService = voiceCallService;
         this.ttsRealtimeService = ttsRealtimeService;
-        this.ttsHttpService = ttsHttpService;
+        this.voiceSynthesisService = voiceSynthesisService;
         this.target = voiceCallService.resolveAndAssertCallTarget(userId, conversationId);
         this.asr = asrStreamClient.open(new AsrStreamClient.Listener() {
             @Override
@@ -255,7 +255,7 @@ public class VoiceCallDuplexSession {
                         log.info("Voice duplex TTS HTTP fallback mode={} pet={} conv={} elapsedMs={}",
                                 target.mode(), target.petId(), conversationId,
                                 System.currentTimeMillis() - turnStartedAtMs);
-                        DashScopeTtsService.SynthesizedAudio audio = synthesizeHttpFallback(spoken);
+                        TtsPort.SynthesizedAudio audio = synthesizeHttpFallback(spoken);
                         if (audio == null || audio.bytes() == null || audio.bytes().length == 0) {
                             emitError("TTS_ERROR", "语音合成失败，请稍后再试");
                         } else {
@@ -315,13 +315,13 @@ public class VoiceCallDuplexSession {
         });
     }
 
-    private DashScopeTtsService.SynthesizedAudio synthesizeHttpFallback(String spoken) {
+    private TtsPort.SynthesizedAudio synthesizeHttpFallback(String spoken) {
         if (target.isCustomDashScope()) {
             String voice = target.httpVoiceId() != null ? target.httpVoiceId() : target.realtimeVoiceId();
-            return ttsHttpService.synthesizeWithVoice(
+            return voiceSynthesisService.synthesizeWithVoice(
                     voice, target.apiKey(), spoken, target.httpModel(), target.endpoint());
         }
-        return ttsHttpService.synthesizeForPet(target.petId(), spoken);
+        return voiceSynthesisService.synthesizeForPet(target.petId(), spoken);
     }
 
     private DashScopeTtsRealtimeService.Session connectRealtimeTts() {

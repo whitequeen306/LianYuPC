@@ -8,6 +8,11 @@ import java.util.regex.Pattern;
 
 /**
  * Validates user-supplied DashScope API base URLs (SSRF-safe allowlist).
+ *
+ * <p>职责边界：本类只做**写库前的输入校验**（「用户填的地址能不能存」），
+ * 以及 Realtime WS 端点（该链路仍在 Java）。音色注册与非实时合成的出站 URL
+ * 一律由 Python 侧拼装（`app/dashscope.py`）—— 出站地址的最终形态归发起调用的那一侧，
+ * 两边各拼一套必然分叉（`enrollUrl` / `synthUrl` 已随客户端一起删除）。
  */
 public final class DashScopeCloudEndpointValidator {
 
@@ -55,14 +60,6 @@ public final class DashScopeCloudEndpointValidator {
             throw new BusinessException(ErrorCode.BAD_REQUEST, label + " 模型名无效");
         }
         return m;
-    }
-
-    public static String enrollUrl(String base) {
-        return normalizeBaseUrl(base) + "/api/v1/services/audio/tts/customization";
-    }
-
-    public static String synthUrl(String base) {
-        return normalizeBaseUrl(base) + "/api/v1/services/aigc/multimodal-generation/generation";
     }
 
     public static String realtimeWsUrl(String base) {

@@ -2,7 +2,7 @@ package com.lianyu.web.controller;
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.lianyu.common.base.Result;
-import com.lianyu.service.ai.DashScopeTtsService;
+import com.lianyu.service.voice.VoiceSynthesisService;
 import com.lianyu.service.auth.AuthRateLimiter;
 import com.lianyu.service.dto.ObserveDesktopRequest;
 import io.swagger.v3.oas.annotations.Operation;
@@ -31,16 +31,16 @@ public class ObserveController {
     private static final int OBSERVE_PER_USER_PER_HOUR = 10;
     private static final int OBSERVE_PER_IP_PER_HOUR = 30;
 
-    private final DashScopeTtsService dashScopeTtsService;
+    private final VoiceSynthesisService voiceSynthesisService;
     private final AuthRateLimiter authRateLimiter;
     private final ClientIpResolver clientIpResolver;
     private final DesktopObserveOrchestrator desktopObserveOrchestrator;
 
-    public ObserveController(DashScopeTtsService dashScopeTtsService,
+    public ObserveController(VoiceSynthesisService voiceSynthesisService,
                              AuthRateLimiter authRateLimiter,
                              ClientIpResolver clientIpResolver,
                              DesktopObserveOrchestrator desktopObserveOrchestrator) {
-        this.dashScopeTtsService = dashScopeTtsService;
+        this.voiceSynthesisService = voiceSynthesisService;
         this.authRateLimiter = authRateLimiter;
         this.clientIpResolver = clientIpResolver;
         this.desktopObserveOrchestrator = desktopObserveOrchestrator;
@@ -70,8 +70,8 @@ public class ObserveController {
             Map<String, String> payload = new LinkedHashMap<>();
             payload.put("greeting", greeting);
 
-            DashScopeTtsService.SynthesizedAudio audio =
-                    dashScopeTtsService.synthesizeForPet(request.getPetId(), greeting);
+            com.lianyu.service.agent.TtsPort.SynthesizedAudio audio =
+                    voiceSynthesisService.synthesizeForPet(request.getPetId(), greeting);
             if (audio != null) {
                 payload.put("audioBase64", audio.base64());
                 payload.put("audioMimeType", audio.mimeType());

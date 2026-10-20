@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 
 import cn.dev33.satoken.exception.SaTokenContextException;
-import com.lianyu.service.ai.DashScopeTtsService;
+import com.lianyu.service.voice.VoiceSynthesisService;
 import com.lianyu.service.auth.AuthRateLimiter;
 import com.lianyu.service.dto.ObserveDesktopRequest;
 import com.lianyu.web.agent.DesktopObserveOrchestrator;
@@ -18,7 +18,7 @@ class ObserveControllerSecurityTest {
   void observe_withoutLogin_throwsNotLogin() {
     ObserveController controller =
         new ObserveController(
-            mock(DashScopeTtsService.class),
+            mock(VoiceSynthesisService.class),
             mock(AuthRateLimiter.class),
             mock(ClientIpResolver.class),
             mock(DesktopObserveOrchestrator.class));

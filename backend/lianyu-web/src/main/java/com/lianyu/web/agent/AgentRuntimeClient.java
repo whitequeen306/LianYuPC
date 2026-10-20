@@ -47,6 +47,8 @@ public class AgentRuntimeClient {
         this.webClient = SsrfPinningClientFactory.defaultWebClientBuilder()
                 .baseUrl(properties.baseUrl())
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                // 音频回传上限：Spring 默认 256KB，十秒语音就超了（见 postBytes 注释）
+                .codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(16 * 1024 * 1024))
                 .build();
     }
 
@@ -285,6 +287,50 @@ public class AgentRuntimeClient {
             log.warn("Agent runtime POST {} failed: {}", uri, e.toString());
             return null;
         }
+    }
+
+    /**
+     * 取**二进制**响应（TTS 音频）。2xx 返回内容；204 / 非 2xx / 异常一律返回 null。
+     *
+     * <p>为什么不能复用 {@link #postJson}：Spring 的 {@code StringDecoder} /
+     * {@code ByteArrayDecoder} 默认 {@code maxInMemorySize = 256KB}，而十秒语音就有
+     * 300KB+ —— 走 RestClient 会在**正常业务**上抛 {@code DataBufferLimitException}。
+     * 这里用 WebClient（已在构造时把 maxInMemorySize 抬到 16MB）并阻塞等待，
+     * 与原来 Apache HttpClient 的阻塞语义一致。
+     *
+     * <p>硬封顶 120s：Python 侧自身有 8s 连接 / 30s 读超时 + 最多两次尝试，
+     * 这里只是兜底，避免上游卡死时把调用线程永久占住。
+     */
+    public BinaryResponse postBytes(String uri, long userId, Map<String, Object> body) {
+        try {
+            return webClient.post()
+                    .uri(uri)
+                    .header("X-User-Id", String.valueOf(userId))
+                    .bodyValue(body)
+                    .exchangeToMono(response -> {
+                        int status = response.statusCode().value();
+                        if (status == 204) {
+                            return response.releaseBody().then(reactor.core.publisher.Mono.empty());
+                        }
+                        if (status < 200 || status >= 300) {
+                            log.warn("Agent runtime POST {} returned {}", uri, status);
+                            return response.releaseBody().then(reactor.core.publisher.Mono.empty());
+                        }
+                        String contentType = response.headers().contentType()
+                                .map(MediaType::toString)
+                                .orElse(null);
+                        return response.bodyToMono(byte[].class)
+                                .map(bytes -> new BinaryResponse(contentType, bytes));
+                    })
+                    .block(Duration.ofSeconds(120));
+        } catch (Exception e) {
+            log.warn("Agent runtime POST {} failed: {}", uri, e.toString());
+            return null;
+        }
+    }
+
+    /** 二进制响应（contentType 可能为 null）。 */
+    public record BinaryResponse(String contentType, byte[] bytes) {
     }
 
     /**

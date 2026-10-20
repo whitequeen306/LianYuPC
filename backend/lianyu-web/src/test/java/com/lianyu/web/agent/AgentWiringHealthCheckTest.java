@@ -12,6 +12,8 @@ import com.lianyu.service.agent.AgentRuntimePort;
 import com.lianyu.service.agent.AgentStreamPort;
 import com.lianyu.service.agent.AgentTextPort;
 import com.lianyu.service.agent.ChatTurnPort;
+import com.lianyu.service.agent.TtsPort;
+import com.lianyu.service.agent.VoiceEnrollmentPort;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -42,7 +44,9 @@ class AgentWiringHealthCheckTest {
                 provider(withText ? mock(AgentTextPort.class) : null),
                 provider(withMemory ? mock(AgentMemoryPort.class) : null),
                 provider(withImage ? mock(AgentImagePort.class) : null),
-                provider(withChatTurn ? mock(ChatTurnPort.class) : null));
+                provider(withChatTurn ? mock(ChatTurnPort.class) : null),
+                provider(mock(TtsPort.class)),
+                provider(mock(VoiceEnrollmentPort.class)));
     }
 
     @Test
@@ -73,9 +77,9 @@ class AgentWiringHealthCheckTest {
     void inspectDoesNotThrowWhenEverythingMissing() {
         AgentWiringHealthCheck check = build(false, false, false, false, false);
         Map<String, Boolean> report = check.inspect();
-        assertEquals(6, report.size());
+        assertEquals(8, report.size());
         assertTrue(report.get("proactiveTurn(AgentRuntimePort)"));
-        assertEquals(1, report.values().stream().filter(Boolean::booleanValue).count());
+        assertEquals(3, report.values().stream().filter(Boolean::booleanValue).count());
     }
 
     @Test

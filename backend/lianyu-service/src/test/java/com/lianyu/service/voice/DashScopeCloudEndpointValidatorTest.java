@@ -2,7 +2,6 @@ package com.lianyu.service.voice;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lianyu.common.exception.BusinessException;
 import org.junit.jupiter.api.Test;
@@ -26,10 +25,10 @@ class DashScopeCloudEndpointValidatorTest {
     }
 
     @Test
-    void derivesPaths() {
+    void derivesRealtimeWsPath() {
+        // 只保留 Realtime：非实时合成的 URL 拼装已搬到 Python（app/dashscope.py），
+        // Java 侧不再有第二套实现。
         String base = "https://dashscope.aliyuncs.com";
-        assertTrue(DashScopeCloudEndpointValidator.enrollUrl(base).endsWith("/customization"));
-        assertTrue(DashScopeCloudEndpointValidator.synthUrl(base).contains("/multimodal-generation/"));
         assertEquals("wss://dashscope.aliyuncs.com/api-ws/v1/realtime",
                 DashScopeCloudEndpointValidator.realtimeWsUrl(base));
     }

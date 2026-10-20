@@ -20,7 +20,7 @@ import com.lianyu.service.agent.AgentTextPort;
 import com.lianyu.service.agent.AgentTextStreamPort;
 import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.ai.AsrService;
-import com.lianyu.service.ai.DashScopeTtsService;
+import com.lianyu.service.agent.TtsPort;
 import com.lianyu.service.ai.InnerThoughtFilter;
 import com.lianyu.service.ai.PetVoiceRegistry;
 import com.lianyu.service.ai.background.AiBackgroundPublisher;
@@ -39,6 +39,7 @@ import com.lianyu.service.storage.FileStorageService;
 import com.lianyu.service.voice.CustomVoiceProviders;
 import com.lianyu.service.voice.CustomVoiceService;
 import com.lianyu.service.voice.VoiceCallTarget;
+import com.lianyu.service.voice.VoiceSynthesisService;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -86,7 +87,7 @@ public class VoiceCallService {
     private final CharacterSquareTemplateMapper squareTemplateMapper;
     private final AsrService asrService;
     private final PetVoiceRegistry petVoiceRegistry;
-    private final DashScopeTtsService dashScopeTtsService;
+    private final VoiceSynthesisService voiceSynthesisService;
     private final AgentBlockingPort agentBlockingPort;
     private final AgentTextStreamPort agentTextStreamPort;
     private final AgentTextPort agentTextPort;
@@ -156,7 +157,7 @@ public class VoiceCallService {
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "角色暂时无法回复，请稍后再试");
         }
 
-        DashScopeTtsService.SynthesizedAudio audioOut = synthesizeForTarget(target, replyText);
+        TtsPort.SynthesizedAudio audioOut = synthesizeForTarget(target, replyText);
         long tTts = System.nanoTime();
         if (audioOut == null || audioOut.base64() == null || audioOut.base64().isBlank()) {
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "语音合成失败，请稍后再试");
@@ -287,12 +288,12 @@ public class VoiceCallService {
         return null;
     }
 
-    private DashScopeTtsService.SynthesizedAudio synthesizeForTarget(VoiceCallTarget target, String text) {
+    private TtsPort.SynthesizedAudio synthesizeForTarget(VoiceCallTarget target, String text) {
         if (target == null) {
             return null;
         }
         if (target.mode() == VoiceCallTarget.Mode.CUSTOM_DASHSCOPE) {
-            return dashScopeTtsService.synthesizeWithVoice(
+            return voiceSynthesisService.synthesizeWithVoice(
                     target.httpVoiceId() != null ? target.httpVoiceId() : target.realtimeVoiceId(),
                     target.apiKey(),
                     text,
@@ -300,7 +301,7 @@ public class VoiceCallService {
                     target.endpoint());
         }
         if (target.mode() == VoiceCallTarget.Mode.OFFICIAL_PET) {
-            return dashScopeTtsService.synthesizeForPet(target.petId(), text);
+            return voiceSynthesisService.synthesizeForPet(target.petId(), text);
         }
         return null;
     }

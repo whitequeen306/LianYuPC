@@ -49,10 +49,24 @@ class JavaAiLogicRatchetTest {
             Pattern.compile("OpenAiChatModel"),
             Pattern.compile("OllamaChatModel"),
             Pattern.compile("ChatClient\\.builder"),
-            Pattern.compile("springframework\\.ai\\.chat\\.model"));
+            Pattern.compile("springframework\\.ai\\.chat\\.model"),
+            // 2026-10-20 补：TTS / 音色克隆 / 向量化 的出站路径。
+            // 这几个模式就是「检查器 0/0/0 却仍有 EmbeddingService 在跑」那个盲区 ——
+            // 只数 prompt 文本与 chat 调用，数不到「另一套 HTTP 自己发请求」。
+            Pattern.compile("/api/v1/services/aigc/multimodal-generation"),
+            Pattern.compile("/api/v1/services/audio/tts/customization"),
+            Pattern.compile("/api/v1/services/rerank/"),
+            Pattern.compile("/compatible-mode/v1/embeddings"));
 
     /** OFF 退役后所有已知 AI 类都已清理/迁移；留空表示清单彻底清零。 */
     private static final Set<String> KNOWN_AI_CLASSES = Set.of();
+
+    /** 已迁往 Python 的能力：这些文件名不允许在 Java 里复活。 */
+    private static final Set<String> MIGRATED_AI_CLIENT_FILES = Set.of(
+            "DashScopeTtsService.java",
+            "DashScopeVoiceEnrollmentClient.java",
+            "EmbeddingService.java",
+            "RerankerService.java");
 
     /** 从测试模块出发找到 backend 根（lianyu-web 的上一级）。 */
     private static Path backendRoot() {
@@ -152,6 +166,16 @@ class JavaAiLogicRatchetTest {
                 .count();
         assertTrue(hits <= BASELINE_AI_CLASSES,
                 "已知 AI 类从 " + BASELINE_AI_CLASSES + " 增到 " + hits);
+    }
+
+    @Test
+    void migratedAiClientsStayDeleted() throws IOException {
+        List<String> offenders = javaSources().stream()
+                .map(path -> path.getFileName().toString())
+                .filter(MIGRATED_AI_CLIENT_FILES::contains)
+                .toList();
+        assertTrue(offenders.isEmpty(),
+                "这些能力已经迁到 Python，不许在 Java 复活：" + offenders);
     }
 
     @Test

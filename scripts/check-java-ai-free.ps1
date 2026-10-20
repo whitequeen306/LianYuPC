@@ -72,12 +72,27 @@ $modelCallPatterns = @(
     'OpenAiChatModel',
     'OllamaChatModel',
     'ChatClient\.builder',
-    'springframework\.ai\.chat\.model'
+    'springframework\.ai\.chat\.model',
+    # 2026-10-20 补：TTS / 音色克隆 / 向量化 / 重排 的出站路径。
+    # 这几个模式补上「0/0/0 却仍有 EmbeddingService 在跑」的盲区 ——
+    # 旧规则只数 prompt 文本与 chat 调用，数不到「另一套 HTTP 自己发请求」。
+    '/api/v1/services/aigc/multimodal-generation',
+    '/api/v1/services/audio/tts/customization',
+    '/api/v1/services/rerank/',
+    '/compatible-mode/v1/embeddings'
 )
 
 # ── 规则 3：已知 AI 类（OFF 退役后清单已清零）──
 # 保留机制：以后若出现新的「AI 逻辑类」，把类名加回这里，strict 会立刻失败。
 $knownAiClasses = @()
+
+# ── 规则 4：已迁往 Python 的客户端（绝不允许在 Java 复活）──
+$migratedClientFiles = @(
+    'DashScopeTtsService.java',
+    'DashScopeVoiceEnrollmentClient.java',
+    'EmbeddingService.java',
+    'RerankerService.java'
+)
 
 $promptHits = New-Object System.Collections.Generic.List[object]
 $modelHits = New-Object System.Collections.Generic.List[object]
@@ -120,6 +135,13 @@ $classHits = $files | Where-Object { $knownAiClasses -contains $_.Name } | ForEa
     }
 }
 
+$revivedHits = $files | Where-Object { $migratedClientFiles -contains $_.Name } | ForEach-Object {
+    [pscustomobject]@{
+        File = $_.FullName.Replace("$repoRoot\", '')
+        Lines = ([System.IO.File]::ReadAllLines($_.FullName)).Count
+    }
+}
+
 # ── 输出 ──
 Write-Host ''
 Write-Host '===== Java AI 逻辑残留清单 =====' -ForegroundColor Cyan
@@ -139,24 +161,29 @@ $classHits | Sort-Object File | ForEach-Object {
     Write-Host ("  {0,6} 行  {1}" -f $_.Lines, $_.File)
 }
 
-Write-Host "`n[4] 允许保留的 seam（不计入违规）: $($allowedFiles.Count) 个" -ForegroundColor DarkGray
+Write-Host "`n[4] 已迁往 Python 的客户端复活: $($revivedHits.Count) 个" -ForegroundColor Yellow
+$revivedHits | Sort-Object File | ForEach-Object {
+    Write-Host ("  {0,6} 行  {1}" -f $_.Lines, $_.File)
+}
+
+Write-Host "`n[5] 允许保留的 seam（不计入违规）: $($allowedFiles.Count) 个" -ForegroundColor DarkGray
 $allowedFiles | ForEach-Object { Write-Host "  $_" }
 
 # 判定
-$gateViolations = $promptHits.Count + $modelHits.Count
+$gateViolations = $promptHits.Count + $modelHits.Count + $revivedHits.Count
 $strictViolations = $gateViolations + $classHits.Count
 
 Write-Host ''
 if ($Mode -eq 'report') {
-    Write-Host "报告模式：prompt 文本 $($promptHits.Count) / 模型调用 $($modelHits.Count) / 已知 AI 类 $($classHits.Count)" -ForegroundColor Cyan
+    Write-Host "报告模式：prompt 文本 $($promptHits.Count) / 模型调用 $($modelHits.Count) / 已知 AI 类 $($classHits.Count) / 复活 $($revivedHits.Count)" -ForegroundColor Cyan
     exit 0
 }
 if ($Mode -eq 'gate') {
     if ($gateViolations -gt 0) {
-        Write-Host "GATE 失败：Java 仍含 $gateViolations 处 AI 逻辑（prompt 文本或模型调用）" -ForegroundColor Red
+        Write-Host "GATE 失败：Java 仍含 $gateViolations 处 AI 逻辑（prompt 文本 / 模型调用 / 复活客户端）" -ForegroundColor Red
         exit 1
     }
-    Write-Host 'GATE 通过：Java 无 prompt 文本、无模型调用' -ForegroundColor Green
+    Write-Host 'GATE 通过：Java 无 prompt 文本、无模型调用、无复活客户端' -ForegroundColor Green
     exit 0
 }
 if ($Mode -eq 'strict') {

@@ -1,73 +1,123 @@
-# TTS / 音色克隆迁移计划（下一步执行清单）
+# TTS / 音色克隆迁移（第 1、2 步已完成）
 
-> 2026-10-20。本文件是「把语音相关能力从 Java 搬到 Python」的执行清单。
-> 之所以先写计划再动手：这块是**实时双向音频**，比聊天链路更容易出静默故障，
-> 必须在有完整上下文时一次做完，不能拆成半截。
+> 2026-10-20 第二轮。第一轮只出了清点与顺序（见本文件末「原始计划」），
+> 第二轮把**第 1 步（音色注册）与第 2 步（非实时 TTS）真正做完并验证**。
+> 第 3 步（实时 TTS，WebSocket 双向）仍未开始，原因在末尾。
 
-## 一、现状清点
+## 一、最终形态
 
-Python 侧目前**完全没有 TTS 代码**（`backend-agent/app` 下无任何 tts 模块）。
+```
+Java（产品规则）                          Python（AI 能力）
+─────────────────────────────            ──────────────────────────────
+CustomVoiceService                        /agent/voice/enroll
+  ├ 音色给哪个用户/角色                     ├ 音色注册请求体拼装
+  ├ Key 加密存库（JasyptUtil）              ├ 出站 URL（enroll_url）
+  ├ 音频裁剪 / MinIO 备份                   ├ 错误脱敏（sk-* → [redacted]）
+  └ VoiceEnrollmentPort ──────────────────▶ └ 返回 voice_id
 
-Java 侧（含 tts / voice 字样的非测试文件，行数为整文件）：
+VoiceSynthesisService                      /agent/tts/synthesize
+  ├ 用哪个音色（Pet 映射 / 用户自定义）        ├ 合成请求体（text/voice/language_type）
+  ├ 用哪个 Key（平台 / 用户）                 ├ 取 audio URL → 下载音频
+  ├ enabled / language_type 配置             ├ 域名白名单 + scheme 升级
+  └ TtsPort ───────────────────────────────▶ └ 返回原始音频字节（204 = 没有）
+```
 
-| 文件 | 行数 | 职责（推断，执行前需确认） |
+关键取舍：**出站 URL 的拼装只在 Python**。`DashScopeCloudEndpointValidator`
+留在 Java，但只剩「用户填的地址能不能存」这层输入校验，以及仍在 Java 的
+Realtime WS 端点；`enrollUrl` / `synthUrl` 随客户端一起删掉 —— 两边各拼一套必然分叉。
+
+## 二、实际删掉的东西
+
+| 文件 | 行数 | 去处 |
 |---|---|---|
-| `VoiceCallDuplexSession.java` | 590 | 语音通话双工会话（客户端 ↔ 模型） |
-| `DashScopeTtsRealtimeService.java` | 401 | 实时 TTS（WebSocket 双向） |
-| `DashScopeTtsService.java` | 275 | 非实时 TTS（HTTP） |
-| `CustomVoiceService.java` | 275 | 音色克隆编排（录制→校验→注册→使用） |
-| `VoiceDuplexHandler.java` | 241 | 双工 handler（连接生命周期、鉴权） |
-| `DashScopeVoiceEnrollmentClient.java` | 135 | 音色注册 API 客户端 |
-| `LocalTtsEndpointValidator.java` | 73 | 本地 TTS 端点校验（SSRF 面） |
-| `DashScopeCloudEndpointValidator.java` | 63 | 云端端点校验 |
-| `CustomVoiceAudioTrimmer.java` / `CustomVoiceAudioValidator.java` | — | 音频裁剪/校验 |
+| `DashScopeTtsService.java` | 302 | `app/tts.py`（147）+ `VoiceSynthesisService`（配置解析） |
+| `DashScopeVoiceEnrollmentClient.java` | 147 | `app/voice_enrollment.py`（172） |
+| `DashScopeTtsServiceNetworkTest.java` | 33 | 行为测试搬到 `tests/test_voice_tts.py` |
 
-相关但不必迁的：`FileStorageService`（对象存储）、`PetVoiceRegistry`（产品配置）、
-`ConversationService` / `VoiceCallService` / `ConversationController`（业务编排）。
+合计 **-482 行 Java**（其中 449 行是真实的 HTTP/JSON/白名单实现）。
+`DashScopeCloudEndpointValidator` 同时删掉 `enrollUrl` / `synthUrl` 两个方法（-9 行），
+`synthUrl` 的唯一调用方就是被删的服务。
 
-## 二、迁移顺序（按风险从低到高）
+新增 Java 只有「端口 + 适配 + 门面」：`TtsPort`(53)、`VoiceEnrollmentPort`(47)、
+`AgentTtsAdapter`(58)、`AgentVoiceEnrollmentAdapter`(84)、`VoiceSynthesisService`(117)。
+它们是**接线**，不是 AI 逻辑 —— 和 `ChatTurnPort` 一起由 `AgentWiringHealthCheck` 在启动时自检。
 
-### 第 1 步：音色注册（纯 HTTP，最低风险）
-- Python 新增 `app/voice_enrollment.py` + `/agent/voice/enroll`、`/agent/voice/delete`
-- Java `DashScopeVoiceEnrollmentClient` → 换成端口调用，然后删除客户端
-- 校验点：注册成功返回的音色 ID 与原实现一致；删除幂等
+## 三、一个真 bug：DashScope 的音频地址是 http
 
-### 第 2 步：非实时 TTS（HTTP 单次合成）
-- Python `app/tts.py`：`POST /agent/tts/synthesize`，返回音频字节（base64 或直接 bytes）
-- Java `DashScopeTtsService` → 端口转发 → 删除
-- 校验点：同一文本同一音色的输出可播放、时长接近、失败码映射一致
+Java 原实现要求音频 URL 必须是 `https`：
 
-### 第 3 步：实时 TTS（WebSocket，最高风险）
-- Python 建 `/agent/tts/realtime` 的 WS 端点，转发 DashScope realtime 协议
-- Java `DashScopeTtsRealtimeService` → 保留连接管理，删掉协议实现
-- 这一层建议**最后做**，并且先在本地用真实通话跑通再动线上
+```java
+if (!"https".equalsIgnoreCase(uri.getScheme())) return false;   // 原 DashScopeTtsService:182
+```
 
-### 第 4 步：补检查器
-- `scripts/check-java-ai-free.ps1` 增加模式：`dashscope`、`tts`、`embedding`、
-  `rerank`、`DashScope*`、`realtime` 等
-- 目标：让「Java 里还有 AI 调用」这件事无法再隐形（本轮已因此漏掉 embedding/rerank）
+实测（2026-10-20，`qwen3-tts-flash`）DashScope 返回的是：
 
-## 三、执行前必须先确认的三件事
+```
+http://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/prod/qwen3-tts/.../x.wav?OSSAccessKeyId=...&Signature=...
+```
 
-1. ~~`CustomVoiceService` 到底调了哪几个外部接口~~ **已确认**：它只依赖
-   `UserCustomVoiceMapper`（DB）、`CharacterMapper`、`FileStorageService`（MinIO）、
-   `DashScopeVoiceEnrollmentClient`（**唯一 AI 调用**）、`JasyptUtil`。
-   → 第 1 步的边界就是这一个客户端，`CustomVoiceService` 自身可以原地不动，
-   只把 `enrollmentClient.xxx(...)` 换成端口调用。这比预想的干净得多。
-2. 实时链路的终止条件与错误码（客户端断连、上游超时、额度不足），
-   这些是 Java 现在用 `SseEmitter`/`WebSocketSession` 生命周期兜住的，换实现要逐条对齐。
-3. 语音通话是否与文字回合共享 prompt 组装（`ChatTurnScene.VOICE_CALL` 已在 Python），
-   若是，TTS 迁移后要保证 voice call 仍走同一条 LangGraph 回合。
+也就是说**凡是用 http 下发的音频 URL，原实现一律判为非法 → 静默返回 null**。
+桌面问候只是不带音频、语音通话则报「语音合成失败」，两条链路都不会报错，
+所以这个缺陷一直没人发现。
 
-## 四、验收标准
+Python 侧的处理：**域名白名单不放宽，只把 scheme 升级成 https 再下载**
+（同一签名 https 同样 200，实测 119084 字节 RIFF）。见 `app/dashscope.py::normalize_audio_url`。
 
-- `mvn test` / `pytest` 全绿
-- `check-java-ai-free.ps1` 新增模式后仍 0/0/0（说明真删干净了，而不是扫不到）
-- 本地容器：发一条语音消息 → 能播放；发起一次语音通话 → 双向通、能挂断
-- 线上灰度：先单实例（`agent` only），观察 30 分钟错误率再放到 `agent2`
+顺带补上国际站：原白名单只放行 `dashscope.aliyuncs.com`，但
+`normalizeBaseUrl` 明确支持 `dashscope-intl.aliyuncs.com` —— 国际站用户的音频
+必然被判非法。既然接受这个 base，白名单必须同步，否则「支持」是假的。
 
-## 五、为什么不在这一轮做
+## 四、契约细节（改动时最容易踩的）
 
-本轮上下文已接近耗尽。上一轮「删 Java 代码 + 大改」在上下文不足时留下了 4 个 bug
-（其中一个是所有回复变空），代价远大于等待一轮。这块涉及实时音频，
-半截状态比不开始更危险。
+| 点 | 现状 | 为什么 |
+|---|---|---|
+| TTS 失败返回 | `null` / HTTP 204 | 原实现就返回 null，调用方已按「没音频」降级。改成异常会把可选增强变成主链路故障 |
+| 音色注册失败 | 抛 `AI_PROVIDER_ERROR(message)` | 用户要看到原因；message 由 Python 脱敏（`sk-*`→`[redacted]`，截断 160） |
+| 删除音色 | 永不抛，永不失败 | 删远端失败不该阻塞本地删记录（原 `deleteVoiceQuietly`） |
+| 传输格式 | **原始字节** + `Content-Type` | JSON+base64 会膨胀 33%，而 Spring 的 `StringDecoder`/`ByteArrayDecoder` 默认 256KB 上限会抛 `DataBufferLimitException`（十秒语音就 300KB+） |
+| 重试 | 最多 2 次，仅「连不上」/429/5xx | 对齐原 `isTransientNetworkFailure`：**读超时不重试**，请求已发出，重试重复扣费 |
+| 一次注册一个模型 | HTTP / Realtime 各注册一次 | 一个音色只属于一个 `target_model`，合并会得到 `CLIENT_ERROR` |
+
+## 五、验证
+
+| 项 | 结果 |
+|---|---|
+| `pytest` | **1197 passed**（新增 `tests/test_voice_tts.py` 58 个） |
+| `mvn test` | **BUILD SUCCESS**（lianyu-service 229 / lianyu-web 104；新增 `AgentVoiceAdaptersTest` 13 个、`AgentRuntimeClientBinaryTest` 4 个） |
+| `check-java-ai-free.ps1` | prompt 0 / 模型调用 0 / 已知 AI 类 0 / 复活客户端 0 |
+| 检查器非空转 | 造一个含 `/api/v1/services/audio/tts/customization` 的探针文件 → gate 立刻失败；删掉 → 通过 |
+| 编解码上限非空转 | 摘掉 `.codecs(maxInMemorySize(16MB))` → `DataBufferLimitException: Exceeded limit on max bytes to buffer : 262144`，400KB 音频用例失败；放回 → 通过 |
+| 本地容器 | `/agent/tts/synthesize` 实测 `200 audio/wav`、88364 字节、`RIFF` 头（`qwen3-tts-flash` + `Cherry`） |
+| 反面用例 | 不存在的模型 → DashScope 404 `Model not exist` → 端点 204（不是 500） |
+| 启动自检 | 8 个端口全部 wired：`tts(TtsPort)=true, voiceEnrollment(VoiceEnrollmentPort)=true`，启动 12.257s |
+
+**没能验证的**：真实自定义音色（`qwen3-tts-vc-*`）的合成质量与音色一致性。
+本地账号的 `DASHSCOPE_API_KEY` 对这些 VC 模型返回 `Model not exist`，
+而 `pet-voices.json` 里的 voiceId 是在另一个账号下注册的。
+所以这一环只验证了「协议通、字节是真 wav」，没有验证「声音对不对」。
+
+## 六、还没做的：第 3 步（实时 TTS）
+
+仍在 Java：`DashScopeTtsRealtimeService`(401)、`VoiceCallDuplexSession`(590)、
+`VoiceDuplexHandler`(241) —— 约 1232 行。
+
+这一层是**双向 WebSocket**：客户端音频上行、ASR 下行、LLM 增量、TTS 音频下行、
+打断（barge-in）与连接生命周期都在一条连接里。迁移风险不是「协议写错」，
+而是「时序写错」——表现为偶发卡顿/重复播报/挂断残留，很难用单测覆盖。
+
+建议顺序：先在本地用真实通话把「打断」「超时」「客户端断连」三种情况跑通，
+再谈替换。不要和前面的 HTTP 能力混在一个批次里。
+
+## 七、原始计划（第一轮，保留作对照）
+
+### 迁移顺序（按风险从低到高）
+1. 音色注册（纯 HTTP，最低风险）—— **已完成**
+2. 非实时 TTS（HTTP 单次合成）—— **已完成**
+3. 实时 TTS（WebSocket，最高风险）—— 未开始
+4. 补检查器 —— **已完成**（`MODEL_CALLS` 增加 4 条出站路径模式 + 客户端复活检测）
+
+### 验收标准
+- `mvn test` / `pytest` 全绿 —— ✅
+- 检查器新增模式后仍 0/0/0，且**证明它不是空转** —— ✅
+- 本地容器：发一条语音消息 → 能播放 —— ⚠️ 协议层通过，音色一致性未验证（见 §5）
+- 线上灰度：先单实例（`agent` only），观察 30 分钟再放到 `agent2` —— 未做

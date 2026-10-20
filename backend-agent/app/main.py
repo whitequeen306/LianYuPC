@@ -8,12 +8,13 @@
 由 Java 适配层（阶段 1 后续）做 vault 解析后转发，或 nginx 直接分流。
 """
 
+import base64
 import logging
 
 from typing import Any
 import asyncio
 from contextlib import asynccontextmanager, suppress
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -129,6 +130,11 @@ async def capabilities() -> dict[str, object]:
         "circuitBreaker": True,
         "toolLoop": True,
         "maxToolRounds": get_settings().max_tool_rounds,
+        # 语音接线：Java 适配层据此决定是否把音色注册 / TTS 交给 Python。
+        # realtimeTts 暂为 False —— 双向 WebSocket 还在 Java（见 tts-migration-plan 第 3 步）。
+        "voiceEnrollment": True,
+        "ttsSynthesize": True,
+        "realtimeTts": False,
     }
 
 
@@ -1007,3 +1013,132 @@ async def proactive_turn(
         tool_rounds=final.get("tool_rounds"),
         tool_truncated=final.get("tool_truncated"),
     )
+
+# ─────────────────────────── 语音：音色注册 / 非实时合成 ───────────────────────────
+
+
+class VoiceEnrollBody(BaseModel):
+    """音色注册：Java 解出 Key 后传入，Python 只负责换 voice_id。
+
+    注意 HTTP 与 Realtime 是两个不同的 target_model，必须各注册一次
+    （一个音色只属于一个模型），所以这里一次只注册一个。
+    """
+
+    user_id: int = Field(alias="userId")
+    api_key: str = Field(alias="apiKey")
+    api_base_url: str | None = Field(default=None, alias="apiBaseUrl")
+    target_model: str = Field(alias="targetModel")
+    preferred_name: str | None = Field(default=None, alias="preferredName")
+    audio_base64: str = Field(alias="audioBase64")
+    mime_type: str | None = Field(default="audio/wav", alias="mimeType")
+    language: str | None = "zh"
+
+    model_config = {"populate_by_name": True}
+
+
+class VoiceDeleteBody(BaseModel):
+    user_id: int = Field(alias="userId")
+    api_key: str | None = Field(default=None, alias="apiKey")
+    api_base_url: str | None = Field(default=None, alias="apiBaseUrl")
+    voice_id: str | None = Field(default=None, alias="voiceId")
+
+    model_config = {"populate_by_name": True}
+
+
+@app.post("/agent/voice/enroll")
+async def voice_enroll(
+    body: VoiceEnrollBody,
+    user_id_header: str | None = Header(default=None, alias="X-User-Id"),
+) -> dict[str, Any]:
+    """返回 {voice}；失败返回 {error, message}（message 已脱敏，可直接展示）。"""
+    from app.voice_enrollment import VoiceEnrollmentError, create_voice
+
+    if user_id_header and str(body.user_id) != user_id_header:
+        raise HTTPException(status_code=403, detail="user mismatch")
+    try:
+        audio = base64.b64decode(body.audio_base64, validate=True)
+    except Exception:  # noqa: BLE001
+        return {"error": "invalid_audio", "message": "音频数据无效，请重新上传"}
+    if not audio:
+        return {"error": "invalid_audio", "message": "音频数据无效，请重新上传"}
+    try:
+        voice = await create_voice(
+            api_key=body.api_key,
+            base_url=body.api_base_url,
+            target_model=body.target_model,
+            preferred_name=body.preferred_name,
+            audio_bytes=audio,
+            mime_type=body.mime_type,
+            language=body.language,
+        )
+    except VoiceEnrollmentError as exc:
+        return {"error": "enroll_failed", "message": str(exc)}
+    except Exception as exc:  # noqa: BLE001 - 地址/模型校验失败等
+        logger.warning("voice enroll rejected: %s", exc)
+        return {"error": "enroll_rejected", "message": str(exc) or "语音报名失败"}
+    return {"voice": voice}
+
+
+@app.post("/agent/voice/delete")
+async def voice_delete(
+    body: VoiceDeleteBody,
+    user_id_header: str | None = Header(default=None, alias="X-User-Id"),
+) -> dict[str, Any]:
+    """删除远端音色 —— 永不失败（对齐 Java deleteVoiceQuietly）。"""
+    from app.voice_enrollment import delete_voice_quietly
+
+    if user_id_header and str(body.user_id) != user_id_header:
+        raise HTTPException(status_code=403, detail="user mismatch")
+    await delete_voice_quietly(
+        api_key=body.api_key, base_url=body.api_base_url, voice_id=body.voice_id
+    )
+    return {"deleted": True}
+
+
+class TtsSynthesizeBody(BaseModel):
+    """非实时 TTS：Java 给已解析好的音色/模型/Key，Python 只做合成 + 下载。"""
+
+    user_id: int = Field(alias="userId")
+    api_key: str | None = Field(default=None, alias="apiKey")
+    base_url: str | None = Field(default=None, alias="baseUrl")
+    model: str | None = None
+    voice_id: str | None = Field(default=None, alias="voiceId")
+    text: str | None = None
+    language_type: str | None = Field(default="Chinese", alias="languageType")
+    connect_timeout_ms: int | None = Field(default=8000, alias="connectTimeoutMs")
+    read_timeout_ms: int | None = Field(default=30000, alias="readTimeoutMs")
+
+    model_config = {"populate_by_name": True}
+
+
+@app.post("/agent/tts/synthesize")
+async def tts_synthesize(
+    body: TtsSynthesizeBody,
+    user_id_header: str | None = Header(default=None, alias="X-User-Id"),
+) -> Response:
+    """成功返回**原始音频字节**（Content-Type 即音频类型）；不可用返回 204。
+
+    刻意不套 JSON+base64：音频动辄几百 KB，base64 会膨胀 33%，而 Spring 的
+    `StringDecoder` / `ByteArrayDecoder` 默认 256KB 上限会直接抛
+    `DataBufferLimitException`（短句还行，十秒以上就炸）。裸字节既省内存也省一次编解码。
+
+    204 不是错误：合成失败是**可降级**的，Java 侧看到 204 就走「没音频」分支，
+    与原来 `return null` 的语义完全一致。
+    """
+    from app.tts import synthesize
+
+    if user_id_header and str(body.user_id) != user_id_header:
+        raise HTTPException(status_code=403, detail="user mismatch")
+    audio = await synthesize(
+        api_key=body.api_key,
+        model=body.model,
+        voice_id=body.voice_id,
+        text=body.text,
+        base_url=body.base_url,
+        language_type=body.language_type,
+        connect_timeout=(body.connect_timeout_ms or 8000) / 1000.0,
+        read_timeout=(body.read_timeout_ms or 30000) / 1000.0,
+    )
+    if audio is None:
+        return Response(status_code=204)
+    return Response(content=audio.audio, media_type=audio.mime_type)
