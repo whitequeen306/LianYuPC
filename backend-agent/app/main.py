@@ -225,6 +225,13 @@ async def chat_stream(
                 provider=body.provider,
                 expected_language=body.expected_language,
                 tools=supported_tool_schemas(body.tools) if body.tools else None,
+                # 流式拿不到文本时用它走有界工具循环（模型想调工具的那一轮）
+                tool_names=body.tools or None,
+                tool_context={
+                    "_user_id": body.user_id,
+                    "_character_id": body.character_id,
+                    "_language": body.expected_language or "zh",
+                },
             ):
                 frames += 1
                 if frames <= 3:

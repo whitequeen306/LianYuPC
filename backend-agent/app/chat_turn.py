@@ -295,6 +295,13 @@ async def invoke_model_stream(state: ChatTurnState) -> dict[str, Any]:
         provider=state.get("provider"),
         expected_language=state.get("expected_language"),
         tools=tools,
+        # 工具回退：流式无文本（模型选择调工具）时退化成有界工具循环
+        tool_names=list(CHAT_TOOL_NAMES) if enable_tools else None,
+        tool_context={
+            "_user_id": state.get("user_id"),
+            "_character_id": state.get("character_id"),
+            "_language": state.get("expected_language") or state.get("output_language") or "zh",
+        },
     ):
         writer({"frame": frame})
     return {}
