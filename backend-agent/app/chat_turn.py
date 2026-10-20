@@ -221,9 +221,54 @@ async def assemble_messages(state: ChatTurnState) -> dict[str, Any]:
     return {"messages": messages}
 
 
+def _tool_context(state: ChatTurnState) -> dict[str, Any]:
+    """工具执行上下文（对齐 Java ChatToolContext；模型看不到，也不进 schema）。"""
+    return {
+        "_user_id": state.get("user_id"),
+        "_character_id": state.get("character_id"),
+        "_language": state.get("expected_language") or state.get("output_language") or "zh",
+    }
+
+
+def _tools_enabled(state: ChatTurnState) -> bool:
+    enable = state.get("enable_chat_tools")
+    if enable is not None:
+        return bool(enable)
+    return scene_enable_tools(normalize_scene(state.get("scene")))
+
+
 async def invoke_model(state: ChatTurnState) -> dict[str, Any]:
-    """节点 3：调用模型（阻塞版；群聊主动发言、关系事件等非流式场景用）。"""
+    """节点 3：调用模型（阻塞版；群聊主动发言、关系事件等非流式场景用）。
+
+    挂了工具就必须把 schema 一起给模型 —— 只给「可用工具」的提示词而不给 schema 时，
+    模型会把 `<｜｜DSML｜｜ tool_calls>` 这类调用标记当成正文吐出来（实测已落库），
+    用户看到的是脏文本、时间/天气也只能靠编。
+    """
     gateway = get_gateway()
+    if _tools_enabled(state):
+        from app.tool_loop import run_tool_loop
+
+        loop = await run_tool_loop(
+            gateway,
+            base_url=state.get("base_url") or "",
+            api_key=state.get("api_key") or "",
+            model=state.get("model") or "",
+            messages=state.get("messages") or [],
+            tool_names=list(CHAT_TOOL_NAMES),
+            temperature=state.get("temperature", 0.8),
+            max_tokens=state.get("max_tokens", 1024),
+            provider=state.get("provider"),
+            lane_name="interactive",
+            tool_context=_tool_context(state),
+        )
+        logger.info("chat_turn.invoke_model rounds=%d tools=%s chars=%d",
+                    loop.rounds, loop.tool_names_called, len(loop.content or ""))
+        return {
+            "content": loop.content or "",
+            "prompt_tokens": loop.prompt_tokens,
+            "completion_tokens": loop.completion_tokens,
+        }
+
     result = await gateway.chat_messages(
         base_url=state.get("base_url") or "",
         api_key=state.get("api_key") or "",
@@ -278,9 +323,7 @@ async def invoke_model_stream(state: ChatTurnState) -> dict[str, Any]:
     from app.stream_chat import stream_chat_events
     from app.tools import supported_tool_schemas
 
-    enable_tools = state.get("enable_chat_tools")
-    if enable_tools is None:
-        enable_tools = scene_enable_tools(normalize_scene(state.get("scene")))
+    enable_tools = _tools_enabled(state)
     tools = supported_tool_schemas(list(CHAT_TOOL_NAMES)) if enable_tools else None
 
     writer = get_stream_writer()
@@ -297,11 +340,7 @@ async def invoke_model_stream(state: ChatTurnState) -> dict[str, Any]:
         tools=tools,
         # 工具回退：流式无文本（模型选择调工具）时退化成有界工具循环
         tool_names=list(CHAT_TOOL_NAMES) if enable_tools else None,
-        tool_context={
-            "_user_id": state.get("user_id"),
-            "_character_id": state.get("character_id"),
-            "_language": state.get("expected_language") or state.get("output_language") or "zh",
-        },
+        tool_context=_tool_context(state),
     ):
         writer({"frame": frame})
     return {}

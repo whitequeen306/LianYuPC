@@ -29,6 +29,9 @@ class ToolLoopResult:
     rounds: int
     truncated: bool = False
     tool_names_called: list[str] = field(default_factory=list)
+    # 各轮 usage 累加：非流式回合要用它落库 token 统计，丢失会让用户额度显示为 0
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
 
 
 async def _post_with_tools(
@@ -43,8 +46,8 @@ async def _post_with_tools(
     max_tokens: int,
     provider: str | None,
     lane_name: str,
-) -> tuple[str, list[dict[str, Any]]]:
-    """一次带工具的调用；返回 (文本, tool_calls)。"""
+) -> tuple[str, list[dict[str, Any]], GatewayResult]:
+    """一次带工具的调用；返回 (文本, tool_calls, 原始结果<含 usage>)。"""
     payload: dict[str, Any] = {
         "model": model,
         "messages": messages,
@@ -62,7 +65,7 @@ async def _post_with_tools(
         provider=provider,
         lane_name=lane_name,
     )
-    return result.content, list(result.tool_calls or [])
+    return result.content, list(result.tool_calls or []), result
 
 
 async def run_tool_loop(
@@ -98,15 +101,19 @@ async def run_tool_loop(
             provider=provider,
             lane_name=lane_name,
         )
-        return ToolLoopResult(content=result.content, rounds=0)
+        return ToolLoopResult(content=result.content, rounds=0,
+                              prompt_tokens=result.prompt_tokens,
+                              completion_tokens=result.completion_tokens)
 
     history = list(messages)
     called: list[str] = []
     rounds = 0
     content = ""
+    prompt_tokens = 0
+    completion_tokens = 0
 
     while True:
-        content, tool_calls = await _post_with_tools(
+        content, tool_calls, result = await _post_with_tools(
             gateway,
             base_url=base_url,
             api_key=api_key,
@@ -118,8 +125,12 @@ async def run_tool_loop(
             provider=provider,
             lane_name=lane_name,
         )
+        prompt_tokens += result.prompt_tokens or 0
+        completion_tokens += result.completion_tokens or 0
         if not tool_calls:
-            return ToolLoopResult(content=content, rounds=rounds, tool_names_called=called)
+            return ToolLoopResult(content=content, rounds=rounds, tool_names_called=called,
+                                  prompt_tokens=prompt_tokens or None,
+                                  completion_tokens=completion_tokens or None)
 
         if rounds >= rounds_limit:
             logger.warning(
@@ -127,7 +138,9 @@ async def run_tool_loop(
                 rounds_limit, len(tool_calls),
             )
             return ToolLoopResult(
-                content=content, rounds=rounds, truncated=True, tool_names_called=called
+                content=content, rounds=rounds, truncated=True, tool_names_called=called,
+                prompt_tokens=prompt_tokens or None,
+                completion_tokens=completion_tokens or None,
             )
 
         # 把 assistant 的 tool_calls 帧与每个工具结果回灌

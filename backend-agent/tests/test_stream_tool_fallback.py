@@ -114,3 +114,67 @@ async def test_fallback_with_empty_result_still_errors(monkeypatch):
 
     assert any("对方没有回复内容" in f for f in frames)
     assert frames[-1] == DONE_FRAME
+
+
+# ─────────────────────────── 阻塞节点也必须挂工具 ───────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_invoke_model_uses_tool_loop_when_scene_enables_tools(monkeypatch):
+    """只给提示词、不给 schema 时模型会把 DSML 调用标记当正文吐出来（实测落库）。"""
+    from app.chat_turn import invoke_model
+
+    captured: dict = {}
+
+    async def fake_run_tool_loop(_gateway, **kwargs):
+        captured.update(kwargs)
+        return ToolLoopResult(content="现在是晚上八点。", rounds=1,
+                              tool_names_called=["get_current_time"],
+                              prompt_tokens=120, completion_tokens=18)
+
+    monkeypatch.setattr("app.tool_loop.run_tool_loop", fake_run_tool_loop)
+
+    out = await invoke_model({
+        "user_id": 7, "character_id": 9, "scene": "SINGLE",
+        "messages": [{"role": "user", "content": "现在几点"}],
+        "base_url": "https://api.example.com/v1", "api_key": "sk", "model": "m",
+    })
+
+    assert out["content"] == "现在是晚上八点。"
+    assert out["prompt_tokens"] == 120
+    assert out["completion_tokens"] == 18
+    assert "get_current_time" in captured["tool_names"]
+    assert captured["tool_context"]["_user_id"] == 7
+    assert captured["tool_context"]["_character_id"] == 9
+
+
+@pytest.mark.asyncio
+async def test_invoke_model_skips_tools_for_scene_without_tools(monkeypatch):
+    """MOMENTS 不挂工具 → 保持单次调用，不引入工具循环开销。"""
+    from types import SimpleNamespace
+
+    from app import chat_turn
+    from app.gateway import GatewayResult
+
+    calls: list[dict] = []
+
+    class FakeModelGateway:
+        async def chat_messages(self, **kwargs):
+            calls.append(kwargs)
+            return GatewayResult(content="文案", prompt_tokens=10, completion_tokens=5)
+
+    monkeypatch.setattr(chat_turn, "get_gateway", lambda: FakeModelGateway())
+
+    async def fail_if_called(*args, **kwargs):  # pragma: no cover
+        raise AssertionError("该场景不该跑工具循环")
+
+    monkeypatch.setattr("app.tool_loop.run_tool_loop", fail_if_called)
+
+    out = await chat_turn.invoke_model({
+        "user_id": 7, "character_id": 9, "scene": "MOMENTS",
+        "messages": [{"role": "user", "content": "写条朋友圈"}],
+        "base_url": "u", "api_key": "k", "model": "m",
+    })
+
+    assert out["content"] == "文案"
+    assert len(calls) == 1
