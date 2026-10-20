@@ -102,3 +102,4 @@ frontend/scripts/gen-*.cjs
 scripts/diag/
 artifacts/
 scripts/test_updater_flow.py
+.zcode/

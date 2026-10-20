@@ -41,11 +41,21 @@ from app.message_assembly import (
     is_voice_call_turn,
     wrap_stored_text_for_model,
 )
-from app.prompt_pipeline import assemble_turn_prompt, normalize_scene
+from app.prompt_pipeline import assemble_turn_prompt, normalize_scene, scene_enable_tools
 
 logger = logging.getLogger(__name__)
 
 GENERIC_IMAGE_USER_TEXT = "用户发送了一张图片"
+
+# 单聊流式回合可挂的只读工具（原先硬编码在 Java `AgentStreamAdapter.CHAT_TOOLS`）。
+# 工具集本身就是「Python 侧能力」，放在这里而不是让 Java 传名字：
+# Java 只需给 `enableChatTools` 这个事实。
+CHAT_TOOL_NAMES = (
+    "get_current_time",
+    "get_weather",
+    "memory_search",
+    "get_my_recent_life",
+)
 
 
 class ChatTurnState(TypedDict, total=False):
@@ -266,6 +276,12 @@ async def invoke_model_stream(state: ChatTurnState) -> dict[str, Any]:
     from langgraph.config import get_stream_writer
 
     from app.stream_chat import stream_chat_events
+    from app.tools import supported_tool_schemas
+
+    enable_tools = state.get("enable_chat_tools")
+    if enable_tools is None:
+        enable_tools = scene_enable_tools(normalize_scene(state.get("scene")))
+    tools = supported_tool_schemas(list(CHAT_TOOL_NAMES)) if enable_tools else None
 
     writer = get_stream_writer()
     async for frame in stream_chat_events(
@@ -278,6 +294,7 @@ async def invoke_model_stream(state: ChatTurnState) -> dict[str, Any]:
         max_tokens=state.get("max_tokens", 1024),
         provider=state.get("provider"),
         expected_language=state.get("expected_language"),
+        tools=tools,
     ):
         writer({"frame": frame})
     return {}

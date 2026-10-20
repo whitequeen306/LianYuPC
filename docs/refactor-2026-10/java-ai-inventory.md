@@ -27,6 +27,7 @@
 | `AiChatService.chat*` | ✅ 删除；对话走 `AgentStreamPort` / `AgentBlockingPort` |
 | 角色生成/抽取的 Java 模型调用 | ✅ 迁 Python `/agent/character/*`；Java 只做清洗 + JSON 归一化 |
 | `AgentRuntimeProperties.Mode` / `NoopAgentRuntimePort` | ✅ 删除；运行时只有 AGENT |
+| Spring AI Alibaba Graph 编排（`ChatTurnGraphConfig` + 3 节点 + `ChatTurnMessageAssembler` + 图状态类，约 1014 行） | ✅ 删除；编排改由 Python LangGraph 负责，`spring-ai-alibaba-graph-core` 依赖一并移除。详见 [langgraph-orchestration.md](langgraph-orchestration.md) |
 
 ## 保留的三条 seam
 
@@ -41,3 +42,15 @@
 - `JavaAiLogicRatchetTest` 基线 `0/0/0`
 - `scripts/check-java-ai-free.ps1 -Mode strict` 作为 CI gate
 - 以后若新增 AI 逻辑类，把类名加回脚本的 `$knownAiClasses`，strict 会立刻失败
+
+### 已知盲区（检查器不覆盖）
+
+群聊指令文本仍留在 Java，且**不会被现有模式命中**：
+
+- `GroupChatService:243-266` 群聊主动发言指令（zh/en/ja/zh-TW 四套）
+- `GroupChatService:280-287` `extraSystemSuffix` 外壳与 `禁止假装…` 约束
+- `GroupChatService:268` `（系统触发主动发言，用户未发送新消息。）`
+- `GroupChatService:237` `formatOtherCharacterHistoryLine` 的中文格式
+
+因此 `0/0/0` 只代表「已登记的残留清零」，不等于「Java 里没有任何 prompt 文本」。
+补法见 [langgraph-orchestration.md](langgraph-orchestration.md) 第五节。
