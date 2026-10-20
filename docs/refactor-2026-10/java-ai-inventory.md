@@ -28,6 +28,7 @@
 | 角色生成/抽取的 Java 模型调用 | ✅ 迁 Python `/agent/character/*`；Java 只做清洗 + JSON 归一化 |
 | `AgentRuntimeProperties.Mode` / `NoopAgentRuntimePort` | ✅ 删除；运行时只有 AGENT |
 | Spring AI Alibaba Graph 编排（`ChatTurnGraphConfig` + 3 节点 + `ChatTurnMessageAssembler` + 图状态类，约 1014 行） | ✅ 删除；编排改由 Python LangGraph 负责，`spring-ai-alibaba-graph-core` 依赖一并移除。详见 [langgraph-orchestration.md](langgraph-orchestration.md) |
+| `EmbeddingService` / `RerankerService` / `MemoryVectorStore.insert+search` / `AiConfig.Embedding+Reranker` | ✅ 删除；向量化与重排已在 Python（pymilvus）。`MemoryVectorStore` 只留 `delete()`（纯 IO，无模型调用） |
 
 ## 保留的三条 seam
 

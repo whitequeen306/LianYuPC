@@ -19,22 +19,7 @@ public class AiConfig {
     }
 
     private int contextWindow = 20;
-    private int embeddingDim = 1536;
 
-    private final Embedding embedding = new Embedding();
-    private final Reranker reranker = new Reranker();
-
-    @Data
-    public static class Embedding {
-        private String model = "text-embedding-v3";
-        private String apiKey;
-        private String baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
-    }
-
-    @Data
-    public static class Reranker {
-        private String model = "gte-rerank-v2";
-        private String apiKey;
-        private String url = "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank";
-    }
+    // embedding / reranker 配置已移除：向量化与重排整体在 Python（backend-agent），
+    // Java 侧不再构造任何 DashScope 向量/重排请求。
 }
