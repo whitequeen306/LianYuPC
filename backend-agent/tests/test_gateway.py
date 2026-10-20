@@ -9,7 +9,23 @@ import pytest
 import respx
 
 from app.gateway import ModelGateway, ModelGatewayError, decode_png_base64, extract_json_object
-from app.http_client import outbound_timeout
+from app.http_client import USER_AGENT, new_client, outbound_timeout
+
+
+@pytest.mark.asyncio
+async def test_outbound_client_uses_app_user_agent():
+    """回归（生产 404 根因）：httpx 默认 UA 会被部分代理站 WAF 拦截返回 404。
+
+    同一 URL 实测：python-httpx/* -> 404，LianYu-Agent/1.0 -> 401（路由存在）。
+    出站客户端必须使用固定 App UA，不能用 httpx 默认值。
+    """
+    client = new_client()
+    try:
+        ua = client.headers.get("User-Agent", "")
+        assert ua == USER_AGENT
+        assert "python-httpx" not in ua.lower()
+    finally:
+        await client.aclose()
 
 
 def test_outbound_timeout_is_explicit():
