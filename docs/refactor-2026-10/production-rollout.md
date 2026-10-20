@@ -172,3 +172,65 @@ python scripts/ops/prod_error_watch.py --minutes 30
 | `JAVA_AI_PATH` / `proactiveTurnResult failed` | 0 / 0 |
 
 > 401/402/`upstream circuit open` 是用户自己的 key 无效/欠费，属预期降级，不是本次修复范围。
+
+## 八、2026-10-20 4xx 误熔断事故（熔断分类）
+
+### 现象
+
+30 分钟窗口：
+
+```
+model gateway http 401                 114 次
+model gateway http 402                 130 次
+upstream circuit open for Provider326   11 次
+```
+
+401/402 是**用户自己的 key 失效/欠费**，却被按 `provider|baseUrl` 记入熔断失败率
+（阈值 50%），导致同 provider 下的正常用户被一起快失败。
+
+### 修复
+
+- `gateway._raise_for_status`：2xx 正常；4xx（429 除外）→ `GatewayBusinessError`
+  （熔断按成功记录）；5xx / 429 / 传输层 → `ModelGatewayError`（计入熔断）
+- `ModelGatewayError` 改为继承 `GatewayError`；`stream_chat` / `text_turn` /
+  `vision` / `image_chat` / `desktop_observe` 统一 `except GatewayError`
+
+### 部署时发现提交的修复不完整（已补，`ef26d6f`）
+
+只测 `_raise_for_status` 会漏掉真实调用路径：
+
+1. **阻塞路径 `_do_post` 未接入分类**：仍 `raise ModelGatewayError(http {status})`，
+   4xx 继续计入熔断；
+2. **流式路径 `_stream_once` 的 `except Exception` 重新包装**：先抛
+   `GatewayBusinessError`，随后被网络层 `except Exception` 包成
+   `ModelGatewayError("transport error")`，又变成熔断失败。
+
+复现证据（修复前）：
+
+```
+blocking: ModelGatewayError: model gateway http 401 (business=False)
+stream:   ModelGatewayError: model gateway transport error: model gateway http 401 (business=False)
+```
+
+补齐：`_do_post` 改用 `_raise_for_status`；`_stream_once` 改为 `except GatewayError: raise`。
+新增路径级 + 熔断级测试：10 次 401 后 breaker 仍 `CLOSED`；10 次 500 后 `OPEN`。
+
+### 部署与验证
+
+- 只重建 agent 层，先 agent 后 agent2；两实例 healthy
+- 容器内 `GatewayBusinessError` 4 处、`_raise_for_status(status)` 已接入
+- 20 条真实对话：**20/20 非空，0 失败**
+- agent 500：**0**
+- parity：`golden[zh] 2588/2588`、`golden[en] 4583/4583` → ALL_PASS
+- 30 分钟观察（部署后窗口，agent 启动 09:53:15Z）：
+
+| 指标 | 修复前（30min） | 修复后（30min） |
+|---|---|---|
+| `circuit open` | 11 | **0** |
+| `model gateway http 401` | 114 | 109 |
+| `model gateway http 402` | 130 | 133 |
+| `model gateway http 500` | — | **0** |
+| agent / agent2 `500 Internal Server Error` | — | **0 / 0** |
+| `proactiveTurnResult failed` | — | **0** |
+
+401/402 仍会出现（用户自己的 key 失效/欠费，预期不变），但**不再连累同 provider 的其他用户**。
