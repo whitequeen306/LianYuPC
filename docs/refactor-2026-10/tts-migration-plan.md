@@ -90,11 +90,19 @@ Python 侧的处理：**域名白名单不放宽，只把 scheme 升级成 https
 | 本地容器 | `/agent/tts/synthesize` 实测 `200 audio/wav`、88364 字节、`RIFF` 头（`qwen3-tts-flash` + `Cherry`） |
 | 反面用例 | 不存在的模型 → DashScope 404 `Model not exist` → 端点 204（不是 500） |
 | 启动自检 | 8 个端口全部 wired：`tts(TtsPort)=true, voiceEnrollment(VoiceEnrollmentPort)=true`，启动 12.257s |
+| **音色注册全链路** | `POST /api/character/52/custom-voice`（multipart，真实 wav 307KB）→ `status=READY`、`voiceCallReady=true`；DB 落两条不同 voiceId：`...-u23_c52-voice-...` / `...-u23_c52_rt-voice-...`，说明 Python 的 `sanitize_preferred_name` 与原 Java 逐字一致 |
+| **音色删除全链路** | `DELETE /api/character/{id}/custom-voice` → 远端两条音色 DashScope 均返回 200（日志 `voice delete ... status=200`），本地行 count=0 |
 
-**没能验证的**：真实自定义音色（`qwen3-tts-vc-*`）的合成质量与音色一致性。
-本地账号的 `DASHSCOPE_API_KEY` 对这些 VC 模型返回 `Model not exist`，
-而 `pet-voices.json` 里的 voiceId 是在另一个账号下注册的。
-所以这一环只验证了「协议通、字节是真 wav」，没有验证「声音对不对」。
+**没能验证的**：用自定义音色（`qwen3-tts-vc-*`）真正合成出声音。
+
+- 音色**注册**没问题：`qwen-voice-enrollment` 对这个 key 完全可用，两个模型都返回了 voice_id。
+- 但 `qwen3-tts-vc-2026-01-22` 走**合成**接口返回 404（body 为空），
+  换刚注册的 voiceId 也一样 —— 是这个 key 的合成权限，不是代码问题。
+  `qwen3-tts-flash` 走同一条路径 200，说明协议与实现都对。
+- `pet-voices.json` 里的 voiceId 属于另一个账号，本机无法直接复用。
+
+所以本轮的「TTS 能出声」是在 `qwen3-tts-flash` + 预置音色上证明的；
+「自定义音色能出声」要等一个有 VC 合成权限的 key 才能验证 —— 这是**环境缺口，不是代码缺口**。
 
 ## 六、还没做的：第 3 步（实时 TTS）
 
