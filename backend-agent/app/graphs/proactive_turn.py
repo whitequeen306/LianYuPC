@@ -14,7 +14,12 @@ import operator
 from typing import Annotated, Any, Literal, TypedDict
 
 from app.config import get_settings
-from app.gateway import GatewayResult, ModelGateway, ModelGatewayError, TextPart
+from app.gateway import (
+    MODEL_GATEWAY_ERRORS,
+    GatewayResult,
+    ModelGateway,
+    TextPart,
+)
 from app.language_gate import (
     correction_instruction,
     matches_expected,
@@ -93,13 +98,12 @@ def build_proactive_graph(gateway: ModelGateway):
         settings = get_settings()
         messages = state["messages"]
         tools = state.get("tools") or []
-        # ModelGatewayError 必须在**两个分支外层**捕获：
-        # 工具分支走 tool_loop → gateway.chat_payload 同样抛 ModelGatewayError，
-        # 只捕获无工具分支会让上游 401/402/404 直接炸出图 → FastAPI 500
-        # （生产实测：用户 vault key 失效时主动发言定时任务全量 500）。
+        # 必须捕获**全部**网关错误（含熔断快速失败 GatewayRejectedError）：
+        # 生产实测——用户 key 欠费(402) 打开熔断后，后续请求走 GatewayRejectedError，
+        # 只捕获 ModelGatewayError 会让它炸出图 → FastAPI 500。
         try:
             return await _invoke_inner(state, settings, messages, tools)
-        except ModelGatewayError as exc:
+        except MODEL_GATEWAY_ERRORS as exc:
             return {"error": str(exc)}
 
     async def _invoke_inner(state: ProactiveTurnState, settings, messages, tools):

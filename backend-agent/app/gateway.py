@@ -22,6 +22,7 @@ from app.resilience import (
     is_transient_failure,
     lane,
 )
+from app.resilience import GatewayError as _resilience_GatewayError
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,14 @@ class GatewayResult:
 
 class ModelGatewayError(Exception):
     """模型网关错误（对齐 Java BusinessException(AI_PROVIDER_ERROR) 语义）。"""
+
+
+# 统一捕获元组：调用方 `except MODEL_GATEWAY_ERRORS` 可同时接住
+# 上游 HTTP 错误（ModelGatewayError）与熔断/隔舱快速失败（GatewayRejectedError）。
+MODEL_GATEWAY_ERRORS: tuple[type[Exception], ...] = (
+    ModelGatewayError,
+    _resilience_GatewayError,  # GatewayRejectedError 是其子类，一并覆盖
+)
 
 
 class ModelGateway:
