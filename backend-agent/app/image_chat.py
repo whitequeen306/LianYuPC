@@ -19,6 +19,7 @@ import logging
 
 from app.config import get_settings
 from app.gateway import ImagePart, ModelGateway, ModelGatewayError
+from app.resilience import GatewayError
 from app.vision import VISION_ANALYSIS_JSON_INSTRUCTION, parse_vision_analysis
 
 logger = logging.getLogger(__name__)
@@ -97,7 +98,7 @@ async def chat_with_image(
             provider=provider,
             lane_name="interactive",
         )
-    except ModelGatewayError as exc:
+    except GatewayError as exc:
         logger.warning("image chat text stage failed: %s", exc)
         return {"error": "text_stage_failed"}
 

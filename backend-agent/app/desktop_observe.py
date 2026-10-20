@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from app.config import get_settings
 from app.gateway import GatewayResult, ModelGateway, ModelGatewayError, TextPart
+from app.resilience import GatewayError
 from app.vision import VisionAnalysisResult, analyze_image_bounded
 
 logger = logging.getLogger(__name__)
@@ -98,7 +99,7 @@ async def observe_desktop(
             temperature=0.8,
             max_tokens=1024,
         )
-    except ModelGatewayError as exc:
+    except GatewayError as exc:
         logger.warning("Desktop observe: greeting generation failed: %s", exc)
         return None
 

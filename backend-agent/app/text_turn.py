@@ -17,7 +17,7 @@ from typing import Any
 
 from app.config import get_settings
 from app.gateway import ModelGateway, ModelGatewayError
-from app.resilience import GatewayRejectedError
+from app.resilience import GatewayError, GatewayRejectedError
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ async def complete_text(
         )
     except GatewayRejectedError:
         return {"error": "upstream_circuit_open"}
-    except ModelGatewayError as exc:
+    except GatewayError as exc:
         logger.warning("text complete failed: %s", exc)
         return {"error": str(exc)}
     except Exception as exc:  # noqa: BLE001 - 任何异常都返回错误码，由 Java 回退

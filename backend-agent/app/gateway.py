@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
 from app.config import get_settings
-from app.resilience import GatewayBusinessError
+from app.resilience import GatewayBusinessError, GatewayError
 from app.http_client import new_client
 from app.resilience import (
     GatewayRejectedError,
@@ -94,7 +94,7 @@ class GatewayResult:
     tool_calls: list[dict[str, Any]] | None = None
 
 
-class ModelGatewayError(Exception):
+class ModelGatewayError(GatewayError):
     """模型网关错误（对齐 Java BusinessException(AI_PROVIDER_ERROR) 语义）。"""
 
 

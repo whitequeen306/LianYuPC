@@ -9,6 +9,7 @@ import logging
 from dataclasses import dataclass
 
 from app.config import get_settings
+from app.resilience import GatewayError
 from app.gateway import (
     GatewayResult,
     ImagePart,
@@ -73,7 +74,7 @@ async def analyze_image(
             temperature=0.1,
             max_tokens=max_tokens,
         )
-    except ModelGatewayError as exc:
+    except GatewayError as exc:
         raise ValueError(f"vision analysis failed: {exc}") from exc
 
     if not result.content or not result.content.strip():

@@ -84,7 +84,7 @@ async def stream_chat_events(
         yield sse_error("对方模型暂时繁忙，请稍后再试")
         yield DONE_FRAME
         return
-    except ModelGatewayError as exc:
+    except GatewayError as exc:
         logger.warning("stream failed: %s", exc)
         yield sse_error(_humanize(exc))
         yield DONE_FRAME
