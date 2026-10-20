@@ -68,6 +68,42 @@ async def _post_with_tools(
     return result.content, list(result.tool_calls or []), result
 
 
+async def execute_tool_calls(
+    specs: list[Any],
+    tool_calls: list[dict[str, Any]],
+    tool_context: dict[str, Any] | None,
+) -> list[tuple[str, str]]:
+    """执行一组 tool_calls，返回 [(name, output)]。
+
+    流式与非流式两条链路共用（`stream_chat_events` 的工具轮次也走这里），
+    避免「怎么执行工具」出现两份实现。单个工具失败只影响它自己那条结果。
+    """
+    results: list[tuple[str, str]] = []
+    for call in tool_calls:
+        name = (call.get("function") or {}).get("name") or ""
+        raw_args = (call.get("function") or {}).get("arguments") or "{}"
+        try:
+            arguments = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+        except json.JSONDecodeError:
+            arguments = {}
+        spec = next((s for s in specs if s.name == name), None)
+        if spec is None:
+            output = f"工具 {name} 不可用"
+        else:
+            # 上下文（userId/characterId/language）由调用方注入，对齐 Java ChatToolContext；
+            # 模型看不到这些键，也不参与 schema。
+            merged = dict(arguments if isinstance(arguments, dict) else {})
+            if tool_context:
+                merged.update(tool_context)
+            try:
+                output = await spec.handler(merged)
+            except (httpx.HTTPError, RuntimeError) as exc:
+                logger.warning("tool %s failed: %s", name, exc)
+                output = f"工具 {name} 调用失败：{exc}"
+        results.append((name, output))
+    return results
+
+
 async def run_tool_loop(
     gateway: ModelGateway,
     *,
@@ -149,27 +185,8 @@ async def run_tool_loop(
             "content": content or "",
             "tool_calls": tool_calls,
         })
-        for call in tool_calls:
-            name = (call.get("function") or {}).get("name") or ""
-            raw_args = (call.get("function") or {}).get("arguments") or "{}"
-            try:
-                arguments = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
-            except json.JSONDecodeError:
-                arguments = {}
-            spec = next((s for s in specs if s.name == name), None)
-            if spec is None:
-                output = f"工具 {name} 不可用"
-            else:
-                # 上下文（userId/characterId/language）由调用方注入，对齐 Java ChatToolContext；
-                # 模型看不到这些键，也不参与 schema。
-                merged = dict(arguments if isinstance(arguments, dict) else {})
-                if tool_context:
-                    merged.update(tool_context)
-                try:
-                    output = await spec.handler(merged)
-                except (httpx.HTTPError, RuntimeError) as exc:
-                    logger.warning("tool %s failed: %s", name, exc)
-                    output = f"工具 {name} 调用失败：{exc}"
+        outputs = await execute_tool_calls(specs, tool_calls, tool_context)
+        for call, (name, output) in zip(tool_calls, outputs):
             called.append(name)
             history.append({
                 "role": "tool",
@@ -191,4 +208,4 @@ def _flatten(messages: list[dict[str, Any]]) -> str:
     return "\n".join(parts)
 
 
-__all__ = ["ToolLoopResult", "run_tool_loop"]
+__all__ = ["ToolLoopResult", "execute_tool_calls", "run_tool_loop"]

@@ -66,29 +66,68 @@ async def stream_chat_events(
 ) -> AsyncIterator[str]:
     """产出符合 Java 契约的 SSE 帧序列。
 
-    `tool_names` / `tool_context` 用于**工具回退**：流式只吃 `delta.content`，
-    模型一旦选择调工具，这一轮流里就没有文本可发（上游把 tool_calls 放在
-    非文本通道，严重时被整段丢弃）—— 用户看到的就是「对方没有回复内容」。
-    因此「流完仍无文本 + 本轮挂了工具」时，退化成有界工具循环 (`run_tool_loop`)：
-    先执行工具、拿到结果再问一次，把最终文本作为单帧下发。
-    牺牲工具轮次的增量体验，换取「问时间/天气能真的答出来」。
+    工具轮次是**流式**的：模型可以在任意一轮返回 `tool_calls`，执行完把
+    assistant / tool 消息回灌，再发起下一轮流式请求 —— 后续回答依旧逐 token 下发。
+    轮次上限由 `settings.max_tool_rounds` 控制（审计 A4：有界，绝不无限递归）。
+
+    兜底：部分上游会把 `tool_calls` 分片吞掉（流里只剩空文本）。此时用
+    非流式的 `run_tool_loop` 补一次，避免这一轮变成「对方没有回复内容」。
     """
     settings = get_settings()
+    from app.tool_loop import execute_tool_calls, resolve_tools  # 局部导入：避免启动期耦合
+
+    specs = resolve_tools(tool_names) if tool_names else []
+    # 没有可执行工具时不下发 schema：只给提示词会让模型以为能调，
+    # 反而吐出 `<｜｜DSML｜｜ tool_calls>` 这类原始标记。
+    schemas = tools if (specs or not tool_names) else None
+
+    history = list(messages)
     collected: list[str] = []
+    rounds = 0
     try:
-        async for delta in gateway.stream_text(
-            base_url=base_url,
-            api_key=api_key,
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            tools=tools,
-            provider=provider,
-            lane_name="interactive",
-        ):
-            collected.append(delta)
-            yield sse_content(delta)
+        while True:
+            round_text: list[str] = []
+            tool_sink: list[dict[str, Any]] = []
+            async for delta in gateway.stream_text(
+                base_url=base_url,
+                api_key=api_key,
+                model=model,
+                messages=history,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                tools=schemas,
+                provider=provider,
+                lane_name="interactive",
+                tool_sink=tool_sink,
+            ):
+                round_text.append(delta)
+                collected.append(delta)
+                yield sse_content(delta)
+
+            if not tool_sink or not specs:
+                break
+            if rounds >= settings.max_tool_rounds:
+                logger.warning(
+                    "stream tool loop truncated at %d rounds (%d calls dropped)",
+                    settings.max_tool_rounds, len(tool_sink),
+                )
+                break
+
+            history.append({
+                "role": "assistant",
+                "content": "".join(round_text),
+                "tool_calls": tool_sink,
+            })
+            outputs = await execute_tool_calls(specs, tool_sink, tool_context)
+            for call, (name, output) in zip(tool_sink, outputs):
+                logger.info("stream tool call: round=%d name=%s chars=%d",
+                            rounds + 1, name, len(output or ""))
+                history.append({
+                    "role": "tool",
+                    "tool_call_id": call.get("id") or "",
+                    "content": output,
+                })
+            rounds += 1
     except GatewayRejectedError:
         # 快速失败：熔断打开 / 隔舱满 —— 对齐 Java 的「对方模型暂时繁忙」
         yield sse_error("对方模型暂时繁忙，请稍后再试")
@@ -99,15 +138,10 @@ async def stream_chat_events(
         yield sse_error(_humanize(exc))
         yield DONE_FRAME
         return
-    except GatewayError as exc:
-        logger.warning("stream gateway error: %s", exc)
-        yield sse_error(_humanize(exc))
-        yield DONE_FRAME
-        return
 
     content = "".join(collected)
-    if not content.strip() and tool_names:
-        # 模型想调工具（或上游把 tool_calls 吞了）：走有界工具循环补一次
+    if not content.strip() and specs:
+        # 上游把 tool_calls 吞了：退化成非流式循环补一次（结果整段下发）
         content = await _tool_fallback(
             gateway,
             base_url=base_url,
@@ -121,7 +155,6 @@ async def stream_chat_events(
             provider=provider,
         )
         if content.strip():
-            # 工具轮次的结果一次性下发（已无法逐 token）
             yield sse_content(content)
 
     if not content.strip():

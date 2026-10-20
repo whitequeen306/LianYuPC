@@ -185,11 +185,16 @@ class ModelGateway:
         tools: list[dict[str, Any]] | None = None,
         provider: str | None = None,
         lane_name: str = "interactive",
+        tool_sink: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[str]:
         """流式取 token 增量（OpenAI SSE）。
 
         韧性语义与阻塞路径一致：隔舱占槽 + 熔断许可 + 首字前瞬断重试。
         一旦已经开始吐字就不再重试（重试会重复生成、重复扣 token）。
+
+        `tool_sink` 非空时会**把本轮流里的 tool_calls 拼好后追加进去**
+        （跨分片拼 `name` + `arguments`）。调用方据此决定「执行工具再来一轮」，
+        而不是让这一轮只剩空文本 —— 这是工具轮次能流式的基础。
         """
         payload: dict[str, Any] = {
             "model": model,
@@ -214,7 +219,9 @@ class ModelGateway:
                 while True:
                     attempt += 1
                     try:
-                        async for delta in self._stream_once(base_url, api_key, payload):
+                        async for delta in self._stream_once(
+                            base_url, api_key, payload, tool_sink=tool_sink
+                        ):
                             emitted_any = True
                             yield delta
                         break
@@ -233,10 +240,15 @@ class ModelGateway:
             await breaker.on_success()
 
     async def _stream_once(
-        self, base_url: str, api_key: str, payload: dict[str, Any]
+        self, base_url: str, api_key: str, payload: dict[str, Any],
+        tool_sink: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[str]:
         url = normalize_openai_base_url(base_url)
         headers = {"Authorization": f"Bearer {api_key}"}
+
+        # tool_calls 在 SSE 里是按 index 分片下发的：name 通常只在首片，
+        # arguments 是逐段字符串，必须自己拼回来才能执行。
+        pending: dict[int, dict[str, Any]] = {}
 
         if self._client is not None:
             client_cm = _null_context(self._client)
@@ -264,7 +276,24 @@ class ModelGateway:
                         choices = frame.get("choices") or []
                         if not choices:
                             continue
-                        delta = (choices[0].get("delta") or {}).get("content")
+                        delta_obj = choices[0].get("delta") or {}
+                        for call in delta_obj.get("tool_calls") or []:
+                            if not isinstance(call, dict):
+                                continue
+                            idx = call.get("index")
+                            slot = pending.setdefault(
+                                idx if isinstance(idx, int) else 0,
+                                {"id": "", "type": "function",
+                                 "function": {"name": "", "arguments": ""}},
+                            )
+                            if call.get("id"):
+                                slot["id"] = call["id"]
+                            fn = call.get("function") or {}
+                            if fn.get("name") and not slot["function"]["name"]:
+                                slot["function"]["name"] = fn["name"]
+                            if fn.get("arguments"):
+                                slot["function"]["arguments"] += fn["arguments"]
+                        delta = delta_obj.get("content")
                         if delta:
                             yield delta
             except GatewayError:
@@ -273,6 +302,12 @@ class ModelGateway:
                 raise
             except Exception as exc:  # 网络层
                 raise ModelGatewayError(f"model gateway transport error: {exc}") from exc
+
+        if tool_sink is not None and pending:
+            for idx in sorted(pending):
+                call = pending[idx]
+                if call["function"]["name"]:
+                    tool_sink.append(call)
 
     async def chat_messages(
         self,

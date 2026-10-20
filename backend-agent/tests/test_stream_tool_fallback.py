@@ -178,3 +178,97 @@ async def test_invoke_model_skips_tools_for_scene_without_tools(monkeypatch):
 
     assert out["content"] == "文案"
     assert len(calls) == 1
+
+
+# ─────────────────────────── 流式工具轮次（逐 token 下发） ───────────────────────────
+
+
+class ScriptedGateway:
+    """按轮次脚本产出：每轮回放 deltas，并把 tool_calls 塞进 tool_sink。"""
+
+    def __init__(self, rounds: list[dict]):
+        self.script = list(rounds)
+        self.calls: list[dict] = []
+
+    async def stream_text(self, **kwargs):
+        index = len(self.calls)
+        self.calls.append(kwargs)
+        step = self.script[index] if index < len(self.script) else {"deltas": []}
+        sink = kwargs.get("tool_sink")
+        if sink is not None:
+            sink.extend(step.get("tool_calls") or [])
+        for delta in step.get("deltas") or []:
+            yield delta
+
+
+def _patch_specs(monkeypatch, handler):
+    from types import SimpleNamespace
+
+    spec = SimpleNamespace(name="get_current_time", handler=handler)
+    monkeypatch.setattr("app.tool_loop.resolve_tools", lambda names: [spec])
+    return spec
+
+
+@pytest.mark.asyncio
+async def test_streaming_tool_round_executes_then_streams_answer(monkeypatch):
+    """第一轮只有 tool_calls、第二轮才出正文 —— 正文仍要逐 token 下发。"""
+    seen: list[dict] = []
+
+    async def handler(arguments):
+        seen.append(arguments)
+        return "现在是晚上八点四十。"
+
+    _patch_specs(monkeypatch, handler)
+    gateway = ScriptedGateway([
+        {"deltas": [], "tool_calls": [{
+            "id": "call_1", "type": "function",
+            "function": {"name": "get_current_time", "arguments": '{"city": "郑州"}'},
+        }]},
+        {"deltas": ["现在是", "晚上八点四十。"]},
+    ])
+
+    frames = await _collect(gateway=gateway, tool_names=["get_current_time"],
+                            tool_context=TOOL_CONTEXT)
+
+    assert any(sse_content("现在是") in f for f in frames), "第二轮正文要增量下发"
+    assert frames[-1] == DONE_FRAME
+    assert not any('"error"' in f for f in frames)
+    # 工具真的被执行，且带上调用方注入的上下文
+    assert seen[0]["city"] == "郑州"
+    assert seen[0]["_user_id"] == 7
+    # 第二轮请求把 assistant(tool_calls) + tool 结果回灌了
+    second = gateway.calls[1]["messages"]
+    assert second[-2]["role"] == "assistant" and second[-2]["tool_calls"]
+    assert second[-1]["role"] == "tool" and second[-1]["content"] == "现在是晚上八点四十。"
+    assert second[-1]["tool_call_id"] == "call_1"
+
+
+@pytest.mark.asyncio
+async def test_streaming_tool_round_is_bounded(monkeypatch):
+    """模型每次都想调工具时，循环必须被 max_tool_rounds 截断，不能无限跑。"""
+
+    async def handler(arguments):
+        return "ok"
+
+    _patch_specs(monkeypatch, handler)
+
+    async def empty_fallback(*args, **kwargs):
+        return ToolLoopResult(content="", rounds=0)
+
+    monkeypatch.setattr("app.tool_loop.run_tool_loop", empty_fallback)
+
+    endless = {"deltas": [], "tool_calls": [{
+        "id": "call_x", "type": "function",
+        "function": {"name": "get_current_time", "arguments": "{}"},
+    }]}
+    gateway = ScriptedGateway([endless] * 10)
+
+    frames = await _collect(gateway=gateway, tool_names=["get_current_time"],
+                            tool_context=TOOL_CONTEXT)
+
+    from app.config import get_settings
+
+    limit = get_settings().max_tool_rounds
+    # 每轮一次请求，最后再留一次「放弃工具」的机会
+    assert len(gateway.calls) <= limit + 1
+    assert frames[-1] == DONE_FRAME
