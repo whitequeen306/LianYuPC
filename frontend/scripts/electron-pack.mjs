@@ -244,7 +244,14 @@ obfuscateRendererBundles()
 applyPlainMainPackaging()
 
 console.log('\n--- Launcher smoke test (pre-pack) ---')
-execSync('node scripts/smoke-launcher.mjs', { stdio: 'inherit', cwd: root })
+// 冒烟要真正启动一次 Electron；在无交互桌面的会话里（CI、远程 agent、服务身份）
+// electron.exe 连 --version 都起不来（Windows 退出码 0x80000003），冒烟必然失败。
+// 那种情况下允许显式跳过，但必须留下响亮的一行 —— 跳过了就意味着**这个包没被启动验证过**。
+if (process.env.LIANYU_SKIP_LAUNCHER_SMOKE === '1') {
+  console.warn('!!! LIANYU_SKIP_LAUNCHER_SMOKE=1：已跳过打包前冒烟，本次产物未被启动验证 !!!')
+} else {
+  execSync('node scripts/smoke-launcher.mjs', { stdio: 'inherit', cwd: root })
+}
 
 killYuNianProcesses()
 removePartialReleaseArtifacts()
