@@ -106,6 +106,25 @@ Java 里仍有**群聊场景的 prompt 文本**，strict 检查器没覆盖到�
 `郑州今天天气怎么样，要带伞吗` → `郑州现在21度，体感才16度…不用带伞`，
 日志 `stream tool fallback: rounds=1 tools=['get_current_time']`。
 
+### 后续：工具轮次改成流式（commit `29ded9d`）
+
+回退版的问题在体验：第一轮流式空转 → 非流式循环 → 正文**整段**一次性出现。
+现在改成有界流式工具循环：`gateway.stream_text` 新增 `tool_sink`，跨 SSE 分片
+按 index 拼回 `tool_calls`；任一回合拿到 tool_calls 就执行、回灌 assistant/tool
+消息，再发起下一轮流式请求，正文照常逐 token 下发。
+
+**但当前 provider（deepseek 经代理）在流里根本不发 tool_calls 分片** ——
+实测仍走 `stream tool fallback`，正文还是一帧。也就是说：
+
+| provider 行为 | 走的路径 | 正文体验 |
+|---|---|---|
+| 流里带 tool_calls 分片 | 流式工具循环 | 逐 token |
+| 流里不带（当前线上） | 非流式回退 | 整段（多约 0.6s） |
+
+要做成「工具跑完仍逐 token」，只能在没有 tool_calls 时把「最后一轮」也改成流式，
+但那需要先知道哪一轮是最后一轮 —— 模型不预先告诉你，只能多问一次（双倍成本）。
+所以这条路当前是**取正确性与成本的最优**，不是最优体验。
+
 ## 六、回滚
 
 `ChatTurnFacade` 的公开签名未变，回滚只需把 `ChatTurnAdapter` 换回旧实现；
