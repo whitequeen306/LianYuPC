@@ -128,3 +128,44 @@ proxy_connect_timeout 3s;
 **代价**：SSE 请求若在已发出后遇到上游错误，`proxy_next_upstream` 不重试
 （`proxy_next_upstream` 对 non-idempotent POST 仅在「请求未发出」时生效），
 语义安全，不会出现双重生成。
+
+## 场景 D：已下线接口被旧客户端轮询 → 假「服务暂时不可用」（2026-10-20 线上事故）
+
+**现象**：线上用户反馈「点一次就报一次错」，toast 固定为「服务暂时不可用，请稍后再试」。
+
+**实际**：后端完全健康。真正的链路是——
+
+| 环节 | 事实 |
+|---|---|
+| 客户端 | 2026-10-07 打的包，含社区功能的通知建连环：`onConnect → W() → dG() → POST /api/community/push-catchup`，且该调用**没有** `skipGlobalError` |
+| 后端 | 2026-10-17（`74552b2`）下线社区，`/api/community/*` 整套移除，改由 `/api/moments/*` 承担 |
+| 兜底 | 路径没被映射 → 落到静态资源处理器 → `NoResourceFoundException` → `GlobalExceptionHandler.handleUnknown` → **HTTP 500 + code 500「服务暂时不可用，请稍后再试」** |
+| 前端 | `installMainHttpToasts` 对所有非 401 失败弹 toast；调用方的 `try{await}catch{}` **拦不住**已经在拦截器里弹出的提示 |
+
+**关键点**：`catch{}` 吞掉的是 Promise 拒绝，而 toast 是拦截器同步弹的。所以「客户端已经忽略这个错误」并不等于「用户看不到」。
+
+**证据**（生产 24h 日志归类）：
+
+```
+    35  api/community/push-catchup.
+     2  ws/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php.   ← 公网扫描器
+合计 39 次，去重 3 条路径
+```
+
+除这两类外，24 小时内没有任何真正的 5xx。也就是说「服务暂时不可用」这条提示，
+在这台机器上几乎只由「路由不存在」产生。
+
+**修复**（两项，均已本地实测）：
+
+1. `GlobalExceptionHandler` 新增 `NoResourceFoundException` 处理 → **404 + WARN**，
+   不再当未知异常兜底成 500。顺带把公网扫描器的探针从 ERROR 降级，避免淹掉真 5xx。
+2. `LegacyCommunityController` 提供 `POST /api/community/push-catchup` 返回 200，
+   只为了让存量客户端安静（客户端丢弃返回值，无需语义）。
+   **删除条件**：最小可运行客户端版本 ≥ 关停社区的版本。
+
+**根治**：客户端升级。当前 `frontend/src` 已无社区代码（`74552b2` 删干净了），
+装的是旧包的用户只要更新就不会再发这个请求。
+
+**顺带暴露的流程问题**：`frontend/dist` 未纳入 git（`.gitignore`），
+仓库里留着一份 2026-10-07 的构建产物，且它与 `src` 不同源。
+排查线上问题时很容易拿它当「线上代码」看 —— 这次差点误判成「前端还在调社区接口」。

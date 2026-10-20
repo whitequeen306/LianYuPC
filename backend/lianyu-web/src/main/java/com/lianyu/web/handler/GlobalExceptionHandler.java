@@ -14,6 +14,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @Slf4j
 @RestControllerAdvice
@@ -126,6 +127,29 @@ public class GlobalExceptionHandler {
         }
         log.warn("Illegal state (auth): {}", e.getMessage());
         return ResponseEntity.status(status).body(Result.fail(ErrorCode.UNAUTHORIZED, e.getMessage()));
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Result<Void>> handleNoResource(NoResourceFoundException e,
+                                                         HttpServletRequest request,
+                                                         HttpServletResponse response) {
+        if (shouldSkipJsonErrorBody(request, response)) {
+            return null;
+        }
+        // 路由不存在 ≠ 服务故障。
+        //
+        // 以前这里落到 handleUnknown：HTTP 500 + code 500「服务暂时不可用，请稍后再试」。
+        // 后果有两个，都很贵：
+        //   1. 存量客户端调一个**已下线**的接口（2026-10-17 下线的
+        //      /api/community/push-catchup），用户看到「服务暂时不可用」，
+        //      以为后端挂了，其实只是版本不匹配；
+        //   2. 公网扫描器探 /ws/vendor/phpunit/... 这类路径也会打成 ERROR，
+        //      把真正的 5xx 淹掉。
+        log.warn("No handler for {} {}: {}",
+                request == null ? "?" : request.getMethod(),
+                request == null ? "?" : request.getRequestURI(),
+                e.getMessage());
+        return ResponseEntity.status(404).body(Result.fail(ErrorCode.NOT_FOUND));
     }
 
     @ExceptionHandler(Exception.class)
