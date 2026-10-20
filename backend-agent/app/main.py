@@ -373,6 +373,63 @@ async def text_chat(
         ),
     }
 
+# ─────────────────────────── 主聊天回合（LangGraph 编排，对照端点） ───────────────────────────
+
+
+class ChatTurnInspectBody(BaseModel):
+    """对照端点入参：用同一份输入跑 Python 的 LangGraph 回合。
+
+    `invoke=false` 时只跑前两个节点（组装 prompt + messages），不产生模型调用，
+    用于与 Java 编排结果逐字节比对。
+    """
+
+    user_id: int = Field(alias="userId")
+    conversation_id: int | None = Field(default=None, alias="conversationId")
+    character_id: int | None = Field(default=None, alias="characterId")
+    character_name: str = Field(default="", alias="characterName")
+    settings: dict[str, Any] = {}
+    prompt_template: str | None = Field(default=None, alias="promptTemplate")
+    scene: str = "SINGLE"
+    output_language: str = Field(default="zh", alias="outputLanguage")
+    user_text: str = Field(default="", alias="userText")
+    history: list[dict[str, Any]] = []
+    time_fact: str | None = Field(default=None, alias="timeFact")
+    invoke: bool = False
+    tool_flags: dict[str, Any] | None = Field(default=None, alias="toolFlags")
+    enable_chat_tools: bool | None = Field(default=None, alias="enableChatTools")
+    show_inner_thoughts: bool | None = Field(default=None, alias="showInnerThoughts")
+    max_pieces: int | None = Field(default=None, alias="maxPieces")
+    provider: str | None = None
+    base_url: str = Field(default="", alias="baseUrl")
+    api_key: str = Field(default="", alias="apiKey")
+    model: str = ""
+    temperature: float = 0.8
+    max_tokens: int = Field(default=1024, alias="maxTokens")
+
+    model_config = {"populate_by_name": True}
+
+
+@app.post("/agent/chat-turn/inspect")
+async def chat_turn_inspect(
+    body: ChatTurnInspectBody,
+    user_id_header: str | None = Header(default=None, alias="X-User-Id"),
+) -> dict[str, Any]:
+    """跑一遍 LangGraph 回合，回传 systemPrompt / messages / content 供对照。"""
+    if user_id_header and str(body.user_id) != user_id_header:
+        raise HTTPException(status_code=403, detail="user mismatch")
+    try:
+        from app.chat_turn import run_chat_turn
+
+        state = await run_chat_turn(body.model_dump(by_alias=False))
+    except Exception as exc:  # noqa: BLE001 - 对照端点失败要能看见原因
+        logger.warning("chat turn inspect failed: %r", exc)
+        return {"error": "chat_turn_failed"}
+    return {
+        "systemPrompt": state.get("system_prompt") or "",
+        "messages": state.get("messages") or [],
+        "content": state.get("content") or "",
+    }
+
 # ─────────────────────────── P5.5：system prompt 组装 ───────────────────────────
 
 
