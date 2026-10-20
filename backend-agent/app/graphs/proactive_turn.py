@@ -93,6 +93,16 @@ def build_proactive_graph(gateway: ModelGateway):
         settings = get_settings()
         messages = state["messages"]
         tools = state.get("tools") or []
+        # ModelGatewayError 必须在**两个分支外层**捕获：
+        # 工具分支走 tool_loop → gateway.chat_payload 同样抛 ModelGatewayError，
+        # 只捕获无工具分支会让上游 401/402/404 直接炸出图 → FastAPI 500
+        # （生产实测：用户 vault key 失效时主动发言定时任务全量 500）。
+        try:
+            return await _invoke_inner(state, settings, messages, tools)
+        except ModelGatewayError as exc:
+            return {"error": str(exc)}
+
+    async def _invoke_inner(state: ProactiveTurnState, settings, messages, tools):
         if tools:
             # 有工具：走有界工具循环（模型↔工具，最多 max_tool_rounds 轮）
             from app.tool_loop import run_tool_loop
@@ -129,20 +139,17 @@ def build_proactive_graph(gateway: ModelGateway):
             else:
                 prefix = "用户" if msg["role"] == "user" else "你"
                 convo.append(f"{prefix}：{msg['content']}")
-        try:
-            result: GatewayResult = await gateway.chat_sync(
-                base_url=state["text_base_url"],
-                api_key=state["text_api_key"],
-                model=state.get("text_model") or "default",
-                system=system,
-                user_text="\n".join(convo) if convo else (state.get("user_trigger") or ""),
-                temperature=state.get("temperature", 0.8),
-                max_tokens=state.get("max_tokens", settings.proactive_max_tokens),
-                provider=state.get("provider"),
-                lane_name="background",
-            )
-        except ModelGatewayError as exc:
-            return {"error": str(exc)}
+        result: GatewayResult = await gateway.chat_sync(
+            base_url=state["text_base_url"],
+            api_key=state["text_api_key"],
+            model=state.get("text_model") or "default",
+            system=system,
+            user_text="\n".join(convo) if convo else (state.get("user_trigger") or ""),
+            temperature=state.get("temperature", 0.8),
+            max_tokens=state.get("max_tokens", settings.proactive_max_tokens),
+            provider=state.get("provider"),
+            lane_name="background",
+        )
         return {
             "assistant_raw": result.content,
             "prompt_tokens": result.prompt_tokens,

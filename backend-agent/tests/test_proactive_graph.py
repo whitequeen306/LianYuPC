@@ -102,6 +102,23 @@ async def test_graph_gateway_error_folded_into_state():
     assert "assistant_raw" not in final
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_graph_gateway_error_folded_in_tool_branch():
+    """回归（生产 500 根因）：带 tools 时上游 401/402/404 也必须折叠为 error 字段，
+    不能炸出图。此前 ModelGatewayError 只在无工具分支被捕获。"""
+    respx.post("https://fake/v1/chat/completions").respond(status_code=401)
+    client = httpx.AsyncClient(timeout=outbound_timeout())
+    try:
+        graph = build_proactive_graph(ModelGateway(client=client))
+        final = await graph.ainvoke(
+            make_state(tools=["get_current_time"]), config={"recursion_limit": 10})
+    finally:
+        await client.aclose()
+    assert "model gateway http 401" in final["error"]
+    assert "assistant_raw" not in final
+
+
 def test_graph_compiles():
     """图可编译（节点/边/条件边结构正确）。"""
     graph = build_proactive_graph(ModelGateway())
