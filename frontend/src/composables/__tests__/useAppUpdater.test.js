@@ -5,6 +5,7 @@ let mockIsElectron = true
 const onUpdateStateCallbacks = []
 const mockApi = {
   checkForUpdates: vi.fn(() => Promise.resolve({ ok: true })),
+  probeForUpdates: vi.fn(() => Promise.resolve({ ok: true, hasUpdate: false })),
   downloadUpdate: vi.fn(() => Promise.resolve({ ok: true })),
   installNow: vi.fn(() => Promise.resolve({ ok: true })),
   openInstallerFolder: vi.fn(() => Promise.resolve({ ok: true })),
@@ -41,6 +42,7 @@ describe('useAppUpdater', () => {
     mockIsElectron = true
     onUpdateStateCallbacks.length = 0
     mockApi.checkForUpdates.mockClear()
+    mockApi.probeForUpdates.mockClear()
     mockApi.downloadUpdate.mockClear()
     mockApi.installNow.mockClear()
     mockApi.openInstallerFolder.mockClear()
@@ -71,6 +73,25 @@ describe('useAppUpdater', () => {
     expect(mockApi.checkForUpdates).toHaveBeenCalled()
   })
 
+  it('probe 调用 electronAPI.probeForUpdates 并原样返回结果', async () => {
+    mockApi.probeForUpdates.mockResolvedValueOnce(
+      { ok: true, hasUpdate: true, version: '0.2.368', currentVersion: '0.2.367' })
+    const { useAppUpdater } = await import('../useAppUpdater.js')
+    const { probe } = useAppUpdater()
+    const result = await probe()
+    expect(mockApi.probeForUpdates).toHaveBeenCalled()
+    expect(result.hasUpdate).toBe(true)
+    // probe 不碰 state 机：check 才负责推进
+    expect(mockApi.checkForUpdates).not.toHaveBeenCalled()
+  })
+
+  it('probe 在 IPC 抛错时返回 null（启动提示不能因此炸掉）', async () => {
+    mockApi.probeForUpdates.mockRejectedValueOnce(new Error('ipc dead'))
+    const { useAppUpdater } = await import('../useAppUpdater.js')
+    const { probe } = useAppUpdater()
+    expect(await probe()).toBeNull()
+  })
+
   it('download 调用 electronAPI.downloadUpdate', async () => {
     const { useAppUpdater } = await import('../useAppUpdater.js')
     const { download } = useAppUpdater()
@@ -95,13 +116,15 @@ describe('useAppUpdater', () => {
   it('非 Electron 环境 isElectron=false 且 actions 为 no-op', async () => {
     mockIsElectron = false
     const { useAppUpdater } = await import('../useAppUpdater.js')
-    const { isElectron, check, download, install, openInstallerFolder } = useAppUpdater()
+    const { isElectron, check, probe, download, install, openInstallerFolder } = useAppUpdater()
     expect(isElectron.value).toBe(false)
     expect(await check()).toBeUndefined()
+    expect(await probe()).toBeNull()
     expect(await download()).toBeUndefined()
     expect(await install()).toBeUndefined()
     expect(await openInstallerFolder()).toBeUndefined()
     expect(mockApi.checkForUpdates).not.toHaveBeenCalled()
+    expect(mockApi.probeForUpdates).not.toHaveBeenCalled()
     expect(onUpdateStateCallbacks.length).toBe(0)
   })
 

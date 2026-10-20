@@ -330,6 +330,33 @@ function compareVersions(current, latest) {
   return 0
 }
 
+/**
+ * 取 latest.yml 并解析出 {version,url,sha512}。
+ *
+ * 抽出来是为了让 `updater:check`（用户主动点「检查更新」）与 `updater:probe`
+ * （启动时静默探测）共用同一套取数与解析逻辑 —— 两边各写一份必然会在
+ * 某次改动后分叉，而这类分叉的表现是「手动检查说有新版本、启动提示说没有」。
+ *
+ * 失败一律抛异常，由调用方决定怎么呈现（state 机 / 静默返回）。
+ */
+async function fetchLatestInfo(apiOrigin) {
+  const ymlUrl = resolveLatestYmlUrl(apiOrigin)
+  const resp = await performApiRequest({
+    method: 'GET',
+    url: ymlUrl,
+    apiOrigin,
+    timeoutMs: 15000,
+  })
+  if (resp.status !== 200) {
+    throw new Error(`latest.yml HTTP ${resp.status}`)
+  }
+  const info = parseLatestYml(resp.data)
+  if (!info) {
+    throw new Error('latest.yml parse failed')
+  }
+  return info
+}
+
 function registerIpc() {
   ipcMain.handle('updater:check', async () => {
     const apiOrigin = resolveApiOrigin()
@@ -339,24 +366,7 @@ function registerIpc() {
     }
     setState({ state: 'checking', info: {} })
     try {
-      const ymlUrl = resolveLatestYmlUrl(apiOrigin)
-      const resp = await performApiRequest({
-        method: 'GET',
-        url: ymlUrl,
-        apiOrigin,
-        timeoutMs: 15000,
-      })
-      if (resp.status !== 200) {
-        const msg = `latest.yml HTTP ${resp.status}`
-        setState({ state: 'error', info: { errorMessage: msg } })
-        return { ok: false, error: msg }
-      }
-      const info = parseLatestYml(resp.data)
-      if (!info) {
-        const msg = 'latest.yml parse failed'
-        setState({ state: 'error', info: { errorMessage: msg } })
-        return { ok: false, error: msg }
-      }
+      const info = await fetchLatestInfo(apiOrigin)
       const currentVersion = app.getVersion()
       const diff = compareVersions(currentVersion, info.version)
       if (diff > 0) {
@@ -370,6 +380,36 @@ function registerIpc() {
       const msg = err?.message || String(err)
       logger.error('updater', `check failed: ${msg}`)
       setState({ state: 'error', info: { errorMessage: msg } })
+      return { ok: false, error: msg }
+    }
+  })
+
+  /**
+   * 启动时的**静默**版本探测。
+   *
+   * 与 `updater:check` 的唯一区别是：**绝不碰 state 机**。
+   * state 机是给「用户主动点检查更新」用的 —— 一旦把 state 设成
+   * `update-available`，`AppUpdateDialog` 就会自己弹出来，用户还没做选择
+   * 就已经被推进更新流程了。启动提示要的是「先问一句」，不是「直接开干」。
+   *
+   * 失败也保持安静：只记日志，返回 `{ok:false}` —— 断网/更新源临时不可用
+   * 不该在用户刚打开软件时糊一个错误弹窗。
+   */
+  ipcMain.handle('updater:probe', async () => {
+    const apiOrigin = resolveApiOrigin()
+    if (!apiOrigin) {
+      return { ok: false, error: 'no api origin' }
+    }
+    try {
+      const info = await fetchLatestInfo(apiOrigin)
+      const currentVersion = app.getVersion()
+      const hasUpdate = compareVersions(currentVersion, info.version) > 0
+      logger.info('updater',
+        `probe: current=${currentVersion} latest=${info.version} hasUpdate=${hasUpdate}`)
+      return { ok: true, hasUpdate, version: info.version, currentVersion }
+    } catch (err) {
+      const msg = err?.message || String(err)
+      logger.warn('updater', `probe failed (silent): ${msg}`)
       return { ok: false, error: msg }
     }
   })

@@ -14,6 +14,7 @@
     </router-view>
     <InAppMessageToastHost v-if="!isLauncherSurface && !isQuickChatSurface" />
     <AppUpdateDialog v-if="isElectron" />
+    <AppUpdatePrompt v-if="isElectron && !isLauncherSurface && !isQuickChatSurface" />
     <McpConfirmDialog v-if="isElectron && !isLauncherSurface && !isQuickChatSurface" />
   </el-config-provider>
 </template>
@@ -28,6 +29,7 @@ import { getElectronAPI } from '@/utils/electron'
 import { syncElectronTitleBar } from '@/utils/electronCaption'
 import { ElMessageBox } from 'element-plus'
 import AppUpdateDialog from '@/components/AppUpdateDialog.vue'
+import AppUpdatePrompt from '@/components/AppUpdatePrompt.vue'
 import InAppMessageToastHost from '@/components/InAppMessageToastHost.vue'
 import McpConfirmDialog from '@/components/McpConfirmDialog.vue'
 import { KEEP_ALIVE_PAGES } from '@/composables/useKeepAlivePages'

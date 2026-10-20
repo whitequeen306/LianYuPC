@@ -172,6 +172,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openLogFolder: () => ipcRenderer.invoke('desktop:open-log-folder'),
   // ── 应用自动更新（updater.js 主进程封装） ──
   checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+  /** 启动时静默探测：只返回结果，不推进 state 机（不会自动弹出更新对话框） */
+  probeForUpdates: () => ipcRenderer.invoke('updater:probe'),
   downloadUpdate: () => ipcRenderer.invoke('updater:download'),
   installNow: () => ipcRenderer.invoke('updater:install'),
   openInstallerFolder: () => ipcRenderer.invoke('updater:openInstallerFolder'),

@@ -35,6 +35,18 @@ export function useAppUpdater() {
     if (!isElectron.value) return
     return getElectronAPI()?.checkForUpdates?.()
   }
+  /**
+   * 启动时的静默探测：只拿「有没有新版本」，不推进主进程 state 机。
+   * 与 {@link check} 分开是为了不让启动提示自动打开更新对话框。
+   */
+  async function probe() {
+    if (!isElectron.value) return null
+    try {
+      return (await getElectronAPI()?.probeForUpdates?.()) || null
+    } catch {
+      return null
+    }
+  }
   async function download() {
     if (!isElectron.value) return
     return getElectronAPI()?.downloadUpdate?.()
@@ -48,5 +60,5 @@ export function useAppUpdater() {
     return getElectronAPI()?.openInstallerFolder?.()
   }
 
-  return { state, info, isElectron, check, download, install, openInstallerFolder }
+  return { state, info, isElectron, check, probe, download, install, openInstallerFolder }
 }

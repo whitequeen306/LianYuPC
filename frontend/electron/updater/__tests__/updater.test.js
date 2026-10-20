@@ -131,6 +131,15 @@ describe('updater (manual mode)', () => {
     mocks.mkdirCalls = []
     mocks.existingFiles = new Set()
     vi.resetModules()
+    // 每个用例都从「有 apiOrigin」的基线开始：
+    // 「无 apiOrigin」的用例会 vi.doUnmock 掉顶层 vi.mock，而 doUnmock 不会自动恢复，
+    // 后面的用例就会莫名拿到 no api origin（这里显式重装，避免用例顺序影响结果）
+    vi.doMock('../../runtimeSecrets.js', () => ({
+      getRuntimeSecrets: () => ({
+        apiOrigin: 'https://api.lianyu.test',
+        updateOrigin: 'https://download.lianyu.test',
+      }),
+    }))
   })
 
   function sha512Base64(data) {
@@ -155,10 +164,11 @@ describe('updater (manual mode)', () => {
     }
   }
 
-  it('initUpdater 注册 4 个 IPC 通道', async () => {
+  it('initUpdater 注册 5 个 IPC 通道', async () => {
     const { initUpdater } = await loadUpdater()
     initUpdater(mockMainWindow)
     expect(mocks.handleRegistry.has('updater:check')).toBe(true)
+    expect(mocks.handleRegistry.has('updater:probe')).toBe(true)
     expect(mocks.handleRegistry.has('updater:download')).toBe(true)
     expect(mocks.handleRegistry.has('updater:install')).toBe(true)
     expect(mocks.handleRegistry.has('updater:openInstallerFolder')).toBe(true)
@@ -603,7 +613,61 @@ describe('updater (manual mode)', () => {
     const { initUpdater } = await loadUpdater()
     initUpdater(mockMainWindow)
     initUpdater(mockMainWindow)
-    expect(mocks.handleRegistry.size).toBe(4)
+    expect(mocks.handleRegistry.size).toBe(5)
+  })
+
+  // ── 启动静默探测 ──
+
+  it('probe: 有新版本时返回 hasUpdate，且不推送任何 state', async () => {
+    mocks.apiResponses['https://api.lianyu.test/api/public/files/updates/latest.yml'] = {
+      status: 200,
+      data: 'version: 0.2.260\nfiles:\n  - url: YuNian-Setup-0.2.260.exe\nsha512: abc\n',
+    }
+    const { initUpdater } = await loadUpdater()
+    initUpdater(mockMainWindow)
+    const ret = await mocks.handleRegistry.get('updater:probe')()
+    expect(ret).toEqual({ ok: true, hasUpdate: true, version: '0.2.260', currentVersion: '0.2.258' })
+    // 关键：探测不能动 state 机，否则 AppUpdateDialog 会自己弹出来，
+    // 用户还没选「前去更新」就被推进下载流程了
+    expect(mocks.webSend).not.toHaveBeenCalled()
+  })
+
+  it('probe: 已是最新时 hasUpdate=false 且不推送 state', async () => {
+    mocks.appVersion = '0.2.260'
+    mocks.apiResponses['https://api.lianyu.test/api/public/files/updates/latest.yml'] = {
+      status: 200,
+      data: 'version: 0.2.260\nfiles:\n  - url: test.exe\nsha512: abc\n',
+    }
+    const { initUpdater } = await loadUpdater()
+    initUpdater(mockMainWindow)
+    const ret = await mocks.handleRegistry.get('updater:probe')()
+    expect(ret.ok).toBe(true)
+    expect(ret.hasUpdate).toBe(false)
+    expect(mocks.webSend).not.toHaveBeenCalled()
+  })
+
+  it('probe: 请求失败时静默返回 ok=false，不推送 error', async () => {
+    mocks.apiResponses['https://api.lianyu.test/api/public/files/updates/latest.yml'] = {
+      status: 503, data: '',
+    }
+    const { initUpdater } = await loadUpdater()
+    initUpdater(mockMainWindow)
+    const ret = await mocks.handleRegistry.get('updater:probe')()
+    expect(ret.ok).toBe(false)
+    // 刚打开软件时断网不该糊一个错误弹窗
+    expect(mocks.webSend).not.toHaveBeenCalled()
+  })
+
+  it('probe: 无 apiOrigin 时返回 ok=false', async () => {
+    vi.doMock('../../runtimeSecrets.js', () => ({
+      getRuntimeSecrets: () => null,
+    }))
+    const { initUpdater } = await loadUpdater()
+    initUpdater(mockMainWindow)
+    const ret = await mocks.handleRegistry.get('updater:probe')()
+    expect(ret.ok).toBe(false)
+    expect(mocks.webSend).not.toHaveBeenCalled()
+    vi.doUnmock('../../runtimeSecrets.js')
   })
 
   it('主窗口销毁时 send 静默跳过', async () => {

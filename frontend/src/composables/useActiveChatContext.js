@@ -63,4 +63,3 @@ export function isViewingConversation(conversationId) {
 
   return false
 }
-}
