@@ -267,7 +267,9 @@ class ModelGateway:
                         delta = (choices[0].get("delta") or {}).get("content")
                         if delta:
                             yield delta
-            except ModelGatewayError:
+            except GatewayError:
+                # 业务错 / 上游错 / 熔断快速失败原样抛出，不能被下面的网络层
+                # except 重新包装成 ModelGatewayError（否则 4xx 又会计入熔断）
                 raise
             except Exception as exc:  # 网络层
                 raise ModelGatewayError(f"model gateway transport error: {exc}") from exc
@@ -355,7 +357,8 @@ class ModelGateway:
             raise ModelGatewayError(f"model gateway transport error: {exc}") from exc
 
         if status != 200:
-            raise ModelGatewayError(f"model gateway http {status}")
+            # 4xx(429 除外) → GatewayBusinessError（不计熔断）；5xx/429 → ModelGatewayError
+            _raise_for_status(status)
         if not isinstance(body, dict):
             raise ModelGatewayError("model gateway malformed response")
         try:
