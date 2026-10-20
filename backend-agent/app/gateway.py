@@ -48,6 +48,28 @@ class ImagePart:
 Part = TextPart | ImagePart
 
 
+# NOTE: 归一化函数不属于 dataclass
+def normalize_openai_base_url(base_url: str) -> str:
+    """把 vault 里的 base_url 归一化成 OpenAI 兼容的 completions 端点。
+
+    必须与旧 Java 行为一致（`ChatModelFactory.normalizeOpenAiBaseUrl`
+    + Spring AI 默认 `completionsPath=/v1/chat/completions`）：
+
+    1. 去掉末尾所有 `/`
+    2. 若以 `/v1` 结尾则去掉这个 `/v1`
+    3. 固定追加 `/v1/chat/completions`
+
+    生产 vault 里同时存在 `https://api.deepseek.com` 与
+    `https://clove.dpdns.org/v1` 两种写法；只按 `<base>/chat/completions`
+    拼会漏掉 `/v1`，对不带 `/v1` 的代理站直接 404。
+    """
+    trimmed = (base_url or "").strip()
+    while trimmed.endswith("/"):
+        trimmed = trimmed[:-1]
+    if trimmed.endswith("/v1"):
+        trimmed = trimmed[: -len("/v1")]
+    return f"{trimmed}/v1/chat/completions"
+
 @dataclass(frozen=True)
 class GatewayResult:
     content: str
@@ -197,7 +219,7 @@ class ModelGateway:
     async def _stream_once(
         self, base_url: str, api_key: str, payload: dict[str, Any]
     ) -> AsyncIterator[str]:
-        url = f"{base_url.rstrip('/')}/chat/completions"
+        url = normalize_openai_base_url(base_url)
         headers = {"Authorization": f"Bearer {api_key}"}
 
         if self._client is not None:
@@ -294,7 +316,7 @@ class ModelGateway:
             return result
 
     async def _do_post(self, base_url: str, api_key: str, payload: dict[str, Any]) -> GatewayResult:
-        url = f"{base_url.rstrip('/')}/chat/completions"
+        url = normalize_openai_base_url(base_url)
         headers = {"Authorization": f"Bearer {api_key}"}
 
         try:
