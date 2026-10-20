@@ -33,6 +33,12 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from app.data_readers import load_character_owner, load_emotion, load_memory_context
+from app.message_assembly import (
+    image_history_text,
+    is_empty_user_message_xml,
+    is_voice_call_turn,
+    wrap_stored_text_for_model,
+)
 from app.gateway import get_gateway
 from app.system_prompt import assemble_scene_prompt
 
@@ -58,6 +64,7 @@ class ChatTurnState(TypedDict, total=False):
     enable_chat_tools: bool | None
     show_inner_thoughts: bool | None
     max_pieces: int | None
+    current_user_message_id: int | None
     history: list[dict[str, Any]]
     provider: str | None
     base_url: str
@@ -157,29 +164,50 @@ async def assemble_prompt(state: ChatTurnState) -> dict[str, Any]:
 
 
 async def assemble_messages(state: ChatTurnState) -> dict[str, Any]:
-    """节点 2：system + 历史消息 → 模型输入。
+    """节点 2：system + 历史 → 模型输入，对齐 Java `ChatTurnMessageAssembler`。
 
-    当前阶段只做最基础的映射；Java `ChatTurnMessageAssembler` 里的
-    图片占位、XML 包裹、通话 turn 过滤见模块文档的「已知缺口」。
+    三处细节全部照 Java 分支实现（XML 包裹属注入防护，不可简化）：
+    - 当前用户消息：优先用 `user_text`，并按 `<user_message trusted="false">` 包裹
+    - 图片消息：历史占位归一（带识图描述时保留描述）
+    - 语音通话 turn：不喂给文字聊模型
     """
-    messages: list[dict[str, str]] = [
-        {"role": "system", "content": state.get("system_prompt") or ""}
-    ]
+    system_prompt = state.get("system_prompt") or ""
+    messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+
+    current_user_id = state.get("current_user_message_id")
+    user_text = state.get("user_text")
+
     for item in state.get("history") or []:
-        role = str(item.get("role") or "user").lower()
-        content = item.get("content")
-        if role == "system/voice-call-turn" or content is None or not str(content).strip():
+        if is_voice_call_turn(item):
             continue
+        has_image = bool(item.get("imageUrl") or item.get("image_url"))
+        content = item.get("contextContent") or item.get("content") or ""
+        is_current = (current_user_id is not None
+                      and item.get("id") == current_user_id)
+
+        if is_current and user_text and user_text.strip():
+            wrapped = (user_text if "<user_message" in user_text
+                       else wrap_stored_text_for_model(user_text))
+            if has_image and is_empty_user_message_xml(wrapped):
+                wrapped = wrap_stored_text_for_model("用户发送了一张图片")
+            content = wrapped
+        elif has_image:
+            content = image_history_text(content, True)
+        elif not str(content).strip():
+            continue
+
+        role = str(item.get("role") or "user").lower()
         messages.append({"role": role, "content": str(content)})
 
-    user_text = state.get("user_text")
-    if user_text and not (messages and messages[-1].get("role") == "user"
-                          and messages[-1].get("content") == user_text):
-        messages.append({"role": "user", "content": user_text})
+    if user_text and user_text.strip():
+        last = messages[-1] if messages else None
+        already_present = (last is not None and last.get("role") == "user"
+                           and wrap_stored_text_for_model(user_text) in last.get("content", ""))
+        if not already_present:
+            messages.append({"role": "user", "content": wrap_stored_text_for_model(user_text)})
 
     logger.info("chat_turn.assemble_messages count=%d", len(messages))
     return {"messages": messages}
-
 
 async def invoke_model(state: ChatTurnState) -> dict[str, Any]:
     """节点 3：调用模型（当前为阻塞调用，便于与 Java 结果对照）。"""
