@@ -21,7 +21,6 @@ from app.config import get_settings
 from app.desktop_observe import DesktopObserveRequest, observe_desktop
 from app.gateway import ModelGateway, decode_png_base64, get_gateway
 from app.stream_chat import DONE_FRAME, sse_error, stream_chat_events
-from app.system_prompt import assemble_scene_prompt
 from app.image_chat import chat_with_image
 from app.text_turn import complete_text
 from app.tools import supported_tool_schemas
@@ -392,13 +391,28 @@ class ChatTurnInspectBody(BaseModel):
     scene: str = "SINGLE"
     output_language: str = Field(default="zh", alias="outputLanguage")
     user_text: str = Field(default="", alias="userText")
+    raw_user_text: str | None = Field(default=None, alias="rawUserText")
     history: list[dict[str, Any]] = []
+    prepared_messages: list[dict[str, Any]] = Field(default=[], alias="preparedMessages")
+    current_user_message_id: int | None = Field(default=None, alias="currentUserMessageId")
     time_fact: str | None = Field(default=None, alias="timeFact")
     invoke: bool = False
     tool_flags: dict[str, Any] | None = Field(default=None, alias="toolFlags")
     enable_chat_tools: bool | None = Field(default=None, alias="enableChatTools")
     show_inner_thoughts: bool | None = Field(default=None, alias="showInnerThoughts")
     max_pieces: int | None = Field(default=None, alias="maxPieces")
+    # 调用方已取好的快照（显式优先，避免本轮写入造成假漂移）
+    memory_context: str = Field(default="", alias="memoryContext")
+    emotion_block: str = Field(default="", alias="emotionBlock")
+    session_summary: str = Field(default="", alias="sessionSummary")
+    city: str | None = None
+    # 群聊附加段
+    group_max_pieces: int = Field(default=0, alias="groupMaxPieces")
+    group_other_characters: str = Field(default="", alias="groupOtherCharacters")
+    group_mention: str = Field(default="", alias="groupMention")
+    extra_system_suffix: str = Field(default="", alias="extraSystemSuffix")
+    prefetch_real_world: bool = Field(default=True, alias="prefetchRealWorld")
+    expected_language: str | None = Field(default=None, alias="expectedLanguage")
     provider: str | None = None
     base_url: str = Field(default="", alias="baseUrl")
     api_key: str = Field(default="", alias="apiKey")
@@ -408,27 +422,56 @@ class ChatTurnInspectBody(BaseModel):
 
     model_config = {"populate_by_name": True}
 
+    def to_state(self, *, invoke: bool | None = None) -> dict[str, Any]:
+        """转成图的输入。`user_text` 缺省时退回 `raw_user_text`（与 Java `modelUserText` 兜底一致）。"""
+        state = self.model_dump(by_alias=False)
+        if not (state.get("user_text") or "").strip():
+            state["user_text"] = state.get("raw_user_text") or ""
+        if invoke is not None:
+            state["invoke"] = invoke
+        return state
+
+
+def _usage_of(state: dict[str, Any]) -> dict[str, Any]:
+    prompt_tokens = state.get("prompt_tokens")
+    completion_tokens = state.get("completion_tokens")
+    if prompt_tokens is None and completion_tokens is None:
+        total = None
+    else:
+        total = (prompt_tokens or 0) + (completion_tokens or 0)
+    return {
+        "promptTokens": prompt_tokens,
+        "completionTokens": completion_tokens,
+        "totalTokens": total,
+    }
+
 
 @app.post("/agent/chat-turn/inspect")
 async def chat_turn_inspect(
     body: ChatTurnInspectBody,
     user_id_header: str | None = Header(default=None, alias="X-User-Id"),
 ) -> dict[str, Any]:
-    """跑一遍 LangGraph 回合，回传 systemPrompt / messages / content 供对照。"""
+    """跑一遍 LangGraph 回合，回传 systemPrompt / messages / content(/usage)。
+
+    `invoke=true` 时同时返回模型回复 —— Java 的非流式回合（群聊主动发言、
+    关系事件）直接消费这个响应，不再自己建图。
+    """
     if user_id_header and str(body.user_id) != user_id_header:
         raise HTTPException(status_code=403, detail="user mismatch")
     try:
         from app.chat_turn import run_chat_turn
 
-        state = await run_chat_turn(body.model_dump(by_alias=False))
+        state = await run_chat_turn(body.to_state(invoke=body.invoke))
     except Exception as exc:  # noqa: BLE001 - 对照端点失败要能看见原因
         logger.warning("chat turn inspect failed: %r", exc)
         return {"error": "chat_turn_failed"}
-    return {
+    payload: dict[str, Any] = {
         "systemPrompt": state.get("system_prompt") or "",
         "messages": state.get("messages") or [],
         "content": state.get("content") or "",
     }
+    payload.update(_usage_of(state))
+    return payload
 
 
 @app.post("/agent/chat-turn/stream")
@@ -444,8 +487,7 @@ async def chat_turn_stream(
     if user_id_header and str(body.user_id) != user_id_header:
         raise HTTPException(status_code=403, detail="user mismatch")
 
-    payload = body.model_dump(by_alias=False)
-    payload["invoke"] = True
+    payload = body.to_state(invoke=True)
 
     async def event_source():
         frames = 0
@@ -522,92 +564,39 @@ async def prompt_assemble(
     if user_id_header and str(body.user_id) != user_id_header:
         raise HTTPException(status_code=403, detail="user mismatch")
     try:
-        memory_context = body.memory_context
-        emotion_block = body.emotion_block
-        city = body.city
-        scene = (body.scene or "SINGLE").strip().upper()
-        # 工具提示：Java 只传开关事实，文案由 Python 生成（Java 侧已删文案）
-        tool_hint = body.tool_hint
-        if body.tool_flags is not None:
-            from app.tools_hint import build_from_flags
-            tool_hint = build_from_flags(body.tool_flags)
-        if body.use_internal_data:
-            from app.data_readers import (
-                load_character_owner,
-                load_emotion,
-                load_memory_context,
-            )
-            from app.emotion_block import format_emotion_block
+        # 组装逻辑只有一处实现（app/prompt_pipeline.py），与聊天回合图共用，
+        # 避免「Java 传数据块」与「Python 自读数据」两条路径再次漂移。
+        from app.prompt_pipeline import assemble_turn_prompt
 
-            # 显式传入的记忆块优先：本轮可能刚写入新记忆（抽取/关系事件是异步的），
-            # 现读会拿到更新的值，与 Java 组装时用的快照不一致 → 假漂移。
-            if not memory_context:
-                memory_context = await load_memory_context(
-                    body.user_id, body.character_id or 0, body.conversation_id,
-                    include_memory=scene != "VOICE_CALL",
-                    include_relationship=scene in {"SINGLE", "PROACTIVE", "MOMENTS", "DIARY"},
-                    include_session=scene in {"SINGLE", "PROACTIVE"},
-                    last_user_message=body.last_user_message,
-                    session_summary_override=body.session_summary,
-                ) or ""
-            # 显式传入的情绪块优先：调用方可能在「组装同一时刻」同步取好快照，
-            # 比这里现读更接近 Java 实际使用的值（情绪会被本轮对话更新）。
-            if not emotion_block:
-                # 情绪按角色所有者维度存储，与 Java 保持一致
-                owner_id = await load_character_owner(body.character_id or 0) or body.user_id
-                emotion = await load_emotion(body.character_id or 0, owner_id)
-                emotion_block = format_emotion_block(
-                    lang=body.output_language,
-                    current_emotion=(emotion or {}).get("current_emotion"),
-                    emotion_intensity=(emotion or {}).get("emotion_intensity"),
-                    status_text=(emotion or {}).get("status_text"),
-                    previous_emotion=(emotion or {}).get("previous_emotion"),
-                ) if emotion else ""
-            # 城市：与 Java 同一判断（city_mode 非 fictional，且城市非空）
-            city_mode = str(body.settings.get("city_mode") or "real").strip().lower()
-            fictional_legacy = body.settings.get("use_fictional_city")
-            if not city and city_mode != "fictional" and not fictional_legacy:
-                raw_city = body.settings.get("city")
-                city = str(raw_city).strip() or None
-
-        prompt = assemble_scene_prompt(
+        prompt = await assemble_turn_prompt(
+            user_id=body.user_id,
+            character_id=body.character_id,
+            conversation_id=body.conversation_id,
             character_name=body.character_name,
             settings=body.settings,
             prompt_template=body.prompt_template,
-            memory_context=memory_context,
-            tool_hint=tool_hint,
-            emotion_block=emotion_block,
+            scene=body.scene,
             output_language=body.output_language,
+            memory_context=body.memory_context,
+            emotion_block=body.emotion_block,
+            tool_hint=body.tool_hint,
+            tool_flags=body.tool_flags,
+            city=body.city,
             enable_chat_tools=body.enable_chat_tools,
             show_inner_thoughts=body.show_inner_thoughts,
             max_pieces=body.max_pieces,
             include_time=body.include_time,
             time_fact=body.time_fact,
-            city=city,
             after_base=body.after_base,
             last_user_message=body.last_user_message,
+            session_summary=body.session_summary,
+            group_max_pieces=body.group_max_pieces,
+            group_other_characters=body.group_other_characters,
+            group_mention=body.group_mention,
+            extra_system_suffix=body.extra_system_suffix,
+            prefetch_real_world=body.prefetch_real_world,
+            use_internal_data=body.use_internal_data,
         )
-        # 群聊附加段：顺序与 Java `ChatTurnPromptAssembler.assemble` 一致（自然风格之后）
-        if scene == "GROUP":
-            from app.rule_templates import render_group_chat_rules
-
-            group_rules = render_group_chat_rules(
-                body.output_language,
-                body.character_name,
-                body.group_other_characters,
-                body.group_mention,
-                body.group_max_pieces or body.max_pieces,
-                body.show_inner_thoughts,
-            )
-            if group_rules.strip():
-                prompt += "\n\n" + group_rules
-        # 主动开口真实环境块（时间天气），在群聊之后、调用方后缀之前
-        if scene == "PROACTIVE" and body.prefetch_real_world:
-            from app.proactive_context import build_proactive_real_world_block
-
-            prompt += await build_proactive_real_world_block(body.settings)
-        if body.extra_system_suffix:
-            prompt += body.extra_system_suffix
     except Exception as exc:  # noqa: BLE001 - 组装失败返回错误码，Java 记录后忽略
         logger.warning("prompt assemble failed: %s", exc)
         return {"error": "assemble_failed"}

@@ -36,24 +36,27 @@ def test_route_enters_model_when_invoke_true():
 
 def test_scene_flags_align_with_java():
     """场景 → 记忆/关系/摘要开关，必须与 Java ChatTurnScene 一致。"""
-    from app.chat_turn import _after_base, _include_flags
+    from app.prompt_pipeline import scene_after_base, scene_include_flags
 
-    assert _after_base("MOMENTS") == "style_only"
-    assert _after_base("DIARY") == "style_only"
-    assert _after_base("VOICE_CALL") == "time_only"
-    assert _after_base("SINGLE") == "full"
+    assert scene_after_base("MOMENTS") == "style_only"
+    assert scene_after_base("DIARY") == "style_only"
+    assert scene_after_base("VOICE_CALL") == "time_only"
+    assert scene_after_base("SINGLE") == "full"
+    assert scene_after_base("PROACTIVE") == "full"
+    # GROUP 不属于 full：群聊规则段自带说话方式，Java afterBaseOf 返回 none
+    assert scene_after_base("GROUP") == "none"
 
-    assert _include_flags("VOICE_CALL") == {
+    assert scene_include_flags("VOICE_CALL") == {
         "include_memory": False,
         "include_relationship": False,
         "include_session": False,
     }
-    assert _include_flags("SINGLE") == {
+    assert scene_include_flags("SINGLE") == {
         "include_memory": True,
         "include_relationship": True,
         "include_session": True,
     }
-    assert _include_flags("GROUP")["include_relationship"] is False
+    assert scene_include_flags("GROUP")["include_relationship"] is False
 
 
 def test_inspect_endpoint_rejects_user_mismatch():

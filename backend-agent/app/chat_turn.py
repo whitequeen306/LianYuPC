@@ -1,28 +1,30 @@
-"""主聊天回合的 LangGraph 编排（迁移第一阶段：对照端点，不切换流量）。
+"""主聊天回合的 LangGraph 编排（编排的**唯一**实现）。
 
-## 为什么要有这个模块
+## 目标形态
 
-重构的目标形态是「编排在 Python 的 LangGraph」，但截至迁移前，
-主聊天链路仍由 Java 的 Spring AI Alibaba Graph 编排
-（`ChatTurnGraphConfig`：assemblePrompt → assembleMessages → invokeModel），
-LangGraph 只在 `proactive_turn.py` 用了一条。
+    Java  →  转发原始输入 + 解密后的模型凭据
+    Python (LangGraph)  →  组装 prompt → 组装 messages → 调模型（流式/阻塞）
+    Java  →  落库、SSE 回写、token 记账
 
-本模块把**同一条 3 节点链路**用 LangGraph 建出来，先以「对照端点」的形式并行存在：
+也就是说 Java 不再持有任何 prompt 文本、消息拼装规则或模型调用；
+本模块之前，这条链路由 Java 的 Spring AI Alibaba Graph 编排
+（`ChatTurnGraphConfig`：assemblePrompt → assembleMessages → invokeModel）。
 
-    assemble_prompt → assemble_messages → invoke_model
+## 图拓扑
 
-Java 侧暂不改动，比对通过后再把 `ChatTurnFacade` 切成「只转发 + 落库」，
-并删除 Java 的 graph/ 包。
+    assemble_prompt → assemble_messages → invoke_model | invoke_model_stream
 
-## 当前阶段的已知缺口（第二阶段补齐）
+比对/回归用的 `invoke=False` 会在 assemble_messages 之后结束（条件边），
+不产生任何模型调用开销。
 
-`ChatTurnMessageAssembler`（Java, 95 行）里有几处细节尚未迁：
+## 与 Java 逐条对齐的细节（都有测试锁定，勿"简化"）
 
-1. 图片消息的历史占位归一（`ImageMessageHistoryText.forHistory`）
-2. 当前用户消息的 XML 包裹（`UserInputSanitizer.wrapStoredTextForModel`，属于提示注入防护）
-3. 语音通话 turn 消息过滤（`audioUrl == "system/voice-call-turn"`）
-
-这些都会改变喂给模型的内容，必须逐条对照迁移，不能凭印象实现。
+1. `ChatTurnMessageAssembler` 的 preparedMessages 分支（群聊主动发言用）：
+   直接采用调用方给的消息列表，只把第 0 条 system 换成组装好的 prompt。
+2. 图片消息的历史占位归一（`ImageMessageHistoryText.forHistory`）
+3. 当前用户消息的 XML 包裹（`UserInputSanitizer.wrapStoredTextForModel`，属提示注入防护）
+4. 语音通话 turn 消息过滤（`audioUrl == "system/voice-call-turn"`）
+5. 历史取文本的优先级：`contextContent`（非空白，trim 后）优先于 `content`
 """
 
 from __future__ import annotations
@@ -32,23 +34,24 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from app.data_readers import load_character_owner, load_emotion, load_memory_context
+from app.gateway import get_gateway
 from app.message_assembly import (
     image_history_text,
     is_empty_user_message_xml,
     is_voice_call_turn,
     wrap_stored_text_for_model,
 )
-from app.gateway import get_gateway
-from app.system_prompt import assemble_scene_prompt
+from app.prompt_pipeline import assemble_turn_prompt, normalize_scene
 
 logger = logging.getLogger(__name__)
+
+GENERIC_IMAGE_USER_TEXT = "用户发送了一张图片"
 
 
 class ChatTurnState(TypedDict, total=False):
     """回合状态：输入（请求参数）→ 中间产物 → 输出。"""
 
-    # ── 输入 ──
+    # ── 输入：角色与会话事实（Java 取好，Python 不重复查） ──
     user_id: int
     conversation_id: int | None
     character_id: int | None
@@ -57,22 +60,41 @@ class ChatTurnState(TypedDict, total=False):
     prompt_template: str | None
     scene: str
     output_language: str
+
+    # ── 输入：本轮文本 ──
     user_text: str
+    """喂模型的用户文本（对齐 Java `modelUserText`，可含识图描述）。"""
+    raw_user_text: str
+    """用户原文（记忆检索与语言判定用，对齐 Java `rawUserText`）。"""
+    history: list[dict[str, Any]]
+    prepared_messages: list[dict[str, Any]]
+    current_user_message_id: int | None
+
+    # ── 输入：场景开关与显式数据块 ──
     time_fact: str | None
-    invoke: bool
     tool_flags: dict[str, Any] | None
     enable_chat_tools: bool | None
     show_inner_thoughts: bool | None
     max_pieces: int | None
-    current_user_message_id: int | None
-    expected_language: str | None
-    history: list[dict[str, Any]]
+    memory_context: str
+    emotion_block: str
+    session_summary: str
+    city: str | None
+    extra_system_suffix: str
+    group_max_pieces: int
+    group_other_characters: str
+    group_mention: str
+    prefetch_real_world: bool
+
+    # ── 输入：模型与凭据 ──
+    invoke: bool
     provider: str | None
     base_url: str
     api_key: str
     model: str
     temperature: float
     max_tokens: int
+    expected_language: str | None
 
     # ── 中间 ──
     system_prompt: str
@@ -80,101 +102,80 @@ class ChatTurnState(TypedDict, total=False):
 
     # ── 输出 ──
     content: str
-
-
-def _after_base(scene: str) -> str:
-    """场景 → 场景块策略，对齐 Java `ChatTurnScene` 的分支。"""
-    if scene in ("MOMENTS", "DIARY"):
-        return "style_only"
-    if scene == "VOICE_CALL":
-        return "time_only"
-    return "full"
-
-
-def _include_flags(scene: str) -> dict[str, bool]:
-    """场景 → 记忆/关系/摘要是否参与，对齐 Java 三个 include* 方法。"""
-    return {
-        "include_memory": scene != "VOICE_CALL",
-        "include_relationship": scene in ("SINGLE", "PROACTIVE", "MOMENTS", "DIARY"),
-        "include_session": scene in ("SINGLE", "PROACTIVE"),
-    }
+    prompt_tokens: int | None
+    completion_tokens: int | None
 
 
 async def assemble_prompt(state: ChatTurnState) -> dict[str, Any]:
     """节点 1：组装 system prompt（记忆/关系/情绪/摘要由 Python 自读）。"""
-    scene = (state.get("scene") or "SINGLE").upper()
-    flags = _include_flags(scene)
-    memory_context = await load_memory_context(
-        state["user_id"],
-        state.get("character_id") or 0,
-        state.get("conversation_id"),
-        **flags,
-        last_user_message=state.get("user_text"),
-    ) or ""
-
-    # 情绪块：按角色所有者维度读取（与 Java 一致），格式化在 Python
-    from app.emotion_block import format_emotion_block
-
-    owner_id = await load_character_owner(state.get("character_id") or 0) or state["user_id"]
-    emotion = await load_emotion(state.get("character_id") or 0, owner_id)
-    emotion_block = format_emotion_block(
-        lang=state.get("output_language") or "zh",
-        current_emotion=(emotion or {}).get("current_emotion"),
-        emotion_intensity=(emotion or {}).get("emotion_intensity"),
-        status_text=(emotion or {}).get("status_text"),
-        previous_emotion=(emotion or {}).get("previous_emotion"),
-    ) if emotion else ""
-
-    # 工具提示文案例由 Python 查表生成（Java 只传开关事实，与 prompt/assemble 一致）
-    from app.tools_hint import build_from_flags
-
-    tool_flags = state.get("tool_flags")
-    scene_enables_tools = scene in ("SINGLE", "GROUP", "DIARY", "PROACTIVE")
-    enable_tools = (state.get("enable_chat_tools")
-                    if state.get("enable_chat_tools") is not None else scene_enables_tools)
-    tool_hint = build_from_flags(tool_flags) if (enable_tools and tool_flags) else ""
-    show_inner = (state.get("show_inner_thoughts")
-                  if state.get("show_inner_thoughts") is not None else scene != "VOICE_CALL")
-    max_pieces = state.get("max_pieces") or 2
-
-    # 城市块：与 Java appendCurrentRealCityContext 同一判断（city_mode=real 且城市非空）
-    city: str | None = None
-    settings = state.get("settings") or {}
-    if str(settings.get("city_mode") or "") == "real":
-        raw_city = settings.get("city")
-        city = str(raw_city).strip() or None if raw_city else None
-
-    system_prompt = assemble_scene_prompt(
+    scene = normalize_scene(state.get("scene"))
+    system_prompt = await assemble_turn_prompt(
+        user_id=state["user_id"],
+        character_id=state.get("character_id"),
+        conversation_id=state.get("conversation_id"),
         character_name=state.get("character_name") or "",
-        settings=state.get("settings"),
+        settings=state.get("settings") or {},
         prompt_template=state.get("prompt_template"),
-        memory_context=memory_context,
-        tool_hint=tool_hint,
-        emotion_block=emotion_block,
-        output_language=state.get("output_language") or "zh",
-        enable_chat_tools=enable_tools,
-        show_inner_thoughts=show_inner,
-        max_pieces=max_pieces,
-        include_time=scene in ("SINGLE", "PROACTIVE", "VOICE_CALL"),
+        scene=scene,
+        output_language=state.get("output_language"),
+        memory_context=state.get("memory_context") or "",
+        emotion_block=state.get("emotion_block") or "",
+        tool_flags=state.get("tool_flags"),
+        city=state.get("city"),
+        enable_chat_tools=state.get("enable_chat_tools"),
+        show_inner_thoughts=state.get("show_inner_thoughts"),
+        max_pieces=state.get("max_pieces"),
         time_fact=state.get("time_fact"),
-        city=city,
-        after_base=_after_base(scene),
+        last_user_message=state.get("raw_user_text") or state.get("user_text"),
+        session_summary=state.get("session_summary"),
+        group_max_pieces=state.get("group_max_pieces") or 0,
+        group_other_characters=state.get("group_other_characters") or "",
+        group_mention=state.get("group_mention") or "",
+        extra_system_suffix=state.get("extra_system_suffix") or "",
+        prefetch_real_world=state.get("prefetch_real_world", True),
+        use_internal_data=True,
     )
     logger.info("chat_turn.assemble_prompt scene=%s chars=%d", scene, len(system_prompt))
     return {"system_prompt": system_prompt}
 
 
+def _stored_text(item: dict[str, Any]) -> str:
+    """对齐 `MessageModelContent.forModel`：contextContent（trim）优先，其次 content。"""
+    context = item.get("contextContent") or item.get("context_content")
+    if context is not None and str(context).strip():
+        return str(context).strip()
+    content = item.get("content")
+    return "" if content is None else str(content)
+
+
+def _assemble_prepared(system_prompt: str,
+                       prepared: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """群聊主动发言路径：调用方已给完整消息列表（对齐 assembler 的 prepared 分支）。"""
+    out: list[dict[str, str]] = []
+    for dto in prepared:
+        has_image = bool(dto.get("imageUrl") or dto.get("image_url"))
+        out.append({
+            "role": dto.get("role"),
+            "content": image_history_text(dto.get("content"), has_image),
+        })
+    if out and str(out[0].get("role") or "").lower() == "system":
+        out[0]["content"] = system_prompt
+    else:
+        out.insert(0, {"role": "system", "content": system_prompt})
+    return out
+
+
 async def assemble_messages(state: ChatTurnState) -> dict[str, Any]:
-    """节点 2：system + 历史 → 模型输入，对齐 Java `ChatTurnMessageAssembler`。
-
-    三处细节全部照 Java 分支实现（XML 包裹属注入防护，不可简化）：
-    - 当前用户消息：优先用 `user_text`，并按 `<user_message trusted="false">` 包裹
-    - 图片消息：历史占位归一（带识图描述时保留描述）
-    - 语音通话 turn：不喂给文字聊模型
-    """
+    """节点 2：system + 历史 → 模型输入，对齐 Java `ChatTurnMessageAssembler`。"""
     system_prompt = state.get("system_prompt") or ""
-    messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
 
+    prepared = state.get("prepared_messages") or []
+    if prepared:
+        messages = _assemble_prepared(system_prompt, prepared)
+        logger.info("chat_turn.assemble_messages count=%d prepared=true", len(messages))
+        return {"messages": messages}
+
+    messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
     current_user_id = state.get("current_user_message_id")
     user_text = state.get("user_text")
 
@@ -182,36 +183,36 @@ async def assemble_messages(state: ChatTurnState) -> dict[str, Any]:
         if is_voice_call_turn(item):
             continue
         has_image = bool(item.get("imageUrl") or item.get("image_url"))
-        content = item.get("contextContent") or item.get("content") or ""
+        content = _stored_text(item)
         is_current = (current_user_id is not None
-                      and item.get("id") == current_user_id)
+                      and str(item.get("id")) == str(current_user_id))
 
         if is_current and user_text and user_text.strip():
             wrapped = (user_text if "<user_message" in user_text
                        else wrap_stored_text_for_model(user_text))
             if has_image and is_empty_user_message_xml(wrapped):
-                wrapped = wrap_stored_text_for_model("用户发送了一张图片")
+                wrapped = wrap_stored_text_for_model(GENERIC_IMAGE_USER_TEXT)
             content = wrapped
         elif has_image:
+            # 优先 contextContent（识图描述），再归一成历史占位；勿只用可见 content 丢掉描述
             content = image_history_text(content, True)
-        elif not str(content).strip():
+        elif not content.strip():
             continue
 
         role = str(item.get("role") or "user").lower()
-        messages.append({"role": role, "content": str(content)})
+        messages.append({"role": role, "content": content})
 
-    if user_text and user_text.strip():
-        last = messages[-1] if messages else None
-        already_present = (last is not None and last.get("role") == "user"
-                           and wrap_stored_text_for_model(user_text) in last.get("content", ""))
-        if not already_present:
-            messages.append({"role": "user", "content": wrap_stored_text_for_model(user_text)})
+    # 调用方没给 currentUserMessageId（独立调用/回归用）时补一条用户消息；
+    # 真实链路 history 里已有该条并被上面的 is_current 分支命中，不会重复添加。
+    if current_user_id is None and user_text and user_text.strip():
+        messages.append({"role": "user", "content": wrap_stored_text_for_model(user_text)})
 
-    logger.info("chat_turn.assemble_messages count=%d", len(messages))
+    logger.info("chat_turn.assemble_messages count=%d prepared=false", len(messages))
     return {"messages": messages}
 
+
 async def invoke_model(state: ChatTurnState) -> dict[str, Any]:
-    """节点 3：调用模型（当前为阻塞调用，便于与 Java 结果对照）。"""
+    """节点 3：调用模型（阻塞版；群聊主动发言、关系事件等非流式场景用）。"""
     gateway = get_gateway()
     result = await gateway.chat_messages(
         base_url=state.get("base_url") or "",
@@ -223,20 +224,20 @@ async def invoke_model(state: ChatTurnState) -> dict[str, Any]:
         provider=state.get("provider"),
     )
     logger.info("chat_turn.invoke_model chars=%d", len(result.content or ""))
-    return {"content": result.content or ""}
+    return {
+        "content": result.content or "",
+        "prompt_tokens": result.prompt_tokens,
+        "completion_tokens": result.completion_tokens,
+    }
 
 
 def route_after_messages(state: ChatTurnState) -> str:
-    """条件边：只做组装时跳过模型调用（对照端点默认走这条）。"""
+    """条件边：只做组装时跳过模型调用（`invoke=False`）。"""
     return "invoke_model" if state.get("invoke") else END
 
 
 def build_chat_turn_graph():
-    """3 节点图，对齐 Java `ChatTurnGraphConfig` 的拓扑。
-
-    比 Java 版多一条条件边：`invoke=False` 时在 assemble_messages 之后结束，
-    用于「只取 prompt + messages」的对照与回归，不产生任何模型调用开销。
-    """
+    """3 节点图，对齐 Java `ChatTurnGraphConfig` 的拓扑。"""
     graph = StateGraph(ChatTurnState)
     graph.add_node("assemble_prompt", assemble_prompt)
     graph.add_node("assemble_messages", assemble_messages)
@@ -244,7 +245,7 @@ def build_chat_turn_graph():
     graph.add_edge(START, "assemble_prompt")
     graph.add_edge("assemble_prompt", "assemble_messages")
     graph.add_conditional_edges("assemble_messages", route_after_messages,
-                               {"invoke_model": "invoke_model", END: END})
+                                {"invoke_model": "invoke_model", END: END})
     graph.add_edge("invoke_model", END)
     return graph.compile()
 
@@ -283,7 +284,7 @@ async def invoke_model_stream(state: ChatTurnState) -> dict[str, Any]:
 
 
 def build_chat_turn_stream_graph():
-    """流式图：前两个节点与对照版相同，第三个节点逐帧透出。"""
+    """流式图：前两个节点与阻塞版相同，第三个节点逐帧透出。"""
     graph = StateGraph(ChatTurnState)
     graph.add_node("assemble_prompt", assemble_prompt)
     graph.add_node("assemble_messages", assemble_messages)
@@ -306,8 +307,11 @@ async def run_chat_turn_stream(payload: dict[str, Any]):
 
 __all__ = [
     "ChatTurnState",
+    "assemble_messages",
+    "assemble_prompt",
     "build_chat_turn_graph",
     "build_chat_turn_stream_graph",
+    "route_after_messages",
     "run_chat_turn",
     "run_chat_turn_stream",
 ]
