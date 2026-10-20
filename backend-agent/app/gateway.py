@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
 from app.config import get_settings
+from app.resilience import GatewayBusinessError
 from app.http_client import new_client
 from app.resilience import (
     GatewayRejectedError,
@@ -49,6 +50,21 @@ Part = TextPart | ImagePart
 
 
 # NOTE: 归一化函数不属于 dataclass
+def _raise_for_status(status: int) -> None:
+    """把上游 HTTP 状态映射成两类异常，决定是否计入熔断。
+
+    - **4xx（429 除外）= 用户侧问题**（key 失效/欠费/model 名错/路径版本不对）：
+      按 `GatewayBusinessError` 处理，**不计入熔断**。
+      否则一个用户把 key 弄坏，就会按 `provider|baseUrl` 把同 provider 的
+      其他用户一起熔断（2026-10-20 生产 `circuit open for Provider326`）。
+    - **5xx / 429 / 传输层失败 = 上游问题**：计入熔断并可能快失败。
+    """
+    if 200 <= status < 300:
+        return
+    if 400 <= status < 500 and status != 429:
+        raise GatewayBusinessError(f"model gateway http {status}")
+    raise ModelGatewayError(f"model gateway http {status}")
+
 def normalize_openai_base_url(base_url: str) -> str:
     """把 vault 里的 base_url 归一化成 OpenAI 兼容的 completions 端点。
 
@@ -231,7 +247,7 @@ class ModelGateway:
             try:
                 async with client.stream("POST", url, json=payload, headers=headers) as response:
                     if response.status_code != 200:
-                        raise ModelGatewayError(f"model gateway http {response.status_code}")
+                        _raise_for_status(response.status_code)
                     async for line in response.aiter_lines():
                         if not line:
                             continue
