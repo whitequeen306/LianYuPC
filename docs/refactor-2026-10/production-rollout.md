@@ -119,3 +119,56 @@ python scripts/ops/prod_error_watch.py --minutes 30
 判定阈值（脚本内置）：`JAVA_AI_PATH=0`、`agent http 500=0`、`proactiveTurnResult failed=0`；
 `prompt 组装失败` 允许重启窗口内极少量；`AI background job failed` 应为 0
 （有重试后，瞬态错误会先出现 `retry in` 日志）。
+
+## 七、2026-10-20 代理站 404 事故（base_url 归一化 + WAF UA）
+
+### 现象
+
+- 生产 backend：`proactiveTurn error: model gateway http 404`（连续）
+- agent 日志：`POST https://linzihan.fun/chat/completions -> 404`、
+  `POST https://api.xiaomimimo.com/chat/completions -> 404`
+- 30 分钟窗口每个实例 37 次 404；DeepSeek 走 `/chat/completions` 返回 402（key 欠费），
+  恰好掩盖了路径问题
+
+### 根因 1：迁移时丢了 Java 的 base_url 归一化（`fa6f55d`）
+
+旧 `ChatModelFactory.normalizeOpenAiBaseUrl`：去尾 `/` → 去末尾 `/v1`，
+再由 Spring AI 固定追加 `/v1/chat/completions`。Python 侧写成了 `<base>/chat/completions`，
+对不带 `/v1` 的代理站直接 404。
+
+修复：`gateway.normalize_openai_base_url`，`_post_chat` / `_stream_once` 统一使用；
+12 个归一化单测覆盖生产全部 base_url 形态。
+
+### 根因 2（部署后复测发现）：WAF 按 UA 拦截 httpx 默认值（`89a5359`）
+
+部署根因 1 后，`https://linzihan.fun/v1/chat/completions` **仍然 404**。
+同一 URL 的 UA 对照实验（假 key，只看 404 vs 401）：
+
+| User-Agent | 结果 |
+|---|---|
+| `curl/8.5.0` | 401（路由存在） |
+| `Python-urllib/3.11` | 401 |
+| `Mozilla/5.0 ... Chrome/124` | 401 |
+| `LianYu-Agent/1.0` | 401 |
+| **`python-httpx/0.28.1`** | **404** |
+
+结论：linzihan.fun 的 CDN/WAF 专门拦截 httpx 默认 UA，与 URL 形态无关。
+修复：`http_client.new_client()` 统一设置 `User-Agent: LianYu-Agent/1.0 (+https://downloadlianyu.asia)`；
+新增回归测试断言不得使用 `python-httpx` 默认 UA。
+
+### 部署与验证（只重建 agent 层，先 agent 后 agent2）
+
+| 项 | 结果 |
+|---|---|
+| agent / agent2 | 均 healthy |
+| 容器内 `normalize_openai_base_url` | 3 处（两实例一致） |
+| 容器内 `LianYu-Agent/1.0` | 1 处（两实例一致） |
+| `linzihan.fun` 探测 | `POST https://linzihan.fun/v1/chat/completions -> 401`（不再是 404） |
+| `api.xiaomimimo.com` 探测 | `/v1/chat/completions -> 401`（不再是 404） |
+| 404 计数（部署后 10 分钟，两实例） | **0 / 0**（部署前 30 分钟各 37） |
+| 出站 URL 形态 | 全部为 `https://.../v1/chat/completions` |
+| 20 条真实对话（账号 hjkl，完整 Java 链路） | **20/20 非空，0 失败** |
+| parity 巡检 | `golden[zh] 2588/2588`、`golden[en] 4583/4583` → ALL_PASS |
+| `JAVA_AI_PATH` / `proactiveTurnResult failed` | 0 / 0 |
+
+> 401/402/`upstream circuit open` 是用户自己的 key 无效/欠费，属预期降级，不是本次修复范围。
