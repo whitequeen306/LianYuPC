@@ -234,3 +234,128 @@ stream:   ModelGatewayError: model gateway transport error: model gateway http 4
 | `proactiveTurnResult failed` | — | **0** |
 
 401/402 仍会出现（用户自己的 key 失效/欠费，预期不变），但**不再连累同 provider 的其他用户**。
+
+## 九、2026-10-21 追平进度（`ef26d6f → c9be5a0`，25 个提交）
+
+上一轮部署停在 `ef26d6f`，之后本地累积 25 个提交（LangGraph 编排整体接管聊天回合、
+TTS/音色注册迁 Python、路由 404 修复、客户端 0.3.1）。本节记录这一次追平。
+
+### 部署范围判定
+
+先看改动面再决定重建什么（不是一把梭）：
+
+| 检查项 | 结果 |
+|---|---|
+| `docker-compose.yml` / `Dockerfile` / `deploy/**` | **0 处改动** |
+| `backend-agent/pyproject.toml` / `uv.lock` | **0 处改动**（无新依赖） |
+| Flyway 迁移 `*.sql` | **0 个新增**（schema 版本仍为 54） |
+| 需重建的层 | **agent + backend**；asr / api-gateway 不动 |
+
+因此本次是「源码层重建」，中间件与网关不重启。
+
+### 部署前置
+
+| 项 | 值 |
+|---|---|
+| 本地回归 | pytest **1197 passed**；`mvn test` BUILD SUCCESS；vitest **466 passed**；`check-java-ai-free.ps1 -Mode strict` **0/0/0/0** |
+| 推送 | `047eafb..c9be5a0` → `origin/main`，服务器 `git pull --ff-only` 后 HEAD = `c9be5a0` |
+| 磁盘 / 可用内存 | `/` 28G 可用；available 11.4G |
+| `.env` 关键键 | DASHSCOPE / MYSQL_* / REDIS / MINIO / LIANYU_MASTER_KEY / LIANYU_AGENT_BASE_URL / APP_REVISION 全部 SET |
+| 回滚基线 | `lianyu-pc/agent:cloud-rollback-ef26d6f` = `829287aed55e`；`lianyu-pc/backend:cloud-rollback-ef26d6f` = `ea3cd3ca7b97` |
+
+### 分层结果
+
+| 层 | 结果 |
+|---|---|
+| agent 镜像 | `341ba762bc09`（554MB），构建 32s |
+| agent2 | 先重建 → healthy；agent 后重建 → healthy（滚动，任意时刻至少一台在服务） |
+| 容器内新模块 | `dashscope.py` / `tts.py` / `voice_enrollment.py` / `chat_turn.py` / `message_assembly.py` / `prompt_pipeline.py` **两实例均存在** |
+| backend 镜像 | `ac2bfbefd33e`（835MB），构建 **120s** |
+| backend 启动 | captcha=200（第 3 次探测，约 15s） |
+| 端口接线 | **8/8 all ports wired**：proactiveTurn / stream / text / memory / image / **chatTurn** / **tts** / **voiceEnrollment** |
+| Flyway | validated **54** migrations，schema 版本 54，`No migration necessary` |
+
+### 端点存在性（agent 容器内 python 探针，无 curl）
+
+空 body 语义：端点存在 → 422（缺字段）；不存在 → 404。两实例结果一致：
+
+```
+/agent/voice/enroll     -> 422
+/agent/tts/synthesize   -> 422
+/agent/chat-turn/inspect-> 422
+/agent/chat-turn/stream -> 422
+/agent/does-not-exist   -> 404
+```
+
+### 端到端验证（`scripts/_prod_verify.py`，完整 Java 链路，账号 hjkl / vault 381 / 会话 900）
+
+| 项 | 结果 |
+|---|---|
+| 阻塞回合 | **6/6 非空，0 失败**，1503–1854ms |
+| SSE 流式 | status 200，9 帧，`content` 帧 + `[DONE]`，正文 16 字，1744ms |
+| `POST /api/community/push-catchup` | **200**（原来是 500） |
+| 未知路由 | **404**（原来是 500） |
+
+回合确实走 Python LangGraph，两侧日志互证（不是悄悄回退）：
+
+```
+backend: ChatTurn stream served by LangGraph runtime: scene=SINGLE
+agent:   chat_turn.assemble_prompt scene=SINGLE chars=3765
+agent:   chat_turn.assemble_messages count=33 prepared=false
+agent:   chat-turn stream done: user=402 frames=8
+```
+
+### parity 巡检（生产容器内）
+
+```
+[PASS] golden[en]: status=200 expectedChars=4583 actualChars=4583
+[PASS] golden[zh]: status=200 expectedChars=2588 actualChars=2588
+[PASS] agent_health: status=200 body={"status":"UP"}
+4/4 checks passed
+```
+
+> 踩坑：脚本用 `Path(__file__).parent.parent.parent` 推仓库根，直接丢到 `/tmp` 跑会把根算成 `/`。
+> 必须放到 `/work/scripts/ops/` 下、并把 prompts 拷到 `/work/backend-agent/app/prompts`。
+
+### 迁移后才有的链路：实测
+
+| 链路 | 证据 |
+|---|---|
+| 记忆写入 + relay（原 Java `EmbeddingService` 职责） | `POST /agent/memory/extract-write 200`；`memory write done: created=2/2/1`；`memory relay: {'picked':2,'done':2,'dead':0}` 与 `{'picked':3,'done':3}` |
+| 向量库 | `milvus collection ready: memory_vectors_v2`；`/embeddings` 连续 200 OK |
+| TTS（Python 合成 + 下载音频） | `qwen3-tts-flash` + `Cherry` → **200 / audio/wav / 169004 bytes / magic 52494646 (RIFF)** |
+
+### 30 分钟观察（部署后窗口）
+
+`scripts/ops/prod_error_watch.py --minutes 30` → **PASS**
+
+| 指标 | 值 |
+|---|---|
+| `JAVA_AI_PATH` | **0** |
+| agent / agent2 `500 Internal Server Error` | **0 / 0** |
+| `proactiveTurnResult failed` | **0** |
+| `prompt 组装失败` | **0** |
+| `AI background job failed` / `retry in` | **0 / 0** |
+| backend `ERROR` 行 | **0** |
+| `NoResourceFoundException` | **0**（垫片接管，改为 INFO `legacy client still polls …`） |
+| `circuit open` | **0**（4xx 分类修复仍生效） |
+
+### 已知且**预期**的降级（不是本次引入）
+
+- 主动发言 20 分钟内 25 次，全部 `model gateway http 401/402`：**用户自己的 key 失效/欠费**。
+  关键是没有一条变成 500 —— 错误被折叠进 `error` 字段，backend 记 WARN。
+- 本次未在**生产**验证的两条：① 图片回合（需真实图片 + vault）；
+  ② Java→Python TTS seam 的完整链路（`/api/desktop/observe` 需要已配置音色的桌宠）。
+  两者都有端口接线 + 单测覆盖，但不算生产实测，后续有人用到时再补证据。
+
+### 回滚方式
+
+```bash
+cd /opt/lianyu
+docker tag lianyu-pc/agent:cloud-rollback-ef26d6f   lianyu-pc/agent:cloud
+docker tag lianyu-pc/backend:cloud-rollback-ef26d6f lianyu-pc/backend:cloud
+docker compose up -d --no-deps agent2 agent backend
+```
+
+回滚只回镜像，不回代码：`/opt/lianyu` 的 git 仍停在 `c9be5a0`，
+容器是从镜像跑的，与工作区无关。真正要回滚代码需另做 `git reset`。
