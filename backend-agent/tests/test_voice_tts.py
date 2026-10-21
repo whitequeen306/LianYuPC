@@ -15,6 +15,8 @@ from fastapi.testclient import TestClient
 from app.dashscope import (
     DEFAULT_BASE,
     DashScopeEndpointError,
+    SPEECH_SYNTH_PATH,
+    SYNTH_PATH,
     enroll_url,
     guess_mime_type,
     is_allowed_audio_host,
@@ -22,6 +24,7 @@ from app.dashscope import (
     normalize_base_url,
     normalize_model,
     realtime_ws_url,
+    synth_path_for,
     synth_url,
 )
 from app.main import app
@@ -36,7 +39,61 @@ from app.voice_enrollment import (
 
 ENROLL = "https://dashscope.aliyuncs.com/api/v1/services/audio/tts/customization"
 SYNTH = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+SPEECH_SYNTH = DEFAULT_BASE + SPEECH_SYNTH_PATH
 AUDIO = "https://dashscope-result.oss-cn-beijing.aliyuncs.com/a.wav"
+
+
+# ─────────────── 端点与模型必须配对（2026-10-21 线上故障的回归守护） ───────────────
+
+
+@pytest.mark.parametrize(
+    "model,expected",
+    [
+        ("qwen3-tts-flash", SYNTH_PATH),
+        ("qwen3-tts-vc-2026-01-22", SYNTH_PATH),
+        ("qwen-audio-3.1-tts-flash", SPEECH_SYNTH_PATH),
+        ("qwen-audio-3.1-tts-plus", SPEECH_SYNTH_PATH),
+        ("cosyvoice-v3-flash", SPEECH_SYNTH_PATH),
+    ],
+)
+def test_synth_path_follows_model_family(model, expected):
+    """把 qwen-audio-* 发到旧端点会 400 `url error`；把 qwen3-tts-* 发到新端点也会失败。
+
+    这条守护的是「换了模型名却没换端点」这类故障 —— 它表现为一句看起来像地址写错的
+    报错，很容易被误判成 base_url 配置问题。
+    """
+    assert synth_path_for(model) == expected
+
+
+@respx.mock
+async def test_synthesize_uses_speech_synthesizer_payload_for_audio_models():
+    """qwen-audio-* 走新端点：要 format/sample_rate，不带 language_type。"""
+    route = respx.post(SPEECH_SYNTH).respond(json={"output": {"audio": {"url": AUDIO}}})
+    respx.get(AUDIO).respond(content=b"RIFF" + b"\x00" * 8)
+
+    audio = await synthesize(
+        api_key="k", model="qwen-audio-3.1-tts-flash", voice_id="v1", text="hi"
+    )
+
+    assert audio is not None
+    body = route.calls[0].request.read().decode()
+    assert '"format": "wav"' in body or '"format":"wav"' in body
+    assert '"sample_rate": 24000' in body or '"sample_rate":24000' in body
+    assert "language_type" not in body
+
+
+@respx.mock
+async def test_synthesize_keeps_legacy_payload_for_qwen3_models():
+    """qwen3-tts-* 仍走旧端点：带 language_type，不带 format。"""
+    route = respx.post(SYNTH).respond(json={"output": {"audio": {"url": AUDIO}}})
+    respx.get(AUDIO).respond(content=b"RIFF" + b"\x00" * 8)
+
+    audio = await synthesize(api_key="k", model="qwen3-tts-flash", voice_id="v1", text="hi")
+
+    assert audio is not None
+    body = route.calls[0].request.read().decode()
+    assert "language_type" in body
+    assert '"format"' not in body
 
 
 # ─────────────────────────── 端点归一化 ───────────────────────────
@@ -260,14 +317,14 @@ async def test_synthesize_returns_none_for_missing_input(kwargs):
 @respx.mock
 async def test_synthesize_retries_transient_then_gives_up():
     route = respx.post(SYNTH).respond(status_code=503, text="busy")
-    assert await synthesize(api_key="k", model="m", voice_id="v1", text="hi") is None
+    assert await synthesize(api_key="k", model="qwen3-tts-flash", voice_id="v1", text="hi") is None
     assert route.call_count == 2
 
 
 @respx.mock
 async def test_synthesize_business_error_does_not_retry():
     route = respx.post(SYNTH).respond(status_code=400, json={"code": "BadRequest"})
-    assert await synthesize(api_key="k", model="m", voice_id="v1", text="hi") is None
+    assert await synthesize(api_key="k", model="qwen3-tts-flash", voice_id="v1", text="hi") is None
     assert route.call_count == 1
 
 
@@ -280,7 +337,7 @@ async def test_synthesize_second_attempt_succeeds():
         ]
     )
     respx.get(AUDIO).respond(content=b"RIFF" + b"\x00" * 20)
-    audio = await synthesize(api_key="k", model="m", voice_id="v1", text="hi")
+    audio = await synthesize(api_key="k", model="qwen3-tts-flash", voice_id="v1", text="hi")
     assert audio is not None
 
 
@@ -288,7 +345,7 @@ async def test_synthesize_second_attempt_succeeds():
 async def test_synthesize_rejects_foreign_audio_host():
     respx.post(SYNTH).respond(json={"output": {"audio": {"url": "https://evil.com/a.wav"}}})
     download = respx.get("https://evil.com/a.wav").respond(content=b"RIFF")
-    assert await synthesize(api_key="k", model="m", voice_id="v1", text="hi") is None
+    assert await synthesize(api_key="k", model="qwen3-tts-flash", voice_id="v1", text="hi") is None
     assert download.call_count == 0
 
 
@@ -296,7 +353,7 @@ async def test_synthesize_rejects_foreign_audio_host():
 async def test_synthesize_download_5xx_retries():
     respx.post(SYNTH).respond(json={"output": {"audio": {"url": AUDIO}}})
     route = respx.get(AUDIO).respond(status_code=502)
-    assert await synthesize(api_key="k", model="m", voice_id="v1", text="hi") is None
+    assert await synthesize(api_key="k", model="qwen3-tts-flash", voice_id="v1", text="hi") is None
     assert route.call_count == 2
 
 
@@ -305,7 +362,7 @@ async def test_synthesize_invalid_base_url_returns_none():
     route = respx.post(SYNTH).respond(json={})
     assert (
         await synthesize(
-            api_key="k", model="m", voice_id="v1", text="hi", base_url="http://evil.com"
+            api_key="k", model="qwen3-tts-flash", voice_id="v1", text="hi", base_url="http://evil.com"
         )
         is None
     )
@@ -319,7 +376,7 @@ async def test_synthesize_uses_custom_base_url():
     respx.get(AUDIO).respond(content=b"RIFF" + b"\x00" * 20)
     audio = await synthesize(
         api_key="k",
-        model="m",
+        model="qwen3-tts-flash",
         voice_id="v1",
         text="hi",
         base_url="https://dashscope-intl.aliyuncs.com",
@@ -336,7 +393,7 @@ async def test_synthesize_upgrades_http_audio_url_to_https():
     respx.post(SYNTH).respond(json={"output": {"audio": {"url": plain_url}}})
     secure = respx.get(secure_url).respond(content=b"RIFF" + b"\x00" * 20)
     plain = respx.get(plain_url).respond(content=b"RIFF")
-    audio = await synthesize(api_key="k", model="m", voice_id="v1", text="hi")
+    audio = await synthesize(api_key="k", model="qwen3-tts-flash", voice_id="v1", text="hi")
     assert audio is not None
     assert secure.call_count == 1
     assert plain.call_count == 0

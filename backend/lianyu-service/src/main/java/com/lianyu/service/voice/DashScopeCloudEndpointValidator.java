@@ -17,8 +17,24 @@ import java.util.regex.Pattern;
 public final class DashScopeCloudEndpointValidator {
 
     public static final String DEFAULT_BASE = "https://dashscope.aliyuncs.com";
-    public static final String RECOMMENDED_HTTP_MODEL = "qwen3-tts-vc-2026-01-22";
-    public static final String RECOMMENDED_REALTIME_MODEL = "qwen3-tts-vc-realtime-2026-01-15";
+    /**
+     * 现役模型（2026-10-21 实测，见 docs/refactor-2026-10/tts-migration-plan.md）：
+     * <ul>
+     *   <li>{@code qwen3-tts-vc-*} —— 已下架，合成报 {@code Model not exist}</li>
+     *   <li>{@code qwen3-tts-flash} —— 可用，但<b>不支持声音复刻</b>，只有系统音色</li>
+     *   <li>{@code qwen-audio-3.1-tts-flash} —— 可用且支持复刻音色，角色音色走它</li>
+     * </ul>
+     */
+    public static final String RECOMMENDED_HTTP_MODEL = "qwen-audio-3.1-tts-flash";
+    /**
+     * 复刻音色的注册目标模型。
+     *
+     * <p>注意它<b>不是 TTS 引擎</b>：{@code qwen-audio-*-realtime-*} 是语音对话模型
+     * （输入音频、另一套事件），拿它喂 {@code input_text_buffer} 不会出音频。
+     * 保留这个常量只为「用户自定义音色注册」这一步仍然合法（该模型接受音色注册），
+     * 实时合成链路已不再使用它。
+     */
+    public static final String RECOMMENDED_REALTIME_MODEL = "qwen-audio-3.1-realtime-plus";
 
     private static final Pattern SAFE_MODEL = Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$");
     private static final Pattern ALLOWED_HOST = Pattern.compile(

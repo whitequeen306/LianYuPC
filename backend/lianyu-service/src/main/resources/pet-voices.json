@@ -1,35 +1,21 @@
 {
-  "model": "qwen3-tts-vc-2026-01-22",
-  "realtimeModel": "qwen3-tts-vc-realtime-2026-01-15",
-  "_comment": "同一角色两套 voiceId，勿混用。voices/model = HTTP（桌宠开场/短语音/通话回退）；realtimeVoices/realtimeModel = 语音通话流式。源 clip 同一份可登记两次。",
+  "_comment": "model/voices = 复刻音色（语音通话与桌宠问候共用）；目标模型 qwen-audio-3.1-tts-flash —— 现役模型里只有 qwen-audio-* / cosyvoice-* 支持声音复刻，qwen3-tts-* 只支持系统音色。realtimeVoices 已于 2026-10-21 清空（原有 13 个）：平台已无「支持复刻的实时 TTS 模型」，实时语音改走按句流式 HTTP 合成。",
+  "model": "qwen-audio-3.1-tts-flash",
   "voices": {
-    "klee": "qwen-tts-vc-klee-voice-20260616133001848-5f9b",
-    "ganyu": "qwen-tts-vc-ganyu-voice-20260616133005161-bc51",
-    "ayaka": "qwen-tts-vc-ayaka-voice-20260616133009192-5478",
-    "raiden": "qwen-tts-vc-raiden-voice-20260616133012759-26cf",
-    "elysia": "qwen-tts-vc-elysia-voice-20260730113705231-3dac",
-    "erii_uesugi": "qwen-tts-vc-eriri-voice-20260720205936884-cd40",
-    "yae_miko": "qwen-tts-vc-yae_miko-voice-20260731221145591-93de",
-    "kokomi": "qwen-tts-vc-kokomi-voice-20260730202213117-5c83",
-    "shenhe": "qwen-tts-vc-shenhe-voice-20260730202216419-d699",
-    "nahida": "qwen-tts-vc-nahida-voice-20260731221329185-b3de",
-    "hu_tao": "qwen-tts-vc-hu_tao-voice-20260730202222738-0771",
-    "furina": "qwen-tts-vc-furina-voice-20260730202225886-c676",
-    "noelle": "qwen-tts-vc-noelle-voice-20260730202229030-44f4"
+    "ayaka": "qwen-audio-3.1-tts-flash-lyayaka-e75f454c57234f3287dbc939a3aa2a6d",
+    "elysia": "qwen-audio-3.1-tts-flash-lyelysia-040c694253c24199af5673a4803f9997",
+    "erii_uesugi": "qwen-audio-3.1-tts-flash-lyerii-d2de26e34c83451eb0a4067685f673c2",
+    "furina": "qwen-audio-3.1-tts-flash-lyfurina-6c632a64f1bd4f0ba3e25e79e54e7e57",
+    "ganyu": "qwen-audio-3.1-tts-flash-lyganyu-c0217185cc9b4bb8963cbd0501f54975",
+    "hu_tao": "qwen-audio-3.1-tts-flash-lyhutao-73522d720e744b01a58bd2d544bd1260",
+    "klee": "qwen-audio-3.1-tts-flash-lyklee-956540d6ec6a4f5b976153a2f7d41428",
+    "kokomi": "qwen-audio-3.1-tts-flash-lykokomi-c9989c791bc04646a8a014e098aec480",
+    "nahida": "qwen-audio-3.1-tts-flash-lynahida-244a2346604840f1bea0408e1ad5a9e8",
+    "noelle": "qwen-audio-3.1-tts-flash-lynoelle-9966e18fcfef4f2fa5f8f132d5bd41b1",
+    "raiden": "qwen-audio-3.1-tts-flash-lyraiden-7de7e9569219414ca8dce0220be08196",
+    "shenhe": "qwen-audio-3.1-tts-flash-lyshenhe-08095ff6403c44b7a0533ce3514bc6e2",
+    "yae_miko": "qwen-audio-3.1-tts-flash-lyyaemiko-e7b9cb8e9a3e4bcaaa92e8dea8545574"
   },
-  "realtimeVoices": {
-    "raiden": "qwen-tts-vc-raiden_rt-voice-20260729051221572-94e4",
-    "yae_miko": "qwen-tts-vc-yae_miko_rt-voice-20260731221149441-1ad7",
-    "kokomi": "qwen-tts-vc-kokomi_rt-voice-20260730202238653-626b",
-    "shenhe": "qwen-tts-vc-shenhe_rt-voice-20260730202242851-092a",
-    "nahida": "qwen-tts-vc-nahida_rt-voice-20260731221333131-d738",
-    "hu_tao": "qwen-tts-vc-hu_tao_rt-voice-20260730202901352-ab2a",
-    "furina": "qwen-tts-vc-furina_rt-voice-20260730202905511-2d03",
-    "noelle": "qwen-tts-vc-noelle_rt-voice-20260730202909351-ee80",
-    "elysia": "qwen-tts-vc-elysia_rt-voice-20260730224949832-f3df",
-    "klee": "qwen-tts-vc-klee_rt-voice-20260801194458612-ede2",
-    "ganyu": "qwen-tts-vc-ganyu_rt-voice-20260801194502348-ef20",
-    "ayaka": "qwen-tts-vc-ayaka_rt-voice-20260801194506176-b212",
-    "erii_uesugi": "qwen-tts-vc-erii_uesugi_rt-voice-20260801194509981-21fb"
-  }
+  "realtimeModel": "",
+  "realtimeVoices": {}
 }

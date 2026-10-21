@@ -24,9 +24,11 @@ import httpx
 from app.dashscope import (
     DEFAULT_BASE,
     DashScopeEndpointError,
-    SYNTH_PATH,
+    RECOMMENDED_HTTP_MODEL,
+    SPEECH_SYNTH_PATH,
     guess_mime_type,
     normalize_audio_url,
+    synth_path_for,
     synth_url,
 )
 from app.http_client import new_client
@@ -94,16 +96,19 @@ async def synthesize(
     if not key:
         logger.warning("tts skipped: missing DashScope api key")
         return None
-    resolved_model = (model or "").strip() or "qwen3-tts-vc-2026-01-22"
+    resolved_model = (model or "").strip() or RECOMMENDED_HTTP_MODEL
+    # 端点必须跟着模型家族走：qwen-audio-* 走 SpeechSynthesizer，
+    # qwen3-tts-* 走旧的 multimodal-generation（发错端点会报 url error）。
+    path = synth_path_for(resolved_model)
 
     if base_url and base_url.strip():
         try:
-            url = synth_url(base_url)
+            url = synth_url(base_url, path)
         except DashScopeEndpointError:
             logger.warning("tts skipped: invalid api base")
             return None
     else:
-        url = DEFAULT_BASE + SYNTH_PATH
+        url = DEFAULT_BASE + path
 
     timeout = (connect_timeout, read_timeout, 30.0, 30.0)
     language = (language_type or "").strip() or LANGUAGE_TYPE_DEFAULT
@@ -112,7 +117,7 @@ async def synthesize(
         try:
             audio_url = await _request_audio_url(
                 key=key, model=resolved_model, voice=voice, text=spoken,
-                url=url, language=language, timeout=timeout,
+                url=url, language=language, path=path, timeout=timeout,
             )
             if not audio_url:
                 return None
@@ -146,12 +151,21 @@ async def _request_audio_url(
     text: str,
     url: str,
     language: str,
+    path: str,
     timeout: tuple[float, float, float, float],
 ) -> str | None:
-    payload = {
-        "model": model,
-        "input": {"text": text, "voice": voice, "language_type": language},
-    }
+    if path == SPEECH_SYNTH_PATH:
+        # 新端点（qwen-audio-*）：要 format/sample_rate，不认 language_type
+        payload = {
+            "model": model,
+            "input": {"text": text, "voice": voice, "format": "wav", "sample_rate": 24000},
+        }
+    else:
+        # 旧端点（qwen3-tts-*）：语言走 language_type
+        payload = {
+            "model": model,
+            "input": {"text": text, "voice": voice, "language_type": language},
+        }
     async with new_client() as client:
         response = await client.post(
             url,

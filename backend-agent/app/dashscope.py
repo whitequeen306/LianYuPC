@@ -15,11 +15,21 @@ import re
 from urllib.parse import urlsplit
 
 DEFAULT_BASE = "https://dashscope.aliyuncs.com"
-RECOMMENDED_HTTP_MODEL = "qwen3-tts-vc-2026-01-22"
-RECOMMENDED_REALTIME_MODEL = "qwen3-tts-vc-realtime-2026-01-15"
+# 现役模型（2026-10-21 实测）：
+#   qwen3-tts-vc-*            -> 已下架，合成报 "Model not exist"
+#   qwen3-tts-flash           -> 可用，但**不支持声音复刻**（只支持系统音色）
+#   qwen-audio-3.1-tts-flash  -> 可用且支持复刻音色，所以角色音色走它
+RECOMMENDED_HTTP_MODEL = "qwen-audio-3.1-tts-flash"
+# 实时：平台已无「支持复刻的实时 TTS 模型」。qwen3-tts-flash-realtime 能出音频但
+# 只支持系统音色；qwen-audio-*-realtime-* 是语音对话模型（另一套事件，不是 TTS）。
+# 因此这里保留空串：任何"用实时模型 + 复刻音色"的调用都是不成立的组合。
+RECOMMENDED_REALTIME_MODEL = ""
 
 ENROLL_PATH = "/api/v1/services/audio/tts/customization"
+# 旧合成端点：只有 qwen3-tts-* 还在这里
 SYNTH_PATH = "/api/v1/services/aigc/multimodal-generation/generation"
+# 新合成端点：qwen-audio-* / cosyvoice-* 走这里
+SPEECH_SYNTH_PATH = "/api/v1/services/audio/tts/SpeechSynthesizer"
 REALTIME_WS_PATH = "/api-ws/v1/realtime"
 
 _ALLOWED_HOST = re.compile(r"^(dashscope(-intl)?\.aliyuncs\.com)$", re.IGNORECASE)
@@ -73,8 +83,22 @@ def enroll_url(base: str | None) -> str:
     return normalize_base_url(base) + ENROLL_PATH
 
 
-def synth_url(base: str | None) -> str:
-    return normalize_base_url(base) + SYNTH_PATH
+def synth_url(base: str | None, path: str | None = None) -> str:
+    return normalize_base_url(base) + (path or SYNTH_PATH)
+
+
+def synth_path_for(model: str | None) -> str:
+    """按模型家族挑合成端点。**路径必须与模型配对。**
+
+    实测（2026-10-21）：把 `qwen-audio-3.1-tts-flash` 发到旧的
+    `aigc/multimodal-generation` 路径，返回
+    `400 InvalidParameter: url error, please check url！` —— 看起来像地址写错，
+    实际是「模型不在这个端点上」。反过来 `qwen3-tts-flash` 走新端点也会 400。
+    """
+    name = (model or "").strip().lower()
+    if name.startswith("qwen3-tts"):
+        return SYNTH_PATH
+    return SPEECH_SYNTH_PATH
 
 
 def realtime_ws_url(base: str | None) -> str:
@@ -148,6 +172,7 @@ __all__ = [
     "RECOMMENDED_HTTP_MODEL",
     "RECOMMENDED_REALTIME_MODEL",
     "REALTIME_WS_PATH",
+    "SPEECH_SYNTH_PATH",
     "SYNTH_PATH",
     "enroll_url",
     "guess_mime_type",
@@ -156,5 +181,6 @@ __all__ = [
     "normalize_base_url",
     "normalize_model",
     "realtime_ws_url",
+    "synth_path_for",
     "synth_url",
 ]

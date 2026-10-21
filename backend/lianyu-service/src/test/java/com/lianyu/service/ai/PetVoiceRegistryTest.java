@@ -1,59 +1,87 @@
 package com.lianyu.service.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
+/**
+ * 音色注册表的契约测试。
+ *
+ * <p>2026-10-21 重写：旧的 {@code qwen3-tts-vc-*} 模型系列已下架，13 个角色音色全部
+ * 按现役模型 {@code qwen-audio-3.1-tts-flash} 重新注册，实时音色随之清空
+ * （平台已无「支持复刻的实时 TTS 模型」）。原测试断言的旧模型名与旧 voiceId 全部作废。
+ */
 class PetVoiceRegistryTest {
 
-    @Test
-    void loadsRegisteredVoices() {
+    private static final String HTTP_MODEL = "qwen-audio-3.1-tts-flash";
+
+    private static final String[] PETS = {
+            "klee", "ganyu", "ayaka", "raiden", "elysia", "erii_uesugi",
+            "yae_miko", "kokomi", "shenhe", "nahida", "hu_tao", "furina", "noelle",
+    };
+
+    private static PetVoiceRegistry load() {
         PetVoiceRegistry registry = new PetVoiceRegistry(new ObjectMapper());
         registry.load();
+        return registry;
+    }
 
-        assertTrue(registry.hasVoice("raiden"));
-        assertTrue(registry.hasVoice("klee"));
-        assertTrue(registry.hasVoice("elysia"));
-        assertTrue(registry.hasVoice("erii_uesugi"));
-        assertTrue(registry.hasVoice("yae_miko"));
-        assertTrue(registry.hasVoice("kokomi"));
-        assertTrue(registry.hasVoice("shenhe"));
-        assertTrue(registry.hasVoice("nahida"));
-        assertTrue(registry.hasVoice("hu_tao"));
-        assertTrue(registry.hasVoice("furina"));
-        assertTrue(registry.hasVoice("noelle"));
-        assertTrue(registry.hasRealtimeVoice("raiden"));
-        assertTrue(registry.hasRealtimeVoice("elysia"));
-        assertTrue(registry.hasRealtimeVoice("yae_miko"));
-        assertTrue(registry.hasRealtimeVoice("klee"));
-        assertTrue(registry.hasRealtimeVoice("ganyu"));
-        assertTrue(registry.hasRealtimeVoice("ayaka"));
-        assertTrue(registry.hasRealtimeVoice("erii_uesugi"));
-        assertEquals("qwen3-tts-vc-2026-01-22", registry.getModel());
-        assertEquals("qwen3-tts-vc-realtime-2026-01-15", registry.getRealtimeModel());
-        assertEquals("qwen-tts-vc-elysia-voice-20260730113705231-3dac", registry.resolveHttpVoiceId("elysia"));
-        assertEquals("qwen-tts-vc-eriri-voice-20260720205936884-cd40", registry.resolveHttpVoiceId("erii_uesugi"));
-        assertEquals("qwen-tts-vc-raiden-voice-20260616133012759-26cf", registry.resolveHttpVoiceId("raiden"));
+    @Test
+    void loadsAllThirteenPetVoices() {
+        PetVoiceRegistry registry = load();
+        for (String pet : PETS) {
+            assertTrue(registry.hasVoice(pet), "缺少音色: " + pet);
+            assertTrue(registry.resolveHttpVoiceId(pet) != null, "解析不到 voiceId: " + pet);
+        }
+        assertEquals(HTTP_MODEL, registry.getModel());
         assertNull(registry.resolveHttpVoiceId("kurumi"));
-        assertEquals("qwen-tts-vc-raiden_rt-voice-20260729051221572-94e4",
-                registry.resolveRealtimeVoiceId("raiden"));
-        assertEquals("qwen-tts-vc-elysia_rt-voice-20260730224949832-f3df",
-                registry.resolveRealtimeVoiceId("elysia"));
-        assertEquals("qwen-tts-vc-klee_rt-voice-20260801194458612-ede2",
-                registry.resolveRealtimeVoiceId("klee"));
-        assertEquals("qwen-tts-vc-erii_uesugi_rt-voice-20260801194509981-21fb",
-                registry.resolveRealtimeVoiceId("erii_uesugi"));
-        assertNull(registry.resolveRealtimeVoiceId("kurumi"));
         assertNull(registry.resolveVoiceId("unknown-pet"));
-        // HTTP and realtime IDs must stay distinct for the same pet
-        assertTrue(!registry.resolveHttpVoiceId("raiden")
-                .equals(registry.resolveRealtimeVoiceId("raiden")));
-        assertTrue(!registry.resolveHttpVoiceId("elysia")
-                .equals(registry.resolveRealtimeVoiceId("elysia")));
-        assertTrue(!registry.resolveHttpVoiceId("klee")
-                .equals(registry.resolveRealtimeVoiceId("klee")));
+    }
+
+    /**
+     * 守护断言：每个 voiceId 必须绑定在当前模型上。
+     *
+     * <p>DashScope 的 voiceId 里嵌了注册时的 target_model（例如
+     * {@code qwen-audio-3.1-tts-flash-lyklee-9565…}）。这条断言能在「换了模型名却没
+     * 重新注册音色」时立刻炸出来 —— 那正是这次线上故障的根因
+     * （模型下架后 26 个旧 voiceId 全部报 voice does not exist）。
+     */
+    @Test
+    void everyVoiceIsBoundToTheCurrentModel() {
+        PetVoiceRegistry registry = load();
+        for (String pet : PETS) {
+            String voiceId = registry.resolveHttpVoiceId(pet);
+            assertTrue(
+                    voiceId.startsWith(HTTP_MODEL + "-"),
+                    "音色 " + voiceId + " 不是按 " + HTTP_MODEL + " 注册的（音色与模型不一致会导致合成失败）");
+        }
+    }
+
+    /** 实时音色已退役：注册表必须为空，且查询一律返回 null（不能悄悄回退到 HTTP id）。 */
+    @Test
+    void realtimeVoicesAreRetired() {
+        PetVoiceRegistry registry = load();
+        assertEquals("", registry.getRealtimeModel());
+        for (String pet : PETS) {
+            assertFalse(registry.hasRealtimeVoice(pet), "不应再有实时音色: " + pet);
+            assertNull(registry.resolveRealtimeVoiceId(pet), "实时音色应为空: " + pet);
+        }
+    }
+
+    /** petId → voiceId 必须一一不同，避免注册时把同一个音色复用给多个角色。 */
+    @Test
+    void voiceIdsAreDistinctPerPet() {
+        PetVoiceRegistry registry = load();
+        Map<String, String> seen = new java.util.HashMap<>();
+        for (String pet : PETS) {
+            String voiceId = registry.resolveHttpVoiceId(pet);
+            String previous = seen.put(voiceId, pet);
+            assertNull(previous, "音色被重复使用: " + pet + " 与 " + previous + " -> " + voiceId);
+        }
     }
 }

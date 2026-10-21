@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+"""把 13 个官方角色音色重新注册到现役模型 qwen-audio-3.1-tts-flash。
+
+为什么必须重注册：旧音色绑定的 target_model 是 `qwen3-tts-vc-*`，该系列已下架，
+旧 voice_id 全部报 "voice does not exist or is not licensed"。
+
+为什么只注册一套（不是两套）：
+`qwen3-tts-*` 不支持复刻音色；而支持复刻的实时模型 `qwen-audio-*-realtime-*`
+是**语音对话模型**（输入音频、另一套事件），不是 TTS。所以语音通话改成
+「按句 SSE 流式合成」，只需 HTTP/SSE 这一套音色。
+
+用法: python scripts/re_enroll_pet_voices.py            （需要 DSK）
+      python scripts/re_enroll_pet_voices.py --only klee,ganyu
+产出: artifacts/voice-vc/re-enroll-<日期>.json（含 voice_id 与验证结果）
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import os
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+import requests
+
+ROOT = Path(__file__).resolve().parents[1]
+VC = ROOT / "artifacts/voice-vc"
+SAMPLES = ROOT / "backend/lianyu-service/src/main/resources/pet-voice-samples"
+BASE = "https://dashscope.aliyuncs.com/api/v1"
+CUSTOMIZATION = f"{BASE}/services/audio/tts/customization"
+SPEECH_SYNTH = f"{BASE}/services/audio/tts/SpeechSynthesizer"
+
+TARGET_MODEL = "qwen-audio-3.1-tts-flash"
+VERIFY_TEXT = "你好，我是你的桌面伙伴。"
+
+KEY = (os.environ.get("DSK") or "").strip()
+if not KEY:
+    sys.exit("缺少环境变量 DSK")
+HEADERS = {"Authorization": f"Bearer {KEY}", "Content-Type": "application/json"}
+
+# (pet_id, 音色前缀, 源音频优先顺序)
+# prefix 的平台约束（比文档更严，2026-10-21 实测）：
+#   1) 只能是英文字母和数字 —— 下划线会被拒："prefix should be english letter and number"
+#   2) 长度 ≤ 10
+# 旧实现（sanitize_preferred_name）允许 [a-z0-9_] 且 32 位，迁移时要一起收紧。
+PLAN: list[tuple[str, str, list[Path]]] = [
+    ("klee",        "lyklee",    [VC / "klee-rt-enroll-40s-mono.wav", SAMPLES / "klee-clip.wav"]),
+    ("ganyu",       "lyganyu",   [VC / "ganyu-rt-enroll-40s-mono.wav", SAMPLES / "ganyu-clip.wav"]),
+    ("ayaka",       "lyayaka",   [VC / "ayaka-rt-enroll-40s-mono.wav", SAMPLES / "ayaka-clip.wav"]),
+    ("raiden",      "lyraiden",  [SAMPLES / "raiden-clip.wav", SAMPLES / "raiden.wav"]),
+    ("elysia",      "lyelysia",  [VC / "elysia-vc-source-mono.wav"]),
+    ("erii_uesugi", "lyerii",    [VC / "erii_uesugi-rt-enroll-40s-mono.wav", VC / "eriri-vc-source-mono.wav"]),
+    ("yae_miko",    "lyyaemiko", [VC / "yae_miko-vc-enroll-55s-mono.wav", VC / "yae_miko-vc-source-mono.wav"]),
+    ("kokomi",      "lykokomi",  [VC / "kokomi-vc-source-mono.wav"]),
+    ("shenhe",      "lyshenhe",  [VC / "shenhe-vc-source-mono.wav"]),
+    ("nahida",      "lynahida",  [VC / "nahida-vc-enroll-55s-mono.wav", VC / "nahida-vc-source-mono.wav"]),
+    ("hu_tao",      "lyhutao",   [VC / "hu_tao-vc-source-mono.wav"]),
+    ("furina",      "lyfurina",  [VC / "furina-vc-source-mono.wav"]),
+    ("noelle",      "lynoelle",  [VC / "noelle-vc-source-mono.wav"]),
+]
+
+
+def data_uri(path: Path) -> str:
+    return f"data:audio/wav;base64,{base64.b64encode(path.read_bytes()).decode()}"
+
+
+def enroll(prefix: str, wav: Path) -> tuple[str, str]:
+    resp = requests.post(
+        CUSTOMIZATION,
+        headers=HEADERS,
+        json={
+            "model": "voice-enrollment",
+            "input": {
+                "action": "create_voice",
+                "target_model": TARGET_MODEL,
+                "prefix": prefix,
+                "audio": data_uri(wav),
+            },
+        },
+        timeout=300,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"create_voice {resp.status_code}: {resp.text[:250]}")
+    voice_id = (resp.json().get("output") or {}).get("voice_id")
+    if not voice_id:
+        raise RuntimeError(f"无 voice_id: {resp.text[:250]}")
+
+    for _ in range(60):
+        q = requests.post(
+            CUSTOMIZATION,
+            headers=HEADERS,
+            json={"model": "voice-enrollment", "input": {"action": "query_voice", "voice_id": voice_id}},
+            timeout=60,
+        )
+        status = (q.json().get("output") or {}).get("status") if q.status_code == 200 else f"HTTP{q.status_code}"
+        if status == "OK":
+            return voice_id, "OK"
+        if status not in ("DEPLOYING", "PROCESSING"):
+            raise RuntimeError(f"部署状态异常 status={status}: {q.text[:250]}")
+        time.sleep(1.5)
+    raise TimeoutError("音色部署超时")
+
+
+def verify(voice_id: str) -> bool:
+    resp = requests.post(
+        SPEECH_SYNTH,
+        headers=HEADERS,
+        json={
+            "model": TARGET_MODEL,
+            "input": {"text": VERIFY_TEXT, "voice": voice_id, "format": "wav", "sample_rate": 24000},
+        },
+        timeout=120,
+    )
+    if resp.status_code != 200:
+        return False
+    return bool(((resp.json().get("output") or {}).get("audio") or {}).get("url"))
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--only", default="", help="逗号分隔的 pet_id 子集")
+    args = ap.parse_args()
+    only = {p.strip() for p in args.only.split(",") if p.strip()}
+
+    plan = [row for row in PLAN if not only or row[0] in only]
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    out_path = VC / f"re-enroll-{stamp}.json"
+
+    results: dict[str, dict] = {}
+    # 断点续跑：已有结果就复用，避免重复注册浪费配额
+    if out_path.is_file():
+        try:
+            results = json.loads(out_path.read_text(encoding="utf-8")).get("voices", {})
+            print(f"复用已有结果 {out_path.name}（{len(results)} 条）")
+        except json.JSONDecodeError:
+            results = {}
+
+    for pet_id, prefix, candidates in plan:
+        if pet_id in results and results[pet_id].get("voice_id"):
+            print(f"[skip] {pet_id} 已有 {results[pet_id]['voice_id']}")
+            continue
+        src = next((p for p in candidates if p.is_file()), None)
+        if src is None:
+            print(f"[miss] {pet_id} 找不到源音频: {[str(p.name) for p in candidates]}")
+            results[pet_id] = {"error": "no source audio"}
+            continue
+        size_mb = src.stat().st_size / 1024 / 1024
+        print(f"[enroll] {pet_id:<12} prefix={prefix:<11} src={src.name} ({size_mb:.1f} MB)", flush=True)
+        try:
+            voice_id, status = enroll(prefix, src)
+            ok = verify(voice_id)
+            results[pet_id] = {
+                "voice_id": voice_id,
+                "prefix": prefix,
+                "source": src.name,
+                "status": status,
+                "verified": ok,
+            }
+            print(f"          -> {voice_id}  verified={ok}")
+        except Exception as exc:  # noqa: BLE001
+            results[pet_id] = {"error": str(exc)[:300], "source": src.name}
+            print(f"          !! {exc}")
+        out_path.write_text(
+            json.dumps(
+                {
+                    "target_model": TARGET_MODEL,
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "voices": results,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    ok = [k for k, v in results.items() if v.get("verified")]
+    bad = [k for k, v in results.items() if not v.get("verified")]
+    print(f"\n===== 汇总 =====")
+    print(f"  已验证可用: {len(ok)}  -> {ok}")
+    if bad:
+        print(f"  未通过: {len(bad)}  -> {bad}")
+    print(f"  结果文件: {out_path}")
+
+
+if __name__ == "__main__":
+    main()

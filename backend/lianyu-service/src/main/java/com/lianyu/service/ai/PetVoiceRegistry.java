@@ -26,13 +26,26 @@ public class PetVoiceRegistry {
 
     private final ObjectMapper objectMapper;
 
-    /** HTTP VC model (qwen3-tts-vc-*). */
+    /**
+     * 复刻音色的合成模型。
+     *
+     * <p>2026-10-21 起是 {@code qwen-audio-3.1-tts-flash}：旧的 {@code qwen3-tts-vc-*}
+     * 系列已下架（合成报 {@code Model not exist}），而 {@code qwen3-tts-flash} 虽然可用
+     * 却不支持声音复刻。13 个角色音色已按新模型重新注册，见 {@code pet-voices.json}。
+     */
     @Getter
-    private String model = "qwen3-tts-vc-2026-01-22";
+    private String model = "qwen-audio-3.1-tts-flash";
 
-    /** Realtime VC model (qwen3-tts-vc-realtime-*). */
+    /**
+     * 实时复刻音色模型 —— 平台已无此能力，保持空串。
+     *
+     * <p>{@code qwen3-tts-flash-realtime} 能流式出音频但只支持系统音色；
+     * {@code qwen-audio-*-realtime-*} 是语音对话模型，不是 TTS。所以
+     * 「实时 + 复刻」这个组合已不存在，{@code realtimeVoices} 也随之清空；
+     * 语音通话改由 {@link #model} 逐句合成。
+     */
     @Getter
-    private String realtimeModel = "qwen3-tts-vc-realtime-2026-01-15";
+    private String realtimeModel = "";
 
     /** petId → HTTP voiceId */
     private Map<String, String> httpVoices = Collections.emptyMap();
