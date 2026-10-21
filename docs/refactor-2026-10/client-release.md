@@ -72,7 +72,33 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\dotnet-install.ps
 $env:LIANYU_SKIP_LAUNCHER_SMOKE = "1"   # 显式跳过，会打印醒目警告
 ```
 
-**跳过就意味着这个包没有被启动验证过**（2026-10-21 的 0.2.368 就是这样打的）。
+**跳过就意味着这个包没有被启动验证过**（2026-10-21 的 0.3.1 就是这样打的）。
+
+### 4. ⚠️ `Failed to create directory [...\.net\...] Error code: 5` —— 先换目录再怀疑安装包
+
+现象：双击安装包，SmartScreen 点「仍要运行」，然后**什么都不发生**（没有安装界面）。
+控制台能抓到的只有：
+
+```
+Failure processing application bundle.
+Failed to create directory [C:\Users\hp\AppData\Local\Temp\.net\YuNian-Setup-x.y.z\]
+for extracting bundled files. Error code: 5      ← 0x5 = ACCESS_DENIED
+```
+
+**这是 .NET 单文件包在解包时写不进 `%TEMP%\.net`**，几乎总是「安装包被放在受限目录里启动」。
+
+排查时我先误判成「`EnableCompressionInSingleFile` 的锅」——因为**工作区里**那个压缩版失败、
+而 `%TEMP%` 里的不压缩版成功。做了对照才发现是**路径**在捣鬼，不是压缩：
+
+| 启动位置 | 压缩版 282MB | 不压缩版 353MB |
+|---|---|---|
+| 仓库工作区内 `frontend\release\...` | ❌ Error code 5 | ❌ Error code 5 |
+| `%TEMP%` 等普通目录 | ✅ 正常弹窗 | ✅ 正常弹窗 |
+
+结论：
+- **安装包本身没问题**，换到桌面 / 下载目录 / `%TEMP%` 再双击即可。
+- 判断方法：看 `%TEMP%\.net\<包名>\` 有没有被创建出来；手工能建、但安装包建不出来 → 就是启动位置的限制。
+- 不要在受限目录（尤其是带沙箱 ACL 的工作区）里验证安装包。
 
 ## 三、标准步骤
 
@@ -117,16 +143,19 @@ python ../scripts/_upload_update_assets.py --version <版本>   # ★ 真正的�
 4. 安装包文件名必须是 `YuNian-Setup-<semver>.exe` —— 更新器用正则校验，
    不匹配会拒绝安装（防 cmd 注入）。
 
-## 五、这次（0.2.368）的实测结果
+## 五、这次（0.3.1）的实测结果
+
+0.2.368 作废（版本号跳过，直接进 0.3.1：社区下线 + 编排/语音重构之后的第一个客户端版本）。
 
 | 项 | 值 |
 |---|---|
-| 基础包 | `release/v0.2.368/` 166 MB（electron-builder NSIS） |
-| 品牌离线包 | 295,794,640 字节（282 MB），2026-10-21 04:52Z |
-| sha512 | `HO9ZZ1zWjCBgdo3WOIBvdhSuO6Zo8vwC2u19KtwCce0pYRC48lgL8yzFITp+oZXgQU7cygCIpgQ58xhpkXm7pA==`（独立复算一致） |
-| 包内新代码 | `main-*.js` 含「稍后再装/前去更新」，`useAppUpdater-*.js` 含 `probeForUpdates`，`preload.cjs` 含 `probeForUpdates`，`main-bundle.cjs` 含 `updater:probe`，全包无 `push-catchup` |
-| 启动验证 | ❌ 未做（本机 Electron 起不来，冒烟被显式跳过） |
-| 发布状态 | GitHub 草稿 + 待定；`latest.yml` **未替换**，用户端仍是 0.2.367 |
+| 基础包 | `release/v0.3.1/` 166 MB（electron-builder NSIS，可用） |
+| 品牌离线包 | 295,794,636 字节（282 MB），压缩版 |
+| sha512 | `bojGY+/NDHiyKUmS8Jc2/Bb5Gg+z14iztDIkaVap8fXHEsr0PfRzReJAbj6r3zeYVpwi3TXF09/yJu4PMhUXZg==`（独立复算一致） |
+| 包内版本 | `resources/app.asar` 里 `package.json` version = **0.3.1**（更新器比对的就是它） |
+| 启动验证 | ✅ 从 `%TEMP%` 启动成功（窗口句柄创建，402MB 工作集）；❌ 从工作区内启动失败（见坑 4） |
+| 包内新代码 | 沿用 0.2.368 的核对结果：`main-*.js` 含「稍后再装/前去更新」、`useAppUpdater-*.js` 含 `probeForUpdates`、`preload.cjs` 含 `probeForUpdates`、`main-bundle.cjs` 含 `updater:probe`，全包无 `push-catchup` |
+| 发布状态 | GitHub 草稿 v0.2.368 已删除；0.3.1 **尚未发布**，`latest.yml` 仍是 0.2.367 |
 
 ## 六、下次发版前值得先修的两件事
 

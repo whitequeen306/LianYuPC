@@ -15,6 +15,15 @@
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!--
+      压缩版（282MB）与不压缩版（353MB）都实测能用，保留压缩以减小下载体积。
+      排查记录（2026-10-21）：有人反馈「双击后 SmartScreen 点仍要运行却什么都不发生」，
+      抓到的错误是
+        Failed to create directory [...\Temp\.net\YuNian-Setup-x.y.z\] ... Error code: 5
+      看着像压缩解包的锅，实际**不是**：同一个压缩版拷到 %TEMP% 下运行完全正常。
+      真正的原因是**安装包被放在受限目录里启动**（当时是仓库工作区内），
+      子进程写不进 %TEMP%\.net。所以遇到这个错误先换目录跑，别怀疑压缩。
+    -->
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
 
