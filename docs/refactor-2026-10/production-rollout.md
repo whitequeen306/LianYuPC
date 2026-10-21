@@ -357,5 +357,8 @@ docker tag lianyu-pc/backend:cloud-rollback-ef26d6f lianyu-pc/backend:cloud
 docker compose up -d --no-deps agent2 agent backend
 ```
 
-回滚只回镜像，不回代码：`/opt/lianyu` 的 git 仍停在 `c9be5a0`，
-容器是从镜像跑的，与工作区无关。真正要回滚代码需另做 `git reset`。
+回滚只回镜像，不回代码：容器是从镜像跑的，与 `/opt/lianyu` 的工作区无关。
+代码要回退需另做 `git reset`，且必须重新构建镜像才生效。
+
+> 注意：本次部署后 `/opt/lianyu` 又 `git pull` 过一次（只含文档与脚本，无源码改动），
+> 所以工作区 HEAD 会领先于「实际在跑的镜像源码」，这是预期的。
