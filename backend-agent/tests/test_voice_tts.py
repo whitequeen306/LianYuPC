@@ -96,6 +96,129 @@ async def test_synthesize_keeps_legacy_payload_for_qwen3_models():
     assert '"format"' not in body
 
 
+# ─────────────── 流式合成（语音通话边收边播） ───────────────
+
+
+def _sse(*chunks: bytes) -> bytes:
+    """拼一段 DashScope 风格的 SSE 响应体。"""
+    import json as _json
+
+    lines = []
+    for c in chunks:
+        lines.append(
+            "data: " + _json.dumps({"output": {"audio": {"data": base64.b64encode(c).decode()}}}))
+    lines.append("data: [DONE]")
+    return ("\n\n".join(lines) + "\n\n").encode()
+
+
+@respx.mock
+async def test_synthesize_stream_yields_each_chunk_in_order():
+    from app.tts import synthesize_stream
+
+    respx.post(SPEECH_SYNTH).respond(
+        content=_sse(b"AAAA", b"BBBB"),
+        headers={"Content-Type": "text/event-stream"},
+    )
+
+    chunks = [
+        c
+        async for c in synthesize_stream(
+            api_key="k", model="qwen-audio-3.1-tts-flash", voice_id="v1", text="hi"
+        )
+    ]
+    assert chunks == [b"AAAA", b"BBBB"]
+
+
+@respx.mock
+async def test_synthesize_stream_ignores_non_audio_frames():
+    """非音频帧（心跳、错误体、坏 JSON、[DONE]）必须被跳过，不能污染 PCM。"""
+    from app.tts import synthesize_stream
+
+    body = (
+        b"\n\n".join(
+            [
+                b"data: " + b'{"output":{}}',
+                b"data: " + b'{"output":{"audio":{}}}',
+                b"data: " + b"not-json",
+                b"data: " + b'{"output":{"audio":{"data":"QUJD"}}}',
+                b"data: [DONE]",
+            ]
+        )
+        + b"\n\n"
+    )
+    respx.post(SPEECH_SYNTH).respond(content=body, headers={"Content-Type": "text/event-stream"})
+
+    chunks = [
+        c
+        async for c in synthesize_stream(
+            api_key="k", model="qwen-audio-3.1-tts-flash", voice_id="v1", text="hi"
+        )
+    ]
+    assert chunks == [b"ABC"]
+
+
+@respx.mock
+async def test_synthesize_stream_upstream_error_yields_nothing():
+    """上游 4xx 时流式端点不能抛异常（响应头已发出，无法改状态码），只能是 0 块。"""
+    from app.tts import synthesize_stream
+
+    respx.post(SPEECH_SYNTH).respond(status_code=400, json={"code": "InvalidParameter"})
+
+    chunks = [
+        c
+        async for c in synthesize_stream(
+            api_key="k", model="qwen-audio-3.1-tts-flash", voice_id="v1", text="hi"
+        )
+    ]
+    assert chunks == []
+
+
+@respx.mock
+async def test_synthesize_stream_falls_back_to_whole_audio_for_legacy_models():
+    """qwen3-tts 家族不支持 SSE：退回整句合成，仍然产出「一块完整音频」。"""
+    from app.tts import synthesize_stream
+
+    respx.post(SYNTH).respond(json={"output": {"audio": {"url": AUDIO}}})
+    respx.get(AUDIO).respond(content=b"RIFF" + b"\x00" * 8)
+
+    chunks = [
+        c
+        async for c in synthesize_stream(
+            api_key="k", model="qwen3-tts-flash", voice_id="v1", text="hi"
+        )
+    ]
+    assert len(chunks) == 1
+    assert chunks[0].startswith(b"RIFF")
+
+
+@respx.mock
+async def test_tts_stream_endpoint_contract():
+    """端点契约：octet-stream + 音频头 + 正文是各块拼接。"""
+    respx.post(SPEECH_SYNTH).respond(
+        content=_sse(b"ABCD", b"EFGH"), headers={"Content-Type": "text/event-stream"}
+    )
+
+    resp = TestClient(app).post(
+        "/agent/tts/stream",
+        json={"userId": 1, "apiKey": "k", "voiceId": "v1", "text": "hi"},
+        headers={"X-User-Id": "1"},
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/octet-stream")
+    assert resp.headers["x-audio-mime"] == "audio/pcm"
+    assert resp.headers["x-audio-sample-rate"] == "24000"
+    assert resp.content == b"ABCDEFGH"
+
+
+def test_tts_stream_endpoint_rejects_user_mismatch():
+    resp = TestClient(app).post(
+        "/agent/tts/stream",
+        json={"userId": 1, "apiKey": "k", "voiceId": "v1", "text": "hi"},
+        headers={"X-User-Id": "2"},
+    )
+    assert resp.status_code == 403
+
+
 # ─────────────────────────── 端点归一化 ───────────────────────────
 
 

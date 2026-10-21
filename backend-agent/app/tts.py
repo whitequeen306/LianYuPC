@@ -16,7 +16,10 @@
 """
 
 import asyncio
+import base64
+import json
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 import httpx
@@ -37,6 +40,10 @@ logger = logging.getLogger(__name__)
 
 LANGUAGE_TYPE_DEFAULT = "Chinese"
 _MAX_ATTEMPTS = 2
+# 流式合成固定 24kHz / 单声道 / s16le —— 与客户端 createPcmPlayback 的默认值一致。
+# 改这里必须同步改前端，否则会变调或出现噪声。
+STREAM_SAMPLE_RATE = 24000
+STREAM_MIME = "audio/pcm"
 
 
 @dataclass(frozen=True)
@@ -204,9 +211,119 @@ async def _download_audio(
     return response.content
 
 
+async def synthesize_stream(
+    *,
+    api_key: str | None,
+    model: str | None,
+    voice_id: str | None,
+    text: str | None,
+    base_url: str | None = None,
+    language_type: str | None = None,
+    connect_timeout: float = 8.0,
+    read_timeout: float = 30.0,
+) -> AsyncIterator[bytes]:
+    """流式合成：逐块产出 **PCM（s16le / 24kHz / 单声道）**，用于语音通话边收边播。
+
+    为什么需要它：语音通话的体感由**首包延迟**决定。整句合成要等音频落地才能发第一帧，
+    而按句流式可以把首包压到 ~0.9s，并且下一句可以在这一句播放时并行预取。
+
+    降级语义与 {@link synthesize} 一致（**永不抛异常**）：
+      · key / text / voice 缺失 → 直接不产出
+      · 端点不是支持 SSE 的那一族 → 退回整句合成，产出单块
+      · 上游 4xx/5xx 或中途断流 → 记日志后结束，已产出的块仍然有效
+    """
+    key = (api_key or "").strip()
+    spoken = (text or "").strip()
+    voice = (voice_id or "").strip()
+    if not key or not spoken or not voice:
+        logger.info("tts stream skipped: missing key/text/voice")
+        return
+
+    resolved_model = (model or "").strip() or RECOMMENDED_HTTP_MODEL
+    path = synth_path_for(resolved_model)
+
+    if path != SPEECH_SYNTH_PATH:
+        # 旧 qwen3-tts 家族不支持 SSE 流式；退回整句，语义上仍然"有声音"
+        audio = await synthesize(
+            api_key=key,
+            model=resolved_model,
+            voice_id=voice,
+            text=spoken,
+            base_url=base_url,
+            language_type=language_type,
+            connect_timeout=connect_timeout,
+            read_timeout=read_timeout,
+        )
+        if audio is not None:
+            yield audio.audio
+        return
+
+    try:
+        url = synth_url(base_url, path) if base_url and base_url.strip() else DEFAULT_BASE + path
+    except DashScopeEndpointError:
+        logger.warning("tts stream skipped: invalid api base")
+        return
+
+    payload = {
+        "model": resolved_model,
+        "input": {"text": spoken, "voice": voice, "format": "pcm", "sample_rate": STREAM_SAMPLE_RATE},
+    }
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "X-DashScope-SSE": "enable",
+    }
+
+    emitted = 0
+    try:
+        async with new_client() as client:
+            async with client.stream(
+                "POST", url, json=payload, headers=headers,
+                timeout=(connect_timeout, read_timeout, 30.0, 30.0),
+            ) as response:
+                if response.status_code != 200:
+                    detail = (await response.aread())[:200]
+                    logger.warning("tts stream HTTP %s: %s", response.status_code, detail)
+                    return
+                async for line in response.aiter_lines():
+                    chunk = _decode_sse_audio(line)
+                    if chunk:
+                        emitted += 1
+                        yield chunk
+    except Exception as exc:  # noqa: BLE001 - 流式失败不向调用方抛
+        logger.warning("tts stream aborted after %d chunks: %s", emitted, exc)
+        return
+    logger.info("tts stream done: chunks=%d model=%s", emitted, resolved_model)
+
+
+def _decode_sse_audio(line: str) -> bytes | None:
+    """从一行 SSE 里取出 base64 音频块；不是音频行就返回 None。"""
+    if not line or not line.startswith("data:"):
+        return None
+    raw = line[5:].strip()
+    if not raw or raw == "[DONE]":
+        return None
+    try:
+        obj = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(obj, dict):
+        return None
+    data = ((obj.get("output") or {}).get("audio") or {}).get("data")
+    if not isinstance(data, str) or not data:
+        return None
+    try:
+        return base64.b64decode(data)
+    except (ValueError, TypeError):
+        return None
+
+
 __all__ = [
     "LANGUAGE_TYPE_DEFAULT",
+    "STREAM_MIME",
+    "STREAM_SAMPLE_RATE",
     "SynthesizedAudio",
     "is_transient_network_failure",
     "synthesize",
+    "synthesize_stream",
 ]

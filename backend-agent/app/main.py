@@ -131,9 +131,11 @@ async def capabilities() -> dict[str, object]:
         "toolLoop": True,
         "maxToolRounds": get_settings().max_tool_rounds,
         # 语音接线：Java 适配层据此决定是否把音色注册 / TTS 交给 Python。
-        # realtimeTts 暂为 False —— 双向 WebSocket 还在 Java（见 tts-migration-plan 第 3 步）。
+        # realtimeTts 仍为 False —— 但含义已变：平台不再提供「支持复刻音色的实时 TTS 模型」，
+        # 所以双向 WS 那条路不是"还没迁"，而是"不存在了"。通话改走 ttsStream（按句流式）。
         "voiceEnrollment": True,
         "ttsSynthesize": True,
+        "ttsStream": True,
         "realtimeTts": False,
     }
 
@@ -1142,3 +1144,42 @@ async def tts_synthesize(
     if audio is None:
         return Response(status_code=204)
     return Response(content=audio.audio, media_type=audio.mime_type)
+
+
+@app.post("/agent/tts/stream")
+async def tts_stream(
+    body: TtsSynthesizeBody,
+    user_id_header: str | None = Header(default=None, alias="X-User-Id"),
+) -> StreamingResponse:
+    """流式合成：**边合成边吐 PCM 块**，供语音通话边收边播。
+
+    为什么单开一个端点而不改 `/agent/tts/synthesize`：
+    非实时场景（桌宠问候、冷启动台词）只要一次拿到完整音频，走合成后下载更简单；
+    而通话场景关心的是**首包延迟**，需要按块下发。两者的错误语义也不同：
+    合成端点用 204 表示"没有音频"，流式端点已经开始下发响应头，无法再改状态码，
+    所以失败就是**提前结束流**（客户端收到 0 块，等价于"没声音"）。
+
+    块格式固定：`audio/pcm`，s16le / 24kHz / 单声道（与前端 createPcmPlayback 默认一致）。
+    mime 与采样率同时放在响应头里，便于 Java 侧原样透传给客户端。
+    """
+    from app.tts import STREAM_MIME, STREAM_SAMPLE_RATE, synthesize_stream
+
+    if user_id_header and str(body.user_id) != user_id_header:
+        raise HTTPException(status_code=403, detail="user mismatch")
+    return StreamingResponse(
+        synthesize_stream(
+            api_key=body.api_key,
+            model=body.model,
+            voice_id=body.voice_id,
+            text=body.text,
+            base_url=body.base_url,
+            language_type=body.language_type,
+            connect_timeout=(body.connect_timeout_ms or 8000) / 1000.0,
+            read_timeout=(body.read_timeout_ms or 30000) / 1000.0,
+        ),
+        media_type="application/octet-stream",
+        headers={
+            "X-Audio-Mime": STREAM_MIME,
+            "X-Audio-Sample-Rate": str(STREAM_SAMPLE_RATE),
+        },
+    )
