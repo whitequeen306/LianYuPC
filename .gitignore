@@ -88,6 +88,11 @@ frontend/build/skin/
 frontend/build/nsNiuniuSkin.dll
 frontend/build/x86-unicode/
 frontend/build/*.bmp
+# 例外：NSIS MUI 的品牌位图是**打包输入**，必须进仓库。
+# 否则换台机器构建时 electron-builder 会静默回退到 nsis3-metro.bmp，
+# 品牌标识凭空消失且没有任何报错。
+!frontend/build/installerSidebar.bmp
+!frontend/build/installerHeader.bmp
 frontend/build/logo.ico
 frontend/build/skin.zip
 # Generated scripts (one-off, not source)

@@ -353,3 +353,49 @@ electron-builder 的 NSIS 本身支持品牌化：`installerIcon` / `installerSi
 
 安装包拷到 `%TEMP%` 再跑无界面安装（2.5s、exit 0、111 文件），
 然后补桌面/开始菜单快捷方式，双击快捷方式 1.1s 出窗口。**这条路径可以写进客服话术。**
+
+## 八、2026-10-21 追加：NSIS 也会被 SmartScreen 拦（第七节结论再修正）
+
+第七节我写的「换回 NSIS 就不弹了」——**这句话也不成立**。
+
+### 事实
+
+同一天、同一台机器、同为 electron-builder NSIS、同为 166MB 未签名：
+
+| 构建 | sha256 前缀 | 启动结果 |
+|---|---|---|
+| 0.3.2（发布版） | — | 正常出向导 |
+| 0.3.3 第一次构建（带欢迎页） | — | **SmartScreen：「Windows 已保护你的电脑 / 阻止了无法识别的应用启动」** |
+| 0.3.3 重建（回退欢迎页，新 hash） | `DBFF1BA6B7D67296` | 正常出向导，无 SmartScreen、无未知发布者对话框 |
+
+第三次的验证方式：启动后枚举可见顶层窗口 + 查 `Smartscreen.exe` 进程，
+两者都不存在，而 `YuNian-Setup-0.3.3` 进程带着「YuNian 安装」窗口在跑。
+
+### 结论
+
+**SmartScreen 的判定是按文件哈希的声誉，不是按安装器类型、也不是按"改了什么"。**
+所以：
+
+- 回退界面配置 **不能** 可靠地让 SmartScreen 消失；这次通过是换了 hash 后碰巧过。
+- 关掉欢迎页只是「少改动」，不是「解决问题」。
+- 唯一可靠解仍是 **代码签名**。在这之前，任何一次发版都可能被拦，
+  应对办法只有：点「更多信息 → 仍要运行」，并在下载页写清楚。
+
+### 我上一轮验证方式的两个漏洞（都已修）
+
+1. **只查了一种提示**：探针只找 `#32770 "Open File - Security Warning"`，
+   完全看不见 SmartScreen 那套全屏蓝框，于是得出了「没有安全警告」的错结论。
+   现在 `scripts/_gate_installer_prompt.ps1` 同时检查：
+   - `Smartscreen.exe` 进程是否带窗口（SmartScreen 的可靠信号）
+   - 传统 `#32770` 未知发布者对话框
+   - 安装器自己的窗口是否出现
+   三种结论分别是 `BLOCKED` / `DIALOG` / `PASS`。
+2. **把偶发当规律**：一次 PASS 不能推出"已解决"。发布前跑这个 gate，
+   它只回答"这个 hash 此刻能不能启动"。
+
+### 另一个坑：品牌位图被 gitignore 吞掉
+
+`frontend/build/*.bmp` 原本在 `.gitignore` 里（历史上是生成物）。加了
+`installerSidebar.bmp` / `installerHeader.bmp` 之后，如果不同时加例外，
+换台机器构建时 electron-builder 会**静默回退到 `nsis3-metro.bmp`**，
+品牌标识凭空消失且不报错。已在 `.gitignore` 里加 `!` 例外把这两人工产物纳入仓库。

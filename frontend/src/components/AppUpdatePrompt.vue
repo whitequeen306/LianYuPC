@@ -58,6 +58,8 @@ const dialogWidth = useResponsiveDialogWidth(460)
 
 const visible = ref(false)
 const submitting = ref(false)
+/** 已经发起过下载：不再重复触发，也不让关闭动作被误判成「稍后再装」 */
+const started = ref(false)
 const latestVersion = ref('')
 const currentVersion = ref('')
 
@@ -88,23 +90,32 @@ function later() {
 }
 
 function onDismissed() {
-  // 点 X / 点遮罩关闭等同「稍后再装」：这一轮不再弹，下次启动再说
-  if (!submitting.value) snoozeUpdatePrompt()
+  // 点 X / 点遮罩关闭等同「稍后再装」：这一轮不再弹，下次启动再说。
+  // 已经点了「前去更新」就不能算 snooze —— 否则会把正在进行的下载从提示层面关掉。
+  if (!submitting.value && !started.value) snoozeUpdatePrompt()
 }
 
 async function goUpdate() {
+  if (submitting.value || started.value) return
   submitting.value = true
+  started.value = true
   try {
     // 更新页在 /app 下：只有已经进主界面时才跳，避免把登录页用户推到登录墙
     if (route.path.startsWith('/app')) {
       await router.push(UPDATE_PAGE_PATH).catch(() => {})
     }
-    // 下载会推进 state 机（downloading），AppUpdateDialog 会自动接上并展示进度
-    await download()
   } finally {
     submitting.value = false
+    // 立刻关掉提示框。
+    //
+    // 以前这里是 `await download()` 之后才关 —— 而 `updater:download` 是
+    // **等整个安装包下完才 resolve** 的，于是用户要对着一个转圈的按钮等上几分钟
+    // （2026-10-21 实测 166MB 约 6 分钟），期间进度弹窗被它盖在下面，看着像卡死。
+    // 现在进度完全交给 `AppUpdateDialog`（它监听主进程的 updater:state），
+    // 这里只负责发起，不等结果。
     visible.value = false
   }
+  void download()
 }
 
 // 启动时若还没登录，等登录后再探测；已登录则立即探测

@@ -14,6 +14,19 @@ let downloadedInstallerPath = null
 const UPDATE_MANIFEST_PATH = '/api/public/files/updates/latest.yml'
 const UPDATE_DOWNLOAD_CONCURRENCY = 6
 const UPDATE_DOWNLOAD_RETRIES = 2
+/**
+ * 多久没收到任何字节就判定"断了"。
+ *
+ * 为什么必须有：`requestToFile` 原先没有任何超时。服务端如果把连接挂住
+ * （不发数据、也不关不 RST），`res` 永远不触发 `end`/`error`，Promise 永不
+ * settle，`withRetries` 也就永远没机会重试 —— 用户看到的就是进度条停在某个
+ * 百分比、无限转圈。2026-10-21 实测 0.3.1 下载 166MB 时有数分钟的停顿，
+ * 那次是自己恢复了，但没有这层保险就是真的吊死。
+ *
+ * 阈值取 45s：远大于正常分片间隔（实测慢速链路上每块也在秒级），
+ * 又远小于用户的忍耐极限。
+ */
+const UPDATE_IDLE_TIMEOUT_MS = 45000
 
 function setState(partial) {
   currentState = { ...currentState, ...partial }
@@ -81,10 +94,30 @@ function requestToFile({ url, filePath, range, expectedBytes, expectedRange, onP
     const ws = fs.createWriteStream(filePath)
     let received = 0
     let settled = false
+    let idleTimer = null
+
+    const clearIdle = () => {
+      if (idleTimer) {
+        clearTimeout(idleTimer)
+        idleTimer = null
+      }
+    }
     const finish = (fn, value) => {
       if (settled) return
       settled = true
+      clearIdle()
       fn(value)
+    }
+    /** 每收到一块就重新计时；超时则主动 abort，让 withRetries 拿到一个普通的 reject。 */
+    const armIdle = () => {
+      clearIdle()
+      idleTimer = setTimeout(() => {
+        try { if (typeof req.abort === 'function') req.abort() } catch (_) {}
+        try { ws.destroy() } catch (_) {}
+        finish(reject, new Error(`download stalled: no data for ${UPDATE_IDLE_TIMEOUT_MS / 1000}s`))
+      }, UPDATE_IDLE_TIMEOUT_MS)
+      // 不要让这个计时器把进程吊住（主进程里 node 的定时器默认会）
+      if (typeof idleTimer.unref === 'function') idleTimer.unref()
     }
 
     ws.on('error', (err) => finish(reject, err))
@@ -105,12 +138,15 @@ function requestToFile({ url, filePath, range, expectedBytes, expectedRange, onP
       }
       const lenHeader = getHeader(res.headers, 'content-length')
       const total = expectedBytes || (lenHeader ? parseInt(lenHeader, 10) || 0 : 0)
+      armIdle()
       res.on('data', (chunk) => {
+        armIdle()
         received += chunk.length
         onProgress?.(chunk.length, total)
         ws.write(chunk)
       })
       res.on('end', () => {
+        clearIdle()
         if (total > 0 && received !== total) {
           ws.destroy()
           finish(reject, new Error(`download incomplete: ${received}/${total}`))
@@ -121,6 +157,7 @@ function requestToFile({ url, filePath, range, expectedBytes, expectedRange, onP
       res.on('error', (err) => finish(reject, err))
     })
     req.on('error', (err) => finish(reject, err))
+    armIdle()
     req.end()
   })
 }
@@ -133,10 +170,18 @@ function probeRangeSupport(url, probePath) {
     const finish = (value) => {
       if (settled) return
       settled = true
+      clearTimeout(watchdog)
       ws.destroy()
       try { fs.unlinkSync(probePath) } catch (_) {}
       resolve(value)
     }
+    // 探针只是"问一句支不支持分片"。它挂住不应该让整个下载停在 0%。
+    // 超时就当不支持 → 退回单连接下载（会慢，但能下）。
+    const watchdog = setTimeout(() => {
+      try { if (typeof req.abort === 'function') req.abort() } catch (_) {}
+      finish(null)
+    }, 20000)
+    if (typeof watchdog.unref === 'function') watchdog.unref()
 
     ws.on('error', () => finish(null))
     req.on('response', (res) => {

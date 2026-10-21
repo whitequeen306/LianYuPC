@@ -346,6 +346,49 @@ describe('updater (manual mode)', () => {
     expect(probeChunksRead).toBe(0)
   })
 
+  it('download: 连接挂住（不发数据也不结束）时按空闲超时中断，不会无限等待', async () => {
+    configureLatest('0.2.260')
+    const { initUpdater } = await loadUpdater()
+    initUpdater(mockMainWindow)
+
+    // 模拟"服务端把连接挂住"：response 事件给了，但之后不 data、不 end、不 error。
+    // 修复前这种情形 Promise 永不 settle → 用户看到进度条停在某个百分比无限转圈。
+    let aborted = 0
+    mocks.netRequestImpl = () => {
+      const handlers = { response: null, error: null }
+      const req = {
+        setHeader: () => {},
+        on: (ev, fn) => { handlers[ev] = fn; return req },
+        abort: () => { aborted += 1 },
+        end: () => {
+          setTimeout(() => {
+            const res = new EventEmitter()
+            res.statusCode = 200
+            res.headers = { 'content-length': '12' }
+            res.destroy = vi.fn()
+            handlers.response(res)
+          }, 0)
+        },
+      }
+      return req
+    }
+
+    vi.useFakeTimers()
+    let ret
+    try {
+      const pending = mocks.handleRegistry.get('updater:download')()
+      // 分片探针自带 20s 看门狗，空闲超时 45s；推到 120s 足够两者都触发
+      await vi.advanceTimersByTimeAsync(120000)
+      ret = await pending
+    } finally {
+      vi.useRealTimers()
+    }
+
+    expect(ret.ok).toBe(false)
+    expect(ret.error).toMatch(/stalled/)
+    expect(aborted).toBeGreaterThan(0)
+  })
+
   it('download: 合并后的安装包 sha512 不匹配时拒绝安装', async () => {
     configureLatest('0.2.260', sha512Base64(Buffer.from('expected')))
     const { initUpdater } = await loadUpdater()
