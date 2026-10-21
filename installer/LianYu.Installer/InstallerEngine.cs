@@ -19,6 +19,27 @@ public sealed class InstallerEngine
 
     public InstallerEngine(string version) => _version = version;
 
+    /// <summary>
+    /// 安装包版本号：优先 <see cref="AssemblyInformationalVersionAttribute"/>（构建脚本传入的
+    /// `LianYuVersion`），退到 <see cref="Version"/>。
+    ///
+    /// 之所以提到这里、让 GUI 与无界面模式共用：无界面模式以前传的是硬编码字符串
+    /// `"silent-probe"`，于是「应用和功能」里显示的版本就是 `silent-probe`
+    /// （2026-10-21 在真机上看到，属于缺陷）。
+    /// </summary>
+    public static string GetInstallerVersion()
+    {
+        var informational = Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        if (!string.IsNullOrWhiteSpace(informational))
+            return informational.Split('+', 2)[0];
+
+        var assemblyVersion = Assembly.GetExecutingAssembly().GetName().Version;
+        return assemblyVersion is null
+            ? "0.0.0"
+            : $"{assemblyVersion.Major}.{assemblyVersion.Minor}.{assemblyVersion.Build}";
+    }
+
     public async Task InstallAsync(InstallOptions options, IProgress<InstallProgress> progress, CancellationToken cancellationToken)
     {
         EnsureElevationIfNeeded(options);

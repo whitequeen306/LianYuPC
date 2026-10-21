@@ -21,8 +21,14 @@
       抓到的错误是
         Failed to create directory [...\Temp\.net\YuNian-Setup-x.y.z\] ... Error code: 5
       看着像压缩解包的锅，实际**不是**：同一个压缩版拷到 %TEMP% 下运行完全正常。
-      真正的原因是**安装包被放在受限目录里启动**（当时是仓库工作区内），
-      子进程写不进 %TEMP%\.net。所以遇到这个错误先换目录跑，别怀疑压缩。
+
+      同日第二次复现（更完整）：进程存活 184s / WS 432MB / CPU 22s，但**没有任何顶层
+      窗口**且 `PresentationFramework` 未加载 —— 根本没进 WPF。A/B 对照证明同一份字节
+      （SHA256 一致）在 %TEMP% 里 2.8s 装完、在仓库目录里 `Start-Process` 直接抛
+      「The operation was canceled by the user」卡 405s。根因是 Windows 对**未签名**
+      安装包的「未知发布者」拦截，警告不点掉进程就不会被创建。
+      → 根治只能给 exe 签名；换打包方式（NSIS/msi）同样被拦。详见
+        docs/refactor-2026-10/client-release.md 第七节。
     -->
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>

@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.IO;
 using System.Windows;
 using System.Windows.Input;
@@ -12,7 +11,7 @@ namespace LianYu.Installer;
 
 public partial class MainWindow : Window
 {
-    private readonly InstallerEngine _engine = new(GetInstallerVersion());
+    private readonly InstallerEngine _engine = new(InstallerEngine.GetInstallerVersion());
     private bool _installing;
     private bool _demoCompleted;
     private Border? _progressCard;
@@ -33,19 +32,6 @@ public partial class MainWindow : Window
     private DispatcherTimer? _imageTimer;
     private bool _transitioning;
     private readonly TranslateTransform _rightContentShift = new();
-
-    private static string GetInstallerVersion()
-    {
-        var informationalVersion = Assembly.GetExecutingAssembly()
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
-        if (!string.IsNullOrWhiteSpace(informationalVersion))
-            return informationalVersion.Split('+', 2)[0];
-
-        var assemblyVersion = Assembly.GetExecutingAssembly().GetName().Version;
-        return assemblyVersion is null
-            ? "0.0.0"
-            : $"{assemblyVersion.Major}.{assemblyVersion.Minor}.{assemblyVersion.Build}";
-    }
 
     public MainWindow()
     {
@@ -459,8 +445,12 @@ public partial class MainWindow : Window
                 await RunDemoInstallAsync();
                 return;
             }
+            InstallerLog.Write($"install start: target={options.InstallDirectory}, allUsers={allUsers}, " +
+                               $"desktop={options.DesktopShortcut}, startMenu={options.StartMenuShortcut}, " +
+                               $"autostart={options.AutoStart}, launch={options.LaunchAfterInstall}");
             var progress = new Progress<InstallProgress>(UpdateProgress);
             await _engine.InstallAsync(options, progress, CancellationToken.None);
+            InstallerLog.Write("install completed");
             StatusText.Text = "安装完成 · 正在启动予念";
             if (options.LaunchAfterInstall) InstallerEngine.Launch(options.InstallDirectory);
             await Task.Delay(900);
@@ -468,10 +458,16 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            StatusText.Text = ex.Message;
+            // 一行小字装不下异常，用户也没法把它发给我们：完整堆栈进日志，界面给出路径。
+            InstallerLog.Write($"install FAILED:{Environment.NewLine}{ex}");
+            StatusText.Text = $"安装失败：{ex.Message}";
             InstallButton.Content = "重试安装";
             InstallButton.IsEnabled = true;
             _installing = false;
+            MessageBox.Show(this,
+                $"安装没有完成。\n\n{ex.Message}\n\n" +
+                $"完整日志（把它发给我们即可定位）：\n{InstallerLog.Path}",
+                "安装失败", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 

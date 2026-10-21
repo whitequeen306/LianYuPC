@@ -210,3 +210,91 @@ Get-Content (Get-ChildItem $env:TEMP\lianyu-installer-*.log | Sort-Object LastWr
    和当前源码不一致，排查线上问题时极容易被它带偏（这次就被带偏过一次）。
 2. **没有 `vite build` 门禁**：`useActiveChatContext.js` 末尾多出的一个 `}` 让 HEAD
    根本构建不过，却存在了三个月没被发现。建议 CI 里加一条 `vite build`。
+
+## 七、2026-10-21「双击没反应」复盘（未签名安装包撞 Windows 拦截）
+
+### 现象
+
+用户删掉本机安装后重装 0.3.1，报「双击完全没反应，窗口一直不出来」，
+并截到 Windows 的 **Open File - Security Warning**：
+
+```
+The publisher could not be verified. Are you sure you want to run this software?
+Name: C:\...\frontend\release\v0.3.1\YuNian-Setup-0.3.1.exe
+Publisher: Unknown Publisher
+```
+
+### 现场取证（这台机器上实测）
+
+| 观察 | 值 |
+|---|---|
+| 卡住的进程 | `YuNian-Setup-0.3.1` 存活 184s、WS 432MB、CPU 22s、**线程 33** |
+| 顶层窗口 | **一个都没有**（连隐藏窗口都没有） |
+| `PresentationFramework` | **未加载** —— 根本没走到 WPF 初始化 |
+| 自解压目录 `%TEMP%\.net\YuNian-Setup-0.3.1\*` | 三次运行各一个子目录，每个 5 个文件 / 7.8MB，最后一次在 13:54，之后不再增长 |
+| Mark of the Web | `dir /r` 查过：仓库目录、`frontend`、`release`、`v0.3.1` **全都没有** `Zone.Identifier` |
+| Smart App Control | `VerifiedAndReputablePolicyState = 0`（关闭） |
+| SRP / AppLocker | `Safer\CodeIdentifiers` 只有 `authenticodeenabled=0`，无任何路径规则；无 SrpV2 |
+| Defender | 实时保护开启，`Policies\Attachments\ScanWithAntiVirus = 3` |
+
+### A/B 对照（同一份字节，只换放置位置）
+
+| 用例 | 输入 | 结果 |
+|---|---|---|
+| A | 拷到 `%TEMP%\ab-temp-copy\` 再运行 | **exit 0，2.8s**，111 文件 / 505.4MB |
+| B | 直接运行 `frontend\release\v0.3.1\` 里那个 | `Start-Process` 抛 **`The operation was canceled by the user.`**，卡了 **405s** |
+
+两份 SHA256 完全相同（`19C150CD3FC72B2D…`）。
+
+**结论：改目录后行为不同，而触发的是 Windows 的「未知发布者」安全警告；
+警告不点掉，进程根本不会被创建，所以表现成「双击没反应」。**
+
+### 老实说：路径差异没归因成功
+
+「同一份字节换个目录就不弹警告」这一点，我排查了 MotW、Smart App Control、
+SRP/AppLocker、Defender 排除项，**都没有解释**。所以这里只记事实，不编原因。
+对真机用户影响有限（他们从浏览器下载到 `Downloads`，本来就会带 MotW 并弹更吓人的
+SmartScreen），但对**我们自己**排查很致命：症状会被误判成"安装器坏了"。
+
+### 真正的修复：给安装包签名
+
+> **这是唯一能让「未知发布者」消失的办法。** 只要不签名，282MB 的 exe 就会一直被
+> SmartScreen / 附件管理器拦。换 NSIS、换 msi、改文件名都没用（electron-builder
+> 打出来的包未签名一样被拦）。
+
+现实选项：
+
+1. **代码签名证书**（OV/EV）：EV 证书最快拿到干净信誉；OV 需要累积下载量。
+   成本从每年几百到几千不等。
+2. 短期兜底：官网/下载页写明「点 Run / 运行」；公开 SHA256 供用户自行校验；
+   下载页给出「属性 → 解除锁定」的图。
+3. 减小摩擦（治不了根）：把 282MB 单文件拆成「小引导器 + 分包下载」，
+   小 exe 被扫的时间与可疑度都低得多。
+
+### 本次顺手修掉的两个真缺陷
+
+1. **无界面模式把版本号写成了 `silent-probe`**
+   `App.RunSilentInstall` 以前 `new InstallerEngine("silent-probe")`，于是
+   「应用和功能」里显示的版本就是字符串 `silent-probe`（真机上已出现）。
+   现在 `InstallerEngine.GetInstallerVersion()` 是公开静态方法，GUI 与无界面共用。
+   **已验证**：`--install-silent` 后注册表 `DisplayVersion = 0.3.1`（不再是 `silent-probe`）。
+2. **GUI 模式完全不记日志**
+   以前只有 `--install-silent` 写日志，用户说"装不上"时只能靠枚举进程去猜。
+   现在新增 `InstallerLog`，两种模式都写
+   `%TEMP%\lianyu-installer-YYYYMMDD-HHmmss.log`（含 base / exe / version / payload /
+   temp / 位数 / mode / target），失败时弹框直接把日志路径给用户。
+   日志头部实测：
+
+   ```
+   [16:41:51.948] === LianYu installer ===
+   [16:41:51.948] base        = C:\Users\hp\AppData\Local\Temp\ver-fix-publish\
+   [16:41:51.949] version     = 0.3.1
+   [16:41:51.953] payload ok  = True
+   [16:41:51.955] mode        = silent
+   [16:41:51.955] target dir  = C:\Users\hp\AppData\Local\Temp\ver-fix-target
+   ```
+
+### 用户当时是怎么装回去的
+
+安装包拷到 `%TEMP%` 再跑无界面安装（2.5s、exit 0、111 文件），
+然后补桌面/开始菜单快捷方式，双击快捷方式 1.1s 出窗口。**这条路径可以写进客服话术。**
