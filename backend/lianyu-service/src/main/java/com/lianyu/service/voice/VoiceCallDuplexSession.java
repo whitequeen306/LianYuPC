@@ -239,7 +239,7 @@ public class VoiceCallDuplexSession {
                     emitLocalTts(spoken);
                 } else {
                     DashScopeTtsRealtimeService.Session tts = ttsSession.get();
-                    if ((tts == null || !tts.isReady()) && !audioSent.get()) {
+                    if ((tts == null || !tts.isReady()) && !audioSent.get() && !noRealtimeVoice()) {
                         awaitRealtimeBriefly();
                         tts = ttsSession.get();
                     }
@@ -252,18 +252,10 @@ public class VoiceCallDuplexSession {
                         synchronized (sentenceLock) {
                             sentenceBuf.setLength(0);
                         }
-                        log.info("Voice duplex TTS HTTP fallback mode={} pet={} conv={} elapsedMs={}",
+                        log.info("Voice duplex TTS HTTP streaming mode={} pet={} conv={} elapsedMs={}",
                                 target.mode(), target.petId(), conversationId,
                                 System.currentTimeMillis() - turnStartedAtMs);
-                        TtsPort.SynthesizedAudio audio = synthesizeHttpFallback(spoken);
-                        if (audio == null || audio.bytes() == null || audio.bytes().length == 0) {
-                            emitError("TTS_ERROR", "语音合成失败，请稍后再试");
-                        } else {
-                            sendAudio(audio.bytes(),
-                                    audio.mimeType() == null ? "audio/mpeg" : audio.mimeType());
-                            emitJson("tts.done", n -> {
-                            });
-                        }
+                        streamHttpFallback(spoken);
                     } else {
                         log.warn("Voice duplex realtime TTS failed after audio started mode={} pet={} conv={}",
                                 target.mode(), target.petId(), conversationId);
@@ -315,13 +307,61 @@ public class VoiceCallDuplexSession {
         });
     }
 
-    private TtsPort.SynthesizedAudio synthesizeHttpFallback(String spoken) {
-        if (target.isCustomDashScope()) {
-            String voice = target.httpVoiceId() != null ? target.httpVoiceId() : target.realtimeVoiceId();
-            return voiceSynthesisService.synthesizeWithVoice(
-                    voice, target.apiKey(), spoken, target.httpModel(), target.endpoint());
+    /**
+     * 非实时兜底的**流式**合成：按块下发，客户端边收边播。
+     *
+     * <p>这是「更流畅」的核心改动。原实现是整句合成完再一次 sendAudio，
+     * 首帧要等整句音频落地；改为流式后第一块就能播（实测 841ms vs 1440ms），
+     * 后面的块边播边收。客户端本来就支持多条 `tts.audio` 帧排队播放
+     * （useVoiceDuplex.js → createPcmPlayback().enqueueBase64Audio），所以无需改前端。
+     *
+     * <p>用 CountDownLatch 等流结束：一是保持 `tts.done` 在 `turn.done` 之前的事件顺序
+     * （否则前端会在音频还在播时就把 phase 复位），二是让 timing 日志能记到真实的
+     * 首帧与总时长。等待有上限，上游卡死不会把工作线程永久占住。
+     */
+    private void streamHttpFallback(String spoken) {
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        AtomicBoolean firstChunk = new AtomicBoolean(false);
+
+        voiceCallService.streamSynthesizeForTarget(target, spoken, new TtsPort.TtsChunkSink() {
+            @Override
+            public void onChunk(byte[] pcm) {
+                if (pcm == null || pcm.length == 0) {
+                    return;
+                }
+                if (firstChunk.compareAndSet(false, true)) {
+                    markFirstAudio();
+                    audioSent.set(true);
+                }
+                sendAudio(pcm, "audio/pcm");
+            }
+
+            @Override
+            public void onDone() {
+                done.countDown();
+            }
+
+            @Override
+            public void onError(String message) {
+                log.warn("Voice duplex stream TTS error conv={}: {}", conversationId, message);
+                done.countDown();
+            }
+        });
+
+        try {
+            if (!done.await(45, TimeUnit.SECONDS)) {
+                log.warn("Voice duplex stream TTS timed out conv={}", conversationId);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
-        return voiceSynthesisService.synthesizeForPet(target.petId(), spoken);
+
+        if (!firstChunk.get()) {
+            emitError("TTS_ERROR", "语音合成失败，请稍后再试");
+            return;
+        }
+        emitJson("tts.done", n -> {
+        });
     }
 
     private DashScopeTtsRealtimeService.Session connectRealtimeTts() {
@@ -370,8 +410,24 @@ public class VoiceCallDuplexSession {
         return ttsRealtimeService.startForPet(target.petId(), listener);
     }
 
+    /**
+     * 该目标有没有可用的实时音色。
+     *
+     * <p>2026-10-21 起恒为「没有」：平台已无「支持复刻音色的实时 TTS 模型」
+     * （qwen3-tts-flash-realtime 只能系统音色；qwen-audio-*-realtime-* 是语音对话模型），
+     * 所以 pet-voices.json 的 realtimeVoices 已清空。
+     *
+     * <p>为什么必须显式判断：不判断的话每轮都会去连一次注定失败的 WS，
+     * 连接失败前还要在 {@link #awaitRealtimeBriefly()} 里白等最多 1.6s
+     * —— 恰好把流式合成省下来的延迟又还回去。
+     */
+    private boolean noRealtimeVoice() {
+        String realtimeVoice = target.realtimeVoiceId();
+        return realtimeVoice == null || realtimeVoice.isBlank();
+    }
+
     private void prewarmRealtimeTts(String reason) {
-        if (closed.get() || target.isLocal()) {
+        if (closed.get() || target.isLocal() || noRealtimeVoice()) {
             return;
         }
         DashScopeTtsRealtimeService.Session existing = ttsSession.get();

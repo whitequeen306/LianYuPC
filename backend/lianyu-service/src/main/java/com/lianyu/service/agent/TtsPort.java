@@ -15,6 +15,36 @@ public interface TtsPort {
     SynthesizedAudio synthesize(SynthesizeRequest request);
 
     /**
+     * 流式合成：按块回调 PCM，供语音通话边收边播。
+     *
+     * <p>为什么要单开一个方法而不是把 {@link #synthesize} 改成流式：非实时场景
+     * （桌宠问候、冷启动台词）只要「一次拿到完整音频」，改造它纯属增加复杂度；
+     * 而通话场景关心的是**首包延迟**，必须按块下发。
+     *
+     * <p>契约同样是「失败不抛」：拿不到音频就不回调 {@code onChunk}（等价于"没声音"），
+     * 中途断流则已回调的块仍然有效。调用方（通话会话）已经按「没音频」降级。
+     *
+     * @param request 与 {@link #synthesize} 相同的入参
+     * @param sink    块回调；**在订阅线程上同步调用**，实现方不要在里面做阻塞操作
+     */
+    void streamSynthesize(SynthesizeRequest request, TtsChunkSink sink);
+
+    /** 流式合成的接收端。默认方法为空实现，调用方只关心自己需要的那几个。 */
+    interface TtsChunkSink {
+
+        /** 收到一块 PCM（s16le / 24kHz / 单声道）。 */
+        void onChunk(byte[] pcm);
+
+        /** 正常收完。 */
+        default void onDone() {
+        }
+
+        /** 上游失败/中断；此时可能已经回调过若干块。 */
+        default void onError(String message) {
+        }
+    }
+
+    /**
      * 一次合成请求。
      *
      * @param apiKey       已解析好的 DashScope Key（用户的或平台配置的）

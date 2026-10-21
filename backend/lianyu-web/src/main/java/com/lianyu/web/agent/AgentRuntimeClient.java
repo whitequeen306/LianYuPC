@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -331,6 +333,46 @@ public class AgentRuntimeClient {
 
     /** 二进制响应（contentType 可能为 null）。 */
     public record BinaryResponse(String contentType, byte[] bytes) {
+    }
+
+    /**
+     * 流式取**二进制块**（语音合成的 PCM 边收边播）。
+     *
+     * <p>与 {@link #postBytes} 的区别：不等完整响应，而是每收到一个 DataBuffer 就把字节
+     * 交给下游 —— 语音通话的首包延迟因此从「整句合成完」降到「第一块就绪」
+     * （实测 841ms vs 1440ms）。
+     *
+     * <p>与 {@link #postStream} 的区别：那条是 String/SSE（聊天文本）。音频**绝不能**
+     * 走字符解码，否则字节会被字符集改写。这里保持 raw DataBuffer。
+     *
+     * <p>非 2xx 返回空 Flux（由调用方按"没有音频"降级），不抛异常；网络中断同理，
+     * 已下发的块仍然有效。
+     */
+    public reactor.core.publisher.Flux<byte[]> postStreamBytes(String uri, long userId,
+                                                               Map<String, Object> body) {
+        if (!properties.agentActive()) {
+            return reactor.core.publisher.Flux.empty();
+        }
+        return webClient.post()
+                .uri(uri)
+                .header("X-User-Id", String.valueOf(userId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body)
+                .exchangeToFlux(response -> {
+                    if (!response.statusCode().is2xxSuccessful()) {
+                        log.warn("Agent runtime POST {} returned {}", uri, response.statusCode().value());
+                        return response.releaseBody()
+                                .thenMany(reactor.core.publisher.Flux.empty());
+                    }
+                    return response.bodyToFlux(DataBuffer.class)
+                            .map(buffer -> {
+                                byte[] chunk = new byte[buffer.readableByteCount()];
+                                buffer.read(chunk);
+                                DataBufferUtils.release(buffer);
+                                return chunk;
+                            })
+                            .filter(chunk -> chunk.length > 0);
+                });
     }
 
     /**

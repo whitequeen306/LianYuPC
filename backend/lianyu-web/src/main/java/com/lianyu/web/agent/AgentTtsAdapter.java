@@ -27,6 +27,45 @@ public class AgentTtsAdapter implements TtsPort {
         if (request == null || request.voiceId() == null || request.voiceId().isBlank()) {
             return null;
         }
+        AgentRuntimeClient.BinaryResponse response =
+                client.postBytes("/agent/tts/synthesize", 0L, toBody(request));
+        if (response == null || response.bytes() == null || response.bytes().length == 0) {
+            log.warn("TTS agent returned no audio for label={}", request.logLabel());
+            return null;
+        }
+        return SynthesizedAudio.of(response.contentType(), response.bytes());
+    }
+
+    /**
+     * 流式合成：把 Python 逐块下发的 PCM 原样转给调用方。
+     *
+     * <p>块是裸字节（`X-Audio-Mime: audio/pcm`），**不做 base64、不做字符解码** ——
+     * 这里多一次编解码就多一次出错机会，而且通话对延迟敏感。
+     */
+    @Override
+    public void streamSynthesize(SynthesizeRequest request, TtsChunkSink sink) {
+        if (request == null || sink == null
+                || request.voiceId() == null || request.voiceId().isBlank()) {
+            return;
+        }
+        client.postStreamBytes("/agent/tts/stream", 0L, toBody(request))
+                .subscribe(
+                        chunk -> {
+                            try {
+                                sink.onChunk(chunk);
+                            } catch (Exception e) {
+                                // 下游（WebSocket 写）失败不能把上游订阅带崩
+                                log.warn("TTS chunk deliver failed label={}: {}", request.logLabel(), e.toString());
+                            }
+                        },
+                        error -> {
+                            log.warn("TTS stream failed label={}: {}", request.logLabel(), error.toString());
+                            sink.onError(error.toString());
+                        },
+                        sink::onDone);
+    }
+
+    private static Map<String, Object> toBody(SynthesizeRequest request) {
         Map<String, Object> body = new LinkedHashMap<>();
         // userId 固定 0：合成是纯能力调用，凭据就是参数本身，没有按用户区分的数据。
         // 仍要传是因为 Python 侧有 X-User-Id 与 body.userId 的一致性校验（缺省即跳过）。
@@ -37,13 +76,6 @@ public class AgentTtsAdapter implements TtsPort {
         body.put("voiceId", request.voiceId());
         body.put("text", request.text() == null ? "" : request.text());
         body.put("languageType", request.languageType() == null ? "Chinese" : request.languageType());
-
-        AgentRuntimeClient.BinaryResponse response =
-                client.postBytes("/agent/tts/synthesize", 0L, body);
-        if (response == null || response.bytes() == null || response.bytes().length == 0) {
-            log.warn("TTS agent returned no audio for label={}", request.logLabel());
-            return null;
-        }
-        return SynthesizedAudio.of(response.contentType(), response.bytes());
+        return body;
     }
 }

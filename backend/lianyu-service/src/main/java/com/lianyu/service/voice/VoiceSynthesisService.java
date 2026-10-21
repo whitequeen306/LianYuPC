@@ -50,6 +50,27 @@ public class VoiceSynthesisService {
         return synthesize(voice, null, text, petVoiceRegistry.getModel(), null, petId);
     }
 
+    /**
+     * 官方桌宠音色的**流式**合成（语音通话用）。
+     *
+     * <p>相对 {@link #synthesizeForPet} 只改了"怎么拿音频"：不再等整句合成完，
+     * 而是按块回调，让客户端能边收边播。参数解析与降级完全一致。
+     */
+    public void streamForPet(String petId, String text, TtsPort.TtsChunkSink sink) {
+        String voice = petVoiceRegistry.resolveHttpVoiceId(petId);
+        if (voice == null) {
+            log.info("Pet TTS stream skipped: no voice mapping for petId={}", petId);
+            return;
+        }
+        stream(voice, null, text, petVoiceRegistry.getModel(), null, petId, sink);
+    }
+
+    /** 用户自定义音色的流式合成。 */
+    public void streamWithVoice(String voiceId, String apiKeyOverride, String text,
+                                String httpModel, String apiBaseUrl, TtsPort.TtsChunkSink sink) {
+        stream(voiceId, apiKeyOverride, text, httpModel, apiBaseUrl, "custom", sink);
+    }
+
     /** 用户自定义音色（用户 Key + 自定义 base）。 */
     public TtsPort.SynthesizedAudio synthesizeWithVoice(String voiceId, String apiKeyOverride, String text,
                                                         String httpModel, String apiBaseUrl) {
@@ -66,6 +87,35 @@ public class VoiceSynthesisService {
                                                 String httpModelOverride,
                                                 String apiBaseUrl,
                                                 String logLabel) {
+        TtsPort.SynthesizeRequest request = buildRequest(
+                voiceId, apiKeyOverride, text, httpModelOverride, apiBaseUrl, logLabel);
+        return request == null ? null : ttsPort.synthesize(request);
+    }
+
+    private void stream(String voiceId,
+                        String apiKeyOverride,
+                        String text,
+                        String httpModelOverride,
+                        String apiBaseUrl,
+                        String logLabel,
+                        TtsPort.TtsChunkSink sink) {
+        if (sink == null) {
+            return;
+        }
+        TtsPort.SynthesizeRequest request = buildRequest(
+                voiceId, apiKeyOverride, text, httpModelOverride, apiBaseUrl, logLabel);
+        if (request != null) {
+            ttsPort.streamSynthesize(request, sink);
+        }
+    }
+
+    /** 参数解析与准入判断：合成与流式合成共用，避免两条路径的降级口径分叉。 */
+    private TtsPort.SynthesizeRequest buildRequest(String voiceId,
+                                                   String apiKeyOverride,
+                                                   String text,
+                                                   String httpModelOverride,
+                                                   String apiBaseUrl,
+                                                   String logLabel) {
         if (!enabled) {
             log.info("TTS skipped: disabled");
             return null;
@@ -87,8 +137,8 @@ public class VoiceSynthesisService {
         String model = httpModelOverride != null && !httpModelOverride.isBlank()
                 ? httpModelOverride.trim()
                 : petVoiceRegistry.getModel();
-        return ttsPort.synthesize(new TtsPort.SynthesizeRequest(
-                key, apiBaseUrl, model, voiceId.trim(), text.trim(), languageType, logLabel));
+        return new TtsPort.SynthesizeRequest(
+                key, apiBaseUrl, model, voiceId.trim(), text.trim(), languageType, logLabel);
     }
 
     private String resolveApiKey() {

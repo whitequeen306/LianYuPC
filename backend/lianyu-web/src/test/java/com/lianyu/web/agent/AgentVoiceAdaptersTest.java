@@ -1,5 +1,6 @@
 package com.lianyu.web.agent;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -135,6 +136,75 @@ class AgentVoiceAdaptersTest {
     @Test
     void synthesizeNullRequestSafe() {
         assertNull(ttsAdapter.synthesize(null));
+    }
+
+    // ── 流式合成（语音通话边收边播） ──
+
+    @Test
+    void streamSynthesizeForwardsChunksInOrderAndCompletes() {
+        when(client.postStreamBytes(eq("/agent/tts/stream"), anyLong(), anyMap()))
+                .thenReturn(reactor.core.publisher.Flux.just(
+                        new byte[]{1, 2}, new byte[]{3}));
+
+        java.util.List<byte[]> received = new java.util.ArrayList<>();
+        java.util.concurrent.atomic.AtomicBoolean done = new java.util.concurrent.atomic.AtomicBoolean(false);
+        ttsAdapter.streamSynthesize(
+                new TtsPort.SynthesizeRequest("sk-x", null, "m", "v1", "在呢", "Chinese", "pet"),
+                new TtsPort.TtsChunkSink() {
+                    @Override
+                    public void onChunk(byte[] pcm) {
+                        received.add(pcm);
+                    }
+
+                    @Override
+                    public void onDone() {
+                        done.set(true);
+                    }
+                });
+
+        assertEquals(2, received.size());
+        assertArrayEquals(new byte[]{1, 2}, received.get(0));
+        assertArrayEquals(new byte[]{3}, received.get(1));
+        assertTrue(done.get(), "onDone 必须被调用，否则通话侧会一直等");
+    }
+
+    @Test
+    void streamSynthesizeSkipsEmptyVoiceIdEntirely() {
+        ttsAdapter.streamSynthesize(
+                new TtsPort.SynthesizeRequest("sk-x", null, "m", " ", "在呢", "Chinese", "pet"),
+                pcm -> { });
+        verify(client, never()).postStreamBytes(anyString(), anyLong(), any());
+    }
+
+    @Test
+    void streamSynthesizeReportsUpstreamError() {
+        when(client.postStreamBytes(anyString(), anyLong(), anyMap()))
+                .thenReturn(reactor.core.publisher.Flux.error(new IllegalStateException("boom")));
+
+        java.util.concurrent.atomic.AtomicReference<String> error =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        ttsAdapter.streamSynthesize(
+                new TtsPort.SynthesizeRequest("sk-x", null, "m", "v1", "在呢", "Chinese", "pet"),
+                new TtsPort.TtsChunkSink() {
+                    @Override
+                    public void onChunk(byte[] pcm) {
+                    }
+
+                    @Override
+                    public void onError(String message) {
+                        error.set(message);
+                    }
+                });
+
+        assertTrue(error.get() != null && error.get().contains("boom"));
+    }
+
+    @Test
+    void streamSynthesizeToleratesNullRequestAndSink() {
+        ttsAdapter.streamSynthesize(null, pcm -> { });
+        ttsAdapter.streamSynthesize(
+                new TtsPort.SynthesizeRequest("sk-x", null, "m", "v1", "在呢", "Chinese", "pet"), null);
+        verify(client, never()).postStreamBytes(anyString(), anyLong(), any());
     }
 
     @Test

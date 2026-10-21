@@ -306,6 +306,32 @@ public class VoiceCallService {
         return null;
     }
 
+    /**
+     * 与 {@link #synthesizeForTarget} 同源，但按块回调 —— 语音通话用它边收边播。
+     *
+     * <p>两者共用同一套目标解析与准入判断（`buildRequest`），避免「整句能用、流式不能用」
+     * 这类分叉。本地 sovits 目标不走这里（它有独立的端点与协议）。
+     */
+    public void streamSynthesizeForTarget(VoiceCallTarget target, String text,
+                                          TtsPort.TtsChunkSink sink) {
+        if (target == null || sink == null) {
+            return;
+        }
+        if (target.mode() == VoiceCallTarget.Mode.CUSTOM_DASHSCOPE) {
+            voiceSynthesisService.streamWithVoice(
+                    target.httpVoiceId() != null ? target.httpVoiceId() : target.realtimeVoiceId(),
+                    target.apiKey(),
+                    text,
+                    target.httpModel(),
+                    target.endpoint(),
+                    sink);
+            return;
+        }
+        if (target.mode() == VoiceCallTarget.Mode.OFFICIAL_PET) {
+            voiceSynthesisService.streamForPet(target.petId(), text, sink);
+        }
+    }
+
     @Transactional
     public void persistUserTurn(Long userId, Long conversationId, String userText) {
         Conversation conversation = findOwned(userId, conversationId);
