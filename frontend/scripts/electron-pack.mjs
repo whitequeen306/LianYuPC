@@ -301,6 +301,35 @@ for (let attempt = 1; attempt <= builderAttempts; attempt++) {
   }
 }
 copyBuilderArtifactsToRepo()
+raiseInstallerIntegrityLevel()
+
+/**
+ * 把安装包的完整性级别提到 Medium。
+ *
+ * 为什么必须做：如果仓库目录本身带 `Low Mandatory Level` 标签（本机的
+ * `Desktop\LianYu-PC` 就是，见 `icacls` 的 `Mandatory Label\Low Mandatory Level:(I)(NW)`），
+ * 那么在里面构建出来的 exe 会**继承低完整性级别**。用户（Explorer 是 Medium）双击
+ * 一个 Low 的 exe 时，Windows 会拦下来 —— 表现为「Windows 已保护你的电脑」或
+ * 「未知发布者」，而**同一份字节拷到桌面/%TEMP% 就没事**，因为那边是 Medium。
+ *
+ * 2026-10-21 排查了很久才定位到这一点：字节完全相同（sha256 一致）、都未签名、
+ * 都没有 MotW，唯一差别就是完整性级别。所以构建后统一提回 Medium。
+ *
+ * 失败不作为构建失败：非 Windows、或没有权限时不该让出包流程挂掉，
+ * 但要响一声，否则下次又会对着"只有本机构建被拦"发懵。
+ */
+function raiseInstallerIntegrityLevel() {
+  if (process.platform !== 'win32') return
+  const installer = path.join(outDirFull, `YuNian-Setup-${pkg.version}.exe`)
+  if (!fs.existsSync(installer)) return
+  try {
+    execSync(`icacls "${installer}" /setintegritylevel Medium`, { stdio: 'pipe' })
+    console.log('Installer integrity level raised to Medium (Low IL files get blocked by Windows)')
+  } catch (err) {
+    console.warn(`Could not raise installer integrity level (continuing): ${err.message}`)
+    console.warn(`  -> 本机构建产物可能继承 Low IL，双击会被 Windows 拦；手动修：icacls "${installer}" /setintegritylevel Medium`)
+  }
+}
 
 console.log(`\nInstaller: ${outDir}/YuNian-Setup-${pkg.version}.exe`)
 console.log(`API Origin (packed in runtime-secrets.bin): ${packApiOrigin}`)

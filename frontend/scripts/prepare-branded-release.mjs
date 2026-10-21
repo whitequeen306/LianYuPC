@@ -25,6 +25,18 @@ execFileSync('powershell.exe', [
 ], { stdio: 'inherit', cwd: repoRoot })
 
 const { size, sha512 } = await buildBlockMap(installerPath, 'gzip', blockmapPath)
+
+// 与 electron-pack.mjs 同样的理由：仓库目录若带 Low 完整性标签，产物会继承它，
+// 用户双击时被 Windows 拦（同一份字节拷到桌面就没事）。详见 electron-pack.mjs 的注释。
+if (process.platform === 'win32' && fs.existsSync(installerPath)) {
+  try {
+    execFileSync('icacls', [installerPath, '/setintegritylevel', 'Medium'], { stdio: 'pipe' })
+    console.log('Installer integrity level raised to Medium')
+  } catch (err) {
+    console.warn(`Could not raise installer integrity level (continuing): ${err.message}`)
+  }
+}
+
 const latest = [
   `version: ${version}`,
   'files:',

@@ -399,3 +399,78 @@ electron-builder 的 NSIS 本身支持品牌化：`installerIcon` / `installerSi
 `installerSidebar.bmp` / `installerHeader.bmp` 之后，如果不同时加例外，
 换台机器构建时 electron-builder 会**静默回退到 `nsis3-metro.bmp`**，
 品牌标识凭空消失且不报错。已在 `.gitignore` 里加 `!` 例外把这两人工产物纳入仓库。
+
+## 九、真正的根因：产物被继承了 Low 完整性级别（前两节结论全部作废）
+
+用户最后提供了一个关键观察：
+
+> 「予念自己下载的 0.3.3 再点安装就不会被拦，但直接点 `LianYu-PC` 里的就会被拦。」
+
+**同一份字节，换个目录，结果不同。** 这次按这个线索查到了根因，第七、八节
+的「安装器类型」「哈希声誉」两种解释都是错的。
+
+### 证据
+
+```
+repo 副本 : sha256 DBFF1BA6…  unsigned  Zone=[]   ← 与下载副本完全一致
+下载副本 : sha256 DBFF1BA6…  unsigned  Zone=[]   ← 用户双击不被拦
+
+icacls 差异（决定性）：
+  ~\Desktop\LianYu-PC\...\YuNian-Setup-0.3.3.exe
+      Mandatory Label\Low Mandatory Level:(I)(NW)     ← 低完整性
+  ~\AppData\Roaming\lianyu-pc\updates\YuNian-Setup-0.3.3.exe
+      （无标签 = Medium）
+```
+
+而且**不是这一个文件**：
+
+```
+~\Desktop                        (无标签 = Medium)
+~\Desktop\LianYu-PC              Low Mandatory Level   ← 整个仓库被打了低标签
+~\Desktop\LianYu-PC\frontend     Low Mandatory Level
+...\frontend\release             Low Mandatory Level
+```
+
+`frontend/release` 下从 `0.2.359`（8-22）到 `0.3.3`（10-21）**每一个安装包都是 Low**，
+因为子对象通过 `(I)(NW)` 继承父目录的标签。
+
+### 机制
+
+Explorer 是 Medium 完整性；它启动一个 **Low** 完整性的 exe 属于「跨完整性级别启动」，
+Windows 会拦：有时候是 SmartScreen「Windows 已保护你的电脑」，
+有时候是传统「未知发布者」对话框。而**同一份字节拷到桌面 / `%TEMP%` / `%APPDATA%`
+会继承目的地的 Medium 标签**，于是双击正常。
+
+这一条同时解释了之前所有互相矛盾的观察：
+
+| 现象 | 现在能解释了 |
+|---|---|
+| 0.2.368/0.3.1（自制 WPF 282MB）在仓库里被拦，拷到 `%TEMP%` 就正常 | 同一份字节，IL 不同 |
+| 0.2.367（NSIS）我用脚本启动"没有提示" | 我的探针从受限上下文启动，**同为 Low，没有跨级**，所以不弹 —— 用户从 Explorer 双击才会弹 |
+| 0.3.3 带欢迎页那版"被 SmartScreen 拦"、回退后重建"通过" | 两次都是 Low；"通过"的那次是我的探针测的，方法本身不成立 |
+| 用户通过予念更新下载的包从来不被拦 | 落在 `%APPDATA%`，Medium |
+
+**结论：安装器本身从来没有坏过。** 之前所有吓人的弹窗，都是
+「在我这台机器的仓库目录里构建出来的产物」这个环境特性。
+
+### 修复
+
+1. **构建后统一提级**（已写进脚本，长期有效）：
+   `electron-pack.mjs` / `prepare-branded-release.mjs` 在产物落地后执行
+   ```
+   icacls "<installer>" /setintegritylevel Medium
+   ```
+   失败只告警不中断（非 Windows / 无权限时不该让出包流程挂掉），
+   但会响一声，免得下次又对着"只有本机构建被拦"发懵。
+2. **临时手工验证**（不想重打包时）：
+   ```powershell
+   icacls .\YuNian-Setup-x.y.z.exe /setintegritylevel Medium
+   ```
+   或者把它拷到桌面/`%TEMP%` 再双击。
+
+### 教训
+
+- 前面两节我给了两个"确定的"结论（安装器类型、哈希声誉），都是**在没查全证据时下的判断**。
+  真正的证据是 `icacls` 里那一行 `Mandatory Label`，它一直都在，只是没人去看。
+- 探针的可信度取决于它的**启动上下文**。用脚本启动 exe 去验证"用户双击会不会被拦"
+  这件事，本身就不成立 —— 必须由人从 Explorer 双击。
