@@ -180,7 +180,18 @@ python ../scripts/_upload_update_assets.py --version <版本>   # ★ 真正的�
 | 覆盖升级 | ✅ 退出码 0，装进已有目录，112 个文件（原有额外文件保留） |
 | 装完启动 | ✅ `YuNian.exe` 启动成功（窗口句柄创建，132 MB 工作集） |
 | 包内新代码 | `main-*.js` 含「稍后再装/前去更新」、`useAppUpdater-*.js` 含 `probeForUpdates`、`preload.cjs` 含 `probeForUpdates`、`main-bundle.cjs` 含 `updater:probe`，全包无 `push-catchup` |
-| 发布状态 | GitHub 草稿 v0.2.368 已删除；0.3.1 **尚未发布**，`latest.yml` 仍是 0.2.367 |
+| 发布状态 | ✅ **已发布 2026-10-21 06:09 UTC**（GitHub Release v0.3.1 + MinIO `updates/`），线上 `latest.yml` = 0.3.1 |
+
+### 发布后核对（这四条都要过）
+
+```powershell
+curl.exe -sk https://downloadlianyu.asia/api/public/files/updates/latest.yml     # version 要等于新版本
+curl.exe -skI https://downloadlianyu.asia/api/public/files/updates/YuNian-Setup-<版本>.exe   # 200 + Content-Length
+# 在服务器上算一遍「对外提供的那个文件」的 sha512，必须和 latest.yml 一致（客户端就是这么校验的）
+ssh root@<host> "curl -sk https://127.0.0.1/api/public/files/updates/YuNian-Setup-<版本>.exe | openssl dgst -sha512 -binary | openssl base64 -A"
+# MinIO 里新旧版本都在（旧版本别急着删，升级中的用户还要下）
+docker exec lianyu-minio sh -lc 'mc ls local/lianyu/updates'
+```
 
 ### 安装器内置了无界面安装（排查用）
 
