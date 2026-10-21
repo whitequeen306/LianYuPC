@@ -256,20 +256,75 @@ SRP/AppLocker、Defender 排除项，**都没有解释**。所以这里只记事
 对真机用户影响有限（他们从浏览器下载到 `Downloads`，本来就会带 MotW 并弹更吓人的
 SmartScreen），但对**我们自己**排查很致命：症状会被误判成"安装器坏了"。
 
-### 真正的修复：给安装包签名
+### 真正的根因：我们把安装器换掉了（上一轮结论写错了，此处纠正）
 
-> **这是唯一能让「未知发布者」消失的办法。** 只要不签名，282MB 的 exe 就会一直被
-> SmartScreen / 附件管理器拦。换 NSIS、换 msi、改文件名都没用（electron-builder
-> 打出来的包未签名一样被拦）。
+上一轮我写的是「只能给 exe 签名，换 NSIS/msi 一样被拦」——**这句是错的**。
+用户一句「之前安装都没有这个弹窗啊」逼出了对照实验，结论是：
 
-现实选项：
+**0.2.366 / 0.2.367 根本不是这个安装器。**
 
-1. **代码签名证书**（OV/EV）：EV 证书最快拿到干净信誉；OV 需要累积下载量。
-   成本从每年几百到几千不等。
-2. 短期兜底：官网/下载页写明「点 Run / 运行」；公开 SHA256 供用户自行校验；
-   下载页给出「属性 → 解除锁定」的图。
-3. 减小摩擦（治不了根）：把 282MB 单文件拆成「小引导器 + 分包下载」，
-   小 exe 被扫的时间与可疑度都低得多。
+| 版本 | 产物 | 大小 | 类型 | 双击结果 |
+|---|---|---|---|---|
+| 0.2.359–0.2.362 | `LianYu Setup x.y.z.exe` | 166.1 MB | electron-builder NSIS | 直接出向导，**无警告** |
+| 0.2.364 / 0.2.365 | `LianYu-Setup-x.y.z.exe` | 282.3 MB | 自制 WPF 单文件 | 未知发布者 |
+| **0.2.366 / 0.2.367** | `YuNian-Setup-x.y.z.exe` | **165.9 MB** | **electron-builder NSIS** | **直接出向导，无警告** |
+| 0.2.368 / 0.3.1 | `YuNian-Setup-x.y.z.exe` | 282.1 MB | 自制 WPF 单文件 | 未知发布者 |
+| **0.3.2** | `YuNian-Setup-0.3.2.exe` | **165.9 MB** | **electron-builder NSIS** | **直接出向导，无警告** |
+
+实测对照（同一台机器、同一目录）：
+
+```
+0.2.367 (165.9MB) -> 进程立刻出现，窗口标题 "YuNian 安装"，全程无安全警告
+0.3.1   (282.1MB) -> 弹 "Open File - Security Warning / Unknown Publisher"，
+                     不点掉进程根本不会创建 → 表现为「双击没反应」
+```
+
+所以 Windows 拦的不是「未签名」，而是**一个 282MB 的陌生单文件 exe**；而 NSIS 安装器
+在 Windows 眼里是"正经安装程序"，走正常流程。用户以前装的一直是 NSIS 那一版。
+
+### 修复：0.3.2 回到 NSIS
+
+打包流程里 `prepare-branded-release.mjs` 做的事就是**用 282MB 的 WPF 包覆盖掉
+electron-builder 打好的 NSIS 包**。所以 0.3.2 只要走到 `electron-pack.mjs` 就停：
+
+```powershell
+# 0.3.2 起：不要跑 prepare-branded-release.mjs
+cd frontend
+$env:LIANYU_SKIP_LAUNCHER_SMOKE = "1"   # 无交互桌面时 electron 起不来，见下
+node scripts/electron-pack.mjs
+# 产物 release/v0.3.2/: exe 165.9MB + blockmap + latest.yml（electron-builder 自己生成）
+```
+
+代价与收益：失去自定义安装界面（换成标准向导），换来 282MB → 166MB、
+双击即用、不再撞「未知发布者」。
+
+### 品牌化该怎么做（别再回到自制 exe）
+
+electron-builder 的 NSIS 本身支持品牌化：`installerIcon` / `installerSidebar` /
+`installerHeader` / `license` / `installer.nsh` 自定义页面。现在的
+`build/installer.nsh` + `nsis.installerIcon` 已经在了 —— **要更漂亮就往 NSIS 里加，
+不要在它外面再套一层自制安装器。**
+
+### 代码签名仍然值得做（但不再是这个问题的解）
+
+签名解决的是"发布者未知"的信任问题，不是这次的"窗口不出来"。有证书当然更好，
+建议顺序：先回到 NSIS（已做），再择机买证书。
+
+### 附带发现：旧安装器留下的目录会让 NSIS 装不上
+
+用户随后用 0.2.367 的 NSIS 包安装时报：
+
+```
+不能打开要写入的文件:
+"C:\Users\hp\AppData\Local\Programs\YuNian\uninstallerIcon.ico"
+[Abort] [Retry] [Ignore]
+```
+
+当时**旧版 YuNian.exe 还在运行**（4 个进程），NSIS 把它遇到的第一个写不进去的文件
+报了出来。处理办法：安装前先彻底退出予念（托盘也要退），再运行安装包。
+
+> 这条没有 100% 归因（也可能是 Defender 实时扫描占用了文件），
+> 但"先关应用再安装"是可复现、无副作用的做法。
 
 ### 本次顺手修掉的两个真缺陷
 
