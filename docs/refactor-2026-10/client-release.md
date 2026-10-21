@@ -100,6 +100,29 @@ for extracting bundled files. Error code: 5      ← 0x5 = ACCESS_DENIED
 - 判断方法：看 `%TEMP%\.net\<包名>\` 有没有被创建出来；手工能建、但安装包建不出来 → 就是启动位置的限制。
 - 不要在受限目录（尤其是带沙箱 ACL 的工作区）里验证安装包。
 
+### 5. 点「立即安装」没反应 / 变「重试安装」—— 解包环节卡死（已修）
+
+现象：安装界面正常，点安装后要么一直转，要么按钮变「重试安装」。
+
+根因在 `InstallerEngine.ExtractPayloadAsync`：它把 **218MB 的内嵌资源流直接交给了 `ZipArchive`**。
+单文件包里的内嵌资源在随机读上极慢，实测卡在第一个条目（`locales\af.pak` 只写了 12KB，
+进程 10 分钟只有 1.1 秒 CPU，看着像死锁）。
+
+修法：**先把资源流顺序复制成一个临时 .zip 文件，再 `ZipFile.OpenRead(temp)`**。
+修完同一台机器上全新安装约 **2 秒**完成（111 个文件 / 505.4 MB）。
+
+```csharp
+// 反例（会卡死）：using var archive = new ZipArchive(payload, ZipArchiveMode.Read);
+var payloadZip = Path.Combine(Path.GetTempPath(), $"lianyu-payload-{Guid.NewGuid():N}.zip");
+await using (var file = File.Create(payloadZip)) await payload.CopyToAsync(file);
+using var archive = ZipFile.OpenRead(payloadZip);   // 落盘后顺序读，内存恒定
+```
+
+顺带发现并修掉一个**更隐蔽的坑**：`build-offline-installer.ps1` 用 `& $dotnet publish` 调用发布，
+MSBuild 失败时不会抛异常，脚本会把**上一次的旧产物**复制出去 —— 产物 sha512 一模一样、
+看着一切正常，实际发的是旧包（2026-10-21 就这样白跑了一轮）。
+现在脚本会在 publish 后检查 `$LASTEXITCODE` 并先删旧产物，失败即中止。
+
 ## 三、标准步骤
 
 ```powershell
@@ -150,12 +173,25 @@ python ../scripts/_upload_update_assets.py --version <版本>   # ★ 真正的�
 | 项 | 值 |
 |---|---|
 | 基础包 | `release/v0.3.1/` 166 MB（electron-builder NSIS，可用） |
-| 品牌离线包 | 295,794,636 字节（282 MB），压缩版 |
-| sha512 | `bojGY+/NDHiyKUmS8Jc2/Bb5Gg+z14iztDIkaVap8fXHEsr0PfRzReJAbj6r3zeYVpwi3TXF09/yJu4PMhUXZg==`（独立复算一致） |
+| 品牌离线包 | 295,799,756 字节（282 MB），压缩版 |
+| sha512 | `J22Kp0UtYuoPyyKyaTQdkTfaActpqVOXPlGMWCpxLj3zT71a2i7FBwgfHAjJHsHL3ZoISf+FOWvfaa8XaxB8tA==` |
 | 包内版本 | `resources/app.asar` 里 `package.json` version = **0.3.1**（更新器比对的就是它） |
-| 启动验证 | ✅ 从 `%TEMP%` 启动成功（窗口句柄创建，402MB 工作集）；❌ 从工作区内启动失败（见坑 4） |
-| 包内新代码 | 沿用 0.2.368 的核对结果：`main-*.js` 含「稍后再装/前去更新」、`useAppUpdater-*.js` 含 `probeForUpdates`、`preload.cjs` 含 `probeForUpdates`、`main-bundle.cjs` 含 `updater:probe`，全包无 `push-catchup` |
+| 全新安装 | ✅ 退出码 0，111 个文件 / 505.4 MB，`YuNian.exe` 就位，耗时约 2 秒 |
+| 覆盖升级 | ✅ 退出码 0，装进已有目录，112 个文件（原有额外文件保留） |
+| 装完启动 | ✅ `YuNian.exe` 启动成功（窗口句柄创建，132 MB 工作集） |
+| 包内新代码 | `main-*.js` 含「稍后再装/前去更新」、`useAppUpdater-*.js` 含 `probeForUpdates`、`preload.cjs` 含 `probeForUpdates`、`main-bundle.cjs` 含 `updater:probe`，全包无 `push-catchup` |
 | 发布状态 | GitHub 草稿 v0.2.368 已删除；0.3.1 **尚未发布**，`latest.yml` 仍是 0.2.367 |
+
+### 安装器内置了无界面安装（排查用）
+
+```powershell
+# 0 = 成功，1 = 失败，2 = 卡住超时；日志写到 %TEMP%\lianyu-installer-<时间>.log
+.\YuNian-Setup-0.3.1.exe --install-silent --dir "$env:TEMP\test-install"
+Get-Content (Get-ChildItem $env:TEMP\lianyu-installer-*.log | Sort-Object LastWriteTime -Desc | Select -First 1)
+```
+
+它的意义不只是排查：**安装器终于可以在没有人点鼠标的情况下被验证**。
+以前只能靠人肉双击，坏了也说不清卡在哪一步。
 
 ## 六、下次发版前值得先修的两件事
 

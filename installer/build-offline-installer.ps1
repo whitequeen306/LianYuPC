@@ -61,7 +61,18 @@ $dotnet = Resolve-Dotnet
 New-Item -ItemType Directory -Force -Path $payloadDir,(Split-Path $outputFull) | Out-Null
 Remove-Item -LiteralPath $payload -Force -ErrorAction SilentlyContinue
 Compress-Archive -Path (Join-Path $unpacked '*') -DestinationPath $payload -CompressionLevel Optimal
-& $dotnet publish (Join-Path $project 'LianYu.Installer.csproj') -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:LianYuVersion=$Version
+
+# 关键：publish 用 & 调用不会因为 MSBuild 报错而抛异常，$ErrorActionPreference='Stop' 也管不到，
+# 于是编译失败时脚本会「成功地」把上一次的旧 publish 产物复制出去 —— 产物 sha512 一模一样、
+# 看着一切正常，实际发的是一个旧包（2026-10-21 就这样白跑了一轮）。必须显式查退出码。
 $published = Join-Path $project "bin\Release\net10.0-windows\win-x64\publish\YuNian-Setup.exe"
+Remove-Item -LiteralPath $published -Force -ErrorAction SilentlyContinue
+& $dotnet publish (Join-Path $project 'LianYu.Installer.csproj') -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:LianYuVersion=$Version
+if ($LASTEXITCODE -ne 0) {
+  throw "dotnet publish 失败（exit $LASTEXITCODE），拒绝复制可能已过期的产物。"
+}
+if (!(Test-Path -LiteralPath $published)) {
+  throw "publish 未产出 $published —— 先删掉的旧文件说明这次没真正编译成功。"
+}
 Copy-Item -LiteralPath $published -Destination $outputFull -Force
 Write-Host "Offline installer written: $outputFull"

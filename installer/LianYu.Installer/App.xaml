@@ -1,7 +1,7 @@
 <Application x:Class="LianYu.Installer.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             StartupUri="MainWindow.xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- 不用 StartupUri：App.OnStartup 按命令行开关决定开窗还是走无界面安装（见 App.xaml.cs） -->
   <Application.Resources>
     <Color x:Key="AccentColor">#FFF4A6B5</Color>
     <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}" />

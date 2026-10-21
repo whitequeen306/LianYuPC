@@ -87,38 +87,65 @@ public sealed class InstallerEngine
         var assembly = Assembly.GetExecutingAssembly();
         await using var payload = assembly.GetManifestResourceStream(PayloadResource)
             ?? throw new InvalidOperationException("安装包未包含 予念离线程序资源。请先运行 branded-installer 构建脚本。");
-        using var archive = new ZipArchive(payload, ZipArchiveMode.Read);
-        var total = archive.Entries.Sum(entry => entry.Length);
-        long completed = 0;
-        var lastReportedPercent = -1;
-        var started = Stopwatch.StartNew();
+        Trace?.Invoke($"payload stream opened: canSeek={payload.CanSeek}, length={(payload.CanSeek ? payload.Length : -1)}");
 
-        foreach (var entry in archive.Entries)
+        // 先把 218MB 的内嵌 zip 落到临时文件，再从文件打开 ZipArchive。
+        //
+        // 之前是直接把资源流交给 ZipArchive：单文件包里的内嵌资源常常是**不可 seek** 的，
+        // ZipArchive 会把整份数据复制进内存（500MB 级的峰值），而且在压缩包体上还要先解压一遍。
+        // 实测表现为安装卡在第一个条目上不动（进程 CPU 极低、临时目录里只有一个 0 字节文件）。
+        // 落盘再读是顺序 I/O，内存占用恒定，也不依赖流的 seek 能力。
+        var payloadZip = Path.Combine(Path.GetTempPath(), $"lianyu-payload-{Guid.NewGuid():N}.zip");
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var outputPath = Path.GetFullPath(Path.Combine(destination, entry.FullName));
-            if (!outputPath.StartsWith(Path.GetFullPath(destination), StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("安装资源包含无效路径。");
-            if (string.IsNullOrEmpty(entry.Name)) { Directory.CreateDirectory(outputPath); continue; }
-            Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
-            await using var source = entry.Open();
-            await using var target = File.Create(outputPath);
-            var buffer = new byte[1024 * 256];
-            int read;
-            while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
+            var copyStarted = Stopwatch.StartNew();
+            await using (var file = new FileStream(payloadZip, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 20, useAsync: true))
             {
-                await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-                completed += read;
-                TimeSpan? remaining = completed > 0
-                    ? TimeSpan.FromSeconds(started.Elapsed.TotalSeconds * (total - completed) / completed)
-                    : null;
-                var percent = total == 0 ? 0 : (int)(completed * 82 / total);
-                if (percent == lastReportedPercent) continue;
-                lastReportedPercent = percent;
-                progress.Report(new InstallProgress(percent, "正在解压应用文件", entry.FullName, completed, total, remaining));
+                await payload.CopyToAsync(file, 1 << 20, cancellationToken);
+            }
+            Trace?.Invoke($"payload copied to {payloadZip} in {copyStarted.ElapsedMilliseconds}ms ({new FileInfo(payloadZip).Length} bytes)");
+
+            using var archive = ZipFile.OpenRead(payloadZip);
+            var total = archive.Entries.Sum(entry => entry.Length);
+            long completed = 0;
+            var lastReportedPercent = -1;
+            var started = Stopwatch.StartNew();
+            Trace?.Invoke($"archive opened: {archive.Entries.Count} entries, {total} bytes");
+
+            foreach (var entry in archive.Entries)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var outputPath = Path.GetFullPath(Path.Combine(destination, entry.FullName));
+                if (!outputPath.StartsWith(Path.GetFullPath(destination), StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("安装资源包含无效路径。");
+                if (string.IsNullOrEmpty(entry.Name)) { Directory.CreateDirectory(outputPath); continue; }
+                Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+                await using var source = entry.Open();
+                await using var target = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20, useAsync: true);
+                var buffer = new byte[1024 * 256];
+                int read;
+                while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
+                {
+                    await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                    completed += read;
+                    TimeSpan? remaining = completed > 0
+                        ? TimeSpan.FromSeconds(started.Elapsed.TotalSeconds * (total - completed) / completed)
+                        : null;
+                    var percent = total == 0 ? 0 : (int)(completed * 82 / total);
+                    if (percent == lastReportedPercent) continue;
+                    lastReportedPercent = percent;
+                    progress.Report(new InstallProgress(percent, "正在解压应用文件", entry.FullName, completed, total, remaining));
+                }
             }
         }
+        finally
+        {
+            try { if (File.Exists(payloadZip)) File.Delete(payloadZip); } catch { }
+        }
     }
+
+    /// <summary>诊断钩子：设置后 InstallerEngine 会把关键步骤写出去（无界面安装用）。</summary>
+    public static Action<string>? Trace { get; set; }
 
     private static void CopyDirectory(string source, string destination, IProgress<InstallProgress>? progress = null, CancellationToken cancellationToken = default)
     {
