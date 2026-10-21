@@ -2,22 +2,80 @@ using Microsoft.Win32;
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.IO.Compression;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace LianYu.Installer;
 
+/// <summary>
+/// 安装引擎的壳：**自己不落地任何文件**，只负责把内嵌的 NSIS 安装器解出来、静默跑起来。
+///
+/// 为什么改成这样（2026-10-21）：
+/// 以前这里内嵌的是 218MB 原始负载 zip，由 C# 自己解压 + 拷贝，于是
+/// - 体积 282MB（原始负载比 NSIS 的 166MB 更大）
+/// - **不生成卸载器**：只写注册表 Uninstall 项，没有 UninstallString，
+///   「应用和功能」里点卸载直接失败；再被 NSIS 升级覆盖时就撞
+///   `不能打开要写入的文件: uninstallerIcon.ico`
+/// 现在内嵌的是 electron-builder 打好的 NSIS 安装器（约 166MB），界面仍由 WPF 出，
+/// 安装/卸载/注册表/快捷方式全部沿用 NSIS 的成熟逻辑，两个老问题一起消失。
+///
+/// 早先"282MB 单文件被 Windows 拦"的结论也是错的：真因是仓库目录带 Low 完整性
+/// 标签，产物继承了它（见 frontend/scripts/electron-pack.mjs 与
+/// docs/refactor-2026-10/client-release.md 第九节）。
+/// </summary>
 public sealed class InstallerEngine
 {
-    private const string PayloadResource = "LianYu.Payload.zip";
+    private const string PayloadResource = "LianYu.Engine.exe";
+    /// <summary>内嵌 NSIS 认识的标记：带上它就老老实实静默安装，不强制弹自己的界面。</summary>
+    private const string EmbeddedSwitch = "/LIANYU_EMBEDDED";
+    private static readonly TimeSpan EngineTimeout = TimeSpan.FromMinutes(10);
+    /// <summary>安装后目录大约 505MB；只用来算进度，不必精确。</summary>
+    private const long ExpectedInstallBytes = 520L * 1024 * 1024;
+
     private readonly string _version;
+
+    public InstallerEngine(string version) => _version = version;
 
     public static bool PayloadAvailable => Assembly.GetExecutingAssembly()
         .GetManifestResourceNames()
         .Any(name => name.EndsWith(PayloadResource, StringComparison.OrdinalIgnoreCase));
 
-    public InstallerEngine(string version) => _version = version;
+    /// <summary>诊断钩子：设置后 InstallerEngine 会把关键步骤写出去（无界面/gui 共用）。</summary>
+    public static Action<string>? Trace { get; set; }
+
+    public async Task InstallAsync(InstallOptions options, IProgress<InstallProgress> progress, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(options.InstallDirectory);
+
+        var stageDirectory = Path.Combine(Path.GetTempPath(), $"lianyu-install-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(stageDirectory);
+
+        try
+        {
+            var enginePath = await ExtractEngineAsync(stageDirectory, progress, cancellationToken);
+            StopRunningApplication();
+
+            progress.Report(new InstallProgress(15, "正在安装应用文件", "YuNian.exe", 0, ExpectedInstallBytes, null));
+            var exitCode = await RunEngineAsync(enginePath, options, progress, cancellationToken);
+            if (exitCode != 0)
+            {
+                // NSIS 的退出码没有公开语义，只知道非 0 = 没装成。
+                throw new InvalidOperationException(
+                    $"安装没有完成（安装引擎返回 {exitCode}）。请确认予念已完全退出后重试。");
+            }
+
+            ApplyShellOptions(options);
+            progress.Report(new InstallProgress(100, "安装完成", "YuNian.exe", 1, 1, TimeSpan.Zero));
+        }
+        finally
+        {
+            TryDelete(stageDirectory);
+        }
+    }
+
+    public static string GetDefaultInstallDirectory(bool allUsers) => allUsers
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "YuNian")
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "YuNian");
 
     /// <summary>
     /// 安装包版本号：优先 <see cref="AssemblyInformationalVersionAttribute"/>（构建脚本传入的
@@ -40,49 +98,6 @@ public sealed class InstallerEngine
             : $"{assemblyVersion.Major}.{assemblyVersion.Minor}.{assemblyVersion.Build}";
     }
 
-    public async Task InstallAsync(InstallOptions options, IProgress<InstallProgress> progress, CancellationToken cancellationToken)
-    {
-        EnsureElevationIfNeeded(options);
-        Directory.CreateDirectory(options.InstallDirectory);
-
-        var stageDirectory = Path.Combine(Path.GetTempPath(), $"lianyu-install-{Guid.NewGuid():N}");
-        var backupDirectory = options.InstallDirectory + ".installer-backup";
-        Directory.CreateDirectory(stageDirectory);
-
-        try
-        {
-            await ExtractPayloadAsync(stageDirectory, progress, cancellationToken);
-            StopRunningApplication();
-
-            if (Directory.Exists(backupDirectory)) Directory.Delete(backupDirectory, true);
-            if (Directory.Exists(options.InstallDirectory) && Directory.EnumerateFileSystemEntries(options.InstallDirectory).Any())
-                CopyDirectory(options.InstallDirectory, backupDirectory);
-
-            CopyDirectory(stageDirectory, options.InstallDirectory, progress, cancellationToken);
-            ConfigureShellIntegration(options);
-            WriteUninstallEntry(options);
-            progress.Report(new InstallProgress(100, "安装完成", "YuNian.exe", 1, 1, TimeSpan.Zero));
-        }
-        catch
-        {
-            if (Directory.Exists(backupDirectory))
-            {
-                if (Directory.Exists(options.InstallDirectory)) Directory.Delete(options.InstallDirectory, true);
-                Directory.Move(backupDirectory, options.InstallDirectory);
-            }
-            throw;
-        }
-        finally
-        {
-            TryDelete(stageDirectory);
-            TryDelete(backupDirectory);
-        }
-    }
-
-    public static string GetDefaultInstallDirectory(bool allUsers) => allUsers
-        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "YuNian")
-        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "YuNian");
-
     public static void Launch(string installDirectory)
     {
         var exe = Path.Combine(installDirectory, "YuNian.exe");
@@ -90,131 +105,127 @@ public sealed class InstallerEngine
         Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true, WorkingDirectory = installDirectory });
     }
 
-    private static void EnsureElevationIfNeeded(InstallOptions options)
-    {
-        if (!options.AllUsers || IsAdministrator()) return;
-        throw new UnauthorizedAccessException("所有用户安装需要管理员权限，请返回后重新确认系统权限提示。");
-    }
-
-    private static bool IsAdministrator()
-    {
-        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
-        return new System.Security.Principal.WindowsPrincipal(identity)
-            .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
-    }
-
-    private static async Task ExtractPayloadAsync(string destination, IProgress<InstallProgress> progress, CancellationToken cancellationToken)
+    /// <summary>把内嵌的 NSIS 安装器落到临时文件（单文件包里的资源不可 seek，必须先落盘再执行）。</summary>
+    private static async Task<string> ExtractEngineAsync(string destination, IProgress<InstallProgress> progress, CancellationToken cancellationToken)
     {
         var assembly = Assembly.GetExecutingAssembly();
         await using var payload = assembly.GetManifestResourceStream(PayloadResource)
-            ?? throw new InvalidOperationException("安装包未包含 予念离线程序资源。请先运行 branded-installer 构建脚本。");
-        Trace?.Invoke($"payload stream opened: canSeek={payload.CanSeek}, length={(payload.CanSeek ? payload.Length : -1)}");
+            ?? throw new InvalidOperationException("安装包未包含 予念 安装引擎。请先运行 installer/build-offline-installer.ps1。");
 
-        // 先把 218MB 的内嵌 zip 落到临时文件，再从文件打开 ZipArchive。
-        //
-        // 之前是直接把资源流交给 ZipArchive：单文件包里的内嵌资源常常是**不可 seek** 的，
-        // ZipArchive 会把整份数据复制进内存（500MB 级的峰值），而且在压缩包体上还要先解压一遍。
-        // 实测表现为安装卡在第一个条目上不动（进程 CPU 极低、临时目录里只有一个 0 字节文件）。
-        // 落盘再读是顺序 I/O，内存占用恒定，也不依赖流的 seek 能力。
-        var payloadZip = Path.Combine(Path.GetTempPath(), $"lianyu-payload-{Guid.NewGuid():N}.zip");
-        try
+        var enginePath = Path.Combine(destination, "YuNian-Engine.exe");
+        Trace?.Invoke($"engine stream opened: canSeek={payload.CanSeek}, length={(payload.CanSeek ? payload.Length : -1)}");
+
+        var started = Stopwatch.StartNew();
+        await using (var file = new FileStream(enginePath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 20, useAsync: true))
         {
-            var copyStarted = Stopwatch.StartNew();
-            await using (var file = new FileStream(payloadZip, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 20, useAsync: true))
+            var expected = payload.CanSeek ? payload.Length : 0;
+            var buffer = new byte[1024 * 256];
+            long copied = 0;
+            var lastPercent = -1;
+            int read;
+            while ((read = await payload.ReadAsync(buffer, cancellationToken)) > 0)
             {
-                await payload.CopyToAsync(file, 1 << 20, cancellationToken);
-            }
-            Trace?.Invoke($"payload copied to {payloadZip} in {copyStarted.ElapsedMilliseconds}ms ({new FileInfo(payloadZip).Length} bytes)");
-
-            using var archive = ZipFile.OpenRead(payloadZip);
-            var total = archive.Entries.Sum(entry => entry.Length);
-            long completed = 0;
-            var lastReportedPercent = -1;
-            var started = Stopwatch.StartNew();
-            Trace?.Invoke($"archive opened: {archive.Entries.Count} entries, {total} bytes");
-
-            foreach (var entry in archive.Entries)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var outputPath = Path.GetFullPath(Path.Combine(destination, entry.FullName));
-                if (!outputPath.StartsWith(Path.GetFullPath(destination), StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException("安装资源包含无效路径。");
-                if (string.IsNullOrEmpty(entry.Name)) { Directory.CreateDirectory(outputPath); continue; }
-                Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
-                await using var source = entry.Open();
-                await using var target = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20, useAsync: true);
-                var buffer = new byte[1024 * 256];
-                int read;
-                while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
-                {
-                    await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-                    completed += read;
-                    TimeSpan? remaining = completed > 0
-                        ? TimeSpan.FromSeconds(started.Elapsed.TotalSeconds * (total - completed) / completed)
-                        : null;
-                    var percent = total == 0 ? 0 : (int)(completed * 82 / total);
-                    if (percent == lastReportedPercent) continue;
-                    lastReportedPercent = percent;
-                    progress.Report(new InstallProgress(percent, "正在解压应用文件", entry.FullName, completed, total, remaining));
-                }
+                await file.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                copied += read;
+                if (expected <= 0) continue;
+                var percent = (int)(copied * 12 / expected); // 解包占整体进度的前 12%
+                if (percent == lastPercent) continue;
+                lastPercent = percent;
+                progress.Report(new InstallProgress(percent, "正在准备安装组件", "YuNian-Engine.exe", copied, expected,
+                    copied > 0 ? TimeSpan.FromSeconds(started.Elapsed.TotalSeconds * (expected - copied) / copied) : null));
             }
         }
-        finally
-        {
-            try { if (File.Exists(payloadZip)) File.Delete(payloadZip); } catch { }
-        }
+        Trace?.Invoke($"engine extracted to {enginePath} in {started.ElapsedMilliseconds}ms ({new FileInfo(enginePath).Length} bytes)");
+        return enginePath;
     }
 
-    /// <summary>诊断钩子：设置后 InstallerEngine 会把关键步骤写出去（无界面安装用）。</summary>
-    public static Action<string>? Trace { get; set; }
-
-    private static void CopyDirectory(string source, string destination, IProgress<InstallProgress>? progress = null, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// 静默跑 NSIS 安装器，同时按目标目录的体积估算进度。
+    ///
+    /// 参数必须拼成一个字符串（`Arguments`）而不是 `ArgumentList`：
+    /// NSIS 的 `/D=` 要求是**命令行最后一项且不加引号**，会让带空格的路径被当成
+    /// 引号的一部分而解错目录。
+    /// </summary>
+    private static async Task<int> RunEngineAsync(string enginePath, InstallOptions options, IProgress<InstallProgress> progress, CancellationToken cancellationToken)
     {
-        Directory.CreateDirectory(destination);
-        var files = Directory.GetFiles(source, "*", SearchOption.AllDirectories);
-        var lastReportedPercent = -1;
-        for (var index = 0; index < files.Length; index++)
+        var arguments = $"/S {EmbeddedSwitch} /currentuser /D={options.InstallDirectory}";
+        Trace?.Invoke($"running engine: \"{enginePath}\" {arguments}");
+
+        var startInfo = new ProcessStartInfo(enginePath)
+        {
+            UseShellExecute = false,
+            Arguments = arguments,
+            WorkingDirectory = Path.GetDirectoryName(enginePath)!,
+        };
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("无法启动安装引擎。");
+
+        var started = Stopwatch.StartNew();
+        while (!process.HasExited)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var relative = Path.GetRelativePath(source, files[index]);
-            var target = Path.Combine(destination, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Copy(files[index], target, true);
-            var percent = 82 + (files.Length == 0 ? 0 : (index + 1) * 15 / files.Length);
-            if (percent == lastReportedPercent) continue;
-            lastReportedPercent = percent;
-            progress?.Report(new InstallProgress(percent, "正在写入安装目录", relative, index + 1, files.Length, null));
+            if (started.Elapsed > EngineTimeout)
+            {
+                try { process.Kill(true); } catch { /* 已经退出 */ }
+                throw new TimeoutException($"安装超过 {EngineTimeout.TotalMinutes:0} 分钟仍未完成，已中止。");
+            }
+
+            var installed = MeasureDirectoryBytes(options.InstallDirectory);
+            var ratio = Math.Clamp(installed / (double)ExpectedInstallBytes, 0, 1);
+            var percent = 15 + (int)(ratio * 80);
+            var remaining = ratio > 0.02
+                ? TimeSpan.FromSeconds(started.Elapsed.TotalSeconds * (1 - ratio) / ratio)
+                : (TimeSpan?)null;
+            progress.Report(new InstallProgress(percent, "正在安装应用文件", "YuNian.exe", installed, ExpectedInstallBytes, remaining));
+
+            await Task.Delay(400, cancellationToken);
+        }
+
+        process.WaitForExit();
+        Trace?.Invoke($"engine exited with {process.ExitCode} after {started.ElapsedMilliseconds}ms");
+        return process.ExitCode;
+    }
+
+    private static long MeasureDirectoryBytes(string directory)
+    {
+        try
+        {
+            if (!Directory.Exists(directory)) return 0;
+            long total = 0;
+            foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+            {
+                try { total += new FileInfo(file).Length; } catch { /* 正在被写，跳过 */ }
+            }
+            return total;
+        }
+        catch
+        {
+            return 0;
         }
     }
 
-    private static void ConfigureShellIntegration(InstallOptions options)
+    /// <summary>
+    /// NSIS 已经处理了卸载登记、开始菜单、桌面快捷方式与文件落地；
+    /// 这里只补它不认识的三个开关：桌面快捷方式「取消勾选」、开机自启、装完启动。
+    /// </summary>
+    private static void ApplyShellOptions(InstallOptions options)
     {
         var exe = Path.Combine(options.InstallDirectory, "YuNian.exe");
+
         if (options.DesktopShortcut)
             CreateShortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "YuNian.lnk"), exe);
-        if (options.StartMenuShortcut)
-        {
-            var menu = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "YuNian");
-            Directory.CreateDirectory(menu);
-            CreateShortcut(Path.Combine(menu, "YuNian.lnk"), exe);
-        }
+        else
+            TryDeleteFile(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "YuNian.lnk"));
+
+        if (!options.StartMenuShortcut)
+            TryDeleteFile(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "YuNian", "YuNian.lnk"));
 
         using var runKey = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
         if (options.AutoStart) runKey.SetValue("YuNian", $"\"{exe}\"");
         else runKey.DeleteValue("YuNian", false);
-    }
 
-    private void WriteUninstallEntry(InstallOptions options)
-    {
-        var root = options.AllUsers ? Registry.LocalMachine : Registry.CurrentUser;
-        using var key = root.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\YuNian");
-        key.SetValue("DisplayName", "YuNian");
-        key.SetValue("DisplayVersion", _version);
-        key.SetValue("Publisher", "YuNian");
-        key.SetValue("InstallLocation", options.InstallDirectory);
-        key.SetValue("DisplayIcon", Path.Combine(options.InstallDirectory, "YuNian.exe"));
-        key.SetValue("NoModify", 1, RegistryValueKind.DWord);
-        key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
+        if (options.LaunchAfterInstall) Launch(options.InstallDirectory);
     }
 
     private static void CreateShortcut(string shortcutPath, string targetPath)
@@ -236,6 +247,11 @@ public sealed class InstallerEngine
         {
             try { process.Kill(true); process.WaitForExit(4000); } catch { }
         }
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); } catch { }
     }
 
     private static void TryDelete(string path)

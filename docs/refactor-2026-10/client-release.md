@@ -474,3 +474,59 @@ Windows 会拦：有时候是 SmartScreen「Windows 已保护你的电脑」，
   真正的证据是 `icacls` 里那一行 `Mandatory Label`，它一直都在，只是没人去看。
 - 探针的可信度取决于它的**启动上下文**。用脚本启动 exe 去验证"用户双击会不会被拦"
   这件事，本身就不成立 —— 必须由人从 Explorer 双击。
+
+## 十、2026-10-21 v0.3.4：WPF 界面回来了（品牌外壳 + NSIS 内核）
+
+### 为什么不是"把 282MB 那版换回去"
+
+现有用户（含本项目自己的机器）装的是 NSIS 版本，安装目录里有 `Uninstall YuNian.exe`、
+注册表里有 electron-builder 的 GUID 键。直接换回自制安装器会**混装**：
+WPF 版不生成卸载器，「应用和功能」里点卸载直接失败（0.3.1 那版就是坏的）。
+
+### 现在的架构
+
+```
+YuNian-Setup-0.3.4.exe   (229.3 MB，单文件)
+└─ WPF 界面（原来那套暗色卡片，未改视觉）
+   └─ 解出内嵌的 NSIS 引擎 → /S /LIANYU_EMBEDDED /currentuser /D=<安装目录>
+      → 按安装目录体积轮询真实进度 → 收尾补「自启 / 快捷方式 / 装完启动」
+```
+
+- 内嵌对象从 **218MB 原始负载 zip** 换成 **166MB 的 NSIS 安装器**，
+  安装/卸载/注册表/快捷方式全部交给 NSIS。
+- NSIS 侧新增 `/LIANYU_EMBEDDED`：带这个标记才老实静默；
+  不带则保持原行为（更新入口强制显示界面），双击 NSIS 包仍然出向导。
+- `installer/build-offline-installer.ps1` 会校验待内嵌文件前 2MB 里有
+  `NullsoftInst`（品牌壳的特征是末尾 2MB 有 `.deps.json`），
+  防止把上一轮的品牌壳再内嵌一遍。
+
+### 体积：282 → 229 MB，不是我最初说的 170MB
+
+我漏算了 WPF **自包含运行时约 63MB**：166（引擎）+ 63 ≈ 229。
+纯 NSIS 仍是 166MB；229 是「漂亮界面 + 正经卸载器」的代价。
+
+### 实测
+
+| 项 | 结果 |
+|---|---|
+| 静默安装 | exit 0，**113 文件 / 506MB**，`resources/app.asar` version = 0.3.4 |
+| 卸载器 | `Uninstall YuNian.exe` 就位；`UninstallString` = `"...\Uninstall YuNian.exe" /currentuser` |
+| 启动 | 窗口 1.1s，`YuNian - 予念`，4 进程 |
+| GUI 门禁 | 1s 出窗口，**无 SmartScreen**，IL = Medium |
+| 注册表 | 只剩 NSIS 的 GUID 键（v0.3.4）；`Uninstall\YuNian` 那条重复项已清掉 |
+
+### 两个坑（都会再犯，记下来）
+
+1. **NSIS 检测旧安装用的是它自己那把键**：`Uninstall\{appId GUID}`
+   （本项目 `8F3C2A1B-4D5E-6F70-8A9B-0C1D2E3F4A5B`），**不是** `Uninstall\YuNian`。
+   我为了隔离测试只摘了后者，结果安装器仍认为存在 per-user 安装 →
+   **先跑了一遍卸载器把现有安装删空**，然后才装到我指定的临时目录。
+   教训：想验证"换目录安装"，必须把 GUID 键一起备份摘掉；
+   这次靠 `.reg` 备份 + 重新安装恢复了，数据（`%APPDATA%\lianyu-pc`）未受影响。
+2. **`edit`/`write` 重写 `.ps1` 会抹掉 UTF-8 BOM**，PS 5.1 随即把中文读成乱码并
+   报一堆语法错（这次的真实报错长这样：`鐪嬭捣鏉ヤ笉鏄?NSIS`）。
+   改完带中文的 `.ps1` 必须补 BOM，并跑一次
+   `[Parser]::ParseFile(...)` 校验。
+3. 顺带：`--install-silent` 走 `DesktopShortcut=false`，`ApplyShellOptions` 会按
+   "未勾选"把桌面快捷方式**删掉**。GUI 路径默认勾选，不受影响；
+   但用静默模式救急后要记得补快捷方式。

@@ -40,7 +40,13 @@
     <Resource Include="Assets\logo.png" />
   </ItemGroup>
 
-  <ItemGroup Condition="Exists('Payload\LianYu-payload.zip')">
-    <EmbeddedResource Include="Payload\LianYu-payload.zip" LogicalName="LianYu.Payload.zip" />
+  <!--
+    内嵌的是 electron-builder 打好的 NSIS 安装器（约 166MB），不是原始负载 zip。
+    界面由 WPF 出，安装/卸载/注册表/快捷方式全部交给 NSIS —— 这样才有卸载器，
+    体积也从 282MB 降到约 170MB。详见 InstallerEngine.cs 文件头。
+    LogicalName 必须与 InstallerEngine.PayloadResource 一致。
+  -->
+  <ItemGroup Condition="Exists('Payload\YuNian-Engine.exe')">
+    <EmbeddedResource Include="Payload\YuNian-Engine.exe" LogicalName="LianYu.Engine.exe" />
   </ItemGroup>
 </Project>

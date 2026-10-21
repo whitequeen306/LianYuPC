@@ -37,6 +37,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         InstallDirectoryBox.Text = InstallerEngine.GetDefaultInstallDirectory(false);
+        PackageSizeText.Text = BuildPackageSizeText();
         SettingsPanel.Width = 300;
         foreach (var image in _images) _imageCache[image] = LoadImage(image);
         ImageFront.Source = _imageCache[_images[0]];
@@ -45,6 +46,30 @@ public partial class MainWindow : Window
         _imageTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
         _imageTimer.Tick += (_, _) => RotateImages();
         _imageTimer.Start();
+    }
+
+    /// <summary>
+    /// 「约 xxx MB」必须按真实体积算。
+    ///
+    /// 以前这里写死成 166 MB，换打包方式后实际包变成 282MB，界面上却仍然写着 166MB ——
+    /// 对用户是错误信息。单文件包自身的大小就是用户的下载体积，直接读它。
+    /// </summary>
+    private static string BuildPackageSizeText()
+    {
+        try
+        {
+            var path = Environment.ProcessPath;
+            if (!string.IsNullOrEmpty(path) && File.Exists(path))
+            {
+                var megabytes = new FileInfo(path).Length / (1024.0 * 1024.0);
+                return $"约 {Math.Round(megabytes):0} MB · Windows 10 / 11 · 无需网络";
+            }
+        }
+        catch
+        {
+            // 读不到就退化成不带体积的文案，不显示假数字
+        }
+        return "Windows 10 / 11 · 无需网络";
     }
 
     private void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -435,9 +460,9 @@ public partial class MainWindow : Window
         if (_installing) return;
         _installing = true;
         InstallButton.IsEnabled = false;
-        var allUsers = AllUsersRadio.IsChecked == true;
-        if (allUsers) InstallDirectoryBox.Text = InstallerEngine.GetDefaultInstallDirectory(true);
-        var options = new InstallOptions(InstallDirectoryBox.Text.Trim(), allUsers, DesktopBox.IsChecked == true, StartMenuBox.IsChecked == true, AutoStartBox.IsChecked == true, LaunchBox.IsChecked == true);
+        // 只做「仅为我安装」：per-machine 需要 UAC 提权，利用率极低；
+        // 安装引擎（内嵌 NSIS）固定以 /currentuser 运行。
+        var options = new InstallOptions(InstallDirectoryBox.Text.Trim(), AllUsers: false, DesktopBox.IsChecked == true, StartMenuBox.IsChecked == true, AutoStartBox.IsChecked == true, LaunchBox.IsChecked == true);
         try
         {
             if (!InstallerEngine.PayloadAvailable)
@@ -445,7 +470,7 @@ public partial class MainWindow : Window
                 await RunDemoInstallAsync();
                 return;
             }
-            InstallerLog.Write($"install start: target={options.InstallDirectory}, allUsers={allUsers}, " +
+            InstallerLog.Write($"install start: target={options.InstallDirectory}, allUsers={options.AllUsers}, " +
                                $"desktop={options.DesktopShortcut}, startMenu={options.StartMenuShortcut}, " +
                                $"autostart={options.AutoStart}, launch={options.LaunchAfterInstall}");
             var progress = new Progress<InstallProgress>(UpdateProgress);

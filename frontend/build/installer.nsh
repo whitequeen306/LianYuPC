@@ -12,9 +12,16 @@
 ;  NSIS hooks — 安装前杀进程 / 更新入口强制显示安装界面 / 卸载时清理 napcat
 ; ================================================================
 !macro customInit
-  IfSilent 0 doneForceVisibleInstall
-    SetSilent normal
-  doneForceVisibleInstall:
+  ; 带 /LIANYU_EMBEDDED 说明是被 WPF 安装器壳内嵌调用的：那边自己负责界面与进度，
+  ; 这里必须**老老实实静默**，否则会自己弹一个向导出来盖住 WPF 窗口。
+  ; 其它情况（用户直接双击 NSIS 包、或走更新入口）保持旧行为：强制显示界面。
+  ${GetParameters} $R0
+  ${GetOptions} $R0 "/LIANYU_EMBEDDED" $R1
+  ${If} ${Errors}
+    IfSilent 0 doneForceVisibleInstall
+      SetSilent normal
+    doneForceVisibleInstall:
+  ${EndIf}
   nsExec::ExecToStack 'taskkill /F /IM "YuNian.exe" /T'
   Pop $0
   Pop $1
