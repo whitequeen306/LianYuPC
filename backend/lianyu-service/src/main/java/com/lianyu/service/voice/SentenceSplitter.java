@@ -57,23 +57,39 @@ public final class SentenceSplitter {
      */
     static final int MIN_LATER_COMMIT = 28;
 
-    /** 模型显式 pause 标记处：比句号更长的停顿。 */
-    static final int PAUSE_MARKER_MS = 400;
-
-    /** 句号 / 换行：实测模型自然停顿 585ms - 两句自带的首尾静音 304ms ≈ 280ms，取略大。 */
-    static final int SENTENCE_PAUSE_MS = 340;
+    /**
+     * 片段之间补多长的静音 —— **基准值是听感标定出来的，不是估的**。
+     *
+     * <p>2026-10-22 第一版按"模型自然停顿 585ms − 拼接后 304ms = 280ms"取 340ms，
+     * 上线后用户仍觉得停顿不像真人。做了一次可控实验（同一段话，1/2/3 个合成单元）：
+     *
+     * <pre>
+     *   1 个单元（整段合成）        7.76s
+     *   2 个单元 + 不补静音         8.32s   ← 光是切成两句就多出 560ms
+     *   2 个单元 + 340ms            8.66s
+     *   3 个单元 + 340ms            9.24s
+     * </pre>
+     *
+     * <p>也就是说**每片的自带首尾静音（304-560ms，随句尾标点波动）已经比模型内部
+     * 跨句停顿还长**，再叠 340ms 会让个别边界到 1.5 秒 —— 真人一句话接一句话时中间
+     * 很少有 1.5 秒。所以基准降到 150ms，其余按比例。
+     */
+    static final int SENTENCE_PAUSE_MS = 150;
 
     /** 感叹号 / 问号：语气收束更重，停得更久一点。 */
-    static final int EXCLAIM_PAUSE_MS = 420;
+    static final int EXCLAIM_PAUSE_MS = 190;
 
     /** 省略号 / 破折号：本身就是"话没说完的沉默"。 */
-    static final int ELLIPSIS_PAUSE_MS = 600;
+    static final int ELLIPSIS_PAUSE_MS = 260;
 
     /** 分号：句内分层。 */
-    static final int CLAUSE_PAUSE_MS = 240;
+    static final int CLAUSE_PAUSE_MS = 110;
 
     /** 逗号等弱边界被切开时的停顿（正常不会切，兜底用）。 */
-    static final int SOFT_PAUSE_MS = 180;
+    static final int SOFT_PAUSE_MS = 90;
+
+    /** 模型显式 pause 标记处：比句号更长的停顿。 */
+    static final int PAUSE_MARKER_MS = 180;
 
     private final StringBuilder buffer = new StringBuilder();
     private boolean firstCommitSent;
