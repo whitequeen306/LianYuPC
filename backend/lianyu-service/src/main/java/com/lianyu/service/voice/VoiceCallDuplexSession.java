@@ -28,8 +28,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class VoiceCallDuplexSession {
 
-    /** 句子队列的收尾标记（正常句子不会是空串/不会以 NUL 开头）。 */
-    private static final String TTS_SENTINEL = "\u0000DONE";
+    /** 句子队列的收尾标记（正常片段不会是空串/不会以 NUL 开头）。按引用比较，不按内容。 */
+    private static final SentenceSplitter.Segment TTS_SENTINEL =
+            new SentenceSplitter.Segment("\u0000DONE", 0);
 
     /**
      * WebSocket 发送串行化。
@@ -174,7 +175,7 @@ public class VoiceCallDuplexSession {
             //  · ttsQueue  —— 句子按序排队；TTS 线程取一句、合成一句、喂给客户端
             // 这样第一句的合成不必等整段回复结束，播完一句时下一句通常已就绪。
             SentenceSplitter splitter = new SentenceSplitter();
-            BlockingQueue<String> ttsQueue = new LinkedBlockingQueue<>();
+            BlockingQueue<SentenceSplitter.Segment> ttsQueue = new LinkedBlockingQueue<>();
             Thread ttsWorker = target.isLocal() ? null : startTtsPipeline(ttsQueue);
             try {
                 StringBuilder full = new StringBuilder();
@@ -201,8 +202,8 @@ public class VoiceCallDuplexSession {
                         emitJson("llm.delta", n -> n.put("text", visible));
                     }
                     if (ttsWorker != null) {
-                        for (String sentence : splitter.accept(delta)) {
-                            ttsQueue.offer(sentence);
+                        for (SentenceSplitter.Segment seg : splitter.accept(delta)) {
+                            ttsQueue.offer(seg);
                         }
                     }
                 });
@@ -224,8 +225,8 @@ public class VoiceCallDuplexSession {
                     emitLocalTts(spoken);
                 } else {
                     // 收尾：把切分器里剩余的半句也送去合成，然后等 TTS 线程把队列吃完。
-                    for (String sentence : splitter.flush()) {
-                        ttsQueue.offer(sentence);
+                    for (SentenceSplitter.Segment seg : splitter.flush()) {
+                        ttsQueue.offer(seg);
                     }
                     ttsQueue.offer(TTS_SENTINEL);
                     joinQuietly(ttsWorker, 180_000);
@@ -291,25 +292,36 @@ public class VoiceCallDuplexSession {
      * 首帧与总时长。等待有上限，上游卡死不会把工作线程永久占住。
      */
     /**
-     * 起一个 TTS 线程：按序从队列取句子，逐句流式合成并喂给客户端。
+     * 起一个 TTS 线程：按序从队列取片段，逐段流式合成并喂给客户端。
      *
      * <p>为什么用队列而不是「每句起一个线程」：**音频必须严格按句序下发**。
      * 并行合成会让第 2 句的音频插到第 1 句中间，听起来就是乱码。
      * 单线程串行虽然不重叠合成，但因为一句的播放时长（2-4s）远大于下一句的首包延迟
      * （实测 0.5-0.9s），下一句在第 1 句播完前就已就绪，实际是连续的。
+     *
+     * <p><b>片段之间补静音</b>：两段独立合成的音频拼在一起时，模型各自的开头/结尾静音
+     * 只有 ~130ms + ~175ms，比它在一次合成里自己产出的句号停顿（实测 585ms）短一半，
+     * 听上去就是「该停顿的地方连读」。所以按上一段结尾的标点补
+     * {@link SentenceSplitter#SENTENCE_PAUSE_MS} 等时长的静音，把边界补齐。
+     * 回合最后一段的 {@code pauseAfterMs} 是 0，不会拖慢 {@code turn.done}。
      */
-    private Thread startTtsPipeline(BlockingQueue<String> queue) {
+    private Thread startTtsPipeline(BlockingQueue<SentenceSplitter.Segment> queue) {
         Thread ttsThread = new Thread(() -> {
             try {
+                int pendingGapMs = 0;
                 while (!closed.get()) {
-                    String sentence = queue.poll(200, TimeUnit.MILLISECONDS);
-                    if (sentence == null) {
+                    SentenceSplitter.Segment segment = queue.poll(200, TimeUnit.MILLISECONDS);
+                    if (segment == null) {
                         continue;
                     }
-                    if (TTS_SENTINEL.equals(sentence)) {
+                    if (segment == TTS_SENTINEL) {
                         return;
                     }
-                    streamSentence(sentence);
+                    if (pendingGapMs > 0 && !closed.get()) {
+                        sendAudio(PcmFrameAssembler.silence(pendingGapMs), "audio/pcm");
+                    }
+                    streamSentence(segment.text());
+                    pendingGapMs = segment.pauseAfterMs();
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();

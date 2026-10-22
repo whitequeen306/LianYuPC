@@ -12,11 +12,19 @@ import org.junit.jupiter.api.Test;
  * <p>2026-10-22 从 {@code VoiceCallDuplexSessionTest} 迁过来：切分逻辑已经搬到
  * {@link SentenceSplitter}，因为语音通话改成了「LLM 还在吐字时就切句、切出来就合成」。
  * 原来只能测静态的 {@code nextCommitEnd}（切点下标）；现在可以直接测
- * 「喂增量 → 立刻拿到可合成的句子」这个真正影响体感的行为。
+ * 「喂增量 → 立刻拿到可合成的片段」这个真正影响体感的行为。
  */
 class SentenceSplitterTest {
 
-    // ── 切点规则（沿用旧断言，防止回归）──
+    private static List<String> texts(List<SentenceSplitter.Segment> segments) {
+        return segments.stream().map(SentenceSplitter.Segment::text).toList();
+    }
+
+    private static List<Integer> pauses(List<SentenceSplitter.Segment> segments) {
+        return segments.stream().map(SentenceSplitter.Segment::pauseAfterMs).toList();
+    }
+
+    // ── 切点规则 ──
 
     @Test
     void markerIsHighestPriorityCutPoint() {
@@ -37,11 +45,26 @@ class SentenceSplitterTest {
         assertEquals(-1, SentenceSplitter.nextCommitEnd("嗯，我在听呢", false));
     }
 
+    /**
+     * 首句之后要求攒够 {@link SentenceSplitter#MIN_LATER_COMMIT} 字再切。
+     *
+     * <p>旧行为是「首句之后每遇到句号就切」，实测把一段话切成 2-4 个独立合成单元，
+     * 句间停顿从模型自然的 585ms 掉到 304ms，且每句语调重新起头 —— 用户反馈的
+     * 「该停顿的地方连读」。这条断言就是那次行为变更的锚点。
+     */
     @Test
-    void laterCommitsCutAtSentenceEndOnly() {
-        assertEquals(2, SentenceSplitter.nextCommitEnd("嗯。走", true));
-        assertEquals(-1, SentenceSplitter.nextCommitEnd("今天天气不错", true));
-        // 逗号不算切点
+    void afterFirstCommitShortSentencesAreMergedNotSplit() {
+        // 「嗯。走」只有 4 字：首句之后不再切，等更多内容
+        assertEquals(-1, SentenceSplitter.nextCommitEnd("嗯。走", true));
+        assertEquals(-1, SentenceSplitter.nextCommitEnd("后面还有一句。", true));
+        // 攒够 20 字后，在下一个句号处切
+        String longEnough = "今天天气很好我想出去走走看看有没有人一起。再来一句。";
+        int cut = SentenceSplitter.nextCommitEnd(longEnough, true);
+        assertEquals(longEnough.indexOf('。') + 1, cut);
+    }
+
+    @Test
+    void laterCommitsNeverCutAtComma() {
         assertEquals(-1, SentenceSplitter.nextCommitEnd("今天天气不错，想出去走走", true));
         assertEquals(-1, SentenceSplitter.nextCommitEnd("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", true));
     }
@@ -64,19 +87,43 @@ class SentenceSplitterTest {
     @Test
     void yieldsSentenceAsSoonAsEnderArrives() {
         SentenceSplitter splitter = new SentenceSplitter();
-        // 第一次增量还没到切点
         assertTrue(splitter.accept("我在听呢").isEmpty());
-        // 句号一来就立刻切出这一句 —— 不必等后面的话
-        List<String> first = splitter.accept("。");
-        assertEquals(List.of("我在听呢。"), first);
-        // 后续增量独立成句
-        assertEquals(List.of("后面还有一句。"), splitter.accept("后面还有一句。"));
+        // 句号一来就立刻切出这一句 —— 首句不等后面的话（首包延迟优先）
+        assertEquals(List.of("我在听呢。"), texts(splitter.accept("。")));
+    }
+
+    @Test
+    void laterSentenceIsHeldUntilLongEnough() {
+        SentenceSplitter splitter = new SentenceSplitter();
+        assertEquals(List.of("我在听呢。"), texts(splitter.accept("我在听呢。")));
+        // 首句之后：短句不切，等攒够再一起合成
+        assertTrue(splitter.accept("后面还有一句。").isEmpty());
+        assertTrue(splitter.accept("再加一句。").isEmpty());
+        // 攒够了（>20 字）就在下一个句号处切
+        List<String> got = texts(splitter.accept("这一句足够长到可以决定切开了。"));
+        assertEquals(1, got.size());
+        assertTrue(got.get(0).length() >= SentenceSplitter.MIN_LATER_COMMIT);
     }
 
     @Test
     void markerSplitsImmediatelyAndIsStripped() {
         SentenceSplitter splitter = new SentenceSplitter();
-        assertEquals(List.of("要不要我陪你"), splitter.accept("要不要我陪你<|pause|>"));
+        assertEquals(List.of("要不要我陪你"), texts(splitter.accept("要不要我陪你<|pause|>")));
+    }
+
+    /**
+     * 回归：切在 marker 处时 marker 会留在缓冲区头部。
+     * 若不主动清掉，{@code indexOf == 0} 分支会让这一回合**再也不切**，
+     * 后续内容全部堆到 flush 才合成（线上表现为「一句话卡到最后一口气才出声」）。
+     */
+    @Test
+    void leadingMarkerDoesNotBlockLaterSplits() {
+        SentenceSplitter splitter = new SentenceSplitter();
+        assertEquals(List.of("先说一句。"), texts(splitter.accept("先说一句。<|pause|>")));
+        // marker 现在位于缓冲区开头；再喂内容必须还能切
+        assertTrue(splitter.accept("后面这一句也够长了吧。").isEmpty());
+        List<String> got = texts(splitter.accept("再来一句收尾的话凑长度。"));
+        assertEquals(1, got.size());
     }
 
     @Test
@@ -85,17 +132,17 @@ class SentenceSplitterTest {
         // 括号里的句号不能作为切点，否则逐句剥离括号后会念出残句
         assertTrue(splitter.accept("（他笑了。真好）我在").isEmpty());
         // 括号闭合后的句号才是合法切点，且括号内容被一并剥掉
-        assertEquals(List.of("我在。"), splitter.accept("。"));
+        assertEquals(List.of("我在。"), texts(splitter.accept("。")));
     }
 
     @Test
     void flushEmitsRemainderAndResets() {
         SentenceSplitter splitter = new SentenceSplitter();
         assertTrue(splitter.accept("嗯，我在听").isEmpty());
-        assertEquals(List.of("嗯，我在听"), splitter.flush());
+        assertEquals(List.of("嗯，我在听"), texts(splitter.flush()));
         // flush 之后再喂，仍按「首次切分」规则处理
         assertTrue(splitter.accept("好").isEmpty());
-        assertEquals(List.of("好"), splitter.flush());
+        assertEquals(List.of("好"), texts(splitter.flush()));
     }
 
     @Test
@@ -104,6 +151,41 @@ class SentenceSplitterTest {
         assertTrue(splitter.accept("<|pause|>").isEmpty());
         assertTrue(splitter.accept("（只有内心独白。）").isEmpty());
         assertTrue(splitter.flush().isEmpty());
+    }
+
+    // ── 停顿时长 ──
+
+    /**
+     * 停顿长度不是随手写的常数，而是实测标定的：
+     * 模型在同一次合成里句号停顿 585ms，而两句独立合成拼起来只有 304ms，
+     * 差值 ≈ 280ms 就是要补的静音。
+     */
+    @Test
+    void pauseAfterEndingFollowsPunctuation() {
+        assertEquals(SentenceSplitter.SENTENCE_PAUSE_MS, SentenceSplitter.pauseForEnding("我回来了。"));
+        assertEquals(SentenceSplitter.SENTENCE_PAUSE_MS, SentenceSplitter.pauseForEnding("真的吗？"));
+        assertEquals(SentenceSplitter.SENTENCE_PAUSE_MS, SentenceSplitter.pauseForEnding("太好了！"));
+        assertEquals(SentenceSplitter.CLAUSE_PAUSE_MS, SentenceSplitter.pauseForEnding("第一点；"));
+        assertEquals(SentenceSplitter.SOFT_PAUSE_MS, SentenceSplitter.pauseForEnding("然后，"));
+        assertEquals(0, SentenceSplitter.pauseForEnding(""));
+        // 尾随空格不影响判断
+        assertEquals(SentenceSplitter.SENTENCE_PAUSE_MS, SentenceSplitter.pauseForEnding("我回来了。 "));
+    }
+
+    @Test
+    void markerCutGetsLongerPause() {
+        SentenceSplitter splitter = new SentenceSplitter();
+        List<SentenceSplitter.Segment> seg = splitter.accept("慢慢来<|pause|>");
+        assertEquals(List.of("慢慢来"), texts(seg));
+        assertEquals(List.of(SentenceSplitter.PAUSE_MARKER_MS), pauses(seg));
+    }
+
+    @Test
+    void flushSegmentCarriesNoTrailingPause() {
+        // 回合最后一片之后再插静音只会让 turn.done 变慢，没有任何听感收益
+        SentenceSplitter splitter = new SentenceSplitter();
+        assertTrue(splitter.accept("嗯，我在听").isEmpty());
+        assertEquals(List.of(0), pauses(splitter.flush()));
     }
 
     @Test
