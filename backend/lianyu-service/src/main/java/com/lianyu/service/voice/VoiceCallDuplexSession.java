@@ -386,7 +386,7 @@ public class VoiceCallDuplexSession {
                         sendAudio(PcmFrameAssembler.silence(pendingGapMs), "audio/pcm");
                     }
                     streamSentence(segment.text());
-                    pendingGapMs = segment.pauseAfterMs();
+                    pendingGapMs = jitteredPause(segment.pauseAfterMs());
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -443,8 +443,21 @@ public class VoiceCallDuplexSession {
         }
     }
 
-    private static void joinQuietly(Thread thread, long timeoutMs) {
-        if (thread == null) {
+    /**
+     * 给片段之间的静音加 ±40ms 抖动。
+     *
+     * <p>固定间隔听久了就是节拍器 —— 真人说话的停顿从来不是等长的。抖动放在这里而不是
+     * {@link SentenceSplitter}，是为了让切分器的单测保持确定性。
+     */
+    private static int jitteredPause(int baseMs) {
+        if (baseMs <= 0) {
+            return 0;
+        }
+        int jitter = java.util.concurrent.ThreadLocalRandom.current().nextInt(81) - 40;
+        return Math.max(60, baseMs + jitter);
+    }
+
+    private static void joinQuietly(Thread thread, long timeoutMs) {        if (thread == null) {
             return;
         }
         try {

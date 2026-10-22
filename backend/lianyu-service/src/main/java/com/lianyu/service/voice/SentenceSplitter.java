@@ -43,7 +43,6 @@ public final class SentenceSplitter {
     static final String PAUSE_TOKEN = "<|pause|>";
 
     private static final String STRONG_ENDERS = "。！？!?\n";
-    private static final String WEAK_ENDERS = "；;…";
 
     /** 首句至少这么长才切，避免「嗯。」「好。」这种碎片。 */
     static final int MIN_FIRST_COMMIT = 4;
@@ -51,22 +50,30 @@ public final class SentenceSplitter {
     /**
      * 首句之后，攒到这么长才切。
      *
-     * <p>取 20 的取舍：更短 → 停顿碎、语调起头多、TTS 往返多；更长 → 第二片就绪太晚，
-     * 首片播完后可能接不上（首片约 1.5-3s 音频，而单片合成 1-2s）。
+     * <p>取 28 的取舍：这个长度大约 4-6 秒语音，通常已经包含 1-2 个句号，**句间停顿交给模型
+     * 自己生成**（实测模型自然停顿 585ms，比我们插的静音自然）。更短 → 边界多、停顿机械、
+     * TTS 往返多；更长 → 第二片就绪太晚，首片播完后可能接不上（首片 1.5-3s 音频，
+     * 单片合成热态 0.3-1.0s，还有余量）。
      */
-    static final int MIN_LATER_COMMIT = 20;
+    static final int MIN_LATER_COMMIT = 28;
 
     /** 模型显式 pause 标记处：比句号更长的停顿。 */
     static final int PAUSE_MARKER_MS = 400;
 
-    /** 句号级停顿：实测模型自然停顿 585ms - 两句自带的首尾静音 304ms ≈ 280ms。 */
-    static final int SENTENCE_PAUSE_MS = 280;
+    /** 句号 / 换行：实测模型自然停顿 585ms - 两句自带的首尾静音 304ms ≈ 280ms，取略大。 */
+    static final int SENTENCE_PAUSE_MS = 340;
 
-    /** 分号级停顿。 */
-    static final int CLAUSE_PAUSE_MS = 220;
+    /** 感叹号 / 问号：语气收束更重，停得更久一点。 */
+    static final int EXCLAIM_PAUSE_MS = 420;
+
+    /** 省略号 / 破折号：本身就是"话没说完的沉默"。 */
+    static final int ELLIPSIS_PAUSE_MS = 600;
+
+    /** 分号：句内分层。 */
+    static final int CLAUSE_PAUSE_MS = 240;
 
     /** 逗号等弱边界被切开时的停顿（正常不会切，兜底用）。 */
-    static final int SOFT_PAUSE_MS = 160;
+    static final int SOFT_PAUSE_MS = 180;
 
     private final StringBuilder buffer = new StringBuilder();
     private boolean firstCommitSent;
@@ -141,13 +148,19 @@ public final class SentenceSplitter {
         }
         for (int i = piece.length() - 1; i >= 0; i--) {
             char c = piece.charAt(i);
-            if (Character.isWhitespace(c) && c != '\n') {
+            if (c == ' ' || c == '\t' || c == '　') {
                 continue;
             }
-            if (STRONG_ENDERS.indexOf(c) >= 0) {
+            if (c == '。' || c == '\n') {
                 return SENTENCE_PAUSE_MS;
             }
-            if (WEAK_ENDERS.indexOf(c) >= 0) {
+            if (c == '！' || c == '？' || c == '!' || c == '?') {
+                return EXCLAIM_PAUSE_MS;
+            }
+            if (c == '…' || c == '—' || c == '～' || c == '~') {
+                return ELLIPSIS_PAUSE_MS;
+            }
+            if (c == '；' || c == ';') {
                 return CLAUSE_PAUSE_MS;
             }
             return SOFT_PAUSE_MS;

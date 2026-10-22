@@ -57,10 +57,14 @@ class SentenceSplitterTest {
         // 「嗯。走」只有 4 字：首句之后不再切，等更多内容
         assertEquals(-1, SentenceSplitter.nextCommitEnd("嗯。走", true));
         assertEquals(-1, SentenceSplitter.nextCommitEnd("后面还有一句。", true));
-        // 攒够 20 字后，在下一个句号处切
-        String longEnough = "今天天气很好我想出去走走看看有没有人一起。再来一句。";
-        int cut = SentenceSplitter.nextCommitEnd(longEnough, true);
-        assertEquals(longEnough.indexOf('。') + 1, cut);
+        // 刚好凑到门槛就在这个句号处切
+        String filler = "一".repeat(SentenceSplitter.MIN_LATER_COMMIT);
+        String longEnough = filler + "。再来一句。";
+        assertEquals(SentenceSplitter.MIN_LATER_COMMIT + 1,
+                SentenceSplitter.nextCommitEnd(longEnough, true));
+        // 差一个字就不切（门槛是硬的，不能靠估算）
+        assertEquals(-1, SentenceSplitter.nextCommitEnd(
+                filler.substring(1) + "。再来一句。", true));
     }
 
     @Test
@@ -99,10 +103,11 @@ class SentenceSplitterTest {
         // 首句之后：短句不切，等攒够再一起合成
         assertTrue(splitter.accept("后面还有一句。").isEmpty());
         assertTrue(splitter.accept("再加一句。").isEmpty());
-        // 攒够了（>20 字）就在下一个句号处切
-        List<String> got = texts(splitter.accept("这一句足够长到可以决定切开了。"));
+        // 攒够了就在下一个句号处切，且切出来的一片明显长于门槛
+        String filler = "凑".repeat(SentenceSplitter.MIN_LATER_COMMIT);
+        List<String> got = texts(splitter.accept(filler + "。"));
         assertEquals(1, got.size());
-        assertTrue(got.get(0).length() >= SentenceSplitter.MIN_LATER_COMMIT);
+        assertTrue(got.get(0).length() > SentenceSplitter.MIN_LATER_COMMIT);
     }
 
     @Test
@@ -122,7 +127,8 @@ class SentenceSplitterTest {
         assertEquals(List.of("先说一句。"), texts(splitter.accept("先说一句。<|pause|>")));
         // marker 现在位于缓冲区开头；再喂内容必须还能切
         assertTrue(splitter.accept("后面这一句也够长了吧。").isEmpty());
-        List<String> got = texts(splitter.accept("再来一句收尾的话凑长度。"));
+        String filler = "凑".repeat(SentenceSplitter.MIN_LATER_COMMIT);
+        List<String> got = texts(splitter.accept(filler + "。"));
         assertEquals(1, got.size());
     }
 
@@ -158,18 +164,24 @@ class SentenceSplitterTest {
     /**
      * 停顿长度不是随手写的常数，而是实测标定的：
      * 模型在同一次合成里句号停顿 585ms，而两句独立合成拼起来只有 304ms，
-     * 差值 ≈ 280ms 就是要补的静音。
+     * 差值 ≈ 280ms 就是要补的静音；现在按标点分级，省略号/破折号最长。
      */
     @Test
     void pauseAfterEndingFollowsPunctuation() {
         assertEquals(SentenceSplitter.SENTENCE_PAUSE_MS, SentenceSplitter.pauseForEnding("我回来了。"));
-        assertEquals(SentenceSplitter.SENTENCE_PAUSE_MS, SentenceSplitter.pauseForEnding("真的吗？"));
-        assertEquals(SentenceSplitter.SENTENCE_PAUSE_MS, SentenceSplitter.pauseForEnding("太好了！"));
+        assertEquals(SentenceSplitter.SENTENCE_PAUSE_MS, SentenceSplitter.pauseForEnding("第一段\n第二段"));
+        assertEquals(SentenceSplitter.EXCLAIM_PAUSE_MS, SentenceSplitter.pauseForEnding("真的吗？"));
+        assertEquals(SentenceSplitter.EXCLAIM_PAUSE_MS, SentenceSplitter.pauseForEnding("太好了！"));
+        assertEquals(SentenceSplitter.ELLIPSIS_PAUSE_MS, SentenceSplitter.pauseForEnding("这个嘛……"));
+        assertEquals(SentenceSplitter.ELLIPSIS_PAUSE_MS, SentenceSplitter.pauseForEnding("我想想——"));
         assertEquals(SentenceSplitter.CLAUSE_PAUSE_MS, SentenceSplitter.pauseForEnding("第一点；"));
         assertEquals(SentenceSplitter.SOFT_PAUSE_MS, SentenceSplitter.pauseForEnding("然后，"));
         assertEquals(0, SentenceSplitter.pauseForEnding(""));
         // 尾随空格不影响判断
         assertEquals(SentenceSplitter.SENTENCE_PAUSE_MS, SentenceSplitter.pauseForEnding("我回来了。 "));
+        // 语气收束比陈述更久
+        assertTrue(SentenceSplitter.EXCLAIM_PAUSE_MS > SentenceSplitter.SENTENCE_PAUSE_MS);
+        assertTrue(SentenceSplitter.ELLIPSIS_PAUSE_MS > SentenceSplitter.EXCLAIM_PAUSE_MS);
     }
 
     @Test
