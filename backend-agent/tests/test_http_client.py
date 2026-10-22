@@ -66,6 +66,18 @@ async def test_shared_client_keeps_outbound_policy():
     assert client.timeout.connect == new_client().timeout.connect
 
 
+def test_keepalive_window_outlives_call_gaps():
+    """httpx 默认 keepalive_expiry=5s，而语音通话轮次间隔常态 5-20s。
+
+    默认值等于「每轮都重新握手」——实测冷首包 2690ms vs 热 314ms。
+    这条断言钉住「保活窗口必须显著大于一轮对话的间隔」。
+    """
+    from app.http_client import _SHARED_LIMITS
+
+    assert _SHARED_LIMITS.keepalive_expiry >= 60.0
+    assert _SHARED_LIMITS.max_keepalive_connections >= 2
+
+
 async def test_aclose_shared_is_idempotent():
     shared_client("twice")
     await aclose_shared()

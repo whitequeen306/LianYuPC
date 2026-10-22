@@ -22,7 +22,7 @@ def outbound_timeout() -> httpx.Timeout:
     return httpx.Timeout(connect=connect, read=read, write=write, pool=pool)
 
 
-def new_client(base_url: str | None = None) -> httpx.AsyncClient:
+def new_client(base_url: str | None = None, limits: httpx.Limits | None = None) -> httpx.AsyncClient:
     """唯一合法的出站 AsyncClient 构造入口。
 
     注意：base_url 为空时必须**不传**该参数（httpx 不接受显式 None）。
@@ -35,12 +35,23 @@ def new_client(base_url: str | None = None) -> httpx.AsyncClient:
     }
     if base_url:
         kwargs["base_url"] = base_url
+    if limits is not None:
+        kwargs["limits"] = limits
     return httpx.AsyncClient(**kwargs)
 
 
 # 按名字复用的长连接客户端。
 # 值里存创建它的事件循环：httpx.AsyncClient 绑定在创建时的循环上，跨循环复用会炸。
 _SHARED: dict[str, tuple[asyncio.AbstractEventLoop, httpx.AsyncClient]] = {}
+
+# httpx 默认 keepalive_expiry 只有 5 秒。语音通话的轮次间隔常态是 5-20 秒，
+# 用默认值等于**每轮都重新握手**（境内到阿里云 300-400ms，实测冷首包 2690ms vs 热 314ms）。
+# 复用客户端存在的意义就是消掉这笔开销，所以显式把保活窗口拉到 3 分钟。
+_SHARED_LIMITS = httpx.Limits(
+    max_connections=16,
+    max_keepalive_connections=8,
+    keepalive_expiry=180.0,
+)
 
 
 def shared_client(name: str = "default") -> httpx.AsyncClient:
@@ -59,7 +70,7 @@ def shared_client(name: str = "default") -> httpx.AsyncClient:
         cached_loop, client = cached
         if cached_loop is loop and not client.is_closed:
             return client
-    client = new_client()
+    client = new_client(limits=_SHARED_LIMITS)
     _SHARED[name] = (loop, client)
     return client
 
