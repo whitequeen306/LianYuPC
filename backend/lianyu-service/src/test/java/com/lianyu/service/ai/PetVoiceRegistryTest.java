@@ -13,12 +13,12 @@ import org.junit.jupiter.api.Test;
  * 音色注册表的契约测试。
  *
  * <p>2026-10-21 重写：旧的 {@code qwen3-tts-vc-*} 模型系列已下架，13 个角色音色全部
- * 按现役模型 {@code qwen-audio-3.1-tts-flash} 重新注册，实时音色随之清空
+ * 按现役模型 {@code cosyvoice-v3-flash} 重新注册（用生产 key），实时音色随之清空
  * （平台已无「支持复刻的实时 TTS 模型」）。原测试断言的旧模型名与旧 voiceId 全部作废。
  */
 class PetVoiceRegistryTest {
 
-    private static final String HTTP_MODEL = "qwen-audio-3.1-tts-flash";
+    private static final String HTTP_MODEL = "cosyvoice-v3-flash";
 
     private static final String[] PETS = {
             "klee", "ganyu", "ayaka", "raiden", "elysia", "erii_uesugi",

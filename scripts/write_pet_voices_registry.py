@@ -18,8 +18,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "backend/lianyu-service/src/main/resources/pet-voices.json"
-ENROLLED = ROOT / "artifacts/voice-vc/re-enroll-20261021.json"
-TARGET_MODEL = "qwen-audio-3.1-tts-flash"
+# 用**生产 key** 注册出来的那批（CosyVoice）。
+# 不用 qwen-audio-3.1-tts-flash 的原因：生产账号调用它报 Engine error 411（模型未开通）。
+ENROLLED = ROOT / "artifacts/voice-vc/re-enroll-cosyvoice-v3-flash.json"
+TARGET_MODEL = "cosyvoice-v3-flash"
 
 
 def main() -> None:

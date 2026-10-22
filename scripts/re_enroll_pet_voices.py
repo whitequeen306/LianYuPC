@@ -33,7 +33,11 @@ BASE = "https://dashscope.aliyuncs.com/api/v1"
 CUSTOMIZATION = f"{BASE}/services/audio/tts/customization"
 SPEECH_SYNTH = f"{BASE}/services/audio/tts/SpeechSynthesizer"
 
-TARGET_MODEL = "qwen-audio-3.1-tts-flash"
+# 目标模型可用环境变量覆盖：生产账号用不了 qwen-audio-3.1-tts-flash（Engine error 411），
+# 但 cosyvoice-v3-flash 可用且同样支持声音复刻，所以上线时用的是后者。
+TARGET_MODEL = os.environ.get("DS_MODEL", "qwen-audio-3.1-tts-flash")
+# 结果文件名带模型标识，避免不同模型的注册结果互相覆盖
+OUT_NAME = os.environ.get("DS_OUT_NAME", "")
 VERIFY_TEXT = "你好，我是你的桌面伙伴。"
 
 KEY = (os.environ.get("DSK") or "").strip()
@@ -127,7 +131,7 @@ def main() -> None:
 
     plan = [row for row in PLAN if not only or row[0] in only]
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
-    out_path = VC / f"re-enroll-{stamp}.json"
+    out_path = VC / (OUT_NAME or f"re-enroll-{stamp}.json")
 
     results: dict[str, dict] = {}
     # 断点续跑：已有结果就复用，避免重复注册浪费配额

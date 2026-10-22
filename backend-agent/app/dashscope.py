@@ -18,8 +18,9 @@ DEFAULT_BASE = "https://dashscope.aliyuncs.com"
 # 现役模型（2026-10-21 实测）：
 #   qwen3-tts-vc-*            -> 已下架，合成报 "Model not exist"
 #   qwen3-tts-flash           -> 可用，但**不支持声音复刻**（只支持系统音色）
-#   qwen-audio-3.1-tts-flash  -> 可用且支持复刻音色，所以角色音色走它
-RECOMMENDED_HTTP_MODEL = "qwen-audio-3.1-tts-flash"
+#   qwen-audio-3.1-tts-flash  -> 支持复刻，但**生产账号未开通**（Engine error 411），
+#   cosyvoice-v3-flash        -> 生产账号可用、支持复刻、SSE 流式首包 536ms，角色音色走它
+RECOMMENDED_HTTP_MODEL = "cosyvoice-v3-flash"
 # 实时：平台已无「支持复刻的实时 TTS 模型」。qwen3-tts-flash-realtime 能出音频但
 # 只支持系统音色；qwen-audio-*-realtime-* 是语音对话模型（另一套事件，不是 TTS）。
 # 因此这里保留空串：任何"用实时模型 + 复刻音色"的调用都是不成立的组合。
