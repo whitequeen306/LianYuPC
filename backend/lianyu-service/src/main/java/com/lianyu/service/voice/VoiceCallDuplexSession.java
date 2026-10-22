@@ -54,10 +54,21 @@ public class VoiceCallDuplexSession {
     private final AtomicBoolean turnBusy = new AtomicBoolean(false);
     private final AtomicBoolean audioSent = new AtomicBoolean(false);
     private final AtomicReference<java.util.concurrent.CompletableFuture<?>> llmFuture = new AtomicReference<>();
+    /**
+     * 上一个回合还没收尾时，用户又说完一句 —— 先把文本存这里，等当前回合结束立刻接上。
+     *
+     * <p>不这么做就会**直接丢掉**这半句（{@code turnBusy} CAS 失败即 return）。用户体感是
+     * 「我说了它没听见 / 识别变慢」，其实是回合还在发上一句的音频。
+     */
+    private final AtomicReference<String> pendingUserText = new AtomicReference<>();
     private final Object sentenceLock = new Object();
     /** LLM delta 展示缓冲：marker 不泄露到前端字幕。guarded by {@link #sentenceLock} */
     private final StringBuilder llmEmitBuf = new StringBuilder();
     private volatile String lastPartial = "";
+    /** 会话起点 / 最近一帧上行 PCM / 第一条 ASR 中间结果 —— 用来量 ASR 这一段到底慢在哪。 */
+    private final long sessionStartedAtMs = System.currentTimeMillis();
+    private volatile long lastPcmAtMs;
+    private volatile long asrFirstPartialAtMs;
     private volatile long turnStartedAtMs;
     private volatile long llmFirstDeltaAtMs;
     private volatile long firstAudioAtMs;
@@ -82,6 +93,11 @@ public class VoiceCallDuplexSession {
             @Override
             public void onPartial(String text) {
                 lastPartial = text == null ? "" : text;
+                if (asrFirstPartialAtMs == 0L && !lastPartial.isBlank()) {
+                    asrFirstPartialAtMs = System.currentTimeMillis();
+                    log.info("Voice duplex timing conv={} stage=asr_first_partial ms={}",
+                            conversationId, asrFirstPartialAtMs - sessionStartedAtMs);
+                }
                 emitJson("asr.partial", n -> n.put("text", lastPartial));
             }
 
@@ -115,6 +131,7 @@ public class VoiceCallDuplexSession {
         if (closed.get() || pcm == null || pcm.length == 0) {
             return;
         }
+        lastPcmAtMs = System.currentTimeMillis();
         asr.sendPcm(pcm);
     }
 
@@ -134,6 +151,14 @@ public class VoiceCallDuplexSession {
             text = lastPartial;
             lastPartial = "";
         }
+        long now = System.currentTimeMillis();
+        // 这行直接回答「语音转文字为什么变慢」：从用户最后一帧语音到判定说完，隔了多久。
+        // 归 VAD/端点检测，不归识别模型 —— 有数才分得清该改哪一段。
+        log.info("Voice duplex timing conv={} stage=asr_endpoint silenceMs={} sinceStartMs={} textLen={}",
+                conversationId,
+                lastPcmAtMs == 0L ? -1 : now - lastPcmAtMs,
+                now - sessionStartedAtMs,
+                text == null ? 0 : text.length());
         try {
             asr.reset();
         } catch (Exception e) {
@@ -160,6 +185,10 @@ public class VoiceCallDuplexSession {
             return;
         }
         if (!turnBusy.compareAndSet(false, true)) {
+            // 上一回合还在播音频。**不能装作没听见**：把这句话存起来，等当前回合收尾立刻接上。
+            pendingUserText.set(userText);
+            log.info("Voice duplex turn queued conv={} len={}（上一回合还在收尾）",
+                    conversationId, userText.length());
             return;
         }
         turnStartedAtMs = System.currentTimeMillis();
@@ -252,6 +281,11 @@ public class VoiceCallDuplexSession {
             } finally {
                 llmFuture.set(null);
                 turnBusy.set(false);
+                // 收尾后再接力：期间用户说的话现在才处理，保证「说过的话一定被回应」。
+                String queued = pendingUserText.getAndSet(null);
+                if (queued != null && !closed.get()) {
+                    startTurn(queued);
+                }
             }
         }, "voice-call-duplex");
         worker.setDaemon(true);
