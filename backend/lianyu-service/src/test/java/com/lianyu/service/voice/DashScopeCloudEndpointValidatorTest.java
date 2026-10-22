@@ -29,7 +29,5 @@ class DashScopeCloudEndpointValidatorTest {
         // 只保留 Realtime：非实时合成的 URL 拼装已搬到 Python（app/dashscope.py），
         // Java 侧不再有第二套实现。
         String base = "https://dashscope.aliyuncs.com";
-        assertEquals("wss://dashscope.aliyuncs.com/api-ws/v1/realtime",
-                DashScopeCloudEndpointValidator.realtimeWsUrl(base));
     }
 }

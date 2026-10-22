@@ -79,9 +79,4 @@ public final class DashScopeCloudEndpointValidator {
         return m;
     }
 
-    public static String realtimeWsUrl(String base) {
-        String normalized = normalizeBaseUrl(base);
-        String host = URI.create(normalized).getHost();
-        return "wss://" + host + "/api-ws/v1/realtime";
-    }
 }

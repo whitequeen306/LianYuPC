@@ -79,7 +79,15 @@ $modelCallPatterns = @(
     '/api/v1/services/aigc/multimodal-generation',
     '/api/v1/services/audio/tts/customization',
     '/api/v1/services/rerank/',
-    '/compatible-mode/v1/embeddings'
+    '/compatible-mode/v1/embeddings',
+    # 2026-10-22 补：**实时语音（WebSocket）**。
+    # 此前这里完全没有 wss 模式，于是 DashScopeTtsRealtimeService（401 行，直连
+    # wss://dashscope.aliyuncs.com/api-ws/v1/realtime）一直扫不到 ——
+    # ratchet 输出的「Java 已无任何 AI 逻辑残留」是**假阴性**，不是通过。
+    # 刻意不用泛化的 'wss://'：AsrStreamClient 也走 WebSocket，但连的是
+    # **我们自己的本地 ASR 容器**，那不是 AI 出站调用，不该计入。
+    'api-ws/v1/realtime',
+    'DashScopeTtsRealtimeService'
 )
 
 # ── 规则 3：已知 AI 类（OFF 退役后清单已清零）──
@@ -91,7 +99,10 @@ $migratedClientFiles = @(
     'DashScopeTtsService.java',
     'DashScopeVoiceEnrollmentClient.java',
     'EmbeddingService.java',
-    'RerankerService.java'
+    'RerankerService.java',
+    # 实时语音 WS 客户端（2026-10-22 删除：平台已无「支持复刻的实时 TTS 模型」，
+    # 语音通话改走按句 SSE 流式合成）
+    'DashScopeTtsRealtimeService.java'
 )
 
 $promptHits = New-Object System.Collections.Generic.List[object]

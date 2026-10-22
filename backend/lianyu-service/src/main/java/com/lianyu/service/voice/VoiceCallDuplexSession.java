@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.lianyu.common.util.UserInputSanitizer;
 import com.lianyu.service.ai.AsrStreamClient;
-import com.lianyu.service.ai.DashScopeTtsRealtimeService;
 import com.lianyu.service.agent.TtsPort;
 import com.lianyu.service.ai.InnerThoughtFilter;
 import com.lianyu.service.conversation.VoiceCallService;
@@ -27,39 +26,22 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class VoiceCallDuplexSession {
 
-    private static final ExecutorService TTS_CONNECT_EXECUTOR = Executors.newCachedThreadPool(r -> {
-        Thread thread = new Thread(r, "voice-tts-connect");
-        thread.setDaemon(true);
-        return thread;
-    });
-
     private final VoiceEventSink sink;
     private final ObjectMapper objectMapper;
     private final long userId;
     private final long conversationId;
     private final VoiceCallService voiceCallService;
-    private final DashScopeTtsRealtimeService ttsRealtimeService;
     private final VoiceSynthesisService voiceSynthesisService;
     private final AsrStreamClient.Session asr;
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicBoolean turnBusy = new AtomicBoolean(false);
-    private final AtomicBoolean ttsFailed = new AtomicBoolean(false);
     private final AtomicBoolean audioSent = new AtomicBoolean(false);
-    private final AtomicReference<DashScopeTtsRealtimeService.Session> ttsSession = new AtomicReference<>();
-    private final AtomicReference<CompletableFuture<DashScopeTtsRealtimeService.Session>> ttsConnectFuture =
-            new AtomicReference<>();
     private final AtomicReference<java.util.concurrent.CompletableFuture<?>> llmFuture = new AtomicReference<>();
-    private final AtomicLong ttsGeneration = new AtomicLong();
-    private final AtomicLong commitSeq = new AtomicLong();
     private final Object sentenceLock = new Object();
-    private final StringBuilder sentenceBuf = new StringBuilder();
     /** LLM delta 展示缓冲：marker 不泄露到前端字幕。guarded by {@link #sentenceLock} */
     private final StringBuilder llmEmitBuf = new StringBuilder();
-    /** guarded by {@link #sentenceLock} */
-    private boolean firstCommitSent;
     private volatile String lastPartial = "";
     private volatile long turnStartedAtMs;
-    private volatile long ttsReadyAtMs;
     private volatile long llmFirstDeltaAtMs;
     private volatile long firstAudioAtMs;
     private final VoiceCallTarget target;
@@ -71,14 +53,12 @@ public class VoiceCallDuplexSession {
             long conversationId,
             VoiceCallService voiceCallService,
             AsrStreamClient asrStreamClient,
-            DashScopeTtsRealtimeService ttsRealtimeService,
             VoiceSynthesisService voiceSynthesisService) {
         this.sink = sink;
         this.objectMapper = objectMapper;
         this.userId = userId;
         this.conversationId = conversationId;
         this.voiceCallService = voiceCallService;
-        this.ttsRealtimeService = ttsRealtimeService;
         this.voiceSynthesisService = voiceSynthesisService;
         this.target = voiceCallService.resolveAndAssertCallTarget(userId, conversationId);
         this.asr = asrStreamClient.open(new AsrStreamClient.Listener() {
@@ -112,7 +92,6 @@ public class VoiceCallDuplexSession {
                 // ignore
             }
         });
-        prewarmRealtimeTts("call-start");
     }
 
     public void onPcm(byte[] pcm) {
@@ -126,7 +105,6 @@ public class VoiceCallDuplexSession {
         cancelInFlightTurn();
         emitJson("turn.cancelled", n -> {
         });
-        prewarmRealtimeTts("barge-in");
     }
 
     public void clientEndpoint() {
@@ -168,7 +146,6 @@ public class VoiceCallDuplexSession {
             return;
         }
         turnStartedAtMs = System.currentTimeMillis();
-        ttsReadyAtMs = 0L;
         llmFirstDeltaAtMs = 0L;
         firstAudioAtMs = 0L;
         emitJson("asr.final", n -> n.put("text", userText));
@@ -179,26 +156,9 @@ public class VoiceCallDuplexSession {
             try {
                 StringBuilder full = new StringBuilder();
                 synchronized (sentenceLock) {
-                    sentenceBuf.setLength(0);
                     llmEmitBuf.setLength(0);
-                    firstCommitSent = false;
                 }
-                commitSeq.set(0);
-                ttsFailed.set(false);
                 audioSent.set(false);
-
-                if (!target.isLocal()) {
-                    DashScopeTtsRealtimeService.Session ready = ttsSession.get();
-                    if (ready != null && ready.isClosed()) {
-                        ttsSession.compareAndSet(ready, null);
-                        ready = null;
-                    }
-                    if (ready == null && ttsConnectFuture.get() == null) {
-                        prewarmRealtimeTts("turn-start");
-                    } else if (ready != null && ready.isReady()) {
-                        markTtsReady();
-                    }
-                }
 
                 long persistStart = System.currentTimeMillis();
                 voiceCallService.persistUserTurn(userId, conversationId, userText);
@@ -216,9 +176,6 @@ public class VoiceCallDuplexSession {
                     String visible = sanitizeDeltaForEmit(delta);
                     if (!visible.isEmpty()) {
                         emitJson("llm.delta", n -> n.put("text", visible));
-                    }
-                    if (!target.isLocal()) {
-                        feedRealtimeTts(delta);
                     }
                 });
                 llmFuture.set(future);
@@ -238,28 +195,13 @@ public class VoiceCallDuplexSession {
                 if (target.isLocal()) {
                     emitLocalTts(spoken);
                 } else {
-                    DashScopeTtsRealtimeService.Session tts = ttsSession.get();
-                    if ((tts == null || !tts.isReady()) && !audioSent.get() && !noRealtimeVoice()) {
-                        awaitRealtimeBriefly();
-                        tts = ttsSession.get();
-                    }
-                    if (tts != null && !ttsFailed.get()) {
-                        flushRealtimeTts();
-                        tts.finish();
-                        tts.awaitFinished(45_000);
-                    } else if (!audioSent.get()) {
-                        ttsFailed.set(true);
-                        synchronized (sentenceLock) {
-                            sentenceBuf.setLength(0);
-                        }
-                        log.info("Voice duplex TTS HTTP streaming mode={} pet={} conv={} elapsedMs={}",
-                                target.mode(), target.petId(), conversationId,
-                                System.currentTimeMillis() - turnStartedAtMs);
-                        streamHttpFallback(spoken);
-                    } else {
-                        log.warn("Voice duplex realtime TTS failed after audio started mode={} pet={} conv={}",
-                                target.mode(), target.petId(), conversationId);
-                    }
+                    // 语音通话只有一条合成路径：按块流式（cosyvoice-v3-flash + 复刻音色）。
+                    // 实时 WS 那条路已于 2026-10-22 整体删除（连同那个 DashScope 实时客户端类）：
+                    // 平台不再提供「支持复刻音色的实时 TTS 模型」。
+                    log.info("Voice duplex TTS streaming mode={} pet={} conv={} elapsedMs={}",
+                            target.mode(), target.petId(), conversationId,
+                            System.currentTimeMillis() - turnStartedAtMs);
+                    streamHttpFallback(spoken);
                 }
 
                 String reply = spoken;
@@ -274,12 +216,8 @@ public class VoiceCallDuplexSession {
                 log.warn("Voice duplex turn failed: {}", e.toString());
                 emitError("TURN_ERROR", "角色暂时无法回复，请稍后再试");
             } finally {
-                releaseTurnTts();
                 llmFuture.set(null);
                 turnBusy.set(false);
-                if (!target.isLocal()) {
-                    prewarmRealtimeTts("after-turn");
-                }
             }
         }, "voice-call-duplex");
         worker.setDaemon(true);
@@ -364,159 +302,6 @@ public class VoiceCallDuplexSession {
         });
     }
 
-    private DashScopeTtsRealtimeService.Session connectRealtimeTts() {
-        DashScopeTtsRealtimeService.AudioListener listener = new DashScopeTtsRealtimeService.AudioListener() {
-            @Override
-            public void onAudio(byte[] pcmOrEncoded, String mimeHint) {
-                if (!turnBusy.get() && !audioSent.get()) {
-                    return;
-                }
-                markFirstAudio();
-                audioSent.set(true);
-                sendAudio(pcmOrEncoded, mimeHint == null ? "audio/pcm" : mimeHint);
-            }
-
-            @Override
-            public void onDone() {
-                if (turnBusy.get() || audioSent.get()) {
-                    emitJson("tts.done", n -> {
-                    });
-                }
-            }
-
-            @Override
-            public void onError(String message) {
-                log.warn("Voice duplex realtime TTS error mode={} pet={} conv={}: {}",
-                        target.mode(), target.petId(), conversationId, message);
-                if (turnBusy.get()) {
-                    ttsFailed.set(true);
-                }
-            }
-
-            @Override
-            public void onReady() {
-                markTtsReady();
-                drainSentenceBuf();
-            }
-        };
-        if (target.isCustomDashScope()) {
-            return ttsRealtimeService.startWithVoice(
-                    target.realtimeVoiceId(),
-                    target.apiKey(),
-                    target.realtimeModel(),
-                    target.endpoint(),
-                    listener);
-        }
-        return ttsRealtimeService.startForPet(target.petId(), listener);
-    }
-
-    /**
-     * 该目标有没有可用的实时音色。
-     *
-     * <p>2026-10-21 起恒为「没有」：平台已无「支持复刻音色的实时 TTS 模型」
-     * （qwen3-tts-flash-realtime 只能系统音色；qwen-audio-*-realtime-* 是语音对话模型），
-     * 所以 pet-voices.json 的 realtimeVoices 已清空。
-     *
-     * <p>为什么必须显式判断：不判断的话每轮都会去连一次注定失败的 WS，
-     * 连接失败前还要在 {@link #awaitRealtimeBriefly()} 里白等最多 1.6s
-     * —— 恰好把流式合成省下来的延迟又还回去。
-     */
-    private boolean noRealtimeVoice() {
-        String realtimeVoice = target.realtimeVoiceId();
-        return realtimeVoice == null || realtimeVoice.isBlank();
-    }
-
-    private void prewarmRealtimeTts(String reason) {
-        if (closed.get() || target.isLocal() || noRealtimeVoice()) {
-            return;
-        }
-        DashScopeTtsRealtimeService.Session existing = ttsSession.get();
-        if (existing != null && !existing.isClosed()) {
-            return;
-        }
-        if (ttsConnectFuture.get() != null) {
-            return;
-        }
-        long generation = ttsGeneration.incrementAndGet();
-        CompletableFuture<DashScopeTtsRealtimeService.Session> future =
-                CompletableFuture.supplyAsync(this::connectRealtimeTts, TTS_CONNECT_EXECUTOR);
-        ttsConnectFuture.set(future);
-        log.info("Voice duplex timing conv={} stage=tts_prewarm reason={}", conversationId, reason);
-        future.whenComplete((session, error) -> {
-            if (error != null || session == null) {
-                if (generation == ttsGeneration.get()) {
-                    ttsConnectFuture.compareAndSet(future, null);
-                }
-                return;
-            }
-            if (closed.get() || generation != ttsGeneration.get()) {
-                try {
-                    session.close();
-                } catch (Exception ignored) {
-                    // ignore
-                }
-                return;
-            }
-            ttsSession.set(session);
-            drainSentenceBuf();
-        });
-    }
-
-    private void releaseTurnTts() {
-        ttsGeneration.incrementAndGet();
-        CompletableFuture<DashScopeTtsRealtimeService.Session> future = ttsConnectFuture.getAndSet(null);
-        if (future != null && !future.isDone()) {
-            future.cancel(true);
-        }
-        DashScopeTtsRealtimeService.Session tts = ttsSession.getAndSet(null);
-        if (tts != null) {
-            try {
-                tts.close();
-            } catch (Exception ignored) {
-                // ignore
-            }
-        }
-    }
-
-    private void awaitRealtimeBriefly() {
-        CompletableFuture<DashScopeTtsRealtimeService.Session> future = ttsConnectFuture.get();
-        if (future == null || future.isDone()) {
-            return;
-        }
-        long elapsed = System.currentTimeMillis() - turnStartedAtMs;
-        long waitMs = Math.min(500L, Math.max(0L, 1600L - elapsed));
-        if (waitMs <= 0L) {
-            return;
-        }
-        try {
-            future.get(waitMs, TimeUnit.MILLISECONDS);
-        } catch (Exception ignored) {
-            // late connect is handled by generation/close in releaseTurnTts
-        }
-    }
-
-    private void feedRealtimeTts(String delta) {
-        synchronized (sentenceLock) {
-            sentenceBuf.append(delta);
-            drainSentenceBufLocked();
-        }
-    }
-
-    private void flushRealtimeTts() {
-        synchronized (sentenceLock) {
-            drainSentenceBufLocked();
-            String rest = stripPauseMarkers(sentenceBuf.toString()).trim();
-            sentenceBuf.setLength(0);
-            DashScopeTtsRealtimeService.Session tts = ttsSession.get();
-            if (!rest.isBlank() && tts != null && !ttsFailed.get() && tts.isReady()) {
-                log.debug("Voice duplex TTS commit conv={} seq={} len={} text=[{}]",
-                        conversationId, commitSeq.incrementAndGet(), rest.length(), rest);
-                tts.appendText(rest);
-                tts.commit();
-            }
-        }
-    }
-
     /** 字幕展示用：剥掉完整 marker；尾部疑似未完整 marker 前缀的部分留到下一个 delta 再定。 */
     private String sanitizeDeltaForEmit(String delta) {
         synchronized (sentenceLock) {
@@ -542,41 +327,6 @@ public class VoiceCallDuplexSession {
         return s.replace(PAUSE_TOKEN, "").replace("<|", "");
     }
 
-    private void drainSentenceBuf() {
-        synchronized (sentenceLock) {
-            drainSentenceBufLocked();
-        }
-    }
-
-    private void drainSentenceBufLocked() {
-        DashScopeTtsRealtimeService.Session tts = ttsSession.get();
-        if (tts == null || ttsFailed.get() || !tts.isReady()) {
-            return;
-        }
-        String buf = sentenceBuf.toString();
-        while (true) {
-            if (buf.startsWith(PAUSE_TOKEN)) {
-                buf = buf.substring(PAUSE_TOKEN.length());
-                continue;
-            }
-            int cut = nextCommitEnd(buf, firstCommitSent);
-            if (cut <= 0) {
-                break;
-            }
-            String piece = buf.substring(0, cut).trim();
-            buf = buf.substring(cut);
-            if (!piece.isBlank()) {
-                log.debug("Voice duplex TTS commit conv={} seq={} len={} text=[{}]",
-                        conversationId, commitSeq.incrementAndGet(), piece.length(), piece);
-                tts.appendText(piece);
-                tts.commit();
-                firstCommitSent = true;
-            }
-        }
-        sentenceBuf.setLength(0);
-        sentenceBuf.append(buf);
-    }
-
     /** 角色模型自主标记的停顿点：语音 prompt 指示其在需要换气/停顿处输出。 */
     static final String PAUSE_TOKEN = "<|pause|>";
     private static final String STRONG_ENDERS = "。！？!?\n";
@@ -586,6 +336,10 @@ public class VoiceCallDuplexSession {
      * 合成边界决策（完全状态化）：只认两种停顿 —— 模型显式 {@link #PAUSE_TOKEN} 和句末强标点。
      * 取消字数硬切 / 逗号兜底；长句（≥2 句）按句界切，短句（≤20 字）整句一次合成。
      * 未完整 marker 前缀永不被切开。
+     *
+     * <p>当前**暂未接入**：实时 WS 退役后，通话改走整段流式（{@code streamHttpFallback}）。
+     * 保留它是因为下一步「按句流水线预取」（上一句在播、下一句已在合成）要用同一套切分规则，
+     * 而且它带完整单测（{@code VoiceCallDuplexSessionTest}）——删掉再重写是浪费。
      */
     static int nextCommitEnd(String buf, boolean firstCommitSent) {
         if (buf == null || buf.isEmpty()) {
@@ -621,14 +375,6 @@ public class VoiceCallDuplexSession {
         return -1;
     }
 
-    private void markTtsReady() {
-        if (turnStartedAtMs == 0L || ttsReadyAtMs != 0L) {
-            return;
-        }
-        ttsReadyAtMs = System.currentTimeMillis();
-        log.info("Voice duplex timing conv={} stage=tts_ready ms={}", conversationId, ttsReadyAtMs - turnStartedAtMs);
-    }
-
     private void markLlmFirstDelta() {
         if (llmFirstDeltaAtMs != 0L) {
             return;
@@ -653,7 +399,6 @@ public class VoiceCallDuplexSession {
         if (fut != null) {
             fut.cancel(true);
         }
-        releaseTurnTts();
         turnBusy.set(false);
     }
 

@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.lianyu.common.exception.BusinessException;
 import com.lianyu.service.ai.AsrService;
 import com.lianyu.service.ai.AsrStreamClient;
-import com.lianyu.service.ai.DashScopeTtsRealtimeService;
 import com.lianyu.service.voice.VoiceSynthesisService;
 import com.lianyu.service.auth.AuthRateLimiter;
 import com.lianyu.service.conversation.VoiceCallService;
@@ -37,7 +36,6 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
     private final AsrService asrService;
     private final AsrStreamClient asrStreamClient;
     private final VoiceCallService voiceCallService;
-    private final DashScopeTtsRealtimeService ttsRealtimeService;
     private final VoiceSynthesisService voiceSynthesisService;
     private final AuthRateLimiter authRateLimiter;
 
@@ -183,7 +181,7 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
                     120, Duration.ofMinutes(1), "语音通话过于频繁，请稍后再试");
             state.call = new VoiceCallDuplexSession(
                     sink, objectMapper, state.userId, conversationId,
-                    voiceCallService, asrStreamClient, ttsRealtimeService, voiceSynthesisService);
+                    voiceCallService, asrStreamClient, voiceSynthesisService);
             var target = state.call.getTarget();
             send(session, event("session.started", n -> {
                 n.put("mode", "call");

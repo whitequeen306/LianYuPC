@@ -104,25 +104,55 @@ Python 侧的处理：**域名白名单不放宽，只把 scheme 升级成 https
 所以本轮的「TTS 能出声」是在 `qwen3-tts-flash` + 预置音色上证明的；
 「自定义音色能出声」要等一个有 VC 合成权限的 key 才能验证 —— 这是**环境缺口，不是代码缺口**。
 
-## 六、还没做的：第 3 步（实时 TTS）
+## 六、第 3 步（实时 TTS）：**不是迁移，而是退役**（2026-10-22 结论）
 
-仍在 Java：`DashScopeTtsRealtimeService`(401)、`VoiceCallDuplexSession`(590)、
-`VoiceDuplexHandler`(241) —— 约 1232 行。
+原计划是把这条 WS 链路迁到 Python。查证后的结论是**这条路本身不存在了**：
 
-这一层是**双向 WebSocket**：客户端音频上行、ASR 下行、LLM 增量、TTS 音频下行、
-打断（barge-in）与连接生命周期都在一条连接里。迁移风险不是「协议写错」，
-而是「时序写错」——表现为偶发卡顿/重复播报/挂断残留，很难用单测覆盖。
+- `qwen3-tts-vc-realtime-2026-01-15`（代码里硬编码的那个）已下架；
+- 现役实时 TTS 模型 `qwen3-tts-flash-realtime` 能流式出音频，但**不支持声音复刻**，
+  只能系统音色 —— 做不了角色音色；
+- 支持复刻的 `qwen-audio-*-realtime-*` 是**语音对话模型**（输入音频、另一套事件），
+  不是 TTS：喂 `input_text_buffer` 只会停在 `session.updated`，不出音频。
 
-建议顺序：先在本地用真实通话把「打断」「超时」「客户端断连」三种情况跑通，
-再谈替换。不要和前面的 HTTP 能力混在一个批次里。
+所以「实时 WS + 复刻音色」这个组合在平台上已经没有实现方式。替代方案是
+**按块 SSE 流式合成**：同一句文本走 HTTP，边合成边下发 PCM，客户端本来就有
+流式播放队列（`createPcmPlayback().enqueueBase64Audio`），前端一行都不用改。
+
+实测对比（生产 key，CosyVoice 复刻音色）：
+
+| 方案 | 首帧 | 备注 |
+|---|---|---|
+| 整句合成（原 HTTP 回退） | 1440ms | 等整段音频落地才发第一帧 |
+| **按块 SSE 流式** | **895ms**（本地 841ms，生产容器 895ms） | 首块即可播放 |
+| 原实时 WS（已不可用） | —— | 无可用模型 |
+
+因此 2026-10-22 把 Java 里的实时链路**整体删除**，而不是迁移：
+
+- 删除 `DashScopeTtsRealtimeService`（444 行）
+- `VoiceCallDuplexSession` 698 → 403 行（删掉 WS 会话管理、预热、握手等待、句子推送）
+- `VoiceDuplexHandler` 去掉该依赖；`DashScopeCloudEndpointValidator.realtimeWsUrl` 删除
+- Python 侧 `realtime_ws_url` / `REALTIME_WS_PATH` 一并删除（同为死代码）
+
+**保留** `nextCommitEnd` / `indexOfAnyFrom`（句子切分，纯文本逻辑 + 完整单测）：
+下一步「按句流水线预取」（上一句在播、下一句已在合成）要用同一套规则。
+
+### 检查器同时补上了盲区
+
+`check-java-ai-free.ps1` 此前**完全没有 wss 模式**，所以那 444 行一直扫不到 ——
+它输出的「Java 已无任何 AI 逻辑残留」是**假阴性**。现在补了
+`api-ws/v1/realtime` 与 `DashScopeTtsRealtimeService` 两个模式，并把后者加进
+「已迁往 Python 的客户端复活」清单。刻意**不用**泛化的 `wss://`：`AsrStreamClient`
+也走 WebSocket，但连的是我们自己的本地 ASR 容器，不算 AI 出站调用。
+
+补完之后 ratchet 先红了（22 处 / 444 行），删干净后回到 0/0/0/0 —— 这次是真绿。
 
 ## 七、原始计划（第一轮，保留作对照）
 
 ### 迁移顺序（按风险从低到高）
 1. 音色注册（纯 HTTP，最低风险）—— **已完成**
 2. 非实时 TTS（HTTP 单次合成）—— **已完成**
-3. 实时 TTS（WebSocket，最高风险）—— 未开始
-4. 补检查器 —— **已完成**（`MODEL_CALLS` 增加 4 条出站路径模式 + 客户端复活检测）
+3. 实时 TTS（WebSocket，最高风险）—— **已退役**（平台无可用模型，见第六节）
+4. 补检查器 —— **已完成**（`MODEL_CALLS` 增加出站路径模式 + 客户端复活检测 + wss 盲区）
 
 ### 验收标准
 - `mvn test` / `pytest` 全绿 —— ✅

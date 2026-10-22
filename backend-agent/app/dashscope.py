@@ -4,9 +4,12 @@
 
 - Java 保留「用户填的 base_url / model 是否合法」这一层**输入校验**，
   因为那是写库前的产品规则（写进 `user_custom_voice.endpoint` 的值要可信）。
-- 真正**拼出站 URL** 的地方在 Python，所以 `enroll_url` / `synth_url` /
-  `realtime_ws_url` 只在这里存在。出站地址的最终形态由发起调用的那一侧决定，
-  否则又会出现「Java 说一套、Python 说一套」的分叉（见 prompt_pipeline 那次教训）。
+- 真正**拼出站 URL** 的地方在 Python，所以 `enroll_url` / `synth_url` 只在这里存在。
+  出站地址的最终形态由发起调用的那一侧决定，否则又会出现「Java 说一套、Python 说一套」
+  的分叉（见 prompt_pipeline 那次教训）。
+
+> 2026-10-22：实时语音（WebSocket）整体退役 —— 平台不再提供「支持复刻音色的实时 TTS 模型」，
+> 语音通话改走按句 SSE 流式合成。所以这里**没有** realtime WS 端点拼装函数了。
 
 错误文案逐字对齐 Java，避免前端提示语变化。
 """
@@ -31,7 +34,6 @@ ENROLL_PATH = "/api/v1/services/audio/tts/customization"
 SYNTH_PATH = "/api/v1/services/aigc/multimodal-generation/generation"
 # 新合成端点：qwen-audio-* / cosyvoice-* 走这里
 SPEECH_SYNTH_PATH = "/api/v1/services/audio/tts/SpeechSynthesizer"
-REALTIME_WS_PATH = "/api-ws/v1/realtime"
 
 _ALLOWED_HOST = re.compile(r"^(dashscope(-intl)?\.aliyuncs\.com)$", re.IGNORECASE)
 _SAFE_MODEL = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
@@ -102,10 +104,6 @@ def synth_path_for(model: str | None) -> str:
     return SPEECH_SYNTH_PATH
 
 
-def realtime_ws_url(base: str | None) -> str:
-    normalized = normalize_base_url(base)
-    host = urlsplit(normalized).hostname
-    return f"wss://{host}{REALTIME_WS_PATH}"
 
 
 def is_allowed_audio_host(audio_url: str | None) -> bool:
@@ -172,7 +170,6 @@ __all__ = [
     "ENROLL_PATH",
     "RECOMMENDED_HTTP_MODEL",
     "RECOMMENDED_REALTIME_MODEL",
-    "REALTIME_WS_PATH",
     "SPEECH_SYNTH_PATH",
     "SYNTH_PATH",
     "enroll_url",
@@ -181,7 +178,6 @@ __all__ = [
     "normalize_audio_url",
     "normalize_base_url",
     "normalize_model",
-    "realtime_ws_url",
     "synth_path_for",
     "synth_url",
 ]

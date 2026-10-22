@@ -419,7 +419,9 @@ CosyVoice 完整链路（生产 key）：注册 → 第 5 次轮询 OK → 整�
 
 ### 仍未做（不阻塞本次上线）
 
-- 退役 Java 侧实时 WS 客户端（`DashScopeTtsRealtimeService` 等约 1,232 行），
-  并把 `wss://` 加进 ratchet —— 否则「Java 零 AI 逻辑」的绿灯仍是假阴性。
+- ~~退役 Java 侧实时 WS 客户端（`DashScopeTtsRealtimeService` 等约 1,232 行），
+  并把 `wss://` 加进 ratchet~~ → **2026-10-22 已完成**：WS 客户端整体删除
+  （`VoiceCallDuplexSession` 698 → 403 行），ratchet 补上 `api-ws/v1/realtime` 与类名模式，
+  先红（22 处 / 444 行）后绿（0/0/0/0）。详见 `tts-migration-plan.md` 第六节。
 - 按句流水线预取（目前是整轮回复一次性流式，首句之后没有并行预取下一句）。
 - 老用户已注册的自定义音色绑在已下架的 `qwen3-tts-vc-*` 上，需要各自重新上传注册。

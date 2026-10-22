@@ -23,7 +23,6 @@ from app.dashscope import (
     normalize_audio_url,
     normalize_base_url,
     normalize_model,
-    realtime_ws_url,
     synth_path_for,
     synth_url,
 )
@@ -265,9 +264,6 @@ def test_normalize_model():
 def test_url_builders():
     assert enroll_url(None) == ENROLL
     assert synth_url(None) == SYNTH
-    assert realtime_ws_url("https://dashscope-intl.aliyuncs.com") == (
-        "wss://dashscope-intl.aliyuncs.com/api-ws/v1/realtime"
-    )
 
 
 @pytest.mark.parametrize(
