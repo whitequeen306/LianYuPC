@@ -12,13 +12,17 @@ import org.junit.jupiter.api.Test;
 /**
  * 音色注册表的契约测试。
  *
- * <p>2026-10-21 重写：旧的 {@code qwen3-tts-vc-*} 模型系列已下架，13 个角色音色全部
- * 按现役模型 {@code cosyvoice-v3-flash} 重新注册（用生产 key），实时音色随之清空
- * （平台已无「支持复刻的实时 TTS 模型」）。原测试断言的旧模型名与旧 voiceId 全部作废。
+ * <p>2026-10-21：旧的 {@code qwen3-tts-vc-*} 模型系列已下架，13 个角色音色全部按当时的
+ * 现役模型 {@code cosyvoice-v3-flash} 重新注册，实时音色随之清空（平台已无「支持复刻的
+ * 实时 TTS 模型」）。
+ *
+ * <p>2026-10-22：用户反馈"音色漂移、不太像角色"。根因是参考音频用了 40/55 秒的拼接素材
+ * （静音占比 27-36%、混着不同情绪），而官方建议 5-20 秒。改为「自动精选 18 秒」并把模型
+ * 换到 {@code cosyvoice-v3.5-flash}（同句合成基频与参考音频差从 28Hz 收到 3Hz）。
  */
 class PetVoiceRegistryTest {
 
-    private static final String HTTP_MODEL = "cosyvoice-v3-flash";
+    private static final String HTTP_MODEL = "cosyvoice-v3.5-flash";
 
     private static final String[] PETS = {
             "klee", "ganyu", "ayaka", "raiden", "elysia", "erii_uesugi",

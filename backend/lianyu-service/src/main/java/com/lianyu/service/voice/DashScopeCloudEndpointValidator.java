@@ -23,10 +23,14 @@ public final class DashScopeCloudEndpointValidator {
      *   <li>{@code qwen3-tts-vc-*} —— 已下架，合成报 {@code Model not exist}</li>
      *   <li>{@code qwen3-tts-flash} —— 可用，但<b>不支持声音复刻</b>，只有系统音色</li>
      *   <li>{@code qwen-audio-3.1-tts-flash} —— 支持复刻，但生产账号未开通（Engine error 411）</li>
- *   <li>{@code cosyvoice-v3-flash} —— 生产账号可用且支持复刻，角色音色走它</li>
+     *   <li>{@code cosyvoice-v3-flash} —— 可用，但同句合成基频离参考音频差 28Hz（音色漂移）</li>
+ *   <li>{@code cosyvoice-v3.5-flash} —— 角色音色走它：基频差 3Hz，冷启动更快，热首包 862ms</li>
      * </ul>
+     *
+     * <p>⚠️ 复刻音色<b>绑定 target_model，不能跨模型</b>：换模型必须重新注册 13 个音色
+     * （{@code scripts/re_enroll_pet_voices.py}），旧 voice_id 在新模型上报 Engine error 418。
      */
-    public static final String RECOMMENDED_HTTP_MODEL = "cosyvoice-v3-flash";
+    public static final String RECOMMENDED_HTTP_MODEL = "cosyvoice-v3.5-flash";
     /**
      * 复刻音色的注册目标模型。
      *

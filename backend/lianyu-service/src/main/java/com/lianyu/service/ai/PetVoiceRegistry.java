@@ -29,13 +29,16 @@ public class PetVoiceRegistry {
     /**
      * 复刻音色的合成模型。
      *
-     * <p>2026-10-22 起是 {@code cosyvoice-v3-flash}（qwen-audio-3.1-tts-flash 生产账号未开通）：
- * 旧的 {@code qwen3-tts-vc-*}
-     * 系列已下架（合成报 {@code Model not exist}），而 {@code qwen3-tts-flash} 虽然可用
-     * 却不支持声音复刻。13 个角色音色已按新模型重新注册，见 {@code pet-voices.json}。
+     * <p>2026-10-22 起是 {@code cosyvoice-v3.5-flash}：旧的 {@code qwen3-tts-vc-*} 系列已下架
+     * （合成报 {@code Model not exist}），{@code qwen3-tts-flash} 虽然可用却不支持声音复刻，
+     * {@code qwen-audio-3.1-tts-flash} 生产账号未开通。13 个角色音色已按新模型重新注册，
+     * 见 {@code pet-voices.json}。
+     *
+     * <p>⚠️ 复刻音色<b>绑定 target_model，不能跨模型</b>：只改这里而不重新注册音色，
+     * 合成会报 {@code Engine return error code: 418}。
      */
     @Getter
-    private String model = "cosyvoice-v3-flash";
+    private String model = "cosyvoice-v3.5-flash";
 
     /**
      * 实时复刻音色模型 —— 平台已无此能力，保持空串。
