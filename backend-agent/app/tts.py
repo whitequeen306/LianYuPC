@@ -19,6 +19,7 @@ import asyncio
 import base64
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
@@ -34,7 +35,7 @@ from app.dashscope import (
     synth_path_for,
     synth_url,
 )
-from app.http_client import new_client
+from app.http_client import new_client, shared_client
 
 logger = logging.getLogger(__name__)
 
@@ -275,25 +276,35 @@ async def synthesize_stream(
     }
 
     emitted = 0
+    first_chunk_ms: float | None = None
+    started = time.perf_counter()
     try:
-        async with new_client() as client:
-            async with client.stream(
-                "POST", url, json=payload, headers=headers,
-                timeout=(connect_timeout, read_timeout, 30.0, 30.0),
-            ) as response:
-                if response.status_code != 200:
-                    detail = (await response.aread())[:200]
-                    logger.warning("tts stream HTTP %s: %s", response.status_code, detail)
-                    return
-                async for line in response.aiter_lines():
-                    chunk = _decode_sse_audio(line)
-                    if chunk:
-                        emitted += 1
-                        yield chunk
+        # 复用长连接：每句一次 POST，重新握手（境内到阿里云 150-300ms）纯属白送延迟
+        client = shared_client("dashscope-tts")
+        async with client.stream(
+            "POST", url, json=payload, headers=headers,
+            timeout=(connect_timeout, read_timeout, 30.0, 30.0),
+        ) as response:
+            if response.status_code != 200:
+                detail = (await response.aread())[:200]
+                logger.warning("tts stream HTTP %s: %s", response.status_code, detail)
+                return
+            async for line in response.aiter_lines():
+                chunk = _decode_sse_audio(line)
+                if chunk:
+                    if emitted == 0:
+                        first_chunk_ms = (time.perf_counter() - started) * 1000
+                    emitted += 1
+                    yield chunk
     except Exception as exc:  # noqa: BLE001 - 流式失败不向调用方抛
         logger.warning("tts stream aborted after %d chunks: %s", emitted, exc)
         return
-    logger.info("tts stream done: chunks=%d model=%s", emitted, resolved_model)
+    logger.info(
+        "tts stream done: chunks=%d model=%s firstChunkMs=%s totalMs=%d",
+        emitted, resolved_model,
+        None if first_chunk_ms is None else round(first_chunk_ms),
+        (time.perf_counter() - started) * 1000,
+    )
 
 
 def _decode_sse_audio(line: str) -> bytes | None:

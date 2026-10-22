@@ -5,6 +5,8 @@
 - 禁止任何「等别人」的调用使用零超时客户端
 """
 
+import asyncio
+
 import httpx
 
 from app.config import get_settings
@@ -34,3 +36,39 @@ def new_client(base_url: str | None = None) -> httpx.AsyncClient:
     if base_url:
         kwargs["base_url"] = base_url
     return httpx.AsyncClient(**kwargs)
+
+
+# 按名字复用的长连接客户端。
+# 值里存创建它的事件循环：httpx.AsyncClient 绑定在创建时的循环上，跨循环复用会炸。
+_SHARED: dict[str, tuple[asyncio.AbstractEventLoop, httpx.AsyncClient]] = {}
+
+
+def shared_client(name: str = "default") -> httpx.AsyncClient:
+    """取一条按名字复用的客户端（**调用方不要关闭它**）。
+
+    为什么需要：语音通话按句流式合成时，每句都是一次到 dashscope 的 POST。
+    每次 `async with new_client()` 都会新建连接池 → 重新 TCP + TLS 握手（境内到阿里云
+    约 150-300ms），一句一次，纯属白送的首包延迟。复用后只有第一句付出握手成本。
+
+    仍然走 {@link new_client} 构造：出站策略（超时 / UA / IPv4 绑定）只保留一份实现，
+    不允许绕过。
+    """
+    loop = asyncio.get_running_loop()
+    cached = _SHARED.get(name)
+    if cached is not None:
+        cached_loop, client = cached
+        if cached_loop is loop and not client.is_closed:
+            return client
+    client = new_client()
+    _SHARED[name] = (loop, client)
+    return client
+
+
+async def aclose_shared() -> None:
+    """进程退出 / 测试收尾用：关掉所有复用客户端。"""
+    for _, client in list(_SHARED.values()):
+        try:
+            await client.aclose()
+        except Exception:  # noqa: BLE001 - 收尾失败无所谓
+            pass
+    _SHARED.clear()
