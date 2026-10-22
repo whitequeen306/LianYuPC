@@ -26,6 +26,8 @@ from pathlib import Path
 
 import requests
 
+from pick_voice_clip import clip_voice
+
 ROOT = Path(__file__).resolve().parents[1]
 VC = ROOT / "artifacts/voice-vc"
 SAMPLES = ROOT / "backend/lianyu-service/src/main/resources/pet-voice-samples"
@@ -34,10 +36,13 @@ CUSTOMIZATION = f"{BASE}/services/audio/tts/customization"
 SPEECH_SYNTH = f"{BASE}/services/audio/tts/SpeechSynthesizer"
 
 # 目标模型可用环境变量覆盖：生产账号用不了 qwen-audio-3.1-tts-flash（Engine error 411），
-# 但 cosyvoice-v3-flash 可用且同样支持声音复刻，所以上线时用的是后者。
+# 但 cosyvoice 系列可用且同样支持声音复刻，所以上线时用的是后者。
 TARGET_MODEL = os.environ.get("DS_MODEL", "qwen-audio-3.1-tts-flash")
 # 结果文件名带模型标识，避免不同模型的注册结果互相覆盖
 OUT_NAME = os.environ.get("DS_OUT_NAME", "")
+# 参考音频裁剪秒数：官方建议 5-20 秒，而素材是 40/55 秒拼接（静音 27-36%、
+# 混着不同情绪），直接整个喂进去会让复刻音色漂移。>0 时先自动挑最干净的一段。
+CLIP_SECONDS = float(os.environ.get("DS_CLIP_SECONDS", "0") or 0)
 VERIFY_TEXT = "你好，我是你的桌面伙伴。"
 
 KEY = (os.environ.get("DSK") or "").strip()
@@ -151,6 +156,10 @@ def main() -> None:
             print(f"[miss] {pet_id} 找不到源音频: {[str(p.name) for p in candidates]}")
             results[pet_id] = {"error": "no source audio"}
             continue
+        # 裁剪结果统一放到 artifacts/（gitignore），不要写回 resources/ 目录污染仓库
+        src = clip_voice(src, CLIP_SECONDS,
+                         out=VC / f"{pet_id}-enroll{int(CLIP_SECONDS)}s-mono.wav"
+                         if CLIP_SECONDS > 0 else None)
         size_mb = src.stat().st_size / 1024 / 1024
         print(f"[enroll] {pet_id:<12} prefix={prefix:<11} src={src.name} ({size_mb:.1f} MB)", flush=True)
         try:

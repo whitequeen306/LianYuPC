@@ -13,15 +13,19 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "backend/lianyu-service/src/main/resources/pet-voices.json"
+VC = ROOT / "artifacts/voice-vc"
+
 # 用**生产 key** 注册出来的那批（CosyVoice）。
 # 不用 qwen-audio-3.1-tts-flash 的原因：生产账号调用它报 Engine error 411（模型未开通）。
-ENROLLED = ROOT / "artifacts/voice-vc/re-enroll-cosyvoice-v3-flash.json"
-TARGET_MODEL = "cosyvoice-v3-flash"
+# 结果文件名与模型都可由环境变量指定，与 re_enroll_pet_voices.py 的 DS_OUT_NAME / DS_MODEL 对齐。
+ENROLLED = VC / (os.environ.get("DS_OUT_NAME") or "re-enroll-cosyvoice-v3-flash.json")
+TARGET_MODEL = os.environ.get("DS_MODEL", "cosyvoice-v3-flash")
 
 
 def main() -> None:
@@ -38,10 +42,12 @@ def main() -> None:
     payload = {
         "_comment": (
             "model/voices = 复刻音色（语音通话与桌宠问候共用）；"
-            "目标模型 qwen-audio-3.1-tts-flash —— 现役模型里只有 qwen-audio-* / cosyvoice-* "
+            f"目标模型 {TARGET_MODEL} —— 现役模型里只有 qwen-audio-* / cosyvoice-* "
             "支持声音复刻，qwen3-tts-* 只支持系统音色。"
             f"realtimeVoices 已于 2026-10-21 清空（原有 {len(old_realtime)} 个）："
             "平台已无「支持复刻的实时 TTS 模型」，实时语音改走按句流式 HTTP 合成。"
+            "参考音频已于 2026-10-22 改为「自动精选 18 秒」：原 40/55 秒拼接素材静音占比 "
+            "27-36% 且混着不同情绪，会让复刻音色漂移（实测 klee 基频差 28Hz → 7Hz）。"
         ),
         "model": TARGET_MODEL,
         "voices": dict(sorted(voices.items())),
