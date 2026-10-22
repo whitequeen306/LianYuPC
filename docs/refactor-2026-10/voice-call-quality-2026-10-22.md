@@ -166,40 +166,69 @@ startTurn(text);                        // ← 空文本，直接 return
 
 ---
 
-## 4. 模型横评（2026-10-22 生产实测）
+# 4. 模型横评（2026-10-22 生产实测）
 
-复刻音色**绑定 `target_model`，不能跨模型**（官方文档明确）。所以每个模型都用自己的 klee 音色：
+复刻音色**绑定 `target_model`，不能跨模型**（官方文档明确，实测跨用报
+`Engine return error code: 418`）。所以每个模型都用自己的 klee 音色：
 
 | 模型 | 冷首包 | 热首包 p50 | 同句音频时长 | 价格（元/万字符） |
 | --- | --- | --- | --- | --- |
-| `cosyvoice-v3-flash`（现用） | 1163ms | **588ms** | 4.24s | 1.0 |
+| `cosyvoice-v3-flash` | 1163ms | **588ms** | 4.24s | 1.0 |
 | `cosyvoice-v3.5-flash` | 842ms | 862ms | 5.12s | — |
 | `cosyvoice-v3.5-plus` | 953ms | 985ms | 5.20s | 1.5 |
 
 读法：
 
 * **v3-flash 热态最快、语速最赶**（同句 4.24s）。v3.5 两档同句 5.1-5.2s，慢约 20% ——
-  这通常意味着更从容的语速和更完整的句末收尾，也就是用户觉得"平淡/连读"的那部分。
+  这通常意味着更从容的语速和更完整的句末收尾。
 * v3.5 的**冷启动更快**（842 / 953 vs 1163），热态慢 270-400ms。复用长连接后热的才是常态，
-  所以换 v3.5 会用首包换音质。
-* v3.5-plus 比 v3.5-flash 只慢 ~120ms、贵 50%？—— 官方价 1.5 元/万字符，v3-flash 1.0，
-  对月量几百万字来说是几十块量级，不是决策点。
+  所以换 v3.5 是用首包换音质。
+* 价格对月量几百万字来说是几十块量级，不是决策点。
 
-结论：**音质的判断只能靠耳朵**，已生成同文本、同音色的对比样本：
+---
 
-```
-artifacts/voice-compare/compare-v3-flash.wav
-artifacts/voice-compare/compare-v3.5-flash.wav
-artifacts/voice-compare/compare-v3.5-plus.wav
-```
+# 4.5 音色漂移：参考音频太长（这次真正的"不像角色"）
 
-### 换模型的完整步骤（约 10 分钟）
+看到"音色漂移"，第一反应是模型档位不够。但真正的根因在**参考音频**：
 
-1. `DSK=<生产key> DS_MODEL=cosyvoice-v3.5-flash DS_OUT_NAME=v35 python scripts/re_enroll_pet_voices.py`
-   重新注册 13 个音色（**必须换**：旧 voice_id 在新模型上返回 `Engine return error code: 418`）
-2. `python scripts/write_pet_voices_registry.py` 写回 `pet-voices.json`（同时改 `model` 字段）
-3. 按 `production-rollout.md` 的正常部署流程上后端
-4. 回滚：模型名 + voice_id 一起回退（音色在两套模型下并存，互不覆盖）
+官方建议复刻参考音频 **5-20 秒**，而线上 13 个角色用的是 40 秒甚至 55 秒的拼接素材，
+实测**静音占比 27-36%**，内部混着不同情绪、不同音高。
+
+用基频中位数（自相关估计，只做横向比较）量化：
+
+| 参考音频 | 素材基频 | 同句合成基频 | 与参考差 |
+| --- | --- | --- | --- |
+| 40s（旧） | 378Hz | 375Hz | **28Hz** |
+| 18s 精选 | 403Hz | 397Hz | 7Hz |
+
+**同一模型、同一句文本，只换参考音频**，音高偏差就从 28Hz 收到 7Hz。28Hz 在 400Hz 附近
+约等于 7% 音高偏差，正好是"听着像她，但又不是她"的量级。
+
+18 秒片段不是随手截的：`scripts/pick_voice_clip.py` 按 0.25 秒滑窗，对每个窗口算
+「有声帧占比 − 有声帧音量变异系数」，取最高分的一段 —— 即**连续、情绪稳定**的那一段。
+
+四个版本的最终对标（同一句台词）：
+
+| 版本 | 参考音频 | 时长 | 基频 | 与参考差 |
+| --- | --- | --- | --- | --- |
+| A 40s @ v3-flash | 40.0s | 6.08s | 375Hz | 28Hz |
+| B 18s @ v3-flash | 18.0s | 5.92s | 397Hz | 7Hz |
+| **C 18s @ v3.5-flash** | 18.0s | 6.08s | 407Hz | **3Hz** |
+| D 18s @ v3.5-plus | 18.0s | 5.36s | 400Hz | 3Hz |
+
+**采用 C**：相似度与 D 同级，但便宜 50%、热首包少 ~120ms；相比 A 只多 270ms 热首包。
+
+### 换模型的完整步骤（实际执行过的，约 15 分钟）
+
+1. `DSK=<生产key> DS_MODEL=cosyvoice-v3.5-flash DS_OUT_NAME=v35flash-18s DS_CLIP_SECONDS=18 \
+   python scripts/re_enroll_pet_voices.py`
+   —— 自动精选 18 秒 + 重新注册 13 个音色（**必须换**：旧 voice_id 在新模型上报 418）
+2. `DS_OUT_NAME=v35flash-18s DS_MODEL=cosyvoice-v3.5-flash python scripts/write_pet_voices_registry.py`
+   写回 `pet-voices.json`（同时改 `model` 字段）
+3. **上线前先在生产 key 下逐个真调**（`scripts/_verify_new_voices.py` 的做法）——
+   注册表里写错一个 voice_id 就等于那个角色没声音
+4. 按 `production-rollout.md` 的正常部署流程上后端
+5. 回滚：模型名 + voice_id 一起回退（两套模型的音色并存，互不覆盖）
 
 ---
 
