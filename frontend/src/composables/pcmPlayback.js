@@ -8,6 +8,15 @@ export function createPcmPlayback({ sampleRate = 24000 } = {}) {
   let playing = false
   /** @type {Promise<void>} */
   let chain = Promise.resolve()
+  /**
+   * 上一帧多出来的半字节（0 或 1 个字节）。
+   *
+   * PCM16 是两字节一个样本，而「一帧」的边界由服务端的分帧决定，历史上服务端是按
+   * HTTP/DataBuffer 的任意边界切的 —— 于是帧可能从样本中间开始。若每帧独立
+   * `new Int16Array(...)`，偏移错一个字节就等于把整帧高低字节对调，听感是电子杂音。
+   * 服务端已改为样本对齐分帧；这里保留 carry 作为第二道防线，让老服务端也不会炸。
+   */
+  let pcmCarry = null
 
   function ensureCtx() {
     if (ctx) return ctx
@@ -57,8 +66,17 @@ export function createPcmPlayback({ sampleRate = 24000 } = {}) {
 
   function enqueueBase64Pcm(base64, rate = sampleRate) {
     if (!base64) return
-    const bytes = base64ToBytes(base64)
-    const buf = int16ToAudioBuffer(bytes, rate)
+    let bytes = base64ToBytes(base64)
+    if (pcmCarry && pcmCarry.length) {
+      const merged = new Uint8Array(pcmCarry.length + bytes.length)
+      merged.set(pcmCarry, 0)
+      merged.set(bytes, pcmCarry.length)
+      bytes = merged
+    }
+    const evenLen = bytes.length - (bytes.length % 2)
+    pcmCarry = evenLen < bytes.length ? bytes.subarray(evenLen) : null
+    if (evenLen === 0) return
+    const buf = int16ToAudioBuffer(bytes.subarray(0, evenLen), rate)
     schedule(buf)
   }
 
@@ -92,6 +110,7 @@ export function createPcmPlayback({ sampleRate = 24000 } = {}) {
 
   function clear() {
     chain = Promise.resolve()
+    pcmCarry = null
     if (ctx) {
       const old = ctx
       ctx = null
