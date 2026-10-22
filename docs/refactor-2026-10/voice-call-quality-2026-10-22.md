@@ -105,9 +105,53 @@ VoiceCallDuplexSession        →  一块一个 tts.audio 帧
 
 * `http_client.shared_client(name)`：按名字复用长连接（跨事件循环自动重建），仍然走 `new_client()`
   构造，出站策略保持一份实现。
+* **保活窗口必须显式调大**：httpx 默认 `keepalive_expiry` 只有 **5 秒**，而语音通话的轮次间隔
+  常态是 5-20 秒 → 默认值等于"每轮都重新握手"。实测同一通电话里 agent-2 的第四次请求
+  `firstChunkMs=2690`（间隔 24s，连接已过期），而热的时候是 314-907ms。现在拉到 180 秒。
 * `tts stream done` 日志补 `firstChunkMs` / `totalMs`：下次变慢能直接分辨是上游慢还是我们排队慢。
 
-## 3.5 "识别变慢" = 回合忙时把用户这句话丢了
+## 3.6 "识别变慢" = 空端点每 2.4 秒把正在识别的半句清一次
+
+第一次真实通话（22:00）的日志给出了决定性证据：`asr_endpoint` **严格每 2.74 秒**出现一次，
+而且绝大多数 `textLen=0`：
+
+```
+22:00:34.251  asr_endpoint silenceMs=39  textLen=0
+22:00:36.956  asr_endpoint silenceMs=3   textLen=0   (+2.705s)
+22:00:39.713  asr_endpoint silenceMs=11  textLen=0   (+2.757s)
+22:00:42.465  asr_endpoint silenceMs=23  textLen=0   (+2.752s)
+```
+
+先排除客户端：`usePcmCapture` 的 VAD 有 `silenceArmed` 闩锁，一次发声只可能触发一次，
+不可能是周期性的。
+
+真凶在 `deploy/asr/server.py`：用的是 **sherpa-onnx Zipformer**，端点规则
+`rule1_min_trailing_silence = 2.4s` 是"**纯静音满 2.4 秒就报端点**"，与有没有说话无关。
+
+```
+recognizer.is_endpoint(stream) → emit {"type":"final"} → recognizer.reset() → emit {"type":"endpoint"}
+```
+
+麦克风一直在推流，所以引擎**每 2.4-2.7 秒稳定吐一个空端点**。而 Java 侧每次收到端点都做：
+
+```java
+text = lastPartial; lastPartial = "";   // ← 清掉正在累积的半句
+asr.reset();                            // ← 清空 Zipformer 声学上下文（服务端已 reset 过）
+startTurn(text);                        // ← 空文本，直接 return
+```
+
+两处伤害：**用户停顿一下，正在识别的半句就被吞掉**；以及**每次 reset 都把左侧上下文白扔**，
+下一句开头凭空变差。而且服务端在发 `endpoint` 之前**已经自己 reset 过**，我们这次是纯冗余。
+
+### 修复
+
+* 空端点（`textLen == 0`）**什么都不做**：不清 `lastPartial`、不 reset、不起回合。
+* 端点日志补 `source=engine|client`，以后一眼分清是哪一路触发的。
+* 顺带确认了一件好事：端点判定**不是**瓶颈。`silenceMs`（用户最后一帧语音 → 判定说完）
+  实测 **3-40ms** —— 客户端 750ms 静音 VAD 干得非常准。所以"识别慢"跟端点检测无关，
+  剩下的慢在 LLM 首字（779-1008ms）与 TTS 首包（314-1016ms）上。
+
+## 3.7 "识别变慢"还混着：回合忙时把用户这句话丢了
 
 读代码发现比"模型慢"严重得多的问题：上一回合还在发音频时，新一句进 `startTurn` 会在
 `turnBusy.compareAndSet` 失败处**直接 return**，这半句被静默丢弃。体感就是"我说了它没听见"。
@@ -169,11 +213,15 @@ DashScope 的失败有两种形态：非 200，以及 **200 + `event:error` 的 
 
 ## 6. 遗留 / 下一步
 
-* **ASR 侧还没有为"更好"做任何改动**：先跑一次真实通话，看新埋点的
-  `asr_endpoint silenceMs` 落在什么量级。若 >800ms，说明瓶颈在 VAD/端点判定而不是识别
-  （现在是客户端 VAD `strict` + Zipformer partial，final 直接复用 partial，没有跑 SenseVoice 整段）。
-  那一步再决定是调 VAD、还是换 SenseVoice streaming / Paraformer realtime。
-* 并行/预取 TTS：现在按序串行，单片合成（0.6-1.0s 热）远小于单片播放（2-5s），暂不需要。
-  若合并后单片变长导致断流，再加一路预取。
+* **首字延迟的账已经算清了**（22:00 那次真实通话）：
+  `llm_first_delta` 779-1008ms → `tts_first_audio afterLlmMs` 578-1378ms → 首声 1.6-2.2s。
+  ASR 只占其中的端点判定 3-40ms，**不是瓶颈**。要再压只能动 LLM 首字（供应商侧）
+  或做「首句先说一句话垫场」的产品方案。
+* 并行/预取 TTS：现在按序串行，单片合成（热 0.3-1.0s）远小于单片播放（2-5s），暂无断流。
+  从 22:00 的日志核对每一轮「下一片就绪时间 vs 上一片播放时长」，都还有余量。
 * `turn.done` 一到客户端就 `phase=idle` + `resetBargeState()`，此时尾音可能还在播 → 这段时间
   打断失效。属遗留问题，未在本次修复范围。
+* ASR 模型本身没动。若后续 `textLen` 仍普遍只有 4-10 字（22:00 那次就是这样），
+  要怀疑的是 sherpa 的 `ASR_EP_RULE2=1.2s` 是否太短，而不是模型能力。
+* `proactiveTurn error: model gateway http 402` 是期间反复出现的告警，与语音链路无关
+  （主动关怀调度用的 provider 余额/鉴权问题），单独处理。
