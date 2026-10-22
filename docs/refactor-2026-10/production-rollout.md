@@ -362,3 +362,64 @@ docker compose up -d --no-deps agent2 agent backend
 
 > 注意：本次部署后 `/opt/lianyu` 又 `git pull` 过一次（只含文档与脚本，无源码改动），
 > 所以工作区 HEAD 会领先于「实际在跑的镜像源码」，这是预期的。
+
+## 十一、2026-10-22 语音链路修复上线（`be3ed8f → 781f108`）
+
+### 上线前发现的致命前提：音色按账号隔离
+
+13 个角色音色先是用临时给的 key（`sk-0fd7927…`）注册在 `qwen-audio-3.1-tts-flash` 上，
+而生产 `.env` 是另一把 key（`sk-01de47e…`）。**两者不统一，部署上去仍会报
+`voice does not exist or is not licensed`** —— 等于白部署一次。
+
+用生产 key 实测三个模型：
+
+| 模型 | 结果 |
+|---|---|
+| `qwen3-tts-flash` + Cherry | ✅ OK（但不支持复刻，做不了角色音色） |
+| **`cosyvoice-v3-flash`** + longanyang | ✅ **OK（支持复刻）** |
+| `qwen-audio-3.1-tts-flash` + Cherry | ❌ `[cosyvoice:]Engine error [411]`（该模型未开通） |
+
+结论：**不换生产 key、不动生产配置**，改用 `cosyvoice-v3-flash`，用生产 key 重注册。
+CosyVoice 完整链路（生产 key）：注册 → 第 5 次轮询 OK → 整句有 audio.url →
+**SSE 流式首包 536ms / 27 块 / 195,840 字节** → 删除 200。
+
+### 部署内容
+
+- agent 镜像 `e7f5d86f6e37`（`voice_enrollment` 新接口、`tts.synthesize_stream`、
+  `/agent/tts/stream`、`RECOMMENDED_HTTP_MODEL=cosyvoice-v3-flash`）
+- backend 镜像 `8f5e8b78318b`（`pet-voices.json` 13 个 CosyVoice 音色、
+  `TtsPort.streamSynthesize` + 适配器 + 通话按块流式、`voiceCallReady` 判据改为 httpVoiceId）
+- 回滚基线：`cloud-rollback-be3ed8f0` → agent `341ba762bc09` / backend `ac2bfbefd33e`
+  （`cloud-rollback-ef26d6f` 仍保留，未覆盖）
+
+### 部署后验证（生产容器内，生产 key）
+
+| 项 | 结果 |
+|---|---|
+| 端点存在性 | `voice/enroll`、`voice/delete`、`tts/synthesize`、**`tts/stream`**、`chat-turn/*` 均 422（存在）；未知路由 404 |
+| 整句合成（cosyvoice klee 音色） | **200 / audio/wav / 169,004 字节 / magic 52494646** |
+| 流式合成 | **200 / audio/pcm / 24000Hz / 首包 895ms / 21 块 / 168,960 字节** |
+| 不存在的音色 | 整句 204、流式 200+0 字节（**优雅降级，不 500**） |
+| 8 端口接线 | `all ports wired`：proactiveTurn/stream/text/memory/image/**chatTurn**/**tts**/**voiceEnrollment** 全 true |
+| 真实对话 | 6/6 非空，860–1717ms；SSE 8 帧 + `[DONE]`，15 字 |
+| 路由行为 | `push-catchup` 200、未知路由 404（沿用 0.3.3 那次修复） |
+| parity 巡检 | `golden[en] 4583/4583`、`golden[zh] 2588/2588` → **4/4 PASS** |
+| 错误计数 | `JAVA_AI_PATH` 0、`proactiveTurnResult failed` 0、agent/agent2 500 **0/0**、backend ERROR **0** |
+| 公网 | `https://downloadlianyu.asia/api/auth/captcha` → 200；agent-lb 健康 200 |
+
+### 踩到的坑
+
+1. **音色与账号绑定**：跨账号的 voiceId 一律报 voice does not exist。今后凡换 key，
+   必须用该 key 重跑 `scripts/re_enroll_pet_voices.py`。
+2. parity 脚本必须放在容器内 `/work/scripts/ops/` 下跑（它用
+   `Path(__file__).parents[3]` 推仓库根，丢到 `/tmp` 会把根推成 `/`）。
+3. 探针里 `docker exec -e DSK="$DASHSCOPE_API_KEY"` 前必须先在远端
+   `set -a; . /opt/lianyu/.env; set +a`，否则变量是空的（第一次就跑出全 204）。
+4. `docker exec ... curl` 在 agent 容器里不可用（python:slim 无 curl），用 python 探针。
+
+### 仍未做（不阻塞本次上线）
+
+- 退役 Java 侧实时 WS 客户端（`DashScopeTtsRealtimeService` 等约 1,232 行），
+  并把 `wss://` 加进 ratchet —— 否则「Java 零 AI 逻辑」的绿灯仍是假阴性。
+- 按句流水线预取（目前是整轮回复一次性流式，首句之后没有并行预取下一句）。
+- 老用户已注册的自定义音色绑在已下架的 `qwen3-tts-vc-*` 上，需要各自重新上传注册。

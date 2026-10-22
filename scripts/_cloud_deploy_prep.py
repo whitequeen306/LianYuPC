@@ -54,7 +54,9 @@ def main() -> None:
     print("=" * 70)
     print("1. 拉代码")
     print("=" * 70)
-    run(c, "cd /opt/lianyu && git rev-parse HEAD")
+    _, head_before_out = run(c, "cd /opt/lianyu && git rev-parse --short HEAD")
+    head_before = head_before_out.strip().splitlines()[-1].strip()
+    print(f"\n拉取前服务器 HEAD = {head_before}")
     run(c, "cd /opt/lianyu && git fetch origin main 2>&1 | tail -3")
     run(c, "cd /opt/lianyu && git log -1 --format='%h %s' origin/main")
     run(c, "cd /opt/lianyu && git pull --ff-only origin main 2>&1 | tail -6")
@@ -74,10 +76,14 @@ def main() -> None:
     print("\n" + "=" * 70)
     print("3. 回滚基线标签")
     print("=" * 70)
+    # 标签名带上「本次部署前」的服务端提交号，避免每次覆盖同一枚标签、
+    # 把更早的回滚基线冲掉（上次就写死过 cloud-rollback-ef26d6f）。
+    rollback_tag = f"cloud-rollback-{head_before}"
+    print(f"\n回滚标签: {rollback_tag}")
     for img in ("lianyu-pc/agent:cloud", "lianyu-pc/backend:cloud"):
-        run(c, f"docker tag {img} {img.rsplit(':', 1)[0]}:{ROLLBACK_TAG} && "
+        run(c, f"docker tag {img} {img.rsplit(':', 1)[0]}:{rollback_tag} && "
                f"docker images --format '{{{{.Repository}}}}:{{{{.Tag}}}} {{{{.ID}}}}' "
-               f"| grep {ROLLBACK_TAG}", must=False)
+               f"| grep {rollback_tag}", must=False)
     run(c, f"docker images | grep -E 'lianyu-pc/(agent|backend)'")
 
     c.close()

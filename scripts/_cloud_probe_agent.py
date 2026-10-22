@@ -19,7 +19,8 @@ PROBE = (
     "        r=urllib.request.urlopen(req,timeout=10); return r.status\n"
     "    except urllib.error.HTTPError as e: return e.code\n"
     "    except Exception as e: return 'ERR:'+type(e).__name__\n"
-    "for p in ['/agent/voice/enroll','/agent/tts/synthesize','/agent/chat-turn/inspect',"
+    "for p in ['/agent/voice/enroll','/agent/voice/delete','/agent/tts/synthesize',"
+    "'/agent/tts/stream','/agent/chat-turn/inspect',"
     "'/agent/chat-turn/stream','/agent/does-not-exist']:\n"
     "    print(p, '->', probe(p))\n"
 )
