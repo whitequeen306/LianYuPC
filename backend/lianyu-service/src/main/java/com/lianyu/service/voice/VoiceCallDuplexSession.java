@@ -9,9 +9,11 @@ import com.lianyu.service.ai.InnerThoughtFilter;
 import com.lianyu.service.conversation.VoiceCallService;
 import com.lianyu.service.dto.AiChatRequest;
 import java.util.Base64;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -25,6 +27,20 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public class VoiceCallDuplexSession {
+
+    /** 句子队列的收尾标记（正常句子不会是空串/不会以 NUL 开头）。 */
+    private static final String TTS_SENTINEL = "\u0000DONE";
+
+    /**
+     * WebSocket 发送串行化。
+     *
+     * <p>Spring 的 {@code WebSocketSession.sendMessage} **不是线程安全的**：并发调用会
+     * 产生交错/损坏的帧，也可能直接抛 IllegalStateException。现在至少有四个线程会往
+     * 同一条连接写：ASR 回调（asr.partial）、LLM 增量（llm.delta）、按句 TTS 线程
+     * （tts.audio）、回合线程（turn.start/done）。所以只把真正的 sendText 包进锁里，
+     * 编码与序列化留在锁外，避免持锁做 CPU 活。
+     */
+    private final Object sendLock = new Object();
 
     private final VoiceEventSink sink;
     private final ObjectMapper objectMapper;
@@ -153,6 +169,13 @@ public class VoiceCallDuplexSession {
         log.info("Voice duplex timing conv={} stage=turn_start userLen={}", conversationId, userText.length());
 
         Thread worker = new Thread(() -> {
+            // 按句流水线的两个部件：
+            //  · splitter  —— 在 LLM 还在吐字时就切出完整句子
+            //  · ttsQueue  —— 句子按序排队；TTS 线程取一句、合成一句、喂给客户端
+            // 这样第一句的合成不必等整段回复结束，播完一句时下一句通常已就绪。
+            SentenceSplitter splitter = new SentenceSplitter();
+            BlockingQueue<String> ttsQueue = new LinkedBlockingQueue<>();
+            Thread ttsWorker = target.isLocal() ? null : startTtsPipeline(ttsQueue);
             try {
                 StringBuilder full = new StringBuilder();
                 synchronized (sentenceLock) {
@@ -177,6 +200,11 @@ public class VoiceCallDuplexSession {
                     if (!visible.isEmpty()) {
                         emitJson("llm.delta", n -> n.put("text", visible));
                     }
+                    if (ttsWorker != null) {
+                        for (String sentence : splitter.accept(delta)) {
+                            ttsQueue.offer(sentence);
+                        }
+                    }
                 });
                 llmFuture.set(future);
                 String rawReply = future.join();
@@ -195,13 +223,18 @@ public class VoiceCallDuplexSession {
                 if (target.isLocal()) {
                     emitLocalTts(spoken);
                 } else {
-                    // 语音通话只有一条合成路径：按块流式（cosyvoice-v3-flash + 复刻音色）。
-                    // 实时 WS 那条路已于 2026-10-22 整体删除（连同那个 DashScope 实时客户端类）：
-                    // 平台不再提供「支持复刻音色的实时 TTS 模型」。
-                    log.info("Voice duplex TTS streaming mode={} pet={} conv={} elapsedMs={}",
-                            target.mode(), target.petId(), conversationId,
-                            System.currentTimeMillis() - turnStartedAtMs);
-                    streamHttpFallback(spoken);
+                    // 收尾：把切分器里剩余的半句也送去合成，然后等 TTS 线程把队列吃完。
+                    for (String sentence : splitter.flush()) {
+                        ttsQueue.offer(sentence);
+                    }
+                    ttsQueue.offer(TTS_SENTINEL);
+                    joinQuietly(ttsWorker, 180_000);
+                    if (!audioSent.get()) {
+                        emitError("TTS_ERROR", "语音合成失败，请稍后再试");
+                    } else {
+                        emitJson("tts.done", n -> {
+                        });
+                    }
                 }
 
                 String reply = spoken;
@@ -257,19 +290,49 @@ public class VoiceCallDuplexSession {
      * （否则前端会在音频还在播时就把 phase 复位），二是让 timing 日志能记到真实的
      * 首帧与总时长。等待有上限，上游卡死不会把工作线程永久占住。
      */
-    private void streamHttpFallback(String spoken) {
-        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
-        AtomicBoolean firstChunk = new AtomicBoolean(false);
+    /**
+     * 起一个 TTS 线程：按序从队列取句子，逐句流式合成并喂给客户端。
+     *
+     * <p>为什么用队列而不是「每句起一个线程」：**音频必须严格按句序下发**。
+     * 并行合成会让第 2 句的音频插到第 1 句中间，听起来就是乱码。
+     * 单线程串行虽然不重叠合成，但因为一句的播放时长（2-4s）远大于下一句的首包延迟
+     * （实测 0.5-0.9s），下一句在第 1 句播完前就已就绪，实际是连续的。
+     */
+    private Thread startTtsPipeline(BlockingQueue<String> queue) {
+        Thread ttsThread = new Thread(() -> {
+            try {
+                while (!closed.get()) {
+                    String sentence = queue.poll(200, TimeUnit.MILLISECONDS);
+                    if (sentence == null) {
+                        continue;
+                    }
+                    if (TTS_SENTINEL.equals(sentence)) {
+                        return;
+                    }
+                    streamSentence(sentence);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }, "voice-call-tts-" + conversationId);
+        ttsThread.setDaemon(true);
+        ttsThread.start();
+        return ttsThread;
+    }
 
-        voiceCallService.streamSynthesizeForTarget(target, spoken, new TtsPort.TtsChunkSink() {
+    /** 合成一句并把 PCM 块直接下发；等这一句的流结束（或超时）再返回。 */
+    private void streamSentence(String sentence) {
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        log.info("Voice duplex TTS sentence conv={} len={} elapsedMs={}",
+                conversationId, sentence.length(), System.currentTimeMillis() - turnStartedAtMs);
+        voiceCallService.streamSynthesizeForTarget(target, sentence, new TtsPort.TtsChunkSink() {
             @Override
             public void onChunk(byte[] pcm) {
                 if (pcm == null || pcm.length == 0) {
                     return;
                 }
-                if (firstChunk.compareAndSet(false, true)) {
+                if (audioSent.compareAndSet(false, true)) {
                     markFirstAudio();
-                    audioSent.set(true);
                 }
                 sendAudio(pcm, "audio/pcm");
             }
@@ -293,22 +356,26 @@ public class VoiceCallDuplexSession {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
 
-        if (!firstChunk.get()) {
-            emitError("TTS_ERROR", "语音合成失败，请稍后再试");
+    private static void joinQuietly(Thread thread, long timeoutMs) {
+        if (thread == null) {
             return;
         }
-        emitJson("tts.done", n -> {
-        });
+        try {
+            thread.join(timeoutMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /** 字幕展示用：剥掉完整 marker；尾部疑似未完整 marker 前缀的部分留到下一个 delta 再定。 */
     private String sanitizeDeltaForEmit(String delta) {
         synchronized (sentenceLock) {
             llmEmitBuf.append(delta);
-            String s = llmEmitBuf.toString().replace(PAUSE_TOKEN, "");
+            String s = llmEmitBuf.toString().replace(SentenceSplitter.PAUSE_TOKEN, "");
             int idx = s.lastIndexOf("<|");
-            if (idx >= 0 && s.length() - idx < PAUSE_TOKEN.length()) {
+            if (idx >= 0 && s.length() - idx < SentenceSplitter.PAUSE_TOKEN.length()) {
                 String out = s.substring(0, idx);
                 llmEmitBuf.setLength(0);
                 llmEmitBuf.append(s.substring(idx));
@@ -319,60 +386,9 @@ public class VoiceCallDuplexSession {
         }
     }
 
-    /** marker 及残片不进 TTS、不进聊天记录。 */
-    static String stripPauseMarkers(String s) {
-        if (s == null || s.isEmpty()) {
-            return "";
-        }
-        return s.replace(PAUSE_TOKEN, "").replace("<|", "");
-    }
-
-    /** 角色模型自主标记的停顿点：语音 prompt 指示其在需要换气/停顿处输出。 */
-    static final String PAUSE_TOKEN = "<|pause|>";
-    private static final String STRONG_ENDERS = "。！？!?\n";
-    private static final String WEAK_PAUSES = "，,、；;";
-
-    /**
-     * 合成边界决策（完全状态化）：只认两种停顿 —— 模型显式 {@link #PAUSE_TOKEN} 和句末强标点。
-     * 取消字数硬切 / 逗号兜底；长句（≥2 句）按句界切，短句（≤20 字）整句一次合成。
-     * 未完整 marker 前缀永不被切开。
-     *
-     * <p>当前**暂未接入**：实时 WS 退役后，通话改走整段流式（{@code streamHttpFallback}）。
-     * 保留它是因为下一步「按句流水线预取」（上一句在播、下一句已在合成）要用同一套切分规则，
-     * 而且它带完整单测（{@code VoiceCallDuplexSessionTest}）——删掉再重写是浪费。
-     */
-    static int nextCommitEnd(String buf, boolean firstCommitSent) {
-        if (buf == null || buf.isEmpty()) {
-            return -1;
-        }
-        int marker = buf.indexOf(PAUSE_TOKEN);
-        if (marker > 0) {
-            return marker;
-        }
-        if (marker == 0) {
-            return -1;
-        }
-        int partial = buf.indexOf("<|");
-        if (partial > 0) {
-            return partial;
-        }
-        if (partial == 0) {
-            return -1;
-        }
-        int strong = indexOfAnyFrom(buf, STRONG_ENDERS, firstCommitSent ? 0 : 4);
-        if (strong >= 0) {
-            return strong + 1;
-        }
-        return -1;
-    }
-
-    private static int indexOfAnyFrom(String buf, String chars, int fromIndex) {
-        for (int i = Math.max(0, fromIndex); i < buf.length(); i++) {
-            if (chars.indexOf(buf.charAt(i)) >= 0) {
-                return i;
-            }
-        }
-        return -1;
+    /** marker 及残片不进 TTS、不进聊天记录。实现已移到 {@link SentenceSplitter}。 */
+    private static String stripPauseMarkers(String s) {
+        return SentenceSplitter.stripPauseMarkers(s);
     }
 
     private void markLlmFirstDelta() {
@@ -412,7 +428,10 @@ public class VoiceCallDuplexSession {
             n.put("mime", mimeHint == null || mimeHint.isBlank() ? "audio/pcm" : mimeHint);
             n.put("sampleRate", 24000);
             n.put("base64", Base64.getEncoder().encodeToString(audio));
-            sink.sendText(objectMapper.writeValueAsString(n));
+            String frame = objectMapper.writeValueAsString(n);
+            synchronized (sendLock) {
+                sink.sendText(frame);
+            }
         } catch (Exception e) {
             log.debug("send audio failed: {}", e.toString());
         }
@@ -426,7 +445,10 @@ public class VoiceCallDuplexSession {
                 filler.accept(n);
             }
             if (sink.isOpen()) {
-                sink.sendText(objectMapper.writeValueAsString(n));
+                String frame = objectMapper.writeValueAsString(n);
+                synchronized (sendLock) {
+                    sink.sendText(frame);
+                }
             }
         } catch (Exception e) {
             log.debug("emit {} failed: {}", type, e.toString());
