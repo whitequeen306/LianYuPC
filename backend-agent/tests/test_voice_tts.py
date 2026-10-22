@@ -113,7 +113,6 @@ def _sse(*chunks: bytes) -> bytes:
 @respx.mock
 async def test_synthesize_stream_yields_each_chunk_in_order():
     from app.tts import synthesize_stream
-
     respx.post(SPEECH_SYNTH).respond(
         content=_sse(b"AAAA", b"BBBB"),
         headers={"Content-Type": "text/event-stream"},
@@ -170,6 +169,37 @@ async def test_synthesize_stream_upstream_error_yields_nothing():
         )
     ]
     assert chunks == []
+
+
+@respx.mock
+async def test_synthesize_stream_logs_upstream_reason_when_http_200_but_no_audio(caplog):
+    """DashScope 会用 **200 + event:error** 表示失败（如音色与模型不匹配 → Engine 418）。
+
+    如果只数块数，线上表现就是「静默没有声音、日志里什么都没有」，无法定位。
+    这条断言钉住「没音频时必须把上游原文记下来」。
+    """
+    import logging
+
+    from app.tts import synthesize_stream
+
+    body = (
+        b'event:error\n\n:HTTP_STATUS/400\n\n'
+        b'data:{"code":"InvalidParameter","message":"[cosyvoice]Engine return error code: 418"}\n\n'
+    )
+    respx.post(SPEECH_SYNTH).respond(content=body, headers={"Content-Type": "text/event-stream"})
+
+    with caplog.at_level(logging.WARNING, logger="app.tts"):
+        chunks = [
+            c
+            async for c in synthesize_stream(
+                api_key="k", model="cosyvoice-v3.5-plus", voice_id="v-bound-to-flash", text="hi"
+            )
+        ]
+
+    assert chunks == []
+    joined = "\n".join(r.getMessage() for r in caplog.records)
+    assert "produced NO audio" in joined
+    assert "Engine return error code: 418" in joined
 
 
 @respx.mock

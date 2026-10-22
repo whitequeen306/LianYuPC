@@ -278,6 +278,10 @@ async def synthesize_stream(
     emitted = 0
     first_chunk_ms: float | None = None
     started = time.perf_counter()
+    # DashScope 的失败有两种形态：非 200，以及 **200 + `event:error` 的 SSE 帧**
+    # （例如音色与模型不匹配时会返回 200 + Engine error code 418）。后者如果只数块数，
+    # 线上表现就是「静默没有声音、日志里什么都没有」，根本没法查。所以留一条上游原文。
+    upstream_error: str | None = None
     try:
         # 复用长连接：每句一次 POST，重新握手（境内到阿里云 150-300ms）纯属白送延迟
         client = shared_client("dashscope-tts")
@@ -296,9 +300,16 @@ async def synthesize_stream(
                         first_chunk_ms = (time.perf_counter() - started) * 1000
                     emitted += 1
                     yield chunk
+                elif emitted == 0 and upstream_error is None and line.startswith("data:"):
+                    upstream_error = line[5:].strip()[:300]
     except Exception as exc:  # noqa: BLE001 - 流式失败不向调用方抛
         logger.warning("tts stream aborted after %d chunks: %s", emitted, exc)
         return
+    if emitted == 0:
+        logger.warning(
+            "tts stream produced NO audio model=%s voice=%s upstream=%s",
+            resolved_model, voice[:40], upstream_error,
+        )
     logger.info(
         "tts stream done: chunks=%d model=%s firstChunkMs=%s totalMs=%d",
         emitted, resolved_model,
