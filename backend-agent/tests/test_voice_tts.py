@@ -310,11 +310,12 @@ def test_guess_mime_type():
 
 
 def test_sanitize_helpers():
-    assert sanitize_preferred_name("U23_C52") == "u23_c52"
-    # 中文/空格/连字符都不是 [a-z0-9_]，逐个变下划线（对齐 Java replaceAll）
-    assert sanitize_preferred_name("音色 一号") == "_____"
+    # prefix 规则（平台实测）：只保留字母数字、最长 10 位
+    assert sanitize_preferred_name("U23_C52") == "u23c52"
+    assert sanitize_preferred_name("音色 一号") == "custom"  # 全被过滤 → 兜底
     assert sanitize_preferred_name("") == "custom"
-    assert len(sanitize_preferred_name("a" * 50)) == 32
+    assert sanitize_preferred_name("a" * 50) == "a" * 10
+    assert sanitize_preferred_name("Klee-RT") == "kleert"
     assert sanitize_user_message("key sk-abcdefgh123456 leaked") == "key [redacted] leaked"
     assert sanitize_user_message("") == "语音报名失败"
     assert len(sanitize_user_message("x" * 300)) == 160
@@ -323,27 +324,76 @@ def test_sanitize_helpers():
 # ─────────────────────────── 音色注册 ───────────────────────────
 
 
+def _enroll_sequence(*bodies):
+    """按顺序返回多次响应：第 1 次是 create_voice，之后是 query_voice。"""
+    queue = [httpx.Response(200, json=b) for b in bodies]
+    return lambda request: queue.pop(0)
+
+
 @respx.mock
-async def test_create_voice_success_payload():
-    route = respx.post(ENROLL).respond(json={"output": {"voice": "voice-http-1"}})
+async def test_create_voice_success_payload(monkeypatch):
+    monkeypatch.setattr("app.voice_enrollment._POLL_INTERVAL_S", 0)
+    route = respx.post(ENROLL).mock(side_effect=_enroll_sequence(
+        {"output": {"voice_id": "voice-http-1"}},
+        {"output": {"status": "OK"}},
+    ))
     voice = await create_voice(
         api_key=" sk-test ",
         base_url=None,
-        target_model="qwen3-tts-vc-2026-01-22",
+        target_model="qwen-audio-3.1-tts-flash",
         preferred_name="U23_C52",
         audio_bytes=b"RIFFdata",
         mime_type="audio/wav",
         language="zh",
     )
     assert voice == "voice-http-1"
-    request = route.calls[0].request
-    assert request.headers["Authorization"] == "Bearer sk-test"
-    body = respx.calls[0].request.content.decode()
-    assert '"action": "create"' in body or '"action":"create"' in body
-    assert '"target_model": "qwen3-tts-vc-2026-01-22"' in body or '"target_model":"qwen3-tts-vc-2026-01-22"' in body
-    assert '"preferred_name": "u23_c52"' in body or '"preferred_name":"u23_c52"' in body
-    assert "data:audio/wav;base64," in body
-    assert '"model": "qwen-voice-enrollment"' in body or '"model":"qwen-voice-enrollment"' in body
+
+    create_body = route.calls[0].request.content.decode()
+    assert route.calls[0].request.headers["Authorization"] == "Bearer sk-test"
+    assert '"action": "create_voice"' in create_body or '"action":"create_voice"' in create_body
+    assert '"model": "voice-enrollment"' in create_body or '"model":"voice-enrollment"' in create_body
+    assert "qwen-audio-3.1-tts-flash" in create_body
+    assert '"prefix": "u23c52"' in create_body or '"prefix":"u23c52"' in create_body
+    assert "data:audio/wav;base64," in create_body
+    # 旧接口字段不应再出现（这正是线上 PipelineNotFound 的来源）
+    assert "preferred_name" not in create_body
+    assert "qwen-voice-enrollment" not in create_body
+
+    # 第二次必须是部署状态轮询，否则拿到的音色还不能用
+    assert route.call_count == 2
+    poll_body = route.calls[1].request.content.decode()
+    assert "query_voice" in poll_body
+    assert "voice-http-1" in poll_body
+
+
+@respx.mock
+async def test_create_voice_waits_for_deploying_then_ok(monkeypatch):
+    """刚创建是 DEPLOYING，必须等到 OK 才返回 —— 这正是旧实现漏掉的一步。"""
+    monkeypatch.setattr("app.voice_enrollment._POLL_INTERVAL_S", 0)
+    route = respx.post(ENROLL).mock(side_effect=_enroll_sequence(
+        {"output": {"voice_id": "v1"}},
+        {"output": {"status": "DEPLOYING"}},
+        {"output": {"status": "DEPLOYING"}},
+        {"output": {"status": "OK"}},
+    ))
+    assert await create_voice(
+        api_key="sk-x", base_url=None, target_model="m", preferred_name="p", audio_bytes=b"x"
+    ) == "v1"
+    assert route.call_count == 4
+
+
+@respx.mock
+async def test_create_voice_fails_when_deploy_status_is_bad(monkeypatch):
+    monkeypatch.setattr("app.voice_enrollment._POLL_INTERVAL_S", 0)
+    respx.post(ENROLL).mock(side_effect=_enroll_sequence(
+        {"output": {"voice_id": "v1"}},
+        {"output": {"status": "FAILED"}},
+    ))
+    with pytest.raises(VoiceEnrollmentError) as exc:
+        await create_voice(
+            api_key="sk-x", base_url=None, target_model="m", preferred_name="p", audio_bytes=b"x"
+        )
+    assert "音色状态异常" in str(exc.value)
 
 
 @respx.mock
@@ -365,7 +415,7 @@ async def test_create_voice_provider_error_is_sanitized():
 
 
 @respx.mock
-async def test_create_voice_without_output_voice():
+async def test_create_voice_without_voice_id():
     respx.post(ENROLL).respond(json={"output": {}})
     with pytest.raises(VoiceEnrollmentError) as exc:
         await create_voice(
@@ -396,6 +446,22 @@ async def test_delete_voice_quietly_skips_without_inputs():
     await delete_voice_quietly(api_key="", base_url=None, voice_id="v1")
     await delete_voice_quietly(api_key="sk-x", base_url=None, voice_id=None)
     assert route.call_count == 0
+
+
+@respx.mock
+async def test_delete_voice_quietly_uses_delete_voice_action():
+    """动作名必须是 delete_voice + voice_id。
+
+    实测：`action:delete` 会返回 400 invalid action；
+    `delete_voice` 配 `voice` 字段会报缺参数。这条守护防止再退回错的名字。
+    """
+    route = respx.post(ENROLL).respond(json={"output": {}})
+    await delete_voice_quietly(api_key="sk-x", base_url=None, voice_id="v1")
+    assert route.call_count == 1
+    body = route.calls[0].request.content.decode()
+    assert "delete_voice" in body
+    assert "voice_id" in body
+    assert '"action": "delete"' not in body and '"action":"delete"' not in body
 
 
 # ─────────────────────────── 非实时合成 ───────────────────────────
@@ -549,8 +615,12 @@ ENROLL_BODY = {
 
 
 @respx.mock
-def test_endpoint_voice_enroll_ok():
-    respx.post(ENROLL).respond(json={"output": {"voice": "v-http"}})
+def test_endpoint_voice_enroll_ok(monkeypatch):
+    monkeypatch.setattr("app.voice_enrollment._POLL_INTERVAL_S", 0)
+    respx.post(ENROLL).mock(side_effect=_enroll_sequence(
+        {"output": {"voice_id": "v-http"}},
+        {"output": {"status": "OK"}},
+    ))
     response = client.post("/agent/voice/enroll", json=ENROLL_BODY, headers={"X-User-Id": "23"})
     assert response.status_code == 200
     assert response.json() == {"voice": "v-http"}

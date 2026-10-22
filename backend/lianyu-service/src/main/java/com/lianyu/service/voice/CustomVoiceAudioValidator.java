@@ -32,7 +32,10 @@ public final class CustomVoiceAudioValidator {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "请上传音频文件（mp3 或 wav）");
         }
         if (file.getSize() > MAX_BYTES) {
-            throw new BusinessException(ErrorCode.FILE_TOO_LARGE, "音频不能超过 15MB");
+            // 文案必须与 MAX_BYTES 一致：这里写死过 15MB，而常量是 30MB，
+            // 用户上传 20MB 的文件被拒时看到"不能超过 15MB"会一头雾水。
+            throw new BusinessException(ErrorCode.FILE_TOO_LARGE,
+                    "音频不能超过 " + (MAX_BYTES / 1024 / 1024) + "MB");
         }
         if (file.getSize() < MIN_BYTES) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "音频文件过小，请提供更长的清晰语音");

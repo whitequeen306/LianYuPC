@@ -198,11 +198,13 @@ public class CustomVoiceService {
             String httpVoice = enrollmentPort.createVoice(
                     row.getUserId(), key, base, httpModel, preferred,
                     sample.bytes(), sample.contentType(), "zh");
-            String rtVoice = enrollmentPort.createVoice(
-                    row.getUserId(), key, base, realtimeModel, preferred + "_rt",
-                    sample.bytes(), sample.contentType(), "zh");
+            // 只注册一套音色。原先这里还会用 realtimeModel 再注册一次，但平台已无
+            // 「支持复刻音色的实时 TTS 模型」（见 docs/refactor-2026-10/tts-migration-plan.md），
+            // 语音通话改走 HTTP 流式合成、复用同一个 httpVoiceId —— 再注册一次只是白等
+            // 几秒并多占一个配额。
             row.setHttpVoiceId(httpVoice);
-            row.setRealtimeVoiceId(rtVoice);
+            row.setRealtimeVoiceId(null);
+            row.setRealtimeModel(null);
             row.setStatus(CustomVoiceProviders.STATUS_READY);
         } catch (BusinessException e) {
             row.setStatus(CustomVoiceProviders.STATUS_FAILED);
@@ -270,9 +272,12 @@ public class CustomVoiceService {
 
     private CustomVoiceResponse toResponse(UserCustomVoice row) {
         boolean ready = CustomVoiceProviders.STATUS_READY.equalsIgnoreCase(row.getStatus());
+        // 「能不能用在语音通话」的判据变了：通话不再需要实时音色，
+        // 而是用 httpVoiceId 逐句流式合成。所以只要 HTTP 音色就绪就算可用，
+        // 否则界面会一直提示用户"语音通话不可用"——那是过时信息。
         boolean voiceCallReady = ready && (
                 (CustomVoiceProviders.DASHSCOPE_VC.equalsIgnoreCase(row.getProvider())
-                        && row.getRealtimeVoiceId() != null && !row.getRealtimeVoiceId().isBlank())
+                        && row.getHttpVoiceId() != null && !row.getHttpVoiceId().isBlank())
                         || (CustomVoiceProviders.GPTSOVITS_LOCAL.equalsIgnoreCase(row.getProvider())
                         && row.getEndpoint() != null && row.getRefText() != null
                         && row.getRefAudioObjectKey() != null));
