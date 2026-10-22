@@ -112,7 +112,7 @@ public class VoiceCallDuplexSession {
 
             @Override
             public void onEndpoint() {
-                triggerTurnFromAsr();
+                triggerTurnFromAsr("engine");
             }
 
             @Override
@@ -142,24 +142,55 @@ public class VoiceCallDuplexSession {
     }
 
     public void clientEndpoint() {
-        triggerTurnFromAsr();
+        triggerTurnFromAsr("client");
     }
 
-    private void triggerTurnFromAsr() {
+    /**
+     * 端点触发：把已累积的 ASR 文本变成一个回合。
+     *
+     * <p>两路来源：
+     * <ul>
+     *   <li>{@code client} —— 客户端 VAD（750ms 静音）判定说完，实测最后一帧到端点只差
+     *       3-40ms，是最快也最准的一路；</li>
+     *   <li>{@code engine} —— sherpa-onnx Zipformer 的端点规则。⚠️ 它的 rule1 是
+     *       <b>「纯静音满 {@code ASR_EP_RULE1}=2.4s 就报端点」</b>，<b>与有没有说话无关</b>。
+     *       通话中麦克风一直在推流，所以引擎会每 2.4-2.7 秒稳定吐一个**空端点</b>
+     *       （2026-10-22 生产日志：34.251 / 36.956 / 39.713 / 42.465 / 45.201，间隔 2.74s，全部 textLen=0）。</li>
+     * </ul>
+     *
+     * <p>空端点必须**什么都不做**，原因有二：
+     * <ol>
+     *   <li>清 {@code lastPartial} 会切掉正在累积的半句（用户停顿一下就被判成一句）；</li>
+     *   <li>{@code asr.reset()} 会清空 Zipformer 的声学上下文 —— 而服务端在发 {@code endpoint}
+     *       之前**已经自己 reset 过**（{@code deploy/asr/server.py}），这里再 reset 一次纯属
+     *       把下一次发声的左侧上下文白扔掉，句子开头凭空变差。</li>
+     * </ol>
+     */
+    private void triggerTurnFromAsr(String source) {
+        long now = System.currentTimeMillis();
+        int textLen;
         String text;
         synchronized (this) {
-            text = lastPartial;
-            lastPartial = "";
+            textLen = lastPartial == null ? 0 : lastPartial.length();
+            boolean hasText = textLen > 0 && !lastPartial.isBlank();
+            text = hasText ? lastPartial : null;
+            if (hasText) {
+                lastPartial = "";
+            }
         }
-        long now = System.currentTimeMillis();
         // 这行直接回答「语音转文字为什么变慢」：从用户最后一帧语音到判定说完，隔了多久。
-        // 归 VAD/端点检测，不归识别模型 —— 有数才分得清该改哪一段。
-        log.info("Voice duplex timing conv={} stage=asr_endpoint silenceMs={} sinceStartMs={} textLen={}",
+        // 实测 3-40ms，说明端点判定不是瓶颈。
+        log.info("Voice duplex timing conv={} stage=asr_endpoint source={} silenceMs={} sinceStartMs={} textLen={}",
                 conversationId,
+                source,
                 lastPcmAtMs == 0L ? -1 : now - lastPcmAtMs,
                 now - sessionStartedAtMs,
-                text == null ? 0 : text.length());
+                textLen);
+        if (text == null) {
+            return;
+        }
         try {
+            // 客户端 VAD 触发时引擎可能还在累积同一段 text，reset 让两边对齐起点
             asr.reset();
         } catch (Exception e) {
             log.debug("ASR reset after call endpoint failed: {}", e.toString());
