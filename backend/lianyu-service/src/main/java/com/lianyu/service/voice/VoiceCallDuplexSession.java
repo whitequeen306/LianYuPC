@@ -325,26 +325,34 @@ public class VoiceCallDuplexSession {
         java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
         log.info("Voice duplex TTS sentence conv={} len={} elapsedMs={}",
                 conversationId, sentence.length(), System.currentTimeMillis() - turnStartedAtMs);
+        // 上游切片边界由 TCP 决定，与 16bit 样本边界无关；直接转发会让客户端把整帧
+        // 高低字节对调（听感=电子杂音）。这里统一拼成样本对齐的定长帧再下发。
+        PcmFrameAssembler assembler = new PcmFrameAssembler();
+        PcmFrameAssembler.FrameConsumer emit = (array, offset, length) -> {
+            if (length <= 0) {
+                return;
+            }
+            if (audioSent.compareAndSet(false, true)) {
+                markFirstAudio();
+            }
+            sendAudio(java.util.Arrays.copyOfRange(array, offset, offset + length), "audio/pcm");
+        };
         voiceCallService.streamSynthesizeForTarget(target, sentence, new TtsPort.TtsChunkSink() {
             @Override
             public void onChunk(byte[] pcm) {
-                if (pcm == null || pcm.length == 0) {
-                    return;
-                }
-                if (audioSent.compareAndSet(false, true)) {
-                    markFirstAudio();
-                }
-                sendAudio(pcm, "audio/pcm");
+                assembler.push(pcm, emit);
             }
 
             @Override
             public void onDone() {
+                assembler.flush(emit);
                 done.countDown();
             }
 
             @Override
             public void onError(String message) {
                 log.warn("Voice duplex stream TTS error conv={}: {}", conversationId, message);
+                assembler.flush(emit);
                 done.countDown();
             }
         });
