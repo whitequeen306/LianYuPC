@@ -59,7 +59,10 @@ PLAN: list[tuple[str, str, list[Path]]] = [
     ("klee",        "lyklee",    [VC / "klee-rt-enroll-40s-mono.wav", SAMPLES / "klee-clip.wav"]),
     ("ganyu",       "lyganyu",   [VC / "ganyu-rt-enroll-40s-mono.wav", SAMPLES / "ganyu-clip.wav"]),
     ("ayaka",       "lyayaka",   [VC / "ayaka-rt-enroll-40s-mono.wav", SAMPLES / "ayaka-clip.wav"]),
-    ("raiden",      "lyraiden",  [SAMPLES / "raiden-clip.wav", SAMPLES / "raiden.wav"]),
+    ("raiden",      "lyraiden",
+     # 顺序很关键：raiden-clip.wav 是 15 秒、频谱平坦度 0.353 的含噪片段（复刻会把噪声一起
+     # 学进去，听感是"声音对但不像她"）。raiden.wav 是 46 秒 48kHz 原素材，平坦度 0.119。
+     [SAMPLES / "raiden.wav", SAMPLES / "raiden-clip.wav"]),
     ("elysia",      "lyelysia",  [VC / "elysia-vc-source-mono.wav"]),
     ("erii_uesugi", "lyerii",    [VC / "erii_uesugi-rt-enroll-40s-mono.wav", VC / "eriri-vc-source-mono.wav"]),
     ("yae_miko",    "lyyaemiko", [VC / "yae_miko-vc-enroll-55s-mono.wav", VC / "yae_miko-vc-source-mono.wav"]),
@@ -131,6 +134,8 @@ def verify(voice_id: str) -> bool:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="", help="逗号分隔的 pet_id 子集")
+    ap.add_argument("--force", action="store_true",
+                    help="已有 voice_id 也重新注册（换素材/换裁剪参数时用）")
     args = ap.parse_args()
     only = {p.strip() for p in args.only.split(",") if p.strip()}
 
@@ -148,7 +153,7 @@ def main() -> None:
             results = {}
 
     for pet_id, prefix, candidates in plan:
-        if pet_id in results and results[pet_id].get("voice_id"):
+        if pet_id in results and results[pet_id].get("voice_id") and not args.force:
             print(f"[skip] {pet_id} 已有 {results[pet_id]['voice_id']}")
             continue
         src = next((p for p in candidates if p.is_file()), None)
