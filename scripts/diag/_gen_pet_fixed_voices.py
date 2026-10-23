@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 OUT_ROOT = ROOT / "frontend" / "public" / "pet" / "voice"
 PET_VOICES = ROOT / "backend" / "lianyu-service" / "src" / "main" / "resources" / "pet-voices.json"
-SYNTH_URL = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+SYNTH_URL = "https://dashscope.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer"
 
 # Keep in sync with frontend/src/constants/petCatalog.js fixedVoiceLines
 # and backend PetMeetVoiceCatalog. Meet lines are personality-shaped (no fixed length).
@@ -188,12 +188,19 @@ def download(url: str) -> bytes:
 
 
 def synth(api_key: str, model: str, voice: str, text: str) -> bytes:
+    """合成一句固定台词。
+
+    2026-10-23 迁移：原来走旧的 multimodal-generation 端点 + qwen3-tts-vc（该模型已下架），
+    现在走 SpeechSynthesizer + cosyvoice-v3.5-flash。两代端点的入参不同：
+    旧的要 language_type，新的要 format/sample_rate（见 backend-agent/app/tts.py 的同款判断）。
+    """
     body = {
         "model": model,
         "input": {
             "text": text,
             "voice": voice,
-            "language_type": "Chinese",
+            "format": "wav",
+            "sample_rate": 24000,
         },
     }
     root = http_json(SYNTH_URL, body, api_key)
