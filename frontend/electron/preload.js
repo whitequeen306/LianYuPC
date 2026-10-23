@@ -184,35 +184,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   /** Local GPT-SoVITS TTS (custom character voice). */
   synthesizeLocalTts: (payload) => ipcRenderer.invoke('custom-tts:sovits', payload),
-  // ── MCP 本地服务（Agent 工具桥） ──
-  getMcpSettings: () => ipcRenderer.invoke('mcp:get-settings'),
-  setMcpSettings: (partial) => ipcRenderer.invoke('mcp:set-settings', partial),
-  getMcpStatus: () => ipcRenderer.invoke('mcp:get-status'),
-  startMcp: () => ipcRenderer.invoke('mcp:start'),
-  stopMcp: () => ipcRenderer.invoke('mcp:stop'),
-  listMcpTools: () => ipcRenderer.invoke('mcp:list-tools'),
-  mcpCallTool: (name, args, actor, requestId) => ipcRenderer.invoke('mcp:call-tool', { name, args, actor, requestId }),
-  respondMcpConfirm: (id, approved) => ipcRenderer.invoke('mcp:confirm-response', { id, approved }),
-  onMcpStatus: (callback) => {
+  // ── 桌面能力层（desk_*） ──
+  getCapabilitySettings: () => ipcRenderer.invoke('capability:get-settings'),
+  setCapabilitySettings: (partial) => ipcRenderer.invoke('capability:set-settings', partial),
+  getCapabilityStatus: () => ipcRenderer.invoke('capability:get-status'),
+  capabilityExec: (payload) => ipcRenderer.invoke('capability:exec', payload),
+  capabilityAbort: (payload) => ipcRenderer.invoke('capability:abort', payload),
+  respondCapabilityConfirm: (id, approved) => ipcRenderer.invoke('capability:confirm-response', { id, approved }),
+  onCapabilityAudit: (callback) => {
     const handler = (_event, payload) => callback(payload)
-    ipcRenderer.on('desktop:mcp-status', handler)
-    return () => ipcRenderer.removeListener('desktop:mcp-status', handler)
+    ipcRenderer.on('desktop:capability-audit', handler)
+    return () => ipcRenderer.removeListener('desktop:capability-audit', handler)
   },
-  onMcpProgress: (callback) => {
+  onCapabilityConfirmRequest: (callback) => {
     const handler = (_event, payload) => callback(payload)
-    ipcRenderer.on('desktop:mcp-progress', handler)
-    return () => ipcRenderer.removeListener('desktop:mcp-progress', handler)
-  },
-  onMcpConfirmRequest: (callback) => {
-    const handler = (_event, payload) => callback(payload)
-    ipcRenderer.on('desktop:mcp-confirm-request', handler)
-    return () => ipcRenderer.removeListener('desktop:mcp-confirm-request', handler)
-  },
-  getEngineStatus: () => ipcRenderer.invoke('mcp:engine-status'),
-  installEngine: () => ipcRenderer.invoke('mcp:install-engine'),
-  onEngineProgress: (callback) => {
-    const handler = (_event, payload) => callback(payload)
-    ipcRenderer.on('desktop:mcp-engine-progress', handler)
-    return () => ipcRenderer.removeListener('desktop:mcp-engine-progress', handler)
+    ipcRenderer.on('desktop:capability-confirm-request', handler)
+    return () => ipcRenderer.removeListener('desktop:capability-confirm-request', handler)
   },
 })

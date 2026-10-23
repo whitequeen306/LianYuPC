@@ -52,6 +52,30 @@ class Settings(BaseSettings):
     # Python 侧显式设上限并在日志/测试中固化
     max_tool_rounds: int = 3
 
+    # ── 桌面能力层（desk_*）：自研替代外借 AgentAssistant MCP 的 computer_task ──
+    # 总开关：关掉后 desk_* 不进入任何一次模型调用的工具集（schema 也不下发）
+    desktop_capability_enabled: bool = True
+    # 单个任务（一次用户消息触发的桌面操作）的步数上限。
+    # 与 max_tool_rounds 分开：chat 回合轮次是模型↔工具往返次数，这里数的是桌面动作个数。
+    desktop_max_steps: int = 6
+    # 单任务允许的视觉分析帧数（每帧约 1.1k input token，是成本主项）
+    desktop_max_vlm_frames: int = 4
+    # 单任务墙钟上限（秒）：到点即降级收尾，绝不让一步卡死拖住整轮对话
+    desktop_task_deadline_seconds: float = 90.0
+    # 同一工具连续失败多少次即停止继续尝试（模型据此向用户解释）
+    desktop_max_consecutive_failures: int = 2
+    # 单个桌面步的默认超时（毫秒）；单个能力可在 specs 里覆盖
+    desktop_step_timeout_ms: int = 8000
+    # 回灌给模型的单条工具结果字符上限（与 Java sanitizeResult 对齐）
+    desktop_result_max_chars: int = 8000
+
+    # Python → Java 内网执行通道（桌面能力层）。agent 无对外端口，只向内网 Java 发起。
+    internal_base_url: str = "http://backend:8080"
+    # 内网 HMAC 共享密钥；为空时通道直接拒发（fail-closed，绝不裸奔）
+    internal_token: str = ""
+    # 允许的时钟偏差（秒），超窗即拒绝（防重放）
+    internal_signature_window_seconds: int = 30
+
     # 只读数据访问（总纲 D7：Python 只读 MySQL/Redis，不写）
     mysql_host: str = "mysql"
     mysql_port: int = 3306

@@ -69,16 +69,30 @@ def test_accepts_stage2_credentials_field_names():
 
 
 def test_capabilities_declares_missing_tools():
-    """能力端点必须诚实报告缺口，供 Java 侧做路由校验。"""
+    """能力端点必须诚实报告缺口，供 Java 侧做路由校验。
+
+    电脑操控已由自研 `desk_*` 承接：粗粒度 `computer_task` 既不在 supported，
+    也不再被声明成缺口（它已退役，而不是"还没做"）。
+    """
     response = client.get("/agent/capabilities")
     assert response.status_code == 200
     body = response.json()
-    assert set(body["supportedTools"]) == {
-        "get_current_time", "get_weather", "memory_search", "get_my_recent_life"
-    }
+    supported = set(body["supportedTools"])
+    assert {"get_current_time", "get_weather", "memory_search", "get_my_recent_life"} <= supported
     assert "memory_search" not in body["missingTools"]
     assert "write_diary" in body["missingTools"]
-    assert "computer_task" in body["missingTools"]
+    assert "computer_task" not in supported
+    assert "computer_task" not in body["missingTools"]
+
+    desktop = body["desktopCapability"]
+    assert desktop["transport"] == "bridge-stomp"
+    assert desktop["tools"], "桌面能力清单不能为空"
+    assert all(t.startswith("desk_") for t in desktop["tools"])
+    assert set(desktop["tools"]) <= supported, "声明了却没注册 = 撒谎"
+    assert desktop["maxSteps"] >= 1
+    assert desktop["maxVisionFrames"] >= 1
+    assert desktop["taskDeadlineSeconds"] > 0
+
     assert body["languageGate"] is True
     assert body["circuitBreaker"] is True
     assert body["toolLoop"] is True

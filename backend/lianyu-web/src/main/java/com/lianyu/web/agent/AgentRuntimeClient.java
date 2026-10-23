@@ -27,8 +27,9 @@ import org.springframework.web.client.RestClient;
 public class AgentRuntimeClient {
 
     /**
-     * 主动发言链路在 Java 侧会挂的只读工具（对齐 ToolManager.resolveToolCallbacks）。
-     * 不含 write_diary / computer_task：Python 侧未实现（总纲 D9），声明了会造成行为落差。
+     * 主动发言链路挂的只读工具（能力声明归 Python，Java 只声明要哪些）。
+     * 不含 write_diary / 桌面 desk_*：前者 Python 未实现（总纲 D9）；
+     * 后者由 Python 的 capability_names() 按桌面在线状态决定，不该在这里写死。
      */
     private static final List<String> PROACTIVE_TOOLS = List.of(
             "get_current_time", "get_weather", "memory_search", "get_my_recent_life");

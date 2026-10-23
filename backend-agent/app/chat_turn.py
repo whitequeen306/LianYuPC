@@ -42,6 +42,8 @@ from app.message_assembly import (
     wrap_stored_text_for_model,
 )
 from app.prompt_pipeline import assemble_turn_prompt, normalize_scene, scene_enable_tools
+from app.capability.budget import TaskBudget, new_session_id
+from app.capability.specs import capability_names
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +58,6 @@ CHAT_TOOL_NAMES = (
     "memory_search",
     "get_my_recent_life",
 )
-
 
 class ChatTurnState(TypedDict, total=False):
     """回合状态：输入（请求参数）→ 中间产物 → 输出。"""
@@ -222,11 +223,20 @@ async def assemble_messages(state: ChatTurnState) -> dict[str, Any]:
 
 
 def _tool_context(state: ChatTurnState) -> dict[str, Any]:
-    """工具执行上下文（对齐 Java ChatToolContext；模型看不到，也不进 schema）。"""
+    """工具执行上下文（对齐 Java ChatToolContext；模型看不到，也不进 schema）。
+
+    `_` 前缀的键由 `capability.handlers.split_internal_arguments` 剥掉，不会下发到客户端。
+    `_budget` 是**一次回合一个**：同一轮的工具往返共享步数/视觉/墙钟预算。
+    """
+    user_id = state.get("user_id")
+    session_id = new_session_id(user_id)
     return {
-        "_user_id": state.get("user_id"),
+        "_user_id": user_id,
         "_character_id": state.get("character_id"),
+        "_character_name": state.get("character_name"),
         "_language": state.get("expected_language") or state.get("output_language") or "zh",
+        "_session_id": session_id,
+        "_budget": TaskBudget.from_settings(session_id),
     }
 
 
@@ -235,6 +245,25 @@ def _tools_enabled(state: ChatTurnState) -> bool:
     if enable is not None:
         return bool(enable)
     return scene_enable_tools(normalize_scene(state.get("scene")))
+
+
+def _desktop_online(state: ChatTurnState) -> bool:
+    """桌面桥是否在线：Java 用 `promptHintFlags.computer` 这个开关事实告诉我们。
+
+    这是唯一的事实来源 —— Python 不去猜、也不自己探活。
+    """
+    flags = state.get("tool_flags") or {}
+    return bool(flags.get("computer"))
+
+
+def tool_names_for_turn(state: ChatTurnState) -> tuple[str, ...]:
+    """本轮可挂的工具：只读工具 +（桌面端在线时）桌面能力。
+
+    桌面端不在线时**一个 desk_* 都不给**：给了模型就会调用，然后每次都失败。
+    """
+    if not _tools_enabled(state):
+        return ()
+    return CHAT_TOOL_NAMES + capability_names(_desktop_online(state))
 
 
 async def invoke_model(state: ChatTurnState) -> dict[str, Any]:
@@ -254,7 +283,7 @@ async def invoke_model(state: ChatTurnState) -> dict[str, Any]:
             api_key=state.get("api_key") or "",
             model=state.get("model") or "",
             messages=state.get("messages") or [],
-            tool_names=list(CHAT_TOOL_NAMES),
+            tool_names=list(tool_names_for_turn(state)),
             temperature=state.get("temperature", 0.8),
             max_tokens=state.get("max_tokens", 1024),
             provider=state.get("provider"),
@@ -324,7 +353,8 @@ async def invoke_model_stream(state: ChatTurnState) -> dict[str, Any]:
     from app.tools import supported_tool_schemas
 
     enable_tools = _tools_enabled(state)
-    tools = supported_tool_schemas(list(CHAT_TOOL_NAMES)) if enable_tools else None
+    tool_names = tool_names_for_turn(state)
+    tools = supported_tool_schemas(list(tool_names)) if enable_tools else None
 
     writer = get_stream_writer()
     async for frame in stream_chat_events(
@@ -339,7 +369,7 @@ async def invoke_model_stream(state: ChatTurnState) -> dict[str, Any]:
         expected_language=state.get("expected_language"),
         tools=tools,
         # 工具回退：流式无文本（模型选择调工具）时退化成有界工具循环
-        tool_names=list(CHAT_TOOL_NAMES) if enable_tools else None,
+        tool_names=list(tool_names) if tool_names else None,
         tool_context=_tool_context(state),
     ):
         writer({"frame": frame})

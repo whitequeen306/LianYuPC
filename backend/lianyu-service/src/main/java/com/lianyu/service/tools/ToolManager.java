@@ -1,38 +1,32 @@
 package com.lianyu.service.tools;
 
-import cn.hutool.core.collection.CollUtil;
-import com.lianyu.service.dto.AiChatRequest;
+import com.lianyu.dao.entity.Character;
+import com.lianyu.service.character.CharacterPreferenceResolver;
 import com.lianyu.service.tools.bridge.AgentBridgeService;
-import com.lianyu.service.tools.bridge.ClientBridgeToolCallback;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
-import org.springframework.ai.support.ToolCallbacks;
-import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * 统一注册角色对话可用的 Spring AI Tool（时间、天气、长期记忆、角色近况等），
- * 并在用户桌面端工具桥在线时合并其本地 MCP 工具（经 {@link AgentBridgeService} 远程执行）。
+ * 工具开关事实（agent 侧据此生成提示文案，Java **不拼接任何 prompt 文本**）。
+ *
+ * <p>能力层重构后这里只剩一件事：把「哪些能力开关是开的」告诉 Python。
+ * 原先的 `resolveToolCallbacks` / `appendClientBridgeTools`（Spring AI ToolCallback 装配）
+ * 已随外借引擎一起删除 —— 现在 schema 由 Python 的 `capability/specs.py` 持有，
+ * Java 再装配一份只会造成两套事实。
+ *
+ * <p>`computer` 键名保持不变（32 组 golden 提示词表的键序依赖它），
+ * 但语义是「该用户桌面能力在线」，即桥上有任一 `desk_*`。
  */
 @Component
 @RequiredArgsConstructor
 public class ToolManager {
 
-    private final TimeTool timeTool;
-    private final WeatherTool weatherTool;
-    private final RecentActivityTool recentActivityTool;
-    private final WriteDiaryTool writeDiaryTool;
     private final AgentBridgeService agentBridgeService;
 
     @Value("${lianyu.tools.chat.enabled:true}")
     private boolean chatToolsEnabled;
-
-    @Value("${lianyu.tools.weather.enabled:true}")
-    private boolean weatherEnabled;
 
     @Value("${lianyu.memory.agentic.enabled:true}")
     private boolean memoryAgenticEnabled;
@@ -44,69 +38,47 @@ public class ToolManager {
     private boolean writeDiaryEnabled;
 
     /**
-     * 为本次 ChatModel 调用解析 Tool 列表；须已设置 {@link ChatToolContext}。
-     * 服务端内置工具之外，若当前用户的桌面工具桥在线，则追加其本地工具
-     * （同名时服务端工具优先，本地工具跳过）。
+     * 桌面能力是否在线：桥上有任一 `desk_*` 原子能力即算在线。
+     *
+     * <p>语义变更（能力层重构）：旧版判断「桥上有 `computer_task`」—— 那是外借引擎的
+     * 粗粒度黑盒工具，已退役。现在客户端注册的是一组 `desk_*`，只要有一个在线，
+     * 模型这一轮就该拿到整套桌面能力（Python 侧按 `capability_names()` 决定具体给哪些）。
      */
-    public List<ToolCallback> resolveToolCallbacks(AiChatRequest request) {
-        if (!chatToolsEnabled || request == null || request.getChatToolCharacterId() == null
-                || request.isDisableChatTools()) {
-            return List.of();
-        }
-        List<Object> providers = CollUtil.newArrayList(timeTool);
-        if (weatherEnabled) {
-            providers.add(weatherTool);
-        }
-        if (recentActivityEnabled) {
-            providers.add(recentActivityTool);
-        }
-        if (writeDiaryEnabled) {
-            providers.add(writeDiaryTool);
-        }
-        List<ToolCallback> callbacks = new ArrayList<>(List.of(ToolCallbacks.from(providers.toArray())));
-        appendClientBridgeTools(callbacks);
-        return List.copyOf(callbacks);
-    }
-
-    private void appendClientBridgeTools(List<ToolCallback> callbacks) {
-        ChatToolContext.Scope scope = ChatToolContext.current();
-        if (scope == null || scope.userId() == null) {
-            return;
-        }
-        List<AgentBridgeService.ClientTool> clientTools = agentBridgeService.availableTools(scope.userId());
-        if (clientTools.isEmpty()) {
-            return;
-        }
-        Set<String> taken = new HashSet<>();
-        for (ToolCallback callback : callbacks) {
-            taken.add(callback.getToolDefinition().name());
-        }
-        for (AgentBridgeService.ClientTool tool : clientTools) {
-            if (taken.add(tool.name())) {
-                callbacks.add(new ClientBridgeToolCallback(agentBridgeService, scope.userId(), tool, scope));
-            }
-        }
-    }
-
-    boolean hasComputerTask(Long userId) {
+    boolean hasDesktopCapability(Long userId) {
         if (userId == null) {
             return false;
         }
         return agentBridgeService.availableTools(userId).stream()
-                .anyMatch(t -> "computer_task".equals(t.name()));
+                .anyMatch(t -> t.name() != null && t.name().startsWith("desk_"));
     }
+
+    /** 工具提示的开关事实。`computer` 依赖桌面桥接的实时会话（进程内内存态），只能由 Java 提供。 */
+    public Map<String, Object> promptHintFlags(Long userId) {
+        return promptHintFlags(userId, null);
+    }
+
     /**
-     * 工具提示的开关事实（agent 侧据此生成文案，Java 不再拼接文本）。
+     * 带角色上下文的开关事实。
      *
-     * <p>`computer` 依赖桌面桥接的实时会话（进程内内存态），只能由 Java 提供。
+     * <p>`computer` = 全局能力在线 **且** 这个角色被允许操控电脑（`settings.desktopEnabled`）。
+     * 两个闸门是「与」的关系：
+     * <ul>
+     *   <li>全局关 → 客户端根本没注册 desk_*，模型看不到任何桌面能力；</li>
+     *   <li>角色关 → 即使能力在线，这个角色也拿不到 desk_*（只能聊天）。</li>
+     * </ul>
+     * 角色为 null（无角色上下文的场景）按「不允许」处理 —— 宁可不给，也不要误开。
      */
-    public java.util.Map<String, Object> promptHintFlags(Long userId) {
-        java.util.Map<String, Object> flags = new java.util.LinkedHashMap<>();
+    public Map<String, Object> promptHintFlags(Long userId, Character character) {
+        // 两个事实分开取，别用 && 短路：短路会让「能力是否在线」这条事实不可观测
+        //（踩过：单测里 stub 因为短路而没被调用）。
+        boolean desktopOnline = hasDesktopCapability(userId);
+        boolean characterAllowsDesktop = CharacterPreferenceResolver.desktopEnabled(character);
+        Map<String, Object> flags = new java.util.LinkedHashMap<>();
         flags.put("chat", chatToolsEnabled);
         flags.put("memory", memoryAgenticEnabled);
         flags.put("recent", recentActivityEnabled);
         flags.put("diary", writeDiaryEnabled);
-        flags.put("computer", hasComputerTask(userId));
+        flags.put("computer", desktopOnline && characterAllowsDesktop);
         return flags;
     }
 }

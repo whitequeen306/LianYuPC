@@ -76,7 +76,7 @@ function respond(approved) {
   stopCountdown()
   current.value = null
   if (item) {
-    getElectronAPI()?.respondMcpConfirm?.(item.id, approved)
+    getElectronAPI()?.respondCapabilityConfirm?.(item.id, approved)
   }
   showNext()
 }
@@ -87,8 +87,8 @@ function onDialogClose() {
 
 onMounted(() => {
   const api = getElectronAPI()
-  if (!api?.onMcpConfirmRequest) return
-  unsub = api.onMcpConfirmRequest((payload) => {
+  if (!api?.onCapabilityConfirmRequest) return
+  unsub = api.onCapabilityConfirmRequest((payload) => {
     if (!payload?.id) return
     queue.push(payload)
     if (!visible.value) showNext()

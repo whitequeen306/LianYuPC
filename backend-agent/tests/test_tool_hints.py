@@ -36,12 +36,16 @@ def test_chat_disabled_yields_empty():
     assert th.build_tool_hint(chat=False, memory=True, recent=True, diary=True, computer=True) == ""
 
 
-def test_computer_task_line_only_when_available(golden):
+def test_desktop_capability_line_only_when_available(golden):
+    """computer 位 = 桌面能力在线；文案必须教 desk_*，不能再提已退役的 computer_task。"""
     without = golden["cases"]["11110"]["hint"]
     with_it = golden["cases"]["11111"]["hint"]
-    assert "computer_task" not in without
-    assert "computer_task" in with_it
+    assert "desk_screen_read" not in without
+    assert "desk_screen_read" in with_it
     assert len(with_it) > len(without)
+    assert "computer_task" not in with_it, "粗粒度工具已退役，提示词不能教模型调用它"
+    for case in golden["cases"].values():
+        assert "computer_task" not in case["hint"]
 
 
 def test_build_from_flags_handles_missing_and_empty():

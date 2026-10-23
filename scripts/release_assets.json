@@ -8,11 +8,6 @@
     "versionPattern": "\\d+\\.\\d+\\.\\d+",
     "ghRepo": "whitequeen306/LianYuPC"
   },
-  "agentEngine": {
-    "zipName": "AgentEngine-hosted-win-x64-{version}.zip",
-    "manifestName": "agent-latest.yml",
-    "versionPattern": "\\d+\\.\\d+\\.\\d+"
-  },
   "wechatChannel": {
     "zipName": "WechatChannel-win-x64-{version}.zip",
     "manifestName": "wechat-channel-latest.yml",

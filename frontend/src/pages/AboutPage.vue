@@ -33,111 +33,36 @@
       </div>
     </section>
 
-    <!-- MCP 服务（桌面端） -->
+    <!-- 电脑能力（自研能力层 desk_*） -->
     <section v-if="isElectron" class="section stagger-item">
       <div class="section-header">
-        <h2 class="section-title">{{ t('about.mcpTitle') }}</h2>
+        <h2 class="section-title">{{ t('about.capabilityTitle') }}</h2>
       </div>
       <div class="glass about-card mcp-card">
         <div class="mcp-service">
           <div class="mcp-service__head">
             <div class="mcp-service__text">
               <div class="mcp-service__name">
-                AgentAssistant
-                <span class="mcp-badge" :class="`mcp-badge--${bridge.mcpState}`">{{ mcpStateLabel }}</span>
+                {{ t('about.capabilityName') }}
+                <span class="mcp-badge" :class="`mcp-badge--${capabilityEnabled ? 'running' : 'stopped'}`">
+                  {{ capabilityEnabled ? t('about.capabilityOn') : t('about.capabilityOff') }}
+                </span>
               </div>
-              <p class="mcp-service__desc">{{ t('about.mcpAgentAssistantDesc') }}</p>
+              <p class="mcp-service__desc">{{ t('about.capabilityDesc') }}</p>
             </div>
             <el-switch
-              :model-value="mcpEnabled"
-              :loading="mcpToggling"
-              @change="onToggleMcp"
+              :model-value="capabilityEnabled"
+              :loading="capabilityToggling"
+              @change="onToggleCapability"
             />
           </div>
-
-          <div v-if="bridge.mcpError" class="mcp-service__error">{{ bridge.mcpError }}</div>
-
-          <div class="mcp-service__body">
-            <div v-if="mcpEnabled" class="info-row">
-              <span class="info-label">{{ t('about.mcpBridge') }}</span>
-              <span class="info-value">{{ bridge.registered ? t('about.mcpBridgeOnline') : t('about.mcpBridgeOffline') }}</span>
+          <div v-if="capabilityEnabled" class="mcp-service__body">
+            <div class="info-row">
+              <span class="info-label">{{ t('about.capabilityTools') }}</span>
+              <span class="info-value">{{ capabilityToolNames }}</span>
             </div>
-            <div v-if="mcpEnabled" class="info-row">
-              <span class="info-label">{{ t('about.mcpTools') }}</span>
-              <span class="info-value">
-                {{ bridge.tools.length ? bridge.tools.map(tool => tool.name).join('、') : '—' }}
-              </span>
-            </div>
-            <div v-if="mcpEnabled" class="info-row">
-              <span class="info-label">{{ t('about.mcpEngine') }}</span>
-              <span class="info-value">{{ engineLabel }}</span>
-            </div>
-            <div class="mcp-engine-mode" role="radiogroup" :aria-label="t('about.mcpEngine')">
-              <button
-                type="button"
-                class="mcp-engine-mode__btn"
-                :class="{ 'is-active': !usingLocal }"
-                :aria-pressed="!usingLocal"
-                @click="onSelectOfficial"
-              >{{ t('about.mcpEngineOfficial') }}</button>
-              <button
-                type="button"
-                class="mcp-engine-mode__btn"
-                :class="{ 'is-active': usingLocal }"
-                :aria-pressed="usingLocal"
-                @click="onSelectLocal"
-              >{{ t('about.mcpEngineLocal') }}</button>
-            </div>
-            <p class="mcp-field__hint">{{ usingLocal ? t('about.mcpEngineLocalHint') : t('about.mcpEngineOfficialHint') }}</p>
-            <div v-if="engineBusy" class="mcp-engine-progress">
-              <el-progress
-                :percentage="enginePercent"
-                :stroke-width="8"
-              />
-              <p class="mcp-engine-progress__meta">
-                {{ enginePhaseLabel }}
-                <span v-if="engineBytesLabel"> · {{ engineBytesLabel }}</span>
-              </p>
-            </div>
-            <template v-if="usingLocal">
-              <div class="mcp-field mcp-field--column">
-                <span class="mcp-field__label">{{ t('about.mcpCommand') }}</span>
-                <el-input
-                  v-model="commandDraft"
-                  :placeholder="t('about.mcpCommandPlaceholder')"
-                  @blur="onCommandBlur"
-                />
-              </div>
-              <div class="mcp-field mcp-field--column">
-                <span class="mcp-field__label">{{ t('about.mcpArgs') }}</span>
-                <el-input
-                  v-model="argsDraft"
-                  type="textarea"
-                  :autosize="{ minRows: 2, maxRows: 6 }"
-                  :placeholder="t('about.mcpArgsPlaceholder')"
-                  @blur="onArgsBlur"
-                />
-                <p class="mcp-field__hint">{{ t('about.mcpArgsHint') }}</p>
-              </div>
-              <div class="mcp-field mcp-field--column">
-                <span class="mcp-field__label">{{ t('about.mcpCwd') }}</span>
-                <el-input
-                  v-model="cwdDraft"
-                  :placeholder="t('about.mcpCwdPlaceholder')"
-                  @blur="onCwdBlur"
-                />
-                <p class="mcp-field__hint">{{ t('about.mcpCommandHint') }}</p>
-              </div>
-            </template>
-            <template v-if="mcpEnabled">
-              <div class="mcp-field">
-                <span class="mcp-field__label">{{ t('about.mcpAutoApprove') }}</span>
-                <el-switch :model-value="autoApprove" @change="onToggleAutoApprove" />
-              </div>
-              <p class="mcp-field__hint">{{ t('about.mcpAutoApproveHint') }}</p>
-            </template>
-            <p v-else class="mcp-service__hint">{{ usingLocal ? t('about.mcpDisabledHintLocal') : t('about.mcpDisabledHint') }}</p>
           </div>
+          <p class="mcp-field__hint">{{ t('about.capabilityHint') }}</p>
         </div>
       </div>
     </section>
@@ -199,147 +124,30 @@ const isElectron = isElectronApp()
 const version = computed(() => pkg.version || '—')
 const goBack = () => router.push('/app/settings')
 
-// ---- MCP 服务（Agent 工具桥） ----
+// ---- 电脑能力（自研桌面能力层 desk_*） ----
+// 外借的 MCP 引擎已整体移除：不再有「引擎下载/版本/本地源码路径」这些概念。
 const bridge = useAgentBridgeStore()
-const mcpToggling = ref(false)
-const commandDraft = ref('')
-const argsDraft = ref('')
-const cwdDraft = ref('')
-
-const SOURCE_ENGINE_DEFAULT_ARGS = ['-m', 'agent_assistant.hosted.mcp_server']
-
-const mcpSettings = computed(() => bridge.settings)
-const mcpEnabled = computed(() => mcpSettings.value?.enabled === true)
-const autoApprove = computed(() => mcpSettings.value?.autoApprove === true)
-const usingLocal = computed(() => mcpSettings.value?.useLocalSource === true)
-
-const engineLabel = computed(() => {
-  if (usingLocal.value) {
-    const cmd = mcpSettings.value?.command
-    return cmd ? t('about.mcpEngineLocalRunning', { command: cmd }) : t('about.mcpEngineLocal')
-  }
-  if (bridge.engineStatus?.installed && bridge.engineStatus.version) {
-    return t('about.mcpEngineManaged', { version: bridge.engineStatus.version })
-  }
-  return t('about.mcpEngineNotInstalled')
+const capabilityToggling = ref(false)
+const capabilityEnabled = computed(() => bridge.capabilityEnabled === true)
+const capabilityToolNames = computed(() => {
+  const names = bridge.capabilityTools || []
+  return names.length ? names.join('、') : '—'
 })
 
-const engineBusy = computed(() => {
-  const phase = bridge.engineProgress?.phase
-  return phase === 'downloading' || phase === 'extracting'
-})
-const enginePercent = computed(() => {
-  const n = Number(bridge.engineProgress?.percent)
-  return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0
-})
-const enginePhaseLabel = computed(() => {
-  const phase = bridge.engineProgress?.phase
-  if (phase === 'extracting') return t('about.mcpEngineExtracting')
-  if (phase === 'downloading') return t('about.mcpEngineDownloading')
-  return ''
-})
-const engineBytesLabel = computed(() => {
-  const p = bridge.engineProgress
-  if (!p?.total) return ''
-  return `${formatBytes(p.received || 0)} / ${formatBytes(p.total)}`
-})
-
-function formatBytes(n) {
-  const v = Number(n) || 0
-  if (v < 1024) return `${v} B`
-  if (v < 1024 * 1024) return `${(v / 1024).toFixed(1)} KB`
-  return `${(v / (1024 * 1024)).toFixed(1)} MB`
-}
-
-const mcpStateLabel = computed(() => {
-  switch (bridge.mcpState) {
-    case 'running': return t('about.mcpStateRunning')
-    case 'starting': return t('about.mcpStateStarting')
-    case 'error': return t('about.mcpStateError')
-    default: return t('about.mcpStateStopped')
-  }
-})
-
-watch(mcpSettings, (s) => {
-  commandDraft.value = s?.command || ''
-  argsDraft.value = Array.isArray(s?.args) ? s.args.join('\n') : ''
-  cwdDraft.value = s?.cwd || ''
-}, { immediate: true })
-
-function parseArgsInput(text) {
-  return text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-}
-
-async function onToggleMcp(enabled) {
-  mcpToggling.value = true
+async function onToggleCapability(enabled) {
+  capabilityToggling.value = true
   try {
-    if (enabled === true && !usingLocal.value) {
-      const res = await bridge.installEngine()
-      if (!res?.ok) {
-        ElMessage.error(res?.error || t('about.mcpEngineDownloadFailed'))
-        return
-      }
-    }
-    await bridge.updateSettings({ enabled: enabled === true })
+    await bridge.setCapabilityEnabled(enabled === true)
+    await bridge.refreshCapabilitySettings()
+  } catch (e) {
+    ElMessage.error(e?.message || t('about.capabilityToggleFailed'))
   } finally {
-    mcpToggling.value = false
+    capabilityToggling.value = false
   }
-}
-
-async function onToggleAutoApprove(value) {
-  await bridge.updateSettings({ autoApprove: value === true })
-}
-
-async function onSelectOfficial() {
-  if (!usingLocal.value) return
-  if (mcpEnabled.value && !bridge.engineStatus?.installed) {
-    const res = await bridge.installEngine()
-    if (!res?.ok) {
-      ElMessage.error(res?.error || t('about.mcpEngineDownloadFailed'))
-      return
-    }
-  }
-  await bridge.updateSettings({ useLocalSource: false })
-}
-
-async function onSelectLocal() {
-  if (usingLocal.value) return
-  const patch = { useLocalSource: true }
-  if (!(mcpSettings.value?.command || '').trim()) {
-    patch.command = 'python'
-    patch.args = [...SOURCE_ENGINE_DEFAULT_ARGS]
-  }
-  await bridge.updateSettings(patch)
-}
-
-async function onCommandBlur() {
-  const command = commandDraft.value.trim()
-  if (command === (mcpSettings.value?.command || '')) return
-  await bridge.updateSettings({ command })
-}
-
-async function onArgsBlur() {
-  const args = parseArgsInput(argsDraft.value)
-  const current = Array.isArray(mcpSettings.value?.args) ? mcpSettings.value.args : []
-  if (JSON.stringify(args) === JSON.stringify(current)) return
-  await bridge.updateSettings({ args })
-}
-
-async function onCwdBlur() {
-  const cwd = cwdDraft.value.trim()
-  if (cwd === (mcpSettings.value?.cwd || '')) return
-  await bridge.updateSettings({ cwd })
 }
 
 onMounted(() => {
-  if (isElectron) {
-    void bridge.init()
-    void bridge.refreshSettings()
-    void bridge.refreshEngineStatus()
-  }
+  if (isElectron) void bridge.init()
 })
 
 // 彩蛋：连续点击予念图标 10 次跳转爱发电赞助页。

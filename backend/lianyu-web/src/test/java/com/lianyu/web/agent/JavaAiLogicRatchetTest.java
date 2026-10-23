@@ -29,13 +29,13 @@ class JavaAiLogicRatchetTest {
     private static final int BASELINE_MODEL_CALLS = 0;
     private static final int BASELINE_AI_CLASSES = 0;
 
-    /** 允许保留：三条基础设施 seam。 */
+    /** 允许保留：基础设施 seam（加解密 / 桥接会话 / 能力审计）。 */
     private static final Set<String> ALLOWED_FILES = Set.of(
             "ApiKeyVaultService.java",
             "JasyptUtil.java",
             "AgentBridgeService.java",
             "AgentBridgeController.java",
-            "ClientBridgeToolCallback.java");
+            "CapabilityAuditService.java");
 
     private static final List<String> PROMPT_MARKERS = List.of(
             "=== 关于用户的记忆", "=== 当前情绪状态", "=== 安全与边界", "=== 可用工具",

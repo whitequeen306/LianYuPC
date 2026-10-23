@@ -1,12 +1,12 @@
-import { describe, it, expect, vi } from 'vitest'
+﻿import { describe, it, expect, vi } from 'vitest'
 import {
   escapeHtml,
   safeAvatarUrl,
   sanitizeActor,
   buildBannerHtml,
-  createMcpControlBanner,
+  createControlBanner,
   BANNER_HEIGHT,
-} from '../mcp/mcpControlBanner.js'
+} from '../capability/controlBanner.js'
 
 describe('mcpControlBanner html', () => {
   it('escapes a hostile character name in the caption', () => {
@@ -50,7 +50,7 @@ describe('mcpControlBanner html', () => {
   })
 })
 
-describe('createMcpControlBanner', () => {
+describe('createControlBanner', () => {
   it('registers Escape and fires onCancel, then unregisters on hide', () => {
     vi.useFakeTimers()
     const registered = []
@@ -83,7 +83,7 @@ describe('createMcpControlBanner', () => {
       unregister: vi.fn(),
     }
     const onCancel = vi.fn()
-    const banner = createMcpControlBanner({
+    const banner = createControlBanner({
       BrowserWindow,
       screen: { getPrimaryDisplay: () => ({ bounds: { x: 0, y: 0, width: 1920, height: 1080 } }) },
       globalShortcut,

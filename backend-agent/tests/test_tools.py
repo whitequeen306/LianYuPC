@@ -37,10 +37,19 @@ def _client():
 
 
 def test_supported_tools_are_declared():
-    """四个只读工具已支持；write_diary（MQ）/ computer_task（STOMP）仍待实现。"""
-    assert supported_tool_names() == frozenset(
-        {"get_current_time", "get_weather", "memory_search", "get_my_recent_life"}
-    )
+    """四个只读工具 + 桌面能力（desk_*）已支持；write_diary（MQ）仍待实现。
+
+    粗粒度 `computer_task` 已退役：它不再出现在任何一份清单里 ——
+    电脑操控由 `desk_*` 一组原子能力承接（见 `app/capability`）。
+    """
+    supported = supported_tool_names()
+    local = {"get_current_time", "get_weather", "memory_search", "get_my_recent_life"}
+    assert local <= supported
+    desktop = {name for name in supported if name.startswith("desk_")}
+    assert desktop, "桌面能力必须已注册"
+    assert supported == local | desktop, "支持清单只能来自这两类，不许有第三来源"
+    assert "write_diary" not in supported
+    assert "computer_task" not in supported, "粗粒度黑盒工具已退役"
 
 
 def test_tool_schema_shape_is_openai_compatible():

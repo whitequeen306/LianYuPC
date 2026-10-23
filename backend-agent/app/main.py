@@ -110,26 +110,38 @@ async def capabilities() -> dict[str, object]:
 
     `missingTools` 里的工具在 Python 侧尚未实现；Java 链路若依赖它们，
     就**不应**路由到 Python（否则相对 Java 会降级，见总纲 §9 缺口 1）。
-    """
-    from app.tools import supported_tool_names
 
+    `desktopCapability` 是自研能力层的自述：`transport` 说明它靠 Java 桥下发到
+    Electron 执行（不是 HTTP 直连），`tools` 是本进程注册的 `desk_*` 全集。
+    模型实际能不能用还要看当轮桌面端是否在线（见 `capability_names()`）。
+    """
+    from app.tools import DESKTOP_TOOL_NAMES, supported_tool_names
+
+    settings = get_settings()
     java_tools = [
         "get_current_time",
         "get_weather",
         "memory_search",
         "get_my_recent_life",
         "write_diary",
-        "computer_task",
     ]
     supported = sorted(supported_tool_names())
     return {
         "version": app.version,
         "supportedTools": supported,
         "missingTools": [t for t in java_tools if t not in supported],
+        "desktopCapability": {
+            "enabled": settings.desktop_capability_enabled,
+            "transport": "bridge-stomp",
+            "tools": sorted(DESKTOP_TOOL_NAMES),
+            "maxSteps": settings.desktop_max_steps,
+            "maxVisionFrames": settings.desktop_max_vlm_frames,
+            "taskDeadlineSeconds": settings.desktop_task_deadline_seconds,
+        },
         "languageGate": True,
         "circuitBreaker": True,
         "toolLoop": True,
-        "maxToolRounds": get_settings().max_tool_rounds,
+        "maxToolRounds": settings.max_tool_rounds,
         # 语音接线：Java 适配层据此决定是否把音色注册 / TTS 交给 Python。
         # realtimeTts 仍为 False —— 但含义已变：平台不再提供「支持复刻音色的实时 TTS 模型」，
         # 所以双向 WS 那条路不是"还没迁"，而是"不存在了"。通话改走 ttsStream（按句流式）。

@@ -190,7 +190,7 @@ public class ChatTurnFacade {
                         && CharacterPreferenceResolver.showInnerThoughts(character),
                 maxPieces,
                 "",
-                tools ? toolManager.promptHintFlags(userId) : Map.of("chat", false),
+                tools ? toolManager.promptHintFlags(userId, character) : Map.of("chat", false),
                 memoryText,
                 extraSystemSuffix,
                 groupExtras == null ? 0 : groupExtras.maxPieces(),
@@ -239,6 +239,14 @@ public class ChatTurnFacade {
         int maxPieces = groupExtras != null && groupExtras.maxPieces() > 0
                 ? groupExtras.maxPieces()
                 : behaviorMax;
+        // 开关事实：`computer` = 桌面能力在线 && 该角色被允许操控电脑。
+        // 打一行 debug 是为了让「为什么这个角色没有桌面能力」可排查（两个闸门哪个关的）。
+        Map<String, Object> toolFlags = enableTools
+                ? toolManager.promptHintFlags(command.getUserId(), character)
+                : Map.of("chat", false);
+        log.debug("ChatTurn toolFlags: scene={} characterId={} desktopEnabled={} flags={}",
+                scene, character == null ? null : character.getId(),
+                CharacterPreferenceResolver.desktopEnabled(character), toolFlags);
         return ChatTurnRequest.builder()
                 .userId(command.getUserId() == null ? 0L : command.getUserId())
                 .conversationId(command.getConversationId())
@@ -254,9 +262,7 @@ public class ChatTurnFacade {
                 .preparedMessages(toPrepared(command.getPreparedMessages()))
                 .currentUserMessageId(command.getCurrentUserMsgId())
                 .timeFact(includeTime ? timeTool.readCurrentTimeFact() : null)
-                .toolFlags(enableTools
-                        ? toolManager.promptHintFlags(command.getUserId())
-                        : Map.of("chat", false))
+                .toolFlags(toolFlags)
                 .enableChatTools(enableTools)
                 .showInnerThoughts(scene != ChatTurnScene.VOICE_CALL
                         && (character == null

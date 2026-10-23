@@ -62,23 +62,5 @@ execFileSync('gh', ['release', 'edit', tag, '--draft=false'], {
 })
 execSync(`python ../scripts/_upload_update_assets.py --version ${pkg.version}`, { stdio: 'inherit' })
 
-// AgentEngine 与 Electron 版本解耦：zip 在兄弟仓库 AgentAssistant/packaging，
-// 上传到同一 MinIO updates/ 前缀（agent-latest.yml）。缺 zip 时跳过（已在 MinIO 的可继续用）；
-// 强制跳过设 AGENT_ENGINE_SKIP=1。
-if (process.env.AGENT_ENGINE_SKIP === '1') {
-  console.log('[electron:release] skip AgentEngine upload (AGENT_ENGINE_SKIP=1)')
-} else {
-  const engineZip = process.env.AGENT_ENGINE_ZIP
-    || path.resolve(root, '..', '..', 'AgentAssistant', 'packaging', 'AgentEngine-hosted-win-x64.zip')
-  // 0.1.5: UIA name FindAll for song rows; computer_task follow-ups must call again
-  const engineVersion = process.env.AGENT_ENGINE_VERSION || '0.1.5'
-  if (fs.existsSync(engineZip)) {
-    execFileSync('python', [
-      path.join(root, '..', 'scripts', '_upload_agent_engine.py'),
-      '--zip', engineZip,
-      '--version', engineVersion,
-    ], { stdio: 'inherit' })
-  } else {
-    console.warn(`[electron:release] AgentEngine zip not found (${engineZip}); skip upload`)
-  }
-}
+// 桌面能力层已改为自研（Electron 内置 PowerShell actor），不再随 Electron 分发 AgentEngine 引擎包。
+// AgentAssistant / agent-latest.yml / AgentEngine-*.zip 相关上传链路与 AGENT_ENGINE_* 环境变量一并移除。

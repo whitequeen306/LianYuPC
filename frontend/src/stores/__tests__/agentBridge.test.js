@@ -3,7 +3,7 @@ import { setActivePinia, createPinia } from 'pinia'
 
 // 可控假 electronAPI + 假后端 API；holder 暴露注册的回调供测试触发主进程推送。
 const { holder } = vi.hoisted(() => ({
-  holder: { api: null, statusCb: null, toolsHandler: null },
+  holder: { api: null, toolsHandler: null },
 }))
 
 vi.mock('@/utils/electron', () => ({
@@ -58,17 +58,22 @@ vi.mock('@/utils/mcpControlActor', () => ({
 import { useAgentBridgeStore } from '@/stores/agentBridge'
 
 function makeApi(overrides = {}) {
-  holder.statusCb = null
   const api = {
     isElectron: true,
-    getMcpSettings: vi.fn(async () => ({ enabled: true, useLocalSource: false, command: '', args: [] })),
-    getMcpStatus: vi.fn(async () => ({ state: 'stopped', tools: [], error: '' })),
-    onMcpStatus: vi.fn((cb) => { holder.statusCb = cb; return () => { holder.statusCb = null } }),
-    listMcpTools: vi.fn(async () => [
-      { name: 'computer_task', description: 'do things', inputSchema: { type: 'object' }, dangerous: false },
-    ]),
-    mcpCallTool: vi.fn(async () => ({ ok: true, content: '已打开 网易云音乐' })),
-    setMcpSettings: vi.fn(async (p) => ({ settings: p })),
+    getCapabilitySettings: vi.fn(async () => ({ enabled: true })),
+    getCapabilityStatus: vi.fn(async () => ({
+      enabled: true,
+      tools: ['desk_click', 'desk_screen_read'],
+    })),
+    setCapabilitySettings: vi.fn(async (p) => ({ settings: { enabled: p.enabled } })),
+    capabilityExec: vi.fn(async () => ({
+      ok: true,
+      text: '已点击「播放」',
+      errorCode: '',
+      images: [],
+      policy: { level: 'R2', confirmed: false },
+    })),
+    onCapabilityAudit: vi.fn(() => () => {}),
     ...overrides,
   }
   holder.api = api
@@ -91,195 +96,154 @@ afterEach(() => {
   holder.api = null
 })
 
-describe('agentBridge store', () => {
-  it('registers tools to cloud when MCP becomes running', async () => {
-    await store.handleMcpStatus({ state: 'running', tools: [{ name: 'computer_task' }], error: '' })
-    expect(registerAgentTools).toHaveBeenCalledTimes(1)
+describe('agentBridge store · 能力注册', () => {
+  it('registers desk_* names to the cloud when the switch is on', async () => {
+    const enabled = await store.refreshCapabilitySettings()
+
+    expect(enabled).toBe(true)
     expect(registerAgentTools).toHaveBeenCalledWith([
-      { name: 'computer_task', description: 'do things', inputSchema: { type: 'object' }, dangerous: false },
+      expect.objectContaining({ name: 'desk_click' }),
+      expect.objectContaining({ name: 'desk_screen_read' }),
     ])
     expect(store.registered).toBe(true)
-    expect(store.online).toBe(true)
+    expect(store.capabilityTools).toEqual(['desk_click', 'desk_screen_read'])
   })
 
-  it('unregisters when MCP stops', async () => {
-    await store.handleMcpStatus({ state: 'running', tools: [], error: '' })
-    await store.handleMcpStatus({ state: 'stopped', tools: [], error: '' })
-    expect(unregisterAgentBridge).toHaveBeenCalledTimes(1)
+  it('does not register anything when the switch is off', async () => {
+    holder.api.getCapabilitySettings = vi.fn(async () => ({ enabled: false }))
+    const enabled = await store.refreshCapabilitySettings()
+
+    expect(enabled).toBe(false)
+    expect(registerAgentTools).not.toHaveBeenCalled()
     expect(store.registered).toBe(false)
-    expect(store.online).toBe(false)
   })
 
-  it('executes a dispatched tool call locally and posts the result back', async () => {
-    await store.handleToolCallMessage({
-      type: 'tool_call',
-      requestId: 'req-1',
-      name: 'computer_task',
-      arguments: '{"instruction":"打开网易云"}',
-    })
-    expect(holder.api.mcpCallTool).toHaveBeenCalledWith(
-      'computer_task',
-      { instruction: '打开网易云' },
-      expect.objectContaining({
-        name: expect.any(String),
-        caption: expect.stringMatching(/Esc/),
-      }),
-      'req-1',
-    )
-    expect(postAgentToolResult).toHaveBeenCalledWith({
-      requestId: 'req-1',
-      ok: true,
-      content: '已打开 网易云音乐',
-      error: '',
-    })
-  })
-
-  it('posts an error result when local execution throws', async () => {
-    holder.api.mcpCallTool = vi.fn(async () => { throw new Error('boom') })
-    await store.handleToolCallMessage({ type: 'tool_call', requestId: 'req-2', name: 'x', arguments: '{}' })
-    expect(postAgentToolResult).toHaveBeenCalledWith(
-      expect.objectContaining({ requestId: 'req-2', ok: false, error: 'boom' }),
-    )
-  })
-
-  it('treats a non-json string as the instruction rather than dropping it', async () => {
-    await store.handleToolCallMessage({ type: 'tool_call', requestId: 'req-3', name: 'x', arguments: '打开网易云' })
-    expect(holder.api.mcpCallTool).toHaveBeenCalledWith(
-      'x',
-      { instruction: '打开网易云' },
-      expect.objectContaining({ caption: expect.any(String) }),
-      'req-3',
-    )
-  })
-
-  it('accepts already-parsed argument objects from STOMP', async () => {
-    await store.handleToolCallMessage({
-      type: 'tool_call', requestId: 'req-3b', name: 'computer_task',
-      arguments: { task: '播放水手' },
-    })
-    expect(holder.api.mcpCallTool).toHaveBeenCalledWith(
-      'computer_task',
-      { task: '播放水手', instruction: '播放水手' },
-      expect.objectContaining({ caption: expect.any(String) }),
-      'req-3b',
-    )
-  })
-
-  it('ignores non tool_call messages', async () => {
-    await store.handleToolCallMessage({ type: 'something_else', requestId: 'r' })
-    expect(holder.api.mcpCallTool).not.toHaveBeenCalled()
-  })
-
-  it('wires the STOMP handler and status listener on init', async () => {
-    await store.init()
-    expect(typeof holder.toolsHandler).toBe('function')
-    expect(holder.api.onMcpStatus).toHaveBeenCalled()
-  })
-
-  it('re-registers when heartbeat reports the session was lost', async () => {
-    await store.handleMcpStatus({ state: 'running', tools: [], error: '' })
+  it('re-registers when the backend forgot the session (heartbeat says registered:false)', async () => {
+    await store.refreshCapabilitySettings()
     expect(registerAgentTools).toHaveBeenCalledTimes(1)
-    agentBridgeHeartbeat.mockResolvedValueOnce({ registered: false })
 
+    agentBridgeHeartbeat.mockResolvedValueOnce({ registered: false })
     await vi.advanceTimersByTimeAsync(30_000)
-    // allow the async re-register chain to settle
-    await Promise.resolve()
-    expect(agentBridgeHeartbeat).toHaveBeenCalled()
+
     expect(registerAgentTools).toHaveBeenCalledTimes(2)
   })
 
-  it('tracks an active task while the engine runs and clears it after the result', async () => {
-    let release
-    holder.api.mcpCallTool = vi.fn(() => new Promise((resolve) => {
-      release = () => resolve({ ok: true, content: 'done' })
-    }))
-    const pending = store.handleToolCallMessage({
-      type: 'tool_call', requestId: 'req-9', name: 'computer_task',
-      arguments: '{"instruction":"放歌"}', characterId: 42, characterName: '琉璃', characterAvatarUrl: '/a.png',
-    })
-    await Promise.resolve()
-    const task = store.taskForCharacter(42)
-    expect(task?.instruction).toBe('放歌')
-    expect(task?.actor?.name).toBe('琉璃')
+  it('unregisters when the user turns the switch off', async () => {
+    await store.refreshCapabilitySettings()
+    expect(store.registered).toBe(true)
 
-    store.handleProgressMessage({ requestId: 'req-9', message: '先打开网易云音乐' })
-    store.handleProgressMessage({ requestId: 'req-9', message: '先打开网易云音乐' }) // dup ignored
-    store.handleProgressMessage({ requestId: 'req-9', message: '正在输入「大海」…' })
-    expect(store.activeTasks['req-9'].updates.map((u) => u.text))
-      .toEqual(['先打开网易云音乐', '正在输入「大海」…'])
+    holder.api.getCapabilitySettings = vi.fn(async () => ({ enabled: false }))
+    const on = await store.setCapabilityEnabled(false)
 
-    release()
-    await pending
-    expect(store.taskForCharacter(42)).toBeNull()
-    expect(store.activeTasks['req-9']).toBeUndefined()
+    expect(on).toBe(false)
+    expect(unregisterAgentBridge).toHaveBeenCalled()
+    expect(store.registered).toBe(false)
   })
 
-  it('ignores progress for unknown tasks and other characters', async () => {
-    store.handleProgressMessage({ requestId: 'ghost', message: 'x' })
+  it('stops the heartbeat on dispose', async () => {
+    await store.refreshCapabilitySettings()
+    store.dispose()
+    agentBridgeHeartbeat.mockClear()
+
+    await vi.advanceTimersByTimeAsync(90_000)
+    expect(agentBridgeHeartbeat).not.toHaveBeenCalled()
+  })
+})
+
+describe('agentBridge store · 动作转交', () => {
+  const message = (over = {}) => ({
+    type: 'tool_call',
+    requestId: 'desk-7-abcd#1',
+    sessionId: 'desk-7-abcd',
+    name: 'desk_click',
+    arguments: '{"element_id":5,"label":"播放","evidence":"user_request"}',
+    danger: 'R2',
+    timeoutMs: 4000,
+    characterId: 42,
+    characterName: '小雨',
+    ...over,
+  })
+
+  it('routes every action to capabilityExec (no engine left to call)', async () => {
+    await store.handleToolCallMessage(message())
+
+    expect(holder.api.capabilityExec).toHaveBeenCalledWith(expect.objectContaining({
+      stepId: 'desk-7-abcd#1',
+      sessionId: 'desk-7-abcd',
+      tool: 'desk_click',
+      danger: 'R2',
+      timeoutMs: 4000,
+    }))
+    expect(postAgentToolResult).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: 'desk-7-abcd#1',
+      ok: true,
+      content: '已点击「播放」',
+      error: '',
+      policy: { level: 'R2', confirmed: false },
+    }))
+  })
+
+  it('forwards the machine-readable error code instead of the Chinese text', async () => {
+    holder.api.capabilityExec = vi.fn(async () => ({
+      ok: false,
+      text: '这一步被拦下了',
+      errorCode: 'window_not_found',
+    }))
+
+    await store.handleToolCallMessage(message({ name: 'desk_window_focus' }))
+
+    expect(postAgentToolResult).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: 'desk-7-abcd#1',
+      ok: false,
+      error: 'window_not_found',
+    }))
+  })
+
+  it('always answers the bridge even if the IPC throws', async () => {
+    holder.api.capabilityExec = vi.fn(async () => { throw new Error('boom') })
+
+    await store.handleToolCallMessage(message())
+
+    expect(postAgentToolResult).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: 'desk-7-abcd#1',
+      ok: false,
+      error: 'action_failed',
+    }))
+  })
+
+  it('clears the active task after the result is posted', async () => {
+    await store.handleToolCallMessage(message())
+    expect(store.activeTasks['desk-7-abcd#1']).toBeUndefined()
+  })
+})
+
+describe('agentBridge store · 进度气泡', () => {
+  it('appends progress text for a running task and dedupes repeats', async () => {
+    const pending = store.handleToolCallMessage({
+      type: 'tool_call', requestId: 'r1', name: 'desk_click', arguments: '{}',
+      characterId: 9, characterName: '小雨',
+    })
+    // 让 task 先登记（capabilityExec 尚未 resolve）
+    let release
+    holder.api.capabilityExec = vi.fn(() => new Promise((resolve) => { release = resolve }))
+    expect(store.taskForCharacter(9)?.requestId).toBe('r1')
+
+    const before = store.activeTasks.r1
+    expect(before).toBeTruthy()
+
+    store.handleProgressMessage({ requestId: 'r1', text: '我点一下' })
+    store.handleProgressMessage({ requestId: 'r1', text: '我点一下' })
+    expect(store.activeTasks.r1.updates).toHaveLength(1)
+
+    store.handleProgressMessage({ requestId: 'r1', text: '好了' })
+    expect(store.activeTasks.r1.updates.map((u) => u.text)).toEqual(['我点一下', '好了'])
+
+    release?.({ ok: true, text: 'ok', errorCode: '' })
+    await pending
+  })
+
+  it('ignores progress for unknown tasks', () => {
+    store.handleProgressMessage({ requestId: 'nope', text: 'hi' })
     expect(Object.keys(store.activeTasks)).toHaveLength(0)
-
-    let release
-    holder.api.mcpCallTool = vi.fn(() => new Promise((resolve) => {
-      release = () => resolve({ ok: true, content: '' })
-    }))
-    const pending = store.handleToolCallMessage({
-      type: 'tool_call', requestId: 'req-10', name: 'computer_task',
-      arguments: '{}', characterId: 42, characterName: '琉璃',
-    })
-    await Promise.resolve()
-    expect(store.taskForCharacter(43)).toBeNull()
-    store.handleProgressMessage({ requestId: 'req-10', message: '' }) // blank ignored
-    expect(store.activeTasks['req-10'].updates).toHaveLength(0)
-    release()
-    await pending
-  })
-
-  it('subscribes to engine progress notifications on init', async () => {
-    const onMcpProgress = vi.fn(() => () => {})
-    makeApi({ onMcpProgress })
-    await store.init()
-    expect(onMcpProgress).toHaveBeenCalled()
-  })
-
-  it('retries a tool call after MCP finishes starting', async () => {
-    store.mcpState = 'starting'
-    const pending = store.handleToolCallMessage({
-      type: 'tool_call', requestId: 'req-restart', name: 'computer_task',
-      arguments: '{"instruction":"放歌"}',
-    })
-    await Promise.resolve()
-    expect(holder.api.mcpCallTool).not.toHaveBeenCalled()
-    store.mcpState = 'running'
-    await vi.advanceTimersByTimeAsync(250)
-    await pending
-    expect(holder.api.mcpCallTool).toHaveBeenCalledTimes(1)
-    expect(postAgentToolResult).toHaveBeenCalledWith(expect.objectContaining({
-      requestId: 'req-restart',
-      ok: true,
-    }))
-  })
-
-  it('retries computer_task after the MCP child crashes and comes back', async () => {
-    holder.api.mcpCallTool = vi.fn()
-      .mockResolvedValueOnce({ ok: false, error: 'MCP server exited (code=3221225477)' })
-      .mockResolvedValueOnce({ ok: true, content: '已播放夜曲' })
-    const pending = store.handleToolCallMessage({
-      type: 'tool_call', requestId: 'req-crash', name: 'computer_task',
-      arguments: '{"instruction":"放夜曲"}',
-    })
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(holder.api.mcpCallTool).toHaveBeenCalledTimes(1)
-    store.mcpState = 'error'
-    await vi.advanceTimersByTimeAsync(250)
-    store.mcpState = 'running'
-    await vi.advanceTimersByTimeAsync(250)
-    await pending
-    expect(holder.api.mcpCallTool).toHaveBeenCalledTimes(2)
-    expect(postAgentToolResult).toHaveBeenCalledWith(expect.objectContaining({
-      requestId: 'req-crash',
-      ok: true,
-      content: '已播放夜曲',
-    }))
   })
 })

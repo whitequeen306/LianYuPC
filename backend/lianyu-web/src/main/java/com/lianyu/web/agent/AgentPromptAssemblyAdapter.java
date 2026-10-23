@@ -67,7 +67,7 @@ public class AgentPromptAssemblyAdapter implements PromptAssemblyPort {
         body.put("settings", request.settings() == null ? Map.of() : request.settings());
         body.put("promptTemplate", request.promptTemplate());
         body.put("memoryContext", "");
-        // 文案由 Python 生成：这里只传开关事实（含桌面桥接是否有 computer_task）
+        // 文案由 Python 生成：这里只传开关事实（含桌面能力是否在线）
         body.put("toolHint", "");
         body.put("toolFlags", request.toolFlags());
         body.put("emotionBlock", "");

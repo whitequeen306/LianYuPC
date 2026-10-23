@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 电脑操控指示条：屏幕最顶端 always-on-top 窗口，展示角色头像 + 文案，Esc 取消。
  *
  * 视觉令牌来自 DESIGN.md：primary（#f4a6b5）+ on-primary-light（#ffffff）。
@@ -154,7 +154,7 @@ export function buildBannerHtml(actorInput) {
 </html>`
 }
 
-export function createMcpControlBanner({
+export function createControlBanner({
   BrowserWindow,
   screen,
   globalShortcut,

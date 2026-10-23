@@ -41,9 +41,13 @@ class TextPart:
 
 @dataclass(frozen=True)
 class ImagePart:
-    """inline base64 PNG，对齐 Java Media.builder().data(byte[])。"""
+    """inline base64 图片，对齐 Java Media.builder().data(byte[])。
+
+    `mime` 默认 png（既有识图链路不变）；桌面能力层的截图走 JPEG 以省带宽与 token。
+    """
 
     png_base64: str
+    mime: str = "image/png"
 
 
 Part = TextPart | ImagePart
@@ -135,7 +139,7 @@ class ModelGateway:
             else:
                 content.append({
                     "type": "image_url",
-                    "image_url": {"url": f"data:image/png;base64,{part.png_base64}"},
+                    "image_url": {"url": f"data:{part.mime};base64,{part.png_base64}"},
                 })
         messages.append({"role": "user", "content": content})
 

@@ -1,0 +1,58 @@
+{
+  "$comment": "桌面能力策略（Python 侧预过滤）。权威判定在 Electron policy.js：只有它知道前台窗口与用户确认结果。此文件用『先拒后允』顺序：sensitiveProcesses → 角色 maxDanger → 高危词表。default.maxDanger=R3 表示不可逆动作允许但必须用户当面确认；roles 里的条目只能收紧，不能放宽。",
+  "version": 1,
+  "default": {
+    "maxDanger": "R3"
+  },
+  "roles": {
+    "pet_gentle": {
+      "maxDanger": "R1"
+    },
+    "companion": {
+      "maxDanger": "R2"
+    },
+    "creator": {
+      "maxDanger": "R3"
+    }
+  },
+  "appAllowlist": [
+    "notepad.exe",
+    "explorer.exe",
+    "chrome.exe",
+    "msedge.exe",
+    "firefox.exe",
+    "wechat.exe",
+    "weixin.exe",
+    "cloudmusic.exe",
+    "qqmusic.exe",
+    "potplayermini64.exe",
+    "code.exe",
+    "winword.exe",
+    "excel.exe",
+    "powerpnt.exe"
+  ],
+  "appDenylist": [
+    "mstsc.exe",
+    "regedit.exe",
+    "diskmgmt.msc",
+    "gpedit.msc",
+    "mmc.exe",
+    "cmd.exe",
+    "powershell.exe",
+    "pwsh.exe",
+    "wt.exe"
+  ],
+  "sensitiveProcesses": [
+    "1password.exe",
+    "keepass.exe",
+    "keepassxc.exe",
+    "bitwarden.exe",
+    "lastpass.exe",
+    "logonui.exe",
+    "consent.exe",
+    "credentialuibroker.exe",
+    "bank",
+    "支付宝",
+    "微信支付"
+  ]
+}

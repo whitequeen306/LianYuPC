@@ -31,4 +31,25 @@ class CharacterPreferenceResolverTest {
     void showInnerThoughts_respectsExplicitDisable() {
         assertFalse(CharacterPreferenceResolver.showInnerThoughts(Map.of("showInnerThoughts", false)));
     }
+
+    @Test
+    void desktopEnabled_defaultsToFalse() {
+        // 默认必须关：老角色不该因为升级就突然获得操控电脑的权限
+        assertFalse(CharacterPreferenceResolver.desktopEnabled((Map<String, Object>) null));
+        assertFalse(CharacterPreferenceResolver.desktopEnabled(Map.of()));
+    }
+
+    @Test
+    void desktopEnabled_respectsExplicitOptIn() {
+        assertTrue(CharacterPreferenceResolver.desktopEnabled(Map.of("desktopEnabled", true)));
+        assertTrue(CharacterPreferenceResolver.desktopEnabled(Map.of("desktopEnabled", "true")));
+        assertFalse(CharacterPreferenceResolver.desktopEnabled(Map.of("desktopEnabled", false)));
+    }
+
+    @Test
+    void creationDefaultsSeedDesktopOff() {
+        Map<String, Object> settings = new java.util.HashMap<>();
+        CharacterPreferenceResolver.applyCreationDefaults(settings);
+        assertFalse(CharacterPreferenceResolver.desktopEnabled(settings));
+    }
 }

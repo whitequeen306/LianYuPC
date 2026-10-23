@@ -35,7 +35,10 @@ def main() -> int:
             failures.append(f"{name}: versionPattern does not compile: {exc}")
 
     # 2. nginx has one location regex per family in both server blocks
-    for fam_key in ("installer", "agentEngine", "wechatChannel"):
+    # NOTE: "agentEngine" was removed from release_assets.json when the desktop
+    # capability layer replaced the borrowed AgentAssistant MCP engine: nothing is
+    # shipped or served for it any more, so there is no nginx location to keep.
+    for fam_key in ("installer", "wechatChannel"):
         stem = ASSETS[fam_key].get("zipName", ASSETS[fam_key].get("exeName", "")).split("{version}")[0].rstrip("-.")
         for prefix in (r"/api/public/files/updates/", r"/"):
             expected = rf"location ~ \^{re.escape(prefix)}{re.escape(stem)}-"

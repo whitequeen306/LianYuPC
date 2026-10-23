@@ -2,12 +2,16 @@
 
 ## 为什么用「按开关键基线」而不是拼接字符串
 
-Java 侧的分支是叠加式拼接（base 两行 + 4 个可选行 + computer_task 行），
-直接手写拼接逻辑极容易在换行/顺序上漂移。这里用 Java 真实执行生成的
-32 种开关组合作为唯一事实来源：Python 只做**查表**，字节必然一致。
+Java 侧曾是叠加式拼接（base 两行 + 4 个可选行 + 电脑操控行），直接手写拼接
+极容易在换行/顺序上漂移。这里用 32 种开关组合作为唯一事实来源：Python 只做**查表**。
 
-`tool_hints_golden.json` 由 `ToolHintGoldenTest` 生成，改 Java 文案后必须重新生成，
-测试 `test_tool_hints.py` 会校验基线与 Python 加载结果一致。
+`tool_hints_golden.json` 现在是**手维护的数据文件**：Java 的 `buildToolsPromptHint`
+与 `ToolHintGoldenTest` 已随「Java 零 AI 逻辑」一起删除，没有第二个生成器。
+改文案直接改 JSON，`tests/test_tool_hints.py` 会校验查表结果与基线一致。
+
+第五位 `computer` 的语义已随能力层重构改变：
+**从「桥上有 computer_task」改为「该用户桌面能力在线」**，
+对应文案教模型使用 `desk_*` 一组原子能力（粗粒度 `computer_task` 已退役）。
 """
 
 from __future__ import annotations

@@ -39,13 +39,14 @@ if (-not (Test-Path $javaRoot)) {
 $files = Get-ChildItem -Path $javaRoot -Recurse -Include *.java -File |
     Where-Object { $_.FullName -notmatch '\\test\\' }
 
-# ── 允许保留的三条 seam（它们不是 AI 逻辑）──
+# ── 允许保留的基础设施 seam（它们不是 AI 逻辑）──
+# ClientBridgeToolCallback 已随「自研能力层」删除：schema 由 Python 持有，Java 不再装配 ToolCallback。
 $allowedFiles = @(
     'ApiKeyVaultService.java',        # 加解密
     'JasyptUtil.java',
     'AgentBridgeService.java',        # 长连接会话状态
     'AgentBridgeController.java',
-    'ClientBridgeToolCallback.java'
+    'CapabilityAuditService.java'     # 桌面能力审计（纯落库，无 AI 逻辑）
 )
 
 # ── 规则 1：prompt 文本痕迹 ──

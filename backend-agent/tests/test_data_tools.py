@@ -240,6 +240,6 @@ async def test_recent_life_resolves_peer_name_for_comment(fake_activity):
 
 
 def test_supported_tools_now_include_memory_and_recent_life():
-    assert supported_tool_names() == frozenset(
-        {"get_current_time", "get_weather", "memory_search", "get_my_recent_life"}
-    )
+    supported = supported_tool_names()
+    assert {"get_current_time", "get_weather", "memory_search", "get_my_recent_life"} <= supported
+    assert any(name.startswith("desk_") for name in supported)

@@ -99,8 +99,8 @@ public class DesktopObserveOrchestrator implements com.lianyu.service.agent.Agen
         } catch (Exception e) {
             log.debug("Proactive turn: vault resolve for agent failed: {}", e.toString());
         }
-        // 主动发言链路在 Java 侧会挂的只读工具（对齐 ToolManager.resolveToolCallbacks）。
-        // 不含 write_diary / computer_task：Python 侧尚未实现，不应声明。
+        // 主动发言链路挂的只读工具（能力声明归 Python，Java 只声明要哪些）。
+        // 不含 write_diary / 桌面 desk_*：后者是否下发由 Python 按桌面在线状态决定。
         List<String> tools = List.of("get_current_time", "get_weather", "memory_search", "get_my_recent_life");
         return agentClient.proactiveTurn(
                 userId, scene, persona, taskBlock, historyMaps, textBaseUrl, textApiKey, textModel,

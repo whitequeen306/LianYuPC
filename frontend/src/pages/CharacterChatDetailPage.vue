@@ -103,10 +103,14 @@
           <el-form-item :label="t('characterSettings.showInnerThoughts')">
             <el-switch v-model="form.showInnerThoughts" />
           </el-form-item>
+          <el-form-item :label="t('characterSettings.desktopEnabled')">
+            <el-switch v-model="form.desktopEnabled" />
+          </el-form-item>
           <el-form-item :label="t('characterSettings.blocked')">
             <el-switch v-model="form.blocked" />
           </el-form-item>
         </div>
+        <p class="custom-voice-hint">{{ t('characterSettings.desktopEnabledHint') }}</p>
 
         <div class="section-title">{{ t('characterSettings.nightRest') }}</div>
         <div class="form-grid three-col">
@@ -317,6 +321,8 @@ const form = reactive({
   useGlobalChatBackground: true,
   proactiveEnabled: true,
   showInnerThoughts: true,
+  // 「言出法随」角色级闸门：默认关闭，显式打开才允许这个角色动用户的电脑
+  desktopEnabled: false,
   doNotDisturbEnabled: true,
   blocked: false,
   dndStartMinutes: 23 * 60,
@@ -375,6 +381,8 @@ function populateForm(settings) {
   form.useGlobalChatBackground = settings.useGlobalChatBackground ?? true
   form.proactiveEnabled = settings.proactiveEnabled ?? true
   form.showInnerThoughts = settings.showInnerThoughts ?? true
+  // 缺省 false：老角色不因为升级就突然获得操控电脑的权限
+  form.desktopEnabled = settings.desktopEnabled === true
   form.doNotDisturbEnabled = settings.doNotDisturbEnabled ?? true
   form.blocked = settings.blocked ?? false
   form.dndStartMinutes = Number.isFinite(Number(settings.dndStartMinutes)) ? Number(settings.dndStartMinutes) : 23 * 60
@@ -523,6 +531,7 @@ async function handleSave() {
       useGlobalChatBackground: form.useGlobalChatBackground,
       proactiveEnabled: form.proactiveEnabled,
       showInnerThoughts: form.showInnerThoughts,
+      desktopEnabled: form.desktopEnabled === true,
       doNotDisturbEnabled: form.doNotDisturbEnabled,
       dndStartMinutes: clampMinutes(form.dndStartMinutes),
       dndEndMinutes: clampMinutes(form.dndEndMinutes),

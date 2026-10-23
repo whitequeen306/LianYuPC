@@ -12,6 +12,8 @@ import {
   Notification,
   powerMonitor,
   dialog,
+  clipboard,
+  desktopCapturer,
 } from 'electron'
 import path from 'path'
 import fs from 'fs'
@@ -74,17 +76,18 @@ import {
   readWechatBridgeSettings,
   writeWechatBridgeSettings,
 } from './wechatBridge/wechatBridgeSettings.js'
-import { createMcpHost, engineEnvFromCredentials, parseAgentToolArguments } from './mcp/mcpHost.js'
-import { createMcpControlBanner } from './mcp/mcpControlBanner.js'
-import { readMcpSettings, writeMcpSettings } from './mcp/mcpSettings.js'
-import {
-  ENGINE_MANIFEST_PATH,
-  parseAgentLatestYml,
-  resolveEngineAssetUrl,
-  getEngineStatus,
-  resolveManagedEngineCommand,
-} from './mcp/engineRelease.js'
-import { ensureManagedEngine } from './mcp/engineDownloader.js'
+import { createControlBanner } from './capability/controlBanner.js'
+import { createCapabilityHost } from './capability/capabilityHost.js'
+import { createCapabilitySettings } from './capability/settings.js'
+import { createWinActor } from './capability/winActor.js'
+import { createInputDriver } from './capability/input.js'
+import { createWindowDriver } from './capability/windows.js'
+import { createScreenCapture } from './capability/capture.js'
+import { createAppIndex } from './capability/appIndex.js'
+import { createLauncher } from './capability/launcher.js'
+import { createFileTools } from './capability/fileTools.js'
+import { CAPABILITY_NAMES } from './capability/capabilityNames.js'
+import { DEFAULT_POLICY as CAPABILITY_DEFAULT_POLICY } from './capability/policy.js'
 import { loadRuntimeSecrets, getRuntimeSecrets } from './runtimeSecrets.js'
 import { initUpdater } from './updater/updater.js'
 import { schedulePostWindowStartup } from './startupOrchestrator.js'
@@ -585,7 +588,7 @@ const wechatBridgeCoordinator = createWechatBridgeCoordinator({
   isAllowedEgressUrl,
 })
 
-// ---- MCP 本地服务宿主（Agent 工具桥客户端侧） ----
+// ---- 桌面能力层（自研）：需要广播到渲染端的确认通道 ----
 
 function broadcastToAppWindows(channel, payload) {
   for (const win of [mainWindow, launcherWindow]) {
@@ -597,143 +600,107 @@ function broadcastToAppWindows(channel, payload) {
   }
 }
 
-const MCP_CONFIRM_TIMEOUT_MS = 45_000
-const pendingMcpConfirms = new Map() // id -> resolve(boolean)
-let mcpConfirmSeq = 0
+const CAPABILITY_CONFIRM_TIMEOUT_MS = 45_000
+const pendingCapabilityConfirms = new Map() // id -> resolve(boolean)
+let capabilityConfirmSeq = 0
 
 /**
- * 危险工具 / elicitation 确认：广播到渲染端弹窗，超时或无窗口默认拒绝（fail-safe）。
+ * 危险动作确认：广播到渲染端弹窗，超时或无窗口默认拒绝（fail-safe）。
+ *
+ * 「无窗口可问 = 拒绝」这条绝不能改：一旦改成默认放行，
+ * 一次被用户忽略的弹窗就等于批准了不可逆动作。
  */
-function requestMcpConfirm(payload) {
+function requestCapabilityConfirm(payload) {
   return new Promise((resolve) => {
-    // 「允许所有询问」开关：面向普通用户的一键放行。每次确认时实时读取设置，
-    // 切换后无需重启引擎即刻生效；只留一行日志作审计。
-    if (readMcpSettings().autoApprove === true) {
-      log(`mcp confirm auto-approved: kind=${payload.kind || 'tool'} tool=${payload.toolName || '-'}`)
-      resolve(true)
-      return
-    }
     const hasWindow = [mainWindow, launcherWindow].some((w) => w && !w.isDestroyed())
     if (!hasWindow) {
-      log('mcp confirm denied: no window to ask')
+      log('capability confirm denied: no window to ask')
       resolve(false)
       return
     }
-    const id = `mcp-confirm-${++mcpConfirmSeq}`
+    const id = `cap-confirm-${++capabilityConfirmSeq}`
     const timer = setTimeout(() => {
-      pendingMcpConfirms.delete(id)
-      log(`mcp confirm timeout (deny): ${id}`)
+      pendingCapabilityConfirms.delete(id)
+      log(`capability confirm timeout (deny): ${id}`)
       resolve(false)
-    }, MCP_CONFIRM_TIMEOUT_MS)
-    pendingMcpConfirms.set(id, (approved) => {
+    }, CAPABILITY_CONFIRM_TIMEOUT_MS)
+    pendingCapabilityConfirms.set(id, (approved) => {
       clearTimeout(timer)
-      pendingMcpConfirms.delete(id)
+      pendingCapabilityConfirms.delete(id)
       resolve(approved === true)
     })
     try {
       showMainWindow()
     } catch { /* ignore */ }
-    broadcastToAppWindows('desktop:mcp-confirm-request', {
+    broadcastToAppWindows('desktop:capability-confirm-request', {
       id,
-      kind: payload.kind || 'tool',
+      kind: payload.kind || 'capability',
       toolName: payload.toolName || '',
       message: payload.message || '',
       args: payload.args || '',
-      timeoutMs: MCP_CONFIRM_TIMEOUT_MS,
+      danger: payload.danger || '',
+      timeoutMs: CAPABILITY_CONFIRM_TIMEOUT_MS,
     })
   })
 }
 
-/**
- * 引擎模型凭据跟随用户文本渠道（一处配置）：spawn 前经主进程从云端拉取，
- * 注入子进程 env，不落盘、不经渲染端。失败返回 {}（继承 env 兜底）。
- */
-async function resolveEngineEnvFromCloud() {
-  const authToken = await resolveDesktopAuthToken()
-  if (!authToken) {
-    log('[mcp] engine credentials skipped: not logged in')
-    return {}
-  }
-  const apiOrigin = resolveApiOrigin()
-  const resp = await performApiRequest({
-    method: 'GET',
-    url: `${apiOrigin}/api/agent-bridge/engine-credentials`,
-    apiOrigin,
-    authToken,
-    timeoutMs: 15000,
-  })
-  if (resp.status !== 200) {
-    log(`[mcp] engine credentials HTTP ${resp.status}`)
-    return {}
-  }
-  let creds = null
-  try {
-    creds = JSON.parse(resp.data)?.data || null
-  } catch {
-    creds = null
-  }
-  const env = engineEnvFromCredentials(creds)
-  // 只记录「注入与否」，绝不落 key 本身
-  log(`[mcp] engine credentials: ${env.DEEPSEEK_API_KEY ? `injected (model=${env.DEEPSEEK_MODEL || 'default'})` : 'no user text vault'}`)
-  return env
-}
+// ---- 桌面能力层（自研，替代外借的 AgentAssistant MCP 引擎） ----
+// 懒启动：第一次真正收到 desk_* 调用时才拉起 PowerShell actor（含一次 Add-Type 编译）。
+// 关闭开关时连 actor 都不会创建，进程里没有任何额外常驻。
+const capabilitySettings = createCapabilitySettings({ dir: app.getPath('userData') })
+let capabilityActor = null
+let capabilityHost = null
 
-let mcpHost = null
-const mcpControlBanner = createMcpControlBanner({
+/**
+ * 「角色正在操控你的电脑」顶部指示条 + 全局 Esc。
+ * 中止语义：杀掉 actor（下一次动作会重建）—— 单个 op 内部无法安全打断正在进行的 SendInput，
+ * 杀进程是「卡死必有出口」的可靠实现。
+ */
+const controlBanner = createControlBanner({
   BrowserWindow,
   screen,
   globalShortcut,
-  log: (msg) => log(`[mcp-banner] ${msg}`),
-  onCancel: () => mcpHost?.cancelActiveCall?.(),
-})
-mcpHost = createMcpHost({
-  getSettings: readMcpSettings,
-  resolveManagedEngine: resolveManagedEngineCommand,
-  resolveEngineEnv: resolveEngineEnvFromCloud,
-  requestConfirm: requestMcpConfirm,
-  broadcast: broadcastToAppWindows,
-  onControlStart: (actor) => mcpControlBanner.show(actor),
-  onControlEnd: () => mcpControlBanner.hide(),
-  log: (msg) => log(`[mcp] ${msg}`),
+  log: (msg) => log(`[capability-banner] ${msg}`),
+  onCancel: () => {
+    stopCapabilityRuntime()
+    try { controlBanner.hide() } catch { /* ignore */ }
+  },
 })
 
-async function installManagedEngineFromCloud(onProgress) {
-  const secrets = getRuntimeSecrets()
-  const apiOrigin = secrets?.apiOrigin || ''
-  if (!apiOrigin) throw new Error('no api origin')
-  const ymlUrl = `${apiOrigin}${ENGINE_MANIFEST_PATH}`
-  const ymlResp = await performApiRequest({
-    method: 'GET',
-    url: ymlUrl,
-    apiOrigin,
-    timeoutMs: 15000,
+function ensureCapabilityHost() {
+  if (capabilityHost) return capabilityHost
+  capabilityActor = createWinActor({ log: (msg) => log(`[capability] ${msg}`) })
+  const appIndex = createAppIndex({ log: (msg) => log(`[capability] ${msg}`) })
+  const launcher = createLauncher({ index: appIndex, shell, log: (msg) => log(`[capability] ${msg}`) })
+  const capLog = (msg) => log(`[capability] ${msg}`)
+  capabilityHost = createCapabilityHost({
+    actor: capabilityActor,
+    capture: createScreenCapture({ desktopCapturer, screen, log: capLog }),
+    windows: createWindowDriver({ actor: capabilityActor }),
+    input: createInputDriver({ actor: capabilityActor, clipboard, log: capLog }),
+    clipboard,
+    files: createFileTools({ shell, log: capLog }),
+    launchApp: (payload) => launcher.launch(payload),
+    // 危险动作确认：人话描述 + 目标参数，走渲染端弹窗（45s 超时 / 无窗口即拒绝）
+    requestConfirm: (req) => requestCapabilityConfirm({
+      kind: 'capability',
+      toolName: req.tool,
+      message: req.description || req.tool,
+      args: req.args,
+      danger: req.danger,
+    }),
+    readSettings: () => capabilitySettings.read(),
+    loadPolicy: () => CAPABILITY_DEFAULT_POLICY,
+    log: capLog,
+    onAudit: (entry) => broadcastToAppWindows('desktop:capability-audit', entry),
   })
-  if (ymlResp.status !== 200) {
-    throw new Error(`agent-latest.yml HTTP ${ymlResp.status}`)
-  }
-  const manifest = parseAgentLatestYml(typeof ymlResp.data === 'string' ? ymlResp.data : '')
-  if (!manifest) {
-    throw new Error('agent-latest.yml parse failed')
-  }
-  const downloadUrl = resolveEngineAssetUrl(manifest.url, ymlUrl, secrets?.updateOrigin || '')
-  if (!isAllowedEgressUrl(downloadUrl, apiOrigin, secrets?.updateOrigin || '')) {
-    throw new Error('download url not allowed')
-  }
-  return ensureManagedEngine({
-    manifest,
-    downloadUrl,
-    onProgress,
-  })
+  return capabilityHost
 }
 
-async function autoStartMcpHostIfNeeded() {
-  try {
-    if (readMcpSettings().enabled) {
-      await mcpHost.start()
-    }
-  } catch (e) {
-    log(`mcp auto-start failed: ${e?.message || e}`)
-  }
+function stopCapabilityRuntime() {
+  try { capabilityActor?.stop?.() } catch { /* ignore */ }
+  capabilityActor = null
+  capabilityHost = null
 }
 
 function resolveTrayIcon() {
@@ -2019,8 +1986,8 @@ function quitApplication(options = {}) {
   stopQqBridge()
   stopNapCatHost()
   void wechatBridgeCoordinator.stopHost({ persist: false })
-  try { mcpControlBanner.hide() } catch { /* ignore */ }
-  void mcpHost.stop()
+  try { controlBanner.hide() } catch { /* ignore */ }
+  stopCapabilityRuntime()
   qqBridgeCoordinator.dispose()
   closeCharacterPicker()
   if (quickChatShell && !quickChatShell.isDestroyed()) quickChatShell.destroy()
@@ -2607,92 +2574,70 @@ function registerIpcHandlers() {
     return { ok: true }
   })
 
-  // ---- MCP 本地服务（Agent 工具桥） ----
-  ipcMain.handle('mcp:get-settings', (event) => {
+  // ---- 桌面能力层（desk_* 原子动作；替代外借引擎的 computer_task） ----
+  ipcMain.handle('capability:get-settings', (event) => {
     if (!guardTrusted(event)) return null
-    return readMcpSettings()
+    return capabilitySettings.read()
   })
 
-  ipcMain.handle('mcp:set-settings', async (event, partial) => {
+  ipcMain.handle('capability:set-settings', (event, partial) => {
     if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
-    const prev = readMcpSettings()
-    const next = writeMcpSettings(partial)
-    // 开关/命令变化时同步服务进程状态
-    if (prev.enabled && !next.enabled) {
-      await mcpHost.stop()
-    } else if (next.enabled && (!prev.enabled
-        || prev.useLocalSource !== next.useLocalSource
-        || prev.command !== next.command
-        || prev.cwd !== next.cwd
-        || JSON.stringify(prev.args) !== JSON.stringify(next.args))) {
-      await mcpHost.stop()
-      await mcpHost.start()
-    }
+    const next = capabilitySettings.write(partial)
+    // 关掉开关就把常驻 actor 一起收掉（不留在用户进程里）
+    if (next.enabled !== true) stopCapabilityRuntime()
     return { ok: true, settings: next }
   })
 
-  ipcMain.handle('mcp:get-status', (event) => {
-    if (!guardTrusted(event)) return { state: 'stopped', tools: [], error: '' }
-    return mcpHost.status()
+  ipcMain.handle('capability:get-status', (event) => {
+    if (!guardTrusted(event)) return null
+    const settings = capabilitySettings.read()
+    return {
+      enabled: settings.enabled === true,
+      ready: !!capabilityHost,
+      running: !!capabilityActor?.running,
+      // 渲染端据此把「桌面能力在线」注册到云端（Java 只按 desk_ 前缀判断）
+      tools: [...CAPABILITY_NAMES],
+      audit: capabilityHost?.status?.() || { auditSize: 0 },
+    }
   })
 
-  ipcMain.handle('mcp:start', async (event) => {
-    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
-    return { ok: true, status: await mcpHost.start() }
+  ipcMain.handle('capability:exec', async (event, payload) => {
+    if (!guardTrusted(event)) return { ok: false, errorCode: 'untrusted_sender' }
+    // 总开关在主进程再判一次：渲染端不该是唯一防线
+    if (capabilitySettings.read().enabled !== true) {
+      return { ok: false, errorCode: 'disabled', text: '用户没有开启「电脑能力」' }
+    }
+    const host = ensureCapabilityHost()
+    const req = payload && typeof payload === 'object' ? payload : {}
+    const actor = req.actor && typeof req.actor === 'object' ? req.actor : {}
+    // 只读动作不弹指示条（看一眼屏幕不该有「正在操控」的压迫感）
+    const showBanner = String(req.danger || '') !== 'R0'
+    if (showBanner) {
+      try { controlBanner.show(actor) } catch { /* ignore */ }
+    }
+    try {
+      return await host.exec(req)
+    } finally {
+      if (showBanner) {
+        try { controlBanner.hide() } catch { /* ignore */ }
+      }
+    }
   })
 
-  ipcMain.handle('mcp:stop', async (event) => {
-    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
-    return { ok: true, status: await mcpHost.stop() }
-  })
-
-  ipcMain.handle('mcp:list-tools', (event) => {
-    if (!guardTrusted(event)) return []
-    return mcpHost.listToolsForRegistration()
-  })
-
-  ipcMain.handle('mcp:call-tool', async (event, payload) => {
-    if (!guardTrusted(event)) return { ok: false, error: 'untrusted_sender' }
-    const name = typeof payload?.name === 'string' ? payload.name : ''
-    const args = parseAgentToolArguments(payload?.args)
-    if (!name) return { ok: false, error: '工具名缺失' }
-    const actor = payload?.actor && typeof payload.actor === 'object' ? payload.actor : {}
-    const requestId = typeof payload?.requestId === 'string' ? payload.requestId : null
-    return mcpHost.callTool(name, args, { actor, requestId })
-  })
-
-  ipcMain.handle('mcp:confirm-response', (event, payload) => {
+  ipcMain.handle('capability:abort', (event, payload) => {
     if (!guardTrusted(event)) return { ok: false }
-    const resolve = pendingMcpConfirms.get(payload?.id)
+    // 中止 = 直接把 actor 杀掉（下一次动作会重建）。
+    // 单个 op 内部无法安全打断正在进行的 SendInput，杀进程是「卡死必有出口」的可靠实现。
+    stopCapabilityRuntime()
+    try { controlBanner.hide() } catch { /* ignore */ }
+    return { ok: true, stepId: payload?.stepId || '' }
+  })
+
+  ipcMain.handle('capability:confirm-response', (event, payload) => {
+    if (!guardTrusted(event)) return { ok: false }
+    const resolve = pendingCapabilityConfirms.get(payload?.id)
     if (resolve) resolve(payload?.approved === true)
     return { ok: true }
-  })
-
-  ipcMain.handle('mcp:engine-status', (event) => {
-    if (!guardTrusted(event)) return { installed: false, version: '', exePath: '' }
-    return getEngineStatus()
-  })
-
-  ipcMain.handle('mcp:install-engine', async (event) => {
-    if (!guardTrusted(event)) return { ok: false, error: 'untrusted_sender' }
-    try {
-      const result = await installManagedEngineFromCloud((progress) => {
-        broadcastToAppWindows('desktop:mcp-engine-progress', progress)
-      })
-      // 新引擎落到磁盘后必须重启宿主，否则仍跑旧进程；更新窗口内的
-      // computer_task 由桥 session-wait / callTool starting-wait 兜住。
-      if (result?.skipped !== true && readMcpSettings().enabled) {
-        log('[mcp] engine updated, restarting host')
-        await mcpHost.stop()
-        await mcpHost.start()
-      }
-      return { ok: true, ...result, status: getEngineStatus() }
-    } catch (e) {
-      const error = e?.message || String(e)
-      log(`[mcp] engine install failed: ${error}`)
-      broadcastToAppWindows('desktop:mcp-engine-progress', { phase: 'error', error, percent: 0 })
-      return { ok: false, error }
-    }
   })
 
   ipcMain.handle('desktop:get-qq-bridge-status', (event) => {
@@ -3216,11 +3161,6 @@ process.on('unhandledRejection', (reason) => {
 })
 
 app.whenReady().then(() => {
-  if (process.env.LIANYU_MCP_STDIO_CHILD === '1') {
-    log('refusing nested YuNian process spawned as MCP child')
-    app.exit(1)
-    return
-  }
   startupMainProfiler.mark('whenReady')
   logger.initGlobalErrorHandlers()
   if (process.env.LIANYU_MAIN_STARTUP_SMOKE === '1') {
@@ -3287,7 +3227,7 @@ app.whenReady().then(() => {
   void autoStartQqBridgeIfNeeded()
   void autoStartNapCatHostIfNeeded()
   void wechatBridgeCoordinator.autoStartIfNeeded()
-  void autoStartMcpHostIfNeeded()
+  // 桌面能力层不自动起进程：actor 在第一次 desk_* 调用时才拉起（见 ensureCapabilityHost）
 
   // 电源事件：唤醒后通知窗口切换检测
   if (powerMonitor) {
@@ -3310,7 +3250,7 @@ app.whenReady().then(() => {
 })
 
 app.on('will-quit', () => {
-  try { mcpControlBanner.dispose() } catch { /* ignore */ }
+  try { controlBanner.dispose() } catch { /* ignore */ }
   globalShortcut.unregisterAll()
 })
 
