@@ -87,6 +87,9 @@ def main() -> None:
     ap.add_argument("--seconds", type=float, default=18.0)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--top", type=int, default=6)
+    ap.add_argument("--f0-tiebreak", type=float, default=0.06,
+                    help="得分落后最优值不超过这个量的候选里，挑音高最接近全片中位数的那个；"
+                         "0 表示关闭（纯按得分选）")
     args = ap.parse_args()
 
     x, sr = read_wav(args.src)
@@ -110,14 +113,36 @@ def main() -> None:
               f"{c['f0_rel']:6.3f} {c['f0']:5.0f}Hz {c['flat']:7.4f}  {c['score']:6.3f}")
 
     best = cands[0]
-    a = int(best["start"] * sr)
+    # 音高代表性：纯按"干净+连续"选，容易挑到某一段偏低/偏高的情绪，克隆出来就不像。
+    # 所以在得分接近最优的候选里，挑音高最接近**全片中位数**的那一个（全片中位数代表
+    # 这个角色在这段素材里的典型音域）。2026-10-23 爱莉希雅就踩过：得分第一的那段
+    # 只有 281Hz，而全片中位数 327Hz，差 14% 会让音色明显偏低沉。
+    global_f0 = 0.0
+    # rms 与 f0 的帧数会差一帧（两者窗口长度不同），必须先截到公共长度
+    n = min(len(rms), len(f0))
+    rms_c, f0_c = rms[:n], f0[:n]
+    voiced_all = f0_c[(rms_c >= max(rms_c.mean() * 0.25, 200.0)) & (f0_c > 0)]
+    if voiced_all.size:
+        global_f0 = float(np.median(voiced_all))
+    chosen, reason = best, "得分最优"
+    if args.f0_tiebreak > 0 and global_f0 > 0:
+        near = [c for c in cands if c["score"] >= best["score"] - args.f0_tiebreak]
+        alt = min(near, key=lambda c: abs(c["f0"] - global_f0))
+        if alt is not best:
+            chosen = alt
+            reason = (f"得分接近最优的 {len(near)} 个候选里音高最接近全片中位数 "
+                      f"{global_f0:.0f}Hz（比得分最优的 {best['f0']:.0f}Hz 更典型）")
+
+    a = int(chosen["start"] * sr)
     clip = x[a:a + win]
     write_wav(args.out, clip, sr)
-    ok = (best["flat"] <= MAX_FLATNESS and best["f0_rel"] < 0.45
-          and best["voiced"] > 0.5)
-    print(f"\n选中 {best['start']:.1f}s 起 {args.seconds:.0f}s -> {args.out}")
-    print(f"  平坦度 {best['flat']:.4f}（阈值 {MAX_FLATNESS}）  "
-          f"F0 相对标准差 {best['f0_rel']:.3f}（>0.45 才可疑）  有声 {best['voiced']*100:.0f}%")
+    ok = (chosen["flat"] <= MAX_FLATNESS and chosen["f0_rel"] < 0.45
+          and chosen["voiced"] > 0.5)
+    print(f"\n选中 {chosen['start']:.1f}s 起 {args.seconds:.0f}s -> {args.out}")
+    print(f"  依据：{reason}")
+    print(f"  平坦度 {chosen['flat']:.4f}（阈值 {MAX_FLATNESS}）  "
+          f"F0 相对标准差 {chosen['f0_rel']:.3f}（>0.45 才可疑）  有声 {chosen['voiced']*100:.0f}%")
+    print(f"  F0 {chosen['f0']:.0f}Hz vs 全片中位数 {global_f0:.0f}Hz")
     print("  判定:", "OK" if ok else "指标未全达标，建议看下一个候选")
 
 

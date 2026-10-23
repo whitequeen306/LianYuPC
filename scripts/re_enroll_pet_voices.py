@@ -68,15 +68,24 @@ PLAN: list[tuple[str, str, list[Path]]] = [
      # pick_from_video.py 在 63.0s 起选出：平坦度 0.104、有声占比 76%、F0 222Hz）。
      # 之前的 raiden-clip.wav 是 15 秒、平坦度 0.353 的含噪片段（会把噪声一起学进去）。
      [VC / "raiden-bili18s-mono.wav", SAMPLES / "raiden.wav", SAMPLES / "raiden-clip.wav"]),
-    ("elysia",      "lyelysia",  [VC / "elysia-vc-source-mono.wav"]),
+    ("elysia",      "lyelysia",
+     # 2026-10-23「爱莉希雅语音纯干声21分钟」（BV1FT4y1b7aT）里 1134.0s 起 18 秒：
+     # 平坦度 0.054、有声 84%（全片最高，纯干声）、F0 322Hz（全片中位数 327Hz）
+     [VC / "elysia-bili18s-mono.wav", VC / "elysia-vc-source-mono.wav"]),
     ("erii_uesugi", "lyerii",    [VC / "erii_uesugi-rt-enroll-40s-mono.wav", VC / "eriri-vc-source-mono.wav"]),
     ("yae_miko",    "lyyaemiko",
      # 首选 2026-10-23 从官方语音合集视频挑的 18 秒（BV1kt4y1P7HB，《原神语音收录-八重神子》，
      # pick_from_video.py 在 12.0s 起选出：平坦度 0.067、有声占比 71%、F0 253Hz）。
      [VC / "yae_miko-bili18s-mono.wav", VC / "yae_miko-vc-enroll-55s-mono.wav",
       VC / "yae_miko-vc-source-mono.wav"]),
-    ("kokomi",      "lykokomi",  [VC / "kokomi-vc-source-mono.wav"]),
-    ("shenhe",      "lyshenhe",  [VC / "shenhe-vc-source-mono.wav"]),
+    ("kokomi",      "lykokomi",
+     # 2026-10-23「原神语音收录-珊瑚宫心海」（BV14R4y1y7wG，11.1 分钟）里 468.0s 起 18 秒：
+     # 平坦度 0.032、有声 68%、F0 239Hz（全片中位数 239Hz）
+     [VC / "kokomi-bili18s-mono.wav", VC / "kokomi-vc-source-mono.wav"]),
+    ("shenhe",      "lyshenhe",
+     # 2026-10-23「原神语音收录-申鹤」（BV1Hv4y1B7Y4，10.9 分钟）里 178.0s 起 18 秒：
+     # 平坦度 0.108、有声 65%、F0 192Hz（全片中位数 192Hz）
+     [VC / "shenhe-bili18s-mono.wav", VC / "shenhe-vc-source-mono.wav"]),
     ("nahida",      "lynahida",
      # 2026-10-23 官方语音合集（BV1514y1W7JL，12.8 分钟）里 385.0s 起 18 秒：
      # 平坦度 0.024、有声 71%、F0 271Hz
@@ -90,7 +99,10 @@ PLAN: list[tuple[str, str, list[Path]]] = [
      # 2026-10-23 官方语音合集（BV1Le411D7iK，15.7 分钟）里 529.0s 起 18 秒：
      # 平坦度 0.083、有声 79%、F0 298Hz
      [VC / "furina-bili18s-mono.wav", VC / "furina-vc-source-mono.wav"]),
-    ("noelle",      "lynoelle",  [VC / "noelle-vc-source-mono.wav"]),
+    ("noelle",      "lynoelle",
+     # 2026-10-23「原神语音收录-诺艾尔」（BV1et4y1M7rY，11.9 分钟）里 552.0s 起 18 秒：
+     # 平坦度 0.030、有声 67%、F0 298Hz（全片中位数 298Hz）
+     [VC / "noelle-bili18s-mono.wav", VC / "noelle-vc-source-mono.wav"]),
 ]
 
 
