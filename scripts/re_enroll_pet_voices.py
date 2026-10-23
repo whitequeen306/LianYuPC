@@ -69,8 +69,11 @@ PLAN: list[tuple[str, str, list[Path]]] = [
      # 之前的 raiden-clip.wav 是 15 秒、平坦度 0.353 的含噪片段（会把噪声一起学进去）。
      [VC / "raiden-bili18s-mono.wav", SAMPLES / "raiden.wav", SAMPLES / "raiden-clip.wav"]),
     ("elysia",      "lyelysia",
-     # 2026-10-23「爱莉希雅语音纯干声21分钟」（BV1FT4y1b7aT）里 1134.0s 起 18 秒：
-     # 平坦度 0.054、有声 84%（全片最高，纯干声）、F0 322Hz（全片中位数 327Hz）
+     # 2026-10-23「爱莉希雅语音纯干声21分钟」（BV1FT4y1b7aT）里 **547.0s** 起 18 秒：
+     # 平坦度 0.052、有声 82%、F0 356Hz（全片中位 327Hz，取偏亮的一段）。
+     # 踩过的坑：先选的是 1134s 那段（有声 84%、F0 正好等于中位数，指标最漂亮），
+     # 但用户听后判断"不太好听" —— 那段语速慢 9%、语气偏平静。
+     # 教训：指标只衡量"干净+稳定+代表性音高"，衡量不了语气和好听程度。
      [VC / "elysia-bili18s-mono.wav", VC / "elysia-vc-source-mono.wav"]),
     ("erii_uesugi", "lyerii",    [VC / "erii_uesugi-rt-enroll-40s-mono.wav", VC / "eriri-vc-source-mono.wav"]),
     ("yae_miko",    "lyyaemiko",
