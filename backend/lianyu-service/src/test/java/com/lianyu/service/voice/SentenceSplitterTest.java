@@ -59,18 +59,35 @@ class SentenceSplitterTest {
         assertEquals(-1, SentenceSplitter.nextCommitEnd("后面还有一句。", true));
         // 刚好凑到门槛就在这个句号处切
         String filler = "一".repeat(SentenceSplitter.MIN_LATER_COMMIT);
-        String longEnough = filler + "。再来一句。";
         assertEquals(SentenceSplitter.MIN_LATER_COMMIT + 1,
-                SentenceSplitter.nextCommitEnd(longEnough, true));
+                SentenceSplitter.nextCommitEnd(filler + "。", true));
         // 差一个字就不切（门槛是硬的，不能靠估算）
-        assertEquals(-1, SentenceSplitter.nextCommitEnd(
-                filler.substring(1) + "。再来一句。", true));
+        assertEquals(-1, SentenceSplitter.nextCommitEnd(filler.substring(1) + "。", true));
     }
 
     @Test
     void laterCommitsNeverCutAtComma() {
         assertEquals(-1, SentenceSplitter.nextCommitEnd("今天天气不错，想出去走走", true));
         assertEquals(-1, SentenceSplitter.nextCommitEnd("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", true));
+    }
+
+    /**
+     * 首片允许在逗号上切 —— 这是**首声延迟**的关键一刀。
+     *
+     * <p>首声 = LLM 出第一个字（0.8-1.3s）+ 等句号 + TTS 首包（~0.9s）。若模型开头是个长句，
+     * "等句号"能吃掉 0.5-1.5s。中文口语里逗号本身是自然气口，8 字之后切开听感损失很小。
+     * 只对首片开：后续片段已经合并成大片，在那里按逗号切会把停顿切碎。
+     */
+    @Test
+    void firstUnitMayCutAtCommaToStartAudioEarlier() {
+        // 8 字之后的逗号 → 切（早开口）
+        assertEquals(10, SentenceSplitter.nextCommitEnd("嗯，我知道了这件事，后面还有话。", false));
+        // 8 字以内只有逗号 → 不切（避免「嗯，好，」这种碎片）
+        assertEquals(-1, SentenceSplitter.nextCommitEnd("嗯，好，我知道了", false));
+        // 句号比逗号更早 → 认句号（不强求逗号）
+        assertEquals(5, SentenceSplitter.nextCommitEnd("我知道了。后面还有很多，话要说。", false));
+        // 首片之后一律不认逗号
+        assertEquals(-1, SentenceSplitter.nextCommitEnd("嗯，我知道了这件事，后面还有话。", true));
     }
 
     @Test
@@ -169,7 +186,8 @@ class SentenceSplitterTest {
     @Test
     void pauseAfterEndingFollowsPunctuation() {
         assertEquals(SentenceSplitter.SENTENCE_PAUSE_MS, SentenceSplitter.pauseForEnding("我回来了。"));
-        assertEquals(SentenceSplitter.SENTENCE_PAUSE_MS, SentenceSplitter.pauseForEnding("第一段\n第二段"));
+        // 按换行切开时，换行符会留在前一片的末尾 → 按句号级停顿
+        assertEquals(SentenceSplitter.SENTENCE_PAUSE_MS, SentenceSplitter.pauseForEnding("第一段\n"));
         assertEquals(SentenceSplitter.EXCLAIM_PAUSE_MS, SentenceSplitter.pauseForEnding("真的吗？"));
         assertEquals(SentenceSplitter.EXCLAIM_PAUSE_MS, SentenceSplitter.pauseForEnding("太好了！"));
         assertEquals(SentenceSplitter.ELLIPSIS_PAUSE_MS, SentenceSplitter.pauseForEnding("这个嘛……"));

@@ -44,8 +44,23 @@ public final class SentenceSplitter {
 
     private static final String STRONG_ENDERS = "。！？!?\n";
 
+    /** 弱边界：只在**首片**上认它，用来抢首声延迟。见 {@link #MIN_FIRST_SOFT}。 */
+    private static final String SOFT_ENDERS = "，、；：,;:";
+
     /** 首句至少这么长才切，避免「嗯。」「好。」这种碎片。 */
     static final int MIN_FIRST_COMMIT = 4;
+
+    /**
+     * 首片在**弱边界**（逗号类）上就能切的最短长度。
+     *
+     * <p>为什么首片要破例：首声延迟 = LLM 出第一个字（0.8-1.3s）+ 等句号 + TTS 首包（~0.9s）。
+     * 如果模型开头是一个很长的句子（只在末尾才有句号），"等句号"这一段能吃掉 0.5-1.5s。
+     * 中文口语里逗号本身就是自然的气口，在 8 字之后切开，听感损失很小，但能提前开口。
+     *
+     * <p>为什么只对首片：后续片段已经用 {@link #MIN_LATER_COMMIT} 合并成大片（音质优先），
+     * 在那里按逗号切会把停顿切碎，得不偿失。
+     */
+    static final int MIN_FIRST_SOFT = 8;
 
     /**
      * 首句之后，攒到这么长才切。
@@ -202,9 +217,12 @@ public final class SentenceSplitter {
      */
     static int nextCutOutsideParens(String buf, boolean firstCommitSent) {
         int minChars = firstCommitSent ? MIN_LATER_COMMIT : MIN_FIRST_COMMIT;
+        // 弱边界只在「首片的第一个切点」上生效
+        boolean allowSoft = !firstCommitSent;
         int from = 0;
         while (from < buf.length()) {
-            int cut = nextCommitEnd(buf.substring(from), from == 0 ? minChars : 0);
+            int cut = nextCommitEnd(buf.substring(from), from == 0 ? minChars : 0,
+                    allowSoft && from == 0);
             if (cut <= 0) {
                 return -1;
             }
@@ -217,19 +235,27 @@ public final class SentenceSplitter {
         return -1;
     }
 
-    /** 兼容旧签名的入口：{@code firstCommitSent} 决定最小长度门槛。 */
+    /** 兼容旧签名的入口：{@code firstCommitSent} 决定最小长度门槛与是否认弱边界。 */
     static int nextCommitEnd(String buf, boolean firstCommitSent) {
-        return nextCommitEnd(buf, firstCommitSent ? MIN_LATER_COMMIT : MIN_FIRST_COMMIT);
+        return nextCommitEnd(buf, firstCommitSent ? MIN_LATER_COMMIT : MIN_FIRST_COMMIT,
+                !firstCommitSent);
+    }
+
+    /** 兼容旧签名的入口：只认强标点。 */
+    static int nextCommitEnd(String buf, int minChars) {
+        return nextCommitEnd(buf, minChars, false);
     }
 
     /**
-     * 合成边界决策（完全状态化）：只认两种停顿 —— 模型显式 {@link #PAUSE_TOKEN} 和句末强标点。
-     * 取消字数硬切 / 逗号兜底；未完整 marker 前缀永不被切开。
+     * 合成边界决策（完全状态化）：认模型显式 {@link #PAUSE_TOKEN} 与句末强标点；
+     * {@code allowSoft} 为真时（仅首片）额外认逗号类弱边界。
+     * 未完整 marker 前缀永不被切开。
      *
-     * @param minChars 切点之前至少要有这么多字（首句 4、后续 20），0 表示不限制
+     * @param minChars  切点之前至少要有这么多字（首片 4、后续 28），0 表示不限制
+     * @param allowSoft 是否认弱边界（逗号类），只对首片开
      * @return 可切位置（不含），-1 表示暂不切
      */
-    static int nextCommitEnd(String buf, int minChars) {
+    static int nextCommitEnd(String buf, int minChars, boolean allowSoft) {
         if (buf == null || buf.isEmpty()) {
             return -1;
         }
@@ -249,7 +275,20 @@ public final class SentenceSplitter {
         }
         int strong = indexOfAnyFrom(buf, STRONG_ENDERS, minChars);
         if (strong >= 0) {
+            // 首片上如果更早处有逗号类气口，优先用它 —— 早 0.3-1s 开口，比"这一句完整"更值
+            if (allowSoft) {
+                int soft = indexOfAnyFrom(buf, SOFT_ENDERS, MIN_FIRST_SOFT);
+                if (soft > 0 && soft < strong) {
+                    return soft + 1;
+                }
+            }
             return strong + 1;
+        }
+        if (allowSoft) {
+            int soft = indexOfAnyFrom(buf, SOFT_ENDERS, MIN_FIRST_SOFT);
+            if (soft >= 0) {
+                return soft + 1;
+            }
         }
         return -1;
     }

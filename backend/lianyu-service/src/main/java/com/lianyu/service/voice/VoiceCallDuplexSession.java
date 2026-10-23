@@ -32,6 +32,9 @@ public class VoiceCallDuplexSession {
     private static final SentenceSplitter.Segment TTS_SENTINEL =
             new SentenceSplitter.Segment("\u0000DONE", 0);
 
+    /** 预热用的文本：一个字，只为让连接与模型实例进入热态。 */
+    private static final String PREWARM_TEXT = "嗯";
+
     /**
      * WebSocket 发送串行化。
      *
@@ -125,6 +128,46 @@ public class VoiceCallDuplexSession {
                 // ignore
             }
         });
+        prewarmTts();
+    }
+
+    /**
+     * 通话建立时先把 TTS 焐热：用**当前角色的音色**合成一个字，把音频丢掉。
+     *
+     * <p>为什么值得：首声 = LLM 出第一个字 + TTS 首包。TTS 首包的冷/热差距是实测的：
+     * 冷（新 TCP+TLS + 模型实例冷启）1163-2162ms，热 588-862ms。而在一次通话里，
+     * 第一句话永远是冷的。
+     *
+     * <p>发**两次**：agent 前置了负载均衡，两个实例各自持有独立的 httpx 连接池，
+     * 只焐一个等于有一半概率白做。成本是每次通话 2 个字（约 0.0002 元），可以忽略。
+     *
+     * <p>失败无所谓 —— 预热本来就是为了快，不能让它影响通话。
+     */
+    private void prewarmTts() {
+        if (target.isLocal()) {
+            return;
+        }
+        for (int i = 0; i < 2; i++) {
+            try {
+                voiceCallService.streamSynthesizeForTarget(target, PREWARM_TEXT, new TtsPort.TtsChunkSink() {
+                    @Override
+                    public void onChunk(byte[] pcm) {
+                        // 丢弃：只为把连接和模型实例焐热，不是要出声
+                    }
+
+                    @Override
+                    public void onDone() {
+                    }
+
+                    @Override
+                    public void onError(String message) {
+                        log.debug("Voice duplex TTS prewarm failed conv={}: {}", conversationId, message);
+                    }
+                });
+            } catch (Exception e) {
+                log.debug("Voice duplex TTS prewarm skipped conv={}: {}", conversationId, e.toString());
+            }
+        }
     }
 
     public void onPcm(byte[] pcm) {
