@@ -53,27 +53,50 @@ export function createLauncher({ index, shell, log = () => {}, resolveExe = crea
       // 2) 索引没命中，但名字本身就是可执行文件（chrome.exe / notepad.exe）→ 直接按 PATH 解析。
       //    真实踩到：模型说「notepad.exe」时 appIndex 里没有这个键，会被误报 app_not_installed。
       const resolved = index.resolve(name)
-      const looksLikeExe = /\.exe$/i.test(name)
-      const target = resolved || (looksLikeExe ? name : null)
-      if (!target) {
+      // 候选链（按可靠性排序）：
+      //   1) 应用索引（内置别名 / 开始菜单 / App Paths）
+      //   2) **跳过内置别名** 再查一次 —— 真实踩到：别名把「网易云音乐」映射成
+      //      `cloudmusic.exe`，而它装在 `D:\网易云\CloudMusic\` 不在 PATH 上，
+      //      于是 where.exe 失败；此时必须回退到开始菜单里的 `.lnk`。
+      //   3) 名字本身形如 `*.exe` → 直接按 PATH 解析
+      const candidates = []
+      const pushCandidate = (value) => {
+        if (value && !candidates.includes(value)) candidates.push(value)
+      }
+      pushCandidate(index.resolve(name))
+      pushCandidate(index.resolve(name, { skipBuiltin: true }))
+      if (/\.exe$/i.test(name)) pushCandidate(name)
+
+      if (candidates.length === 0) {
         log(`launch: unresolved app ${name}`)
         return { ok: false, error: 'app_not_installed' }
       }
-      if (!resolved && looksLikeExe) {
-        log(`launch: index miss for ${name}, treating as executable name`)
+
+      // ms-settings: 这类协议用 openExternal（协议不属于候选链）
+      const protocolTarget = candidates.find((c) => PROTOCOL_RE.test(c) && !/^[a-zA-Z]:/.test(c))
+      if (protocolTarget) {
+        await shell.openExternal(protocolTarget)
+        return { ok: true, target: protocolTarget }
       }
 
-      // ms-settings: 这类协议用 openExternal
-      if (PROTOCOL_RE.test(target) && !/^[a-zA-Z]:/.test(target)) {
-        await shell.openExternal(target)
-        return { ok: true, target }
+      // 逐个候选解析成绝对路径（`.lnk` / 绝对 exe 原样通过；裸 exe 名走 where.exe）
+      let execPath = null
+      let usedCandidate = ''
+      for (const candidate of candidates) {
+        const resolved = resolveExe(candidate)
+        if (resolved) {
+          execPath = resolved
+          usedCandidate = candidate
+          break
+        }
+        log(`launch: candidate not resolvable, trying next: ${candidate}`)
       }
-
-      // 裸 exe 名（内置别名）→ 必须先解析成绝对路径，否则 openPath 必然失败
-      const execPath = resolveExe(target)
       if (!execPath) {
-        log(`launch: exe not found on PATH for ${target}`)
-        return { ok: false, error: 'app_not_installed', detail: target }
+        log(`launch: no resolvable target for ${name} (candidates=${candidates.join(' | ')})`)
+        return { ok: false, error: 'app_not_installed', detail: candidates.join(' | ') }
+      }
+      if (usedCandidate !== candidates[0]) {
+        log(`launch: fallback used for ${name}: ${usedCandidate}`)
       }
 
       const failure = await shell.openPath(execPath)

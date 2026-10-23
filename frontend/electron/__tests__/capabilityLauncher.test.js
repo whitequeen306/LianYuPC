@@ -129,6 +129,26 @@ describe('launcher', () => {
     expect(shell.openPath).toHaveBeenCalledWith('C:/Windows/System32/notepad.exe')
   })
 
+  it('falls back to the Start Menu shortcut when the builtin alias is not on PATH', async () => {
+    // 真实线上故障（user 402）：内置别名把「网易云音乐」映射成 cloudmusic.exe，
+    // 但它装在 D:\网易云\CloudMusic\ 不在 PATH 上 → where.exe 失败 → app_not_installed。
+    // 正确行为：回退到开始菜单里的 .lnk。
+    const shell = { openPath: vi.fn(async () => ''), openExternal: vi.fn(async () => {}) }
+    const LINK = 'C:/ProgramData/Microsoft/Windows/Start Menu/Programs/网易云音乐.lnk'
+    const launcher = createLauncher({
+      index: {
+        resolve: (_name, opts) => (opts?.skipBuiltin ? LINK : 'cloudmusic.exe'),
+      },
+      shell,
+      resolveExe: (t) => (t === 'cloudmusic.exe' ? null : t),
+      log: () => {},
+    })
+
+    const res = await launcher.launch({ app: '网易云音乐' })
+    expect(res.ok).toBe(true)
+    expect(shell.openPath).toHaveBeenCalledWith(LINK)
+  })
+
   it('opens a resolved app through shell.openPath (never a command line)', async () => {
     const { launcher, shell } = makeLauncher('notepad.exe')
     const res = await launcher.launch({ app: '记事本' })

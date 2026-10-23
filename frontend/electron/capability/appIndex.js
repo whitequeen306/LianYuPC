@@ -105,13 +105,24 @@ export function createAppIndex({
     return map
   }
 
-  function resolve(name) {
+  /**
+   * @param {string} name 用户/模型给的应用名
+   * @param {object} [options]
+   * @param {boolean} [options.skipBuiltin] 跳过内置别名，只查「开始菜单 / App Paths」
+   *
+   * 为什么要这个开关：内置别名给的是**裸 exe 名**（`cloudmusic.exe`），而很多应用
+   * 装完不在 PATH 上（例如网易云装在 `D:\网易云\CloudMusic\cloudmusic.exe`）。
+   * 这时需要能跳区别名、直接走开始菜单的 `.lnk` 兜底。
+   */
+  function resolve(name, { skipBuiltin = false } = {}) {
     const raw = String(name || '').trim()
     if (!raw) return null
     const key = raw.toLowerCase()
 
-    const alias = BUILTIN_ALIASES[raw] || BUILTIN_ALIASES[key]
-    if (alias) return alias
+    if (!skipBuiltin) {
+      const alias = BUILTIN_ALIASES[raw] || BUILTIN_ALIASES[key]
+      if (alias) return alias
+    }
 
     if (!startMenuIndex) startMenuIndex = buildStartMenuIndex()
     if (startMenuIndex.has(key)) return startMenuIndex.get(key)
