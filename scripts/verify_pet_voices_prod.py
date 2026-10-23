@@ -22,36 +22,54 @@ ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "backend/lianyu-service/src/main/resources/pet-voices.json"
 
 PROBE = '''
-import json, os, sys, urllib.request
+import json, os, time, urllib.request
 
 BASE = "http://127.0.0.1:8001"
 KEY = os.environ.get("DSK", "")
 MODEL = os.environ["MODEL"]
 VOICES = json.loads(os.environ["VOICES"])
 TEXT = "你好呀，我在这里。"
+SLEEP_BETWEEN = 0.4   # 连发 13 个合成请求容易撞上上游限流/DNS 抖动，放缓一点
 
-bad = []
-for pet, vid in VOICES.items():
+
+def once(vid):
     body = json.dumps({"userId": 0, "apiKey": KEY, "model": MODEL,
                        "voiceId": vid, "text": TEXT}).encode()
     req = urllib.request.Request(
         BASE + "/agent/tts/stream", data=body,
         headers={"Content-Type": "application/json", "X-User-Id": "0"}, method="POST")
+    total = 0
+    with urllib.request.urlopen(req, timeout=180) as r:
+        while True:
+            buf = r.read(65536)
+            if not buf:
+                break
+            total += len(buf)
+    return total
+
+
+bad = []
+for pet, vid in VOICES.items():
+    result = 0
+    note = ""
     try:
-        total = 0
-        with urllib.request.urlopen(req, timeout=180) as r:
-            while True:
-                buf = r.read(65536)
-                if not buf:
-                    break
-                total += len(buf)
-        status = "OK" if total > 0 else "NO_AUDIO"
-        if total <= 0:
-            bad.append(pet)
-        print("  %-12s %-9s bytes=%d" % (pet, status, total))
+        result = once(vid)
+        if result <= 0:
+            # 0 字节可能是上游瞬断（DNS/限流），隔一下再试一次，避免把抖动误判成音色坏了
+            time.sleep(1.0)
+            result = once(vid)
+            note = " (重试后)"
     except Exception as exc:
         bad.append(pet)
         print("  %-12s FAIL %s: %s" % (pet, type(exc).__name__, str(exc)[:100]))
+        time.sleep(SLEEP_BETWEEN)
+        continue
+    if result <= 0:
+        bad.append(pet)
+        print("  %-12s NO_AUDIO bytes=0%s" % (pet, note))
+    else:
+        print("  %-12s OK       bytes=%d%s" % (pet, result, note))
+    time.sleep(SLEEP_BETWEEN)
 print("BAD=" + (",".join(bad) if bad else "none"))
 '''
 

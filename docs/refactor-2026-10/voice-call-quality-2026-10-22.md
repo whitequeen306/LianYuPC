@@ -262,6 +262,64 @@ DashScope 的失败有两种形态：非 200，以及 **200 + `event:error` 的 
 原来的实现只数音频块数，于是线上表现是"静默没有声音、日志里什么都没有"。
 现在没有音频时会打 `tts stream produced NO audio model=... voice=... upstream=...`。
 
+### 5.1 这条日志立刻抓到一个真问题：DNS 抖动 = 整句静默
+
+2026-10-23 给 13 个音色做全量体检时，其中一次返回 0 字节。查日志：
+
+```
+11:33:04 WARNING app.tts tts stream aborted after 0 chunks:
+          [Errno -3] Temporary failure in name resolution
+```
+
+容器内解析 `dashscope.aliyuncs.com` 瞬时失败。**流式合成原来没有任何重试**，所以一次抖动
+就等于那一句话完全没有声音（通话里表现为"这句它没出声"，而且不报错、不提示）。
+
+两处修：
+
+* `is_transient_network_failure` 的 token 列表补上 `name resolution` / `temporary failure`
+  —— 这是该错误的真实报文，原来只匹配 `failed to resolve`，正好漏掉
+* `synthesize_stream` 在**一块音频都没发出**时重试一次（`emitted == 0` 才重试：
+  已经吐过音频再重试会让同一句播两遍，那种情况只收尾不重试）
+
+顺带修了体检工具本身：连发 13 个请求容易撞限流/DNS 抖动，现在每次间隔 0.4s、
+0 字节时自动重试一次，免得把上游抖动误判成"音色坏了"（这次就差点误判成绫华音色被删坏）。
+
+---
+
+## 5.2 角色音色重做流程（2026-10-23 起）
+
+用户提供了各角色的 B 站官方语音合集，重做流程已经完全脚本化：
+
+```
+# 1. 下载并转单声道
+yt-dlp -f bestaudio -x --audio-format wav -o "artifacts/voice-src/<pet>-video.%(ext)s" <url>
+ffmpeg -y -i artifacts/voice-src/<pet>-video.wav -ac 1 -ar 48000 artifacts/voice-src/<pet>-mono.wav
+# 2. 从十几分钟里挑 15-20 秒（会打印前 N 名候选及指标）
+python scripts/pick_from_video.py artifacts/voice-src/<pet>-mono.wav --seconds 18 \
+    --out artifacts/voice-vc/<pet>-bili18s-mono.wav
+# 3. 把该文件加进 re_enroll_pet_voices.py 的 PLAN 首位，然后重注册
+DSK=<key> DS_MODEL=cosyvoice-v3.5-flash DS_OUT_NAME=v35flash-18s DS_CLIP_SECONDS=18 \
+    python scripts/re_enroll_pet_voices.py --only <pet> --force
+# 4. 写回注册表 → 部署 → 全量体检
+DS_OUT_NAME=v35flash-18s DS_MODEL=cosyvoice-v3.5-flash python scripts/write_pet_voices_registry.py
+python scripts/verify_pet_voices_prod.py
+```
+
+已重做的 6 个（2026-10-23，全部经用户确认比旧版更像）：
+
+| 角色 | 视频 | 选中起点 | 平坦度 | F0 |
+| --- | --- | --- | --- | --- |
+| 八重神子 | BV1kt4y1P7HB 13.5min | 12.0s | 0.067 | 253Hz |
+| 雷电将军 | BV1nP4y1X7Zv 10.8min | 63.0s | 0.104 | 222Hz |
+| 胡桃 | BV1SK411d7Nm 7.6min | 227.0s | 0.024 | 322Hz |
+| 芙宁娜 | BV1Le411D7iK 15.7min | 529.0s | 0.083 | 298Hz |
+| 纳西妲 | BV1514y1W7JL 12.8min | 385.0s | 0.024 | 271Hz |
+| 神里绫华 | BV1pe4y1g7SZ 12.5min | 382.0s | 0.032 | 220Hz |
+
+**注意**：`F0 相对标准差`这一指标**不能**用来筛"是不是同一个角色"。拿已上线且用户认可
+"很像"的素材标定后会发现 klee 0.267、甘雨 0.282、申鹤 0.370 —— 中文口语的语调起伏本来
+就这么大。它只能粗筛"这段是不是混了两个人在交替说话"，阈值放到 0.45。
+
 ---
 
 ## 6. 遗留 / 下一步
