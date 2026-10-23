@@ -56,7 +56,11 @@ HEADERS = {"Authorization": f"Bearer {KEY}", "Content-Type": "application/json"}
 #   2) 长度 ≤ 10
 # 旧实现（sanitize_preferred_name）允许 [a-z0-9_] 且 32 位，迁移时要一起收紧。
 PLAN: list[tuple[str, str, list[Path]]] = [
-    ("klee",        "lyklee",    [VC / "klee-rt-enroll-40s-mono.wav", SAMPLES / "klee-clip.wav"]),
+    ("klee",        "lyklee",
+     # 2026-10-23「原神语音收录-可莉」（BV16R4y1D7Vx，8.6 分钟）里 239.0s 起 18 秒：
+     # 平坦度 0.095、有声 70%、F0 398Hz —— 按**现有音色的 403Hz** 对齐挑的，不是按视频中位数。
+     # 这个视频的音高中位数只有 333Hz（含不少平静语气的台词），按中位数挑会明显偏低。
+     [VC / "klee-bili18s-mono.wav", VC / "klee-rt-enroll-40s-mono.wav", SAMPLES / "klee-clip.wav"]),
     ("ganyu",       "lyganyu",   [VC / "ganyu-rt-enroll-40s-mono.wav", SAMPLES / "ganyu-clip.wav"]),
     ("ayaka",       "lyayaka",
      # 2026-10-23 官方语音合集（BV1pe4y1g7SZ，12.5 分钟）里 382.0s 起 18 秒：
