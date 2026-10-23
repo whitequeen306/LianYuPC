@@ -74,7 +74,11 @@ def is_transient_network_failure(exc: BaseException | None) -> bool:
         if isinstance(current, (httpx.ConnectError, httpx.ConnectTimeout)):
             return True
         message = str(current).lower()
-        for token in ("try again", "timed out", "connection reset", "failed to resolve", "transient http"):
+        for token in ("try again", "timed out", "connection reset", "failed to resolve",
+                      # 容器内 DNS 抖动的实际报文（2026-10-23 生产日志）：
+                      # "[Errno -3] Temporary failure in name resolution"
+                      # 漏掉这两个 token 就不会重试，表现为「那一句静默没声音」。
+                      "name resolution", "temporary failure", "transient http"):
             if token in message:
                 return True
         current = current.__cause__ or current.__context__
@@ -282,29 +286,40 @@ async def synthesize_stream(
     # （例如音色与模型不匹配时会返回 200 + Engine error code 418）。后者如果只数块数，
     # 线上表现就是「静默没有声音、日志里什么都没有」，根本没法查。所以留一条上游原文。
     upstream_error: str | None = None
-    try:
-        # 复用长连接：每句一次 POST，重新握手（境内到阿里云 150-300ms）纯属白送延迟
-        client = shared_client("dashscope-tts")
-        async with client.stream(
-            "POST", url, json=payload, headers=headers,
-            timeout=(connect_timeout, read_timeout, 30.0, 30.0),
-        ) as response:
-            if response.status_code != 200:
-                detail = (await response.aread())[:200]
-                logger.warning("tts stream HTTP %s: %s", response.status_code, detail)
-                return
-            async for line in response.aiter_lines():
-                chunk = _decode_sse_audio(line)
-                if chunk:
-                    if emitted == 0:
-                        first_chunk_ms = (time.perf_counter() - started) * 1000
-                    emitted += 1
-                    yield chunk
-                elif emitted == 0 and upstream_error is None and line.startswith("data:"):
-                    upstream_error = line[5:].strip()[:300]
-    except Exception as exc:  # noqa: BLE001 - 流式失败不向调用方抛
-        logger.warning("tts stream aborted after %d chunks: %s", emitted, exc)
-        return
+    for attempt in (1, _MAX_ATTEMPTS):
+        try:
+            # 复用长连接：每句一次 POST，重新握手（境内到阿里云 150-300ms）纯属白送延迟
+            client = shared_client("dashscope-tts")
+            async with client.stream(
+                "POST", url, json=payload, headers=headers,
+                timeout=(connect_timeout, read_timeout, 30.0, 30.0),
+            ) as response:
+                if response.status_code != 200:
+                    detail = (await response.aread())[:200]
+                    logger.warning("tts stream HTTP %s: %s", response.status_code, detail)
+                    return
+                async for line in response.aiter_lines():
+                    chunk = _decode_sse_audio(line)
+                    if chunk:
+                        if emitted == 0:
+                            first_chunk_ms = (time.perf_counter() - started) * 1000
+                        emitted += 1
+                        yield chunk
+                    elif emitted == 0 and upstream_error is None and line.startswith("data:"):
+                        upstream_error = line[5:].strip()[:300]
+            break
+        except Exception as exc:  # noqa: BLE001 - 流式失败不向调用方抛
+            # 仅在**一块音频都没发出去**时才重试：那种情况下重试不会重复播放，
+            # 也不会有拼接问题。已经吐过音频再断流，只能就此收尾（客户端播已有的部分）。
+            if emitted == 0 and attempt < _MAX_ATTEMPTS and is_transient_network_failure(exc):
+                logger.warning(
+                    "tts stream retry attempt=%d/%d after 0 chunks: %s",
+                    attempt, _MAX_ATTEMPTS, exc,
+                )
+                await asyncio.sleep(0.2 * attempt)
+                continue
+            logger.warning("tts stream aborted after %d chunks: %s", emitted, exc)
+            return
     if emitted == 0:
         logger.warning(
             "tts stream produced NO audio model=%s voice=%s upstream=%s",

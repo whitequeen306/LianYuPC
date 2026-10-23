@@ -203,6 +203,33 @@ async def test_synthesize_stream_logs_upstream_reason_when_http_200_but_no_audio
 
 
 @respx.mock
+async def test_synthesize_stream_retries_transient_dns_failure():
+    """容器内 DNS 抖动会让整句静默没声音，必须重试一次。
+
+    2026-10-23 生产日志实录：
+        tts stream aborted after 0 chunks: [Errno -3] Temporary failure in name resolution
+    一次体检 13 个音色就有一次撞上，线上表现就是「这句话它没出声」。
+    """
+    from app.tts import synthesize_stream
+
+    route = respx.post(SPEECH_SYNTH)
+    route.side_effect = [
+        httpx.ConnectError("[Errno -3] Temporary failure in name resolution"),
+        httpx.Response(200, content=_sse(b"AB"), headers={"Content-Type": "text/event-stream"}),
+    ]
+
+    chunks = [
+        c
+        async for c in synthesize_stream(
+            api_key="k", model="cosyvoice-v3.5-flash", voice_id="v1", text="hi"
+        )
+    ]
+
+    assert chunks == [b"AB"], "第一次失败后应该重试并成功"
+    assert route.call_count == 2
+
+
+@respx.mock
 async def test_synthesize_stream_falls_back_to_whole_audio_for_legacy_models():
     """qwen3-tts 家族不支持 SSE：退回整句合成，仍然产出「一块完整音频」。"""
     from app.tts import synthesize_stream
