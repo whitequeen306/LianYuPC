@@ -3,6 +3,32 @@
 > 2026-10-21 整理。上一次真实出包是 **0.2.367（2026-10-07）**，之后 13 天没发过包，
 > 期间踩了三个纯环境坑，全部记在这里，下次直接照着走。
 
+> **2026-10-23 又踩到一个：打包前的 smoke-launcher 在某些终端里会直接崩。**
+>
+> | 症状 | 真因 |
+> | --- | --- |
+> | `TypeError: Cannot read properties of undefined (reading 'setAppUserModelId')` | 环境里有 `ELECTRON_RUN_AS_NODE=1`，electron.exe 被当成普通 Node 跑，`require('electron').app` 是 undefined |
+> | 退出码 `-2147483645`（0x80000003）、无任何输出 | Chromium 沙箱进程起不来（受限终端 / 沙箱环境） |
+> | `LAUNCHER_SMOKE_FAIL EPERM ... AppData\Roaming\Electron\desktop-settings.json` | 默认 userData 目录不可写 |
+>
+> 解法（不改构建逻辑）：
+>
+> ```powershell
+> Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+> $ud = Join-Path (Get-Location) ".tmp\launcher-smoke-userdata"
+> $env:SMOKE_ELECTRON_ARGS = "--no-sandbox --user-data-dir=$ud"
+> $env:GH_TOKEN = (gh auth token).Trim()
+> npm run electron:release
+> ```
+>
+> `SMOKE_ELECTRON_ARGS` 是 smoke-launcher.mjs 新增的口子，**只影响本地打包前的冒烟**，
+> 装出来的应用仍走默认沙箱；userData 放 `.tmp/` 下（该目录已被 gitignore）。
+>
+> 另注意：`electron:release` 第一步就是 `npm version patch`。若打包中途失败，必须
+> `git checkout -- frontend/package.json frontend/package-lock.json` 回退版本号再重试，
+> 否则每重试一次版本号就跳一级（0.3.4 → 0.3.5 → 0.3.6…）。
+
+
 ## 一、发版链路（谁管什么）
 
 ```

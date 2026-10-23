@@ -46,7 +46,19 @@ if (!fs.existsSync(electronBin)) {
 }
 
 console.log('smoke-launcher: starting Electron launcher smoke test...')
-const result = spawnSync(electronBin, [mainEntry], {
+// 受限环境（CI 容器 / 沙箱）里 Chromium 的沙箱进程起不来，默认 userData 目录也可能不可写，
+// 于是 Electron 会以 0x80000003 直接崩掉、或用 EPERM 打开 desktop-settings.json 失败。
+// 用 SMOKE_ELECTRON_ARGS 透传额外参数即可，例如：
+//   SMOKE_ELECTRON_ARGS="--no-sandbox --user-data-dir=C:\tmp\ud"
+// 注意：这只是**本地打包前的冒烟**，装出来的应用仍然走默认沙箱。
+const extraArgs = (process.env.SMOKE_ELECTRON_ARGS || '')
+  .split(/\s+/)
+  .map((s) => s.trim())
+  .filter(Boolean)
+if (extraArgs.length) {
+  console.log(`smoke-launcher: extra electron args: ${extraArgs.join(' ')}`)
+}
+const result = spawnSync(electronBin, [...extraArgs, mainEntry], {
   cwd: path.join(root, 'dist-electron'),
   env: {
     ...process.env,
