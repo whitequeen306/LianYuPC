@@ -58,7 +58,11 @@ HEADERS = {"Authorization": f"Bearer {KEY}", "Content-Type": "application/json"}
 PLAN: list[tuple[str, str, list[Path]]] = [
     ("klee",        "lyklee",    [VC / "klee-rt-enroll-40s-mono.wav", SAMPLES / "klee-clip.wav"]),
     ("ganyu",       "lyganyu",   [VC / "ganyu-rt-enroll-40s-mono.wav", SAMPLES / "ganyu-clip.wav"]),
-    ("ayaka",       "lyayaka",   [VC / "ayaka-rt-enroll-40s-mono.wav", SAMPLES / "ayaka-clip.wav"]),
+    ("ayaka",       "lyayaka",
+     # 2026-10-23 官方语音合集（BV1pe4y1g7SZ，12.5 分钟）里 382.0s 起 18 秒：
+     # 平坦度 0.032、有声 68%、F0 220Hz
+     [VC / "ayaka-bili18s-mono.wav", VC / "ayaka-rt-enroll-40s-mono.wav",
+      SAMPLES / "ayaka-clip.wav"]),
     ("raiden",      "lyraiden",
      # 首选 2026-10-23 从官方语音合集视频里挑的 18 秒（BV1nP4y1X7Zv，《原神语音收录-雷电将军》，
      # pick_from_video.py 在 63.0s 起选出：平坦度 0.104、有声占比 76%、F0 222Hz）。
@@ -73,9 +77,19 @@ PLAN: list[tuple[str, str, list[Path]]] = [
       VC / "yae_miko-vc-source-mono.wav"]),
     ("kokomi",      "lykokomi",  [VC / "kokomi-vc-source-mono.wav"]),
     ("shenhe",      "lyshenhe",  [VC / "shenhe-vc-source-mono.wav"]),
-    ("nahida",      "lynahida",  [VC / "nahida-vc-enroll-55s-mono.wav", VC / "nahida-vc-source-mono.wav"]),
-    ("hu_tao",      "lyhutao",   [VC / "hu_tao-vc-source-mono.wav"]),
-    ("furina",      "lyfurina",  [VC / "furina-vc-source-mono.wav"]),
+    ("nahida",      "lynahida",
+     # 2026-10-23 官方语音合集（BV1514y1W7JL，12.8 分钟）里 385.0s 起 18 秒：
+     # 平坦度 0.024、有声 71%、F0 271Hz
+     [VC / "nahida-bili18s-mono.wav", VC / "nahida-vc-enroll-55s-mono.wav",
+      VC / "nahida-vc-source-mono.wav"]),
+    ("hu_tao",      "lyhutao",
+     # 2026-10-23 官方语音合集（BV1SK411d7Nm，7.6 分钟）里 227.0s 起 18 秒：
+     # 平坦度 0.024、有声 72%、F0 322Hz
+     [VC / "hu_tao-bili18s-mono.wav", VC / "hu_tao-vc-source-mono.wav"]),
+    ("furina",      "lyfurina",
+     # 2026-10-23 官方语音合集（BV1Le411D7iK，15.7 分钟）里 529.0s 起 18 秒：
+     # 平坦度 0.083、有声 79%、F0 298Hz
+     [VC / "furina-bili18s-mono.wav", VC / "furina-vc-source-mono.wav"]),
     ("noelle",      "lynoelle",  [VC / "noelle-vc-source-mono.wav"]),
 ]
 
