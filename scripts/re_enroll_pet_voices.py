@@ -60,12 +60,17 @@ PLAN: list[tuple[str, str, list[Path]]] = [
     ("ganyu",       "lyganyu",   [VC / "ganyu-rt-enroll-40s-mono.wav", SAMPLES / "ganyu-clip.wav"]),
     ("ayaka",       "lyayaka",   [VC / "ayaka-rt-enroll-40s-mono.wav", SAMPLES / "ayaka-clip.wav"]),
     ("raiden",      "lyraiden",
-     # 顺序很关键：raiden-clip.wav 是 15 秒、频谱平坦度 0.353 的含噪片段（复刻会把噪声一起
-     # 学进去，听感是"声音对但不像她"）。raiden.wav 是 46 秒 48kHz 原素材，平坦度 0.119。
-     [SAMPLES / "raiden.wav", SAMPLES / "raiden-clip.wav"]),
+     # 首选 2026-10-23 从官方语音合集视频里挑的 18 秒（BV1nP4y1X7Zv，《原神语音收录-雷电将军》，
+     # pick_from_video.py 在 63.0s 起选出：平坦度 0.104、有声占比 76%、F0 222Hz）。
+     # 之前的 raiden-clip.wav 是 15 秒、平坦度 0.353 的含噪片段（会把噪声一起学进去）。
+     [VC / "raiden-bili18s-mono.wav", SAMPLES / "raiden.wav", SAMPLES / "raiden-clip.wav"]),
     ("elysia",      "lyelysia",  [VC / "elysia-vc-source-mono.wav"]),
     ("erii_uesugi", "lyerii",    [VC / "erii_uesugi-rt-enroll-40s-mono.wav", VC / "eriri-vc-source-mono.wav"]),
-    ("yae_miko",    "lyyaemiko", [VC / "yae_miko-vc-enroll-55s-mono.wav", VC / "yae_miko-vc-source-mono.wav"]),
+    ("yae_miko",    "lyyaemiko",
+     # 首选 2026-10-23 从官方语音合集视频挑的 18 秒（BV1kt4y1P7HB，《原神语音收录-八重神子》，
+     # pick_from_video.py 在 12.0s 起选出：平坦度 0.067、有声占比 71%、F0 253Hz）。
+     [VC / "yae_miko-bili18s-mono.wav", VC / "yae_miko-vc-enroll-55s-mono.wav",
+      VC / "yae_miko-vc-source-mono.wav"]),
     ("kokomi",      "lykokomi",  [VC / "kokomi-vc-source-mono.wav"]),
     ("shenhe",      "lyshenhe",  [VC / "shenhe-vc-source-mono.wav"]),
     ("nahida",      "lynahida",  [VC / "nahida-vc-enroll-55s-mono.wav", VC / "nahida-vc-source-mono.wav"]),
