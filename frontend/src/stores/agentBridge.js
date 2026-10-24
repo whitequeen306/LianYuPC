@@ -223,10 +223,19 @@ export const useAgentBridgeStore = defineStore('agentBridge', () => {
       result = { ok: false, errorCode: 'action_failed', text: e?.message || '本地调用异常' }
     }
     try {
+      // 关键：桥接协议只透传 `content` 字符串（Java 侧 BridgeResult 只有 text/images/policy）。
+      // 所以结构化观测（元素编号、窗口列表）必须**塞进 content 里**，否则 Python 只拿到
+      // 一段人话，模型就不知道 element_id，也没法判断「窗口到底出现没有」。
+      // 约定：有结构化数据时 content = {"text": "...", "data": {...}}；Python 侧解析。
+      const data = result?.data && typeof result.data === 'object' ? result.data : null
+      const hasData = data && Object.keys(data).length > 0
+      const content = hasData
+        ? JSON.stringify({ text: result?.text || '', data })
+        : (result?.text || result?.content || '')
       await postAgentToolResult({
         requestId: message.requestId,
         ok: result?.ok === true,
-        content: result?.text || result?.content || '',
+        content,
         // 能力层回的是机器可读错误码（Java 透传给 Python 做文案翻译）
         error: result?.errorCode || result?.error || '',
         images: Array.isArray(result?.images) ? result.images : undefined,

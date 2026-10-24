@@ -15,7 +15,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+from dataclasses import replace
 from typing import Any
 
 from app.capability.budget import TaskBudget
@@ -189,6 +191,25 @@ def _actor_from(internal: dict[str, Any]) -> dict[str, Any]:
         actor["name"] = str(name)
     return actor
 
+
+def _normalize_result(result: DesktopExecResult) -> DesktopExecResult:
+    """把桥接回来的 `content` 还原成 (text, data)。
+
+    背景：Electron → Java → Python 这条链只透传一个 `content` 字符串
+    （Java 的 BridgeResult 只有 text/images/policy），结构化观测会被丢掉。
+    所以渲染端在 content 里塞 {"text": ..., "data": {...}}，这里拆回来；
+    没有结构化数据时 content 仍是纯文本，直接原样用。
+    """
+    text = (result.text or "").strip()
+    if not text.startswith("{") or '"data"' not in text:
+        return result
+    try:
+        payload = json.loads(text)
+    except (ValueError, TypeError):
+        return result
+    if not isinstance(payload, dict) or not isinstance(payload.get("data"), dict):
+        return result
+    return replace(result, text=str(payload.get("text") or ""), data=payload["data"])
 
 # ── 结果格式化 ────────────────────────────────────────────────────────────
 
@@ -392,7 +413,7 @@ async def call_desktop_tool(name: str, arguments: dict[str, Any] | None = None) 
         args = dict(extra)
         if op_name in ("desk_click", "desk_type", "desk_key", "desk_scroll", "desk_window_focus"):
             args["evidence"] = evidence
-        return await channel.exec(
+        raw = await channel.exec(
             user_id=int(user_id),
             session_id=session_id,
             step_id=op_step_id,
@@ -403,6 +424,7 @@ async def call_desktop_tool(name: str, arguments: dict[str, Any] | None = None) 
             danger=decision.danger,
             actor=actor,
         )
+        return _normalize_result(raw)
 
     # 4) 语义组装（新工具在这里被翻译成原子 op）
     if name == "desk_find":
