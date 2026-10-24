@@ -196,6 +196,10 @@ Electron 主进程          服务端 Java                  Python backend-agent
 **已知坑（脚本已兜底，别绕过它）**：
 - **`docker compose up -d --build <svc>` 在服务器上会挂死**（构建完成但 compose 不退出）：
   必须 `build` 与 `up -d --no-build` 两步走。
+- **compose 输出接 PTY 时可能永不返回 EOF**：deploy 段会假死在最后一条 `build` 上（服务器侧其实
+  早已完成、镜像也在），表现为「日志停住 5 分钟以上且服务器上没有构建进程」。排查口诀：
+  `ps -eo etime,cmd | grep 'docker compose'` 为空 = 命令已结束，别等它；
+  `_cloud_deploy_pull.py` 里跑 docker 的命令应加 `timeout` 并改用非 PTY（`get_pty=False`），或显式按 exit code 判定。
 - **不要单独跑 `electron-pack.mjs` 就发布**：那样只有原生 NSIS（约 168MB），
   安装界面会退化成白框；品牌 WPF 壳由 `prepare-branded-release.mjs` 生成（约 231MB）。
 - 本机打包/发版前要**清掉 `ELECTRON_RUN_AS_NODE`**，并给打包冒烟传
