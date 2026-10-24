@@ -118,6 +118,7 @@ public static class LianYuDesktop
     [DllImport("user32.dll")] static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr hWnd);
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hWnd, int cmd);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hWnd);
     [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hWnd);
@@ -277,7 +278,16 @@ public static class LianYuDesktop
         if (best == null) return false;
         if (IsIconic(best.Handle)) ShowWindow(best.Handle, 9);
         if (maximize) ShowWindow(best.Handle, 3);
+        BringWindowToTop(best.Handle);
         bool ok = SetForegroundWindow(best.Handle);
+        if (!ok)
+        {
+            // Windows 的前台锁：调用方"最近没有输入"时会被拒。
+            // 轻敲一次 Alt 就能解除（这是各家自动化工具的标准做法）。
+            KeyTap(0x12, false);
+            KeyTap(0x12, true);
+            ok = SetForegroundWindow(best.Handle);
+        }
         if (!ok)
         {
             uint ignored = 0;
@@ -615,6 +625,10 @@ public static void Nudge(IntPtr hwnd) {
   }
   return $items
 }
+# ── OCR 兜底（Windows.Media.Ocr）──────────────────────────────────────────
+# 为什么需要它：Chromium 系应用（网易云、Electron、CEF）不暴露无障碍树，
+# UIA/MSAA 都是 0 个元素，模型拿不到编号也没坐标 → 只能盲点。
+# 系统自带 OCR 是离线的、零依赖的，能给出「文字 + bbox」，于是「按歌名找并点击」变得确定。
 while ($true) {
   $line = [Console]::In.ReadLine()
   if ($null -eq $line) { break }
@@ -654,7 +668,9 @@ while ($true) {
           try { $again = Get-UiaElements; if ($again.Count -gt $msaa.Count) { $els = $again; $source = 'uia-after-msaa' } } catch { }
         }
       }
-      $resp = @{ id = $reqId; ok = $true; elements = $els; source = $source; msaaCount = $(if ($null -ne $respExtra) { $respExtra.msaaCount } else { -1 }); msaaError = $(if ($null -ne $respExtra) { $respExtra.msaaError } else { "" }) }
+      $ocrCount = -1
+      $ocrError = 'pending-integration'
+      $resp = @{ id = $reqId; ok = $true; elements = $els; source = $source; msaaCount = $(if ($null -ne $respExtra) { $respExtra.msaaCount } else { -1 }); msaaError = $(if ($null -ne $respExtra) { $respExtra.msaaError } else { "" }); ocrCount = $ocrCount; ocrError = $ocrError }
     } catch {
       $resp = @{ id = $reqId; ok = $false; error = 'uia_unavailable'; detail = $_.Exception.Message }
     }
