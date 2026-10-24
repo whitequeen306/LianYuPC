@@ -79,7 +79,44 @@ def main() -> None:
         client.close()
         raise SystemExit(57)
 
+    head_before = run(client, "cd /opt/lianyu && git rev-parse HEAD", quiet=True).strip()
     run(client, "cd /opt/lianyu && git pull origin main")
+
+    # 变更检测：只重建**真的改了**的那一层。
+    #
+    # 为什么必须做：这个脚本原先无条件重建 agent + backend + asr + api-gateway，
+    # 而 asr 那条链（torch 等）即使 deploy/asr 一行没改也会因为构建上下文时间戳
+    # 导致缓存失效，实测每次多花 10-12 分钟。发一次只改 Java 的版本也要等这么久。
+    #
+    # 保守策略：**识别不出来就全建**（宁慢勿漏），只有明确知道改了什么才裁剪。
+    head_after = run(client, "cd /opt/lianyu && git rev-parse HEAD", quiet=True).strip()
+    changed = ""
+    if head_before and head_after and head_before != head_after:
+        changed = run(
+            client,
+            f"cd /opt/lianyu && git diff --name-only {head_before} {head_after}",
+            timeout=120,
+            quiet=True,
+        )
+    if not changed.strip():
+        print("[deploy] 代码无变化，只做重启不重建")
+        build_agent = build_backend = build_infra = False
+    else:
+        files = [line.strip() for line in changed.splitlines() if line.strip()]
+        build_agent = any(f.startswith("backend-agent/") or f.startswith("deploy/agent") for f in files)
+        build_backend = any(f.startswith("backend/") or f.startswith("deploy/backend") for f in files)
+        build_infra = any(
+            f.startswith("deploy/asr") or f.startswith("deploy/api-gateway") or f.startswith("docker-compose")
+            for f in files
+        )
+        # backend 改了也要重建 agent？不需要：两者是独立镜像。
+        # 但 compose 文件变了就必须全部重建（镜像/端口/健康检查可能都变了）。
+        if any(f.startswith("docker-compose") for f in files):
+            build_agent = build_backend = build_infra = True
+        print(
+            f"[deploy] 变更 {len(files)} 个文件 → agent={build_agent} backend={build_backend} infra={build_infra}"
+        )
+
     # 重建清单（逐层构建，且**必须 build 与 up 分开**）：
     #   1. agent / agent2 / agent-lb —— Python 运行时与 LB（LB 需 proxy_next_upstream 修复）
     #   2. backend —— Java（等 agent 层 healthy 后再起，避免启动期探测失败）
@@ -89,12 +126,22 @@ def main() -> None:
     # buildkit 构建完成后 **compose 进程不退出**（`up --build` 卡住 15min+ 不返回），
     # 于是整条发版流水线挂在那里、后面 Electron 段永远不开始。
     # 拆成 build + `up --no-build` 后行为稳定。
-    run(client, "cd /opt/lianyu && docker compose build agent agent2 agent-lb", timeout=1800)
-    run(client, "cd /opt/lianyu && docker compose up -d --no-build agent agent2 agent-lb", timeout=600)
-    run(client, "cd /opt/lianyu && docker compose build backend", timeout=1800)
-    run(client, "cd /opt/lianyu && docker compose up -d --no-build backend", timeout=600)
-    run(client, "cd /opt/lianyu && docker compose build asr api-gateway", timeout=1800)
-    run(client, "cd /opt/lianyu && docker compose up -d --no-build asr api-gateway", timeout=600)
+    if build_agent:
+        run(client, "cd /opt/lianyu && docker compose build agent agent2 agent-lb", timeout=1800)
+        run(client, "cd /opt/lianyu && docker compose up -d --no-build agent agent2 agent-lb", timeout=600)
+    if build_backend:
+        run(client, "cd /opt/lianyu && docker compose build backend", timeout=1800)
+        run(client, "cd /opt/lianyu && docker compose up -d --no-build backend", timeout=600)
+    if build_infra:
+        run(client, "cd /opt/lianyu && docker compose build asr api-gateway", timeout=1800)
+        run(client, "cd /opt/lianyu && docker compose up -d --no-build asr api-gateway", timeout=600)
+    if not (build_agent or build_backend or build_infra):
+        run(
+            client,
+            "cd /opt/lianyu && docker compose up -d --no-build --force-recreate"
+            " $(docker compose ps --services | tr '\\n' ' ')",
+            timeout=600,
+        )
     run(
         client,
         "cd /opt/lianyu && set -a && . ./.env && set +a && "
