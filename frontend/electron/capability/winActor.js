@@ -601,7 +601,10 @@ export function createWinActor({
   let seq = 0
   let startedAt = 0
   const pending = new Map()
-  const scriptFile = scriptPath || path.join(os.tmpdir(), `lianyu-win-actor-${process.pid}.ps1`)
+  // 显式给了 tempDir（企业策略/沙箱把 %TEMP% 锁死）时，脚本也要落在那里，
+    // 否则 `writeFileSync` 直接 EPERM → 整个能力层退化 actor_down。
+    const scriptRoot = scriptPath ? path.dirname(scriptPath) : (tempDir || os.tmpdir())
+    const scriptFile = scriptPath || path.join(scriptRoot, `lianyu-win-actor-${process.pid}.ps1`)
 
   function failAll(reason) {
     for (const [, entry] of pending) {

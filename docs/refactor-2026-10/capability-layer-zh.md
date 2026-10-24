@@ -113,3 +113,14 @@ actor 在真机验证：`foreground`/`windows` 正确；UIA 收割冷 759ms / **
 2. `desk_ocr` / `desk_now_playing`（WinRT）与流式 usage 归因未做，理由见 P3 记录；
 3. 确认弹窗目前只有人话描述，**没有目标区域局部放大截图**；
 4. 音量绝对值是 ±2% 精度（VK 步进），不是 CoreAudio 精确设定。
+
+
+### 5.0.1 真机验证留档
+
+- ![顶部操控横幅](capability-banner-verified.png) —— 角色正在操控电脑时的屏幕顶部横幅：{头像}{角色名}正在操控你的电脑 · {当前动作} · Esc 取消（2026-10-24 真机截图）
+- ![横幅与桌面](capability-banner-desktop.png) —— 横幅叠在真实桌面最上层（always-on-top，不抢焦点）
+
+真机验证同时修掉三个只在真实环境才暴露的问题：
+1. ocusable:false 的窗口调 showInactive() 可能**完全不显示** → 补 isVisible() 兜底再 show()；
+2. 每步更新文案时把「{角色名}正在操控你的电脑」整句覆盖掉了 → 改成保留前缀、只换后半句；
+3. 主进程 console.log 在 stdout 关闭（父进程管道断开）时抛 EPIPE，被 uncaughtException 再打一次 → **无限递归卡死主进程**（实测日志涨到 191MB、IPC 全超时）→ 给 stdout 镜像加熔断。

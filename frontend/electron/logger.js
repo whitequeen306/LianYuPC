@@ -76,15 +76,49 @@ function rotateIfNeeded() {
  * @param {string} tag - 来源标签（main / qqBridge / napcatHost / renderer / vue-error 等）
  * @param {...any} args - 日志内容
  */
+/**
+ * stdout 镜像的保险丝。
+ *
+ * 真实事故（2026-10-24）：把 App 从「父进程管道已被关闭」的会话里启动时，
+ * 每次 console.log 都抛 `EPIPE: broken pipe`；uncaughtException 处理器又用
+ * logger.error 打印 → 再抛 EPIPE → 无限递归，**主进程直接被卡死**（IPC 全部超时）。
+ * 所以：stdout 一旦坏掉就永久只写文件，绝不让日志把应用搞挂。
+ */
+let stdoutBroken = false
+
+function markStdoutBroken() {
+  stdoutBroken = true
+}
+
+function mirrorToStdout(level, message) {
+  if (stdoutBroken) return
+  try {
+    if (level === 'ERROR') console.error(message)
+    else if (level === 'WARN') console.warn(message)
+    else console.log(message)
+  } catch {
+    markStdoutBroken()
+  }
+}
+
+// EPIPE 有时不是抛出，而是以 stream 'error' 事件出现（Node 的 stdout 是异步写的）
+try {
+  process.stdout?.on?.('error', (err) => {
+    if (err?.code === 'EPIPE' || err?.code === 'ERR_STREAM_DESTROYED') markStdoutBroken()
+  })
+  process.stderr?.on?.('error', (err) => {
+    if (err?.code === 'EPIPE' || err?.code === 'ERR_STREAM_DESTROYED') markStdoutBroken()
+  })
+} catch {
+  /* 某些运行时没有可用的 stdout，忽略 */
+}
+
 export function log(level, tag, ...args) {
   const ts = new Date().toISOString()
   const msg = args.map(stringifyArg).join(' ')
   const line = `[${ts}] [${level.toUpperCase()}] [${tag}] ${msg}\n`
-  // stdout 镜像（开发可见、生产 stdout 也有）
-  const consoleMsg = line.trimEnd()
-  if (level === 'ERROR') console.error(consoleMsg)
-  else if (level === 'WARN') console.warn(consoleMsg)
-  else console.log(consoleMsg)
+  // stdout 镜像（开发可见）；坏掉后自动只剩文件日志
+  mirrorToStdout(level.toUpperCase(), line.trimEnd())
 
   try {
     fs.mkdirSync(getLogDir(), { recursive: true })

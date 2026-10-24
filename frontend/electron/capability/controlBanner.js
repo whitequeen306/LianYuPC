@@ -169,6 +169,8 @@ export function createControlBanner({
   let displayListener = null
   /** 当前展示的身份（名字+头像）：同一角色连续动作时只改文案，不重载页面（避免闪一帧） */
   let currentIdentity = ''
+  /** 记住名字，update() 时要把「XXX正在操控你的电脑」保住，只换后面那半句 */
+  let currentName = '角色'
 
   function primaryBounds() {
     const display = screen?.getPrimaryDisplay?.() || screen?.getDisplayNearestPoint?.({ x: 0, y: 0 })
@@ -245,17 +247,22 @@ export function createControlBanner({
 
   /**
    * 只换文案不重建窗口（多步任务里每步都会调一次）。
-   * 传入的是「当前这一步在干什么」，例如「正在打开网易云音乐」。
+   * 传入的是「当前这一步在干什么」，最终展示为：
+   *   `{角色名}正在操控你的电脑 · 正在打开网易云音乐 · Esc 取消`
    */
   function update(caption) {
     if (!win || win.isDestroyed()) return false
-    const raw = String(caption || '').replace(/\s+/g, ' ').trim().slice(0, 80)
-    if (!raw) return false
-    const text = /esc/i.test(raw) ? raw : `${raw} · Esc 取消`
+    const step = String(caption || '').replace(/\s+/g, ' ').trim().slice(0, 64)
+    if (!step) return false
+    // 已经是完整句子（调用方自己拼好了名字）就不再重复前缀
+    const text = step.includes('正在操控')
+      ? step
+      : `${currentName}正在操控你的电脑 · ${step}`
+    const full = /esc/i.test(text) ? text : `${text} · Esc 取消`
     const js = `(() => {
       const el = document.getElementById('ly-caption')
       if (!el) return false
-      el.textContent = ${JSON.stringify(text)}
+      el.textContent = ${JSON.stringify(full)}
       return true
     })()`
     try {
@@ -277,6 +284,7 @@ export function createControlBanner({
       showTimer = null
     }
     const payload = sanitizeActor(actor)
+    currentName = payload.name
     const identity = `${payload.name}|${payload.avatarUrl}`
     // 同一角色、窗口已在：只更新文案，避免整块重载造成闪烁
     if (identity === currentIdentity && win && !win.isDestroyed() && win.isVisible?.()) {
@@ -292,11 +300,42 @@ export function createControlBanner({
       w.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
         .then(() => {
           if (w.isDestroyed()) return
-          if (typeof w.showInactive === 'function') w.showInactive()
-          else w.show()
+          revealWindow(w)
         })
         .catch((e) => log(`banner load failed: ${e?.message || e}`))
     }, BANNER_SHOW_DELAY_MS)
+  }
+
+  /**
+   * 让窗口真正出现在屏幕上。
+   *
+   * 真实踩到（Win11 + 2026-10-24 真机验证）：`focusable:false` 的窗口调
+   * `showInactive()` 可能**什么都不做**——webContents 已加载、target 也存在，
+   * 但屏幕上根本没有那条横幅。所以这里补一次可见性兜底：
+   *   showInactive → 下一帧检查 isVisible() → 不可见就用 show() 硬唤。
+   * 窗口本身 focusable=false，show() 也不会抢走正在被操控窗口的焦点。
+   */
+  function revealWindow(w) {
+    try {
+      // 重新设一次置顶与尺寸：某些 DPI/多屏场景下 show 之前设的 bounds 会被丢
+      try { w.setAlwaysOnTop(true, 'screen-saver') } catch { /* ignore */ }
+      reposition()
+      if (typeof w.showInactive === 'function') w.showInactive()
+      else w.show()
+    } catch (e) {
+      log(`banner showInactive threw: ${e?.message || e}`)
+    }
+    setTimeout(() => {
+      if (!w || w.isDestroyed()) return
+      let visible = false
+      try { visible = w.isVisible?.() === true } catch { visible = false }
+      if (visible) {
+        log('banner visible')
+        return
+      }
+      log('banner still hidden after showInactive, falling back to show()')
+      try { w.show() } catch (e) { log(`banner show() failed: ${e?.message || e}`) }
+    }, 150)
   }
 
   function hide() {
