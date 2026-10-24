@@ -547,6 +547,74 @@ function Get-UiaElements {
   return $items
 }
 
+# ── MSAA(IAccessible) 兜底 ───────────────────────────────────────────────────
+# Chromium / Electron / 自绘界面常常没有 UIA 树：这类应用只在「检测到辅助技术」时
+# 才构建无障碍树，而通过 oleacc 走 IAccessible(MSAA) 访问本身就是那个触发信号。
+# 产出元素与 UIA 同构（label/role/bbox），所以上层 desk_find / desk_click 不用改。
+function Get-MsaaElements {
+  $items = New-Object System.Collections.ArrayList
+  try { Add-Type -AssemblyName Accessibility -ErrorAction Stop } catch { return $items }
+  try {
+    if (-not ('LianYuMsaa' -as [type])) {
+      Add-Type -Name 'LianYuMsaa' -Namespace '' -MemberDefinition @"
+[DllImport("oleacc.dll")]
+public static extern int AccessibleObjectFromWindow(IntPtr hwnd, uint dwId, ref Guid riid, [MarshalAs(UnmanagedType.Interface)] out object ppvObject);
+
+[DllImport("user32.dll")]
+public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+// 给 Chromium 系应用发 WM_GETOBJECT：这正是屏幕阅读器"上线"时 Chromium 用来
+// 判断「有辅助技术连接」的信号，收到后它才会异步构建无障碍树（需要等几百毫秒）。
+public static void Nudge(IntPtr hwnd) {
+    SendMessage(hwnd, 0x003D, IntPtr.Zero, IntPtr.Zero);
+}
+"@ -ErrorAction Stop
+    }
+  } catch { return $items }
+
+  $hwnd = [LianYuDesktop]::ForegroundHandle()
+  if ($hwnd -eq 0) { return $items }
+
+  $iid = New-Object Guid '618736E0-3C3D-11CF-810C-00AA00389B71'
+  $obj = $null
+  $hr = -1
+  try { $hr = [LianYuMsaa]::AccessibleObjectFromWindow([IntPtr]$hwnd, [uint32]4294967292, [ref]$iid, [ref]$obj) } catch { return $items }
+  if ($hr -ne 0 -or $null -eq $obj) { return $items }
+  $root = $obj -as [Accessibility.IAccessible]
+  if ($null -eq $root) { return $items }
+
+  $queue = New-Object System.Collections.Queue
+  $queue.Enqueue(@{ acc = $root; depth = 0 })
+  $visited = 0
+  while ($queue.Count -gt 0 -and $items.Count -lt 80 -and $visited -lt 500) {
+    $node = $queue.Dequeue()
+    $acc = $node.acc
+    $visited++
+    if ($null -eq $acc) { continue }
+    $count = 0
+    try { $count = $acc.accChildCount } catch { $count = 0 }
+    for ($i = 1; $i -le $count; $i++) {
+      $child = $null
+      try { $child = $acc.get_accChild($i) } catch { $child = $null }
+      if ($null -ne $child) {
+        if ($node.depth -lt 6) { $queue.Enqueue(@{ acc = ($child -as [Accessibility.IAccessible]); depth = ($node.depth + 1) }) }
+        continue
+      }
+      $label = ''
+      try { $label = [string]$acc.get_accName($i) } catch { $label = '' }
+      if ([string]::IsNullOrWhiteSpace($label)) { continue }
+      $x = 0; $y = 0; $w = 0; $h = 0
+      try { $acc.accLocation([ref]$x, [ref]$y, [ref]$w, [ref]$h, $i) } catch { continue }
+      if ($w -lt 8 -or $h -lt 6) { continue }
+      $role = ''
+      try { $role = [string]$acc.get_accRole($i) } catch { $role = '' }
+      $role = ($role -replace '^\d+\s*', '')
+      if ($label.Length -gt 60) { $label = $label.Substring(0, 60) }
+      [void]$items.Add([pscustomobject]@{ label = $label; role = $role; x = [int]$x; y = [int]$y; w = [int]$w; h = [int]$h })
+    }
+  }
+  return $items
+}
 while ($true) {
   $line = [Console]::In.ReadLine()
   if ($null -eq $line) { break }
@@ -557,7 +625,36 @@ while ($true) {
   if ($op -eq 'elements') {
     try {
       $els = Get-UiaElements
-      $resp = @{ id = $reqId; ok = $true; elements = $els }
+      $source = 'uia'
+      if ($els.Count -lt 1) {
+        $msaaErr = ''
+        $msaa = @()
+        try { $msaa = Get-MsaaElements } catch { $msaaErr = $_.Exception.Message }
+        $respExtra = @{ msaaCount = $msaa.Count; msaaError = $msaaErr }
+        if ($msaa.Count -lt 1) {
+          # Chromium/Electron：无障碍树要"被戳一下"才建，而且异步。戳完等 ~900ms 再来一轮。
+          try {
+            $hwnd0 = [LianYuDesktop]::ForegroundHandle()
+            if ($hwnd0 -ne 0) {
+              [LianYuMsaa]::Nudge([IntPtr]$hwnd0)
+              Start-Sleep -Milliseconds 900
+              $els2 = Get-UiaElements
+              if ($els2.Count -gt 0) { $els = $els2; $source = 'uia-after-nudge' }
+              else {
+                $msaa2 = Get-MsaaElements
+                if ($msaa2.Count -gt 0) { $els = $msaa2; $source = 'msaa-after-nudge'; $msaa = $msaa2 }
+              }
+            }
+          } catch { }
+        }
+        if ($msaa.Count -gt 0) {
+          $els = $msaa
+          $source = 'msaa'
+          # MSAA 访问会触发 Chromium 构建无障碍树：再试一次 UIA，可能拿到更完整的树
+          try { $again = Get-UiaElements; if ($again.Count -gt $msaa.Count) { $els = $again; $source = 'uia-after-msaa' } } catch { }
+        }
+      }
+      $resp = @{ id = $reqId; ok = $true; elements = $els; source = $source; msaaCount = $(if ($null -ne $respExtra) { $respExtra.msaaCount } else { -1 }); msaaError = $(if ($null -ne $respExtra) { $respExtra.msaaError } else { "" }) }
     } catch {
       $resp = @{ id = $reqId; ok = $false; error = 'uia_unavailable'; detail = $_.Exception.Message }
     }
