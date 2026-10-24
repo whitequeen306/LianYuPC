@@ -188,6 +188,14 @@ export const useAgentBridgeStore = defineStore('agentBridge', () => {
       const next = { ...activeTasks.value }
       delete next[message.requestId]
       activeTasks.value = next
+      // 任务收尾：没有正在跑的任务了就把顶部指示条收掉（还有别的任务就让它继续留着）
+      if (Object.keys(next).length === 0) {
+        try {
+          getElectronAPI()?.capabilityBanner?.({ hide: true })
+        } catch {
+          /* ignore */
+        }
+      }
     }
   }
 
@@ -206,6 +214,13 @@ export const useAgentBridgeStore = defineStore('agentBridge', () => {
     activeTasks.value = {
       ...activeTasks.value,
       [requestId]: { ...task, updates },
+    }
+    // 桌面顶部指示条同步换文案：「{角色名}正在操控你的电脑」+ 当前这一步在干什么。
+    // 纯 IPC，主进程会兜底（未开开关 / 窗口没起来都只是 no-op），失败不影响任务本身。
+    try {
+      getElectronAPI()?.capabilityBanner?.({ text })
+    } catch {
+      /* ignore */
     }
   }
 

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 电脑操控指示条：屏幕最顶端 always-on-top 窗口，展示角色头像 + 文案，Esc 取消。
  *
  * 视觉令牌来自 DESIGN.md：primary（#f4a6b5）+ on-primary-light（#ffffff）。
@@ -7,6 +7,8 @@
 
 export const BANNER_HEIGHT = 44
 export const BANNER_SHOW_DELAY_MS = 120
+/** 一步做完后不立刻消失：多步任务中间会有几百毫秒空档，闪一下反而更吓人。 */
+export const BANNER_IDLE_HIDE_MS = 4000
 
 /** DESIGN.md primary + on-primary-light；独立窗口无法继承应用 CSS 变量，这里内联同一套令牌。 */
 const BANNER_TOKENS = {
@@ -147,7 +149,7 @@ export function buildBannerHtml(actorInput) {
   <div class="bar" role="status" aria-live="polite">
     <div class="inner">
       <div class="avatar" aria-hidden="true">${avatar}</div>
-      <span>${caption}</span>
+      <span id="ly-caption">${caption}</span>
     </div>
   </div>
 </body>
@@ -165,6 +167,8 @@ export function createControlBanner({
   let showTimer = null
   let escapeArmed = false
   let displayListener = null
+  /** 当前展示的身份（名字+头像）：同一角色连续动作时只改文案，不重载页面（避免闪一帧） */
+  let currentIdentity = ''
 
   function primaryBounds() {
     const display = screen?.getPrimaryDisplay?.() || screen?.getDisplayNearestPoint?.({ x: 0, y: 0 })
@@ -239,6 +243,33 @@ export function createControlBanner({
     try { win.hide() } catch { /* ignore */ }
   }
 
+  /**
+   * 只换文案不重建窗口（多步任务里每步都会调一次）。
+   * 传入的是「当前这一步在干什么」，例如「正在打开网易云音乐」。
+   */
+  function update(caption) {
+    if (!win || win.isDestroyed()) return false
+    const raw = String(caption || '').replace(/\s+/g, ' ').trim().slice(0, 80)
+    if (!raw) return false
+    const text = /esc/i.test(raw) ? raw : `${raw} · Esc 取消`
+    const js = `(() => {
+      const el = document.getElementById('ly-caption')
+      if (!el) return false
+      el.textContent = ${JSON.stringify(text)}
+      return true
+    })()`
+    try {
+      const pending = win.webContents.executeJavaScript(js)
+      if (pending && typeof pending.catch === 'function') {
+        pending.catch((e) => log(`banner update failed: ${e?.message || e}`))
+      }
+      return true
+    } catch (e) {
+      log(`banner update threw: ${e?.message || e}`)
+      return false
+    }
+  }
+
   function show(actor) {
     armEscape()
     if (showTimer) {
@@ -246,11 +277,18 @@ export function createControlBanner({
       showTimer = null
     }
     const payload = sanitizeActor(actor)
+    const identity = `${payload.name}|${payload.avatarUrl}`
+    // 同一角色、窗口已在：只更新文案，避免整块重载造成闪烁
+    if (identity === currentIdentity && win && !win.isDestroyed() && win.isVisible?.()) {
+      update(payload.caption)
+      return
+    }
     showTimer = setTimeout(() => {
       showTimer = null
       const w = ensureWindow()
       reposition()
       const html = buildBannerHtml(payload)
+      currentIdentity = identity
       w.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
         .then(() => {
           if (w.isDestroyed()) return
@@ -267,6 +305,7 @@ export function createControlBanner({
       showTimer = null
     }
     disarmEscape()
+    currentIdentity = ''
     hideWindow()
   }
 
@@ -282,5 +321,11 @@ export function createControlBanner({
     win = null
   }
 
-  return { show, hide, dispose, get isVisible() { return !!(win && !win.isDestroyed() && win.isVisible?.()) } }
+  return {
+    show,
+    update,
+    hide,
+    dispose,
+    get isVisible() { return !!(win && !win.isDestroyed() && win.isVisible?.()) },
+  }
 }

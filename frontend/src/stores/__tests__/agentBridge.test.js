@@ -246,4 +246,22 @@ describe('agentBridge store · 进度气泡', () => {
     store.handleProgressMessage({ requestId: 'nope', text: 'hi' })
     expect(Object.keys(store.activeTasks)).toHaveLength(0)
   })
+
+  it('forwards the current step to the desktop banner and hides it when the task ends', async () => {
+    let release
+    holder.api.capabilityExec = vi.fn(() => new Promise((resolve) => { release = resolve }))
+    holder.api.capabilityBanner = vi.fn(async () => ({ ok: true }))
+
+    const pending = store.handleToolCallMessage({
+      type: 'tool_call', requestId: 'r3', name: 'desk_app_launch', arguments: '{}',
+      characterId: 9, characterName: '小雨',
+    })
+
+    store.handleProgressMessage({ requestId: 'r3', text: '正在打开网易云音乐' })
+    expect(holder.api.capabilityBanner).toHaveBeenCalledWith({ text: '正在打开网易云音乐' })
+
+    release?.({ ok: true, text: 'ok', errorCode: '' })
+    await pending
+    expect(holder.api.capabilityBanner).toHaveBeenCalledWith({ hide: true })
+  })
 })

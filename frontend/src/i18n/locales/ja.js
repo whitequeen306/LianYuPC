@@ -323,6 +323,7 @@ export default {
     noMessages: 'まだメッセージがありません。挨拶してみましょう',
     typing: '{name}が返信中...',
     export: '書き出し',
+    actingOnComputer: 'パソコンを操作中',
     exporting: 'チャット履歴を準備中…',
     exportSuccess: 'チャット履歴を書き出しました',
     exportEmpty: '書き出せるチャット履歴がありません',

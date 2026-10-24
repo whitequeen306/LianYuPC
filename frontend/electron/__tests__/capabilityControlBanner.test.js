@@ -1,4 +1,4 @@
-﻿import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   escapeHtml,
   safeAvatarUrl,
@@ -104,5 +104,83 @@ describe('createControlBanner', () => {
     expect(globalShortcut.unregister).toHaveBeenCalledWith('Escape')
     banner.dispose()
     vi.useRealTimers()
+  })
+})
+
+describe('controlBanner live caption', () => {
+  const makeHarness = () => {
+    const windows = []
+    const BrowserWindow = vi.fn(function ctor(opts) {
+      const win = {
+        opts,
+        _visible: false,
+        isDestroyed: () => false,
+        isVisible: () => win._visible,
+        setIgnoreMouseEvents: vi.fn(),
+        setAlwaysOnTop: vi.fn(),
+        setVisibleOnAllWorkspaces: vi.fn(),
+        setBounds: vi.fn(),
+        hide: vi.fn(() => { win._visible = false }),
+        showInactive: vi.fn(() => { win._visible = true }),
+        show: vi.fn(() => { win._visible = true }),
+        loadURL: vi.fn(async () => {}),
+        destroy: vi.fn(),
+        on: vi.fn(),
+        webContents: { executeJavaScript: vi.fn(async () => true) },
+      }
+      windows.push(win)
+      return win
+    })
+    const banner = createControlBanner({
+      BrowserWindow,
+      screen: { getPrimaryDisplay: () => ({ bounds: { x: 0, y: 0, width: 1920, height: 1080 } }) },
+      globalShortcut: { register: () => true, unregister: vi.fn() },
+    })
+    return { banner, windows }
+  }
+
+  it('update() 不重建窗口，只改文案并补 Esc 提示', async () => {
+    vi.useFakeTimers()
+    const { banner, windows } = makeHarness()
+    banner.show({ name: '甘雨', caption: '甘雨正在操控你的电脑' })
+    vi.advanceTimersByTime(200)
+    expect(windows).toHaveLength(1)
+
+    expect(banner.update('正在打开网易云音乐')).toBe(true)
+    const js = windows[0].webContents.executeJavaScript.mock.calls[0][0]
+    expect(js).toContain('正在打开网易云音乐')
+    expect(js).toContain('Esc 取消')
+    // 同一个窗口，没有再次 loadURL
+    expect(windows[0].loadURL).toHaveBeenCalledTimes(1)
+
+    banner.dispose()
+    vi.useRealTimers()
+  })
+
+  it('同一角色再次 show() 只换文案，不重载页面（避免闪一帧）', async () => {
+    vi.useFakeTimers()
+    const { banner, windows } = makeHarness()
+    const actor = { name: '甘雨', caption: '甘雨正在操控你的电脑' }
+    banner.show(actor)
+    vi.advanceTimersByTime(200)
+    // 让 loadURL().then() 里的 showInactive 真正执行，窗口才处于可见态
+    await Promise.resolve()
+    await Promise.resolve()
+    const firstLoads = windows[0].loadURL.mock.calls.length
+
+    banner.show({ ...actor, caption: '甘雨正在打开网易云音乐' })
+    vi.advanceTimersByTime(200)
+    expect(windows).toHaveLength(1)
+    expect(windows[0].loadURL).toHaveBeenCalledTimes(firstLoads)
+    expect(windows[0].webContents.executeJavaScript).toHaveBeenCalled()
+
+    banner.dispose()
+    vi.useRealTimers()
+  })
+
+  it('窗口还没起来时 update() 是安全 no-op', () => {
+    const { banner } = makeHarness()
+    expect(banner.update('正在点一下')).toBe(false)
+    expect(() => banner.hide()).not.toThrow()
   })
 })

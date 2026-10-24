@@ -190,6 +190,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getCapabilityStatus: () => ipcRenderer.invoke('capability:get-status'),
   capabilityExec: (payload) => ipcRenderer.invoke('capability:exec', payload),
   capabilityAbort: (payload) => ipcRenderer.invoke('capability:abort', payload),
+  /** 顶部指示条：{ text } 换当前动作文案，{ hide: true } 立刻收起（任务结束时用） */
+  capabilityBanner: (payload) => ipcRenderer.invoke('capability:banner', payload),
   respondCapabilityConfirm: (id, approved) => ipcRenderer.invoke('capability:confirm-response', { id, approved }),
   onCapabilityAudit: (callback) => {
     const handler = (_event, payload) => callback(payload)

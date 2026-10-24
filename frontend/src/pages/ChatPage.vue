@@ -29,6 +29,17 @@
             :emotion-intensity="emotionState.emotionIntensity"
             :status-text="emotionState.statusText"
           />
+          <span
+            v-if="mcpActiveTask"
+            class="gal-header__acting"
+            role="status"
+            aria-live="polite"
+          >
+            <span class="gal-header__acting-dot" aria-hidden="true" />
+            <span class="gal-header__acting-text">
+              {{ t('chat.actingOnComputer') }}<template v-if="mcpActiveStepText"> · {{ mcpActiveStepText }}</template>
+            </span>
+          </span>
         </div>
         <button
           v-if="voiceCallEnabled"
@@ -475,8 +486,14 @@ const currentConvId = ref(null)
 const activeCharacter = ref(null)
 const activeCharacterAvatarTier = ref('thumb')
 const agentBridgeStore = useAgentBridgeStore()
-// 角色正在本机执行的电脑任务（进度小气泡；任务结束自动消失）
+// 角色正在本机执行的电脑任务（进度小气泡 + 头部「正在操控电脑」状态条；任务结束自动消失）
 const mcpActiveTask = computed(() => taskForCharacterSafe(activeCharacter.value?.id))
+// 头部只简要展示「当前这一步」，完整历史留在消息流的气泡里
+const mcpActiveStepText = computed(() => {
+  const updates = mcpActiveTask.value?.updates || []
+  const last = updates[updates.length - 1]
+  return last?.text || ''
+})
 function taskForCharacterSafe(characterId) {
   try {
     return agentBridgeStore.taskForCharacter(characterId)
@@ -1675,6 +1692,38 @@ function formatTime(ts) {
     font-weight: $font-weight-medium;
     color: $color-text-muted;
   }
+}
+
+/* 「正在操控电脑」状态条：只在角色真的在本机动手时出现 */
+.gal-header__acting {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-2;
+  max-width: 320px;
+  margin-top: 2px;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  color: var(--ly-accent);
+}
+
+.gal-header__acting-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: $radius-full;
+  background: var(--ly-accent);
+  animation: ly-acting-pulse 1.4s ease-in-out infinite;
+}
+
+.gal-header__acting-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+@keyframes ly-acting-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1); }
 }
 
 .gal-header__call,

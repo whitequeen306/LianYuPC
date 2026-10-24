@@ -328,6 +328,7 @@ export default {
     noMessages: 'No messages yet — say hello',
     typing: '{name} is replying...',
     export: 'Export',
+    actingOnComputer: 'Operating your computer',
     exporting: 'Preparing chat history…',
     exportSuccess: 'Chat history exported',
     exportEmpty: 'No chat history to export',

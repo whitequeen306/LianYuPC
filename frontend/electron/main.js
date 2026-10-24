@@ -76,7 +76,7 @@ import {
   readWechatBridgeSettings,
   writeWechatBridgeSettings,
 } from './wechatBridge/wechatBridgeSettings.js'
-import { createControlBanner } from './capability/controlBanner.js'
+import { BANNER_IDLE_HIDE_MS, createControlBanner } from './capability/controlBanner.js'
 import { createCapabilityHost } from './capability/capabilityHost.js'
 import { createCapabilitySettings } from './capability/settings.js'
 import { createWinActor } from './capability/winActor.js'
@@ -667,6 +667,26 @@ const controlBanner = createControlBanner({
   },
 })
 
+/**
+ * 多步任务里每一步之间会有几百毫秒空档，若每步结束就隐藏横幅会「一閃一閃」。
+ * 改成「空闲 N 秒后才收」，任务内的下一步会把它取消。
+ */
+let bannerIdleTimer = null
+function cancelBannerIdleHide() {
+  if (bannerIdleTimer) {
+    clearTimeout(bannerIdleTimer)
+    bannerIdleTimer = null
+  }
+}
+function scheduleBannerIdleHide() {
+  cancelBannerIdleHide()
+  bannerIdleTimer = setTimeout(() => {
+    bannerIdleTimer = null
+    try { controlBanner.hide() } catch { /* ignore */ }
+  }, BANNER_IDLE_HIDE_MS)
+  if (typeof bannerIdleTimer.unref === 'function') bannerIdleTimer.unref()
+}
+
 function ensureCapabilityHost() {
   if (capabilityHost) return capabilityHost
   capabilityActor = createWinActor({ log: (msg) => log(`[capability] ${msg}`) })
@@ -701,6 +721,8 @@ function stopCapabilityRuntime() {
   try { capabilityActor?.stop?.() } catch { /* ignore */ }
   capabilityActor = null
   capabilityHost = null
+  cancelBannerIdleHide()
+  try { controlBanner.hide() } catch { /* ignore */ }
 }
 
 function resolveTrayIcon() {
@@ -2613,15 +2635,34 @@ function registerIpcHandlers() {
     // 只读动作不弹指示条（看一眼屏幕不该有「正在操控」的压迫感）
     const showBanner = String(req.danger || '') !== 'R0'
     if (showBanner) {
+      cancelBannerIdleHide()
       try { controlBanner.show(actor) } catch { /* ignore */ }
     }
     try {
       return await host.exec(req)
     } finally {
-      if (showBanner) {
-        try { controlBanner.hide() } catch { /* ignore */ }
-      }
+      // 不立刻收：多步任务中间有几百毫秒空档，空闲几秒后才隐藏（见 BANNER_IDLE_HIDE_MS）
+      if (showBanner) scheduleBannerIdleHide()
     }
+  })
+
+  // 渲染端把「这一步在干什么」推过来，横幅就地换文案（不重建窗口、不抢焦点）
+  ipcMain.handle('capability:banner', (event, payload) => {
+    if (!guardTrusted(event)) return { ok: false }
+    const req = payload && typeof payload === 'object' ? payload : {}
+    if (req.hide === true) {
+      cancelBannerIdleHide()
+      try { controlBanner.hide() } catch { /* ignore */ }
+      return { ok: true }
+    }
+    const text = String(req.text || '').trim()
+    if (!text) return { ok: true }
+    cancelBannerIdleHide()
+    const updated = (() => {
+      try { return controlBanner.update(text) } catch { return false }
+    })()
+    scheduleBannerIdleHide()
+    return { ok: updated }
   })
 
   ipcMain.handle('capability:abort', (event, payload) => {
