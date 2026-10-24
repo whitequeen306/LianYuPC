@@ -30,6 +30,7 @@ import { spawn as nodeSpawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { OCR_SCRIPTS_FILENAME, OCR_SCRIPTS_SOURCE } from './ocrFallback.js'
 
 export const ACTOR_SEPARATOR = '\u0001'
 
@@ -668,8 +669,37 @@ while ($true) {
           try { $again = Get-UiaElements; if ($again.Count -gt $msaa.Count) { $els = $again; $source = 'uia-after-msaa' } } catch { }
         }
       }
+      # UIA / MSAA 都拿不到时，退回「PrintWindow 截图 → 系统 OCR」。
+      # 子进程方式：不污染常驻 actor 的作用域，失败也不影响其它 op。
       $ocrCount = -1
-      $ocrError = 'pending-integration'
+      $ocrError = ''
+      if ($els.Count -lt 1) {
+        try {
+          $ocrScript = Join-Path $PSScriptRoot 'ocr-fallback.ps1'
+          if (Test-Path $ocrScript) {
+            $ocrOut = Join-Path $PSScriptRoot ('ocr-' + $PID + '.json')
+            $hwndFg = [LianYuDesktop]::ForegroundHandle()
+            & powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $ocrScript -Hwnd $hwndFg -OutFile $ocrOut | Out-Null
+            if (Test-Path $ocrOut) {
+              $payload = Get-Content $ocrOut -Raw -Encoding UTF8 | ConvertFrom-Json
+              $ocrCount = @($payload.items).Count
+              if ($ocrCount -gt 0) {
+                $converted = @()
+                $idx = 0
+                foreach ($it in $payload.items) {
+                  $idx++
+                  $converted += [pscustomobject]@{ id = $idx; label = $it.label; role = 'Text'; x = $it.x; y = $it.y; w = $it.w; h = $it.h }
+                }
+                $els = $converted
+                $source = 'ocr'
+              }
+              Remove-Item $ocrOut -Force -ErrorAction SilentlyContinue
+            }
+          } else {
+            $ocrError = 'ocr_script_missing'
+          }
+        } catch { $ocrError = $_.Exception.Message }
+      }
       $resp = @{ id = $reqId; ok = $true; elements = $els; source = $source; msaaCount = $(if ($null -ne $respExtra) { $respExtra.msaaCount } else { -1 }); msaaError = $(if ($null -ne $respExtra) { $respExtra.msaaError } else { "" }); ocrCount = $ocrCount; ocrError = $ocrError }
     } catch {
       $resp = @{ id = $reqId; ok = $false; error = 'uia_unavailable'; detail = $_.Exception.Message }
@@ -753,6 +783,13 @@ export function createWinActor({
     try {
       fs.mkdirSync(path.dirname(scriptFile), { recursive: true })
       fs.writeFileSync(scriptFile, `\uFEFF${ACTOR_SCRIPT}`, 'utf8')
+      // OCR 兜底脚本放在 actor 脚本旁边（同一个 tempDir），由 elements op 以子进程调用。
+      // 子进程的好处：WinRT/COM 的作用域问题不会污染常驻 actor，失败也只是少一条兜底。
+      try {
+        fs.writeFileSync(path.join(path.dirname(scriptFile), OCR_SCRIPTS_FILENAME), `\uFEFF${OCR_SCRIPTS_SOURCE}`, 'utf8')
+      } catch (e) {
+        log(`ocr fallback write failed: ${e?.message || e}`)
+      }
     } catch (e) {
       log(`win-actor script write failed: ${e?.message || e}`)
       return false

@@ -249,6 +249,19 @@ export function createCapabilityHost({
         y = element.y + Math.round(element.h / 2)
         label = element.label || label
       } else {
+        // 硬规则：没有接地（没有元素编号）就不许按裸坐标点。
+        // 盲点的后果是"工具返回成功、界面毫无变化"，比失败更难排查
+        //（真实踩过：网易云 CEF 没有 UIA 树，模型只能猜坐标，连点 8 次全"成功"却什么也没发生）。
+        const known = elementRegistry.get(String(ctx.sessionId || '')) || []
+        // 完全"盲点"（既没接地、又说不清点的是什么）直接拒绝；
+        // 有 label 说明模型至少知道目标语义，允许按坐标点（多屏/自绘界面偶尔只有坐标可行）。
+        if (known.length === 0 && !String(args.label || '').trim()) {
+          return {
+            ok: false,
+            error: 'needs_grounding',
+            detail: '先 desk_screen_read / desk_read_elements / desk_find 拿到元素编号，再用 element_id 点击',
+          }
+        }
         x = args.x
         y = args.y
       }
