@@ -113,6 +113,38 @@ let launcherWindow = null
 let pickerWindow = null
 /** @type {BrowserWindow | null} */
 let quickChatShell = null
+
+/**
+ * 角色操控电脑期间：**我们自己的窗口要让位**。
+ *
+ * 真实踩到：DSH/聊天窗是 always-on-top，角色去点网易云时鼠标落点被我们的窗口吃掉、
+ * 键盘焦点也抢不回来 —— 表现为「工具全部 ok，界面一动不动」。
+ * 所以任务开始时把我们的窗口从置顶降下来（保持可见），任务结束再恢复原状。
+ */
+const yieldedWindows = new Map()
+
+function enterAutomationMode() {
+  for (const win of [mainWindow, launcherWindow, pickerWindow, quickChatShell]) {
+    if (!win || win.isDestroyed?.()) continue
+    try {
+      if (!win.isAlwaysOnTop?.()) continue
+      yieldedWindows.set(win.id, true)
+      win.setAlwaysOnTop(false)
+      log('automation-mode: yielded topmost window')
+    } catch { /* ignore */ }
+  }
+}
+
+function exitAutomationMode() {
+  if (yieldedWindows.size === 0) return
+  for (const win of [mainWindow, launcherWindow, pickerWindow, quickChatShell]) {
+    if (!win || win.isDestroyed?.()) continue
+    if (!yieldedWindows.has(win.id)) continue
+    try { win.setAlwaysOnTop(true) } catch { /* ignore */ }
+  }
+  yieldedWindows.clear()
+  log('automation-mode: restored topmost windows')
+}
 let quickChatShellReady = false
 /** @type {string | null} */
 let quickChatPendingShowId = null
@@ -685,6 +717,7 @@ function scheduleBannerIdleHide() {
   bannerIdleTimer = setTimeout(() => {
     bannerIdleTimer = null
     try { controlBanner.hide() } catch { /* ignore */ }
+    exitAutomationMode()
   }, BANNER_IDLE_HIDE_MS)
   if (typeof bannerIdleTimer.unref === 'function') bannerIdleTimer.unref()
 }
@@ -2638,6 +2671,7 @@ function registerIpcHandlers() {
     const showBanner = String(req.danger || '') !== 'R0'
     if (showBanner) {
       cancelBannerIdleHide()
+      enterAutomationMode()
       try { controlBanner.show(actor) } catch { /* ignore */ }
     }
     try {
@@ -2657,6 +2691,7 @@ function registerIpcHandlers() {
       bannerTaskActive = false
       cancelBannerIdleHide()
       try { controlBanner.hide() } catch { /* ignore */ }
+      exitAutomationMode()
       return { ok: true }
     }
     if (req.hide === true) {
@@ -2666,7 +2701,10 @@ function registerIpcHandlers() {
       return { ok: true }
     }
     // taskActive：一个用户请求还没做完 → 横幅要一直挂着，直到渲染端发 taskDone
-    if (req.taskActive === true) bannerTaskActive = true
+    if (req.taskActive === true) {
+      bannerTaskActive = true
+      enterAutomationMode()
+    }
     const text = String(req.text || '').trim()
     if (bannerTaskActive) {
       cancelBannerIdleHide()

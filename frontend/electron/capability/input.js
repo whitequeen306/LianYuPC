@@ -81,11 +81,20 @@ export function createInputDriver({ actor, clipboard, log = () => {} } = {}) {
       const value = String(text ?? '')
       if (!value) throw new Error('text 不能为空')
       if (value.length > MAX_TEXT_CHARS) throw new Error('text 过长')
-      const usePaste = value.length > 30 || value.includes('\n')
+      // CEF/Chromium（网易云音乐、Electron 应用）对 SendInput 的 Unicode 字符经常不认：
+      // 表现为「工具返回 ok 但输入框里什么都没有」（真机踩过）。所以统一走「剪贴板 + Ctrl+V」，
+      // 对 Win32 与 CEF 都成立，也不会因为逐字符注入而变慢。
+      const usePaste = true
       const result = usePaste
         ? await pasteViaClipboard(value)
         : await actor.call('type', [value, submit ? '1' : '0'])
       if (!result.ok) return result
+      if (usePaste && submit) {
+        // 粘贴与回车之间留一点时间，否则内容还没落地就回车（真实踩过）
+        await new Promise((r) => setTimeout(r, 120))
+        const enter = await actor.call('key', [resolveKeySequence(['enter']).join(',')])
+        if (!enter.ok) return enter
+      }
       return { ...result, method: usePaste ? 'paste' : 'unicode', chars: value.length }
     },
 
