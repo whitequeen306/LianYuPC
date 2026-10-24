@@ -50,22 +50,22 @@ class Settings(BaseSettings):
     weather_cache_minutes: float = 15.0
     # 工具循环上限：Java 侧是框架内部递归**无计数器**（审计 A4），
     # Python 侧显式设上限并在日志/测试中固化
-    max_tool_rounds: int = 3
+    max_tool_rounds: int = 8
 
     # ── 桌面能力层（desk_*）：自研替代外借 AgentAssistant MCP 的 computer_task ──
     # 总开关：关掉后 desk_* 不进入任何一次模型调用的工具集（schema 也不下发）
     desktop_capability_enabled: bool = True
     # 单个任务（一次用户消息触发的桌面操作）的步数上限。
     # 与 max_tool_rounds 分开：chat 回合轮次是模型↔工具往返次数，这里数的是桌面动作个数。
-    desktop_max_steps: int = 6
+    desktop_max_steps: int = 14
     # 单任务允许的视觉分析帧数（每帧约 1.1k input token，是成本主项）
-    desktop_max_vlm_frames: int = 4
+    desktop_max_vlm_frames: int = 6
     # 单任务墙钟上限（秒）：到点即降级收尾，绝不让一步卡死拖住整轮对话
-    desktop_task_deadline_seconds: float = 90.0
+    desktop_task_deadline_seconds: float = 240.0
     # 同一工具连续失败多少次即停止继续尝试（模型据此向用户解释）
     desktop_max_consecutive_failures: int = 2
     # 单个桌面步的默认超时（毫秒）；单个能力可在 specs 里覆盖
-    desktop_step_timeout_ms: int = 8000
+    desktop_step_timeout_ms: int = 12000
     # 回灌给模型的单条工具结果字符上限（与 Java sanitizeResult 对齐）
     desktop_result_max_chars: int = 8000
 

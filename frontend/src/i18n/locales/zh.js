@@ -330,6 +330,8 @@ export default {
     scrollToBottom: '回到底部',
     export: '导出',
     actingOnComputer: '正在操控电脑',
+    mcpTaskActive: '行动中',
+    mcpTaskStarting: '准备中…',
     exporting: '正在整理聊天记录…',
     exportSuccess: '聊天记录已导出',
     exportEmpty: '暂无聊天记录可导出',

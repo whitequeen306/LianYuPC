@@ -324,6 +324,8 @@ export default {
     typing: '{name}が返信中...',
     export: '書き出し',
     actingOnComputer: 'パソコンを操作中',
+    mcpTaskActive: '行動中',
+    mcpTaskStarting: '準備中…',
     exporting: 'チャット履歴を準備中…',
     exportSuccess: 'チャット履歴を書き出しました',
     exportEmpty: '書き出せるチャット履歴がありません',

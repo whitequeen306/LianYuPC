@@ -672,6 +672,8 @@ const controlBanner = createControlBanner({
  * 改成「空闲 N 秒后才收」，任务内的下一步会把它取消。
  */
 let bannerIdleTimer = null
+/** 一个用户请求是否还在进行（渲染端通过 capability:banner 的 taskActive/taskDone 维护） */
+let bannerTaskActive = false
 function cancelBannerIdleHide() {
   if (bannerIdleTimer) {
     clearTimeout(bannerIdleTimer)
@@ -2641,8 +2643,9 @@ function registerIpcHandlers() {
     try {
       return await host.exec(req)
     } finally {
-      // 不立刻收：多步任务中间有几百毫秒空档，空闲几秒后才隐藏（见 BANNER_IDLE_HIDE_MS）
-      if (showBanner) scheduleBannerIdleHide()
+      // 任务还在进行（渲染端会持续发 taskActive）→ 横幅常驻，等 taskDone 再收；
+      // 否则（一次性调用，例如 just 看一眼）空闲几秒后自动隐藏。
+      if (showBanner && !bannerTaskActive) scheduleBannerIdleHide()
     }
   })
 
@@ -2650,18 +2653,34 @@ function registerIpcHandlers() {
   ipcMain.handle('capability:banner', (event, payload) => {
     if (!guardTrusted(event)) return { ok: false }
     const req = payload && typeof payload === 'object' ? payload : {}
-    if (req.hide === true) {
+    if (req.taskDone === true) {
+      bannerTaskActive = false
       cancelBannerIdleHide()
       try { controlBanner.hide() } catch { /* ignore */ }
       return { ok: true }
     }
+    if (req.hide === true) {
+      bannerTaskActive = false
+      cancelBannerIdleHide()
+      try { controlBanner.hide() } catch { /* ignore */ }
+      return { ok: true }
+    }
+    // taskActive：一个用户请求还没做完 → 横幅要一直挂着，直到渲染端发 taskDone
+    if (req.taskActive === true) bannerTaskActive = true
     const text = String(req.text || '').trim()
+    if (bannerTaskActive) {
+      cancelBannerIdleHide()
+    } else {
+      scheduleBannerIdleHide()
+    }
     if (!text) return { ok: true }
-    cancelBannerIdleHide()
     const updated = (() => {
-      try { return controlBanner.update(text) } catch { return false }
+      try {
+        return controlBanner.update(text)
+      } catch {
+        return false
+      }
     })()
-    scheduleBannerIdleHide()
     return { ok: updated }
   })
 

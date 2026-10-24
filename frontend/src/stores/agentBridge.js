@@ -39,6 +39,48 @@ export const useAgentBridgeStore = defineStore('agentBridge', () => {
   // requestId → { requestId, name, instruction, actor, updates: [{ ts, text }], startedAt }
   const activeTasks = ref({})
 
+  /**
+   * 一次用户请求通常由多个动作组成（启动 → 找 → 点 → 输入 → 确认）。
+   * 气泡和桌面横幅要在这整段时间里挂着，所以任务**不是每个结果就删**（那样会一闪一闪），
+   * 而是「空闲 ACTION_IDLE_MS 后才收」：任何 tool_call / progress / result 都会给它续命。
+   */
+  const ACTION_IDLE_MS = 8000
+  let actionIdleTimer = null
+
+  function sweepActions() {
+    actionIdleTimer = null
+    if (Object.keys(activeTasks.value).length === 0) return
+    const now = Date.now()
+    const next = {}
+    let dropped = false
+    for (const [id, item] of Object.entries(activeTasks.value)) {
+      if (now - (item.lastActiveAt || item.startedAt || 0) < ACTION_IDLE_MS) next[id] = item
+      else dropped = true
+    }
+    if (dropped) activeTasks.value = next
+    if (Object.keys(next).length === 0) {
+      try {
+        getElectronAPI()?.capabilityBanner?.({ taskDone: true })
+      } catch {
+        /* ignore */
+      }
+      return
+    }
+    actionIdleTimer = setTimeout(sweepActions, ACTION_IDLE_MS)
+  }
+
+  function keepAliveAction(requestId) {
+    const task = requestId ? activeTasks.value[requestId] : null
+    if (task) {
+      activeTasks.value = {
+        ...activeTasks.value,
+        [requestId]: { ...task, lastActiveAt: Date.now() },
+      }
+    }
+    if (actionIdleTimer) clearTimeout(actionIdleTimer)
+    actionIdleTimer = setTimeout(sweepActions, ACTION_IDLE_MS)
+  }
+
   let heartbeatTimer = null
   let toolsHandlerUnsub = null
   let progressUnsub = null
@@ -152,8 +194,16 @@ export const useAgentBridgeStore = defineStore('agentBridge', () => {
       }),
       updates: [],
       startedAt: Date.now(),
+      lastActiveAt: Date.now(),
     }
     activeTasks.value = { ...activeTasks.value, [message.requestId]: task }
+    keepAliveAction(message.requestId)
+    // 任务一开始就把桌面横幅立起来（不依赖第一次进度消息）
+    try {
+      getElectronAPI()?.capabilityBanner?.({ taskActive: true, text: task.instruction || '' })
+    } catch {
+      /* ignore */
+    }
     try {
       result = await api?.capabilityExec?.({
         stepId: message.requestId,
@@ -185,23 +235,15 @@ export const useAgentBridgeStore = defineStore('agentBridge', () => {
     } catch (e) {
       console.warn('[agentBridge] post result failed', e)
     } finally {
-      const next = { ...activeTasks.value }
-      delete next[message.requestId]
-      activeTasks.value = next
-      // 任务收尾：没有正在跑的任务了就把顶部指示条收掉（还有别的任务就让它继续留着）
-      if (Object.keys(next).length === 0) {
-        try {
-          getElectronAPI()?.capabilityBanner?.({ hide: true })
-        } catch {
-          /* ignore */
-        }
-      }
+      // 注意：**不立刻删除任务**。一个用户请求通常要连做 4~8 个动作，
+      // 每步删掉就会让聊天气泡与桌面横幅「一闪一闪」（真实反馈）。
+      // 改成「记下最后一次活动时间，空闲 ACTION_IDLE_MS 后再收」。
+      keepAliveAction(message.requestId)
     }
   }
 
   /** 每步的现场解说（progressToken = requestId）。 */
-  function handleProgressMessage(params) {
-    const requestId = params?.requestId
+  function handleProgressMessage(params) {    const requestId = params?.requestId
     const text = typeof params?.message === 'string'
       ? params.message.trim()
       : (typeof params?.text === 'string' ? params.text.trim() : '')
@@ -215,10 +257,11 @@ export const useAgentBridgeStore = defineStore('agentBridge', () => {
       ...activeTasks.value,
       [requestId]: { ...task, updates },
     }
-    // 桌面顶部指示条同步换文案：「{角色名}正在操控你的电脑」+ 当前这一步在干什么。
+    // 桌面顶部指示条同步换文案，并声明「任务仍在进行」（taskActive）→ 横幅常驻不闪。
     // 纯 IPC，主进程会兜底（未开开关 / 窗口没起来都只是 no-op），失败不影响任务本身。
+    keepAliveAction(requestId)
     try {
-      getElectronAPI()?.capabilityBanner?.({ text })
+      getElectronAPI()?.capabilityBanner?.({ taskActive: true, text })
     } catch {
       /* ignore */
     }

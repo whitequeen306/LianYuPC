@@ -12,6 +12,8 @@
 export const CAPABILITY_NAMES = Object.freeze([
   'desk_screen_read',
   'desk_read_elements',
+  'desk_find',
+  'desk_wait',
   'desk_window_list',
   'desk_window_focus',
   'desk_app_launch',

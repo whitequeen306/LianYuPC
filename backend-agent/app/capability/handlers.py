@@ -1,56 +1,115 @@
-"""桌面能力工具的统一执行器。
+"""`desk_*` 工具的统一执行入口：预算 → 策略 → 下发 → 结果组织。
 
-一个 `desk_*` 工具被模型调用时，这里做四件事（顺序固定）：
+设计要点（2026-10 重构）：
 
-1. **预算检查** —— 步数/墙钟/连续失败，超限就返回收尾文案而不是继续发指令；
-2. **策略预过滤** —— 来源护栏与角色上限（权威判定仍在 Electron）；
-3. **下发** —— 经 `desktop_channel` 到 Java → STOMP → Electron，顺带发一条进度；
-4. **结果组织** —— 图片不进文本；`desk_screen_read` 的图交给视觉模型压成摘要。
-
-设计约束（都是踩过的坑）：
-- `_` 前缀的键是**调用方注入的上下文**（userId/sessionId/预算），模型看不到，
-  也绝不能透给 Electron —— 下发前必须剥掉；
-- 工具结果永远是**给模型看的说明**，不是给用户看的台词；台词由模型按人设生成；
-- 任何失败都返回字符串，绝不抛异常（`execute_tool_calls` 只兜底 `httpx`/`RuntimeError`）。
+1. **工具是"组合"的，传输是"原子"的**。模型看到的是 `desk_find` / `desk_wait` /
+   `desk_app_launch(wait_for_window)` 这类语义工具；真正下发到 Electron 的仍是
+   `read_elements` / `window_list` / `app_launch` 这些原子 op。组合在 Python 做，
+   好处是 Electron 侧完全不用改，且组合逻辑可以单测。
+2. **省轮次**。GUI 任务的稀缺资源是「模型↔工具往返」，不是 Electron 调用次数
+   （后者 10~50ms）。所以这里大量用「一次工具调用 = 多个原子 op」：
+   `desk_app_launch` 会自己等窗口出现并带回元素清单，模型不必再调 `window_list`。
+3. **进度文案带参数**。前端展示「行动中 · 启动网易云音乐」，而不是笼统的「我点一下」。
 """
 
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
 from typing import Any
 
 from app.capability.budget import TaskBudget
 from app.capability.desktop_channel import DesktopExecResult, get_channel
-from app.capability.policy import EVIDENCE_USER, decide, load_policy
+from app.capability.policy import decide, load_policy
 from app.config import get_settings
 from app.tool_registry import ToolSpec, get_tool
 
 logger = logging.getLogger(__name__)
 
-# 每个能力下发前的进度文案（Python 是文案唯一产地；Electron 只上报 code）
+# 工具 → 真正下发的 Electron op。没列的 = 同名直传（历史上就是一对一）。
+OP_ALIASES: dict[str, str] = {
+    "desk_find": "desk_read_elements",
+    "desk_wait": "desk_window_list",
+}
+
+EVIDENCE_USER = "user_request"
+_WAIT_POLL_MS = 500
+
+
+# ── 进度文案（前端「行动中」气泡直接显示这句）────────────────────────────────
+
+
+def _short(text: Any, limit: int = 14) -> str:
+    value = " ".join(str(text or "").split())
+    return value if len(value) <= limit else value[:limit] + "…"
+
+
+def progress_text(name: str, args: dict[str, Any]) -> str:
+    """给用户看的「当前动作」，中文、短、带宾语。"""
+    app = _short(args.get("app") or args.get("title") or args.get("process"), 12)
+    if name == "desk_screen_read":
+        return "看一眼界面"
+    if name == "desk_read_elements":
+        return "看一下界面元素"
+    if name == "desk_window_list":
+        return "看看有哪些窗口"
+    if name == "desk_find":
+        return f"寻找「{_short(args.get('text'), 12)}」"
+    if name == "desk_wait":
+        return f"等{app}出来" if app else "等界面加载"
+    if name == "desk_app_launch":
+        return f"启动{app}" if app else "启动应用"
+    if name == "desk_click":
+        return f"点「{_short(args.get('label_match') or args.get('label'), 12)}」"
+    if name == "desk_type":
+        verb = "改写" if args.get("mode") == "replace" else "输入"
+        return f"{verb}「{_short(args.get('text'), 12)}」"
+    if name == "desk_key":
+        keys = args.get("keys")
+        joined = "+".join(str(k) for k in keys) if isinstance(keys, list) else str(keys or "")
+        return f"按 {joined}" if joined else "按键"
+    if name == "desk_scroll":
+        return "往下翻" if int(args.get("dy") or 0) >= 0 else "往上翻"
+    if name == "desk_window_focus":
+        return f"切到{app}" if app else "切换窗口"
+    if name == "desk_system_control":
+        return {
+            "volume_set": "调音量",
+            "volume_mute": "切换静音",
+            "media_play": "播放",
+            "media_pause": "暂停",
+            "media_next": "下一首",
+            "media_prev": "上一首",
+            "dnd_on": "打开勿扰",
+            "dnd_off": "关闭勿扰",
+        }.get(str(args.get("action") or ""), "调系统设置")
+    if name == "desk_file_reveal":
+        return "在文件夹里定位文件"
+    if name == "desk_file_open":
+        return "打开文件"
+    if name == "desk_clipboard_get":
+        return "看一眼剪贴板"
+    if name == "desk_clipboard_set":
+        return "写入剪贴板"
+    return "操作电脑"
+
+
+# 兼容旧引用（有些测试/日志按字典取）
 PROGRESS_TEMPLATES: dict[str, str] = {
-    "desk_screen_read": "我看一眼你的屏幕",
-    "desk_read_elements": "我看看界面上有哪些可点的东西",
-    "desk_window_list": "我看看现在开着哪些窗口",
-    "desk_window_focus": "我把窗口切过去",
-    "desk_app_launch": "我先把应用打开",
-    "desk_click": "我点一下",
-    "desk_key": "我按一下键",
-    "desk_type": "我在输入",
-    "desk_scroll": "我往下翻一点",
-    "desk_system_control": "我调一下系统设置",
-    "desk_file_reveal": "我帮你在文件夹里找一下",
-    "desk_file_open": "我打开看看",
-    "desk_clipboard_get": "我看一眼剪贴板",
-    "desk_clipboard_set": "我复制一下",
+    name: progress_text(name, {})
+    for name in (
+        "desk_screen_read", "desk_read_elements", "desk_window_list", "desk_find", "desk_wait",
+        "desk_app_launch", "desk_click", "desk_type", "desk_key", "desk_scroll",
+        "desk_window_focus", "desk_system_control", "desk_file_reveal", "desk_file_open",
+        "desk_clipboard_get", "desk_clipboard_set",
+    )
 }
 
 # 错误码 → 给模型的下一步建议（不是给用户的话术）
 ERROR_GUIDANCE: dict[str, str] = {
-    "window_not_found": "没找到目标窗口。可先用 desk_window_list 看当前窗口，或 desk_app_launch 打开应用。",
-    "app_not_installed": "这台电脑上没找到该应用。可以问用户确切名称，或改用 desk_window_focus。",
-    "target_obscured": "目标被遮挡或界面还没渲染出来。可稍等后再看一次（或 desk_wait_for）。",
+    "window_not_found": "没找到目标窗口。先用 desk_window_list 看当前窗口，或 desk_app_launch 打开应用。",
+    "app_not_installed": "这台电脑上没找到该应用。可以问用户确切名称，或先 desk_window_list 看它是不是已经开着。",
+    "target_obscured": "目标被遮挡或界面还没渲染出来。用 desk_wait 等一会儿，或用 desk_screen_read 再看一眼。",
     "desktop_offline": "桌面端当前未连接，无法操作本机。请告知用户需要开启「电脑能力」，不要反复重试。",
     "policy_blocked": "这个动作被安全策略拦下了。换用只读手段，或请用户自己操作/确认。",
     "screen_content_high_risk": (
@@ -60,7 +119,7 @@ ERROR_GUIDANCE: dict[str, str] = {
     "sensitive_window": "前台是敏感窗口（密码/银行/登录），不截图也不操作。请用户先切到别的窗口。",
     "permission_denied": "目标窗口权限更高（管理员/UAC），无法注入输入。请用户手动完成这一步。",
     "capture_black": "截图是黑的（独占全屏或受保护内容），看不到界面。改为直接询问用户。",
-    "unsupported": "这一步在当前环境不支持（例如这个应用没有可访问性树，或当前是副屏）。换个办法或让用户手动完成。",
+    "unsupported": "这一步在当前环境不支持（应用没有可访问性树，或当前是副屏）。换个办法或让用户手动完成。",
     "uia_unavailable": "这个应用没有可访问性元素（自绘界面）。改用 desk_screen_read 看截图，再用坐标点击。",
     "file_not_found": "这个路径不存在。让用户确认文件名，或先问清楚在哪个文件夹。",
     "file_open_failed": "文件打不开（可能没有关联程序）。告诉用户手动打开，不要重试。",
@@ -131,6 +190,155 @@ def _actor_from(internal: dict[str, Any]) -> dict[str, Any]:
     return actor
 
 
+# ── 结果格式化 ────────────────────────────────────────────────────────────
+
+
+def _fmt_elements(elements: list[Any], limit: int = 12) -> str:
+    lines: list[str] = []
+    for item in elements[:limit]:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").strip()
+        if not label:
+            continue
+        role = str(item.get("role") or "")
+        lines.append(f"  #{item.get('id')} [{role}] {label[:40]}")
+    if not lines:
+        return ""
+    more = "" if len(elements) <= limit else f"\n  …还有 {len(elements) - limit} 个元素，需要时用 desk_find 精确找。"
+    return "\n可点元素：\n" + "\n".join(lines) + more
+
+
+def _fmt_windows(windows: list[Any], limit: int = 8) -> str:
+    lines: list[str] = []
+    for item in windows[:limit]:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        mark = "（前台）" if item.get("isForeground") or item.get("foreground") else ""
+        proc = str(item.get("process") or "")
+        lines.append(f"  - {title[:40]}{mark} {('· ' + proc) if proc else ''}".rstrip())
+    return "\n".join(lines)
+
+
+def _snapshot(data: dict[str, Any], *, elements_limit: int = 10) -> str:
+    """动作之后附一小段界面快照：省掉模型「再点一次 desk_screen_read」。"""
+    parts: list[str] = []
+    title = str(data.get("windowTitle") or "").strip()
+    app = str(data.get("app") or data.get("process") or "").strip()
+    if title or app:
+        parts.append(f"当前窗口：{title or '(未知)'}" + (f"（{app}）" if app else ""))
+    elements = data.get("elements")
+    if isinstance(elements, list) and elements:
+        chunk = _fmt_elements(elements, elements_limit)
+        if chunk:
+            parts.append(chunk)
+    return "\n".join(parts)
+
+
+# ── 观察类工具的语义组装 ──────────────────────────────────────────────────
+
+
+def _match_element(elements: list[Any], text: str, role: str | None = None) -> list[dict[str, Any]]:
+    needle = str(text or "").strip().lower()
+    if not needle:
+        return []
+    role_key = str(role or "").strip().lower()
+    hits: list[dict[str, Any]] = []
+    for item in elements:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").lower()
+        if needle not in label:
+            continue
+        if role_key and role_key not in str(item.get("role") or "").lower():
+            continue
+        hits.append(item)
+    return hits
+
+
+async def _do_find(op: Any, public: dict[str, Any], step_id: str) -> tuple[bool, str]:
+    limit = min(max(int(public.get("limit") or 5), 1), 20)
+    result = await op("desk_read_elements", {}, f"{step_id}-f")
+    if not result.ok:
+        return False, guidance_for(result.error_code, "desk_find")
+    elements = (result.data or {}).get("elements")
+    elements = elements if isinstance(elements, list) else []
+    if not elements:
+        return True, (
+            "当前窗口没有可访问性元素（自绘界面）。改用 desk_screen_read 看截图，再用坐标点击。"
+        )
+    hits = _match_element(elements, public.get("text"), public.get("role"))
+    if not hits:
+        near = [e for e in elements if isinstance(e, dict) and str(e.get("label") or "").strip()][:5]
+        body = _fmt_elements(near, 5)
+        return True, (
+            f"没找到包含「{public.get('text')}」的元素。先确认界面是不是已经切到目标页；"
+            f"当前可点的有：{body or '（无）'}"
+        )
+    lines = [f"找到 {len(hits)} 个匹配「{public.get('text')}」的元素："]
+    for item in hits[:limit]:
+        lines.append(f"  #{item.get('id')} [{item.get('role')}] {str(item.get('label'))[:40]}")
+    lines.append("用 desk_click(element_id=对应编号, label=元素文字) 点它。")
+    return True, "\n".join(lines)
+
+
+async def _do_wait(op: Any, public: dict[str, Any], step_id: str) -> tuple[bool, str]:
+    timeout_ms = min(max(int(public.get("timeout_ms") or 8000), 500), 20000)
+    title = str(public.get("title") or "").strip().lower()
+    process = str(public.get("process") or "").strip().lower()
+    if not title and not process:
+        return False, "desk_wait 需要 title 或 process 之一。"
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_ms / 1000
+    attempt = 0
+    while True:
+        attempt += 1
+        result = await op("desk_window_list", {}, f"{step_id}-w{attempt}")
+        if result.ok:
+            windows = (result.data or {}).get("windows")
+            windows = windows if isinstance(windows, list) else []
+            for win in windows:
+                if not isinstance(win, dict):
+                    continue
+                win_title = str(win.get("title") or "").lower()
+                win_process = str(win.get("process") or "").lower()
+                if (title and title in win_title) or (process and process in win_process):
+                    return True, (
+                        f"窗口已出现：{win.get('title')}"
+                        f"{('（' + str(win.get('process')) + '）') if win.get('process') else ''}"
+                    )
+        if loop.time() >= deadline:
+            return True, (
+                f"等了 {timeout_ms}ms 还是没等到匹配「{public.get('title') or public.get('process')}」的窗口。"
+                "用 desk_window_list 看看现在有哪些窗口，或让用户手动打开。"
+            )
+        await asyncio.sleep(_WAIT_POLL_MS / 1000)
+
+
+async def _settle_after_launch(
+    op: Any, public: dict[str, Any], step_id: str, result: DesktopExecResult
+) -> str:
+    """启动后等窗口出现并带回元素清单 —— 让「打开应用」一步到位。"""
+    if public.get("wait_for_window") is False:
+        return (result.text or "").strip() or "已启动（未等待窗口）。"
+    app = str(public.get("app") or "").replace(".exe", "").strip()
+    timeout_ms = min(max(int(public.get("timeout_ms") or 8000), 1000), 20000)
+    ok, message = await _do_wait(op, {"title": app, "process": app + ".exe", "timeout_ms": timeout_ms}, step_id)
+    parts = [(result.text or "").strip() or f"{app or '应用'} 已启动。", message]
+    snapshot_result = await op("desk_read_elements", {}, f"{step_id}-e")
+    if snapshot_result.ok:
+        snapshot = _snapshot(snapshot_result.data or {}, elements_limit=12)
+        if snapshot:
+            parts.append(snapshot)
+    return "\n".join(p for p in parts if p)
+
+
+# ── 主入口 ────────────────────────────────────────────────────────────────
+
+
 async def call_desktop_tool(name: str, arguments: dict[str, Any] | None = None) -> str:
     """一个 `desk_*` 工具的执行入口（由 specs 用 partial 绑定 name）。"""
     spec: ToolSpec | None = get_tool(name)
@@ -165,31 +373,77 @@ async def call_desktop_tool(name: str, arguments: dict[str, Any] | None = None) 
         return guidance_for(decision.reason, name)
 
     evidence = str(public.get("evidence") or EVIDENCE_USER)
-
-    # 3) 下发（先发进度，失败不影响执行）
     step_id = budget.begin_step() if budget is not None else f"{name}-step"
     session_id = budget.session_id if budget is not None else "desk-session"
     channel = get_channel()
     actor = _actor_from(internal)
 
-    progress_text = PROGRESS_TEMPLATES.get(name)
-    if progress_text:
+    # 3) 进度（前端「行动中」气泡显示这句；失败不影响执行）
+    try:
         await channel.progress(
             user_id=int(user_id), session_id=session_id, step_id=step_id,
-            code=name, text=progress_text,
+            code=name, text=progress_text(name, public),
+        )
+    except Exception as exc:  # noqa: BLE001 - 进度失败不能影响动作
+        logger.debug("progress push failed: %s", exc)
+
+    async def op(op_name: str, extra: dict[str, Any], op_step_id: str) -> DesktopExecResult:
+        """下发一个原子 op（组合工具内部用；不计入模型步数预算）。"""
+        args = dict(extra)
+        if op_name in ("desk_click", "desk_type", "desk_key", "desk_scroll", "desk_window_focus"):
+            args["evidence"] = evidence
+        return await channel.exec(
+            user_id=int(user_id),
+            session_id=session_id,
+            step_id=op_step_id,
+            tool=op_name,
+            arguments=args,
+            timeout_ms=spec.timeout_ms,
+            evidence=evidence,
+            danger=decision.danger,
+            actor=actor,
         )
 
-    result: DesktopExecResult = await channel.exec(
-        user_id=int(user_id),
-        session_id=session_id,
-        step_id=step_id,
-        tool=name,
-        arguments=public,
-        timeout_ms=spec.timeout_ms,
-        evidence=evidence,
-        danger=decision.danger,
-        actor=actor,
-    )
+    # 4) 语义组装（新工具在这里被翻译成原子 op）
+    if name == "desk_find":
+        ok, text = await _do_find(op, public, step_id)
+        if budget is not None:
+            budget.note_result(name, ok, "" if ok else "find_failed")
+        return _truncate(text)
+
+    if name == "desk_wait":
+        ok, text = await _do_wait(op, public, step_id)
+        if budget is not None:
+            budget.note_result(name, ok, "" if ok else "wait_failed")
+        return _truncate(text)
+
+    # desk_click 支持「按文字找再点」，省掉一次 find
+    op_args = dict(public)
+    label_match = str(op_args.pop("label_match", "") or "").strip()
+    if name == "desk_click" and label_match and not op_args.get("element_id"):
+        found = await op("desk_read_elements", {}, f"{step_id}-f")
+        elements = (found.data or {}).get("elements") if found.ok else []
+        hits = _match_element(elements if isinstance(elements, list) else [], label_match)
+        if not hits:
+            return _truncate(
+                f"没找到文字包含「{label_match}」的按钮。先用 desk_screen_read 看一眼界面，或让用户确认控件名称。"
+            )
+        op_args["element_id"] = hits[0].get("id")
+
+    # desk_window_focus 只把需要的字段传下去
+    if name == "desk_window_focus":
+        op_args = {k: v for k, v in op_args.items() if k in ("title", "process", "maximized")}
+    # desk_app_launch：wait_for_window/timeout_ms 由 Python 侧消费，不下发
+    if name == "desk_app_launch":
+        op_args.pop("wait_for_window", None)
+        op_args.pop("timeout_ms", None)
+    if name == "desk_type":
+        mode = op_args.pop("mode", None)
+        if mode == "replace":
+            # 先全选再输入 = 覆盖原内容
+            await op("desk_key", {"keys": ["ctrl", "a"]}, f"{step_id}-a")
+
+    result = await op(OP_ALIASES.get(name, name), op_args, step_id)
 
     if budget is not None:
         budget.note_result(name, result.ok, result.error_code)
@@ -198,11 +452,22 @@ async def call_desktop_tool(name: str, arguments: dict[str, Any] | None = None) 
         logger.info("desktop tool failed: tool=%s code=%s", name, result.error_code or "unknown")
         return guidance_for(result.error_code, name)
 
-    # 4) 组织结果
+    # 5) 组织结果
     if name == "desk_screen_read":
         return _truncate(await _screen_report(result, budget))
-    text = (result.text or "").strip() or f"{name} 已完成（无额外输出）。"
-    return _truncate(text)
+    if name == "desk_app_launch":
+        return _truncate(await _settle_after_launch(op, public, step_id, result))
+    if name == "desk_window_list":
+        body = _fmt_windows(((result.data or {}).get("windows") or []))
+        return _truncate(("当前窗口：\n" + body) if body else "当前没有可见窗口。")
+    if name == "desk_read_elements":
+        snapshot = _snapshot(result.data or {}, elements_limit=14)
+        return _truncate(snapshot or (result.text or "").strip() or "当前窗口没有可访问性元素（自绘界面），改用 desk_screen_read。")
+
+    text = (result.text or "").strip()
+    snapshot = _snapshot(result.data or {}, elements_limit=8)
+    merged = "\n".join(p for p in (text or "已执行。", snapshot) if p)
+    return _truncate(merged)
 
 
 async def _screen_report(result: DesktopExecResult, budget: TaskBudget | None) -> str:
@@ -269,9 +534,11 @@ async def _analyze_screen(result: DesktopExecResult, budget: TaskBudget | None):
 
 __all__ = [
     "ERROR_GUIDANCE",
+    "OP_ALIASES",
     "PROGRESS_TEMPLATES",
     "budget_block_text",
     "call_desktop_tool",
     "guidance_for",
+    "progress_text",
     "split_internal_arguments",
 ]

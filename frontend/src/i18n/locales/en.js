@@ -329,6 +329,8 @@ export default {
     typing: '{name} is replying...',
     export: 'Export',
     actingOnComputer: 'Operating your computer',
+    mcpTaskActive: 'Acting',
+    mcpTaskStarting: 'Getting ready…',
     exporting: 'Preparing chat history…',
     exportSuccess: 'Chat history exported',
     exportEmpty: 'No chat history to export',

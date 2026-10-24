@@ -211,9 +211,20 @@ describe('agentBridge store · 动作转交', () => {
     }))
   })
 
-  it('clears the active task after the result is posted', async () => {
-    await store.handleToolCallMessage(message())
-    expect(store.activeTasks['desk-7-abcd#1']).toBeUndefined()
+  it('keeps the task alive after a step (气泡不闪) and sweeps it after idle', async () => {
+    vi.useFakeTimers()
+    try {
+      holder.api.capabilityBanner = vi.fn(async () => ({ ok: true }))
+      await store.handleToolCallMessage(message())
+      // 每步结束不再立刻删除：多步任务的气泡要一直挂着
+      expect(store.activeTasks['desk-7-abcd#1']).toBeTruthy()
+      // 空闲超时后才收，并通知主进程收横幅
+      vi.advanceTimersByTime(9000)
+      expect(store.activeTasks['desk-7-abcd#1']).toBeUndefined()
+      expect(holder.api.capabilityBanner).toHaveBeenCalledWith({ taskDone: true })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
@@ -247,21 +258,29 @@ describe('agentBridge store · 进度气泡', () => {
     expect(Object.keys(store.activeTasks)).toHaveLength(0)
   })
 
-  it('forwards the current step to the desktop banner and hides it when the task ends', async () => {
-    let release
-    holder.api.capabilityExec = vi.fn(() => new Promise((resolve) => { release = resolve }))
-    holder.api.capabilityBanner = vi.fn(async () => ({ ok: true }))
+  it('forwards the current step to the desktop banner and ends the task explicitly', async () => {
+    vi.useFakeTimers()
+    try {
+      let release
+      holder.api.capabilityExec = vi.fn(() => new Promise((resolve) => { release = resolve }))
+      holder.api.capabilityBanner = vi.fn(async () => ({ ok: true }))
 
-    const pending = store.handleToolCallMessage({
-      type: 'tool_call', requestId: 'r3', name: 'desk_app_launch', arguments: '{}',
-      characterId: 9, characterName: '小雨',
-    })
+      const pending = store.handleToolCallMessage({
+        type: 'tool_call', requestId: 'r3', name: 'desk_app_launch', arguments: '{}',
+        characterId: 9, characterName: '小雨',
+      })
 
-    store.handleProgressMessage({ requestId: 'r3', text: '正在打开网易云音乐' })
-    expect(holder.api.capabilityBanner).toHaveBeenCalledWith({ text: '正在打开网易云音乐' })
+      store.handleProgressMessage({ requestId: 'r3', text: '启动网易云音乐' })
+      // 任务进行中：带 taskActive，主进程据此让横幅常驻
+      expect(holder.api.capabilityBanner).toHaveBeenCalledWith({ taskActive: true, text: '启动网易云音乐' })
 
-    release?.({ ok: true, text: 'ok', errorCode: '' })
-    await pending
-    expect(holder.api.capabilityBanner).toHaveBeenCalledWith({ hide: true })
+      release?.({ ok: true, text: 'ok', errorCode: '' })
+      await pending
+      // 任务结束用 taskDone（不是 hide），并要等空闲兜底超时才会发
+      vi.advanceTimersByTime(9000)
+      expect(holder.api.capabilityBanner).toHaveBeenCalledWith({ taskDone: true })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
