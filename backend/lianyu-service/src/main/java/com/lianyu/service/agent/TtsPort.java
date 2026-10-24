@@ -61,7 +61,20 @@ public interface TtsPort {
                              String voiceId,
                              String text,
                              String languageType,
-                             String logLabel) {
+                             String logLabel,
+                             // 语速倍率（1.0=模型默认）；null 表示不传，交给上游默认值
+                             Double rate) {
+
+        /** 不带语速的便捷构造（等价于 rate=null）——保留给不关心语速的调用方与测试。 */
+        public SynthesizeRequest(String apiKey,
+                                 String baseUrl,
+                                 String model,
+                                 String voiceId,
+                                 String text,
+                                 String languageType,
+                                 String logLabel) {
+            this(apiKey, baseUrl, model, voiceId, text, languageType, logLabel, null);
+        }
     }
 
     /** 合成结果。音频短（几秒），base64 与字节同时给出，省调用方一次编解码。 */

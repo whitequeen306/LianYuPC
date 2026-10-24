@@ -137,8 +137,10 @@ public class VoiceSynthesisService {
         String model = httpModelOverride != null && !httpModelOverride.isBlank()
                 ? httpModelOverride.trim()
                 : petVoiceRegistry.getModel();
+        // 语速：只对配置过倍率的音色生效（pet-voices.json 的 rates），其余走模型默认
+        Double rate = petVoiceRegistry.getRate(logLabel);
         return new TtsPort.SynthesizeRequest(
-                key, apiBaseUrl, model, voiceId.trim(), text.trim(), languageType, logLabel);
+                key, apiBaseUrl, model, voiceId.trim(), text.trim(), languageType, logLabel, rate);
     }
 
     private String resolveApiKey() {

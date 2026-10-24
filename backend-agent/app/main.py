@@ -204,6 +204,7 @@ class ChatStreamBody(BaseModel):
     temperature: float = 0.8
     max_tokens: int = 1024
     tools: list[str] = []
+    low_latency: bool = Field(default=True, alias="lowLatency")
 
     model_config = {"populate_by_name": True}
 
@@ -247,6 +248,7 @@ async def chat_stream(
                 tools=supported_tool_schemas(body.tools) if body.tools else None,
                 # 流式拿不到文本时用它走有界工具循环（模型想调工具的那一轮）
                 tool_names=body.tools or None,
+                low_latency=body.low_latency,
                 tool_context={
                     "_user_id": body.user_id,
                     "_character_id": body.character_id,
@@ -1121,6 +1123,8 @@ class TtsSynthesizeBody(BaseModel):
     language_type: str | None = Field(default="Chinese", alias="languageType")
     connect_timeout_ms: int | None = Field(default=8000, alias="connectTimeoutMs")
     read_timeout_ms: int | None = Field(default=30000, alias="readTimeoutMs")
+    # 语速（0.5~2.0，None=模型默认 1.0）：不同音色默认语感差很多，按音色调
+    rate: float | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -1152,6 +1156,7 @@ async def tts_synthesize(
         language_type=body.language_type,
         connect_timeout=(body.connect_timeout_ms or 8000) / 1000.0,
         read_timeout=(body.read_timeout_ms or 30000) / 1000.0,
+        rate=body.rate,
     )
     if audio is None:
         return Response(status_code=204)
@@ -1188,6 +1193,7 @@ async def tts_stream(
             language_type=body.language_type,
             connect_timeout=(body.connect_timeout_ms or 8000) / 1000.0,
             read_timeout=(body.read_timeout_ms or 30000) / 1000.0,
+            rate=body.rate,
         ),
         media_type="application/octet-stream",
         headers={

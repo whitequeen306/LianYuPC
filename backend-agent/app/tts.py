@@ -95,6 +95,7 @@ async def synthesize(
     language_type: str | None = LANGUAGE_TYPE_DEFAULT,
     connect_timeout: float = 8.0,
     read_timeout: float = 30.0,
+    rate: float | None = None,
 ) -> SynthesizedAudio | None:
     """合成一段语音；不可用时返回 None（调用方已有降级路径）。"""
     spoken = (text or "").strip()
@@ -129,7 +130,7 @@ async def synthesize(
         try:
             audio_url = await _request_audio_url(
                 key=key, model=resolved_model, voice=voice, text=spoken,
-                url=url, language=language, path=path, timeout=timeout,
+                url=url, language=language, path=path, timeout=timeout, rate=rate,
             )
             if not audio_url:
                 return None
@@ -165,19 +166,20 @@ async def _request_audio_url(
     language: str,
     path: str,
     timeout: tuple[float, float, float, float],
+    rate: float | None = None,
 ) -> str | None:
     if path == SPEECH_SYNTH_PATH:
         # 新端点（qwen-audio-*）：要 format/sample_rate，不认 language_type
-        payload = {
-            "model": model,
-            "input": {"text": text, "voice": voice, "format": "wav", "sample_rate": 24000},
-        }
+        input_payload: dict[str, object] = {
+            "text": text, "voice": voice, "format": "wav", "sample_rate": 24000}
     else:
         # 旧端点（qwen3-tts-*）：语言走 language_type
-        payload = {
-            "model": model,
-            "input": {"text": text, "voice": voice, "language_type": language},
-        }
+        input_payload = {"text": text, "voice": voice, "language_type": language}
+    # 语速：CosyVoice 认 rate（0.5~2.0，默认 1.0）。不同音色的默认语感差很多，
+    # 有的角色（例如雷电将军）听起来偏拖沓，需要按音色单独调快。
+    if rate is not None and rate > 0:
+        input_payload["rate"] = rate
+    payload = {"model": model, "input": input_payload}
     async with new_client() as client:
         response = await client.post(
             url,
@@ -226,6 +228,7 @@ async def synthesize_stream(
     language_type: str | None = None,
     connect_timeout: float = 8.0,
     read_timeout: float = 30.0,
+    rate: float | None = None,
 ) -> AsyncIterator[bytes]:
     """流式合成：逐块产出 **PCM（s16le / 24kHz / 单声道）**，用于语音通话边收边播。
 
@@ -273,6 +276,9 @@ async def synthesize_stream(
         "model": resolved_model,
         "input": {"text": spoken, "voice": voice, "format": "pcm", "sample_rate": STREAM_SAMPLE_RATE},
     }
+    # 语音通话的语速也走 rate（CosyVoice 支持 0.5~2.0）：按音色调，避免某些角色听着拖沓
+    if rate is not None and rate > 0:
+        payload["input"]["rate"] = rate
     headers = {
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",

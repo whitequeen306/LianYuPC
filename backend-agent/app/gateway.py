@@ -98,6 +98,18 @@ class GatewayResult:
     tool_calls: list[dict[str, Any]] | None = None
 
 
+def is_thinking_model(model: str) -> bool:
+    """是否是「先思考再回答」的模型。
+
+    这类模型首字延迟极高（实测 qwen3.7-flash：默认 9.3s，关掉思考 0.38s），
+    语音通话必须关掉，否则用户说完话要等近十秒才听到第一个字。
+    只认 qwen3 系，其它 provider 收到 enable_thinking 会 400。
+    """
+    name = (model or "").strip().lower()
+    if not name:
+        return False
+    return name.startswith("qwen3") or "thinking" in name
+
 class ModelGatewayError(GatewayError):
     """模型网关错误（对齐 Java BusinessException(AI_PROVIDER_ERROR) 语义）。"""
 
@@ -190,6 +202,7 @@ class ModelGateway:
         provider: str | None = None,
         lane_name: str = "interactive",
         tool_sink: list[dict[str, Any]] | None = None,
+        low_latency: bool = False,
     ) -> AsyncIterator[str]:
         """流式取 token 增量（OpenAI SSE）。
 
@@ -207,6 +220,11 @@ class ModelGateway:
             "max_tokens": max_tokens,
             "stream": True,
         }
+        if low_latency and is_thinking_model(model):
+            # 语音通话要的是"说完就答"，而思考型模型会先想 5~10 秒才吐第一个字
+            # （实测 qwen3.7-flash：带思考首字 9.3s，关掉 0.38s，快 25 倍）。
+            # 只对认识的思考型模型加这个字段，其它 provider 收到会 400。
+            payload["enable_thinking"] = False
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"

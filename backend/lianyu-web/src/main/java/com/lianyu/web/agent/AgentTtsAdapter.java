@@ -76,6 +76,10 @@ public class AgentTtsAdapter implements TtsPort {
         body.put("voiceId", request.voiceId());
         body.put("text", request.text() == null ? "" : request.text());
         body.put("languageType", request.languageType() == null ? "Chinese" : request.languageType());
+        // 语速倍率：只有音色配了 rates 才带（雷电将军 1.15），其余走上游默认 1.0
+        if (request.rate() != null && request.rate() > 0) {
+            body.put("rate", request.rate());
+        }
         return body;
     }
 }

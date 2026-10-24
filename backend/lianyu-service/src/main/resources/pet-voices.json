@@ -16,6 +16,10 @@
     "shenhe": "cosyvoice-v3.5-flash-lyshenhe-393bdf1f5b2745ffa4dfaef57f37da71",
     "yae_miko": "cosyvoice-v3.5-flash-lyyaemiko-d0401e4efb694253a96af486dbf60f96"
   },
+  "_ratesComment": "按音色的语速倍率（1.0 = 模型默认）。只给听感明显偏慢的角色调，避免全局变调。",
+  "rates": {
+    "raiden": 1.15
+  },
   "realtimeModel": "",
   "realtimeVoices": {}
 }

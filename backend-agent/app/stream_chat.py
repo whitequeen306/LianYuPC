@@ -63,6 +63,7 @@ async def stream_chat_events(
     tools: list[dict[str, Any]] | None = None,
     tool_names: list[str] | None = None,
     tool_context: dict[str, Any] | None = None,
+    low_latency: bool = False,
 ) -> AsyncIterator[str]:
     """产出符合 Java 契约的 SSE 帧序列。
 
@@ -99,6 +100,7 @@ async def stream_chat_events(
                 provider=provider,
                 lane_name="interactive",
                 tool_sink=tool_sink,
+                low_latency=low_latency,
             ):
                 round_text.append(delta)
                 collected.append(delta)

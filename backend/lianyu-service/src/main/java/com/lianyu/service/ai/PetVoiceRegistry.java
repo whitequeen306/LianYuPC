@@ -57,6 +57,9 @@ public class PetVoiceRegistry {
     /** petId → realtime voiceId (never fall back to HTTP id) */
     private Map<String, String> realtimeVoices = Collections.emptyMap();
 
+    /** petId → 语速倍率（1.0 = 模型默认）；只给听感偏慢的角色配。 */
+    private Map<String, Double> rates = Collections.emptyMap();
+
     public PetVoiceRegistry(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
@@ -73,12 +76,14 @@ public class PetVoiceRegistry {
             }
             httpVoices = Collections.unmodifiableMap(readVoiceMap(root.get("voices")));
             realtimeVoices = Collections.unmodifiableMap(readVoiceMap(root.get("realtimeVoices")));
+            rates = Collections.unmodifiableMap(readRateMap(root.get("rates")));
             log.info("Loaded pet voices: http={} model={} realtime={} realtimeModel={}",
                     httpVoices.size(), model, realtimeVoices.size(), realtimeModel);
         } catch (Exception e) {
             log.warn("pet-voices.json not loaded, pet TTS disabled: {}", e.getMessage());
             httpVoices = Collections.emptyMap();
             realtimeVoices = Collections.emptyMap();
+            rates = Collections.emptyMap();
         }
     }
 
@@ -91,6 +96,30 @@ public class PetVoiceRegistry {
         return loaded;
     }
 
+    private static Map<String, Double> readRateMap(JsonNode node) {
+        Map<String, Double> loaded = new HashMap<>();
+        if (node != null && node.isObject()) {
+            node.fields().forEachRemaining(entry -> {
+                if (entry.getValue().isNumber()) {
+                    loaded.put(entry.getKey().toLowerCase(java.util.Locale.ROOT), entry.getValue().asDouble());
+                }
+            });
+        }
+        return loaded;
+    }
+
+    /**
+     * 该音色的语速倍率；没配置时返回 null（= 用模型默认 1.0）。
+     *
+     * <p>为什么按音色而不是全局：TTS 音色的默认语感差异很大，全局调快会把
+     * 本来正常的角色说过头；只给听感偏慢的（例如雷电将军）单独调快即可。
+     */
+    public Double getRate(String petId) {
+        if (petId == null || petId.isBlank()) {
+            return null;
+        }
+        return rates.get(petId.trim().toLowerCase(java.util.Locale.ROOT));
+    }
     /** HTTP voiceId for desktop pet / cold-open / HTTP synthesis. */
     public String resolveHttpVoiceId(String petId) {
         return lookup(httpVoices, petId);
