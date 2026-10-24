@@ -26,7 +26,9 @@ def run(client: paramiko.SSHClient, cmd: str, timeout: int = 900, quiet: bool = 
     """执行远端命令；quiet=True 时不回显命令与输出（用于纯取值的探测）。"""
     if not quiet:
         print(f"$ {cmd}", flush=True)
-    _, stdout, stderr = client.exec_command(cmd, timeout=timeout, get_pty=True)
+        # 不用 PTY：compose 的进度 TUI 在 PTY 下可能永不返回 EOF（2026-10 两次假死：
+    # 服务器侧构建早已结束，客户端却一直读不到结束符，整条发版流水线卡在 deploy）。
+    _, stdout, stderr = client.exec_command(cmd, timeout=timeout, get_pty=False)
     out = stdout.read().decode("utf-8", errors="replace")
     err = stderr.read().decode("utf-8", errors="replace")
     code = stdout.channel.recv_exit_status()
