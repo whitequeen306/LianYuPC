@@ -144,10 +144,35 @@ public class VoiceCallDuplexSession {
      * <p>失败无所谓 —— 预热本来就是为了快，不能让它影响通话。
      */
     private void prewarmTts() {
+        prewarmTtsInternal(2);
+    }
+
+    /**
+     * 每轮对话开始前焐一次（异步、只一次）。
+     *
+     * <p>为什么还需要它：通话建立时那次预热只保住了第一句。DashScope 的 HTTP 合成不是
+     * 长连接保活，两次调用间隔久了模型实例会冷却 —— 线上实测同一通电话里
+     * 后续轮次的首包回到 1940ms（热态是 588ms）。
+     *
+     * <p>关键点是**并行**：它和 LLM 出首字同时开始，等句子切好（约 1s 后）模型实例已就绪，
+     * 用户几乎听不到这次预热的存在；如果串行做就纯亏时间。
+     *
+     * <p>只焐一次（不像通话建立时发两次）：这时负载均衡另一侧会被正式合成打到，不必重复。
+     */
+    private void prewarmTtsForTurn() {
+        if (target.isLocal() || closed.get()) {
+            return;
+        }
+        Thread t = new Thread(() -> prewarmTtsInternal(1), "voice-prewarm-" + conversationId);
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private void prewarmTtsInternal(int times) {
         if (target.isLocal()) {
             return;
         }
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < times; i++) {
             try {
                 voiceCallService.streamSynthesizeForTarget(target, PREWARM_TEXT, new TtsPort.TtsChunkSink() {
                     @Override
@@ -271,6 +296,10 @@ public class VoiceCallDuplexSession {
         emitJson("asr.final", n -> n.put("text", userText));
         emitJson("turn.start", n -> n.put("userText", userText));
         log.info("Voice duplex timing conv={} stage=turn_start userLen={}", conversationId, userText.length());
+
+        // 与下面的 LLM 请求**并行**把 TTS 焐热：等句子切好（约 1s 后）模型实例就绪，
+        // 首包从冷态的 ~1.9s 降到热态的 ~0.6s。
+        prewarmTtsForTurn();
 
         Thread worker = new Thread(() -> {
             // 按句流水线的两个部件：
