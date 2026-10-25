@@ -26,6 +26,13 @@ import org.junit.jupiter.api.Test;
  * 而这正是「测试全绿、线上没声音」的典型形态。
  */
 class AgentRuntimeClientBinaryTest {
+    /** 工具清单来源的桩：测试里不需要真去打 /agent/capabilities。 */
+    private static AgentToolCatalog stubCatalog() {
+        AgentToolCatalog catalog = org.mockito.Mockito.mock(AgentToolCatalog.class);
+        org.mockito.Mockito.when(catalog.chatTools()).thenReturn(java.util.List.of(
+                "get_current_time", "get_weather", "memory_search", "get_my_recent_life"));
+        return catalog;
+    }
 
     /** 400KB：明显超过 256KB 默认上限，又远小于我们配的 16MB。 */
     private static final byte[] BIG_AUDIO = buildAudio(400 * 1024);
@@ -52,7 +59,7 @@ class AgentRuntimeClientBinaryTest {
                 respond(exchange, 500, "text/plain", "oops".getBytes(StandardCharsets.UTF_8)));
         server.start();
         String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
-        client = new AgentRuntimeClient(new AgentRuntimeProperties(baseUrl), new ObjectMapper());
+        client = new AgentRuntimeClient(new AgentRuntimeProperties(baseUrl), new ObjectMapper(), stubCatalog());
     }
 
     @AfterAll
@@ -105,8 +112,7 @@ class AgentRuntimeClientBinaryTest {
         try (java.net.ServerSocket socket = new java.net.ServerSocket(0)) {
             closedPort = socket.getLocalPort();
         }
-        AgentRuntimeClient deadClient = new AgentRuntimeClient(
-                new AgentRuntimeProperties("http://127.0.0.1:" + closedPort), new ObjectMapper());
+        AgentRuntimeClient deadClient = new AgentRuntimeClient(new AgentRuntimeProperties("http://127.0.0.1:" + closedPort), new ObjectMapper(), stubCatalog());
         assertNull(deadClient.postBytes("/audio", 0L, Map.of()));
     }
 }

@@ -26,23 +26,19 @@ import org.springframework.web.client.RestClient;
 @EnableConfigurationProperties(AgentRuntimeProperties.class)
 public class AgentRuntimeClient {
 
-    /**
-     * 主动发言链路挂的只读工具（能力声明归 Python，Java 只声明要哪些）。
-     * 不含 write_diary / 桌面 desk_*：前者 Python 未实现（总纲 D9）；
-     * 后者由 Python 的 capability_names() 按桌面在线状态决定，不该在这里写死。
-     */
-    private static final List<String> PROACTIVE_TOOLS = List.of(
-            "get_current_time", "get_weather", "memory_search", "get_my_recent_life");
-
     private final AgentRuntimeProperties properties;
+    /** 工具清单唯一来源（Python /agent/capabilities），别再在 Java 里手抄。 */
+    private final AgentToolCatalog toolCatalog;
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
     /** 流式出站（对齐红线 §10：流式必须用 reactor-netty + 读间隙超时）。 */
     private final org.springframework.web.reactive.function.client.WebClient webClient;
 
-    public AgentRuntimeClient(AgentRuntimeProperties properties, ObjectMapper objectMapper) {
+    public AgentRuntimeClient(AgentRuntimeProperties properties, ObjectMapper objectMapper,
+                              AgentToolCatalog toolCatalog) {
         this.properties = properties;
         this.objectMapper = objectMapper;
+        this.toolCatalog = toolCatalog;
         this.restClient = SsrfPinningClientFactory.defaultRestClientBuilder()
                 .baseUrl(properties.baseUrl())
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
@@ -171,7 +167,7 @@ public class AgentRuntimeClient {
         if (!properties.agentActive()) {
             return null;
         }
-        List<String> tools = PROACTIVE_TOOLS;
+        List<String> tools = toolCatalog.chatTools();
         try {
             Map<String, Object> body = new java.util.LinkedHashMap<>();
             body.put("userId", userId);

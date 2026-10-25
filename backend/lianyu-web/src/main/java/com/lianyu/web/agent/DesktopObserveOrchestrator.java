@@ -16,11 +16,14 @@ import java.util.Map;
 public class DesktopObserveOrchestrator implements com.lianyu.service.agent.AgentRuntimePort {
 
     private final AgentRuntimeClient agentClient;
+    private final AgentToolCatalog toolCatalog;
     private final ApiKeyVaultService vaultService;
 
     public DesktopObserveOrchestrator(AgentRuntimeClient agentClient,
+                                      AgentToolCatalog toolCatalog,
                                       ApiKeyVaultService vaultService) {
         this.agentClient = agentClient;
+        this.toolCatalog = toolCatalog;
         this.vaultService = vaultService;
     }
 

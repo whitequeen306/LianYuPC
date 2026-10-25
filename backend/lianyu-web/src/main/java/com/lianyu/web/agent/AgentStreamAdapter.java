@@ -24,11 +24,9 @@ public class AgentStreamAdapter implements AgentStreamPort {
 
     private static final long SSE_TIMEOUT_MS = 1_800_000L;
 
-    /** 单聊链路在 Java 侧会挂的工具（与 ToolManager 默认集对齐；Python 已支持）。 */
-    private static final List<String> CHAT_TOOLS = List.of(
-            "get_current_time", "get_weather", "memory_search", "get_my_recent_life");
-
     private final AgentRuntimeClient client;
+    /** 工具清单唯一来源（Python /agent/capabilities）。 */
+    private final AgentToolCatalog toolCatalog;
     private final AgentStreamBridge bridge;
     private final ApiKeyVaultService vaultService;
 
@@ -89,7 +87,7 @@ public class AgentStreamAdapter implements AgentStreamPort {
 
         log.info("Agent stream dispatched: userId={}, messages={}, model={}", userId, payloadMessages.size(), resolvedModel);
         client.streamChat(userId, systemPrompt, payloadMessages, baseUrl, apiKey, resolvedModel,
-                        provider, expectedLanguage, characterId, CHAT_TOOLS, 0.8, maxTokens)
+                        provider, expectedLanguage, characterId, toolCatalog.chatTools(), 0.8, maxTokens)
 
                 .subscribe(
                         relay::accept,

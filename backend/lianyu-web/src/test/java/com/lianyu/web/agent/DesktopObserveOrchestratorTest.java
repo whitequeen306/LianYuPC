@@ -21,6 +21,13 @@ import org.mockito.Mockito;
  * agent 编排行为测试（OFF 退役后只有一条路径）。
  */
 class DesktopObserveOrchestratorTest {
+    /** 工具清单来源的桩：测试里不需要真去打 /agent/capabilities。 */
+    private static AgentToolCatalog stubCatalog() {
+        AgentToolCatalog catalog = org.mockito.Mockito.mock(AgentToolCatalog.class);
+        org.mockito.Mockito.when(catalog.chatTools()).thenReturn(java.util.List.of(
+                "get_current_time", "get_weather", "memory_search", "get_my_recent_life"));
+        return catalog;
+    }
 
     private AgentRuntimeClient agentClient;
     private ApiKeyVaultService vaultService;
@@ -30,7 +37,7 @@ class DesktopObserveOrchestratorTest {
     void setUp() {
         agentClient = Mockito.mock(AgentRuntimeClient.class);
         vaultService = Mockito.mock(ApiKeyVaultService.class);
-        orchestrator = new DesktopObserveOrchestrator(agentClient, vaultService);
+        orchestrator = new DesktopObserveOrchestrator(agentClient, stubCatalog(), vaultService);
         when(agentClient.properties()).thenReturn(new AgentRuntimeProperties("http://agent:8001"));
         when(vaultService.resolveForChat(anyLong(), any())).thenReturn(
                 VaultEntryResponse.builder()

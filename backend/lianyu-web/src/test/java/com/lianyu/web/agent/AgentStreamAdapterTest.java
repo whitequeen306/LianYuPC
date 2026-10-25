@@ -27,6 +27,13 @@ import reactor.core.publisher.Flux;
  * 所以「什么情况下返回 null」必须精确——多接管一次就可能让用户看到空回复。
  */
 class AgentStreamAdapterTest {
+    /** 工具清单来源的桩：测试里不需要真去打 /agent/capabilities。 */
+    private static AgentToolCatalog stubCatalog() {
+        AgentToolCatalog catalog = org.mockito.Mockito.mock(AgentToolCatalog.class);
+        org.mockito.Mockito.when(catalog.chatTools()).thenReturn(java.util.List.of(
+                "get_current_time", "get_weather", "memory_search", "get_my_recent_life"));
+        return catalog;
+    }
 
     private AgentRuntimeClient client;
     private AgentStreamBridge bridge;
@@ -40,7 +47,7 @@ class AgentStreamAdapterTest {
         when(client.isHealthy()).thenReturn(true);
         bridge = mock(AgentStreamBridge.class);
         vaultService = mock(ApiKeyVaultService.class);
-        adapter = new AgentStreamAdapter(client, bridge, vaultService);
+        adapter = new AgentStreamAdapter(client, stubCatalog(), bridge, vaultService);
         callback = mock(com.lianyu.service.agent.AgentStreamCallback.class);
         when(bridge.newRelay(any(), any())).thenReturn(mock(AgentStreamBridge.Relay.class));
     }

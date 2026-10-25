@@ -24,6 +24,8 @@ import org.springframework.stereotype.Component;
 public class AgentTextStreamAdapter implements AgentTextStreamPort {
 
     private final AgentRuntimeClient client;
+    /** 工具清单唯一来源（Python /agent/capabilities）。 */
+    private final AgentToolCatalog toolCatalog;
     private final ApiKeyVaultService vaultService;
 
     @Override
@@ -81,7 +83,7 @@ public class AgentTextStreamAdapter implements AgentTextStreamPort {
         StringBuilder content = new StringBuilder();
         client.streamChat(userId, systemPrompt, payload, baseUrl, apiKey, resolvedModel,
                         provider, expectedLanguage, null,
-                        List.of("get_current_time", "get_weather", "memory_search", "get_my_recent_life"),
+                        toolCatalog.chatTools(),
                         0.7, 256)
                 .subscribe(chunk -> {
                     AgentSseParser.Event event = AgentSseParser.parseLine(chunk);
