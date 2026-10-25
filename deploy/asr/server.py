@@ -240,6 +240,18 @@ def _sense_final(pcm: bytes) -> str:
         return ""
 
 
+def _looks_like_noise(zip_text: str, sense_text: str) -> bool:
+    """是不是「不该当成一句话」的噪声。
+
+    判据：流式一个字符都没解出来（真实说话不可能），而 SenseVoice 也只给两三个字 ——
+    线上实际见到的是 ``zip='' sense='我你。'``，来自角色自己声音的回声尾巴。
+    这种照常开回合会白花一次模型调用，还会让角色答非所问。
+    """
+    if (zip_text or "").strip():
+        return False
+    return sum(1 for ch in (sense_text or "") if ch.isalnum()) <= 3
+
+
 def _pick_final(zip_text: str, sense_text: str) -> str:
     """二次解码结果优先，流式结果只兜底。
 
@@ -413,18 +425,21 @@ async def stream_asr(ws: WebSocket) -> None:
                         f"[asr] commit zip={zip_text!r} sense={sense_text!r} pick={final_text!r}",
                         flush=True,
                     )
-                    if final_text:
+                    noise = _looks_like_noise(zip_text, sense_text)
+                    if final_text and not noise:
                         await emit({
                             "type": "final",
                             "text": final_text,
                             "zipformer": zip_text,
                             "sense": sense_text,
                         })
+                    elif noise:
+                        print(f"[asr] drop noise (commit) sense={sense_text!r}", flush=True)
                     recognizer.reset(stream)
                     last_text = ""
                     pcm_buf.clear()
                     utt_pcm.clear()
-                    await emit({"type": "endpoint"})
+                    await emit({"type": "noise"} if noise else {"type": "endpoint"})
                     continue
                 if kind == "reset":
                     stream = recognizer.create_stream()
@@ -462,19 +477,22 @@ async def stream_asr(ws: WebSocket) -> None:
                     f"[asr] endpoint zip={zip_text!r} sense={sense_text!r} pick={final_text!r}",
                     flush=True,
                 )
-                if final_text:
+                noise = _looks_like_noise(zip_text, sense_text)
+                if final_text and not noise:
                     await emit({
                         "type": "final",
                         "text": final_text,
                         "zipformer": zip_text,
                         "sense": sense_text,
                     })
+                elif noise:
+                    print(f"[asr] drop noise (endpoint) sense={sense_text!r}", flush=True)
                 # Reset for next utterance; keep connection.
                 recognizer.reset(stream)
                 last_text = ""
                 pcm_buf.clear()
                 utt_pcm.clear()
-                await emit({"type": "endpoint"})
+                await emit({"type": "noise"} if noise else {"type": "endpoint"})
     except WebSocketDisconnect:
         return
     except Exception:

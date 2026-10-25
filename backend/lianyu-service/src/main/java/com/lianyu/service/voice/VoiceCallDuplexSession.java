@@ -58,6 +58,11 @@ public class VoiceCallDuplexSession {
     private final AtomicBoolean audioSent = new AtomicBoolean(false);
     /** 已向服务端发出 commit，正在等定稿结果（等到了就取消兜底计时）。 */
     private final AtomicBoolean commitPending = new AtomicBoolean(false);
+    /** 最近一次真正开起来的回合的文本与时刻：用来挡住「同一句话被触发两次」。 */
+    private volatile String lastTurnText = "";
+    private volatile long lastTurnAtMs = 0L;
+    /** 去重时间窗：commit 超时与定稿到达之间实测只差 77ms，3s 足够宽裕。 */
+    private static final long DEDUP_WINDOW_MS = 3000L;
     /** 本轮是否已放行麦克风（真人插话）；回合结束复位。 */
     private final AtomicBoolean bargeInAllowed = new AtomicBoolean(false);
     private final AtomicReference<java.util.concurrent.CompletableFuture<?>> llmFuture = new AtomicReference<>();
@@ -120,6 +125,16 @@ public class VoiceCallDuplexSession {
             @Override
             public void onEndpoint() {
                 triggerTurnFromAsr("engine");
+            }
+
+            @Override
+            public void onNoise() {
+                // 端点成立但内容是噪声（回声尾巴）：丢掉累积文本、取消等定稿的兜底计时，绝不开回合。
+                synchronized (VoiceCallDuplexSession.this) {
+                    lastPartial = "";
+                }
+                commitPending.set(false);
+                log.info("Voice duplex asr noise dropped conv={}", conversationId);
             }
 
             @Override
@@ -259,8 +274,8 @@ public class VoiceCallDuplexSession {
         timer.start();
     }
 
-    /** commit 定稿的等待上限：超过就用中间结果兜底（正常 80-250ms 就回来了）。 */
-    private static final long COMMIT_WAIT_MS = 600L;
+    /** commit 定稿的等待上限。线上实测 677ms（含 SenseVoice 二次解码），原来 600ms 会误判超时。 */
+    private static final long COMMIT_WAIT_MS = 1500L;
 
     /**
      * 端点触发：把已累积的 ASR 文本变成一个回合。
@@ -328,6 +343,62 @@ public class VoiceCallDuplexSession {
         asr.close();
     }
 
+    /** 去掉标点/空白后的字数（回声尾巴常常只剩标点加一两个字）。 */
+    private static int meaningfulLength(String text) {
+        int n = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (Character.isLetterOrDigit(text.charAt(i))) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    private static String stripPunct(String s) {
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (Character.isLetterOrDigit(c)) {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 是否与「刚开起来的那个回合」是同一句话。
+     *
+     * <p>不做严格相等：定稿通常比中间结果多几个字（线上实测 12 字 vs 14 字），
+     * 所以用「时间窗 + 包含关系 + 前缀重合度」判定，宁可漏挡也不要误挡下一句。
+     */
+    private boolean isDuplicateOfLastTurn(String text) {
+        String prev = lastTurnText;
+        if (prev == null || prev.isBlank()) {
+            return false;
+        }
+        if (System.currentTimeMillis() - lastTurnAtMs > DEDUP_WINDOW_MS) {
+            return false;
+        }
+        String a = stripPunct(prev);
+        String b = stripPunct(text);
+        if (a.isEmpty() || b.isEmpty()) {
+            return false;
+        }
+        if (a.equals(b) || a.contains(b) || b.contains(a)) {
+            return true;
+        }
+        int min = Math.min(a.length(), b.length());
+        int common = 0;
+        while (common < min && a.charAt(common) == b.charAt(common)) {
+            common++;
+        }
+        return common >= Math.max(2, (int) Math.ceil(min * 0.6));
+    }
+
+    private static String abbreviate(String text) {
+        return text.length() <= 20 ? text : text.substring(0, 20) + "…";
+    }
+
     private void startTurn(String rawText) {
         if (closed.get()) {
             return;
@@ -337,6 +408,19 @@ public class VoiceCallDuplexSession {
         if (userText.isBlank()) {
             return;
         }
+        // 噪声过滤：定稿只剩一两个字（回声尾巴、咳嗽、桌面杂音）不值得开一整回合。
+        if (meaningfulLength(userText) < 2) {
+            log.info("Voice duplex skip noise conv={} len={} text={}",
+                    conversationId, userText.length(), abbreviate(userText));
+            return;
+        }
+        // 同一句话的重复触发：commit 超时先拿中间结果开了回合、定稿随后才到（线上实测差 77ms），
+        // 以及客户端 VAD 抖动重复发端点。不挡的话用户会听到「同一句被处理两次」。
+        if (isDuplicateOfLastTurn(userText)) {
+            log.info("Voice duplex skip duplicate conv={} len={} text={}",
+                    conversationId, userText.length(), abbreviate(userText));
+            return;
+        }
         if (!turnBusy.compareAndSet(false, true)) {
             // 上一回合还在播音频。**不能装作没听见**：把这句话存起来，等当前回合收尾立刻接上。
             pendingUserText.set(userText);
@@ -344,6 +428,8 @@ public class VoiceCallDuplexSession {
                     conversationId, userText.length());
             return;
         }
+        lastTurnText = userText;
+        lastTurnAtMs = System.currentTimeMillis();
         turnStartedAtMs = System.currentTimeMillis();
         // 每个回合开始时关闭麦克风：这一轮要出声，外放回声不能被当成用户在说话。
         // 真人插话会走 bargeIn() 重新打开。

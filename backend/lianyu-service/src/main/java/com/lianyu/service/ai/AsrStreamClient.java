@@ -28,6 +28,13 @@ public class AsrStreamClient {
 
         void onEndpoint();
 
+        /**
+         * 端点判定成立、但内容是噪声（真实说话不可能流式零字符 + 定稿只有两三个字）。
+         * 默认什么都不做；实现方应清掉累积文本、**不要**开回合。
+         */
+        default void onNoise() {
+        }
+
         void onError(String message);
 
         void onClosed();
@@ -210,6 +217,8 @@ public class AsrStreamClient {
                     case "partial" -> listener.onPartial(root.path("text").asText("").trim());
                     case "final" -> listener.onFinal(root.path("text").asText("").trim());
                     case "endpoint" -> listener.onEndpoint();
+                    // 端点但内容是噪声（回声尾巴）：不要开回合，清掉状态即可
+                    case "noise" -> listener.onNoise();
                     case "error" -> listener.onError(root.path("message").asText("asr error"));
                     case "closed" -> {
                         if (closed.compareAndSet(false, true)) {
