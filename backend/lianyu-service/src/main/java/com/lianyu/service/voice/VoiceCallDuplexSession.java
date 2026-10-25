@@ -56,6 +56,8 @@ public class VoiceCallDuplexSession {
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicBoolean turnBusy = new AtomicBoolean(false);
     private final AtomicBoolean audioSent = new AtomicBoolean(false);
+    /** 已向服务端发出 commit，正在等定稿结果（等到了就取消兜底计时）。 */
+    private final AtomicBoolean commitPending = new AtomicBoolean(false);
     private final AtomicReference<java.util.concurrent.CompletableFuture<?>> llmFuture = new AtomicReference<>();
     /**
      * 上一个回合还没收尾时，用户又说完一句 —— 先把文本存这里，等当前回合结束立刻接上。
@@ -209,9 +211,47 @@ public class VoiceCallDuplexSession {
         });
     }
 
+    /**
+     * 客户端 VAD 判定「说完了」。
+     *
+     * <p>不直接取 {@code lastPartial} 进回合：那是**中间结果**，引擎往往还没把尾巴解出来，
+     * 直接拿去提问就会得到「什么赫赫尔」这种残句/乱码（线上真实反馈）。
+     * 正确做法是先让服务端 commit（补尾音 + 解完 + SenseVoice 二次解码），
+     * 定稿文本通过 {@code final}/{@code endpoint} 事件回到 {@link #triggerTurnFromAsr}。
+     *
+     * <p>{@link #COMMIT_WAIT_MS} 是兜底：服务端无响应（网络抖动/模型卡住）时，
+     * 退回旧行为用中间结果，宁可稍差也不能让用户"说了没反应"。
+     */
     public void clientEndpoint() {
-        triggerTurnFromAsr("client");
+        if (closed.get()) {
+            return;
+        }
+        commitPending.set(true);
+        try {
+            asr.commit();
+        } catch (Exception e) {
+            commitPending.set(false);
+            triggerTurnFromAsr("client-nocommit");
+            return;
+        }
+        Thread timer = new Thread(() -> {
+            try {
+                Thread.sleep(COMMIT_WAIT_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            if (commitPending.compareAndSet(true, false)) {
+                log.info("Voice duplex commit timeout conv={}, falling back to partial", conversationId);
+                triggerTurnFromAsr("client-timeout");
+            }
+        }, "voice-commit-" + conversationId);
+        timer.setDaemon(true);
+        timer.start();
     }
+
+    /** commit 定稿的等待上限：超过就用中间结果兜底（正常 80-250ms 就回来了）。 */
+    private static final long COMMIT_WAIT_MS = 600L;
 
     /**
      * 端点触发：把已累积的 ASR 文本变成一个回合。
@@ -235,6 +275,8 @@ public class VoiceCallDuplexSession {
      * </ol>
      */
     private void triggerTurnFromAsr(String source) {
+        // 服务端的定稿回来了（final/endpoint）：取消「等不到就退回中间结果」的兜底
+        commitPending.set(false);
         long now = System.currentTimeMillis();
         int textLen;
         String text;
@@ -258,8 +300,11 @@ public class VoiceCallDuplexSession {
             return;
         }
         try {
-            // 客户端 VAD 触发时引擎可能还在累积同一段 text，reset 让两边对齐起点
-            asr.reset();
+            // 正常路径（commit 定稿 / 引擎端点）服务端已经自己 reset 过，这里再 reset 一次
+            // 只会把下一句的左侧上下文白扔掉；只有兜底路径（没走 commit 就进回合）才需要补。
+            if (source.startsWith("client")) {
+                asr.reset();
+            }
         } catch (Exception e) {
             log.debug("ASR reset after call endpoint failed: {}", e.toString());
         }

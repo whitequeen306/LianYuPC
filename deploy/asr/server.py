@@ -8,6 +8,7 @@ YuNian ASR service (sherpa-onnx).
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import subprocess
@@ -220,6 +221,42 @@ def _sense_transcribe(samples: np.ndarray, sample_rate: int) -> str:
     return (stream.result.text or "").strip()
 
 
+# ── 二次解码（final re-pass）──
+# 流式 Zipformer 是 greedy transducer：没有语言模型、会重复吐字、结尾常丢音。
+# 同一句音频再交给离线 SenseVoice 解一遍，精度高得多（非自回归，几十到一两百毫秒）。
+# 语音通话真正送给模型的是**这句定稿文本**，所以这里值得多花这点时间。
+FINAL_REPASS = os.environ.get("ASR_FINAL_REPASS", "true").lower() not in {"0", "false", "no"}
+UTT_MAX_SECONDS = float(os.environ.get("ASR_UTT_MAX_SECONDS", "30"))
+
+
+def _sense_final(pcm: bytes) -> str:
+    """把一整句 PCM 用 SenseVoice 重解；失败返回空串（绝不影响主链路）。"""
+    if not pcm:
+        return ""
+    try:
+        return _sense_transcribe(_pcm16_to_float(pcm), SAMPLE_RATE).strip()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[asr] sense repass failed: {exc}", flush=True)
+        return ""
+
+
+def _pick_final(zip_text: str, sense_text: str) -> str:
+    """二次解码结果优先，流式结果只兜底。
+
+    为什么不是"取更长的那句"：Zipformer 的重复吐字（如「赫尔赫尔」）会让它更长，
+    按长度取胜劣币驱逐良币。只在 SenseVoice 明显可疑（空/极短/不到流式一半）时才回退。
+    """
+    z = (zip_text or "").strip()
+    s = (sense_text or "").strip()
+    if not s:
+        return z
+    if not z:
+        return s
+    if len(s) < 2 or len(s) * 2 < len(z):
+        return z
+    return s
+
+
 @app.on_event("startup")
 def startup() -> None:
     _load_offline()
@@ -325,6 +362,10 @@ async def stream_asr(ws: WebSocket) -> None:
     stream = recognizer.create_stream()
     last_text = ""
     pcm_buf = bytearray()
+    # 当前这一句的音频：commit / endpoint 时用来做 SenseVoice 二次解码。
+    # 和 pcm_buf 分开是因为 pcm_buf 是"整个会话"的上限控制，utt_pcm 只留这一句。
+    utt_pcm = bytearray()
+    utt_max_bytes = int(UTT_MAX_SECONDS * SAMPLE_RATE * 2)
     max_session_bytes = MAX_BYTES * 2
 
     async def emit(event: dict) -> None:
@@ -354,10 +395,42 @@ async def stream_asr(ws: WebSocket) -> None:
                         await emit({"type": "final", "text": text})
                     await emit({"type": "closed"})
                     break
+                if kind == "commit":
+                    # 「现在这句说完了，请给我定稿」——由客户端 VAD 触发。
+                    #
+                    # 为什么需要它：客户端 VAD（750ms 静音）总比引擎自己的端点规则
+                    # （rule2=1.2s）先到。原先客户端一到就直接拿**未定稿的中间结果**
+                    # 去提问，尾巴上的字常常还没解出来，就成了「什么赫赫尔」那种残句。
+                    # 现在改成：客户端说完了 → 这里立刻收尾定稿 → 再回 endpoint。
+                    pad = np.zeros(int(0.3 * SAMPLE_RATE), dtype=np.float32)
+                    stream.accept_waveform(SAMPLE_RATE, pad)
+                    while recognizer.is_ready(stream):
+                        recognizer.decode_stream(stream)
+                    zip_text = (recognizer.get_result(stream) or "").strip() or last_text
+                    sense_text = await asyncio.to_thread(_sense_final, bytes(utt_pcm)) if FINAL_REPASS else ""
+                    final_text = _pick_final(zip_text, sense_text)
+                    print(
+                        f"[asr] commit zip={zip_text!r} sense={sense_text!r} pick={final_text!r}",
+                        flush=True,
+                    )
+                    if final_text:
+                        await emit({
+                            "type": "final",
+                            "text": final_text,
+                            "zipformer": zip_text,
+                            "sense": sense_text,
+                        })
+                    recognizer.reset(stream)
+                    last_text = ""
+                    pcm_buf.clear()
+                    utt_pcm.clear()
+                    await emit({"type": "endpoint"})
+                    continue
                 if kind == "reset":
                     stream = recognizer.create_stream()
                     last_text = ""
                     pcm_buf.clear()
+                    utt_pcm.clear()
                     await emit({"type": "reset"})
                 continue
 
@@ -368,6 +441,8 @@ async def stream_asr(ws: WebSocket) -> None:
                 await emit({"type": "error", "message": "session audio too large"})
                 break
             pcm_buf.extend(data)
+            if len(utt_pcm) < utt_max_bytes:
+                utt_pcm.extend(data)
             samples = _pcm16_to_float(bytes(data))
             if samples.size == 0:
                 continue
@@ -379,13 +454,26 @@ async def stream_asr(ws: WebSocket) -> None:
                 last_text = text
                 await emit({"type": "partial", "text": text})
             if recognizer.is_endpoint(stream):
-                final_text = last_text
-                await emit({"type": "final", "text": final_text})
+                # 引擎自己判到端点了：同样先二次解码再定稿（与 commit 一致的取值口径）
+                zip_text = (recognizer.get_result(stream) or "").strip() or last_text
+                sense_text = await asyncio.to_thread(_sense_final, bytes(utt_pcm)) if FINAL_REPASS else ""
+                final_text = _pick_final(zip_text, sense_text)
+                print(
+                    f"[asr] endpoint zip={zip_text!r} sense={sense_text!r} pick={final_text!r}",
+                    flush=True,
+                )
+                if final_text:
+                    await emit({
+                        "type": "final",
+                        "text": final_text,
+                        "zipformer": zip_text,
+                        "sense": sense_text,
+                    })
                 # Reset for next utterance; keep connection.
                 recognizer.reset(stream)
                 last_text = ""
-                # Keep a short PCM window for optional SenseVoice re-decode upstream.
                 pcm_buf.clear()
+                utt_pcm.clear()
                 await emit({"type": "endpoint"})
     except WebSocketDisconnect:
         return

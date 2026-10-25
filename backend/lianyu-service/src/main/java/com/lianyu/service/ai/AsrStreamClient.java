@@ -131,6 +131,26 @@ public class AsrStreamClient {
             }
         }
 
+        /**
+         * 请求服务端**立即定稿**当前这一句。
+         *
+         * <p>为什么不能直接 reset：reset 只丢弃、不产出。客户端 VAD 判定"说完了"时，
+         * 引擎（rule2 = 1.2s 静音）往往还没到自己端点，此时的结果仍是中间态；
+         * reset 掉就等于把这句话的尾巴扔了。commit 让服务端补尾音、解完、做二次解码，
+         * 再把定稿文本经 {@code final} 事件回传。
+         */
+        public void commit() {
+            WebSocket ws = socket;
+            if (ws == null || closed.get()) {
+                return;
+            }
+            try {
+                ws.sendText("{\"type\":\"commit\"}", true);
+            } catch (Exception e) {
+                log.debug("ASR stream commit send failed: {}", e.toString());
+            }
+        }
+
         public void close() {
             if (!closed.compareAndSet(false, true)) {
                 return;
