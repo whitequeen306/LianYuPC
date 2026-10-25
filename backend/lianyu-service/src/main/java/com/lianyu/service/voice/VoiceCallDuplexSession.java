@@ -58,6 +58,8 @@ public class VoiceCallDuplexSession {
     private final AtomicBoolean audioSent = new AtomicBoolean(false);
     /** 已向服务端发出 commit，正在等定稿结果（等到了就取消兜底计时）。 */
     private final AtomicBoolean commitPending = new AtomicBoolean(false);
+    /** 本轮是否已放行麦克风（真人插话）；回合结束复位。 */
+    private final AtomicBoolean bargeInAllowed = new AtomicBoolean(false);
     private final AtomicReference<java.util.concurrent.CompletableFuture<?>> llmFuture = new AtomicReference<>();
     /**
      * 上一个回合还没收尾时，用户又说完一句 —— 先把文本存这里，等当前回合结束立刻接上。
@@ -202,10 +204,17 @@ public class VoiceCallDuplexSession {
             return;
         }
         lastPcmAtMs = System.currentTimeMillis();
+        // 角色正在出声时不把麦克风转给 ASR：外放时喇叭里的声音会被当成「用户说的话」，
+        // 线上表现就是用户下一句变成刚才那段的重复（转写出一堆重复文字）。
+        // 真人插话由 barge_in 放行 —— 那条路已要求持续高音量，不会被回声误触。
+        if (turnBusy.get() && !bargeInAllowed.get()) {
+            return;
+        }
         asr.sendPcm(pcm);
     }
 
     public void bargeIn() {
+        bargeInAllowed.set(true);
         cancelInFlightTurn();
         emitJson("turn.cancelled", n -> {
         });
@@ -336,6 +345,9 @@ public class VoiceCallDuplexSession {
             return;
         }
         turnStartedAtMs = System.currentTimeMillis();
+        // 每个回合开始时关闭麦克风：这一轮要出声，外放回声不能被当成用户在说话。
+        // 真人插话会走 bargeIn() 重新打开。
+        bargeInAllowed.set(false);
         llmFirstDeltaAtMs = 0L;
         firstAudioAtMs = 0L;
         emitJson("asr.final", n -> n.put("text", userText));
@@ -428,6 +440,7 @@ public class VoiceCallDuplexSession {
                 emitError("TURN_ERROR", "角色暂时无法回复，请稍后再试");
             } finally {
                 llmFuture.set(null);
+                bargeInAllowed.set(false);
                 turnBusy.set(false);
                 // 收尾后再接力：期间用户说的话现在才处理，保证「说过的话一定被回应」。
                 String queued = pendingUserText.getAndSet(null);
