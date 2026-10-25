@@ -108,3 +108,5 @@ scripts/diag/
 artifacts/
 scripts/test_updater_flow.py
 .zcode/
+pytest-of-*/
+backend-agent/pytest-of-hp/
