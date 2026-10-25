@@ -6,7 +6,9 @@
 > 2026-10-25：桌面能力层（`desk_*`，经 Java 内网通道下发到 Electron）已从代码里
 > 整体删除，模型只保留聊天类工具。`kind` 字段保留是为了将来引入其它执行地时不用改表结构。
 
-仍需 Java 侧实现、Python 尚未支持的：`write_diary`（记录在案，见 `/agent/capabilities`）。
+关于 `write_diary`：**不提供模型工具** —— 角色写日记由 Java 定时任务完成
+（`CharacterDiaryService` 每晚扫当天活跃会话 → MQ → 生成 → 落库 + 推送通知），
+与对话回合解耦。想让它更频繁，调 `lianyu.diary.*` 配置即可，不要加工具。
 """
 
 from __future__ import annotations

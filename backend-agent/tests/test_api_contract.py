@@ -80,7 +80,9 @@ def test_capabilities_declares_missing_tools():
     supported = set(body["supportedTools"])
     assert {"get_current_time", "get_weather", "memory_search", "get_my_recent_life"} <= supported
     assert "memory_search" not in body["missingTools"]
-    assert "write_diary" in body["missingTools"]
+    # 2026-10-25：write_diary 不是「待实现工具」，是「由 Java 定时任务实现、不提供模型工具」
+    assert body["missingTools"] == [], "不再有缺失的工具"
+    assert "write_diary" not in supported, "write_diary 不该出现在模型工具清单里"
     assert "computer_task" not in supported
     assert "computer_task" not in body["missingTools"]
 

@@ -10,7 +10,9 @@
 > 模型现在只看得到上面这四个聊天类工具。删除范围：`app/capability`、
 > `frontend/electron/capability`、Java 的 agent-bridge 控制器与内网执行通道。
 
-仍需 Java 侧实现、Python 尚未支持的：`write_diary`（MQ 入队）。
+关于 `write_diary`：**不提供模型工具** —— 角色写日记由 Java 定时任务完成
+（`CharacterDiaryService` 每晚扫当天活跃会话 → MQ → 生成 → 落库 + 推送通知），
+与对话回合解耦。想让它更频繁，调 `lianyu.diary.*` 配置即可，不要加工具。
 """
 
 from app.tools import registry

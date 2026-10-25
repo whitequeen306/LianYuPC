@@ -108,12 +108,9 @@ async def health() -> dict[str, str]:
 async def capabilities() -> dict[str, object]:
     """运行时可能力清单 —— Java 适配层切 AGENT 前必须校验。
 
-    `missingTools` 里的工具在 Python 侧尚未实现；Java 链路若依赖它们，
-    就**不应**路由到 Python（否则相对 Java 会降级，见总纲 §9 缺口 1）。
-
-    `desktopCapability` 是自研能力层的自述：`transport` 说明它靠 Java 桥下发到
-    Electron 执行（不是 HTTP 直连），`tools` 是本进程注册的 `desk_*` 全集。
-    模型实际能不能用还要看当轮桌面端是否在线（见 `capability_names()`）。
+    `missingTools` = 「Java 侧宣称有、Python 侧没注册」的工具：非空即说明两边清单漂移。
+    正常情况下应为空。（2026-10-25 起 `write_diary` 不再算缺口：角色写日记由 Java 的
+    定时任务完成，与对话回合解耦，不提供模型工具。）
     """
     from app.tools import supported_tool_names
 
@@ -123,7 +120,6 @@ async def capabilities() -> dict[str, object]:
         "get_weather",
         "memory_search",
         "get_my_recent_life",
-        "write_diary",
     ]
     supported = sorted(supported_tool_names())
     return {
