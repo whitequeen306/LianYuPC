@@ -104,3 +104,11 @@ async def test_nudge_then_model_calls_tool(monkeypatch):
     assert calls == ["desk_app_launch"]
     assert result.rounds == 1
     assert "已经帮你打开啦" in result.content
+
+# ── 能力层单测：显式打开桌面工具 ──
+# 2026-10-25 产品决定：模型侧不再提供 desk_*（见 app/tool_registry.desktop_tools_enabled）。
+# 本文件测的是「能力层本身对不对」，所以要显式打开；产品口径由
+# tests/test_desktop_tools_off.py 单独锁定。
+@pytest.fixture(autouse=True)
+def _enable_desktop_tools(monkeypatch):
+    monkeypatch.setenv("LIANYU_DESKTOP_TOOLS", "1")

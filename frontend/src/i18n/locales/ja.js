@@ -307,6 +307,7 @@ export default {
     desktopEnabled: 'このキャラクターに PC 操作を許可',
     desktopEnabledHint:
       'オンにすると、このキャラクターがあなたの PC で操作できます（アプリ起動、クリック、入力、音量調整や音楽再生）。「情報 → PC 操作」の全体スイッチもオンの必要があります。オフのときはチャットのみです。',
+    desktopOfflineHint: 'AI によるPC操作は一時停止中です。キャラクターはチャットと記憶系ツールのみ利用します。',
     blocked: 'キャラをブロック',
     nightRest: '夜間休憩',
     nightRestEnabled: '23:00–08:00 は能動メッセージなし',

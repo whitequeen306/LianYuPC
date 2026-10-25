@@ -103,14 +103,11 @@
           <el-form-item :label="t('characterSettings.showInnerThoughts')">
             <el-switch v-model="form.showInnerThoughts" />
           </el-form-item>
-          <el-form-item :label="t('characterSettings.desktopEnabled')">
-            <el-switch v-model="form.desktopEnabled" />
-          </el-form-item>
           <el-form-item :label="t('characterSettings.blocked')">
             <el-switch v-model="form.blocked" />
           </el-form-item>
         </div>
-        <p class="custom-voice-hint">{{ t('characterSettings.desktopEnabledHint') }}</p>
+        <p class="custom-voice-hint">{{ t('characterSettings.desktopOfflineHint') }}</p>
 
         <div class="section-title">{{ t('characterSettings.nightRest') }}</div>
         <div class="form-grid three-col">
@@ -531,7 +528,8 @@ async function handleSave() {
       useGlobalChatBackground: form.useGlobalChatBackground,
       proactiveEnabled: form.proactiveEnabled,
       showInnerThoughts: form.showInnerThoughts,
-      desktopEnabled: form.desktopEnabled === true,
+      // 桌面能力已下线（2026-10-25 决定）：无论历史设置如何，一律不授予
+      desktopEnabled: false,
       doNotDisturbEnabled: form.doNotDisturbEnabled,
       dndStartMinutes: clampMinutes(form.dndStartMinutes),
       dndEndMinutes: clampMinutes(form.dndEndMinutes),

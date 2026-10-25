@@ -312,6 +312,7 @@ export default {
     desktopEnabled: '允许 TA 操控我的电脑',
     desktopEnabledHint:
       '开启后这个角色可以在你的电脑上动手（打开应用、点按钮、打字、调音量放歌）。需要先在「关于 → 电脑能力」里打开总开关；关闭时无论总开关如何，TA 都只能聊天。',
+    desktopOfflineHint: 'AI 操控电脑能力已暂时下线，角色只保留聊天与记忆类工具。',
     blocked: '拉黑角色',
     nightRest: '夜间休息',
     nightRestEnabled: '23:00–08:00 不发主动消息',

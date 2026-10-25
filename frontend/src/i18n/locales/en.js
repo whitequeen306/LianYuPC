@@ -312,6 +312,7 @@ export default {
     desktopEnabled: 'Let this character control my PC',
     desktopEnabledHint:
       'When on, this character can act on your computer (launch apps, click, type, change volume or play music). The global switch under About → Computer access must also be on; while this is off the character can only chat.',
+    desktopOfflineHint: 'Desktop control is temporarily disabled; characters keep chat and memory tools only.',
     blocked: 'Block character',
     nightRest: 'Night rest',
     nightRestEnabled: 'No proactive messages 23:00–08:00',

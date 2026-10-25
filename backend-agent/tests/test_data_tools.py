@@ -242,4 +242,5 @@ async def test_recent_life_resolves_peer_name_for_comment(fake_activity):
 def test_supported_tools_now_include_memory_and_recent_life():
     supported = supported_tool_names()
     assert {"get_current_time", "get_weather", "memory_search", "get_my_recent_life"} <= supported
-    assert any(name.startswith("desk_") for name in supported)
+    # 桌面能力已下线（2026-10-25 产品决定），清单里只剩聊天类工具
+    assert not any(name.startswith("desk_") for name in supported)

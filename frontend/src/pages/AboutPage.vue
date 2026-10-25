@@ -33,39 +33,7 @@
       </div>
     </section>
 
-    <!-- 电脑能力（自研能力层 desk_*） -->
-    <section v-if="isElectron" class="section stagger-item">
-      <div class="section-header">
-        <h2 class="section-title">{{ t('about.capabilityTitle') }}</h2>
-      </div>
-      <div class="glass about-card mcp-card">
-        <div class="mcp-service">
-          <div class="mcp-service__head">
-            <div class="mcp-service__text">
-              <div class="mcp-service__name">
-                {{ t('about.capabilityName') }}
-                <span class="mcp-badge" :class="`mcp-badge--${capabilityEnabled ? 'running' : 'stopped'}`">
-                  {{ capabilityEnabled ? t('about.capabilityOn') : t('about.capabilityOff') }}
-                </span>
-              </div>
-              <p class="mcp-service__desc">{{ t('about.capabilityDesc') }}</p>
-            </div>
-            <el-switch
-              :model-value="capabilityEnabled"
-              :loading="capabilityToggling"
-              @change="onToggleCapability"
-            />
-          </div>
-          <div v-if="capabilityEnabled" class="mcp-service__body">
-            <div class="info-row">
-              <span class="info-label">{{ t('about.capabilityTools') }}</span>
-              <span class="info-value">{{ capabilityToolNames }}</span>
-            </div>
-          </div>
-          <p class="mcp-field__hint">{{ t('about.capabilityHint') }}</p>
-        </div>
-      </div>
-    </section>
+    <!-- 桌面能力（desk_*）已于 2026-10-25 下线：模型侧不再提供任何操控电脑的工具，只有聊天类工具。代码保留在 electron/capability 与 app/capability，需要时用 LIANYU_DESKTOP_TOOLS=1 恢复。 -->
 
     <!-- 版权 -->
     <section class="section stagger-item">

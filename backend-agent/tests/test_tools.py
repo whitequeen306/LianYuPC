@@ -45,8 +45,10 @@ def test_supported_tools_are_declared():
     supported = supported_tool_names()
     local = {"get_current_time", "get_weather", "memory_search", "get_my_recent_life"}
     assert local <= supported
+    # 2026-10-25 产品决定：模型侧下掉「角色操控电脑」，desk_* 不再出现在可用清单里。
+    # 旧断言是「桌面能力必须已注册」，现在反过来了（能力层代码仍在，只是不提供给模型）。
     desktop = {name for name in supported if name.startswith("desk_")}
-    assert desktop, "桌面能力必须已注册"
+    assert not desktop, f"桌面能力已下线，不该再出现在可用清单里：{sorted(desktop)}"
     assert supported == local | desktop, "支持清单只能来自这两类，不许有第三来源"
     assert "write_diary" not in supported
     assert "computer_task" not in supported, "粗粒度黑盒工具已退役"

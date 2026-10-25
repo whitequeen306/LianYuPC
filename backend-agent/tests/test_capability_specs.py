@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 import json
 import re
 
@@ -85,3 +87,11 @@ def test_capability_can_be_imported_first_without_cycle():
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
     assert result.returncode == 0, result.stderr
     assert int(result.stdout.strip()) >= 14
+
+# ── 能力层单测：显式打开桌面工具 ──
+# 2026-10-25 产品决定：模型侧不再提供 desk_*（见 app/tool_registry.desktop_tools_enabled）。
+# 本文件测的是「能力层本身对不对」，所以要显式打开；产品口径由
+# tests/test_desktop_tools_off.py 单独锁定。
+@pytest.fixture(autouse=True)
+def _enable_desktop_tools(monkeypatch):
+    monkeypatch.setenv("LIANYU_DESKTOP_TOOLS", "1")
