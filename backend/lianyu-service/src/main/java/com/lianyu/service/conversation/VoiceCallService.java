@@ -38,6 +38,7 @@ import com.lianyu.service.memory.MemoryWriter;
 import com.lianyu.service.storage.FileStorageService;
 import com.lianyu.service.voice.CustomVoiceProviders;
 import com.lianyu.service.voice.CustomVoiceService;
+import com.lianyu.service.voice.SentenceSplitter;
 import com.lianyu.service.voice.VoiceCallTarget;
 import com.lianyu.service.voice.VoiceSynthesisService;
 import java.util.ArrayList;
@@ -527,7 +528,9 @@ public class VoiceCallService {
             return "我在听，你再说一遍。";
         }
         String raw = chatResult.content() == null ? "" : chatResult.content().trim();
-        String spoken = InnerThoughtFilter.strip(raw);
+        // 朗读标记必须在这里剥掉：这条路是**整句合成**，标记留进去会被念出来，
+        // 也会跟着落库出现在聊天记录里。（这里的停顿由标点承担；按标记切片是双工路径的事）
+        String spoken = InnerThoughtFilter.strip(SentenceSplitter.stripPauseMarkers(raw));
         if (spoken.isBlank() && !raw.isBlank()) {
             log.warn("Voice call reply became empty after stripping inner thoughts, rawLen={}", raw.length());
         }
@@ -550,9 +553,13 @@ public class VoiceCallService {
                 + "1. 只用口语化中文，1～2 句，总字数不超过 " + maxReplyChars + " 字；\n"
                 + "2. 禁止任何括号（）() 及其中内容：不准写心理活动、内心独白、旁白、动作/表情描写；\n"
                 + "3. 只输出可直接说出口的台词，不要列表、不要 markdown、不要引号包裹全文；\n"
-                + "4. 停顿由你控制：如果你希望两句话之间有明显的停顿或换气（如反问前、情绪转折、强调前），"
-                + "在该处插入 <|pause|>；每条回复最多 2 处，不要连用，不要放在整段开头或结尾；"
-                + "该标记不会被朗读，也不会显示给用户。";
+                + "4. 朗读节奏由你决定，用下面三种标记表达（标记不会被朗读，也不会显示给用户）：\n"
+                + "   · <|cut|>   这句说完了、下一句另起（真正的换气与分句处）；\n"
+                + "   · <|pause|> 同一句话里想喘口气、留个悬念（反问前、情绪转折前、强调前）；\n"
+                + "   · <|join|>  放在标点之后，表示「这里别停、连起来读」（如「我……我真的没事。」）；\n"
+                + "   每种标记都要放在语义真正成立的位置，宁可不用也不要乱打；"
+                + "每条回复里 cut 与 pause 合计不超过 3 处，join 不超过 2 处，不要连用，"
+                + "不要放在整段开头或结尾。";
         String systemPrompt = chatTurnFacade.assembleSystemPrompt(
                 ChatTurnScene.VOICE_CALL,
                 userId,

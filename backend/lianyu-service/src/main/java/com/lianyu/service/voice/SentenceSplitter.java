@@ -42,6 +42,28 @@ public final class SentenceSplitter {
     /** 角色模型自主标记的停顿点：语音 prompt 指示其在需要换气/停顿处输出。 */
     static final String PAUSE_TOKEN = "<|pause|>";
 
+    /**
+     * 模型显式标注的**语义断句点**：这里换一个合成单元（新的一句从新调起）。
+     *
+     * <p>和 {@link #PAUSE_TOKEN} 的区别在意图：pause 是"同一句话里喘口气"，
+     * cut 是"这句说完了，下一句另起"。两者都切单元，但 cut 不受 28 字门槛约束 ——
+     * 模型说该断就断，短句也不许被合并。
+     */
+    static final String CUT_TOKEN = "<|cut|>";
+
+    /**
+     * 模型显式标注的**连读点**：放在标点之后，表示"这里不要断开"。
+     *
+     * <p>为什么需要零宽的"反向标记"：切分器只认标点和长度，遇到
+     * {@code 我……我真的没事。} 这种会按标点切开，听感上是两口气；
+     * 模型知道这里该一口气说完，就可以在标点后打 join 抑制切分。
+     */
+    static final String JOIN_TOKEN = "<|join|>";
+
+    /** 所有 marker 里最长的长度：字幕剥离时用它判断"尾部是不是半截 marker"。 */
+    static final int MAX_MARKER_LEN =
+            Math.max(PAUSE_TOKEN.length(), Math.max(CUT_TOKEN.length(), JOIN_TOKEN.length()));
+
     private static final String STRONG_ENDERS = "。！？!?\n";
 
     /** 弱边界：只在**首片**上认它，用来抢首声延迟。见 {@link #MIN_FIRST_SOFT}。 */
@@ -106,8 +128,21 @@ public final class SentenceSplitter {
     /** 模型显式 pause 标记处：比句号更长的停顿。 */
     static final int PAUSE_MARKER_MS = 180;
 
+    /**
+     * 模型显式 cut（语义断句）后的停顿：比句号更长一些。
+     *
+     * <p>理由：模型只在"这句真说完了、下一句另起"时才打 cut，那是一次完整换气；
+     * 而句号是排版意义上的句末，未必是口头停顿。两者区分开，模型的话才有分量。
+     */
+    static final int CUT_MARKER_MS = 260;
+
     private final StringBuilder buffer = new StringBuilder();
     private boolean firstCommitSent;
+
+    /** 匹配三种朗读控制标记（大小写/内部空格容错）。 */
+    private static final java.util.regex.Pattern MARKER_PATTERN = java.util.regex.Pattern.compile(
+            "<\\|\\s*(pause|cut|join)\\s*\\|>",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
 
     /**
      * 一个可合成片段。
@@ -121,20 +156,24 @@ public final class SentenceSplitter {
     /** 喂一段 LLM 增量，返回这段之后**已经完整、可以立刻合成**的片段（可能为空）。 */
     public List<Segment> accept(String delta) {
         if (delta != null && !delta.isEmpty()) {
-            buffer.append(delta);
+            // 归一化大小写变体，后面才能用 indexOf 精确命中
+            buffer.append(normalizeMarkers(delta));
         }
         List<Segment> segments = new ArrayList<>(2);
         while (true) {
-            dropLeadingPauseTokens();
+            dropLeadingMarkers();
             int cut = nextCutOutsideParens(buffer.toString(), firstCommitSent);
             if (cut <= 0) {
                 break;
             }
-            boolean markerCut = buffer.indexOf(PAUSE_TOKEN) == cut;
+            boolean pauseCut = buffer.indexOf(PAUSE_TOKEN) == cut;
+            boolean semanticCut = buffer.indexOf(CUT_TOKEN) == cut;
             String piece = buffer.substring(0, cut);
             buffer.delete(0, cut);
             firstCommitSent = true;
-            addClean(segments, piece, markerCut ? PAUSE_MARKER_MS : pauseForEnding(piece));
+            int pause = semanticCut ? CUT_MARKER_MS
+                    : (pauseCut ? PAUSE_MARKER_MS : pauseForEnding(piece));
+            addClean(segments, piece, pause);
         }
         return segments;
     }
@@ -142,7 +181,7 @@ public final class SentenceSplitter {
     /** 回合结束：把剩下的文本整段作为最后一片吐出（可能为空；之后不再需要停顿）。 */
     public List<Segment> flush() {
         List<Segment> segments = new ArrayList<>(1);
-        dropLeadingPauseTokens();
+        dropLeadingMarkers();
         if (buffer.length() > 0) {
             addClean(segments, buffer.toString(), 0);
             buffer.setLength(0);
@@ -158,9 +197,18 @@ public final class SentenceSplitter {
      * {@code indexOf(PAUSE_TOKEN) == 0} 会命中「marker 在 0 位」的分支而**永久不切**，
      * 该回合后续全部堆到 flush 才合成。这是按句流水线里一处真实的卡顿源。
      */
-    private void dropLeadingPauseTokens() {
-        while (buffer.indexOf(PAUSE_TOKEN) == 0) {
-            buffer.delete(0, PAUSE_TOKEN.length());
+    private void dropLeadingMarkers() {
+        // 三种标记都要清：任意一种停在 0 位都会命中 nextCommitEnd 的
+        // "marker == 0 → return -1" 分支，导致该回合后续全部堆到 flush 才合成。
+        boolean dropped = true;
+        while (dropped) {
+            dropped = false;
+            for (String token : new String[] {CUT_TOKEN, PAUSE_TOKEN, JOIN_TOKEN}) {
+                if (buffer.indexOf(token) == 0) {
+                    buffer.delete(0, token.length());
+                    dropped = true;
+                }
+            }
         }
     }
 
@@ -199,11 +247,43 @@ public final class SentenceSplitter {
         return 0;
     }
 
-    static String stripPauseMarkers(String s) {
+    /** 剥掉全部朗读标记（含半截前缀）。跨包可用：非双工路径也要在落库前清干净。 */
+    public static String stripPauseMarkers(String s) {
         if (s == null || s.isEmpty()) {
             return "";
         }
-        return s.replace(PAUSE_TOKEN, "").replace("<|", "");
+        // 先按完整标记剥（大小写不敏感，模型偶尔会吐 <|PAUSE|>），
+        // 再清掉残留的 "<|" 前缀片段 —— 顺序不能反，否则 <|cut|> 会剩下 "cut|>"
+        String cleaned = MARKER_PATTERN.matcher(s).replaceAll("");
+        // 收尾处若残留半截标记（回合正好在标记中途结束），从 "<|" 起整段丢，
+        // 否则会把 "cu" 这种碎片念出来
+        int tail = cleaned.lastIndexOf("<|");
+        if (tail >= 0 && cleaned.length() - tail <= MAX_MARKER_LEN) {
+            cleaned = cleaned.substring(0, tail);
+        }
+        return cleaned.replace("<|", "");
+    }
+
+    /**
+     * 只剥**完整**标记，保留半截前缀（{@code "<|cu"}）。
+     *
+     * <p>字幕流式下发必须用这个：一个标记可能被切在两个 delta 里，若在这里连
+     * 半截前缀一起清掉，字幕就会**少字**；正确做法是把尾巴留到下一个 delta 再定。
+     */
+    static String stripCompleteMarkers(String s) {
+        if (s == null || s.isEmpty()) {
+            return "";
+        }
+        return MARKER_PATTERN.matcher(s).replaceAll("");
+    }
+
+    /** 把任何大小写/空格变体的 marker 归一成规范形式，供 indexOf 精确匹配。 */
+    static String normalizeMarkers(String s) {
+        if (s == null || s.isEmpty() || s.indexOf("<|") < 0) {
+            return s == null ? "" : s;
+        }
+        return MARKER_PATTERN.matcher(s).replaceAll(
+                m -> "<|" + m.group(1).toLowerCase(java.util.Locale.ROOT) + "|>");
     }
 
     /**
@@ -247,9 +327,18 @@ public final class SentenceSplitter {
     }
 
     /**
-     * 合成边界决策（完全状态化）：认模型显式 {@link #PAUSE_TOKEN} 与句末强标点；
-     * {@code allowSoft} 为真时（仅首片）额外认逗号类弱边界。
-     * 未完整 marker 前缀永不被切开。
+     * 合成边界决策。
+     *
+     * <p>优先级（先到先切）：
+     *
+     * <ol>
+     *   <li><b>模型显式标记</b>：{@code <|cut|>}（语义断句）与 {@code <|pause|>}（句内喘息）。
+     *       两者都**不受 minChars 约束** —— 模型明确说了要断，就不该被"攒够 28 字"合并掉，
+     *       只要求 cut 前面至少有 {@value #MIN_CUT_TEXT} 个字，避免切出单字碎片。</li>
+     *   <li><b>半截 marker</b>：必须在它之前切住，否则会被当正文念出来。</li>
+     *   <li><b>句末强标点</b>，但被 {@code <|join|>} 抑制的候选要跳过（连读）。</li>
+     *   <li>首片额外认逗号类弱边界（抢开口时间），同样尊重 join。</li>
+     * </ol>
      *
      * @param minChars  切点之前至少要有这么多字（首片 4、后续 28），0 表示不限制
      * @param allowSoft 是否认弱边界（逗号类），只对首片开
@@ -259,38 +348,114 @@ public final class SentenceSplitter {
         if (buf == null || buf.isEmpty()) {
             return -1;
         }
-        int marker = buf.indexOf(PAUSE_TOKEN);
-        if (marker > 0) {
-            return marker;
-        }
-        if (marker == 0) {
-            return -1;
-        }
-        int partial = buf.indexOf("<|");
-        if (partial > 0) {
-            return partial;
-        }
+        // ① 模型标记 + 半截 marker：取最靠前的那个（谁先出现谁说了算）
+        int partial = indexOfPartialMarker(buf);
         if (partial == 0) {
+            // 半截 marker 卡在开头：等后续 delta 补齐（回合结束时由 flush 兜底）
             return -1;
         }
+        int hard = minPositive(
+                indexOfToken(buf, CUT_TOKEN, MIN_CUT_TEXT),
+                indexOfToken(buf, PAUSE_TOKEN, 1),
+                partial);
+        if (hard > 0) {
+            return hard;
+        }
+        // ② 句末强标点（跳过被 join 抑制的候选）
         int strong = indexOfAnyFrom(buf, STRONG_ENDERS, minChars);
-        if (strong >= 0) {
+        while (strong >= 0) {
+            int cut = strong + 1;
+            if (startsWithJoin(buf, cut)) {
+                // 模型要求这里连读：跳过这个标点，去后面找下一个断点
+                strong = indexOfAnyFrom(buf, STRONG_ENDERS, cut + JOIN_TOKEN.length());
+                continue;
+            }
             // 首片上如果更早处有逗号类气口，优先用它 —— 早 0.3-1s 开口，比"这一句完整"更值
             if (allowSoft) {
-                int soft = indexOfAnyFrom(buf, SOFT_ENDERS, MIN_FIRST_SOFT);
-                if (soft > 0 && soft < strong) {
+                int soft = indexOfSoft(buf, MIN_FIRST_SOFT, strong);
+                if (soft > 0) {
                     return soft + 1;
                 }
             }
-            return strong + 1;
+            return cut;
         }
         if (allowSoft) {
-            int soft = indexOfAnyFrom(buf, SOFT_ENDERS, MIN_FIRST_SOFT);
+            int soft = indexOfSoft(buf, MIN_FIRST_SOFT, buf.length());
             if (soft >= 0) {
                 return soft + 1;
             }
         }
         return -1;
+    }
+
+    /**
+     * cut 之前至少要有的正文字数。
+     *
+     * <p>只约束 cut、不约束 pause：pause 的既有语义允许在「嗯」这种单字后切
+     * （那是口语里的自然喘息，切出来也不刺耳）；而 cut 是"这句说完了"，
+     * 前面只有 1 个字时更可能是模型标错了位置，宁可不切。
+     */
+    static final int MIN_CUT_TEXT = 2;
+
+    /** marker 的位置；前面正文不足 {@code minText} 字时视为不可切（返回 -1）。 */
+    private static int indexOfToken(String buf, String token, int minText) {
+        int idx = buf.indexOf(token);
+        return idx >= minText ? idx : -1;
+    }
+
+    /**
+     * 找**未完整**的 marker 前缀（{@code <|cu} 这种）。
+     *
+     * <p>为什么不能直接 {@code indexOf("<|")}：{@code <|join|>} 是完整标记，
+     * 也是零宽的（不出声、不该在这里断）。若把它当成半截前缀切住，就会**正好在
+     * 模型要求连读的地方断句**，与标记语义相反。
+     *
+     * @return 半截前缀的下标；0 表示卡在开头（等后续 delta）；-1 表示没有
+     */
+    private static int indexOfPartialMarker(String buf) {
+        int i = buf.indexOf("<|");
+        while (i >= 0) {
+            if (buf.startsWith(CUT_TOKEN, i)
+                    || buf.startsWith(PAUSE_TOKEN, i)
+                    || buf.startsWith(JOIN_TOKEN, i)) {
+                i = buf.indexOf("<|", i + 2);
+                continue;
+            }
+            return i <= 0 ? 0 : i;
+        }
+        return -1;
+    }
+
+    /**
+     * 在 {@code [from, limit)} 里找最靠前的、**未被 join 抑制**的弱边界下标。
+     *
+     * @return 弱边界字符下标，找不到返回 -1
+     */
+    private static int indexOfSoft(String buf, int from, int limit) {
+        int i = indexOfAnyFrom(buf, SOFT_ENDERS, from);
+        while (i >= 0 && i < limit) {
+            if (!startsWithJoin(buf, i + 1)) {
+                return i;
+            }
+            i = indexOfAnyFrom(buf, SOFT_ENDERS, i + 1 + JOIN_TOKEN.length());
+        }
+        return -1;
+    }
+
+    /** {@code pos} 处是否紧跟连读标记（零宽，不产生停顿）。 */
+    private static boolean startsWithJoin(String buf, int pos) {
+        return pos >= 0 && pos + JOIN_TOKEN.length() <= buf.length()
+                && buf.startsWith(JOIN_TOKEN, pos);
+    }
+
+    private static int minPositive(int... values) {
+        int best = Integer.MAX_VALUE;
+        for (int v : values) {
+            if (v >= 0 && v < best) {
+                best = v;
+            }
+        }
+        return best == Integer.MAX_VALUE ? -1 : best;
     }
 
     private static int indexOfAnyFrom(String buf, String chars, int fromIndex) {

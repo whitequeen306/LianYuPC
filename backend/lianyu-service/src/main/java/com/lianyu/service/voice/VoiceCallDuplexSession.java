@@ -540,13 +540,18 @@ public class VoiceCallDuplexSession {
         }
     }
 
-    /** 字幕展示用：剥掉完整 marker；尾部疑似未完整 marker 前缀的部分留到下一个 delta 再定。 */
+    /**
+     * 字幕展示用：剥掉完整 marker；尾部疑似未完整 marker 前缀的部分留到下一个 delta 再定。
+     *
+     * <p>三种标记（cut / pause / join）都不该出现在字幕里；用的是"只剥完整标记"的
+     * 版本，因为半截前缀必须保留 —— 否则字幕会少字。
+     */
     private String sanitizeDeltaForEmit(String delta) {
         synchronized (sentenceLock) {
             llmEmitBuf.append(delta);
-            String s = llmEmitBuf.toString().replace(SentenceSplitter.PAUSE_TOKEN, "");
+            String s = SentenceSplitter.stripCompleteMarkers(llmEmitBuf.toString());
             int idx = s.lastIndexOf("<|");
-            if (idx >= 0 && s.length() - idx < SentenceSplitter.PAUSE_TOKEN.length()) {
+            if (idx >= 0 && s.length() - idx < SentenceSplitter.MAX_MARKER_LEN) {
                 String out = s.substring(0, idx);
                 llmEmitBuf.setLength(0);
                 llmEmitBuf.append(s.substring(idx));

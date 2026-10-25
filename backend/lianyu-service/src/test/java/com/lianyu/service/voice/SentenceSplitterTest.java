@@ -225,4 +225,94 @@ class SentenceSplitterTest {
         assertEquals(false, SentenceSplitter.insideParens("（abc）", 5));
         assertEquals(false, SentenceSplitter.insideParens("abc", 2));
     }
+
+    // ── 模型语义标记：cut（断句）/ join（连读）──
+
+    @Test
+    void cutBreaksTheAccumulationGate() {
+        // 首句之后要攒到 28 字才认句号 —— 短句会被强行连读，这是「切分不对劲」的主因。
+        // 模型显式 cut 必须能打破它。
+        SentenceSplitter splitter = new SentenceSplitter();
+        splitter.accept("我在听呢。");
+        assertTrue(splitter.accept("今天风很大。").isEmpty(), "28 字门槛内不该自动切");
+        assertEquals(List.of("今天风很大。"), texts(splitter.accept("<|cut|>")),
+                "模型标了 cut 就必须断");
+    }
+
+    @Test
+    void cutGetsLongerPauseThanPauseMarker() {
+        SentenceSplitter splitter = new SentenceSplitter();
+        List<SentenceSplitter.Segment> seg = splitter.accept("今天风很大<|cut|>");
+        assertEquals(List.of(SentenceSplitter.CUT_MARKER_MS), pauses(seg));
+        assertTrue(SentenceSplitter.CUT_MARKER_MS > SentenceSplitter.PAUSE_MARKER_MS,
+                "语义断句应该比句内喘息停得久");
+    }
+
+    @Test
+    void cutNeedsAtLeastTwoChars() {
+        // 「我<|cut|>真的没事」这种切出来是一个单字，更像模型标错位置，宁可不切
+        assertEquals(-1, SentenceSplitter.nextCommitEnd("我<|cut|>真的没事", 0, false));
+    }
+
+    @Test
+    void joinSuppressesCutAtStrongPunctuation() {
+        // 「我没事呀。<|join|>真的……」：模型要求一口气读完，句号处不许断
+        assertEquals(-1, SentenceSplitter.nextCommitEnd("我没事呀。<|join|>真的", 0, false));
+        // 没有 join 时同一个句子会在句号后切开
+        assertEquals(5, SentenceSplitter.nextCommitEnd("我没事呀。真的", 0, false));
+    }
+
+    @Test
+    void joinTokenItselfIsNeverACutPoint() {
+        // join 是零宽标记：不能因为 "<|" 出现在正文里就在它前面断（那正好断在要连读的地方）
+        SentenceSplitter splitter = new SentenceSplitter();
+        assertTrue(splitter.accept("我正在想你<|join|>").isEmpty());
+    }
+
+    @Test
+    void leadingMarkersDoNotStallThePipeline() {
+        // 历史坑：标记停在缓冲区 0 位会让 indexOf == 0 分支永久不切，整回合堆到 flush
+        SentenceSplitter splitter = new SentenceSplitter();
+        splitter.accept("我在听呢。先说话。");
+        assertTrue(!splitter.accept("<|cut|>今天风很大。还有事吗？").isEmpty(),
+                "开头的 marker 不能把流水线堵住");
+    }
+
+    @Test
+    void stripsAllThreeMarkersIncludingCaseVariants() {
+        assertEquals("好。走吧", SentenceSplitter.stripPauseMarkers("好。<|cut|>走吧"));
+        assertEquals("好。走吧", SentenceSplitter.stripPauseMarkers("好。<|pause|>走吧"));
+        assertEquals("好。走吧", SentenceSplitter.stripPauseMarkers("好。<|join|>走吧"));
+        assertEquals("好。走吧", SentenceSplitter.stripPauseMarkers("好。<|CUT|>走吧"));
+        // 回合在标记中途结束：半截前缀之后的碎片不许漏出来
+        assertEquals("好。", SentenceSplitter.stripPauseMarkers("好。<|cu"));
+    }
+
+    @Test
+    void normalizeMarkersFoldsCaseAndSpaces() {
+        assertEquals("好<|cut|>吧", SentenceSplitter.normalizeMarkers("好<| CUT |>吧"));
+        assertEquals("好<|join|>吧", SentenceSplitter.normalizeMarkers("好<|Join|>吧"));
+        assertEquals("没有任何标记", SentenceSplitter.normalizeMarkers("没有任何标记"));
+    }
+
+    @Test
+    void stripCompleteMarkersKeepsPartialPrefixForCaption() {
+        // 字幕不能少字：半截前缀必须留给下一个 delta，不能在这里吞掉
+        assertEquals("我在听<|cu", SentenceSplitter.stripCompleteMarkers("我在听<|cu"));
+        assertEquals("我在听", SentenceSplitter.stripCompleteMarkers("我在听<|cut|>"));
+    }
+
+    @Test
+    void segmentsNeverLeakMarkersIntoText() {
+        SentenceSplitter splitter = new SentenceSplitter();
+        List<String> out = new java.util.ArrayList<>();
+        out.addAll(texts(splitter.accept("我在听呢。<|cut|>今天风")));
+        out.addAll(texts(splitter.accept("很大。<|pause|>要不")));
+        out.addAll(texts(splitter.accept("<|join|>明天再说。")));
+        out.addAll(texts(splitter.flush()));
+        for (String t : out) {
+            assertEquals(false, t.contains("<|"), "片段里不能残留标记：" + t);
+            assertEquals(false, t.contains("cut"), "片段里不能残留标记：" + t);
+        }
+    }
 }
