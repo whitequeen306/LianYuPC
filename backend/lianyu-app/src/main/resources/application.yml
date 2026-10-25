@@ -250,12 +250,6 @@ lianyu:
   agent:
     # OFF 已退役：所有 AI 调用都在 backend-agent（Python）。
     base-url: ${LIANYU_AGENT_BASE_URL:http://agent:8001}
-    # ── 反向通道：Python backend-agent 调用本服务的内部执行端点（桌面能力层下发）──
-    # 该端点不经网关暴露，也不在 Sa-Token 拦截范围（/api/**）内，认证靠 HMAC。
-    # 共享密钥：为空 = 端点一律拒绝（fail-closed）。生产由 compose 给两端注入同一值。
-    internal-token: ${LIANYU_AGENT_INTERNAL_TOKEN:}
-    # 允许的时钟偏差（秒），超窗即拒（防重放）
-    internal-window-seconds: 30
   voice:
     duplex:
       enabled: ${LIANYU_VOICE_DUPLEX_ENABLED:true}
@@ -331,13 +325,6 @@ lianyu:
     write-diary:
       # 角色即兴写日记 Tool（聊天中觉得今天交流有趣时自行调用，异步后台生成）
       enabled: true
-    agent-bridge:
-      # 桌面能力桥：客户端注册的本地能力（desk_* 原子动作）经 STOMP 下发本地执行
-      enabled: true
-      # 单步等待上限（毫秒）。真实超时由 Python 逐步传入（timeoutMs），这里只是
-      # 「客户端失联时别把请求线程占死」的兜底。旧值 630000（≈10 分钟）是外借引擎时代的
-      # 整任务超时，审计 A5 已点名删除 —— 现在一次动作最长 20s。
-      step-timeout-ms: 20000
 
   group:
     # 单个群聊最多角色数（不含用户本人）

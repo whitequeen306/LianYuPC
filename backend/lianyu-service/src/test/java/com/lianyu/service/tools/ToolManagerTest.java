@@ -1,95 +1,79 @@
 package com.lianyu.service.tools;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.when;
 
 import com.lianyu.dao.entity.Character;
-import com.lianyu.service.character.CharacterPreferenceResolver;
-import com.lianyu.service.tools.bridge.AgentBridgeService;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
- * 开关事实：只有「哪些能力开着」这一件事。
+ * 开关事实：只有「哪些聊天工具开着」这一件事。
  *
- * <p>两个闸门是「与」的关系：
- * <ul>
- *   <li>`computer` = 客户端注册了 desk_*（全局能力在线）**且** 该角色 `settings.desktopEnabled`；</li>
- *   <li>角色为 null（无角色上下文）按不允许处理。</li>
- * </ul>
+ * <p>2026-10-25 桌面能力层下线后，`computer` 恒为 false —— 保留键名只为不改
+ * Python 侧 `build_tool_hint` 的键序契约（chat,memory,recent,diary,computer）。
+ * 因此原先「桥上有 desk_* && 角色 opt-in 才为 true」的两组断言已失效，
+ * 改为「无论桥/角色怎么配，`computer` 都必须是 false」。
  */
-@ExtendWith(MockitoExtension.class)
 class ToolManagerTest {
-
-    @Mock
-    private AgentBridgeService agentBridgeService;
 
     private ToolManager manager;
 
     @BeforeEach
     void setUp() {
-        manager = new ToolManager(agentBridgeService);
+        manager = new ToolManager();
         ReflectionTestUtils.setField(manager, "chatToolsEnabled", true);
         ReflectionTestUtils.setField(manager, "memoryAgenticEnabled", true);
         ReflectionTestUtils.setField(manager, "recentActivityEnabled", true);
         ReflectionTestUtils.setField(manager, "writeDiaryEnabled", true);
     }
 
-    private Character character(boolean desktopEnabled) {
+    /** 老角色 settings 里可能还残留 desktopEnabled=true（数据库列保留），Java 侧不该再读它。 */
+    private Character legacyOptInCharacter() {
         Character character = new Character();
         Map<String, Object> settings = new HashMap<>();
-        settings.put(CharacterPreferenceResolver.KEY_DESKTOP_ENABLED, desktopEnabled);
+        settings.put("desktopEnabled", true);
         character.setSettings(settings);
         return character;
     }
 
     @Test
-    void flagsWithoutDesktopBridgeMarkComputerFalse() {
-        when(agentBridgeService.availableTools(7L)).thenReturn(List.of());
-        Map<String, Object> flags = manager.promptHintFlags(7L, character(true));
+    void chatToolFlagsFollowConfiguration() {
+        Map<String, Object> flags = manager.promptHintFlags(7L, legacyOptInCharacter());
         assertThat(flags).containsEntry("chat", true)
                 .containsEntry("memory", true)
                 .containsEntry("recent", true)
-                .containsEntry("diary", true)
+                .containsEntry("diary", true);
+    }
+
+    @Test
+    void computerFlagIsAlwaysFalseEvenWhenCharacterOptedIn() {
+        // 角色 settings 里还写着 desktopEnabled=true，但能力层已删除 → 必须是 false
+        assertThat(manager.promptHintFlags(7L, legacyOptInCharacter()))
                 .containsEntry("computer", false);
     }
 
     @Test
-    void computerFlagRequiresBothSwitchAndCharacterOptIn() {
-        when(agentBridgeService.availableTools(7L)).thenReturn(List.of(
-                new AgentBridgeService.ClientTool("desk_click", "desc", "{}", false)));
-
-        assertThat(manager.promptHintFlags(7L, character(true)))
-                .containsEntry("computer", true);
-        // 角色关：能力在线也拿不到
-        assertThat(manager.promptHintFlags(7L, character(false)))
-                .containsEntry("computer", false);
-        // 老角色（settings 里没有这个键）默认关
-        Character legacy = new Character();
-        legacy.setSettings(new HashMap<>());
-        assertThat(manager.promptHintFlags(7L, legacy)).containsEntry("computer", false);
-        // 无角色上下文：不给
+    void computerFlagIsFalseWithoutCharacterContext() {
+        // 无角色上下文：同样不给
         assertThat(manager.promptHintFlags(7L, null)).containsEntry("computer", false);
-    }
-
-    @Test
-    void retiredComputerTaskToolNoLongerFlipsComputerFlag() {
-        when(agentBridgeService.availableTools(7L)).thenReturn(List.of(
-                new AgentBridgeService.ClientTool("computer_task", "desc", "{}", false)));
-        assertThat(manager.promptHintFlags(7L, character(true))).containsEntry("computer", false);
-    }
-
-    @Test
-    void singleArgOverloadMeansNoCharacterContext() {
-        when(agentBridgeService.availableTools(7L)).thenReturn(List.of(
-                new AgentBridgeService.ClientTool("desk_click", "desc", "{}", false)));
         assertThat(manager.promptHintFlags(7L)).containsEntry("computer", false);
+    }
+
+    @Test
+    void keyOrderStaysStableForGoldenHints() {
+        // Python 的 `tool_hints_golden.json` 依赖这五个键的顺序，删键会打乱 golden 位串
+        assertThat(manager.promptHintFlags(7L, null).keySet())
+                .containsExactly("chat", "memory", "recent", "diary", "computer");
+    }
+
+    @Test
+    void chatToolSwitchesAreRespected() {
+        ReflectionTestUtils.setField(manager, "memoryAgenticEnabled", false);
+        ReflectionTestUtils.setField(manager, "writeDiaryEnabled", false);
+        Map<String, Object> flags = manager.promptHintFlags(7L, null);
+        assertThat(flags).containsEntry("memory", false).containsEntry("diary", false);
     }
 }

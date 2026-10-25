@@ -57,35 +57,6 @@ export const useNotificationsStore = defineStore('notifications', () => {
   /** @type {((body: object) => void) | null} */
   let groupMessageHandler = null
   let groupTopicSubscription = null
-  /** Agent 工具桥：云端下发的本地工具调用（/user/queue/agent-tools）处理器 */
-  let agentToolsHandler = null
-  let agentToolsSubscription = null
-
-  function resubscribeAgentTools() {
-    if (!stompClient?.connected || !agentToolsHandler) return
-    if (agentToolsSubscription) {
-      agentToolsSubscription.unsubscribe()
-      agentToolsSubscription = null
-    }
-    agentToolsSubscription = stompClient.subscribe('/user/queue/agent-tools', (message) => {
-      try {
-        agentToolsHandler(JSON.parse(message.body))
-      } catch (e) {
-        console.warn('[notifications] agent-tools parse', e)
-      }
-    })
-  }
-
-  /** 注册工具桥消息处理器（agentBridge store 调用）；连接建立后自动订阅。 */
-  function setAgentToolsHandler(handler) {
-    agentToolsHandler = handler
-    if (handler) {
-      resubscribeAgentTools()
-    } else if (agentToolsSubscription) {
-      agentToolsSubscription.unsubscribe()
-      agentToolsSubscription = null
-    }
-  }
 
   function resubscribeGroupChat() {
     if (!stompClient?.connected || pendingGroupId == null || !groupMessageHandler) return
@@ -278,7 +249,6 @@ export const useNotificationsStore = defineStore('notifications', () => {
           }
         })
         resubscribeGroupChat()
-        resubscribeAgentTools()
       },
       onDisconnect: () => {
         wsStatus.value = 'disconnected'
@@ -440,7 +410,6 @@ export const useNotificationsStore = defineStore('notifications', () => {
     purgeForCharacter,
     subscribeGroupChat,
     unsubscribeGroupChat,
-    setAgentToolsHandler,
     reconnectWebSocket,
     publishGroupMessage,
     requestBrowserNotificationPermission,

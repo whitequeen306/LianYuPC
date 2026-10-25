@@ -110,3 +110,6 @@ scripts/test_updater_flow.py
 .zcode/
 pytest-of-*/
 backend-agent/pytest-of-hp/
+ship-*.log
+frontend/.tmp-*/
+.tmp-*/

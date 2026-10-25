@@ -42,8 +42,6 @@ from app.message_assembly import (
     wrap_stored_text_for_model,
 )
 from app.prompt_pipeline import assemble_turn_prompt, normalize_scene, scene_enable_tools
-from app.capability.budget import TaskBudget, new_session_id
-from app.capability.specs import capability_names
 
 logger = logging.getLogger(__name__)
 
@@ -225,18 +223,14 @@ async def assemble_messages(state: ChatTurnState) -> dict[str, Any]:
 def _tool_context(state: ChatTurnState) -> dict[str, Any]:
     """工具执行上下文（对齐 Java ChatToolContext；模型看不到，也不进 schema）。
 
-    `_` 前缀的键由 `capability.handlers.split_internal_arguments` 剥掉，不会下发到客户端。
-    `_budget` 是**一次回合一个**：同一轮的工具往返共享步数/视觉/墙钟预算。
+    `_` 前缀的键由工具层剥掉，不会下发到客户端。
     """
     user_id = state.get("user_id")
-    session_id = new_session_id(user_id)
     return {
         "_user_id": user_id,
         "_character_id": state.get("character_id"),
         "_character_name": state.get("character_name"),
         "_language": state.get("expected_language") or state.get("output_language") or "zh",
-        "_session_id": session_id,
-        "_budget": TaskBudget.from_settings(session_id),
     }
 
 
@@ -247,23 +241,14 @@ def _tools_enabled(state: ChatTurnState) -> bool:
     return scene_enable_tools(normalize_scene(state.get("scene")))
 
 
-def _desktop_online(state: ChatTurnState) -> bool:
-    """桌面桥是否在线：Java 用 `promptHintFlags.computer` 这个开关事实告诉我们。
-
-    这是唯一的事实来源 —— Python 不去猜、也不自己探活。
-    """
-    flags = state.get("tool_flags") or {}
-    return bool(flags.get("computer"))
-
-
 def tool_names_for_turn(state: ChatTurnState) -> tuple[str, ...]:
-    """本轮可挂的工具：只读工具 +（桌面端在线时）桌面能力。
+    """本轮可挂的工具：只剩聊天类只读工具。
 
-    桌面端不在线时**一个 desk_* 都不给**：给了模型就会调用，然后每次都失败。
+    2026-10-25：桌面能力层（desk_*）已从代码里删除，不再按"桌面端在线"追加任何工具。
     """
     if not _tools_enabled(state):
         return ()
-    return CHAT_TOOL_NAMES + capability_names(_desktop_online(state))
+    return CHAT_TOOL_NAMES
 
 
 async def invoke_model(state: ChatTurnState) -> dict[str, Any]:

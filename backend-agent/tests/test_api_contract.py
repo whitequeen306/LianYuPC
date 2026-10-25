@@ -84,14 +84,9 @@ def test_capabilities_declares_missing_tools():
     assert "computer_task" not in supported
     assert "computer_task" not in body["missingTools"]
 
-    desktop = body["desktopCapability"]
-    assert desktop["transport"] == "bridge-stomp"
-    assert desktop["tools"], "桌面能力清单不能为空"
-    assert all(t.startswith("desk_") for t in desktop["tools"])
-    assert set(desktop["tools"]) <= supported, "声明了却没注册 = 撒谎"
-    assert desktop["maxSteps"] >= 1
-    assert desktop["maxVisionFrames"] >= 1
-    assert desktop["taskDeadlineSeconds"] > 0
+    # 2026-10-25：桌面能力层已从代码里删除，能力端点不应再声明它
+    assert "desktopCapability" not in body, "能力层已删除，不该再声明 desktopCapability"
+    assert not [t for t in supported if t.startswith("desk_")], "desk_* 不该再注册"
 
     assert body["languageGate"] is True
     assert body["circuitBreaker"] is True

@@ -16,11 +16,9 @@ import com.lianyu.service.agent.ChatTurnRequest;
 import com.lianyu.service.agent.PromptAssemblyPort;
 import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
-import com.lianyu.service.character.CharacterPreferenceResolver;
 import com.lianyu.service.support.OutputLanguageService;
 import com.lianyu.service.tools.TimeTool;
 import com.lianyu.service.tools.ToolManager;
-import com.lianyu.service.tools.bridge.AgentBridgeService;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,11 +27,11 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 /**
- * 角色级「操控电脑」闸门的**装配**验证。
+ * `ChatTurnFacade` → Python 的**开关事实装配**验证。
  *
- * <p>`ToolManager` 自己的单测只证明「两个闸门相与」；这里补的是另一半：
- * `ChatTurnFacade` 真的把 `character` 传下去了，并且两个闸门都与桌面在线状态联动。
- * 这个测试直接抓发给 Python 的 `ChatTurnRequest.toolFlags` —— 也就是模型最终看到的能力开关。
+ * <p>2026-10-25 桌面能力层下线后，这里验证的不再是「角色级操控电脑闸门」，
+ * 而是剩下的事实：聊天工具开关按场景下发，`computer` 恒为 false
+ * （键保留是为了不改 Python 侧 `build_tool_hint` 的键序契约）。
  */
 class ChatTurnFacadeToolFlagsTest {
 
@@ -44,7 +42,6 @@ class ChatTurnFacadeToolFlagsTest {
     private TimeTool timeTool;
     private CharacterChatBehaviorResolver behaviorResolver;
     private ToolManager toolManager;
-    private AgentBridgeService agentBridgeService;
     private ChatTurnFacade facade;
 
     @BeforeEach
@@ -55,9 +52,8 @@ class ChatTurnFacadeToolFlagsTest {
         outputLanguageService = mock(OutputLanguageService.class);
         timeTool = mock(TimeTool.class);
         behaviorResolver = mock(CharacterChatBehaviorResolver.class);
-        agentBridgeService = mock(AgentBridgeService.class);
 
-        toolManager = new ToolManager(agentBridgeService);
+        toolManager = new ToolManager();
         org.springframework.test.util.ReflectionTestUtils.setField(toolManager, "chatToolsEnabled", true);
         org.springframework.test.util.ReflectionTestUtils.setField(toolManager, "memoryAgenticEnabled", true);
         org.springframework.test.util.ReflectionTestUtils.setField(toolManager, "recentActivityEnabled", true);
@@ -74,20 +70,21 @@ class ChatTurnFacadeToolFlagsTest {
                 "sys", List.of(), "好呀", 10, 5, 15));
     }
 
-    private Character character(boolean desktopEnabled) {
+    /** 老角色 settings 里可能还残留 desktopEnabled=true（列保留、不再读），不该影响任何开关。 */
+    private Character character(boolean legacyDesktopEnabled) {
         Character character = new Character();
         character.setId(57L);
         character.setName("验证角色");
         character.setPromptTemplate("你是验证角色。");
         Map<String, Object> settings = new HashMap<>();
-        settings.put(CharacterPreferenceResolver.KEY_DESKTOP_ENABLED, desktopEnabled);
+        settings.put("desktopEnabled", legacyDesktopEnabled);
         character.setSettings(settings);
         return character;
     }
 
-    private Map<String, Object> captureFlags(Character character) {
+    private Map<String, Object> captureFlags(Character character, ChatTurnScene scene) {
         facade.invokeBlocking(ChatTurnCommand.builder()
-                .scene(ChatTurnScene.SINGLE)
+                .scene(scene)
                 .userId(25L)
                 .conversationId(59L)
                 .character(character)
@@ -100,35 +97,31 @@ class ChatTurnFacadeToolFlagsTest {
     }
 
     @Test
-    void desktopOnlineAndCharacterOptedInGivesComputerFlag() {
-        when(agentBridgeService.availableTools(25L)).thenReturn(List.of(
-                new AgentBridgeService.ClientTool("desk_click", "d", "{}", false)));
-
-        assertThat(captureFlags(character(true))).containsEntry("computer", true);
+    void chatSceneSendsChatToolSwitchesWithComputerOff() {
+        Map<String, Object> flags = captureFlags(character(true), ChatTurnScene.SINGLE);
+        assertThat(flags).containsEntry("chat", true)
+                .containsEntry("memory", true)
+                .containsEntry("recent", true)
+                .containsEntry("diary", true)
+                .containsEntry("computer", false);
     }
 
     @Test
-    void characterOptOutWinsEvenWhenDesktopIsOnline() {
-        when(agentBridgeService.availableTools(25L)).thenReturn(List.of(
-                new AgentBridgeService.ClientTool("desk_click", "d", "{}", false)));
-
-        assertThat(captureFlags(character(false))).containsEntry("computer", false);
+    void legacyCharacterOptInNoLongerFlipsComputer() {
+        // 旧数据里 desktopEnabled=true 也必须 false：读写两侧都不认这个键了
+        assertThat(captureFlags(character(true), ChatTurnScene.SINGLE))
+                .containsEntry("computer", false);
     }
 
     @Test
-    void characterOptInIsNotEnoughWhenDesktopIsOffline() {
-        when(agentBridgeService.availableTools(25L)).thenReturn(List.of());
-
-        assertThat(captureFlags(character(true))).containsEntry("computer", false);
+    void sceneWithoutChatToolsSendsOnlyChatOffFlag() {
+        // VOICE_CALL / MOMENTS 等场景不启用聊天工具，只告诉 Python「chat=false」
+        Map<String, Object> flags = captureFlags(character(false), ChatTurnScene.VOICE_CALL);
+        assertThat(flags).containsOnlyKeys("chat").containsEntry("chat", false);
     }
 
     @Test
-    void legacyCharacterWithoutTheKeyStaysOff() {
-        when(agentBridgeService.availableTools(25L)).thenReturn(List.of(
-                new AgentBridgeService.ClientTool("desk_click", "d", "{}", false)));
-        Character legacy = character(true);
-        legacy.setSettings(new HashMap<>());
-
-        assertThat(captureFlags(legacy)).containsEntry("computer", false);
+    void toolFlagsAreNeverEmpty() {
+        assertThat(captureFlags(character(false), ChatTurnScene.DIARY)).isNotEmpty();
     }
 }

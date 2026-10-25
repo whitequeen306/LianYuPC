@@ -29,17 +29,6 @@
             :emotion-intensity="emotionState.emotionIntensity"
             :status-text="emotionState.statusText"
           />
-          <span
-            v-if="mcpActiveTask"
-            class="gal-header__acting"
-            role="status"
-            aria-live="polite"
-          >
-            <span class="gal-header__acting-dot" aria-hidden="true" />
-            <span class="gal-header__acting-text">
-              {{ t('chat.actingOnComputer') }}<template v-if="mcpActiveStepText"> · {{ mcpActiveStepText }}</template>
-            </span>
-          </span>
         </div>
         <button
           v-if="voiceCallEnabled"
@@ -170,11 +159,6 @@
           </template>
           </div>
         </template>
-          <McpTaskProgressBubble
-            v-if="mcpActiveTask"
-            :task="mcpActiveTask"
-            class="gal-log__mcp-task"
-          />
           <div ref="scrollAnchor" />
         </div>
         <button
@@ -339,7 +323,6 @@ import { useUserStore } from '@/stores/user'
 import { useSettingsStore } from '@/stores/settings'
 import { useCharactersStore } from '@/stores/characters'
 import { useConversationsStore } from '@/stores/conversations'
-import { useAgentBridgeStore } from '@/stores/agentBridge'
 import { humanizeError } from '@/utils/errorMessage'
 import { getConversation, getMessages, notifyConversationOpened, sendMessageStream, uploadChatImage } from '@/api/conversation'
 import { fetchModels } from '@/api/ai'
@@ -363,7 +346,6 @@ import { drainAssistantStream } from '@/utils/assistantStreamDrain'
 import { formatSmartTime } from '@/utils/feedTime'
 import AssistantMessageContent from '@/components/AssistantMessageContent.vue'
 import VoiceMessageBubble from '@/components/VoiceMessageBubble.vue'
-import McpTaskProgressBubble from '@/components/McpTaskProgressBubble.vue'
 import VoiceCallOverlay from '@/components/VoiceCallOverlay.vue'
 import { useVoiceDuplex } from '@/composables/useVoiceDuplex'
 import { typewriteText } from '@/utils/voiceResponse'
@@ -485,22 +467,6 @@ function openImagePreview(imageUrl) {
 const currentConvId = ref(null)
 const activeCharacter = ref(null)
 const activeCharacterAvatarTier = ref('thumb')
-const agentBridgeStore = useAgentBridgeStore()
-// 角色正在本机执行的电脑任务（进度小气泡 + 头部「正在操控电脑」状态条；任务结束自动消失）
-const mcpActiveTask = computed(() => taskForCharacterSafe(activeCharacter.value?.id))
-// 头部只简要展示「当前这一步」，完整历史留在消息流的气泡里
-const mcpActiveStepText = computed(() => {
-  const updates = mcpActiveTask.value?.updates || []
-  const last = updates[updates.length - 1]
-  return last?.text || ''
-})
-function taskForCharacterSafe(characterId) {
-  try {
-    return agentBridgeStore.taskForCharacter(characterId)
-  } catch {
-    return null
-  }
-}
 watch(activeCharacter, (char) => setActiveChatActor(char), { immediate: true })
 const emotionState = ref(null)
 const msgListRef = ref(null)
@@ -515,14 +481,6 @@ const { isUserScrolledUp, scrollToBottom, jumpToBottom } = useChatScroll(msgList
   onReachTop: () => { void loadOlderMessages() },
 })
 const { beginStream, abortStream, isAbortError } = useStreamAbort({ abortOnUnmount: false })
-// 任务进度更新时跟随滚动（用户上翻时 useChatScroll 内部会拦截）
-watch(
-  () => mcpActiveTask.value?.updates?.length,
-  async () => {
-    await nextTick()
-    scrollToBottom()
-  },
-)
 const fileInputRef = ref(null)
 const galBgRef = ref(null)
 
@@ -1692,38 +1650,6 @@ function formatTime(ts) {
     font-weight: $font-weight-medium;
     color: $color-text-muted;
   }
-}
-
-/* 「正在操控电脑」状态条：只在角色真的在本机动手时出现 */
-.gal-header__acting {
-  display: inline-flex;
-  align-items: center;
-  gap: $space-2;
-  max-width: 320px;
-  margin-top: 2px;
-  font-size: $font-size-xs;
-  font-weight: $font-weight-medium;
-  color: var(--ly-accent);
-}
-
-.gal-header__acting-dot {
-  flex-shrink: 0;
-  width: 6px;
-  height: 6px;
-  border-radius: $radius-full;
-  background: var(--ly-accent);
-  animation: ly-acting-pulse 1.4s ease-in-out infinite;
-}
-
-.gal-header__acting-text {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-@keyframes ly-acting-pulse {
-  0%, 100% { opacity: 0.35; transform: scale(0.85); }
-  50% { opacity: 1; transform: scale(1); }
 }
 
 .gal-header__call,

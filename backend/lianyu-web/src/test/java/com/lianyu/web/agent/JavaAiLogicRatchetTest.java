@@ -29,13 +29,10 @@ class JavaAiLogicRatchetTest {
     private static final int BASELINE_MODEL_CALLS = 0;
     private static final int BASELINE_AI_CLASSES = 0;
 
-    /** 允许保留：基础设施 seam（加解密 / 桥接会话 / 能力审计）。 */
+    /** 允许保留：基础设施 seam（加解密）。桌面能力层已于 2026-10-25 删除，白名单同步收窄。 */
     private static final Set<String> ALLOWED_FILES = Set.of(
             "ApiKeyVaultService.java",
-            "JasyptUtil.java",
-            "AgentBridgeService.java",
-            "AgentBridgeController.java",
-            "CapabilityAuditService.java");
+            "JasyptUtil.java");
 
     private static final List<String> PROMPT_MARKERS = List.of(
             "=== 关于用户的记忆", "=== 当前情绪状态", "=== 安全与边界", "=== 可用工具",
@@ -181,6 +178,6 @@ class JavaAiLogicRatchetTest {
     @Test
     void seamFilesAreStillAllowed() {
         assertTrue(ALLOWED_FILES.contains("ApiKeyVaultService.java"));
-        assertTrue(ALLOWED_FILES.contains("AgentBridgeService.java"));
+        assertTrue(ALLOWED_FILES.contains("JasyptUtil.java"));
     }
 }

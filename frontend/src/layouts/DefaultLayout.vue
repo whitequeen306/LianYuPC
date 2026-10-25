@@ -35,7 +35,6 @@ import AppHeader from '@/components/AppHeader.vue'
 import AppDock from '@/components/AppDock.vue'
 import AppShellAtmosphere from '@/components/AppShellAtmosphere.vue'
 import { useNotificationsStore } from '@/stores/notifications'
-import { useAgentBridgeStore } from '@/stores/agentBridge'
 import { useLayoutStore } from '@/stores/layout'
 import { useDesktopCloseHint } from '@/composables/useDesktopCloseHint'
 import { useUserStore } from '@/stores/user'
@@ -44,7 +43,6 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const notificationsStore = useNotificationsStore()
-const agentBridgeStore = useAgentBridgeStore()
 const layoutStore = useLayoutStore()
 useDesktopCloseHint()
 
@@ -53,11 +51,9 @@ const hideDock = computed(() => route.meta.hideDock === true || isImmersive.valu
 
 onMounted(() => {
   notificationsStore.init()
-  void agentBridgeStore.init()
 })
 
 onUnmounted(() => {
-  agentBridgeStore.dispose()
   notificationsStore.dispose()
 })
 

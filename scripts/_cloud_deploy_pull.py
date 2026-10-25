@@ -55,30 +55,6 @@ def main() -> None:
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     client.connect(HOST, username=USER, password=password, timeout=30)
 
-    # ── 0) 关键配置自检：桌面能力层的内网通道 token 必须存在于云端 .env ────────────
-    # 本脚本只 pull + rebuild，**不写** /opt/lianyu/.env（那是运维资产）。
-    # 但 Python↔Java 的内部通道在缺 token 时是 fail-closed 的：所有 desk_* 会直接报
-    # channel_not_configured / invalid_signature，用户看起来就是「角色不会动手」，
-    # 而且完全不会报错到部署日志里。所以这里提前拦，别让它悄悄上线。
-    token_check = run(
-        client,
-        "grep -cE '^LIANYU_AGENT_INTERNAL_TOKEN=.+' /opt/lianyu/.env 2>/dev/null || true",
-        timeout=60,
-        quiet=True,
-    ).strip()
-    if token_check not in ("1",):
-        print(
-            "\n[deploy] /opt/lianyu/.env 缺少 LIANYU_AGENT_INTERNAL_TOKEN（或为空）。\n"
-            "  桌面能力层会 fail-closed：角色无法操控电脑，但不会报错到部署日志。\n"
-            "  补法（两端同值，随机 64 hex）：\n"
-            "    ssh root@" + HOST + " \"grep -q '^LIANYU_AGENT_INTERNAL_TOKEN=' /opt/lianyu/.env"
-            " || echo 'LIANYU_AGENT_INTERNAL_TOKEN=<64位hex>' >> /opt/lianyu/.env\"\n"
-            "  再 `docker compose up -d --no-build backend agent agent2`。\n",
-            file=sys.stderr,
-        )
-        client.close()
-        raise SystemExit(57)
-
     head_before = run(client, "cd /opt/lianyu && git rev-parse HEAD", quiet=True).strip()
     run(client, "cd /opt/lianyu && git pull origin main")
 
@@ -168,28 +144,18 @@ def main() -> None:
     # OFF 退役自检：所有 agent 端口必须接线（缺端口 = 该链路会直接报错）
     run(client, "docker logs lianyu-backend 2>&1 | grep -E 'all ports wired|ports missing' | tail -2")
 
-    # 能力层自检（2026-10 起）：内部端点必须「无签名即拒」。
-    # 这一条能同时证明三件事：新后端镜像已生效、签名校验在工作、缺密钥时 fail-closed。
-    unsigned = run(
-        client,
-        "curl -s -X POST http://127.0.0.1:8080/internal/agent/desktop/exec "
-        "-H 'Content-Type: application/json' -d '{}' | head -c 200",
-        quiet=True,
-    ).strip()
-    print(f"$ internal exec (unsigned) -> {unsigned}")
-    if "invalid_signature" not in unsigned:
-        print(
-            "[deploy] 警告：/internal/agent/desktop/exec 未按预期拒绝未签名请求；"
-            "后端可能仍是旧镜像，或鉴权被改坏。",
-            file=sys.stderr,
-        )
-
-    # Python 侧能力清单：desk_* 必须存在（否则客户端拿不到桌面能力）
+    # 2026-10-25 起：桌面能力层已从代码删除。这里反过来守：
+    # 聊天工具必须在、desk_* 必须一个都没有（防止旧镜像/旧客户端把能力又带回来）。
     caps = run(client, "curl -s http://127.0.0.1:18001/agent/capabilities", quiet=True).strip()
-    desk_count = caps.count('"desk_')
-    print(f"$ agent capabilities: desk_* 提及 {desk_count} 次（应 ≥ 14）")
-    if desk_count < 14:
-        print("[deploy] 警告：能力清单里 desk_* 数量异常，检查 backend-agent 是否拉到新代码。", file=sys.stderr)
+    chat_hits = sum(caps.count(f'"{name}"') for name in (
+        "get_current_time", "get_weather", "memory_search", "get_my_recent_life"))
+    desk_hits = caps.count('"desk_')
+    print(f"$ agent capabilities: 聊天工具 {chat_hits}/4 命中，desk_* {desk_hits} 个（应为 0）")
+    if chat_hits < 4:
+        print("[deploy] 警告：聊天工具清单不全，检查 backend-agent 是否拉到新代码。", file=sys.stderr)
+    if desk_hits:
+        print("[deploy] 警告：desk_* 又出现了 —— 能力层本应已删除，可能后端是旧镜像。",
+              file=sys.stderr)
 
     run(client, "docker ps --format 'table {{.Names}}\\t{{.Status}}' | head -12")
 

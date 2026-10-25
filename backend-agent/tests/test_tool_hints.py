@@ -36,16 +36,19 @@ def test_chat_disabled_yields_empty():
     assert th.build_tool_hint(chat=False, memory=True, recent=True, diary=True, computer=True) == ""
 
 
-def test_desktop_capability_line_only_when_available(golden):
-    """computer 位 = 桌面能力在线；文案必须教 desk_*，不能再提已退役的 computer_task。"""
+def test_desktop_capability_line_is_gone(golden):
+    """2026-10-25：桌面能力层已从代码删除，`computer` 位不再改变任何文案。
+
+    旧断言是「computer=1 时多一行教 desk_* 的说明且比 computer=0 更长」——
+    能力层删除后那行不存在了，两个组合的文案必须完全一致；
+    同时整张表里不允许再出现 desk_* 或已退役的 computer_task。
+    """
     without = golden["cases"]["11110"]["hint"]
     with_it = golden["cases"]["11111"]["hint"]
-    assert "desk_screen_read" not in without
-    assert "desk_screen_read" in with_it
-    assert len(with_it) > len(without)
-    assert "computer_task" not in with_it, "粗粒度工具已退役，提示词不能教模型调用它"
+    assert with_it == without, "computer 位不该再影响提示词"
     for case in golden["cases"].values():
-        assert "computer_task" not in case["hint"]
+        assert "desk_" not in case["hint"], f"文案里还有 desk_*：{case['hint'][:60]}"
+        assert "computer_task" not in case["hint"], "粗粒度工具已退役，提示词不能教模型调用它"
 
 
 def test_build_from_flags_handles_missing_and_empty():

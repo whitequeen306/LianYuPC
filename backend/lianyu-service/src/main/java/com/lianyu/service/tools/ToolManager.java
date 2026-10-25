@@ -1,8 +1,6 @@
 package com.lianyu.service.tools;
 
 import com.lianyu.dao.entity.Character;
-import com.lianyu.service.character.CharacterPreferenceResolver;
-import com.lianyu.service.tools.bridge.AgentBridgeService;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -11,19 +9,16 @@ import org.springframework.stereotype.Component;
 /**
  * 工具开关事实（agent 侧据此生成提示文案，Java **不拼接任何 prompt 文本**）。
  *
- * <p>能力层重构后这里只剩一件事：把「哪些能力开关是开的」告诉 Python。
- * 原先的 `resolveToolCallbacks` / `appendClientBridgeTools`（Spring AI ToolCallback 装配）
- * 已随外借引擎一起删除 —— 现在 schema 由 Python 的 `capability/specs.py` 持有，
- * Java 再装配一份只会造成两套事实。
+ * <p>能力层下线后（2026-10-25）这里只剩「聊天工具开关」这一件事：
+ * 时间 / 天气 / 记忆 / 近况 / 写日记，全部由配置决定，与客户端在线状态无关。
  *
- * <p>`computer` 键名保持不变（32 组 golden 提示词表的键序依赖它），
- * 但语义是「该用户桌面能力在线」，即桥上有任一 `desk_*`。
+ * <p>`computer` 键**保留但恒为 false**：Python 的 `build_tool_hint` 仍接受该参数，
+ * 32 组 golden 提示词表的键序（chat,memory,recent,diary,computer）也依赖它存在。
+ * 桌面能力层已删除，Java 侧不再有任何「桌面能力在线」的判断来源。
  */
 @Component
 @RequiredArgsConstructor
 public class ToolManager {
-
-    private final AgentBridgeService agentBridgeService;
 
     @Value("${lianyu.tools.chat.enabled:true}")
     private boolean chatToolsEnabled;
@@ -37,22 +32,7 @@ public class ToolManager {
     @Value("${lianyu.tools.write-diary.enabled:true}")
     private boolean writeDiaryEnabled;
 
-    /**
-     * 桌面能力是否在线：桥上有任一 `desk_*` 原子能力即算在线。
-     *
-     * <p>语义变更（能力层重构）：旧版判断「桥上有 `computer_task`」—— 那是外借引擎的
-     * 粗粒度黑盒工具，已退役。现在客户端注册的是一组 `desk_*`，只要有一个在线，
-     * 模型这一轮就该拿到整套桌面能力（Python 侧按 `capability_names()` 决定具体给哪些）。
-     */
-    boolean hasDesktopCapability(Long userId) {
-        if (userId == null) {
-            return false;
-        }
-        return agentBridgeService.availableTools(userId).stream()
-                .anyMatch(t -> t.name() != null && t.name().startsWith("desk_"));
-    }
-
-    /** 工具提示的开关事实。`computer` 依赖桌面桥接的实时会话（进程内内存态），只能由 Java 提供。 */
+    /** 工具提示的开关事实（无角色上下文的场景）。 */
     public Map<String, Object> promptHintFlags(Long userId) {
         return promptHintFlags(userId, null);
     }
@@ -60,25 +40,16 @@ public class ToolManager {
     /**
      * 带角色上下文的开关事实。
      *
-     * <p>`computer` = 全局能力在线 **且** 这个角色被允许操控电脑（`settings.desktopEnabled`）。
-     * 两个闸门是「与」的关系：
-     * <ul>
-     *   <li>全局关 → 客户端根本没注册 desk_*，模型看不到任何桌面能力；</li>
-     *   <li>角色关 → 即使能力在线，这个角色也拿不到 desk_*（只能聊天）。</li>
-     * </ul>
-     * 角色为 null（无角色上下文的场景）按「不允许」处理 —— 宁可不给，也不要误开。
+     * <p>`computer` 恒为 false：操控电脑能力已下线，客户端不再注册 `desk_*`，
+     * 模型也拿不到任何桌面工具。保留键名只是为了不改 Python 侧的提示词键序契约。
      */
     public Map<String, Object> promptHintFlags(Long userId, Character character) {
-        // 两个事实分开取，别用 && 短路：短路会让「能力是否在线」这条事实不可观测
-        //（踩过：单测里 stub 因为短路而没被调用）。
-        boolean desktopOnline = hasDesktopCapability(userId);
-        boolean characterAllowsDesktop = CharacterPreferenceResolver.desktopEnabled(character);
         Map<String, Object> flags = new java.util.LinkedHashMap<>();
         flags.put("chat", chatToolsEnabled);
         flags.put("memory", memoryAgenticEnabled);
         flags.put("recent", recentActivityEnabled);
         flags.put("diary", writeDiaryEnabled);
-        flags.put("computer", desktopOnline && characterAllowsDesktop);
+        flags.put("computer", false);
         return flags;
     }
 }

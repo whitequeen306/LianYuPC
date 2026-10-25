@@ -115,7 +115,7 @@ async def capabilities() -> dict[str, object]:
     Electron 执行（不是 HTTP 直连），`tools` 是本进程注册的 `desk_*` 全集。
     模型实际能不能用还要看当轮桌面端是否在线（见 `capability_names()`）。
     """
-    from app.tools import DESKTOP_TOOL_NAMES, supported_tool_names
+    from app.tools import supported_tool_names
 
     settings = get_settings()
     java_tools = [
@@ -130,14 +130,6 @@ async def capabilities() -> dict[str, object]:
         "version": app.version,
         "supportedTools": supported,
         "missingTools": [t for t in java_tools if t not in supported],
-        "desktopCapability": {
-            "enabled": settings.desktop_capability_enabled,
-            "transport": "bridge-stomp",
-            "tools": sorted(DESKTOP_TOOL_NAMES),
-            "maxSteps": settings.desktop_max_steps,
-            "maxVisionFrames": settings.desktop_max_vlm_frames,
-            "taskDeadlineSeconds": settings.desktop_task_deadline_seconds,
-        },
         "languageGate": True,
         "circuitBreaker": True,
         "toolLoop": True,

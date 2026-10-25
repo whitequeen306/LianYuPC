@@ -33,23 +33,12 @@ class CharacterPreferenceResolverTest {
     }
 
     @Test
-    void desktopEnabled_defaultsToFalse() {
-        // 默认必须关：老角色不该因为升级就突然获得操控电脑的权限
-        assertFalse(CharacterPreferenceResolver.desktopEnabled((Map<String, Object>) null));
-        assertFalse(CharacterPreferenceResolver.desktopEnabled(Map.of()));
-    }
-
-    @Test
-    void desktopEnabled_respectsExplicitOptIn() {
-        assertTrue(CharacterPreferenceResolver.desktopEnabled(Map.of("desktopEnabled", true)));
-        assertTrue(CharacterPreferenceResolver.desktopEnabled(Map.of("desktopEnabled", "true")));
-        assertFalse(CharacterPreferenceResolver.desktopEnabled(Map.of("desktopEnabled", false)));
-    }
-
-    @Test
-    void creationDefaultsSeedDesktopOff() {
+    void creationDefaultsNoLongerSeedDesktopFlag() {
+        // 桌面能力层已下线：新建角色不该再写这个键（老角色 JSON 里残留的键不迁移、不读取）
         Map<String, Object> settings = new java.util.HashMap<>();
         CharacterPreferenceResolver.applyCreationDefaults(settings);
-        assertFalse(CharacterPreferenceResolver.desktopEnabled(settings));
+        assertFalse(settings.containsKey("desktopEnabled"));
+        assertTrue(settings.containsKey(CharacterPreferenceResolver.KEY_DO_NOT_DISTURB));
+        assertTrue(settings.containsKey(CharacterPreferenceResolver.KEY_SHOW_INNER_THOUGHTS));
     }
 }

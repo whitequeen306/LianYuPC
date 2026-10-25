@@ -12,8 +12,6 @@ import {
   Notification,
   powerMonitor,
   dialog,
-  clipboard,
-  desktopCapturer,
 } from 'electron'
 import path from 'path'
 import fs from 'fs'
@@ -76,18 +74,6 @@ import {
   readWechatBridgeSettings,
   writeWechatBridgeSettings,
 } from './wechatBridge/wechatBridgeSettings.js'
-import { BANNER_IDLE_HIDE_MS, createControlBanner } from './capability/controlBanner.js'
-import { createCapabilityHost } from './capability/capabilityHost.js'
-import { createCapabilitySettings } from './capability/settings.js'
-import { createWinActor } from './capability/winActor.js'
-import { createInputDriver } from './capability/input.js'
-import { createWindowDriver } from './capability/windows.js'
-import { createScreenCapture } from './capability/capture.js'
-import { createAppIndex } from './capability/appIndex.js'
-import { createLauncher } from './capability/launcher.js'
-import { createFileTools } from './capability/fileTools.js'
-import { CAPABILITY_NAMES } from './capability/capabilityNames.js'
-import { DEFAULT_POLICY as CAPABILITY_DEFAULT_POLICY } from './capability/policy.js'
 import { loadRuntimeSecrets, getRuntimeSecrets } from './runtimeSecrets.js'
 import { initUpdater } from './updater/updater.js'
 import { schedulePostWindowStartup } from './startupOrchestrator.js'
@@ -114,37 +100,6 @@ let pickerWindow = null
 /** @type {BrowserWindow | null} */
 let quickChatShell = null
 
-/**
- * 角色操控电脑期间：**我们自己的窗口要让位**。
- *
- * 真实踩到：DSH/聊天窗是 always-on-top，角色去点网易云时鼠标落点被我们的窗口吃掉、
- * 键盘焦点也抢不回来 —— 表现为「工具全部 ok，界面一动不动」。
- * 所以任务开始时把我们的窗口从置顶降下来（保持可见），任务结束再恢复原状。
- */
-const yieldedWindows = new Map()
-
-function enterAutomationMode() {
-  for (const win of [mainWindow, launcherWindow, pickerWindow, quickChatShell]) {
-    if (!win || win.isDestroyed?.()) continue
-    try {
-      if (!win.isAlwaysOnTop?.()) continue
-      yieldedWindows.set(win.id, true)
-      win.setAlwaysOnTop(false)
-      log('automation-mode: yielded topmost window')
-    } catch { /* ignore */ }
-  }
-}
-
-function exitAutomationMode() {
-  if (yieldedWindows.size === 0) return
-  for (const win of [mainWindow, launcherWindow, pickerWindow, quickChatShell]) {
-    if (!win || win.isDestroyed?.()) continue
-    if (!yieldedWindows.has(win.id)) continue
-    try { win.setAlwaysOnTop(true) } catch { /* ignore */ }
-  }
-  yieldedWindows.clear()
-  log('automation-mode: restored topmost windows')
-}
 let quickChatShellReady = false
 /** @type {string | null} */
 let quickChatPendingShowId = null
@@ -619,146 +574,6 @@ const wechatBridgeCoordinator = createWechatBridgeCoordinator({
   getRuntimeSecrets,
   isAllowedEgressUrl,
 })
-
-// ---- 桌面能力层（自研）：需要广播到渲染端的确认通道 ----
-
-function broadcastToAppWindows(channel, payload) {
-  for (const win of [mainWindow, launcherWindow]) {
-    if (win && !win.isDestroyed()) {
-      try {
-        win.webContents.send(channel, payload)
-      } catch { /* ignore */ }
-    }
-  }
-}
-
-const CAPABILITY_CONFIRM_TIMEOUT_MS = 45_000
-const pendingCapabilityConfirms = new Map() // id -> resolve(boolean)
-let capabilityConfirmSeq = 0
-
-/**
- * 危险动作确认：广播到渲染端弹窗，超时或无窗口默认拒绝（fail-safe）。
- *
- * 「无窗口可问 = 拒绝」这条绝不能改：一旦改成默认放行，
- * 一次被用户忽略的弹窗就等于批准了不可逆动作。
- */
-function requestCapabilityConfirm(payload) {
-  return new Promise((resolve) => {
-    const hasWindow = [mainWindow, launcherWindow].some((w) => w && !w.isDestroyed())
-    if (!hasWindow) {
-      log('capability confirm denied: no window to ask')
-      resolve(false)
-      return
-    }
-    const id = `cap-confirm-${++capabilityConfirmSeq}`
-    const timer = setTimeout(() => {
-      pendingCapabilityConfirms.delete(id)
-      log(`capability confirm timeout (deny): ${id}`)
-      resolve(false)
-    }, CAPABILITY_CONFIRM_TIMEOUT_MS)
-    pendingCapabilityConfirms.set(id, (approved) => {
-      clearTimeout(timer)
-      pendingCapabilityConfirms.delete(id)
-      resolve(approved === true)
-    })
-    try {
-      showMainWindow()
-    } catch { /* ignore */ }
-    broadcastToAppWindows('desktop:capability-confirm-request', {
-      id,
-      kind: payload.kind || 'capability',
-      toolName: payload.toolName || '',
-      message: payload.message || '',
-      args: payload.args || '',
-      danger: payload.danger || '',
-      timeoutMs: CAPABILITY_CONFIRM_TIMEOUT_MS,
-    })
-  })
-}
-
-// ---- 桌面能力层（自研，替代外借的 AgentAssistant MCP 引擎） ----
-// 懒启动：第一次真正收到 desk_* 调用时才拉起 PowerShell actor（含一次 Add-Type 编译）。
-// 关闭开关时连 actor 都不会创建，进程里没有任何额外常驻。
-const capabilitySettings = createCapabilitySettings({ dir: app.getPath('userData') })
-let capabilityActor = null
-let capabilityHost = null
-
-/**
- * 「角色正在操控你的电脑」顶部指示条 + 全局 Esc。
- * 中止语义：杀掉 actor（下一次动作会重建）—— 单个 op 内部无法安全打断正在进行的 SendInput，
- * 杀进程是「卡死必有出口」的可靠实现。
- */
-const controlBanner = createControlBanner({
-  BrowserWindow,
-  screen,
-  globalShortcut,
-  log: (msg) => log(`[capability-banner] ${msg}`),
-  onCancel: () => {
-    stopCapabilityRuntime()
-    try { controlBanner.hide() } catch { /* ignore */ }
-  },
-})
-
-/**
- * 多步任务里每一步之间会有几百毫秒空档，若每步结束就隐藏横幅会「一閃一閃」。
- * 改成「空闲 N 秒后才收」，任务内的下一步会把它取消。
- */
-let bannerIdleTimer = null
-/** 一个用户请求是否还在进行（渲染端通过 capability:banner 的 taskActive/taskDone 维护） */
-let bannerTaskActive = false
-function cancelBannerIdleHide() {
-  if (bannerIdleTimer) {
-    clearTimeout(bannerIdleTimer)
-    bannerIdleTimer = null
-  }
-}
-function scheduleBannerIdleHide() {
-  cancelBannerIdleHide()
-  bannerIdleTimer = setTimeout(() => {
-    bannerIdleTimer = null
-    try { controlBanner.hide() } catch { /* ignore */ }
-    exitAutomationMode()
-  }, BANNER_IDLE_HIDE_MS)
-  if (typeof bannerIdleTimer.unref === 'function') bannerIdleTimer.unref()
-}
-
-function ensureCapabilityHost() {
-  if (capabilityHost) return capabilityHost
-  capabilityActor = createWinActor({ log: (msg) => log(`[capability] ${msg}`) })
-  const appIndex = createAppIndex({ log: (msg) => log(`[capability] ${msg}`) })
-  const launcher = createLauncher({ index: appIndex, shell, log: (msg) => log(`[capability] ${msg}`) })
-  const capLog = (msg) => log(`[capability] ${msg}`)
-  capabilityHost = createCapabilityHost({
-    actor: capabilityActor,
-    capture: createScreenCapture({ desktopCapturer, screen, log: capLog }),
-    windows: createWindowDriver({ actor: capabilityActor }),
-    input: createInputDriver({ actor: capabilityActor, clipboard, log: capLog }),
-    clipboard,
-    files: createFileTools({ shell, log: capLog }),
-    launchApp: (payload) => launcher.launch(payload),
-    // 危险动作确认：人话描述 + 目标参数，走渲染端弹窗（45s 超时 / 无窗口即拒绝）
-    requestConfirm: (req) => requestCapabilityConfirm({
-      kind: 'capability',
-      toolName: req.tool,
-      message: req.description || req.tool,
-      args: req.args,
-      danger: req.danger,
-    }),
-    readSettings: () => capabilitySettings.read(),
-    loadPolicy: () => CAPABILITY_DEFAULT_POLICY,
-    log: capLog,
-    onAudit: (entry) => broadcastToAppWindows('desktop:capability-audit', entry),
-  })
-  return capabilityHost
-}
-
-function stopCapabilityRuntime() {
-  try { capabilityActor?.stop?.() } catch { /* ignore */ }
-  capabilityActor = null
-  capabilityHost = null
-  cancelBannerIdleHide()
-  try { controlBanner.hide() } catch { /* ignore */ }
-}
 
 function resolveTrayIcon() {
   // 打包后 build/icon.ico 不在 asar 里；dist/icon.ico 才在（regenerate-icon.py 同步写
@@ -2043,8 +1858,6 @@ function quitApplication(options = {}) {
   stopQqBridge()
   stopNapCatHost()
   void wechatBridgeCoordinator.stopHost({ persist: false })
-  try { controlBanner.hide() } catch { /* ignore */ }
-  stopCapabilityRuntime()
   qqBridgeCoordinator.dispose()
   closeCharacterPicker()
   if (quickChatShell && !quickChatShell.isDestroyed()) quickChatShell.destroy()
@@ -2628,113 +2441,6 @@ function registerIpcHandlers() {
   ipcMain.handle('desktop:stop-qq-bridge', (event) => {
     if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
     stopQqBridge()
-    return { ok: true }
-  })
-
-  // ---- 桌面能力层（desk_* 原子动作；替代外借引擎的 computer_task） ----
-  ipcMain.handle('capability:get-settings', (event) => {
-    if (!guardTrusted(event)) return null
-    return capabilitySettings.read()
-  })
-
-  ipcMain.handle('capability:set-settings', (event, partial) => {
-    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
-    const next = capabilitySettings.write(partial)
-    // 关掉开关就把常驻 actor 一起收掉（不留在用户进程里）
-    if (next.enabled !== true) stopCapabilityRuntime()
-    return { ok: true, settings: next }
-  })
-
-  ipcMain.handle('capability:get-status', (event) => {
-    if (!guardTrusted(event)) return null
-    const settings = capabilitySettings.read()
-    return {
-      enabled: settings.enabled === true,
-      ready: !!capabilityHost,
-      running: !!capabilityActor?.running,
-      // 渲染端据此把「桌面能力在线」注册到云端（Java 只按 desk_ 前缀判断）
-      tools: [...CAPABILITY_NAMES],
-      audit: capabilityHost?.status?.() || { auditSize: 0 },
-    }
-  })
-
-  ipcMain.handle('capability:exec', async (event, payload) => {
-    if (!guardTrusted(event)) return { ok: false, errorCode: 'untrusted_sender' }
-    // 总开关在主进程再判一次：渲染端不该是唯一防线
-    if (capabilitySettings.read().enabled !== true) {
-      return { ok: false, errorCode: 'disabled', text: '用户没有开启「电脑能力」' }
-    }
-    const host = ensureCapabilityHost()
-    const req = payload && typeof payload === 'object' ? payload : {}
-    const actor = req.actor && typeof req.actor === 'object' ? req.actor : {}
-    // 只读动作不弹指示条（看一眼屏幕不该有「正在操控」的压迫感）
-    const showBanner = String(req.danger || '') !== 'R0'
-    if (showBanner) {
-      cancelBannerIdleHide()
-      enterAutomationMode()
-      try { controlBanner.show(actor) } catch { /* ignore */ }
-    }
-    try {
-      return await host.exec(req)
-    } finally {
-      // 任务还在进行（渲染端会持续发 taskActive）→ 横幅常驻，等 taskDone 再收；
-      // 否则（一次性调用，例如 just 看一眼）空闲几秒后自动隐藏。
-      if (showBanner && !bannerTaskActive) scheduleBannerIdleHide()
-    }
-  })
-
-  // 渲染端把「这一步在干什么」推过来，横幅就地换文案（不重建窗口、不抢焦点）
-  ipcMain.handle('capability:banner', (event, payload) => {
-    if (!guardTrusted(event)) return { ok: false }
-    const req = payload && typeof payload === 'object' ? payload : {}
-    if (req.taskDone === true) {
-      bannerTaskActive = false
-      cancelBannerIdleHide()
-      try { controlBanner.hide() } catch { /* ignore */ }
-      exitAutomationMode()
-      return { ok: true }
-    }
-    if (req.hide === true) {
-      bannerTaskActive = false
-      cancelBannerIdleHide()
-      try { controlBanner.hide() } catch { /* ignore */ }
-      return { ok: true }
-    }
-    // taskActive：一个用户请求还没做完 → 横幅要一直挂着，直到渲染端发 taskDone
-    if (req.taskActive === true) {
-      bannerTaskActive = true
-      enterAutomationMode()
-    }
-    const text = String(req.text || '').trim()
-    if (bannerTaskActive) {
-      cancelBannerIdleHide()
-    } else {
-      scheduleBannerIdleHide()
-    }
-    if (!text) return { ok: true }
-    const updated = (() => {
-      try {
-        return controlBanner.update(text)
-      } catch {
-        return false
-      }
-    })()
-    return { ok: updated }
-  })
-
-  ipcMain.handle('capability:abort', (event, payload) => {
-    if (!guardTrusted(event)) return { ok: false }
-    // 中止 = 直接把 actor 杀掉（下一次动作会重建）。
-    // 单个 op 内部无法安全打断正在进行的 SendInput，杀进程是「卡死必有出口」的可靠实现。
-    stopCapabilityRuntime()
-    try { controlBanner.hide() } catch { /* ignore */ }
-    return { ok: true, stepId: payload?.stepId || '' }
-  })
-
-  ipcMain.handle('capability:confirm-response', (event, payload) => {
-    if (!guardTrusted(event)) return { ok: false }
-    const resolve = pendingCapabilityConfirms.get(payload?.id)
-    if (resolve) resolve(payload?.approved === true)
     return { ok: true }
   })
 
@@ -3325,7 +3031,6 @@ app.whenReady().then(() => {
   void autoStartQqBridgeIfNeeded()
   void autoStartNapCatHostIfNeeded()
   void wechatBridgeCoordinator.autoStartIfNeeded()
-  // 桌面能力层不自动起进程：actor 在第一次 desk_* 调用时才拉起（见 ensureCapabilityHost）
 
   // 电源事件：唤醒后通知窗口切换检测
   if (powerMonitor) {
@@ -3348,7 +3053,6 @@ app.whenReady().then(() => {
 })
 
 app.on('will-quit', () => {
-  try { controlBanner.dispose() } catch { /* ignore */ }
   globalShortcut.unregisterAll()
 })
 

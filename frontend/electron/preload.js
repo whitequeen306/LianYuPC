@@ -184,23 +184,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   /** Local GPT-SoVITS TTS (custom character voice). */
   synthesizeLocalTts: (payload) => ipcRenderer.invoke('custom-tts:sovits', payload),
-  // ── 桌面能力层（desk_*） ──
-  getCapabilitySettings: () => ipcRenderer.invoke('capability:get-settings'),
-  setCapabilitySettings: (partial) => ipcRenderer.invoke('capability:set-settings', partial),
-  getCapabilityStatus: () => ipcRenderer.invoke('capability:get-status'),
-  capabilityExec: (payload) => ipcRenderer.invoke('capability:exec', payload),
-  capabilityAbort: (payload) => ipcRenderer.invoke('capability:abort', payload),
-  /** 顶部指示条：{ text } 换当前动作文案，{ hide: true } 立刻收起（任务结束时用） */
-  capabilityBanner: (payload) => ipcRenderer.invoke('capability:banner', payload),
-  respondCapabilityConfirm: (id, approved) => ipcRenderer.invoke('capability:confirm-response', { id, approved }),
-  onCapabilityAudit: (callback) => {
-    const handler = (_event, payload) => callback(payload)
-    ipcRenderer.on('desktop:capability-audit', handler)
-    return () => ipcRenderer.removeListener('desktop:capability-audit', handler)
-  },
-  onCapabilityConfirmRequest: (callback) => {
-    const handler = (_event, payload) => callback(payload)
-    ipcRenderer.on('desktop:capability-confirm-request', handler)
-    return () => ipcRenderer.removeListener('desktop:capability-confirm-request', handler)
-  },
 })

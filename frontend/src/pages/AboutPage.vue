@@ -33,8 +33,6 @@
       </div>
     </section>
 
-    <!-- 桌面能力（desk_*）已于 2026-10-25 下线：模型侧不再提供任何操控电脑的工具，只有聊天类工具。代码保留在 electron/capability 与 app/capability，需要时用 LIANYU_DESKTOP_TOOLS=1 恢复。 -->
-
     <!-- 版权 -->
     <section class="section stagger-item">
       <div class="glass about-card about-footer">
@@ -74,14 +72,12 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { isElectronApp } from '@/utils/electron'
-import { useAgentBridgeStore } from '@/stores/agentBridge'
 import AppUpdateButton from '@/components/AppUpdateButton.vue'
 import { ArrowLeft, Link } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
 import { APP_LOGO } from '@/constants/brand'
 import pkg from '../../package.json'
 
@@ -91,32 +87,6 @@ const isElectron = isElectronApp()
 // 版本号取自 package.json，构建时注入；桌面版亦可由主进程覆盖但此处统一用前端版本
 const version = computed(() => pkg.version || '—')
 const goBack = () => router.push('/app/settings')
-
-// ---- 电脑能力（自研桌面能力层 desk_*） ----
-// 外借的 MCP 引擎已整体移除：不再有「引擎下载/版本/本地源码路径」这些概念。
-const bridge = useAgentBridgeStore()
-const capabilityToggling = ref(false)
-const capabilityEnabled = computed(() => bridge.capabilityEnabled === true)
-const capabilityToolNames = computed(() => {
-  const names = bridge.capabilityTools || []
-  return names.length ? names.join('、') : '—'
-})
-
-async function onToggleCapability(enabled) {
-  capabilityToggling.value = true
-  try {
-    await bridge.setCapabilityEnabled(enabled === true)
-    await bridge.refreshCapabilitySettings()
-  } catch (e) {
-    ElMessage.error(e?.message || t('about.capabilityToggleFailed'))
-  } finally {
-    capabilityToggling.value = false
-  }
-}
-
-onMounted(() => {
-  if (isElectron) void bridge.init()
-})
 
 // 彩蛋：连续点击予念图标 10 次跳转爱发电赞助页。
 // 计数窗口 2s，中断则重置，避免误触。
@@ -245,136 +215,6 @@ function handleLogoClick() {
   align-items: center;
   justify-content: space-between;
   gap: $space-4;
-}
-
-.mcp-service__head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: $space-4;
-}
-
-.mcp-service__name {
-  display: flex;
-  align-items: center;
-  gap: $space-2;
-  font-size: $font-size-base;
-  font-weight: $font-weight-semibold;
-  color: $color-text-primary;
-}
-
-.mcp-badge {
-  padding: 1px $space-2;
-  border-radius: $radius-pill;
-  font-size: $font-size-xs;
-  font-weight: $font-weight-normal;
-  color: $color-text-secondary;
-  background: rgba(128, 128, 140, 0.12);
-
-  &--running {
-    color: $color-pink-primary;
-    background: rgba($color-pink-rgb, 0.12);
-  }
-
-  &--starting {
-    color: $color-text-secondary;
-    background: rgba($color-pink-rgb, 0.08);
-  }
-
-  &--error {
-    color: $color-error;
-    background: rgba(128, 128, 140, 0.1);
-  }
-}
-
-.mcp-service__desc {
-  margin: $space-1 0 0;
-  font-size: $font-size-sm;
-  color: $color-text-secondary;
-  line-height: $line-height-normal;
-}
-
-.mcp-service__error {
-  margin-top: $space-3;
-  font-size: $font-size-xs;
-  color: $color-error;
-}
-
-.mcp-service__body {
-  display: flex;
-  flex-direction: column;
-  gap: $space-3;
-  margin-top: $space-5;
-  padding-top: $space-5;
-  border-top: 1px solid rgba(128, 128, 140, 0.15);
-}
-
-.mcp-service__hint {
-  margin: $space-4 0 0;
-  font-size: $font-size-xs;
-  color: $color-text-muted;
-}
-
-.mcp-engine-progress {
-  display: flex;
-  flex-direction: column;
-  gap: $space-2;
-}
-
-.mcp-engine-progress__meta {
-  margin: 0;
-  font-size: $font-size-xs;
-  color: $color-text-muted;
-  font-family: $font-mono;
-}
-
-.mcp-engine-mode {
-  display: flex;
-  gap: $space-2;
-  padding: $space-1;
-  border-radius: $radius-pill;
-  background: rgba(128, 128, 140, 0.08);
-}
-
-.mcp-engine-mode__btn {
-  flex: 1;
-  border: none;
-  border-radius: $radius-pill;
-  padding: $space-2 $space-3;
-  font-size: $font-size-sm;
-  color: $color-text-secondary;
-  background: transparent;
-  cursor: pointer;
-  transition: background 0.22s cubic-bezier(0.23, 1, 0.32, 1), color 0.22s cubic-bezier(0.23, 1, 0.32, 1);
-
-  &.is-active {
-    color: $color-pink-primary;
-    background: rgba($color-pink-rgb, 0.16);
-  }
-}
-
-.mcp-field {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: $space-3;
-  padding: $space-2 0;
-
-  &--column {
-    flex-direction: column;
-    align-items: stretch;
-  }
-}
-
-.mcp-field__label {
-  font-size: $font-size-sm;
-  color: $color-text-secondary;
-}
-
-.mcp-field__hint {
-  margin: $space-1 0 0;
-  font-size: $font-size-xs;
-  color: $color-text-muted;
 }
 
 .about-copyright {

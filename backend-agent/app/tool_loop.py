@@ -16,11 +16,6 @@ from typing import Any
 
 import httpx
 
-from app.capability.intent import (
-    DESKTOP_ACTION_NUDGE,
-    last_user_text,
-    looks_like_desktop_action,
-)
 from app.config import get_settings
 from app.gateway import GatewayResult, ModelGateway, ModelGatewayError
 from app.tools import resolve_tools, supported_tool_schemas
@@ -37,7 +32,6 @@ class ToolLoopResult:
     # 各轮 usage 累加：非流式回合要用它落库 token 统计，丢失会让用户额度显示为 0
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
-    # 是否触发过「空口承诺」重问（见 app/capability/intent.py 的真实事故说明）
     nudged: bool = False
 
 
@@ -156,9 +150,6 @@ async def run_tool_loop(
     completion_tokens = 0
 
     # 空口承诺防护：只有「桌面上确实可用」+「用户这句话是要动本机」时才启用，
-    # 否则纯闲聊被追问一句会显得角色很笨。详见 app/capability/intent.py。
-    desk_offered = any(str(name).startswith("desk_") for name in (tool_names or ()))
-    wants_action = desk_offered and looks_like_desktop_action(last_user_text(messages))
     nudged = False
 
     while True:
@@ -177,17 +168,6 @@ async def run_tool_loop(
         prompt_tokens += result.prompt_tokens or 0
         completion_tokens += result.completion_tokens or 0
         if not tool_calls:
-            if wants_action and not nudged and rounds == 0:
-                # 模型第一轮只说话不动手 → 追问一次（只追一次，绝不递归）
-                nudged = True
-                logger.info(
-                    "desktop action expected but model returned no tool_call; nudging once "
-                    "(chars=%d, tools=%s)",
-                    len(content or ""),
-                    tool_names,
-                )
-                history.append({"role": "user", "content": DESKTOP_ACTION_NUDGE})
-                continue
             return ToolLoopResult(content=content, rounds=rounds, tool_names_called=called,
                                   prompt_tokens=prompt_tokens or None,
                                   completion_tokens=completion_tokens or None,

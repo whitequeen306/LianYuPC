@@ -1,7 +1,7 @@
 # Java AI 逻辑残留清单（滚动更新）
 
 由 `scripts/check-java-ai-free.ps1` 生成/核对。目标：Java 零 AI 逻辑
-（仅保留加解密、桌面桥接会话、事务/落库三条 seam）。
+（仅保留加解密、事务/落库两条 seam —— 桌面桥接会话已于 2026-10-25 随能力层删除）。
 
 ## 当前基线（2026-10-20，语音迁移第 1、2 步之后）
 
@@ -31,13 +31,13 @@
 | Spring AI Alibaba Graph 编排（`ChatTurnGraphConfig` + 3 节点 + `ChatTurnMessageAssembler` + 图状态类，约 1014 行） | ✅ 删除；编排改由 Python LangGraph 负责，`spring-ai-alibaba-graph-core` 依赖一并移除。详见 [langgraph-orchestration.md](langgraph-orchestration.md) |
 | `EmbeddingService` / `RerankerService` / `MemoryVectorStore.insert+search` / `AiConfig.Embedding+Reranker` | ✅ 删除；向量化与重排已在 Python（pymilvus）。`MemoryVectorStore` 只留 `delete()`（纯 IO，无模型调用） |
 | `DashScopeTtsService` / `DashScopeVoiceEnrollmentClient` | ✅ 删除（-449 行）；音色注册与非实时 TTS 走 `VoiceEnrollmentPort` / `TtsPort`。`DashScopeCloudEndpointValidator.enrollUrl/synthUrl` 一并删除 —— 出站 URL 只在 Python 拼。详见 [tts-migration-plan.md](tts-migration-plan.md) |
+| 桌面能力层 Java 侧：`AgentBridgeService` / `CapabilityAuditService` / `AgentToolArguments` / `AgentBridgeController` / `InternalDesktopExecController` / `AgentInternalSigner` / 桥专用 DTO + 3 个测试（11 个文件，-1539 行） | ✅ 删除（2026-10-25）。模型侧 `desk_*` 工具已下线、Electron 能力层并行删除，这条链路已无调用方；`toolFlags.computer` 保留键名但恒为 `false`。Flyway `V55__agent_capability_audit.sql` 与 `agent_capability_audit` 表**保留**（已上线，只停写） |
 
-## 保留的三条 seam
+## 保留的两条 seam
 
 | 文件 | 职责 |
 |---|---|
 | `ApiKeyVaultService.java` / `JasyptUtil.java` | 凭据加解密 |
-| `AgentBridgeService.java` / `AgentBridgeController.java` | 桌面桥接长连接会话 |
 | 事务/落库（各 Service/Mapper） | MySQL/Redis/MQ 写入 |
 
 ## 防回退

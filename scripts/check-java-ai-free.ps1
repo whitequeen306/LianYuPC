@@ -3,8 +3,8 @@
     检查 Java 侧是否还残留 AI 逻辑（目标：Java 零 AI 逻辑）。
 
 .DESCRIPTION
-    终局形态：Java 只保留三条基础设施 seam —— 加解密、长连接会话状态（桌面桥接）、
-    事务/落库。其余 AI 逻辑（prompt 文本、模型调用、记忆处理）必须只在 Python。
+    终局形态：Java 只保留两条基础设施 seam —— 加解密、事务/落库。
+    其余 AI 逻辑（prompt 文本、模型调用、记忆处理）必须只在 Python。
 
     本脚本给出**可执行的门禁**，而不是靠人工 review：
       1. prompt 文本痕迹（中文提示词、提示词段落标记）
@@ -40,13 +40,11 @@ $files = Get-ChildItem -Path $javaRoot -Recurse -Include *.java -File |
     Where-Object { $_.FullName -notmatch '\\test\\' }
 
 # ── 允许保留的基础设施 seam（它们不是 AI 逻辑）──
-# ClientBridgeToolCallback 已随「自研能力层」删除：schema 由 Python 持有，Java 不再装配 ToolCallback。
+# 2026-10-25 桌面能力层删除后，桥接会话 / 能力审计两个 seam 一起消失；
+# ClientBridgeToolCallback 此前已随「自研能力层」删除：schema 由 Python 持有，Java 不再装配 ToolCallback。
 $allowedFiles = @(
     'ApiKeyVaultService.java',        # 加解密
-    'JasyptUtil.java',
-    'AgentBridgeService.java',        # 长连接会话状态
-    'AgentBridgeController.java',
-    'CapabilityAuditService.java'     # 桌面能力审计（纯落库，无 AI 逻辑）
+    'JasyptUtil.java'
 )
 
 # ── 规则 1：prompt 文本痕迹 ──
