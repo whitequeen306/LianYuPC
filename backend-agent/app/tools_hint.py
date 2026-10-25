@@ -9,9 +9,10 @@ Java 侧曾是叠加式拼接（base 两行 + 4 个可选行 + 电脑操控行�
 与 `ToolHintGoldenTest` 已随「Java 零 AI 逻辑」一起删除，没有第二个生成器。
 改文案直接改 JSON，`tests/test_tool_hints.py` 会校验查表结果与基线一致。
 
-第五位 `computer` 的语义已随能力层重构改变：
-**从「桥上有 computer_task」改为「该用户桌面能力在线」**，
-对应文案教模型使用 `desk_*` 一组原子能力（粗粒度 `computer_task` 已退役）。
+位串是四位：`chat,memory,recent,diary`（顺序与 golden 表一致）。
+
+> 2026-10-25：第五位 `computer` 已删除 —— 桌面能力层整体下线后它恒为 false，
+> 留着只会让 golden 表多一倍无用组合、每处调用多传一个永远 false 的参数。
 """
 
 from __future__ import annotations
@@ -36,10 +37,9 @@ def flag_key(
     memory: bool,
     recent: bool,
     diary: bool,
-    computer: bool,
 ) -> str:
-    """与 Java golden 的 key 顺序一致：chat,memory,recent,diary,computer。"""
-    return "".join("1" if flag else "0" for flag in (chat, memory, recent, diary, computer))
+    """与 Java golden 的 key 顺序一致：chat,memory,recent,diary。"""
+    return "".join("1" if flag else "0" for flag in (chat, memory, recent, diary))
 
 
 def build_tool_hint(
@@ -48,11 +48,10 @@ def build_tool_hint(
     memory: bool,
     recent: bool,
     diary: bool,
-    computer: bool,
 ) -> str:
     """返回与 Java `buildToolsPromptHint` 逐字节一致的文案。"""
     return _cases().get(flag_key(chat=chat, memory=memory, recent=recent,
-                                 diary=diary, computer=computer), "")
+                                 diary=diary), "")
 
 
 def build_from_flags(flags: dict[str, Any] | None) -> str:
@@ -64,7 +63,6 @@ def build_from_flags(flags: dict[str, Any] | None) -> str:
         memory=bool(flags.get("memory")),
         recent=bool(flags.get("recent")),
         diary=bool(flags.get("diary")),
-        computer=bool(flags.get("computer")),
     )
 
 

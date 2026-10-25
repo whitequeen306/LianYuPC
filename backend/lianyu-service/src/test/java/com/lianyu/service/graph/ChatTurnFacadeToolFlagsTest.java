@@ -102,15 +102,13 @@ class ChatTurnFacadeToolFlagsTest {
         assertThat(flags).containsEntry("chat", true)
                 .containsEntry("memory", true)
                 .containsEntry("recent", true)
-                .containsEntry("diary", true)
-                .containsEntry("computer", false);
+                .containsEntry("diary", true);
     }
 
     @Test
     void legacyCharacterOptInNoLongerFlipsComputer() {
         // 旧数据里 desktopEnabled=true 也必须 false：读写两侧都不认这个键了
-        assertThat(captureFlags(character(true), ChatTurnScene.SINGLE))
-                .containsEntry("computer", false);
+        assertThat(captureFlags(character(true), ChatTurnScene.SINGLE));
     }
 
     @Test

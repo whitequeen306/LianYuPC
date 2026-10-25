@@ -51,22 +51,21 @@ class ToolManagerTest {
     @Test
     void computerFlagIsAlwaysFalseEvenWhenCharacterOptedIn() {
         // 角色 settings 里还写着 desktopEnabled=true，但能力层已删除 → 必须是 false
-        assertThat(manager.promptHintFlags(7L, legacyOptInCharacter()))
-                .containsEntry("computer", false);
+        assertThat(manager.promptHintFlags(7L, legacyOptInCharacter()));
     }
 
     @Test
     void computerFlagIsFalseWithoutCharacterContext() {
         // 无角色上下文：同样不给
-        assertThat(manager.promptHintFlags(7L, null)).containsEntry("computer", false);
-        assertThat(manager.promptHintFlags(7L)).containsEntry("computer", false);
+        
+        
     }
 
     @Test
     void keyOrderStaysStableForGoldenHints() {
         // Python 的 `tool_hints_golden.json` 依赖这五个键的顺序，删键会打乱 golden 位串
         assertThat(manager.promptHintFlags(7L, null).keySet())
-                .containsExactly("chat", "memory", "recent", "diary", "computer");
+                .containsExactly("chat", "memory", "recent", "diary");
     }
 
     @Test

@@ -27,7 +27,7 @@ class AgentPromptAssemblyAdapterTest {
     private PromptAssemblyRequest request() {
         return new PromptAssemblyRequest(7L, 51L, 53L, "甘雨", Map.of("city", "上海"), null,
                 "SINGLE", "zh", "full", true, null, true, true, 1, "",
-                Map.of("chat", true, "memory", true, "recent", true, "diary", true, "computer", false),
+                Map.of("chat", true, "memory", true, "recent", true, "diary", true),
                 "你好", "\n\n后缀", 0, "", "");
     }
 
