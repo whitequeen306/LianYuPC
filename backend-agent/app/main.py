@@ -600,6 +600,42 @@ def _normalize_lang(raw: str | None) -> str:
     return code or "zh"
 
 
+
+class PromptRenderBody(BaseModel):
+    """按名渲染 prompt 资源（`app/prompts/<name>.md` + 变量）。"""
+
+    name: str
+    variables: dict[str, Any] = {}
+    leading_newlines: int = Field(default=2, alias="leadingNewlines")
+
+    model_config = {"populate_by_name": True}
+
+
+@app.post("/agent/prompt/render")
+async def prompt_render(body: PromptRenderBody) -> dict[str, Any]:
+    """通用渲染：模板住在 `app/prompts/`，Java 只传名字与变量。
+
+    两条刻意的严格行为（都是为了把错误暴露在改代码时，而不是等到线上语气变怪）：
+    · 缺变量 → 400 `missing_placeholders`（参数名对不齐立刻炸）；
+    · 资源不存在 → 404 `prompt_not_found`（防止拼错名字静默返回空串）。
+
+    `leading_newlines` 必须由调用方显式给：各处 Java 字面量的前导空行并不一致
+    （A1/A5 实测都是 2，但以后接别的站点前要各自量），统一按 2 处理会悄悄改动
+    模型看到的内容。
+    """
+    from app.prompts.loader import render_prompt
+
+    try:
+        text = render_prompt(
+            body.name, leading_newlines=body.leading_newlines, **body.variables
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"prompt_not_found: {body.name}") from exc
+    except KeyError as exc:  # MissingPlaceholderError 是 KeyError 子类
+        raise HTTPException(status_code=400, detail=f"missing_placeholders: {exc}") from exc
+    return {"text": text, "name": body.name}
+
+
 @app.post("/agent/prompt/scene-instruction")
 async def prompt_scene_instruction(body: SceneInstructionBody) -> dict[str, Any]:
     """按场景给一段 instruction 文案。

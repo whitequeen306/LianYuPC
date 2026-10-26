@@ -24,6 +24,29 @@ public class AgentSceneInstructionAdapter implements SceneInstructionPort {
     private final ObjectMapper objectMapper;
 
     @Override
+    public String render(String name, Map<String, Object> variables, int leadingNewlines) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("name", name);
+        body.put("variables", variables == null ? Map.of() : variables);
+        body.put("leadingNewlines", leadingNewlines);
+        try {
+            String raw = client.postJson("/agent/prompt/render", 0L, body);
+            if (raw == null || raw.isBlank()) {
+                return null;
+            }
+            JsonNode root = objectMapper.readTree(raw);
+            String text = root.path("text").asText("");
+            return text.isEmpty() ? null : text;
+        } catch (Exception e) {
+            log.warn("prompt render failed name={}: {}", name, e.toString());
+            return null;
+        }
+    }
+
+    @Override
     public String instruction(String scene, String outputLanguage) {
         if (scene == null || scene.isBlank()) {
             return null;

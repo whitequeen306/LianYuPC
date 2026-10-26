@@ -178,3 +178,32 @@ def test_scene_instruction_unknown_scene_returns_empty():
     r = client.post("/agent/prompt/scene-instruction", json={"scene": "NOPE", "language": "zh"})
     assert r.status_code == 200
     assert r.json()["instruction"] == ""
+
+
+def test_prompt_render_renders_template_with_variables():
+    r = client.post("/agent/prompt/render",
+                    json={"name": "proactive_task", "variables": {"max_pieces": 3}})
+    assert r.status_code == 200
+    text = r.json()["text"]
+    # 前导空行 2 个（与 Java 文本块口径一致）、占位符已替换
+    assert text.startswith("\n\n=== "), repr(text[:20])
+    assert "1～3 条短消息" in text
+    assert "{max_pieces}" not in text
+
+
+def test_prompt_render_leading_newlines_is_explicit():
+    r = client.post("/agent/prompt/render",
+                    json={"name": "cold_open_followup", "variables": {}, "leadingNewlines": 0})
+    assert r.status_code == 200
+    assert r.json()["text"].startswith("=== ")
+
+
+def test_prompt_render_missing_variable_is_400_not_silent():
+    r = client.post("/agent/prompt/render", json={"name": "proactive_task", "variables": {}})
+    assert r.status_code == 400
+    assert "missing_placeholders" in r.text
+
+
+def test_prompt_render_unknown_name_is_404():
+    r = client.post("/agent/prompt/render", json={"name": "no_such_prompt", "variables": {}})
+    assert r.status_code == 404
