@@ -67,6 +67,10 @@ public class ProactiveMessageService {
     private static final long ENTER_MIN_IDLE_MINUTES = 20;
 
 
+    /** prompt 文案由 Python 提供（批次 A）：取不到就跳过本次生成，绝不在 Java 留兜底文案。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.service.agent.SceneInstructionPort promptPort;
+
     private String appendCityChangeContext(String basePrompt, String previousCity, String newCity) {
         return basePrompt + """
 
@@ -85,21 +89,15 @@ public class ProactiveMessageService {
     private static final String PROACTIVE_USER_TRIGGER = "（系统触发主动发言，用户未发送新消息。）";
 
     /** System-only task block for scheduled proactive chat. */
-    private static String buildProactiveTaskSystemSuffix(int maxPieces) {
+    private String buildProactiveTaskSystemSuffix(int maxPieces) {
         int pieces = Math.max(1, maxPieces);
-        return """
-
-
-                === 主动发言任务（系统指令 · 不是用户发来的消息）===
-                用户此刻没有发送任何新消息；你是在定时主动关心用户。
-                请发 1～%d 条短消息（符合性格；多条用空行分隔）。
-                语气自然，可围绕最近上下文或设定关心用户；不要重复历史原话，不要机械问候。
-
-                硬性禁止：
-                1. 禁止假装用户刚刚发了乱码、报错、代码、系统日志、奇怪「指令/要求」，或任何未在历史中真实出现的用户消息。
-                2. 禁止把本系统任务、编号要求、或 prompt 片段当作用户输入来吐槽/复述。
-                3. 历史里提过的旧事件（如设备/服务器故障）除非用户刚刚主动再提，否则不要当成此刻仍在发生，更不要说「又收到乱码」。
-                """.formatted(pieces);
+        if (promptPort == null) {
+            log.warn("Proactive task block unavailable: prompt port missing");
+            return null;
+        }
+        // 文案在 Python（app/prompts/proactive_task.md）；前导空行 2 与旧文本块口径一致
+        return promptPort.render(
+                "proactive_task", java.util.Map.of("max_pieces", pieces), 2);
     }
 
     /** 单聊主动开口（含破冰/跟进）：走 PROACTIVE scene（含真实时间/天气块）。 */
@@ -216,8 +214,14 @@ public class ProactiveMessageService {
         CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
         int maxPieces = behavior.maxRepliesPerTurn();
         String agentPersona = proactiveSystemPrompt(userId, character, null);
+        String proactiveTask = buildProactiveTaskSystemSuffix(maxPieces);
+        if (proactiveTask == null) {
+            // 文案取不到就跳过这次主动发言：宁可少发一条，也不编一段兜底台词
+            log.warn("Proactive message skipped: task block unavailable, convId={}", conversationId);
+            return List.of();
+        }
         ChatResult agentTurn = tryAgentTurn(userId, "PROACTIVE", agentPersona,
-                buildProactiveTaskSystemSuffix(maxPieces), historyToDtoList(history), userVault,
+                proactiveTask, historyToDtoList(history), userVault,
                 character.getId());
         if (agentTurn == null) {
             log.info("Proactive message skipped: agent returned no content, convId={}", conversationId);
