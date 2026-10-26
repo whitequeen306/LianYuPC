@@ -157,3 +157,24 @@ def test_assistant_raw_uses_camel_case_wire_name():
 @pytest.fixture(autouse=True)
 def _enable_desktop_tools(monkeypatch):
     monkeypatch.setenv("LIANYU_DESKTOP_TOOLS", "1")
+
+
+def test_scene_instruction_serves_diary_in_four_languages():
+    """日记 instruction 由 Python 提供：四种语言都必须拿得到，且是 JSON 格式要求。"""
+    for lang, marker in (
+        ("zh", "内心独白"),
+        ("zh-TW", "內心獨白"),
+        ("ja", "心の日記"),
+        ("en", "private inner thoughts"),
+    ):
+        r = client.post("/agent/prompt/scene-instruction", json={"scene": "DIARY", "language": lang})
+        assert r.status_code == 200
+        body = r.json()
+        assert marker in body["instruction"], f"{lang} 的文案不对：{body}"
+        assert '{"title"' in body["instruction"] or '{"title":' in body["instruction"]
+
+
+def test_scene_instruction_unknown_scene_returns_empty():
+    r = client.post("/agent/prompt/scene-instruction", json={"scene": "NOPE", "language": "zh"})
+    assert r.status_code == 200
+    assert r.json()["instruction"] == ""

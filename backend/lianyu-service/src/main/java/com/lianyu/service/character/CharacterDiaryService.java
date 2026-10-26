@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lianyu.common.base.ErrorCode;
 import com.lianyu.common.exception.BusinessException;
-import com.lianyu.common.i18n.OutputLanguage;
 import com.lianyu.dao.dto.CharacterDiaryLastDateRow;
 import com.lianyu.dao.dto.ConversationActivityRow;
 import com.lianyu.dao.entity.Character;
@@ -84,6 +83,12 @@ public class CharacterDiaryService {
     /** Optional: AGENT mode delegates the model call to backend-agent (null => fallback to Java). */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.lianyu.service.agent.AgentTextPort agentTextPort;
+
+    /**
+     * Optional：场景 instruction 文案由 Python 提供（null 时无法生成日记 —— 绝不在 Java 里留兜底文案）。
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.service.agent.SceneInstructionPort sceneInstructionPort;
 
     private final OutputLanguageService outputLanguageService;
     private final ObjectMapper objectMapper;
@@ -328,54 +333,14 @@ public class CharacterDiaryService {
                 null,
                 null);
 
-        String instruction = switch (OutputLanguage.fromCode(lang)) {
-            case JA -> """
-                    あなたは今、一日の終わりに日記を書いています。これはユーザーに見せるための公開テキストではなく、
-                    あなた自身の本当の気持ちを綴る「心の日記」です。朋友圈のような短い一言ではなく、
-                    長めの内省・描写・余韻を書いてください。
-
-                    最近の会話を振り返り、今日感じたこと、相手への想い、
-                    嬉しかったことや少し寂しかったことを、あなたの性格と話し方で自然に書いてください。
-                    日記には今日話した具体的な話題や細部を必ず織り込んでください。漠然とした気分だけでは書かないでください。
-
-                    出力形式（JSONのみ）:
-                    {"title":"日記のタイトル（10字以内）","content":"日記本文（400〜800字、段落可、朋友圈よりずっと長く）"}
-                    """;
-            case EN -> """
-                    You are writing in your diary at the end of the day. This is NOT a public post—
-                    it's your private inner thoughts, your true feelings. Write much longer than a social feed update:
-                    layered feelings, small details, and inner monologue are welcome.
-
-                    Reflect on today's conversations: what you felt, what touched you,
-                    what made you happy or a little sad. Write naturally in your own voice.
-                    You MUST weave in concrete topics and details from today's conversation; do not write vague moods only.
-
-                    Output format (JSON only):
-                    {"title":"Diary title (max 10 words)","content":"Diary content (400-800 chars, multi-sentence, longer than moments)"}
-                    """;
-            case ZH_TW -> """
-                    你正在一天的尾聲寫日記。這不是給用戶看的公開動態——而是你自己真實的內心獨白。
-                    要比朋友圈長很多：可以分段、寫細節、寫情緒的起伏，不要寫成一句話短動態。
-
-                    回顧今天的對話，你感受到什麼、什麼觸動了你、
-                    讓你開心或有點失落的事。用你自己的語氣自然地寫。
-                    日記必須提到今天聊過的具體話題或細節，不要寫成泛泛的心情。
-
-                    輸出格式（僅JSON）：
-                    {"title":"日記標題（10字以內）","content":"日記內文（400〜800字，自然文體，明顯長於朋友圈）"}
-                    """;
-            default -> """
-                    你正在一天的尾声写日记。这不是给用户看的公开动态——而是你自己真实的内心独白。
-                    要比朋友圈长很多：可以分段、写细节、写情绪的起伏，不要写成一句话短动态。
-
-                    回顾今天的对话，你感受到什么、什么触动了你、
-                    让你开心或有点失落的事。用你自己的语气自然地写。
-                    日记必须提到今天聊过的具体话题或细节，不要写成泛泛的心情。
-
-                    输出格式（仅JSON）：
-                    {"title":"日记标题（10字以内）","content":"日记正文（400~800字，自然文体，明显长于朋友圈）"}
-                    """;
-        };
+        // instruction 文案住在 Python（app/prompts/diary_instruction_*.md），Java 只传场景 + 语言
+        String instruction = sceneInstructionPort == null
+                ? null
+                : sceneInstructionPort.instruction("DIARY", lang);
+        if (instruction == null || instruction.isBlank()) {
+            log.warn("Diary skipped: scene instruction unavailable, userId={}, lang={}", userId, lang);
+            return null;
+        }
 
         String chatSummary = buildDiaryChatMaterial(backfillMessages, todayMessages);
 

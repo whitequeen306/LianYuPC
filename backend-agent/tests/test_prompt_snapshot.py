@@ -68,8 +68,11 @@ def test_city_change_matches_java():
     ) == expected
 
 
-def test_diary_instructions_match_java_four_languages():
-    """CharacterDiaryService instruction 四语种。"""
+def test_diary_instructions_available_in_four_languages():
+    """日记 instruction 四语种：**文案所有权在 Python**（Java 只传 scene + language）。
+
+    原先这四段文案是 `CharacterDiaryService` 里的一个四语 switch（约 50 行），
+    属于「prompt 长在 Java 里」的红线违规；2026-10-26 搬到这里。"""
     assert "心の日記" in load_prompt("diary_instruction_ja")
     assert "private inner thoughts" in load_prompt("diary_instruction_en")
     assert "內心獨白" in load_prompt("diary_instruction_zh_tw")

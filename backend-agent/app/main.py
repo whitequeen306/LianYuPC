@@ -572,6 +572,52 @@ class PromptAssembleBody(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+
+class SceneInstructionBody(BaseModel):
+    """取某个场景的 instruction 文案（非对话类，例如「写日记」）。"""
+
+    scene: str = "DIARY"
+    language: str | None = "zh"
+
+    model_config = {"populate_by_name": True}
+
+
+# 场景 → 语言 → prompt 资源名。**文案所有权在 app/prompts/**，
+# Java 侧只传 scene + language，不许再持有任何一段 prompt 文本。
+_SCENE_INSTRUCTIONS: dict[str, dict[str, str]] = {
+    "DIARY": {
+        "zh": "diary_instruction_zh",
+        "zh_tw": "diary_instruction_zh_tw",
+        "ja": "diary_instruction_ja",
+        "en": "diary_instruction_en",
+    },
+}
+
+
+def _normalize_lang(raw: str | None) -> str:
+    """zh / zh-TW / ja / en → zh / zh_tw / ja / en（与本目录 md 后缀对齐）。"""
+    code = (raw or "").strip().lower().replace("-", "_")
+    return code or "zh"
+
+
+@app.post("/agent/prompt/scene-instruction")
+async def prompt_scene_instruction(body: SceneInstructionBody) -> dict[str, Any]:
+    """按场景给一段 instruction 文案。
+
+    为什么要这个端点：这类文案原先以四语 switch 长在 Java 的
+    `CharacterDiaryService` 里（约 50 行），违反「prompt 只许在 Python」的红线。
+    搬过来之后 Java 只传 scene + language。
+    """
+    from app.prompts.loader import load_prompt
+
+    table = _SCENE_INSTRUCTIONS.get((body.scene or "").strip().upper())
+    if not table:
+        return {"instruction": "", "promptKey": ""}
+    lang = _normalize_lang(body.language)
+    key = table.get(lang) or table["zh"]
+    return {"instruction": load_prompt(key).strip(), "promptKey": key}
+
+
 @app.post("/agent/prompt/assemble")
 async def prompt_assemble(
     body: PromptAssembleBody,

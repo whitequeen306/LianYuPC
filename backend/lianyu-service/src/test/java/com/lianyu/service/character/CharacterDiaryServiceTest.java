@@ -82,6 +82,14 @@ class CharacterDiaryServiceTest {
                 new ObjectMapper(), mock(RelationshipStateService.class),
                 notificationService, characterRecentActivityService, aiBackgroundPublisher);
 
+        // 日记 instruction 文案由 Python 提供（SceneInstructionPort）；测试给个桩，
+        // 否则按设计会跳过生成（绝不在 Java 里留兜底文案）。
+        com.lianyu.service.agent.SceneInstructionPort instructions =
+                mock(com.lianyu.service.agent.SceneInstructionPort.class);
+        when(instructions.instruction(anyString(), anyString())).thenReturn(
+                "你正在一天的尾端写日记。输出格式（仅JSON）:\n"
+                + "{\"title\":\"日记标题（10字以内）\",\"content\":\"日记正文\"}");
+        ReflectionTestUtils.setField(service, "sceneInstructionPort", instructions);
         ReflectionTestUtils.setField(service, "diaryEnabled", true);
         ReflectionTestUtils.setField(service, "scanLimit", 30);
         ReflectionTestUtils.setField(service, "minDaysBetweenDiaries", 2);
