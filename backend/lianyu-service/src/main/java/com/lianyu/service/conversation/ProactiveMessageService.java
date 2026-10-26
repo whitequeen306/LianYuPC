@@ -72,14 +72,17 @@ public class ProactiveMessageService {
     private com.lianyu.service.agent.SceneInstructionPort promptPort;
 
     private String appendCityChangeContext(String basePrompt, String previousCity, String newCity) {
-        return basePrompt + """
-
-
-                === 用户城市变更（最高优先级，权威事实） ===
-                """ + "用户当前现实所在城市：" + newCity + "\n"
-                + "（刚才从 " + previousCity + " 变更而来。）\n\n"
-                + "对话历史里若仍写用户还在 " + previousCity + " 或基于旧城市的天气/地点，一律视为过时信息，必须以本条为准。\n"
-                + "你本次主动开口就是为了关心用户这次换城市，不要假装用户还在旧城市。";
+        // 文案在 Python（app/prompts/city_change_context.md）；前导空行 2 与旧拼接口径一致
+        String block = promptPort == null ? null
+                : promptPort.render("city_change_context", java.util.Map.of(
+                        "previous_city", previousCity,
+                        "new_city", newCity), 2);
+        if (block == null) {
+            // 这段只是"补充语境"，取不到就不加：主任务块取不到时另有跳过逻辑
+            log.warn("City change context unavailable, continue without it");
+            return basePrompt;
+        }
+        return basePrompt + block;
     }
 
     /**
