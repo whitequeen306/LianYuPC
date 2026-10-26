@@ -36,6 +36,10 @@ Electron 主进程          服务端 Java                  Python backend-agent
 
 辅助事实：`backend/lianyu-web/.../JavaAiLogicRatchetTest` + `scripts/check-java-ai-free.ps1`
 会**失败**任何长在 Java 里的 AI 逻辑（prompt 文本 / 模型调用点 / 已知 AI 类），基线是 `0/0/0`。
+2026-10-26 起还有**规则 5「裸 prompt 长文案」**：≥60 字的字符串或非 SQL 文本块，只要命中
+`=== 标题 ===` 段头或 ≥2 个三语 prompt 特征词，就判定为 prompt 文案，必须搬去 Python；
+确实要留在 Java 的，登记进 `scripts/java_bare_prompt_allowlist.txt`（**只许变短**，
+登记了却没命中也会红）。当前已登记 19 条待迁，见 `docs/refactor-2026-10/prompt-migration-inventory.md`。
 
 ---
 
@@ -90,7 +94,7 @@ Electron 主进程          服务端 Java                  Python backend-agent
 | Java | `cd backend && mvn -o test` | `BUILD SUCCESS`（service/web/ai/admin 全绿） |
 | 前端 | `cd frontend && npx vitest run --no-file-parallelism` | 全绿（当前 488+） |
 | 构建 | `cd frontend && npx vite build` | 产出 `dist/` |
-| Java 零 AI 逻辑 | `scripts/check-java-ai-free.ps1 -Mode strict` | 通过（`0/0/0`） |
+| Java 零 AI 逻辑 | `scripts/check-java-ai-free.ps1 -Mode strict` | 通过（`0/0/0` + 裸文案 `0` 未登记） |
 | 发布资产契约 | `python scripts/check_release_asset_contract.py` | `json/nginx/client in sync` |
 
 约定：
@@ -153,6 +157,7 @@ Electron 主进程          服务端 Java                  Python backend-agent
 | `scripts/_upload_update_assets.py` | 安装包同步到 MinIO `updates/`（保留最近 3 版） |
 | `scripts/release_assets.json` | 更新资产命名唯一真相源（安装器 / 微信渠道） |
 | `scripts/check-java-ai-free.ps1` | Java 零 AI 逻辑棘轮 |
+| `scripts/java_bare_prompt_allowlist.txt` | 规则 5 的允许清单（裸 prompt 长文案，只许变短） |
 | `scripts/check_release_asset_contract.py` | json / nginx / 客户端命名一致性 |
 | `deploy/api-gateway/nginx.conf` | 网关路由（含更新资产下发） |
 
@@ -206,7 +211,7 @@ Electron 主进程          服务端 Java                  Python backend-agent
 | 流式回复空/串行 | SSE 帧是否被改；`stream_chat.py` 与 `AgentStreamBridge` 是否同步 |
 | 安装器界面变原生白框 | 是否走了 `prepare-branded-release`；产物大小是否 ~168MB（异常）/ ~231MB（正常） |
 | 更新器不提示新版本 | MinIO `updates/latest.yml` 的 version/sha512；`_upload_update_assets.py` 是否成功；客户端证书指纹 |
-| Java 侧棘轮红 | 新代码里是否出现 prompt 文本/模型调用；应搬去 Python |
+| Java 侧棘轮红 | 新代码里是否出现 prompt 文本/模型调用；应搬去 Python。规则 5 报「未登记」就搬走或登记进 `scripts/java_bare_prompt_allowlist.txt`；报「已失效」说明迁完了没删条目 |
 
 ---
 

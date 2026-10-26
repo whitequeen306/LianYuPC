@@ -10,6 +10,8 @@
       1. prompt 文本痕迹（中文提示词、提示词段落标记）
       2. 模型调用点（AiChatService / Spring AI ChatModel / 直接 HTTP 调模型）
       3. 已知 AI 类清单（迁移完成后应逐个消失）
+      4. 裸 prompt 长文案（规则 5）：判定在 JavaAiLogicRatchetTest#barePromptLiteralsAreAllRegistered，
+         本脚本只列「还欠多少」——两个提取器各写一遍必然漂，单一事实来源留给测试。
 
     退出码：0 = 无残留；1 = 有残留（可用于 CI gate）。
 
@@ -179,6 +181,20 @@ $revivedHits | Sort-Object File | ForEach-Object {
 Write-Host "`n[5] 允许保留的 seam（不计入违规）: $($allowedFiles.Count) 个" -ForegroundColor DarkGray
 $allowedFiles | ForEach-Object { Write-Host "  $_" }
 
+# ── 规则 5（裸 prompt 长文案）：判定在 JavaAiLogicRatchetTest，这里只报「还欠多少」 ──
+# 为什么不在本脚本里再写一遍扫描：提取器（注释/字符串/文本块状态机）写两遍必然漂，
+# 而两份结果不一致时没人知道该信哪个。允许清单是同一个文件，棘轮只许变短。
+$allowlistFile = Join-Path $repoRoot 'scripts\java_bare_prompt_allowlist.txt'
+$allowlistEntries = @()
+if (Test-Path $allowlistFile) {
+    $allowlistEntries = Get-Content $allowlistFile -Encoding UTF8 |
+        Where-Object { $_.Trim() -ne '' -and -not $_.Trim().StartsWith('#') }
+}
+Write-Host "`n[6] 裸 prompt 长文案（判定在 JavaAiLogicRatchetTest）: 已登记待迁 $($allowlistEntries.Count) 条" -ForegroundColor Yellow
+$allowlistEntries | ForEach-Object { ($_ -split '::')[0] } | Group-Object | Sort-Object Count -Descending | ForEach-Object {
+    Write-Host ("  {0,4} 条  {1}" -f $_.Count, ($_.Name -replace '^.*/lianyu-', 'lianyu-'))
+}
+
 # 判定
 $gateViolations = $promptHits.Count + $modelHits.Count + $revivedHits.Count
 $strictViolations = $gateViolations + $classHits.Count
@@ -201,6 +217,6 @@ if ($Mode -eq 'strict') {
         Write-Host "STRICT 失败：仍有 $strictViolations 项（含 $($classHits.Count) 个已知 AI 类）" -ForegroundColor Red
         exit 1
     }
-    Write-Host 'STRICT 通过：Java 已无任何 AI 逻辑残留' -ForegroundColor Green
+    Write-Host "STRICT 通过：Java 无未登记 AI 逻辑（prompt 文本 / 模型调用 / 复活客户端 / 已知 AI 类 全 0；另有 $($allowlistEntries.Count) 条已登记待迁，见 [6]）" -ForegroundColor Green
     exit 0
 }

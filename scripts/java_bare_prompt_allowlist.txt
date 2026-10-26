@@ -1,0 +1,63 @@
+# Java 裸 prompt 长文案 —— 允许清单（棘轮：只许变短）
+#
+# 谁在用：backend/lianyu-web/src/test/java/com/lianyu/web/agent/JavaAiLogicRatchetTest.java
+#         规则 5「裸 prompt 长文案」。命中判定看结构特征，不看具体标题：
+#           ① 含 `=== 标题 ===` 段头；② 三语 prompt 特征词 >=2；③ 非 SQL 文本块 >=60 字。
+#
+# 条目格式：<相对仓库根的路径>::<正文头 48 字（空白折叠）>
+#   · 命中却没登记 -> 测试红（新长出来的文案必须立刻搬走或登记）
+#   · 登记了却没命中 -> 测试红（已迁走的删掉，文案改过的更新指纹）
+# 所以本文件只会越用越短：迁走一段就删一行，目标态是空文件。
+#
+# 登记含义：「已确认是 prompt 文案，但还没搬去 Python」。带 TODO 的就是待办。
+# 未登记就落地的后果（历史教训）：A 批次 6 段 + B/C 18 段在 Java 里活了很久，
+# 老规则却一直报 0/0/0 —— 那是假阴性，不是通过。
+#
+# ── 已知盲区（本规则扫不到，靠人）────────────────────────────────────────
+# · 单行英文 prompt 片段（如 MomentsCommentOrchestrator 的 `[Moment scene] ...`
+#   `You are ...` `Do not ...`）：英文特征词只取「写成句子才会出现」的几个，
+#   因为 `role` / `character` 这类词在 SQL 里满地都是，收进来全是噪音。
+#   代价是行内英文片段可能漏，登记在 C5。
+
+# TODO D1 — `=== Your recent life activities ===` 生活动态块（清单未登记，本轮扫描新发现）
+#   位置（仅备忘，行号会漂）：164
+backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterRecentActivityService.java::=== Your recent life activities (background cont
+
+# TODO B1/B2/B3 — 群聊主动发言四语 + 段头/禁止补丁 + 「@提及裁决器」判题 prompt
+#   位置（仅备忘，行号会漂）：244, 249, 254, 260, 280, 284, 989
+backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java::いまグループチャットで自発的に一言（または短い連投）してください。ユーザーが今まさに送ったわけで
+backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java::Speak up proactively in this group chat (the use
+backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java::你現在要在群聊裡主動發言（不是用戶剛發了一條需要你回覆）。 必須：每條訊息盡量以 @%s 開頭（
+backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java::你现在要在群聊里主动发言（不是用户刚发了一条需要你回复）。 必须：每条消息尽量以 @%s 开头（
+backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java::=== 群聊主动发言（系统指令 · 不是用户发来的消息）===
+backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java::禁止假装用户刚发了乱码、指令、报错或任何未在历史中真实出现的用户消息。
+backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java::你是“群聊@提及裁决器”。只做一件事：判断当前消息是否应该添加一个@对象。 规则： 1) 只允许
+
+# TODO D2 — `=== 本次对话 Earlier 摘要 ===` 摘要块（清单未登记，本轮扫描新发现）
+#   位置（仅备忘，行号会漂）：177, 183
+backend/lianyu-service/src/main/java/com/lianyu/service/conversation/SessionSummaryService.java::=== 本次对话 Earlier 摘要 ===
+backend/lianyu-service/src/main/java/com/lianyu/service/conversation/SessionSummaryService.java::说明：摘要描述本次聊天中较早的内容；与用户最近几条消息冲突时，以最近消息为准。
+
+# TODO C3/C4 — 朋友圈评论 / 回评（C5 英文护栏是单行片段，本规则暂扫不到，见文末已知盲区）
+#   位置（仅备忘，行号会漂）：355, 362, 457, 463
+backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentOrchestrator.java::用户刚发了一条朋友圈（不是你的用户专属对话，而是公开动态）： 「%s」 请以你的身份写一条评论：
+backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentOrchestrator.java::另一位角色「%s」刚发了一条朋友圈（不是你的用户，也不是你在对主人说话）： 「%s」 请以你的身
+backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentOrchestrator.java::你在朋友圈发了一条动态，现在「用户」评论了： 动态原文：「%s」 用户的评论：「%s」 请以发帖
+backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentOrchestrator.java::你在朋友圈发了一条动态，现在另一位角色「%s」评论了（不是用户）： 动态原文：「%s」 %s 的
+
+# TODO C1/C2 — 朋友圈发帖：日常生活 / 对话余韵
+#   位置（仅备忘，行号会漂）：371, 389
+backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsService.java::请以该角色身份发一条像真人随手发的社交动态（第一人称）。 主题：日常生活里的具体小事——通勤、吃
+backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsService.java::请以该角色身份发一条像真人随手发的社交动态（第一人称）。 主题：结合最近和用户的聊天余韵，落到日
+
+# TODO D3 — Spring AI `@ToolParam` 工具描述；按「工具 schema 归 Python」红线待评估是否整段迁走
+#   位置（仅备忘，行号会漂）：22
+backend/lianyu-service/src/main/java/com/lianyu/service/tools/RecentActivityTool.java::查询「我」（当前角色）最近的生活动态：近几天写的日记、发的朋友圈、评论摘要。 当用户问你最近在干
+
+# TODO D3 — 同上
+#   位置（仅备忘，行号会漂）：18
+backend/lianyu-service/src/main/java/com/lianyu/service/tools/TimeTool.java::获取当前真实日期与时间（应用配置时区）。 当用户询问现在几点、今天几号、星期几、日期等与「当前时
+
+# TODO D3 — 同上
+#   位置（仅备忘，行号会漂）：38
+backend/lianyu-service/src/main/java/com/lianyu/service/tools/WeatherTool.java::查询指定城市当前天气（气温、体感、湿度、风速、天气描述）。 当用户问天气、冷不冷、要不要带伞、穿

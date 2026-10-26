@@ -43,7 +43,19 @@ Java 字面量还原（开分隔符后的换行不算内容 / 去公共缩进 / 
 | C2 | `MomentsService:389` | `generateReflectionMoment` | 发帖·对话余韵 |
 | C3 | `MomentsCommentOrchestrator:355/362` | `executePeerComment` | 评论用户 / 评论另一位角色 |
 | C4 | `MomentsCommentOrchestrator:457/463` | `runAuthorReply` | 回用户评论 / 回角色评论 |
-| C5 | `MomentsCommentOrchestrator:761-776` | `buildMomentsSceneGuard` | 场景护栏，四语 |
+| C5 | `MomentsCommentOrchestrator:761-776` | `buildMomentsSceneGuard` | 场景护栏，四语（英文版是单行片段，棘轮规则 5 扫不到，见下方「已知盲区」） |
+
+### D. 盘点时漏掉、由新棘轮规则扫出来的（2026-10-26）
+
+清单初稿是**人眼**盘出来的，所以只能盘到「我搜索时想到的词」。规则 5 上线后实测多出 5 段：
+
+| # | 位置 | 方法 | 说明 |
+|---|---|---|---|
+| D1 | `CharacterRecentActivityService:164` | 生活动态块 | `=== Your recent life activities (background context, do not recap line by line) ===` |
+| D2 | `SessionSummaryService:177/183` | 会话摘要块 | `=== 本次对话 Earlier 摘要 ===` + 「与最近消息冲突时以最近为准」说明 |
+| D3 | `TimeTool:18` / `WeatherTool:38` / `RecentActivityTool:22` | `@ToolParam(description=...)` | Spring AI 工具描述。按红线「工具 schema 归 Python」**待评估**：要确认 Java 侧这套 `@Tool` 是否还活着，再决定整段迁走还是删掉 |
+
+> 这不是「清单不准」，而是**人盘点必然漏**的证据：规则 5 的价值就在于它不依赖记忆。
 
 ## ⚠️ 迁移前必须量准的两件事（否则模型看到的话会悄悄变）
 
@@ -64,15 +76,39 @@ Java 字面量还原（开分隔符后的换行不算内容 / 去公共缩进 / 
 
 1. ~~**A 批次**~~：✅ 完成。通用端点 `POST /agent/prompt/render` + `SceneInstructionPort.render`
    已上线，6 段全部接线，A6 为「删死代码」。
-2. **B 批次**：新建四语文件；判题 prompt 单独一个 key。
-3. **C 批次**：新建 11 段。
-4. **棘轮规则**：A 已清空，现在可以让规则以「0 未登记违规」落地——把
-   `CharacterSquareCatalog*`（角色资料数据）、日志/通知文案列入 allowlist，
-   并给 B/C 那 18 段登记「待迁」，这样新长出来的裸文案会立刻红。
+2. ~~**棘轮规则**~~：✅ 已上线（2026-10-26），见下节。现在 B/C/D 的每一段都在
+   `scripts/java_bare_prompt_allowlist.txt` 里挂着号，新长出来的裸文案立刻红。
+3. **B 批次**：群聊 7 段，新建四语文件；判题 prompt 单独一个 key。
+4. **C 批次**：朋友圈 11 段。
+5. **D 批次**：3 组 5 段（先确认 `@Tool` 那条链路是否还活着）。
 
-## 附：棘轮规则草稿（A 已完成，可启用）
+## 棘轮规则 5「裸 prompt 长文案」（已落地）
 
-- 排除：`CharacterSquareCatalog*`（人设资料）、`log.*`/`notify*`/`BusinessException` 所在行
-- 命中条件：字符串（含文本块）长度 ≥ 60 且含 ≥ 2 个 prompt 特征词
-  （你是 / 你正 / 请你 / 必须 / 不要 / 输出 / 格式 / JSON / 任务 / 场景 / 扮演 / 语气 / 字数 / 只输出 / 禁止）
-- 基线：A 完成后应为 0；B/C 未迁部分登记在 allowlist 里，带「待迁」注释
+实现只有一份：`JavaAiLogicRatchetTest#barePromptLiteralsAreAllRegistered`（`mvn test` 守），
+`scripts/check-java-ai-free.ps1` 只负责把「还欠多少」打印出来 —— 提取器（注释/字符串/文本块
+状态机）写两遍必然漂，而两份结果不一致时没人知道该信哪个。
+
+命中判定（**看结构，不看具体标题**）：
+
+| 条件 | 为什么 |
+|---|---|
+| 字面量长度 ≥ 60（`\n` 先还原） | 短句做不了 prompt；太短的多是错误码 |
+| 含 `=== 标题 ===` 段头 | prompt 块最稳的结构特征，业务文案/SQL/日志里不会出现 |
+| 或含 ≥2 个三语特征词 | 收「写成句子才会出现」的词；`role`/`character` 这类 SQL 列名**刻意不收** |
+| 或「非 SQL 文本块」 | 业务代码里除了 SQL 几乎只有 prompt 写成文本块 |
+
+- 排除：`CharacterSquareCatalog*`（角色资料数据，属搬家不属 prompt）、`ApiKeyVaultService`/`JasyptUtil`（既有 seam）
+- 登记：`scripts/java_bare_prompt_allowlist.txt`，条目指纹 = `路径::正文头 48 字`
+  - 命中未登记 → 红（新文案必须搬走或登记）
+  - 登记未命中 → 红（迁完了就得删行；文案改了要更新指纹）
+  - 所以该文件**只会变短**，目标态是空文件
+- 当前 19 条：B1/B2/B3 七段、C1–C4 六段、D1–D3 五段、C5 英文片段一段（见下表分布）
+
+### 已知盲区（明确记录，不假装守住了）
+
+- **单行英文 prompt 片段**：如 `MomentsCommentOrchestrator` 的 `[Moment scene] You are ...` /
+  `Do not use pet names ...`。英文特征词只收了 `You are` / `Do not` 等几个，
+  因为通用英文词在 SQL 里满地都是（实测 86 个长字面量里 26 个是「英文且不含中日文」，
+  绝大多数是 SQL/Mapper 语句）。代价是行内英文片段可能漏 —— 记在 C5。
+- **跨行字符串拼接**（`"a" + "b" + ...`）：按单个字面量判定，拼出来的长句可能每段都不足 60 字。
+
