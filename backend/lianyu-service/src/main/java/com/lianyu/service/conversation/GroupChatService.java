@@ -15,6 +15,7 @@ import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.GroupMemberMapper;
 import com.lianyu.dao.mapper.MessageMapper;
+import com.lianyu.service.agent.SceneInstructionPort;
 import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.ai.AssistantReplyService;
 import com.lianyu.service.ai.AssistantReplySplitter;
@@ -45,6 +46,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -76,6 +78,13 @@ public class GroupChatService {
     private final ObjectMapper objectMapper;
     @Resource(name = "groupChatExecutor")
     private TaskExecutor taskExecutor;
+
+    /**
+     * 群聊 prompt 文案由 Python 提供（批次 B）。端口缺失/渲染失败时跳过本次主动发言，
+     * 绝不在 Java 留兜底文案 —— 四语任务块原来就长在这个类里（约 24 行 switch）。
+     */
+    @Autowired(required = false)
+    private SceneInstructionPort promptPort;
 
     @Value("${lianyu.ai.context-window:20}")
     private int contextWindow;
@@ -240,30 +249,11 @@ public class GroupChatService {
             allMsgs.add(dto);
         }
 
-        String proactiveInstruction = switch (OutputLanguage.fromCode(outputLang)) {
-            case JA -> """
-                    いまグループチャットで自発的に一言（または短い連投）してください。ユーザーが今まさに送ったわけではありません。
-                    必須：各メッセージはできるだけ @%s で始める（@あなた＝ユーザー、または @他キャラ名）。
-                    1〜%d 件の短い発言、空行区切り。自然に、履歴に沿って。機械的な挨拶は避ける。
-                    """.formatted(mentionTarget, maxPieces);
-            case EN -> """
-                    Speak up proactively in this group chat (the user did not just send a new message).
-                    Required: each piece should start with @%s (@你 = the user, or another member's name).
-                    1–%d short messages, blank line separated. Stay in character; follow recent context.
-                    """.formatted(mentionTarget, maxPieces);
-            case ZH_TW -> """
-                    你現在要在群聊裡主動發言（不是用戶剛發了一條需要你回覆）。
-                    必須：每條訊息盡量以 @%s 開頭（@你 表示用戶，或 @其他角色名 表示群裡另一位角色）。
-                    共 1～%d 條短訊息，多條用空行分隔；語氣自然，結合最近上下文，不要機械問候。
-                    可以關心用戶，也可以接其他角色的話茬。
-                    """.formatted(mentionTarget, maxPieces);
-            case ZH -> """
-                    你现在要在群聊里主动发言（不是用户刚发了一条需要你回复）。
-                    必须：每条消息尽量以 @%s 开头（@你 表示用户，或 @其他角色名 表示群里另一位角色）。
-                    共 1～%d 条短消息，多条用空行分隔；语气自然，结合最近上下文，不要机械问候。
-                    可以关心用户，也可以接其他角色的话茬。
-                    """.formatted(mentionTarget, maxPieces);
-        };
+        String proactiveSuffix = buildProactiveGroupSuffix(outputLang, mentionTarget, maxPieces, warmHint);
+        if (proactiveSuffix == null) {
+            log.warn("Proactive group chat skipped: task block unavailable, convId={}", conversationId);
+            return false;
+        }
         // Task text in system; trailing user turn is only a non-user trigger (same as single-chat proactive).
         allMsgs.add(buildUserMessage("（系统触发主动发言，用户未发送新消息。）"));
 
@@ -277,14 +267,7 @@ public class GroupChatService {
                     .temperature(0.85)
                     .rawUserText(warmHint)
                     .preparedMessages(allMsgs)
-                    .extraSystemSuffix("""
-
-
-                            === 群聊主动发言（系统指令 · 不是用户发来的消息）===
-                            """ + proactiveInstruction + "\n\n最近气氛参考：" + warmHint + """
-
-                            禁止假装用户刚发了乱码、指令、报错或任何未在历史中真实出现的用户消息。
-                            """)
+                    .extraSystemSuffix(proactiveSuffix)
                     .groupExtras(new com.lianyu.service.graph.ChatTurnGroupExtras(
                             maxPieces, othersLine, mentionCtx))
                     .streaming(false)
@@ -609,6 +592,31 @@ public class GroupChatService {
                 }
             }
         }
+    }
+
+    /**
+     * 群聊主动发言的 system 任务块：段头 + 四语任务说明 + 最近气氛 + 禁止条款。
+     *
+     * <p>文案在 Python（{@code app/prompts/group_proactive_task_{zh,zh_tw,ja,en}.md}），
+     * 前导空行 2 与旧拼接口径逐字节一致（拼接口径：文本块后跟 "最近气氛参考：" 与禁止条款，
+     * 段头与禁止条款在任何语种下都保持中文）。取不到返回 null，调用方跳过本次生成。
+     */
+    private String buildProactiveGroupSuffix(String outputLang, String mentionTarget,
+                                             int maxPieces, String warmHint) {
+        if (promptPort == null) {
+            log.warn("Proactive group task block unavailable: prompt port missing");
+            return null;
+        }
+        String promptName = switch (OutputLanguage.fromCode(outputLang)) {
+            case JA -> "group_proactive_task_ja";
+            case EN -> "group_proactive_task_en";
+            case ZH_TW -> "group_proactive_task_zh_tw";
+            case ZH -> "group_proactive_task_zh";
+        };
+        return promptPort.render(promptName, Map.of(
+                "mention_target", mentionTarget == null ? "" : mentionTarget,
+                "max_pieces", maxPieces,
+                "warm_hint", warmHint == null ? "" : warmHint), 2);
     }
 
     private String pickProactiveMentionTarget(Character speaker, List<GroupMember> members,

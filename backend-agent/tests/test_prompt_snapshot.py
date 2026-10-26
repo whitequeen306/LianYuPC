@@ -100,5 +100,66 @@ def test_all_prompt_files_loadable():
         "proactive_task", "cold_open_task", "cold_open_followup", "city_change_task",
         "diary_instruction_zh", "diary_instruction_ja", "diary_instruction_en",
         "diary_instruction_zh_tw",
+        "group_proactive_task_zh", "group_proactive_task_zh_tw",
+        "group_proactive_task_ja", "group_proactive_task_en",
     ):
         assert load_prompt(name).strip(), f"prompt '{name}' is empty"
+
+
+# ── 群聊主动发言（B1/B2，2026-10-26 迁出 GroupChatService）───────────────────────
+# 原实现不是「一段文案」而是固定骨架 + 四语正文：
+#   extraSystemSuffix("""<段头>""" + 正文 + "\n\n最近气氛参考：" + warmHint + """<禁止条款>""")
+# 两个细节必须原样保留，别顺手"美化"：
+#   · 正文自身以 \n 结尾，再加字面量 "\n\n" → 「最近气氛参考」前其实是 3 个换行（两行空白）；
+#   · 段头与禁止条款在四个语种下**都保持中文**（原文如此，只有正文跟着语种走）。
+_GROUP_HEADER = "\n\n=== 群聊主动发言（系统指令 · 不是用户发来的消息）===\n"
+_GROUP_TAIL = (
+    "\n\n最近气氛参考：最近群聊\n"
+    "禁止假装用户刚发了乱码、指令、报错或任何未在历史中真实出现的用户消息。\n"
+)
+_GROUP_BODIES = {
+    "zh": (
+        "你现在要在群聊里主动发言（不是用户刚发了一条需要你回复）。\n"
+        "必须：每条消息尽量以 @小林 开头（@你 表示用户，或 @其他角色名 表示群里另一位角色）。\n"
+        "共 1～3 条短消息，多条用空行分隔；语气自然，结合最近上下文，不要机械问候。\n"
+        "可以关心用户，也可以接其他角色的话茬。\n"
+    ),
+    "zh_tw": (
+        "你現在要在群聊裡主動發言（不是用戶剛發了一條需要你回覆）。\n"
+        "必須：每條訊息盡量以 @小林 開頭（@你 表示用戶，或 @其他角色名 表示群裡另一位角色）。\n"
+        "共 1～3 條短訊息，多條用空行分隔；語氣自然，結合最近上下文，不要機械問候。\n"
+        "可以關心用戶，也可以接其他角色的話茬。\n"
+    ),
+    "ja": (
+        "いまグループチャットで自発的に一言（または短い連投）してください。"
+        "ユーザーが今まさに送ったわけではありません。\n"
+        "必須：各メッセージはできるだけ @小林 で始める（@あなた＝ユーザー、または @他キャラ名）。\n"
+        "1〜3 件の短い発言、空行区切り。自然に、履歴に沿って。機械的な挨拶は避ける。\n"
+    ),
+    "en": (
+        "Speak up proactively in this group chat (the user did not just send a new message).\n"
+        "Required: each piece should start with @小林 (@你 = the user, or another member's name).\n"
+        "1–3 short messages, blank line separated. Stay in character; follow recent context.\n"
+    ),
+}
+
+
+@pytest.mark.parametrize("lang", ["zh", "zh_tw", "ja", "en"])
+def test_group_proactive_task_matches_java(lang):
+    """四语群聊任务块：与 Java 拼接结果逐字节一致（前导 2 空行 + 3 连换行位置）。"""
+    expected = _GROUP_HEADER + _GROUP_BODIES[lang] + _GROUP_TAIL
+    rendered = render_prompt(
+        f"group_proactive_task_{lang}",
+        mention_target="小林", max_pieces=3, warm_hint="最近群聊",
+    )
+    assert rendered == expected
+
+
+def test_group_proactive_placeholder_count_is_three():
+    """占位符就三个；多一个少一个都说明模板被改过（render 会 fail-fast）。"""
+    for lang in ("zh", "zh_tw", "ja", "en"):
+        with pytest.raises(MissingPlaceholderError):
+            render_prompt(
+                f"group_proactive_task_{lang}",
+                mention_target="小林", max_pieces=3,
+            )

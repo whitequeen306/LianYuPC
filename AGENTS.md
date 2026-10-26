@@ -39,7 +39,7 @@ Electron 主进程          服务端 Java                  Python backend-agent
 2026-10-26 起还有**规则 5「裸 prompt 长文案」**：≥60 字的字符串或非 SQL 文本块，只要命中
 `=== 标题 ===` 段头或 ≥2 个三语 prompt 特征词，就判定为 prompt 文案，必须搬去 Python；
 确实要留在 Java 的，登记进 `scripts/java_bare_prompt_allowlist.txt`（**只许变短**，
-登记了却没命中也会红）。当前已登记 19 条待迁，见 `docs/refactor-2026-10/prompt-migration-inventory.md`。
+登记了却没命中也会红）。当前已登记 13 条待迁，见 `docs/refactor-2026-10/prompt-migration-inventory.md`。
 
 ---
 
