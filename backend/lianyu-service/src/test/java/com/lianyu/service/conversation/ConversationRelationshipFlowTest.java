@@ -60,7 +60,6 @@ class ConversationRelationshipFlowTest {
         NotificationService notificationService = mock(NotificationService.class);
         OutputLanguageService outputLanguageService = mock(OutputLanguageService.class);
         CharacterStateService characterStateService = mock(CharacterStateService.class);
-        ProactiveRealWorldContextService proactiveRealWorldContext = mock(ProactiveRealWorldContextService.class);
         RelationshipStateService relationshipStateService = mock(RelationshipStateService.class);
         ProactiveUnrepliedThrottle proactiveUnrepliedThrottle = mock(ProactiveUnrepliedThrottle.class);
         com.lianyu.service.tools.TimeTool timeTool = mock(com.lianyu.service.tools.TimeTool.class);

@@ -71,7 +71,6 @@ class ConversationServiceStreamErrorTest {
     @Mock private NotificationService notificationService;
     @Mock private OutputLanguageService outputLanguageService;
     @Mock private CharacterStateService characterStateService;
-    @Mock private ProactiveRealWorldContextService proactiveRealWorldContext;
     @Mock private RelationshipStateService relationshipStateService;
     @Mock private ProactiveUnrepliedThrottle proactiveUnrepliedThrottle;
     @Mock private com.lianyu.service.tools.TimeTool timeTool;
