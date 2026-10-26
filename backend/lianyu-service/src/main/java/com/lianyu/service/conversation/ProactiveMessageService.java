@@ -313,16 +313,12 @@ public class ProactiveMessageService {
             // Cold-open text: 1–2 short lines (not the full chat burst budget).
             int maxPieces = Math.min(2, Math.max(1, behavior.maxRepliesPerTurn()));
             String systemPrompt = proactiveSystemPrompt(userId, character, null);
-            String coldOpenTask = String.format("""
-
-                    
-                    
-                    === 破冰任务（系统指令 · 不是用户发来的消息）===
-                    这是你和该用户在本会话里的第一次开口（会话中还没有任何历史消息）。
-                    请主动先发 1～%d 条很短的破冰话，符合口吻与设定，自然一点，避免机械客服腔。
-                    若多条请用空行分隔；不要堆砌长段落。
-                    禁止假装用户发了乱码、指令、报错或任何尚未出现的用户消息。
-                    """, maxPieces);
+            String coldOpenTask = promptPort == null ? null
+                    : promptPort.render("cold_open_task", java.util.Map.of("max_pieces", maxPieces), 2);
+            if (coldOpenTask == null) {
+                log.warn("Cold open skipped: task block unavailable, convId={}", conversationId);
+                return;
+            }
 
             ChatResult chatResult = tryAgentTurn(
                     userId, "COLD_OPEN", systemPrompt, coldOpenTask, List.of(), userVault,
@@ -601,15 +597,12 @@ public class ProactiveMessageService {
         String systemPrompt = proactiveSystemPrompt(userId, character, null);
         List<Message> history = conversationService.getRecentMessages(conversationId, contextWindow);
 
-        String followUpTask = """
-
-
-                === 破冰跟进（系统指令 · 不是用户发来的消息）===
-                用户在你上一条之后仍未回复。请再发**唯一一条**非常简短的关心或轻轻一推（一两句话即可）。
-                不要重复上一句的意思，不要过于啰嗦。
-                这是本条场景下系统允许你的**最后一次自动开口**；发完后安静等用户就好。
-                禁止假装用户刚发了乱码、指令、报错或任何未在历史中真实出现的用户消息。
-                """;
+        String followUpTask = promptPort == null ? null
+                : promptPort.render("cold_open_followup", java.util.Map.of(), 2);
+        if (followUpTask == null) {
+            log.warn("Cold open follow-up skipped: task block unavailable, convId={}", conversationId);
+            return;
+        }
 
         ChatResult chatResult = tryAgentTurn(
                 userId, "COLD_OPEN_FOLLOWUP", systemPrompt, followUpTask,
@@ -681,19 +674,15 @@ public class ProactiveMessageService {
         systemPrompt = appendCityChangeContext(systemPrompt, previousCity, newCity);
 
         List<Message> history = conversationService.getRecentMessages(conversationId, contextWindow);
-        String cityChangeTask = String.format("""
-
-                
-                
-                === 城市变更关心（系统指令 · 不是用户发来的消息）===
-                系统检测到用户刚刚把自己的现实所在城市从「%s」改成了「%s」。
-                请主动发一条关心用户的消息，核心要问用户是不是搬家/换城市了、发生什么事了。
-                必须用称呼「%s」；必须明确提到从「%s」到「%s」的变化。
-                参考句式（可略作口语化，但不要改城市名、不要否认搬迁）：%s，我看你从%s来到了%s，是发生了什么事情吗？
-                只发 1 条，不要太长；不要重复历史原话。
-                禁止假装用户发了乱码、指令或报错。
-                """, previousCity, newCity, addressing, previousCity, newCity,
-                addressing, previousCity, newCity);
+        String cityChangeTask = promptPort == null ? null
+                : promptPort.render("city_change_task", java.util.Map.of(
+                        "previous_city", previousCity,
+                        "new_city", newCity,
+                        "addressing", addressing), 2);
+        if (cityChangeTask == null) {
+            log.warn("City change message skipped: task block unavailable, convId={}", conversationId);
+            return;
+        }
 
         ChatResult chatResult = tryAgentTurn(
                 userId, "CITY_CHANGE", systemPrompt, cityChangeTask,
