@@ -3,6 +3,7 @@ import { buildVoiceWsUrl } from '@/utils/runtime'
 import { syncToken } from '@/utils/secureToken'
 import { usePcmCapture } from '@/composables/usePcmCapture'
 import { createPcmPlayback } from '@/composables/pcmPlayback'
+import { createTurnTailGate } from '@/composables/voiceTurnTail'
 
 /**
  * Duplex voice session over /ws/voice.
@@ -34,6 +35,19 @@ export function useVoiceDuplex() {
   const BARGE_PEAK_THRESHOLD = 0.28
   const BARGE_HOT_FRAMES_REQUIRED = 4
 
+  /**
+   * turn.done 只代表服务端不再产音频；本地还压着 2-5 秒尾音。
+   * 这段时间必须保持 speaking，否则 maybeBargeIn 的 phase 判断会直接返回，
+   * 用户的打断在「角色还在说话」时失效。
+   */
+  const turnTail = createTurnTailGate({
+    isPlaying: () => playback?.isPlaying() === true,
+    onIdle: () => {
+      resetBargeState()
+      phase.value = 'idle'
+    },
+  })
+
   function resetBargeState() {
     bargeArmed = false
     bargeGraceUntil = 0
@@ -57,6 +71,7 @@ export function useVoiceDuplex() {
     bargeHotFrames += 1
     if (bargeHotFrames < BARGE_HOT_FRAMES_REQUIRED) return
     resetBargeState()
+    turnTail.stop()
     playback?.clear()
     sendJson({ type: 'barge_in' })
     phase.value = 'listening'
@@ -110,10 +125,13 @@ export function useVoiceDuplex() {
     } else if (type === 'asr.final') {
       partialText.value = String(msg.text || '')
     } else if (type === 'turn.start') {
+      // 新回合开始：上一回合的尾音排空监视必须撤销，否则它会在新回合中把状态压回 idle。
+      turnTail.stop()
       phase.value = 'thinking'
     } else if (type === 'llm.delta') {
       phase.value = 'thinking'
     } else if (type === 'tts.audio') {
+      turnTail.stop()
       phase.value = 'speaking'
       if (!playback) playback = createPcmPlayback({ sampleRate: msg.sampleRate || 24000 })
       playback.enqueueBase64Audio(msg.base64, {
@@ -122,14 +140,14 @@ export function useVoiceDuplex() {
       })
       noteSpeakingStarted()
     } else if (type === 'tts.local') {
+      turnTail.stop()
       phase.value = 'speaking'
       void playLocalTts(msg)
-    } else if (type === 'tts.done' || type === 'turn.done') {
-      if (type === 'turn.done') {
-        phase.value = 'idle'
-        resetBargeState()
-      }
+    } else if (type === 'turn.done') {
+      // 服务端说完了，但本地尾音可能还在播：等排空后再 idle，期间保持可打断。
+      turnTail.settle()
     } else if (type === 'turn.cancelled') {
+      turnTail.stop()
       playback?.clear()
       phase.value = 'idle'
       resetBargeState()
@@ -218,6 +236,7 @@ export function useVoiceDuplex() {
     onEvent = cb || null
     lastError.value = ''
     partialText.value = ''
+    turnTail.stop()
     phase.value = 'idle'
     playback = createPcmPlayback({ sampleRate: 24000 })
     await connect()
@@ -235,6 +254,7 @@ export function useVoiceDuplex() {
   async function stop() {
     sendJson({ type: 'session.end' })
     await stopPcmStream()
+    turnTail.stop()
     playback?.clear()
     playback = null
     resetBargeState()
@@ -250,6 +270,7 @@ export function useVoiceDuplex() {
   }
 
   function bargeIn() {
+    turnTail.stop()
     playback?.clear()
     sendJson({ type: 'barge_in' })
     phase.value = 'listening'
