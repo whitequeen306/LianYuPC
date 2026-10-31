@@ -49,6 +49,9 @@ public class MomentsCommentOrchestrator {
     /** Optional: AGENT mode delegates model calls to backend-agent (null => fallback to Java). */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.lianyu.service.agent.AgentTextPort agentTextPort;
+    /** 文案归 Python（app/prompts/moments_*）；取不到就跳过本次生成，不在 Java 编兜底。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.service.agent.SceneInstructionPort promptPort;
     private final ApiKeyVaultService apiKeyVaultService;
     private final com.lianyu.service.graph.ChatTurnFacade chatTurnFacade;
     private final OutputLanguageService outputLanguageService;
@@ -351,21 +354,21 @@ public class MomentsCommentOrchestrator {
             String postAuthorName = userPost ? "用户" : (postAuthor != null ? postAuthor.getName() : "发帖角色");
 
             String instruction;
+            String trimmedContent = trim(post.getContent(), 200);
             if (userPost) {
-                instruction = String.format("""
-                        用户刚发了一条朋友圈（不是你的用户专属对话，而是公开动态）：
-                        「%s」
-                        请以你的身份写一条评论：像朋友随口回一句，可以自然称呼用户。
-                        15~60字，不要重复原文，不要话题标签，不要解释自己是AI。
-                        """, trim(post.getContent(), 200));
+                instruction = promptPort == null ? null
+                        : promptPort.render("moments_comment_user_post",
+                                Map.of("content", trimmedContent), 0);
             } else {
-                instruction = String.format("""
-                        另一位角色「%s」刚发了一条朋友圈（不是你的用户，也不是你在对主人说话）：
-                        「%s」
-                        请以你的身份，对「%s」这条动态写评论：像同行随口回一句，可以直呼对方名字。
-                        禁止：对用户/主人/Darling 说话；不要使用你专指用户的昵称；不要写「你来找我」这类明显在喊用户的句子。
-                        15~60字，不要重复原文，不要话题标签，不要解释自己是AI。
-                        """, postAuthorName, trim(post.getContent(), 200), postAuthorName);
+                Map<String, Object> vars = new HashMap<>();
+                vars.put("author", postAuthorName);
+                vars.put("content", trimmedContent);
+                instruction = promptPort == null ? null
+                        : promptPort.render("moments_comment_peer_post", vars, 0);
+            }
+            if (instruction == null || instruction.isBlank()) {
+                log.debug("Moments peer comment skipped: instruction unavailable, postId={}", postId);
+                return false;
             }
 
             String content = generateCharacterComment(
@@ -446,6 +449,25 @@ public class MomentsCommentOrchestrator {
 
         String commenterName = resolveCommenterName(trigger);
         boolean commenterIsUser = MomentsCommentService.AUTHOR_USER.equals(trigger.getAuthorType());
+        String postTrim = trim(post.getContent(), 200);
+        String commentTrim = trim(trigger.getContent(), 200);
+        String instruction;
+        if (commenterIsUser) {
+            instruction = promptPort == null ? null
+                    : promptPort.render("moments_reply_user",
+                            Map.of("post", postTrim, "comment", commentTrim), 0);
+        } else {
+            Map<String, Object> vars = new HashMap<>();
+            vars.put("commenter", commenterName);
+            vars.put("post", postTrim);
+            vars.put("comment", commentTrim);
+            instruction = promptPort == null ? null
+                    : promptPort.render("moments_reply_peer", vars, 0);
+        }
+        if (instruction == null || instruction.isBlank()) {
+            log.debug("Moments author reply skipped: instruction unavailable, postId={}", post.getId());
+            return false;
+        }
         String content = generateCharacterComment(
                 post.getUserId(),
                 author,
@@ -453,21 +475,7 @@ public class MomentsCommentOrchestrator {
                 commenterIsUser
                         ? MomentsCommentAudience.user(commenterName)
                         : MomentsCommentAudience.character(commenterName),
-                commenterIsUser
-                        ? String.format("""
-                        你在朋友圈发了一条动态，现在「用户」评论了：
-                        动态原文：「%s」
-                        用户的评论：「%s」
-                        请以发帖人身份回复用户这条评论，简短自然，20~80字，不要话题标签，不要解释自己是AI。
-                        """, trim(post.getContent(), 200), trim(trigger.getContent(), 200))
-                        : String.format("""
-                        你在朋友圈发了一条动态，现在另一位角色「%s」评论了（不是用户）：
-                        动态原文：「%s」
-                        %s 的评论：「%s」
-                        请以发帖人身份回复 TA 这条评论；对话对象是 %s，不要对屏幕前的用户说话，也不要把对方当成你的 Darling/主人。
-                        20~80字，不要话题标签，不要解释自己是AI。
-                        """, commenterName, trim(post.getContent(), 200), commenterName,
-                                trim(trigger.getContent(), 200), commenterName)
+                instruction
         );
         if (content == null) {
             return false;
@@ -722,6 +730,12 @@ public class MomentsCommentOrchestrator {
                                             MomentsCommentAudience audience,
                                             String instruction) {
         String lang = outputLanguageService.resolveForRequest(userId, null);
+        String guard = buildMomentsSceneGuard(audience, lang);
+        if (guard == null) {
+            // 拿不到护栏就不生成：宁可少一条评论，也不要让角色把对方当成用户乱叫。
+            log.debug("Moments comment skipped: scene guard unavailable, audience={}", audience);
+            return null;
+        }
         String systemPrompt = chatTurnFacade.assembleSystemPrompt(
                 com.lianyu.ai.graph.ChatTurnScene.MOMENTS,
                 userId,
@@ -729,7 +743,7 @@ public class MomentsCommentOrchestrator {
                 character,
                 null,
                 null,
-                buildMomentsSceneGuard(audience, lang),
+                guard,
                 null);
 
         VaultEntryResponse userVault = apiKeyVaultService.resolvePreferredUserVault(userId);
@@ -755,26 +769,21 @@ public class MomentsCommentOrchestrator {
     }
 
     private String buildMomentsSceneGuard(MomentsCommentAudience audience, String lang) {
-        if (audience.addressingUser()) {
-            return switch (com.lianyu.common.i18n.OutputLanguage.fromCode(lang)) {
-                case EN -> "\n\n[Moment scene] You are replying to the human user's comment on your post. The user is your chat partner.";
-                case JA -> "\n\n【朋友圈】あなたの投稿への「ユーザー」コメントへの返信。相手は人間ユーザー。";
-                case ZH_TW -> "\n\n【朋友圈場景】你在回覆「用戶」對你所發動態的評論；對方是人類用戶，可以自然稱呼。";
-                default -> "\n\n【朋友圈场景】你在回复「用户」对你所发动态的评论；对方是人类用户，可以自然称呼。";
-            };
+        if (promptPort == null) {
+            return null;
         }
-        String target = audience.counterpartyName();
-        return switch (com.lianyu.common.i18n.OutputLanguage.fromCode(lang)) {
-            case EN -> "\n\n[Moment scene — character only] You are talking to another character \""
-                    + target + "\", NOT the human user. Do not use pet names you reserve for the user "
-                    + "(e.g. Darling). Address \"" + target + "\" by name or natural second person toward them.";
-            case JA -> "\n\n【朋友圈・キャラ同士】相手は別キャラ「" + target + "」で、ユーザーではない。"
-                    + "ユーザー専用の呼び方（Darling 等）は使わない。投稿者の名前で話す。";
-            case ZH_TW -> "\n\n【朋友圈場景·角色互動】你正在對另一角色「" + target + "」說話，不是對螢幕前的用戶。"
-                    + "禁止把單聊裡專指用戶的暱稱（如 Darling、主人、寶貝）用在本次評論；請用「" + target + "」稱呼對方。";
-            default -> "\n\n【朋友圈场景·角色互动】你正在对另一角色「" + target + "」说话，不是对屏幕前的用户。"
-                    + "禁止把单聊里专指用户的昵称（如 Darling、主人、宝贝）用在本次评论；请用「" + target + "」称呼对方。";
+        String suffix = switch (com.lianyu.common.i18n.OutputLanguage.fromCode(lang)) {
+            case EN -> "en";
+            case JA -> "ja";
+            case ZH_TW -> "zh_tw";
+            default -> "zh";
         };
+        // 前导两个空行是原实现的固定分隔符（拼接在 systemPrompt 之后），模板文件不含空行。
+        if (audience.addressingUser()) {
+            return promptPort.render("moments_scene_guard_user_" + suffix, Map.of(), 2);
+        }
+        return promptPort.render("moments_scene_guard_peer_" + suffix,
+                Map.of("target", audience.counterpartyName()), 2);
     }
 
     private record MomentsCommentAudience(String counterpartyName, boolean addressingUser) {

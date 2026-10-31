@@ -14,10 +14,11 @@
 # 老规则却一直报 0/0/0 —— 那是假阴性，不是通过。
 #
 # ── 已知盲区（本规则扫不到，靠人）────────────────────────────────────────
-# · 单行英文 prompt 片段（如 MomentsCommentOrchestrator 的 `[Moment scene] ...`
-#   `You are ...` `Do not ...`）：英文特征词只取「写成句子才会出现」的几个，
-#   因为 `role` / `character` 这类词在 SQL 里满地都是，收进来全是噪音。
-#   代价是行内英文片段可能漏，登记在 C5。
+# · 单行英文 prompt 片段（如 `[Moment scene] ...` `You are ...` `Do not ...`）：
+#   英文特征词只取「写成句子才会出现」的几个，因为 `role` / `character` 这类词
+#   在 SQL 里满地都是，收进来全是噪音。代价是行内英文片段可能漏。
+#   C5 那批护栏曾是这个盲区的实例，2026-10-31 已人工迁到
+#   backend-agent/app/prompts/moments_scene_guard_*.md。
 
 # TODO D1 — `=== Your recent life activities ===` 生活动态块（清单未登记，本轮扫描新发现）
 #   位置（仅备忘，行号会漂）：164
@@ -27,18 +28,6 @@ backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterRecen
 #   位置（仅备忘，行号会漂）：177, 183
 backend/lianyu-service/src/main/java/com/lianyu/service/conversation/SessionSummaryService.java::=== 本次对话 Earlier 摘要 ===
 backend/lianyu-service/src/main/java/com/lianyu/service/conversation/SessionSummaryService.java::说明：摘要描述本次聊天中较早的内容；与用户最近几条消息冲突时，以最近消息为准。
-
-# TODO C3/C4 — 朋友圈评论 / 回评（C5 英文护栏是单行片段，本规则暂扫不到，见文末已知盲区）
-#   位置（仅备忘，行号会漂）：355, 362, 457, 463
-backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentOrchestrator.java::用户刚发了一条朋友圈（不是你的用户专属对话，而是公开动态）： 「%s」 请以你的身份写一条评论：
-backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentOrchestrator.java::另一位角色「%s」刚发了一条朋友圈（不是你的用户，也不是你在对主人说话）： 「%s」 请以你的身
-backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentOrchestrator.java::你在朋友圈发了一条动态，现在「用户」评论了： 动态原文：「%s」 用户的评论：「%s」 请以发帖
-backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentOrchestrator.java::你在朋友圈发了一条动态，现在另一位角色「%s」评论了（不是用户）： 动态原文：「%s」 %s 的
-
-# TODO C1/C2 — 朋友圈发帖：日常生活 / 对话余韵
-#   位置（仅备忘，行号会漂）：371, 389
-backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsService.java::请以该角色身份发一条像真人随手发的社交动态（第一人称）。 主题：日常生活里的具体小事——通勤、吃
-backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsService.java::请以该角色身份发一条像真人随手发的社交动态（第一人称）。 主题：结合最近和用户的聊天余韵，落到日
 
 # TODO D3 — Spring AI `@ToolParam` 工具描述；按「工具 schema 归 Python」红线待评估是否整段迁走
 #   位置（仅备忘，行号会漂）：22

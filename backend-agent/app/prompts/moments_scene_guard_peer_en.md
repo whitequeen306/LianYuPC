@@ -1,0 +1,1 @@
+[Moment scene — character only] You are talking to another character "{target}", NOT the human user. Do not use pet names you reserve for the user (e.g. Darling). Address "{target}" by name or natural second person toward them.

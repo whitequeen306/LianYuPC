@@ -21,7 +21,7 @@ Java 字面量还原（开分隔符后的换行不算内容 / 去公共缩进 / 
 留下来的风险点只有一处：Python 对天气实况做了 `.strip()`，Java 是原样拼接——
 实况由工具生成、本就无首尾空白，故不影响，但将来若换天气源要留意。
 
-## 待迁（B/C 共 18 段，2 个文件）
+## 台账（B/C 已清零，仅剩 D 批 6 条）
 
 ### A. 主动发言 / 破冰 / 城市变更
 
@@ -35,15 +35,17 @@ Java 字面量还原（开分隔符后的换行不算内容 / 去公共缩进 / 
 | B2 | `GroupChatService:280/284` | 同上 | 标题行 + 禁止条款补丁 | ✅ 已迁：并进同一批模板（段头/禁止条款在四语下都保持中文） |
 | B3 | `GroupChatService:989` | `decideMentionByJudgeModel` | 「群聊@提及裁决器」判题 prompt（非对话场景，需独立小端点） | ✅ 已迁（2026-10-31）：`group_mention_judge_{system,user}.md`，走 `SceneInstructionPort.render`（`leading_newlines=0`）；取不到就跳过 @ 决策，Java 不再有兜底文案 |
 
-### C. 朋友圈（需新建文案，量大）
+### C. 朋友圈（✅ 2026-10-31 全部完成）
 
-| # | 位置 | 方法 | 说明 |
-|---|---|---|---|
-| C1 | `MomentsService:371` | `generateMoodMoment` | 发帖·日常生活 |
-| C2 | `MomentsService:389` | `generateReflectionMoment` | 发帖·对话余韵 |
-| C3 | `MomentsCommentOrchestrator:355/362` | `executePeerComment` | 评论用户 / 评论另一位角色 |
-| C4 | `MomentsCommentOrchestrator:457/463` | `runAuthorReply` | 回用户评论 / 回角色评论 |
-| C5 | `MomentsCommentOrchestrator:761-776` | `buildMomentsSceneGuard` | 场景护栏，四语（英文版是单行片段，棘轮规则 5 扫不到，见下方「已知盲区」） |
+| # | 位置 | 方法 | 说明 | 状态 |
+|---|---|---|---|---|
+| C1 | `MomentsService:371` | `generateMoodMoment` | 发帖·日常生活 | ✅ `moments_post_mood.md` |
+| C2 | `MomentsService:389` | `generateReflectionMoment` | 发帖·对话余韵 | ✅ `moments_post_reflection.md` |
+| C3 | `MomentsCommentOrchestrator:355/362` | `executePeerComment` | 评论用户 / 评论另一位角色 | ✅ `moments_comment_{user,peer}_post.md` |
+| C4 | `MomentsCommentOrchestrator:457/463` | `runAuthorReply` | 回用户评论 / 回角色评论 | ✅ `moments_reply_{user,peer}.md` |
+| C5 | `MomentsCommentOrchestrator:761-776` | `buildMomentsSceneGuard` | 场景护栏，四语 × 用户/角色 = 8 段 | ✅ `moments_scene_guard_{user,peer}_{zh,zh_tw,ja,en}.md`（`leading_newlines=2`） |
+
+护栏取不到时**跳过整条评论生成**：宁可少一条，也不要让角色把对方当成用户乱叫。
 
 ### D. 盘点时漏掉、由新棘轮规则扫出来的（2026-10-26）
 
