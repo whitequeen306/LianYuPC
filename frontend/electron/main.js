@@ -78,6 +78,7 @@ import { loadRuntimeSecrets, getRuntimeSecrets } from './runtimeSecrets.js'
 import { initUpdater } from './updater/updater.js'
 import { schedulePostWindowStartup } from './startupOrchestrator.js'
 import { createStartupProfiler } from './startupProfiler.js'
+import { acquireSingleInstanceLock } from './singleInstance.js'
 import { RENDERER_AUTH_TOKEN_SCRIPT } from './rendererTokenScript.js'
 import { clampLauncherBoundsToWorkArea, isLauncherWithinWorkArea } from './launcherBounds.js'
 
@@ -120,6 +121,21 @@ let launcherIsDragging = false
 let launcherSuppressMoveSave = false
 /** 桌宠是否允许显示（用户已登录后才允许） */
 let launcherLoggedIn = false
+
+// 必须在 app.whenReady() 之前抢锁：抢不到锁的进程不能建窗口、托盘或桥。
+// 第二个实例只负责把已有主窗拉到前台，避免托盘/桌宠/观察者各来一份。
+acquireSingleInstanceLock({
+  app,
+  log,
+  onSecondInstance: () => {
+    if (isQuitting) return
+    // 最小化时 show() 不会还原窗口（isVisible 仍为 true），必须先 restore。
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isMinimized()) {
+      mainWindow.restore()
+    }
+    showMainWindow()
+  },
+})
 
 const SHARED_WEB_PREFS = {
   preload: path.join(__dirname, app.isPackaged ? 'preload.cjs' : 'preload.cjs'),
