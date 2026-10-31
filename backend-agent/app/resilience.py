@@ -39,7 +39,15 @@ MAX_UPSTREAM_BREAKERS = 500
 
 
 class GatewayError(Exception):
-    """模型网关错误基类。"""
+    """模型网关错误基类。
+
+    `code` 是机器可读短词（如 `provider_insufficient_balance`），供 Java 侧做
+    日志归类/降噪；`str(exc)` 仍是给人看的长句，两者互不影响。
+    """
+
+    def __init__(self, message: str = "", code: str = "") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class GatewayBusinessError(GatewayError):

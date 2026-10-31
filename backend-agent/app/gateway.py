@@ -54,6 +54,23 @@ Part = TextPart | ImagePart
 
 
 # NOTE: 归一化函数不属于 dataclass
+def _business_error_code(status: int) -> str:
+    """4xx 归类成机器可读短词：Java 侧靠它做日志降噪与告警分类。
+
+    这些状态码的含义由「用户自己的 key / 模型配置」决定，不是上游故障——
+    生产上 `proactiveTurn error: model gateway http 402` 反复刷 WARN，
+    真实 5xx 反而被淹掉（2026-10-22 语音回归期间观察到的现象）。
+    """
+    return {
+        401: "provider_auth_failed",
+        402: "provider_insufficient_balance",
+        403: "provider_forbidden",
+        404: "provider_model_not_found",
+        413: "provider_payload_too_large",
+        422: "provider_payload_invalid",
+    }.get(status, "provider_bad_request")
+
+
 def _raise_for_status(status: int) -> None:
     """把上游 HTTP 状态映射成两类异常，决定是否计入熔断。
 
@@ -66,7 +83,10 @@ def _raise_for_status(status: int) -> None:
     if 200 <= status < 300:
         return
     if 400 <= status < 500 and status != 429:
-        raise GatewayBusinessError(f"model gateway http {status}")
+        raise GatewayBusinessError(
+            f"model gateway http {status}",
+            code=_business_error_code(status),
+        )
     raise ModelGatewayError(f"model gateway http {status}")
 
 def normalize_openai_base_url(base_url: str) -> str:

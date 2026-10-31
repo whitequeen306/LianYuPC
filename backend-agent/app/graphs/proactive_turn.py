@@ -52,6 +52,7 @@ class ProactiveTurnState(TypedDict, total=False):
     prompt_tokens: int | None
     completion_tokens: int | None
     error: str
+    error_code: str
     # ── internal（assemble 节点产出，invoke 节点消费）──
     messages: list[dict[str, str]]
     provider: str | None
@@ -104,7 +105,8 @@ def build_proactive_graph(gateway: ModelGateway):
         try:
             return await _invoke_inner(state, settings, messages, tools)
         except MODEL_GATEWAY_ERRORS as exc:
-            return {"error": str(exc)}
+            # error_code 供 Java 侧归类降噪（欠费/失效 vs 上游故障），不要只给长句。
+            return {"error": str(exc), "error_code": getattr(exc, "code", "") or ""}
 
     async def _invoke_inner(state: ProactiveTurnState, settings, messages, tools):
         if tools:

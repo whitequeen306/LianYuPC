@@ -1042,6 +1042,9 @@ class ProactiveTurnResponse(BaseModel):
     # 无 alias 的字段会以 snake_case 输出，Java 侧读 assistantRaw 会永远拿不到（AGENT 会静默回退）。
     assistant_raw: str | None = Field(default=None, alias="assistantRaw")
     error: str | None = None
+    # 机器可读错误码：provider_auth_failed / provider_insufficient_balance / ...
+    # Java 侧据此归类与降噪，不再只靠解析长句里的 "http 402"。
+    error_code: str | None = Field(default=None, alias="errorCode")
     # 用量与执行元信息：Java 侧据此落库 token 统计（AGENT 模式不能丢这份数据）
     prompt_tokens: int | None = Field(default=None, alias="promptTokens")
     completion_tokens: int | None = Field(default=None, alias="completionTokens")
@@ -1084,7 +1087,10 @@ async def proactive_turn(
         state["max_tokens"] = body.max_tokens
     final = await graph.ainvoke(state, config={"recursion_limit": 10})
     if final.get("error"):
-        return ProactiveTurnResponse(error=final["error"])
+        return ProactiveTurnResponse(
+            error=final["error"],
+            error_code=final.get("error_code") or None,
+        )
     prompt_tokens = final.get("prompt_tokens")
     completion_tokens = final.get("completion_tokens")
     total = None

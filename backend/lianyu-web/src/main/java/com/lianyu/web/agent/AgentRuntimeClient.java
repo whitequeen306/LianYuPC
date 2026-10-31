@@ -34,6 +34,13 @@ public class AgentRuntimeClient {
     /** 流式出站（对齐红线 §10：流式必须用 reactor-netty + 读间隙超时）。 */
     private final org.springframework.web.reactive.function.client.WebClient webClient;
 
+    /**
+     * 主动关怀失败日志的节流器：用户 key 欠费（402）/失效（401）时调度器每轮都会失败，
+     * 不节流就会把真实的 5xx 淹掉（2026-10-22 语音回归期间的实际现象）。
+     */
+    private final AgentFailureLogThrottle proactiveErrorThrottle =
+            new AgentFailureLogThrottle(10 * 60 * 1000L, 512);
+
     public AgentRuntimeClient(AgentRuntimeProperties properties, ObjectMapper objectMapper,
                               AgentToolCatalog toolCatalog) {
         this.properties = properties;
@@ -49,6 +56,24 @@ public class AgentRuntimeClient {
                 // 音频回传上限：Spring 默认 256KB，十秒语音就超了（见 postBytes 注释）
                 .codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(16 * 1024 * 1024))
                 .build();
+    }
+
+    /**
+     * 主动关怀失败降噪：同一个 (userId, errorCode) 10 分钟内只 WARN 一次，其余降 DEBUG。
+     *
+     * <p>用户 key 欠费/失效属于「用户侧配置问题」，会随每次调度重复出现；
+     * 保留首次 WARN 足以定位是谁的 key，后续刷屏只会掩盖真正的上游 5xx。
+     */
+    private void logProactiveFailure(long userId, JsonNode root) {
+        String code = root.path("errorCode").asText("");
+        String detail = root.path("error").asText("");
+        if (!proactiveErrorThrottle.allow(userId, code, System.currentTimeMillis())) {
+            log.debug("Agent runtime proactiveTurn error (suppressed): userId={}, code={}, detail={}",
+                    userId, code, detail);
+            return;
+        }
+        log.warn("Agent runtime proactiveTurn error: userId={}, code={}, detail={}",
+                userId, code.isEmpty() ? "unknown" : code, detail);
     }
 
     /**
@@ -137,7 +162,7 @@ public class AgentRuntimeClient {
                     .body(String.class);
             JsonNode root = objectMapper.readTree(response == null ? "{}" : response);
             if (root.hasNonNull("error")) {
-                log.warn("Agent runtime proactiveTurn error: {}", root.path("error").asText());
+                logProactiveFailure(userId, root);
                 return null;
             }
             JsonNode raw = root.path("assistantRaw");
@@ -191,7 +216,7 @@ public class AgentRuntimeClient {
                     .body(String.class);
             JsonNode root = objectMapper.readTree(response == null ? "{}" : response);
             if (root.hasNonNull("error")) {
-                log.warn("Agent runtime proactiveTurn error: {}", root.path("error").asText());
+                logProactiveFailure(userId, root);
                 return null;
             }
             JsonNode raw = root.path("assistantRaw");

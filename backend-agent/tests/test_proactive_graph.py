@@ -104,6 +104,22 @@ async def test_graph_gateway_error_folded_into_state():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_graph_business_error_exposes_machine_readable_code():
+    """402 欠费/401 失效是用户侧配置问题：必须带机器可读 code，Java 才能归类降噪。"""
+    respx.post("https://fake/v1/chat/completions").respond(status_code=402)
+    client = httpx.AsyncClient(timeout=outbound_timeout())
+    try:
+        graph = build_proactive_graph(ModelGateway(client=client))
+        final = await graph.ainvoke(make_state(), config={"recursion_limit": 10})
+    finally:
+        await client.aclose()
+    # 长句保持不变（既有断言/排障口径依赖它）
+    assert "model gateway http 402" in final["error"]
+    assert final["error_code"] == "provider_insufficient_balance"
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_graph_gateway_error_folded_in_tool_branch():
     """回归（生产 500 根因）：带 tools 时上游 401/402/404 也必须折叠为 error 字段，
     不能炸出图。此前 ModelGatewayError 只在无工具分支被捕获。"""
