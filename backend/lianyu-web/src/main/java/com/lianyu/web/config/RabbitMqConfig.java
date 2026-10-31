@@ -21,7 +21,6 @@ public class RabbitMqConfig {
     // Queue names
     public static final String QUEUE_MEMORY_SUMMARY = "memory.summary.queue";
     public static final String QUEUE_MEMORY_SUMMARY_DLX = "memory.summary.dlq";
-    public static final String QUEUE_MESSAGE_ARCHIVE = "message.archive.queue";
     public static final String QUEUE_EVENT_BROADCAST = "event.broadcast.queue";
     public static final String QUEUE_AI_BACKGROUND = "ai.background.queue";
     public static final String QUEUE_AI_BACKGROUND_DLX = "ai.background.dlq";
@@ -29,7 +28,6 @@ public class RabbitMqConfig {
     // Routing keys
     public static final String RK_MEMORY_SUMMARY = "memory.summary";
     public static final String RK_MEMORY_SUMMARY_DLX = "memory.summary.dlq";
-    public static final String RK_MESSAGE_ARCHIVE = "message.archive";
     public static final String RK_EVENT_BROADCAST = "event.broadcast";
     public static final String RK_AI_BACKGROUND = "ai.background";
     public static final String RK_AI_BACKGROUND_DLX = "ai.background.dlq";
@@ -84,11 +82,6 @@ public class RabbitMqConfig {
     }
 
     @Bean
-    public Queue messageArchiveQueue() {
-        return QueueBuilder.durable(QUEUE_MESSAGE_ARCHIVE).build();
-    }
-
-    @Bean
     public Queue eventBroadcastQueue() {
         return QueueBuilder.durable(QUEUE_EVENT_BROADCAST).build();
     }
@@ -111,11 +104,6 @@ public class RabbitMqConfig {
     @Bean
     public Binding aiBackgroundDeadLetterBinding() {
         return BindingBuilder.bind(aiBackgroundDeadLetterQueue()).to(lianyuExchange()).with(RK_AI_BACKGROUND_DLX);
-    }
-
-    @Bean
-    public Binding messageArchiveBinding() {
-        return BindingBuilder.bind(messageArchiveQueue()).to(lianyuExchange()).with(RK_MESSAGE_ARCHIVE);
     }
 
     @Bean
