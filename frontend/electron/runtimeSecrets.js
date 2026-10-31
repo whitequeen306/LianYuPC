@@ -25,7 +25,7 @@ export const RUNTIME_SECRETS_PEPPER = 'LianYu-RtSec-v1-8F3C2A1B'
 const DEFAULT_API_ORIGIN = 'http://127.0.0.1:8080'
 const SECRETS_FILENAME = 'runtime-secrets.bin'
 
-/** @type {{ apiOrigin: string, updateOrigin: string, certFingerprint: string, pinnedSpki: string } | null} */
+/** @type {{ apiOrigin: string, updateOrigin: string, certFingerprint: string, pinnedSpki: string, updateManifestPublicKey: string } | null} */
 let cachedSecrets = null
 
 function deriveKey(version, buildId) {
@@ -88,6 +88,12 @@ export function loadRuntimeSecrets(opts) {
         || ''
       ).trim(),
       pinnedSpki: 'EdDpp/Z9REuRjqZLzXXrOW8opTtR8Yph2YM0s+xuLss=',
+      // 更新清单验签公钥（公开值，不是秘密）；空 = 暂不强制验签，见 updater/manifestSignature.js
+      updateManifestPublicKey: (
+        process.env.LIANYU_UPDATE_PUBKEY
+        || process.env.VITE_LIANYU_UPDATE_PUBKEY
+        || ''
+      ).trim(),
     }
     return cachedSecrets
   }
@@ -105,6 +111,7 @@ export function loadRuntimeSecrets(opts) {
     updateOrigin: String(decoded.updateOrigin || '').trim().replace(/\/$/, ''),
     certFingerprint: String(decoded.certFingerprint || '').trim(),
     pinnedSpki: String(decoded.pinnedSpki || '').trim(),
+    updateManifestPublicKey: String(decoded.updateManifestPublicKey || '').trim(),
   }
   return cachedSecrets
 }

@@ -197,6 +197,12 @@ def configure_update_assets_public_read(client: paramiko.SSHClient) -> None:
     )
 
 
+def manifest_signature_path(version: str) -> Path:
+    """Ed25519 detached signature next to latest.yml (see scripts/sign_update_manifest.py)."""
+    release_dir = ROOT / "frontend" / "release" / f"v{version}"
+    return release_dir / f"{_ASSETS['installer']['manifestName']}.sig"
+
+
 def artifact_paths(version: str) -> list[tuple[Path, str]]:
     release_dir = ROOT / "frontend" / "release" / f"v{version}"
     exe_name = _ASSETS["installer"]["exeName"].format(version=version)
@@ -250,9 +256,21 @@ def main() -> None:
         download_release_asset(client, token, asset["id"], asset["size"], f"{remote_tmp}/{target}")
 
     run(client, "docker exec lianyu-minio sh -lc 'rm -rf /tmp/lianyu-update-assets && mkdir -p /tmp/lianyu-update-assets'")
-    # latest.yml is copied last; order matters for clients polling latest.
-    for _src, target in artifact_paths(args.version):
-        run(client, f"docker cp {remote_tmp}/{target} lianyu-minio:/tmp/lianyu-update-assets/{target}", timeout=600)
+
+    manifest_name = _ASSETS["installer"]["manifestName"]
+    sig_path = manifest_signature_path(args.version)
+    signing_configured = bool(os.environ.get("LIANYU_UPDATE_SIGNING_KEY"))
+    if signing_configured and not sig_path.is_file():
+        # 配了私钥却不签，等于「以为签了其实没签」——直接失败，别把未签名的清单推上去。
+        raise SystemExit(
+            "LIANYU_UPDATE_SIGNING_KEY is set but latest.yml.sig is missing; "
+            f"run: python scripts/sign_update_manifest.py --version {args.version}"
+        )
+    if not signing_configured and not sig_path.is_file():
+        print("warning: publishing UNSIGNED latest.yml (no LIANYU_UPDATE_SIGNING_KEY)", flush=True)
+
+    def push(target: str, source: str | None = None) -> None:
+        run(client, f"docker cp {source or f'{remote_tmp}/{target}'} lianyu-minio:/tmp/lianyu-update-assets/{target}", timeout=600)
         run(
             client,
             "docker exec lianyu-minio sh -lc '"
@@ -261,6 +279,20 @@ def main() -> None:
             "'",
             timeout=600,
         )
+
+    # 顺序：安装包/blockmap → 签名 → latest.yml。
+    # 清单必须最后落地，否则客户端可能读到「新清单但签名/安装包还没到」。
+    for _src, target in artifact_paths(args.version):
+        if target != manifest_name:
+            push(target)
+
+    if sig_path.is_file():
+        sig_name = f"{manifest_name}.sig"
+        with client.open_sftp() as sftp:
+            sftp.put(str(sig_path), f"{remote_tmp}/{sig_name}")
+        push(sig_name)
+
+    push(manifest_name)
     run(client, "docker exec lianyu-minio sh -lc 'rm -rf /tmp/lianyu-update-assets'")
     run(client, f"rm -rf {remote_tmp}")
     configure_update_assets_public_read(client)

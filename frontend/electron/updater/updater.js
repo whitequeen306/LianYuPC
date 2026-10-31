@@ -2,11 +2,14 @@ import { app, ipcMain, net, shell } from 'electron'
 import * as logger from '../logger.js'
 import { getRuntimeSecrets } from '../runtimeSecrets.js'
 import { performApiRequest, isAllowedEgressUrl } from '../apiProxy.js'
+import { verifyManifestSignature } from './manifestSignature.js'
 import path from 'path'
 import fs from 'fs'
 import { createHash } from 'crypto'
 
 let initialized = false
+/** 「未配置公钥、跳过验签」只告警一次，避免每次探测都刷同一条。 */
+let manifestSignatureWarningLogged = false
 let mainWindowRef = null
 let currentState = { state: 'idle', info: {} }
 let downloadedInstallerPath = null
@@ -62,6 +65,45 @@ function parseLatestYml(ymlText) {
 
 function resolveLatestYmlUrl(apiOrigin) {
   return `${apiOrigin}${UPDATE_MANIFEST_PATH}`
+}
+
+function resolveManifestPublicKey() {
+  const secrets = getRuntimeSecrets()
+  return String(secrets?.updateManifestPublicKey || '').trim()
+}
+
+/**
+ * 校验 latest.yml 的分离签名（见 manifestSignature.js 文件头）。
+ *
+ * 未配置公钥 → 保持旧行为（只告警一次），避免「客户端先发、签名后上」时中断更新；
+ * 配置了公钥 → 签名缺失或错误一律拒绝，宁可这次不更新，也不装来源不明的包。
+ */
+async function verifyManifestOrThrow(ymlText, ymlUrl, apiOrigin) {
+  const publicKeyBase64 = resolveManifestPublicKey()
+  if (!publicKeyBase64) {
+    if (!manifestSignatureWarningLogged) {
+      manifestSignatureWarningLogged = true
+      logger.warn('updater', 'latest.yml signature check disabled: no updateManifestPublicKey')
+    }
+    return
+  }
+  const resp = await performApiRequest({
+    method: 'GET',
+    url: `${ymlUrl}.sig`,
+    apiOrigin,
+    timeoutMs: 15000,
+  })
+  if (resp.status !== 200) {
+    throw new Error(`latest.yml.sig HTTP ${resp.status}`)
+  }
+  const ok = verifyManifestSignature({
+    payload: ymlText,
+    signatureBase64: String(resp.data || '').trim(),
+    publicKeyBase64,
+  })
+  if (!ok) {
+    throw new Error('update manifest signature invalid')
+  }
 }
 
 function resolveUpdateAssetUrl(assetUrl, latestYmlUrl, updateOrigin = '') {
@@ -395,6 +437,7 @@ async function fetchLatestInfo(apiOrigin) {
   if (resp.status !== 200) {
     throw new Error(`latest.yml HTTP ${resp.status}`)
   }
+  await verifyManifestOrThrow(resp.data, ymlUrl, apiOrigin)
   const info = parseLatestYml(resp.data)
   if (!info) {
     throw new Error('latest.yml parse failed')
@@ -478,6 +521,7 @@ function registerIpc() {
       if (ymlResp.status !== 200) {
         throw new Error(`latest.yml HTTP ${ymlResp.status}`)
       }
+      await verifyManifestOrThrow(ymlResp.data, ymlUrl, apiOrigin)
       const info = parseLatestYml(ymlResp.data)
       if (!info || !info.url) {
         throw new Error('latest.yml missing url')

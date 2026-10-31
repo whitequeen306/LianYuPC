@@ -24,12 +24,14 @@ function deriveKey(version, buildId) {
 }
 
 /**
- * @param {{ version: string, buildId: string, apiOrigin: string, updateOrigin?: string, certFingerprint: string, outPath: string }} opts
+ * @param {{ version: string, buildId: string, apiOrigin: string, updateOrigin?: string, certFingerprint: string, updateManifestPublicKey?: string, outPath: string }} opts
  */
 export function packRuntimeSecrets(opts) {
   const apiOrigin = String(opts.apiOrigin || '').trim().replace(/\/$/, '')
   const updateOrigin = String(opts.updateOrigin || '').trim().replace(/\/$/, '')
   const certFingerprint = String(opts.certFingerprint || '').trim()
+  // 公开验签公钥（Ed25519 SPKI base64），不是秘密；留空表示暂不强制验签。
+  const updateManifestPublicKey = String(opts.updateManifestPublicKey || '').trim()
   if (!apiOrigin) {
     throw new Error('packRuntimeSecrets: apiOrigin is required')
   }
@@ -39,6 +41,7 @@ export function packRuntimeSecrets(opts) {
     updateOrigin,
     certFingerprint,
     pinnedSpki: PINNED_SPKI,
+    updateManifestPublicKey,
   })
   const nonce = crypto.randomBytes(16)
   const data = Buffer.from(payload, 'utf8')
