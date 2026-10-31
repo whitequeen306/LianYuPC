@@ -38,6 +38,10 @@ public class CharacterRecentActivityService {
     private final CharacterMapper characterMapper;
     private final StringRedisTemplate redisTemplate;
 
+    /** 文案归 Python（app/prompts/recent_life_*）；取不到就不注入本块，也不缓存失败结果。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.service.agent.SceneInstructionPort promptPort;
+
     public String formatForPrompt(Long userId, Long characterId, String lang) {
         if (userId == null || characterId == null) {
             return "";
@@ -48,6 +52,10 @@ public class CharacterRecentActivityService {
             return cached;
         }
         String formatted = buildFormatted(userId, characterId, lang);
+        if (formatted == null) {
+            // 端口不可用/模板缺失：不缓存，等下一轮再试，避免把空块钉在 Redis 里一小时。
+            return "";
+        }
         redisTemplate.opsForValue().set(cacheKey, formatted, CACHE_TTL);
         return formatted;
     }
@@ -60,6 +68,13 @@ public class CharacterRecentActivityService {
     }
 
     private String buildFormatted(Long userId, Long characterId, String lang) {
+        String sectionTitle = renderTitle(lang);
+        String closing = promptPort == null
+                ? null
+                : promptPort.render("recent_life_closing", Map.of(), 0);
+        if (sectionTitle == null || closing == null) {
+            return null;
+        }
         LocalDateTime since = LocalDateTime.now().minusDays(7);
         List<ActivityLine> lines = new ArrayList<>();
 
@@ -112,12 +127,25 @@ public class CharacterRecentActivityService {
             lines = lines.subList(0, MAX_LINES);
         }
 
-        StringBuilder sb = new StringBuilder(sectionTitle(lang));
+        StringBuilder sb = new StringBuilder(sectionTitle);
         for (ActivityLine line : lines) {
             sb.append("\n- ").append(formatDate(lang, line.at())).append("：").append(line.text());
         }
-        sb.append("\n\n请勿逐条复述以上动态，仅作背景感知。");
+        sb.append("\n\n").append(closing);
         return sb.toString();
+    }
+
+    private String renderTitle(String lang) {
+        if (promptPort == null) {
+            return null;
+        }
+        String suffix = switch (OutputLanguage.fromCode(lang)) {
+            case EN -> "en";
+            case JA -> "ja";
+            case ZH_TW -> "zh_tw";
+            default -> "zh";
+        };
+        return promptPort.render("recent_life_title_" + suffix, Map.of(), 0);
     }
 
     private Map<Long, MomentsPost> loadPosts(List<MomentsComment> comments) {
@@ -157,15 +185,6 @@ public class CharacterRecentActivityService {
             }
         }
         return "用户";
-    }
-
-    private static String sectionTitle(String lang) {
-        return switch (OutputLanguage.fromCode(lang)) {
-            case EN -> "=== Your recent life activities (background context, do not recap line by line) ===";
-            case JA -> "=== 最近の生活の出来事（背景記憶・逐条復述しない） ===";
-            case ZH_TW -> "=== 你最近的生活動態（背景記憶，勿逐條復述） ===";
-            default -> "=== 你最近的生活动态（背景记忆，勿逐条复述） ===";
-        };
     }
 
     private static String formatDiaryLine(String lang, String detail) {

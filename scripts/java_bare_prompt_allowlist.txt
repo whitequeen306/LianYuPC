@@ -20,23 +20,10 @@
 #   C5 那批护栏曾是这个盲区的实例，2026-10-31 已人工迁到
 #   backend-agent/app/prompts/moments_scene_guard_*.md。
 
-# TODO D1 — `=== Your recent life activities ===` 生活动态块（清单未登记，本轮扫描新发现）
-#   位置（仅备忘，行号会漂）：164
-backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterRecentActivityService.java::=== Your recent life activities (background cont
-
-# TODO D2 — `=== 本次对话 Earlier 摘要 ===` 摘要块（清单未登记，本轮扫描新发现）
-#   位置（仅备忘，行号会漂）：177, 183
-backend/lianyu-service/src/main/java/com/lianyu/service/conversation/SessionSummaryService.java::=== 本次对话 Earlier 摘要 ===
-backend/lianyu-service/src/main/java/com/lianyu/service/conversation/SessionSummaryService.java::说明：摘要描述本次聊天中较早的内容；与用户最近几条消息冲突时，以最近消息为准。
-
-# TODO D3 — Spring AI `@ToolParam` 工具描述；按「工具 schema 归 Python」红线待评估是否整段迁走
-#   位置（仅备忘，行号会漂）：22
-backend/lianyu-service/src/main/java/com/lianyu/service/tools/RecentActivityTool.java::查询「我」（当前角色）最近的生活动态：近几天写的日记、发的朋友圈、评论摘要。 当用户问你最近在干
-
-# TODO D3 — 同上
-#   位置（仅备忘，行号会漂）：18
-backend/lianyu-service/src/main/java/com/lianyu/service/tools/TimeTool.java::获取当前真实日期与时间（应用配置时区）。 当用户询问现在几点、今天几号、星期几、日期等与「当前时
-
-# TODO D3 — 同上
-#   位置（仅备忘，行号会漂）：38
-backend/lianyu-service/src/main/java/com/lianyu/service/tools/WeatherTool.java::查询指定城市当前天气（气温、体感、湿度、风速、天气描述）。 当用户问天气、冷不冷、要不要带伞、穿
+# ── 已清零（2026-10-31）────────────────────────────────────────────────
+# A1–A6 / B1–B3 / C1–C5 / D1–D3 全部落地：
+#   · 生活动态块段头与收尾 → recent_life_title_{zh,zh_tw,ja,en}.md + recent_life_closing.md
+#   · 会话摘要块 → session_summary_block.md
+#   · Spring AI @Tool/@ToolParam 描述 → 整段删除（WeatherTool / RecentActivityTool 已无调用方，
+#     直接删类；TimeTool 只保留取事实的方法，schema 归 Python app/tool_registry.py）
+# 目标态已达成：本文件不再有 backend/ 条目；新长出来的裸文案会立刻红。

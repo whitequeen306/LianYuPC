@@ -45,6 +45,26 @@ class CharacterRecentActivityServiceTest {
                 momentsCommentMapper,
                 characterMapper,
                 redisTemplate);
+        // 文案归 Python：单测里用最小 stub 回放段头/收尾两段，避免把文案抄进 Java 测试
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "promptPort",
+                new com.lianyu.service.agent.SceneInstructionPort() {
+                    @Override
+                    public String instruction(String scene, String outputLanguage) {
+                        return null;
+                    }
+
+                    @Override
+                    public String render(String name, java.util.Map<String, Object> variables,
+                                         int leadingNewlines) {
+                        if (name.startsWith("recent_life_title_")) {
+                            return "=== 你最近的生活动态（背景记忆，勿逐条复述） ===";
+                        }
+                        if ("recent_life_closing".equals(name)) {
+                            return "请勿逐条复述以上动态，仅作背景感知。";
+                        }
+                        return null;
+                    }
+                });
     }
 
     @Test
@@ -73,6 +93,16 @@ class CharacterRecentActivityServiceTest {
         assertTrue(block.contains("=== 你最近的生活动态"));
         assertTrue(block.contains("写了日记"));
         assertTrue(block.contains("雨夜"));
+    }
+
+    @Test
+    void formatForPrompt_withoutPromptPortDoesNotCacheFailure() {
+        // 端口缺失时返回空串，但绝不能把「空块」缓存一小时，否则恢复后仍读不到动态
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "promptPort", null);
+        when(valueOps.get(any())).thenReturn(null);
+
+        assertEquals("", service.formatForPrompt(1L, 2L, "zh"));
+        verify(valueOps, org.mockito.Mockito.never()).set(any(), any(), any());
     }
 
     @Test

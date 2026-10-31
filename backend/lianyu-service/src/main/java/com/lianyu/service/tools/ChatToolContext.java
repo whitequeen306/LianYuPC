@@ -5,7 +5,10 @@ import com.lianyu.service.dto.AiChatRequest;
 import java.util.Map;
 
 /**
- * 单次 AI 请求内绑定角色与用户，供 {@link MemorySearchTool}、{@link WeatherTool} 等使用。
+ * 单次 AI 请求内绑定角色与用户，供 {@link TimeTool} 等「取事实」的组件读取请求上下文。
+ *
+ * <p>模型工具（时间/天气/记忆/近况）已全部由 Python 侧声明与执行，这里只服务 Java
+ * 自身的只读事实拼装。
  */
 public final class ChatToolContext {
 

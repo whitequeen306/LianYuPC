@@ -47,15 +47,15 @@ Java 字面量还原（开分隔符后的换行不算内容 / 去公共缩进 / 
 
 护栏取不到时**跳过整条评论生成**：宁可少一条，也不要让角色把对方当成用户乱叫。
 
-### D. 盘点时漏掉、由新棘轮规则扫出来的（2026-10-26）
+### D. 盘点时漏掉、由新棘轮规则扫出来的（2026-10-26，2026-10-31 清零）
 
 清单初稿是**人眼**盘出来的，所以只能盘到「我搜索时想到的词」。规则 5 上线后实测多出 5 段：
 
-| # | 位置 | 方法 | 说明 |
-|---|---|---|---|
-| D1 | `CharacterRecentActivityService:164` | 生活动态块 | `=== Your recent life activities (background context, do not recap line by line) ===` |
-| D2 | `SessionSummaryService:177/183` | 会话摘要块 | `=== 本次对话 Earlier 摘要 ===` + 「与最近消息冲突时以最近为准」说明 |
-| D3 | `TimeTool:18` / `WeatherTool:38` / `RecentActivityTool:22` | `@ToolParam(description=...)` | Spring AI 工具描述。按红线「工具 schema 归 Python」**待评估**：要确认 Java 侧这套 `@Tool` 是否还活着，再决定整段迁走还是删掉 |
+| # | 位置 | 方法 | 说明 | 状态 |
+|---|---|---|---|---|
+| D1 | `CharacterRecentActivityService:164` | 生活动态块 | 段头 + 收尾提示 | ✅ `recent_life_title_{zh,zh_tw,ja,en}.md` + `recent_life_closing.md`；端口不可用时**不缓存空块** |
+| D2 | `SessionSummaryService:177/183` | 会话摘要块 | `=== 本次对话 Earlier 摘要 ===` + 「冲突以最近为准」 | ✅ `session_summary_block.md`（`leading_newlines=2`，与 golden 逐字一致） |
+| D3 | `TimeTool:18` / `WeatherTool:38` / `RecentActivityTool:22` | `@Tool` / `@ToolParam` | Spring AI 工具描述 | ✅ **判定为死代码后删除**：Java 侧模型调用为 0，`@Tool` 永无触发方；`WeatherTool` / `RecentActivityTool` 整类删除（连同测试），`TimeTool` 只保留取事实的方法 |
 
 > 这不是「清单不准」，而是**人盘点必然漏**的证据：规则 5 的价值就在于它不依赖记忆。
 

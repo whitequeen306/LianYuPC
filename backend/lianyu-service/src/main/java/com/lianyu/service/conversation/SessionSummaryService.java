@@ -31,6 +31,10 @@ public class SessionSummaryService {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
 
+    /** 文案归 Python（app/prompts/session_summary_block.md）；取不到就跳过摘要注入。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.service.agent.SceneInstructionPort promptPort;
+
     public String formatForPrompt(Long conversationId) {
         if (!properties.isEnabled() || conversationId == null) {
             return null;
@@ -169,20 +173,17 @@ public class SessionSummaryService {
         return REDIS_KEY_PREFIX + conversationId;
     }
 
-    /** 纯格式化（无 IO）：便于快照比对，行为与原先完全一致。 */
-    static String formatPrompt(String text) {
+    /**
+     * 摘要注入块。文案归 Python（app/prompts/session_summary_block.md），
+     * 前导两个空行由 leading_newlines=2 补；取不到就跳过注入，不在 Java 拼兜底。
+     */
+    private String formatPrompt(String text) {
         if (text == null || text.strip().isEmpty()) {
             return null;
         }
-        return """
-
-                
-                === 本次对话 Earlier 摘要 ===
-                """
-                + text.trim()
-                + """
-                
-                
-                说明：摘要描述本次聊天中较早的内容；与用户最近几条消息冲突时，以最近消息为准。""";
+        if (promptPort == null) {
+            return null;
+        }
+        return promptPort.render("session_summary_block", java.util.Map.of("summary", text.trim()), 2);
     }
 }
