@@ -23,12 +23,6 @@
 #   位置（仅备忘，行号会漂）：164
 backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterRecentActivityService.java::=== Your recent life activities (background cont
 
-# TODO B3 — 「@提及裁决器」判题 prompt
-#   B1/B2（四语主动发言 + 段头/禁止补丁）已于 2026-10-26 迁到
-#   backend-agent/app/prompts/group_proactive_task_{zh,zh_tw,ja,en}.md
-#   （原位置 244/249/254/260/280/284 已迁走，行号会漂）
-backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java::你是“群聊@提及裁决器”。只做一件事：判断当前消息是否应该添加一个@对象。 规则： 1) 只允许
-
 # TODO D2 — `=== 本次对话 Earlier 摘要 ===` 摘要块（清单未登记，本轮扫描新发现）
 #   位置（仅备忘，行号会漂）：177, 183
 backend/lianyu-service/src/main/java/com/lianyu/service/conversation/SessionSummaryService.java::=== 本次对话 Earlier 摘要 ===

@@ -33,7 +33,7 @@ Java 字面量还原（开分隔符后的换行不算内容 / 去公共缩进 / 
 |---|---|---|---|---|
 | B1 | `GroupChatService:244/249/254/260` | `sendProactiveGroupMessage` | 同一任务块的 **ja / en / zh-TW / zh** 四份 | ✅ 已迁（2026-10-26）：`group_proactive_task_{zh,zh_tw,ja,en}.md` |
 | B2 | `GroupChatService:280/284` | 同上 | 标题行 + 禁止条款补丁 | ✅ 已迁：并进同一批模板（段头/禁止条款在四语下都保持中文） |
-| B3 | `GroupChatService:989` | `decideMentionByJudgeModel` | 「群聊@提及裁决器」判题 prompt（非对话场景，需独立小端点） | ⬜ 待迁 |
+| B3 | `GroupChatService:989` | `decideMentionByJudgeModel` | 「群聊@提及裁决器」判题 prompt（非对话场景，需独立小端点） | ✅ 已迁（2026-10-31）：`group_mention_judge_{system,user}.md`，走 `SceneInstructionPort.render`（`leading_newlines=0`）；取不到就跳过 @ 决策，Java 不再有兜底文案 |
 
 ### C. 朋友圈（需新建文案，量大）
 

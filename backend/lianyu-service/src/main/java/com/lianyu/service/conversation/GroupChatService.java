@@ -994,18 +994,24 @@ public class GroupChatService {
             }
 
             String ctx = buildJudgeContext(historySnapshot, mentionJudgeContextMessages, nameMap);
-            String systemPrompt = """
-                    你是“群聊@提及裁决器”。只做一件事：判断当前消息是否应该添加一个@对象。
-                    规则：
-                    1) 只允许从候选列表中选择1个目标，或选择 NONE；
-                    2) 若语义没有明显点名对象，返回 NONE；
-                    3) 不要改写原句，不要输出解释；
-                    4) 仅输出 JSON：{"shouldMention":true/false,"target":"候选名或NONE","confidence":0~1}
-                    """;
-            String userPrompt = "说话者: " + speakerName
-                    + "\n候选目标: " + String.join("、", candidates)
-                    + "\n当前消息: " + content
-                    + "\n最近上下文:\n" + ctx;
+            // 文案与拼装顺序归 Python（app/prompts/group_mention_judge_{system,user}.md）。
+            // 取不到就跳过本次 @ 决策：宁可少一个 @，也不在这里编兜底文案。
+            if (promptPort == null) {
+                return null;
+            }
+            String systemPrompt = promptPort.render("group_mention_judge_system", Map.of(), 0);
+            if (systemPrompt == null || systemPrompt.isBlank()) {
+                return null;
+            }
+            Map<String, Object> judgeVars = new HashMap<>();
+            judgeVars.put("speaker", speakerName == null ? "" : speakerName);
+            judgeVars.put("candidates", String.join("、", candidates));
+            judgeVars.put("content", content == null ? "" : content);
+            judgeVars.put("context", ctx);
+            String userPrompt = promptPort.render("group_mention_judge_user", judgeVars, 0);
+            if (userPrompt == null || userPrompt.isBlank()) {
+                return null;
+            }
 
             com.lianyu.service.agent.AgentChatResult result = agentBlockingPort.complete(
                     userId,
