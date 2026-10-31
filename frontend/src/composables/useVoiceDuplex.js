@@ -1,9 +1,11 @@
 import { ref } from 'vue'
-import { buildVoiceWsUrl } from '@/utils/runtime'
+import { buildVoiceWsUrl, ensureApiOriginReady } from '@/utils/runtime'
 import { syncToken } from '@/utils/secureToken'
 import { usePcmCapture } from '@/composables/usePcmCapture'
 import { createPcmPlayback } from '@/composables/pcmPlayback'
 import { createTurnTailGate } from '@/composables/voiceTurnTail'
+import { shouldReuseVoiceSocket } from '@/composables/voiceSocket'
+import * as logger from '@/utils/logger'
 
 /**
  * Duplex voice session over /ws/voice.
@@ -158,8 +160,15 @@ export function useVoiceDuplex() {
   }
 
   async function connect() {
-    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    // 只复用真正 OPEN 的连接。CONNECTING/CLOSING 一律重建，否则握手失败的
+    // 残留 socket 会让后续每次「开始通话」静默跳过握手：麦克风开着，
+    // PCM 帧因 readyState 不是 OPEN 被丢弃，服务端没有任何记录（见 voiceSocket.js）。
+    if (shouldReuseVoiceSocket(ws)) {
       return
+    }
+    if (ws) {
+      try { ws.close() } catch { /* ignore */ }
+      ws = null
     }
     const token = syncToken()
     if (!token) {
@@ -168,28 +177,42 @@ export function useVoiceDuplex() {
     // 首帧认证：URL 不再携带 token（避免进入服务器访问日志），
     // 连接建立后先发 {"type":"auth","token":...}，等 ready 才算就绪。
     const url = buildVoiceWsUrl()
+    logger.info('voice', `connecting ${url}`)
     await new Promise((resolve, reject) => {
       const socket = new WebSocket(url)
       ws = socket
       socket.binaryType = 'arraybuffer'
-      const timer = setTimeout(() => {
-        reject(new Error('语音通道连接超时'))
+      let settled = false
+      /** @type {ReturnType<typeof setTimeout> | undefined} */
+      let timer
+      const fail = (err) => {
+        if (settled) return
+        settled = true
+        if (timer) clearTimeout(timer)
+        // 失败必须把引用清掉：否则下一次连接会命中复用判定，永久静默失败。
+        if (ws === socket) ws = null
+        connected.value = false
+        logger.warn('voice', `connect failed: ${err?.message || err} url=${url}`)
         try { socket.close() } catch { /* ignore */ }
-      }, 12000)
+        reject(err)
+      }
+      /**
+       * 握手期任何非 ready 的收尾都要拒绝，不能只等 12s 超时：
+       * 服务端在 /ws/voice 上可能直接 close（未授权/过载），旧实现会 hang 住，
+       * 表现为「不报错、也不说话」，用户只能手动挂断。
+       */
+      timer = setTimeout(() => fail(new Error('语音通道连接超时')), 12000)
       socket.onopen = () => {
         try {
           socket.send(JSON.stringify({ type: 'auth', token }))
         } catch (e) {
-          clearTimeout(timer)
-          reject(e)
+          fail(e)
         }
       }
-      socket.onerror = () => {
-        clearTimeout(timer)
-        reject(new Error('语音通道连接失败'))
-      }
+      socket.onerror = () => fail(new Error('语音通道连接失败'))
       socket.onclose = () => {
         connected.value = false
+        fail(new Error('语音通道连接被关闭'))
       }
       socket.onmessage = (ev) => {
         if (typeof ev.data !== 'string') {
@@ -198,15 +221,15 @@ export function useVoiceDuplex() {
         try {
           const msg = JSON.parse(ev.data)
           if (msg?.type === 'ready') {
-            clearTimeout(timer)
+            settled = true
+            if (timer) clearTimeout(timer)
             connected.value = true
+            logger.info('voice', 'connected (ready)')
             resolve()
             return
           }
           if (msg?.type === 'error' && !connected.value) {
-            clearTimeout(timer)
-            reject(new Error(String(msg.message || '语音通道认证失败')))
-            try { socket.close() } catch { /* ignore */ }
+            fail(new Error(String(msg.message || '语音通道认证失败')))
             return
           }
         } catch { /* 非 JSON 帧，交给统一处理 */ }
@@ -220,6 +243,9 @@ export function useVoiceDuplex() {
     onEvent = cb || null
     lastError.value = ''
     partialText.value = ''
+    // 语音 URL 由渲染进程自己拼，必须等主进程下发 apiOrigin，
+    // 否则会退回 127.0.0.1:8080 兜底（表现为握手一直挂起）。
+    await ensureApiOriginReady()
     await connect()
     sendJson({ type: 'session.start', mode: 'dictation' })
     await startPcmStream({
@@ -239,6 +265,8 @@ export function useVoiceDuplex() {
     turnTail.stop()
     phase.value = 'idle'
     playback = createPcmPlayback({ sampleRate: 24000 })
+    // 同 dictation：先确保拿到了真实 apiOrigin 再拼 wss 地址。
+    await ensureApiOriginReady()
     await connect()
     sendJson({ type: 'session.start', mode: 'call', conversationId })
     await startPcmStream({
@@ -249,6 +277,7 @@ export function useVoiceDuplex() {
       },
       onEndpoint: () => sendJson({ type: 'endpoint' }),
     })
+    logger.info('voice', 'call pcm stream started')
   }
 
   async function stop() {

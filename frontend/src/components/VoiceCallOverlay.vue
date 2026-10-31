@@ -256,15 +256,19 @@ async function startCallSession() {
   try {
     live.value = true
     startElapsedTimer()
-    ElMessage.info('通话已开始，请直接说话，可随时打断')
     await startCall({
       conversationId: props.conversationId,
       vadProfile: 'strict',
       onEvent: handleDuplexEvent,
     })
+    // 提示放在握手成功之后：此前不管连没连上都提示「通话已开始」，
+    // 用户会以为在说话，其实一帧都没发出去。
+    ElMessage.info('通话已开始，请直接说话，可随时打断')
   } catch (err) {
+    // 失败必须回收：残留的 CONNECTING socket 会让下一次点击静默跳过握手。
     live.value = false
     stopElapsedTimer()
+    await stopDuplex().catch(() => {})
     ElMessage.error(humanizeError(err, '无法开始语音通话'))
   }
 }
