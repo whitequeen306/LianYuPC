@@ -1,6 +1,7 @@
 package com.lianyu.service.conversation;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 import com.lianyu.dao.entity.Conversation;
@@ -21,8 +22,12 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 
 class ProactiveChatSchedulerRelationshipTest {
 
+    /**
+     * 旧断言是「受伤即沉默」。新决策：受伤改成低频试探（0.25 倍），只有已被未回复节流暂停时才闭嘴，
+     * 否则用户会把受伤理解成被抛弃。这里锁定新语义。
+     */
     @Test
-    void isEligible_rejectsProactiveMessageWhenRelationshipIsFreshlyInjured() throws Exception {
+    void isEligible_allowsLowFrequencyProbeWhenInjuredButNotThrottled() throws Exception {
         ConversationMapper conversationMapper = Mockito.mock(ConversationMapper.class);
         MessageMapper messageMapper = Mockito.mock(MessageMapper.class);
         CharacterMapper characterMapper = Mockito.mock(CharacterMapper.class);
@@ -57,7 +62,7 @@ class ProactiveChatSchedulerRelationshipTest {
 
         Message lastMessage = new Message();
         lastMessage.setRole("USER");
-        lastMessage.setCreatedAt(LocalDateTime.now());
+        lastMessage.setCreatedAt(LocalDateTime.now().minusHours(2));
 
         when(relationshipStateService.getSnapshot(3L, 5L)).thenReturn(
                 RelationshipSnapshot.builder()
@@ -86,6 +91,17 @@ class ProactiveChatSchedulerRelationshipTest {
                 lastMessage,
                 RelationshipPhase.INJURED);
 
-        assertFalse(result);
+        assertTrue(result);
+
+        when(proactiveUnrepliedThrottle.isPaused(11L)).thenReturn(true);
+        boolean throttled = (boolean) isEligibleMethod.invoke(
+                scheduler,
+                conversation,
+                behavior,
+                behavior.minIdleMinutes(),
+                lastMessage,
+                lastMessage,
+                RelationshipPhase.INJURED);
+        assertFalse(throttled);
     }
 }

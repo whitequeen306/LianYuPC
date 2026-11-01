@@ -11,7 +11,7 @@ class RelationshipHeuristicsTest {
     void classifyUserTurn_marksDismissiveReplyForShortColdAnswers() {
         List<RelationshipEventInput> events = RelationshipHeuristics.fromUserTurn(
                 7L, 9L, 11L, 13L,
-                "嗯", "你刚刚认真提到难过的事", false);
+                "嗯", "你刚刚认真提到难过的事");
 
         assertEquals(RelationshipEventType.USER_DISMISSIVE_RESPONSE, events.get(0).eventType());
     }

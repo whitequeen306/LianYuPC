@@ -1,6 +1,8 @@
 package com.lianyu.service.relationship;
 
 public enum RelationshipEventType {
+    /** 当天第一次出现：陪伴的基本盘，不靠用户说出某句特定台词才成长。 */
+    DAILY_PRESENCE,
     USER_VULNERABLE_SHARE,
     USER_WARM_RESPONSE,
     USER_DISMISSIVE_RESPONSE,

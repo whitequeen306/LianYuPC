@@ -168,11 +168,13 @@ public class EngagementFrequencyScorer {
             return 1.0;
         }
         return switch (phase) {
-            case DEPENDENT, STABLE_INTIMATE -> 1.18;
+            case STABLE_INTIMATE -> 1.40;
+            case DEPENDENT -> 1.25;
             case FAMILIAR -> 1.08;
-            case REPAIRING -> 0.88;
-            case TESTING -> 0.82;
-            case INJURED -> 0.0;
+            case REPAIRING -> 0.90;
+            case TESTING -> 0.85;
+            // 受伤后彻底消失会被理解成被抛弃：降频但不沉默，留一条修复的通道
+            case INJURED -> 0.25;
         };
     }
 

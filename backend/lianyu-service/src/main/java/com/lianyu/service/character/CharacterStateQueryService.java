@@ -5,8 +5,11 @@ import com.lianyu.common.base.Result;
 import com.lianyu.dao.entity.Character;
 import com.lianyu.dao.entity.CharacterDiary;
 import com.lianyu.dao.entity.CharacterState;
+import com.lianyu.dao.entity.RelationshipMilestone;
 import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.service.relationship.RelationshipInnerSpace;
+import com.lianyu.service.relationship.RelationshipPresence;
+import com.lianyu.service.relationship.RelationshipSnapshot;
 import com.lianyu.service.relationship.RelationshipStateService;
 import com.lianyu.service.storage.FileStorageService;
 import java.util.ArrayList;
@@ -161,18 +164,60 @@ public class CharacterStateQueryService {
     }
 
     private void putInnerSpace(Map<String, Object> item, Long userId, Long characterId) {
-        RelationshipInnerSpace innerSpace = safeInnerSpace(userId, characterId);
-        item.put("innerSpaceHeadline", innerSpace.headline());
-        item.put("innerSpaceBody", innerSpace.body());
+        RelationshipStateService.RelationshipView view = safeRelationshipView(userId, characterId);
+        item.put("innerSpaceHeadline", view.innerSpace().headline());
+        item.put("innerSpaceBody", view.innerSpace().body());
+        putRelationship(item, view);
     }
 
-    private RelationshipInnerSpace safeInnerSpace(Long userId, Long characterId) {
+    /**
+     * 关系是纯事实（阶段枚举 + 分数 + 陪伴时间 + 里程碑），文案全部交给前端 i18n：
+     * 阶段标签随语言变化，Java 只回机器可读的枚举名与 key。
+     */
+    private void putRelationship(Map<String, Object> item, RelationshipStateService.RelationshipView view) {
+        RelationshipSnapshot snapshot = view.snapshot();
+        if (snapshot == null) {
+            item.put("relationshipPhase", null);
+            return;
+        }
+        item.put("relationshipPhase", snapshot.phase() != null ? snapshot.phase().name() : null);
+        item.put("relationshipTrustScore", snapshot.trustScore());
+        item.put("relationshipIntimacyScore", snapshot.intimacyScore());
+        item.put("relationshipSecurityScore", snapshot.securityScore());
+        item.put("relationshipAnticipationScore", snapshot.anticipationScore());
+
+        RelationshipPresence presence = view.presence();
+        if (presence != null) {
+            item.put("relationshipDaysKnown", presence.daysKnown());
+            item.put("relationshipStreakDays", presence.streakDays());
+            item.put("relationshipAwayHours", presence.awayHours());
+            item.put("relationshipNextPhase",
+                    presence.nextPhase() != null ? presence.nextPhase().name() : null);
+            item.put("relationshipProgress", presence.progressToNext());
+        }
+        List<Map<String, Object>> milestones = new ArrayList<>();
+        if (view.milestones() != null) {
+            for (RelationshipMilestone milestone : view.milestones()) {
+                Map<String, Object> entry = new LinkedHashMap<>();
+                entry.put("key", milestone.getMilestoneKey());
+                entry.put("happenedAt", milestone.getHappenedAt());
+                milestones.add(entry);
+            }
+        }
+        item.put("relationshipMilestones", milestones);
+    }
+
+    private RelationshipStateService.RelationshipView safeRelationshipView(Long userId, Long characterId) {
         try {
-            return relationshipStateService.buildInnerSpace(userId, characterId);
+            return relationshipStateService.loadView(userId, characterId);
         } catch (RuntimeException e) {
-            log.warn("Inner space build failed: userId={}, characterId={}, reason={}",
+            log.warn("Relationship view build failed: userId={}, characterId={}, reason={}",
                     userId, characterId, e.getMessage());
-            return RelationshipInnerSpace.defaultSpace();
+            return new RelationshipStateService.RelationshipView(
+                    null,
+                    RelationshipInnerSpace.defaultSpace(),
+                    RelationshipPresence.empty(),
+                    List.of());
         }
     }
 }

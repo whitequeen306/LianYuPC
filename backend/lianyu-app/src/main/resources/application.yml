@@ -393,6 +393,13 @@ lianyu:
       interval-ms: 900000   # 15 min
     decay-interval-minutes: 60
 
+  relationship:
+    # 关系时间衰减：不见面累积想念、安心向基线回归、三天后亲密缓慢回落。
+    # 每天按 last_decay_at 结算一次，本调度只是触发器。
+    decay:
+      enabled: true
+      interval-ms: 1800000   # 30 min
+
   diary:
     # 角色日记触发算法：
     #   候选 = 当天有过用户消息的 SINGLE 会话（按当天用户消息数降序）；

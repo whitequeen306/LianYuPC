@@ -293,7 +293,9 @@ public class ProactiveChatScheduler {
         if (conv.getCharacterId() == null || !behavior.proactiveEnabled()) {
             return false;
         }
-        if (phase == RelationshipPhase.INJURED) {
+        // INJURED 不再硬跳过：关系层把它降到 0.25 倍低频试探，配合既有冷却与未回复节流，
+        // 让「受伤」表现为小心翼翼，而不是角色消失。
+        if (phase == RelationshipPhase.INJURED && proactiveUnrepliedThrottle.isPaused(conv.getId())) {
             return false;
         }
         if (Boolean.TRUE.equals(redisTemplate.hasKey(cooldownKey(conv.getId())))) {
