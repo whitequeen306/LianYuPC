@@ -24,11 +24,19 @@ logger = logging.getLogger(__name__)
 
 
 async def load_relationship(user_id: int, character_id: int) -> dict[str, Any] | None:
-    """返回 {phase, trust, intimacy, security, anticipation, events}；无状态行返回 None。"""
+    """返回 {phase, trust, intimacy, security, anticipation, days_known, streak_days, away_hours, events}。
+
+    陪伴事实（第几天 / 连续几天 / 多久没见）用 **数据库时钟**计算，
+    与 Java `RelationshipPresence` 保持同一口径，避免两端时区漂移。
+    events 带 event_type：角色自己说过的话要标成「你说过」，否则模型会把归属搞反。
+    """
     if not user_id or not character_id:
         return None
     rows = await fetch_all(
-        "SELECT phase, trust_score, intimacy_score, security_score, anticipation_score "
+        "SELECT phase, trust_score, intimacy_score, security_score, anticipation_score, "
+        "streak_days, "
+        "TIMESTAMPDIFF(HOUR, last_interaction_at, NOW()) AS away_hours, "
+        "DATEDIFF(NOW(), created_at) + 1 AS days_known "
         "FROM relationship_state WHERE user_id = %s AND character_id = %s LIMIT 1",
         (user_id, character_id),
     )
@@ -37,7 +45,7 @@ async def load_relationship(user_id: int, character_id: int) -> dict[str, Any] |
     row = rows[0]
     settings = get_settings()
     events = await fetch_all(
-        "SELECT summary FROM relationship_event "
+        "SELECT event_type, summary FROM relationship_event "
         "WHERE user_id = %s AND character_id = %s AND summary IS NOT NULL "
         "ORDER BY created_at DESC LIMIT %s",
         (user_id, character_id, max(1, settings.relationship_recent_events)),
@@ -48,7 +56,13 @@ async def load_relationship(user_id: int, character_id: int) -> dict[str, Any] |
         "intimacy": int(row.get("intimacy_score") or 0),
         "security": int(row.get("security_score") or 0),
         "anticipation": int(row.get("anticipation_score") or 0),
-        "events": [str(e["summary"]) for e in events if e.get("summary")],
+        "days_known": int(row.get("days_known") or 1),
+        "streak_days": int(row.get("streak_days") or 0),
+        "away_hours": int(row.get("away_hours") or 0),
+        "events": [
+            {"type": str(e.get("event_type") or ""), "summary": str(e["summary"])}
+            for e in events if e.get("summary")
+        ],
     }
 
 
@@ -214,7 +228,8 @@ async def load_memory_context(user_id: int, character_id: int,
                             include_relationship: bool = True,
                             include_session: bool = True,
                             last_user_message: str | None = None,
-                            session_summary_override: str | None = None) -> str | None:
+                            session_summary_override: str | None = None,
+                            lang: str | None = "zh") -> str | None:
     """记忆 + 关系 + 会话摘要的连接结果（对齐 Java `joinBlocks`）。
 
     记忆块复用与 Java 相同的取数策略（见 `load_profile_block`）。
@@ -235,6 +250,8 @@ async def load_memory_context(user_id: int, character_id: int,
             phase=relationship["phase"], trust=relationship["trust"],
             intimacy=relationship["intimacy"], security=relationship["security"],
             anticipation=relationship["anticipation"], recent_events=relationship["events"],
+            days_known=relationship["days_known"], streak_days=relationship["streak_days"],
+            away_hours=relationship["away_hours"], lang=lang,
         ))
 
     # 显式传入优先：摘要在本轮可能被更新，异步读会拿到新值造成假差异

@@ -38,7 +38,12 @@ async def test_load_relationship_returns_raw_fields(fake_db):
     data = await dr.load_relationship(7, 3)
     assert data["phase"] == "TESTING"
     assert data["trust"] == 80
-    assert data["events"] == ["一起看流星雨", "吵过一次架"]
+    assert data["events"] == [
+        {"type": "", "summary": "一起看流星雨"},
+        {"type": "", "summary": "吵过一次架"},
+    ]
+    assert data["days_known"] == 1
+    assert data["away_hours"] == 0
 
 
 @pytest.mark.asyncio
@@ -60,7 +65,7 @@ async def test_load_relationship_skips_blank_events(fake_db):
     }]
     fake_db["rows"]["FROM relationship_event"] = [{"summary": ""}, {"summary": "有效事件"}]
     data = await dr.load_relationship(7, 3)
-    assert data["events"] == ["有效事件"]
+    assert data["events"] == [{"type": "", "summary": "有效事件"}]
 
 
 # ── 情绪 ──
@@ -123,10 +128,11 @@ async def test_load_memory_context_joins_three_blocks(fake_db):
     block = await dr.load_memory_context(7, 3, conversation_id=42)
 
     assert "[用户画像]" in block
-    assert "关系阶段: testing" in block  # 非法 phase 回退为 Java 的默认 TESTING
+    assert "=== 关系 ===" in block
+    assert "阶段：试探中" in block  # 非法 phase 回退为默认 TESTING
     assert "本次对话 Earlier 摘要" in block
     # 顺序：记忆 → 关系 → 摘要
-    assert block.index("[用户画像]") < block.index("关系阶段") < block.index("Earlier 摘要")
+    assert block.index("[用户画像]") < block.index("=== 关系 ===") < block.index("Earlier 摘要")
 
 
 @pytest.mark.asyncio

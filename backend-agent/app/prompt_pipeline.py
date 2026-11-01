@@ -252,6 +252,7 @@ async def _fill_internal_data(
             **scene_include_flags(scene),
             last_user_message=last_user_message,
             session_summary_override=session_summary,
+            lang=output_language or "zh",
         ) or ""
 
     if not emotion_block:
