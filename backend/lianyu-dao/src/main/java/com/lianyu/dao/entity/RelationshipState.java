@@ -23,6 +23,10 @@ public class RelationshipState {
     private LocalDateTime lastInjuryAt;
     private LocalDateTime lastRepairAt;
     private LocalDateTime lastProactiveAt;
+    private LocalDateTime lastInteractionAt;
+    private Integer streakDays;
+    private java.time.LocalDate streakAnchorDate;
+    private LocalDateTime lastDecayAt;
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
     @TableField(fill = FieldFill.INSERT_UPDATE)
