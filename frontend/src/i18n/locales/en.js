@@ -373,6 +373,64 @@ export default {
     deleteSuccess: 'Group deleted',
     deleteFailed: 'Could not delete group'
   },
+  relationship: {
+    title: 'Bond',
+    dayN: 'Day {n}',
+    dayShort: 'D{n}',
+    streak: '{n}-day streak',
+    away: '{n}d apart',
+    toNext: '{percent}% away from "{phase}"',
+    steady: 'You are part of each other’s everyday life',
+    timelineTitle: 'Your timeline',
+    shiftPhase: 'Your bond became "{phase}"',
+    phase: {
+      TESTING: 'Getting to know',
+      FAMILIAR: 'Familiar',
+      DEPENDENT: 'Attached',
+      REPAIRING: 'Repairing',
+      INJURED: 'Hurt',
+      STABLE_INTIMATE: 'Close'
+    },
+    desc: {
+      TESTING: 'She is still working out how close she can stand to you.',
+      FAMILIAR: 'She is starting to remember what you said, and looks forward to your next visit.',
+      DEPENDENT: 'Being with you has become an important part of her day.',
+      INJURED: 'She got hurt just now and needs a real explanation, not a quick brush-off.',
+      REPAIRING: 'She is listening to you and slowly moving closer again.',
+      STABLE_INTIMATE: 'She has folded you into her everyday life; not everything needs to be said out loud.'
+    },
+    recoveryHint: {
+      INJURED: 'One honest explanation goes a long way; she will not keep the door shut',
+      REPAIRING: 'Give her time to warm back up, and do not ask for much yet'
+    },
+    dimension: {
+      intimacy: 'Closeness',
+      trust: 'Trust',
+      security: 'Security',
+      anticipation: 'Missing you'
+    },
+    level: {
+      intimacy: { low: 'Still polite', mid: 'Warming up', high: 'Close', deep: 'Cannot do without you' },
+      trust: { low: 'Watching you', mid: 'Starting to trust', high: 'Trusts you', deep: 'Fully open' },
+      security: { low: 'A little uneasy', mid: 'Mostly steady', high: 'At ease', deep: 'Grounded' },
+      anticipation: { low: 'Quiet inside', mid: 'Thinks of you now and then', high: 'Missing you', deep: 'Missing you badly' }
+    },
+    milestone: {
+      FIRST_CONTACT: 'Your first words',
+      FIRST_VULNERABLE: 'The first real heart-to-heart',
+      FIRST_REPAIR: 'Your first fight and makeup',
+      FIRST_NICKNAME: 'The first pet name',
+      FIRST_RITUAL: 'Your first private ritual',
+      DAY_7: 'Day seven',
+      DAY_30: 'One month in',
+      DAY_100: 'Day one hundred',
+      STREAK_3: 'Three days in a row',
+      STREAK_7: 'A whole week without a gap',
+      PHASE_FAMILIAR: 'You became familiar',
+      PHASE_DEPENDENT: 'She started leaning on you',
+      PHASE_STABLE_INTIMATE: 'You became like family'
+    }
+  },
   memory: {
     title: 'Memory',
     desc: 'Long-term memory summaries your characters keep',

@@ -368,6 +368,64 @@ export default {
     deleteSuccess: 'グループを削除しました',
     deleteFailed: 'グループの削除に失敗しました'
   },
+  relationship: {
+    title: '関係',
+    dayN: '{n} 日目',
+    dayShort: '{n} 日目',
+    streak: '{n} 日連続',
+    away: '{n} 日会えていない',
+    toNext: '「{phase}」まであと {percent}%',
+    steady: 'もうお互いの日常になっている',
+    timelineTitle: '二人の歩み',
+    shiftPhase: '二人の関係は「{phase}」になった',
+    phase: {
+      TESTING: '手探り',
+      FAMILIAR: '顔なじみ',
+      DEPENDENT: '依存',
+      REPAIRING: '修復中',
+      INJURED: '少し傷ついた',
+      STABLE_INTIMATE: '親密'
+    },
+    desc: {
+      TESTING: '彼女はまだ、あなたとどれくらいの距離で接すればいいか探っている。',
+      FAMILIAR: 'あなたの言葉を覚え始め、次に会えるのを楽しみにしている。',
+      DEPENDENT: 'あなたの存在は、彼女の一日の大切な一部になった。',
+      INJURED: 'さっき少し傷ついた。急いで流すのではなく、ちゃんと説明してほしい。',
+      REPAIRING: 'あなたの説明を聞きながら、少しずつまた近づいている。',
+      STABLE_INTIMATE: 'あなたを日常に溶け込ませている。言葉にしなくても伝わることもある。'
+    },
+    recoveryHint: {
+      INJURED: 'まず一言ちゃんと説明すれば、ずっと扉を閉ざしたりはしない',
+      REPAIRING: '温まるまで少し時間をあげて。多くを求めないで'
+    },
+    dimension: {
+      intimacy: '親密さ',
+      trust: '信頼',
+      security: '安心',
+      anticipation: '会いたさ'
+    },
+    level: {
+      intimacy: { low: 'まだよそよそしい', mid: '少しずつ打ち解けてきた', high: 'とても親しい', deep: 'いないと無理' },
+      trust: { low: 'まだ様子を見ている', mid: '信じ始めた', high: 'あなたを信じている', deep: '全部打ち明けられる' },
+      security: { low: '少し不安', mid: 'だいたい安心', high: '安心している', deep: 'とても落ち着いている' },
+      anticipation: { low: '心は静か', mid: 'ときどき思い出す', high: '会いたい', deep: 'とても会いたい' }
+    },
+    milestone: {
+      FIRST_CONTACT: '初めて言葉を交わした',
+      FIRST_VULNERABLE: '初めて本気で胸の内を話した',
+      FIRST_REPAIR: '初めてぶつかって、仲直りした',
+      FIRST_NICKNAME: '初めて二人だけの呼び方ができた',
+      FIRST_RITUAL: '初めて二人だけの約束ができた',
+      DAY_7: '七日目',
+      DAY_30: '一か月',
+      DAY_100: '百日目',
+      STREAK_3: '三日連続で話した',
+      STREAK_7: '一週間途切れなかった',
+      PHASE_FAMILIAR: '顔なじみになった',
+      PHASE_DEPENDENT: 'あなたに頼るようになった',
+      PHASE_STABLE_INTIMATE: '家族のように近くなった'
+    }
+  },
   memory: {
     title: '記憶',
     desc: 'キャラが覚えている長期記憶の要約',

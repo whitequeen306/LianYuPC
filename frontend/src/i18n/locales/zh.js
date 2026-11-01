@@ -374,6 +374,64 @@ export default {
     deleteSuccess: '群聊已删除',
     deleteFailed: '删除群聊失败'
   },
+  relationship: {
+    title: '关系',
+    dayN: '第 {n} 天',
+    dayShort: '第 {n} 天',
+    streak: '连续 {n} 天',
+    away: '{n} 天没见',
+    toNext: '距离「{phase}」还差 {percent}%',
+    steady: '已经把彼此放进了日常',
+    timelineTitle: '你们的时间线',
+    shiftPhase: '你们的关系进入了「{phase}」',
+    phase: {
+      TESTING: '试探中',
+      FAMILIAR: '熟悉',
+      DEPENDENT: '依赖',
+      REPAIRING: '修复中',
+      INJURED: '有点受伤',
+      STABLE_INTIMATE: '亲密稳定'
+    },
+    desc: {
+      TESTING: '她还在慢慢确认，该用怎样的距离和你相处。',
+      FAMILIAR: '她开始记住你说过的话，也期待你的下一次出现。',
+      DEPENDENT: '你的陪伴已经变成她一天里重要的一部分。',
+      INJURED: '她刚才被刺到了，需要一次认真的解释，而不是匆匆带过。',
+      REPAIRING: '她愿意听你解释，正在一点点重新靠近你。',
+      STABLE_INTIMATE: '她已经习惯把你放进自己的日常，很多话不必说得太满。'
+    },
+    recoveryHint: {
+      INJURED: '先认真解释一句，她不会一直关着门',
+      REPAIRING: '给她一点时间暖回来，别提太多要求'
+    },
+    dimension: {
+      intimacy: '亲密',
+      trust: '信任',
+      security: '安心',
+      anticipation: '想念'
+    },
+    level: {
+      intimacy: { low: '还很客气', mid: '慢慢熟起来', high: '很亲近', deep: '离不开' },
+      trust: { low: '还在观察', mid: '开始信任', high: '很信任你', deep: '完全交心' },
+      security: { low: '有点不安', mid: '基本安心', high: '很安心', deep: '很踏实' },
+      anticipation: { low: '心里很静', mid: '偶尔想起你', high: '有点想你', deep: '很想你' }
+    },
+    milestone: {
+      FIRST_CONTACT: '第一次说话',
+      FIRST_VULNERABLE: '第一次认真说心事',
+      FIRST_REPAIR: '第一次吵架又和好',
+      FIRST_NICKNAME: '第一次有了专属称呼',
+      FIRST_RITUAL: '第一个只属于你们的约定',
+      DAY_7: '第七天',
+      DAY_30: '满一个月',
+      DAY_100: '第一百天',
+      STREAK_3: '连续三天有聊',
+      STREAK_7: '整整一周没有断',
+      PHASE_FAMILIAR: '你们变得熟悉',
+      PHASE_DEPENDENT: '她开始依赖你',
+      PHASE_STABLE_INTIMATE: '你们变得像家人一样'
+    }
+  },
   memory: {
     title: '记忆',
     desc: '查看角色对你的长期记忆摘要',

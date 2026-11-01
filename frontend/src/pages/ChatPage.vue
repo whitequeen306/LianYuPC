@@ -23,12 +23,17 @@
           <h2 class="gal-header__name" :class="{ 'is-typing': showHeaderTyping }">
             {{ headerTitle }}
           </h2>
-          <EmotionBadge
-            v-if="emotionState"
-            :current-emotion="emotionState.currentEmotion"
-            :emotion-intensity="emotionState.emotionIntensity"
-            :status-text="emotionState.statusText"
-          />
+          <div v-if="emotionState" class="gal-header__badges">
+            <EmotionBadge
+              :current-emotion="emotionState.currentEmotion"
+              :emotion-intensity="emotionState.emotionIntensity"
+              :status-text="emotionState.statusText"
+            />
+            <RelationshipBadge
+              :state="emotionState"
+              :inner-space-body="emotionState.innerSpaceBody || ''"
+            />
+          </div>
         </div>
         <button
           v-if="voiceCallEnabled"
@@ -333,7 +338,9 @@ import { nextCharacterAvatarTier, resolveCharacterAvatarSrc } from '@/utils/char
 import { PLATFORM_PROVIDER } from '@/constants/ai'
 import { normalizeHex } from '@/utils/themeColor'
 import EmotionBadge from '@/components/EmotionBadge.vue'
+import RelationshipBadge from '@/components/RelationshipBadge.vue'
 import { getCharacterState } from '@/api/characterState'
+import { diffRelationshipView } from '@/utils/relationship'
 import { setActiveChatConversationId, setActiveChatRefreshHandler, setActiveChatActor } from '@/composables/useActiveChatContext'
 import {
   splitAssistantReply,
@@ -854,10 +861,36 @@ function goBack() {
 async function loadEmotionState() {
   if (!activeCharacter.value?.id) return
   try {
-    emotionState.value = await getCharacterState(activeCharacter.value.id, { silent: true })
+    const next = await getCharacterState(activeCharacter.value.id, { silent: true })
+    notifyRelationshipShift(emotionState.value, next)
+    emotionState.value = next
   } catch {
     emotionState.value = null
   }
+}
+
+/**
+ * 关系变化必须被看见，否则后端做得再好用户也感知不到。
+ * 只播报「跨越阈值」的变化：阶段跃迁优先，其次是单项 >= 3 分的变化，
+ * 避免每说一句话就弹提示。
+ */
+function notifyRelationshipShift(previous, next) {
+  const { phaseChanged, deltas } = diffRelationshipView(previous, next)
+  if (phaseChanged) {
+    const phaseKey = `relationship.phase.${phaseChanged.to}`
+    ElMessage({
+      message: t('relationship.shiftPhase', { phase: t(phaseKey) }),
+      type: 'success',
+      duration: 3200,
+      grouping: true
+    })
+    return
+  }
+  if (!deltas.length) return
+  const text = deltas
+    .map((item) => `${t(`relationship.dimension.${item.key}`)} ${item.delta > 0 ? '+' : ''}${item.delta}`)
+    .join(' · ')
+  ElMessage({ message: `♥ ${text}`, type: 'success', duration: 2200, grouping: true })
 }
 
 async function loadRecentMessages(convId) {
@@ -1633,6 +1666,14 @@ function formatTime(ts) {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.gal-header__badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: $space-2;
+  min-width: 0;
 }
 
 .gal-header__name {
