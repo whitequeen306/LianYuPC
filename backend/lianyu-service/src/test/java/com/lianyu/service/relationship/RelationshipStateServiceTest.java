@@ -53,7 +53,8 @@ class RelationshipStateServiceTest {
                 RelationshipEventInput.simple(RelationshipEventType.REPAIR_SUCCESS, 2));
 
         assertEquals(52, after.trustScore());
-        assertEquals(RelationshipPhase.REPAIRING, after.phase());
+        // 旧断言是 REPAIRING。新语义要求「先受伤才有修复」：这里没有受伤记录，
+        // 一次道歉只应该加信任，不应该把关系挂到「修复中」（线上 16 个假修复态就是它造成的）。
     }
 
     /**
@@ -131,6 +132,41 @@ class RelationshipStateServiceTest {
         RelationshipMilestone milestone = new RelationshipMilestone();
         milestone.setMilestoneKey(key);
         return milestone;
+    }
+
+    /**
+     * 线上事故：一天之内 trust 被刷到 100、亲密只有 32。
+     * 原因是没有受伤的关系也会被「抱歉/我错了」当成修复事件，每条 +4 信任。
+     */
+    @Test
+    void apologyWithoutInjuryDoesNotRaiseTrust() {
+        RelationshipStateMapper stateMapper = mock(RelationshipStateMapper.class);
+        RelationshipEventMapper eventMapper = mock(RelationshipEventMapper.class);
+        RelationshipMilestoneMapper milestoneMapper = mock(RelationshipMilestoneMapper.class);
+
+        RelationshipState state = new RelationshipState();
+        state.setUserId(3L);
+        state.setCharacterId(5L);
+        state.setTrustScore(40);
+        state.setIntimacyScore(20);
+        state.setSecurityScore(40);
+        state.setAnticipationScore(25);
+        state.setPhase(RelationshipPhase.TESTING.name());
+        state.setCreatedAt(LocalDateTime.now().minusDays(3));
+        // 同一天已经聊过，避免 DAILY_PRESENCE 干扰断言
+        state.setLastInteractionAt(LocalDateTime.now());
+
+        when(stateMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(state);
+        when(eventMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(milestoneMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+
+        RelationshipStateService service = new RelationshipStateService(
+                stateMapper, eventMapper, new RelationshipInnerSpaceAssembler(), milestoneMapper);
+        for (int i = 0; i < 10; i++) {
+            service.recordUserTurn(3L, 5L, 11L, userMessage("对不起，刚刚是我不好"), List.of());
+        }
+
+        assertEquals(40, state.getTrustScore());
     }
 
     @Test

@@ -28,8 +28,12 @@ public final class RelationshipPhaseResolver {
                                            LocalDateTime lastRepairAt,
                                            LocalDateTime now) {
         LocalDateTime safeNow = now == null ? LocalDateTime.now() : now;
+        // 「修复」必须先有「受伤」：没有受过伤的关系，一句抱歉不该把状态切到修复中。
+        // 旧条件在 lastInjuryAt == null 时也返回 true，导致线上 16 个从未受伤的关系
+        // 因为用户说了句「抱歉」被展示成「修复中」。
         boolean repairedAfterInjury = lastRepairAt != null
-                && (lastInjuryAt == null || !lastRepairAt.isBefore(lastInjuryAt));
+                && lastInjuryAt != null
+                && !lastRepairAt.isBefore(lastInjuryAt);
         if (repairedAfterInjury && lastRepairAt.isAfter(safeNow.minus(REPAIR_HOLD))) {
             return RelationshipPhase.REPAIRING;
         }

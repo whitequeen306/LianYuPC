@@ -171,10 +171,13 @@ public class RelationshipStateService {
      */
     public int decayAll() {
         LocalDateTime now = LocalDateTime.now();
+        // 按 last_decay_at 升序取批（MySQL 中 NULL 排最前）：结算过的行会排到队尾，
+        // 形成轮转。旧写法按 last_interaction_at 排序，同一批最老的行会被每一轮反复扫描，
+        // 线上 936 行里只有 502 行轮到过，其余永远轮不到。
         List<RelationshipState> states = relationshipStateMapper.selectList(
                 new LambdaQueryWrapper<RelationshipState>()
                         .isNotNull(RelationshipState::getLastInteractionAt)
-                        .orderByAsc(RelationshipState::getLastInteractionAt)
+                        .orderByAsc(RelationshipState::getLastDecayAt)
                         .last("LIMIT " + DECAY_BATCH_LIMIT));
         int updated = 0;
         for (RelationshipState state : states) {
@@ -226,8 +229,16 @@ public class RelationshipStateService {
         if (events == null || events.isEmpty()) {
             return;
         }
+        boolean injuryOpen = state.getLastInjuryAt() != null
+                && (state.getLastRepairAt() == null || state.getLastRepairAt().isBefore(state.getLastInjuryAt()));
         RelationshipSnapshot snapshot = toSnapshot(state);
         for (RelationshipEventInput event : events) {
+            // 「抱歉」只有在真的受了伤之后才算修复。否则一句对不起就是 +4 信任，
+            // 线上已经出现一天之内把 trust 刷到 100、亲密却只有 32 的账号。
+            if ((event.eventType() == RelationshipEventType.REPAIR_ATTEMPT
+                    || event.eventType() == RelationshipEventType.REPAIR_SUCCESS) && !injuryOpen) {
+                continue;
+            }
             snapshot = applyEvent(snapshot, event);
             persistEvent(event);
             switch (event.eventType()) {

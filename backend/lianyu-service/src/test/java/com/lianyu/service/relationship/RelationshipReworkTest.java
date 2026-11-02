@@ -126,6 +126,16 @@ class RelationshipReworkTest {
     }
 
     @Test
+    void apologyWithoutPriorInjuryDoesNotEnterRepairing() {
+        // 线上真实事故：16 个从未受伤的关系因为用户说了句「抱歉」被展示成「修复中」
+        LocalDateTime now = LocalDateTime.now();
+        RelationshipSnapshot fine = initial().toBuilder().trustScore(52).build();
+
+        assertEquals(RelationshipPhase.FAMILIAR, RelationshipPhaseResolver.derive(
+                fine, null, now.minusMinutes(5), now));
+    }
+
+    @Test
     void decayNeverAppliesMoreThanAMonthAtOnce() {
         // 老账号第一次跑衰减时不该被一口气扣掉几个月（V56 回填的是 updated_at）
         LocalDateTime now = LocalDateTime.now();
