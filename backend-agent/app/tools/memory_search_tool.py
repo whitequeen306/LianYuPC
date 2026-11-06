@@ -73,6 +73,25 @@ def _merge(base: list[dict[str, Any]], boosted: list[dict[str, Any]]) -> list[di
     return list(merged.values())
 
 
+async def _search_via_recall(character_id: int, user_id: int, query: str,
+                            limit: int) -> list[str]:
+    """v3 召回结果转成工具的输出形状；失败返回空列表交给下一级。"""
+    from app.memory.recall import recall
+
+    try:
+        rows = await recall(character_id, user_id, query, limit=limit)
+    except Exception as exc:  # noqa: BLE001 - v3 挂了还有向量与 LIKE 兜底
+        logger.warning("memory_search v3 failed, falling back: %s", exc)
+        return []
+
+    lines: list[str] = []
+    for row in rows:
+        text = str(row.get("quote") or row.get("summary") or "").strip()
+        if text:
+            lines.append(f"- {text}")
+    return lines[:limit]
+
+
 async def search_semantic(
     user_id: int,
     character_id: int,
@@ -91,7 +110,17 @@ async def search_semantic(
     if isinstance(cached, list):
         return cached[:limit]
 
-    # 一级：Milvus 向量检索（与 Java 同源，真实语义召回）
+    # 一级（v3 开关打开时）：与注入共用同一套召回打分。
+    # 两套打分最容易出现的毛病是「注入时说记得、工具却说找不到」，所以先试 v3，
+    # 它没给出结果再落回下面的向量直查。
+    if getattr(settings, "memory_recall_v3_enabled", False):
+        lines = await _search_via_recall(character_id, user_id, query.strip(), limit)
+        if lines:
+            await cache_put_json(key, lines, settings.memory_semantic_ttl_minutes * 60, field=field)
+            logger.info("memory_search via v3: userId=%s, hits=%d", user_id, len(lines))
+            return lines
+
+    # 二级：Milvus 向量检索（与 Java 同源，真实语义召回）
     from app.memory.embedding import embed
     query_vectors = await embed([query.strip()])
     if query_vectors:

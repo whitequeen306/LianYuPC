@@ -870,6 +870,7 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 | PR-19 历史按 token 裁剪 | ✅ 本次 | `app/context/history.py` + `chat_turn._trim_to_budget`：只为 recent 槽服务，开关 `history_trim_enabled` 默认关 |
 | PR-21 语义去重（双阈值） | ✅ 本次 | `app/memory/dedupe.py`：cos≥0.92 NOOP / <0.75 ADD / 灰区默认 ADD（不调模型）；开关 `memory_dedupe_similarity_enabled` 默认关 |
 | PR-20 上下文日统计 | ✅ 本次 | `app/context/stats.py` 写 Redis `ctx:stats:YYYYMMDD`；`GET /agent/context/stats` 读 `turns / est_tokens_per_turn / cache_hit_rate / trimmed_turns` |
+| PR-24 工具与注入共用召回 | ✅ 本次 | `memory_search` 在 `memory_recall_v3_enabled` 时先走 v3，v3 空/异常才落回 Milvus，避免「注入说记得、工具说找不到」 |
 | PR-23 段落装配器 | ✅ 本次 | `app/context/assembler.py`：先按槽截断、再按 `DROP_ORDER` 整段丢；v3 召回块已硬顶到 recall 槽 400 token |
 | PR-22 影子召回 | ✅ 本次 | `app/memory/shadow.py`：v3 未开时也跑一遍，只记 `overlap / missing`，不改注入内容；开关 `memory_shadow_enabled` 默认关 |
 
