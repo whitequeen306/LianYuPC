@@ -93,11 +93,43 @@ def build_insert(
     return _INSERT_SQL, params
 
 
+DUPLICATE_QUOTE_DAYS = 7
+
+
+async def _recent_same_quote(user_id: int, character_id: int, quote: str) -> int | None:
+    """同一句原话在 7 天内已经记过？看原话而不是 hash。
+
+    hash 带 event_time，重试两次若时间戳差一秒就会各写一行；原话才是「同一件事」的
+    稳定标识。查询失败只当没查到——宁可多一条，也不能因为查重把这一幕丢了。
+    """
+    from app.db import fetch_all
+
+    try:
+        rows = await fetch_all(
+            "SELECT id FROM memory_episode WHERE user_id = %s AND character_id = %s "
+            "AND quote = %s AND created_at > NOW() - INTERVAL %s DAY LIMIT 1",
+            (int(user_id), int(character_id), quote[:600], DUPLICATE_QUOTE_DAYS),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("episode duplicate check failed: %s", exc)
+        return None
+    if not rows:
+        return None
+    return int(rows[0]["id"])
+
+
 async def insert_episode(**kwargs: Any) -> int:
-    """写入一条 episode，返回新行 id；重复（同 hash）返回 0。
+    """写入一条 episode，返回新行 id；重复（同 hash 或 7 天内同原话）返回 0。
 
     重复不是错误：抽取可能因为重试跑两遍，幂等比报错更省事。
     """
+    existing = await _recent_same_quote(
+        kwargs.get("user_id"), kwargs.get("character_id"), str(kwargs.get("quote") or "")
+    )
+    if existing:
+        logger.debug("episode already stored for the same quote: %s", existing)
+        return 0
+
     sql, params = build_insert(**kwargs)
     try:
         async with write.transaction() as cursor:

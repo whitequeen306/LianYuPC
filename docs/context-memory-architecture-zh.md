@@ -890,6 +890,7 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 | PR-40 主动浮现按场景话题过滤 | ✅ | PROACTIVE 组装时读场景卡 topic 传给 `suggest`，余弦 <0.2 就不提；拿不到卡则不设门槛 |
 | PR-41 评测对比 | ✅ | `evaluation.compare/render_comparison` + CLI `--json/--compare`：同一题集两次跑，给出 recall/MRR 差与逐题「救回/弄丢」 |
 | PR-42 记忆可解释（被想起次数） | ✅ | 列表/详情返回 `recallCount` + `lastRecalledAt`，抽屉标「被想起过 3 次 · 最近 11-06」；召回打点本来就在写这两个字段 |
+| PR-43 同一句原话不重复记 | ✅ | `insert_episode` 先查 7 天内同 quote（hash 带 event_time，重试差一秒就会各写一行）；查重失败仍写，宁可多一条也不丢这一幕 |
 | PR-31 召回超时预算 | ✅ 本次 | 召回超过 `memory_recall_timeout_seconds`（默认 80ms）就退回旧路径；`mark_injected` 超过 300ms 直接放弃，下一轮再补——记忆可以晚一轮，回复不能卡住 |
 
 **仍未做**：周记换成生成式（现在是抽取拼接；cron 已就绪但默认关）、

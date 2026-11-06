@@ -108,3 +108,49 @@ def test_scene_json_is_serialized_without_ascii_escape():
     sql, params = episode_store.build_insert(**_kwargs(scene={"topic": "加班", "mood": "低落"}))
 
     assert '"topic": "加班"' in params[3]
+
+
+@pytest.mark.asyncio
+async def test_same_quote_within_a_week_is_not_stored_twice(monkeypatch):
+    from app.memory import episode_store
+
+    async def seen(sql, params):
+        return [{"id": 9}]
+
+    monkeypatch.setattr("app.db.fetch_all", seen)
+
+    async def boom():
+        raise AssertionError("duplicate must not reach INSERT")
+
+    monkeypatch.setattr(episode_store.write, "transaction", boom)
+
+    assert await episode_store.insert_episode(**_kwargs()) == 0
+
+
+@pytest.mark.asyncio
+async def test_duplicate_check_failure_still_writes(monkeypatch):
+    from app.memory import episode_store
+
+    async def broken(sql, params):
+        raise RuntimeError("mysql down")
+
+    monkeypatch.setattr("app.db.fetch_all", broken)
+
+    class _Cursor:
+        pass
+
+    class _Tx:
+        async def __aenter__(self):
+            return _Cursor()
+
+        async def __aexit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(episode_store.write, "transaction", lambda: _Tx())
+
+    async def returning(cursor, sql, params):
+        return 42
+
+    monkeypatch.setattr(episode_store.write, "insert_returning_id", returning)
+
+    assert await episode_store.insert_episode(**_kwargs()) == 42
