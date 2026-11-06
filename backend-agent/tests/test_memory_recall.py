@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -510,6 +511,34 @@ async def test_vector_lane_drops_hits_below_similarity_floor(monkeypatch):
     monkeypatch.setattr("app.milvus_store.search_hits", lambda c, u, v, top_k=20: [(9, 0.42)])
 
     assert await recall_mod.load_candidates(3, 7, "今天吃了火锅") == []
+
+
+@pytest.mark.asyncio
+async def test_slow_vector_lane_does_not_take_down_text_lanes(monkeypatch):
+    # 生产日志：embedding 单次 1–11s，整条召回等它 → 每轮都 "timed out ... falling
+    # back"，等于 v3 没开。向量路要单独限时，超时只丢向量，ngram/episode 照常出块。
+    async def fake_fetch_all(sql, params=()):
+        if sql is recall_mod._CANDIDATE_SQL_RELEVANT:
+            return [_row(1, rel=0.09, summary="今天加班到很晚")]
+        return []
+
+    async def slow_vector(*args, **kwargs):
+        await asyncio.sleep(1.0)
+        return []
+
+    monkeypatch.setattr(recall_mod, "fetch_all", fake_fetch_all)
+    monkeypatch.setattr(recall_mod, "_vector_rows", slow_vector)
+    monkeypatch.setattr(
+        recall_mod, "get_settings",
+        lambda: SimpleNamespace(
+            memory_vector_recall_enabled=True,
+            memory_vector_timeout_seconds=0.01,
+        ),
+    )
+
+    rows = await recall_mod.load_candidates(3, 7, "加班")
+
+    assert [row["id"] for row in rows] == [1]
 
 
 @pytest.mark.asyncio

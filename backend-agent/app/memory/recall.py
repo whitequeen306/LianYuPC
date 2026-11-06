@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Any
@@ -134,10 +135,10 @@ async def _vector_rows(
         return []
     try:
         from app import milvus_store
-        from app.memory.embedding import embed
+        from app.memory.embedding import embed_query
 
-        vectors = await embed([text])
-        if not vectors:
+        vector = await embed_query(text)
+        if not vector:
             return []
         # getattr：测试替身与旧配置里没有这个字段，缺省按 v2 处理
         search = (
@@ -146,7 +147,7 @@ async def _vector_rows(
             else milvus_store.search_hits
         )
         hits = search(
-            character_id, user_id, vectors[0],
+            character_id, user_id, vector,
             top_k=top_k or settings.memory_vector_recall_top_k,
         )
     except Exception as exc:  # noqa: BLE001 - 向量路失败不影响关键词召回
@@ -267,7 +268,21 @@ async def load_candidates(
     episodes = [{**row, "_lane": "episode"} for row in (episodes or []) if row.get("id") not in seen]
     seen.update(row.get("id") for row in episodes)
 
-    vector_rows = [{**row, "_lane": "vector"} for row in await _vector_rows(character_id, user_id, query, top_k=limit)]
+    # 向量路单独限时：它要走一次外网 embedding，线上实测 1–11 秒。等它会把整条
+    # 召回拖过预算、连带 SQL 路一起作废（生产日志里每轮都 "timed out ... falling
+    # back"）。超时就只丢向量，文本路照常出块。
+    vector_budget = float(getattr(get_settings(), "memory_vector_timeout_seconds", 0.35))
+    try:
+        vector_rows = [{**row, "_lane": "vector"} for row in await asyncio.wait_for(
+            _vector_rows(character_id, user_id, query, top_k=limit),
+            timeout=vector_budget,
+        )]
+    except asyncio.TimeoutError:
+        logger.warning("vector recall timed out after %.2fs; text lanes only", vector_budget)
+        vector_rows = []
+    except Exception as exc:  # noqa: BLE001 - 向量是加分项
+        logger.warning("vector recall skipped: %s", exc)
+        vector_rows = []
     # 同一 id 可能同时被 ngram 与向量召回：都留着，交给 rank_rows 合并取较高的 rel，
     # 而不是"先到先得"——否则原话先被 ngram 以低分收录，就把向量的高分版本丢了。
     return [*merged, *episodes, *vector_rows]

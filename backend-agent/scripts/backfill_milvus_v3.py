@@ -96,17 +96,25 @@ async def backfill(limit: int = 5000, batch_size: int = 64, dry_run: bool = Fals
         if not vectors or len(vectors) != len(pending):
             stats["failed"] += len(pending)
             continue
-        for row, vector in zip(pending, vectors):
-            written = milvus_store.insert_v3(
-                int(row["character_id"]), int(row["user_id"]), int(row["id"]),
-                str(row["summary"]), str(row.get("memory_type") or "FACT"),
-                str(row.get("layer") or "fact"), str(row.get("status") or "active"),
-                _event_time_ms(row.get("event_time")), vector,
-            )
-            if written is None:
-                stats["failed"] += 1
-            else:
-                stats["written"] += 1
+        entries = [
+            {
+                "character_id": int(row["character_id"]),
+                "user_id": int(row["user_id"]),
+                "memory_id": int(row["id"]),
+                "summary": str(row["summary"]),
+                "memory_type": str(row.get("memory_type") or "FACT"),
+                "layer": str(row.get("layer") or "fact"),
+                "status": str(row.get("status") or "active"),
+                "event_time": _event_time_ms(row.get("event_time")),
+                "vector": vector,
+            }
+            for row, vector in zip(pending, vectors)
+        ]
+        written = milvus_store.insert_v3_batch(entries)
+        if written:
+            stats["written"] += written
+        else:
+            stats["failed"] += len(entries)
     if not dry_run:
         # 原话单独一遍：它们和 memory_meta 共用集合，靠 EPISODE_ID_OFFSET 区分。
         episodes = await fetch_all(_EPISODE_SELECT, (limit,))
@@ -132,17 +140,25 @@ async def backfill(limit: int = 5000, batch_size: int = 64, dry_run: bool = Fals
                 if not vectors or len(vectors) != len(pending):
                     stats["failed"] += len(pending)
                 else:
-                    for row, vector in zip(pending, vectors):
-                        written = milvus_store.insert_v3(
-                            int(row["character_id"]), int(row["user_id"]),
-                            offset + int(row["id"]), str(row["summary"]),
-                            "EPISODE", "episode", "active",
-                            _event_time_ms(row.get("event_time")), vector,
-                        )
-                        if written is None:
-                            stats["failed"] += 1
-                        else:
-                            stats["written"] += 1
+                    entries = [
+                        {
+                            "character_id": int(row["character_id"]),
+                            "user_id": int(row["user_id"]),
+                            "memory_id": offset + int(row["id"]),
+                            "summary": str(row["summary"]),
+                            "memory_type": "EPISODE",
+                            "layer": "episode",
+                            "status": "active",
+                            "event_time": _event_time_ms(row.get("event_time")),
+                            "vector": vector,
+                        }
+                        for row, vector in zip(pending, vectors)
+                    ]
+                    written = milvus_store.insert_v3_batch(entries)
+                    if written:
+                        stats["written"] += written
+                    else:
+                        stats["failed"] += len(entries)
 
     if stats["written"]:
         # 和 relay 一样：不刷的话刚回填的向量在 search 里看不见。

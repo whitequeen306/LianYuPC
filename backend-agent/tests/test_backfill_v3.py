@@ -69,8 +69,8 @@ async def test_backfill_writes_only_missing_rows(monkeypatch):
     monkeypatch.setattr("app.memory.embedding.embed", fake_embed)
     monkeypatch.setattr("app.milvus_store._connect_v3", lambda: FakeClient())
     monkeypatch.setattr(
-        "app.milvus_store.insert_v3",
-        lambda cid, uid, mid, *a, **kw: written.append(mid) or "pk",
+        "app.milvus_store.insert_v3_batch",
+        lambda entries, **kw: written.extend(e["memory_id"] for e in entries) or len(entries),
     )
     stats = await backfill.backfill(limit=10, batch_size=10)
 

@@ -10,6 +10,7 @@ import respx
 
 from app.config import get_settings
 from app.http_client import outbound_timeout
+from app.memory import embedding
 from app.memory.embedding import embed, embed_one, rerank
 from app.tools.memory_search_tool import search_semantic
 
@@ -21,6 +22,14 @@ RERANK_URL = "https://rerank.test/v1/rerank"
 def client():
     c = httpx.AsyncClient(timeout=outbound_timeout())
     yield c
+
+
+@pytest.fixture(autouse=True)
+def _clear_query_cache():
+    # embed_query 的缓存是模块级的：不清理会让后面的用例读到上一句话的向量。
+    embedding._QUERY_CACHE.clear()
+    yield
+    embedding._QUERY_CACHE.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -53,6 +62,24 @@ async def test_embed_returns_vectors_in_input_order(client):
     )
     vectors = await embed(["第一句", "第二句"], client=client)
     assert vectors == [[0.1, 0.1], [0.2, 0.2]]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_embed_query_caches_repeated_questions(client):
+    # 线上 DashScope 一次往返 1–11s：同一句话重试/复述时不该再发一次。
+    route = respx.post(f"{EMB_BASE}/embeddings").respond(
+        json={"data": [{"index": 0, "embedding": [0.5, 0.5]}]}
+    )
+
+    first = await embedding.embed_query("加班")
+    second = await embedding.embed_query("加班")
+
+    assert first == second == [0.5, 0.5]
+    assert route.call_count == 1
+
+    await embedding.embed_query("换一句")
+    assert route.call_count == 2
 
 
 @pytest.mark.asyncio

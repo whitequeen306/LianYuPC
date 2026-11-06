@@ -27,6 +27,32 @@ logger = logging.getLogger(__name__)
 # DashScope text-embedding-v3 单次最多 10 条；超了直接 400，整批回填会全失败。
 MAX_BATCH = 10
 
+# 线上实测 DashScope 往返 1–11s 不等；同一句话连问两轮（重试、用户复述）不该
+# 再付一次网络。缓存只活 60 秒：久一点就会把"刚纠正过的说法"召回到旧句子上。
+_QUERY_CACHE: dict[str, tuple[float, list[float]]] = {}
+_QUERY_TTL_SECONDS = 60.0
+_QUERY_CACHE_MAX = 256
+
+
+async def embed_query(text: str) -> list[float] | None:
+    """单条查询向量（60 秒内存缓存）。失败返回 None，调用方照常走文本路。"""
+    import time
+
+    key = (text or "").strip()
+    if not key:
+        return None
+    now = time.monotonic()
+    cached = _QUERY_CACHE.get(key)
+    if cached and now - cached[0] < _QUERY_TTL_SECONDS:
+        return cached[1]
+    vectors = await embed([key])
+    if not vectors:
+        return None
+    if len(_QUERY_CACHE) >= _QUERY_CACHE_MAX:
+        _QUERY_CACHE.pop(next(iter(_QUERY_CACHE)))
+    _QUERY_CACHE[key] = (now, vectors[0])
+    return vectors[0]
+
 
 async def embed(texts: list[str], *, client: httpx.AsyncClient | None = None) -> list[list[float]] | None:
     """批量向量化；按供应商上限切片，失败返回 None。"""

@@ -275,6 +275,49 @@ def insert_v3(
         return None
 
 
+def insert_v3_batch(entries: list[dict], *, dedupe: bool = False) -> int:
+    """批量投影（回填专用）：一次 insert 几十条。
+
+    逐条 `insert_v3` 是"先 delete 再 insert"两次 RPC，生产上 15k 条要跑一个多小时；
+    回填前已经用 `memory_id in [...]` 查过缺失，这里不需要再去重。
+    返回成功写入条数（0 表示失败，调用方按批计失败）。
+    """
+    client = _connect_v3()
+    if client is None or not entries:
+        return 0
+    settings = get_settings()
+    collection = settings.milvus_v3_collection
+    data: list[dict] = []
+    for entry in entries:
+        summary = str(entry.get("summary") or "")
+        data.append({
+            "character_id": int(entry["character_id"]),
+            "user_id": int(entry["user_id"]),
+            "memory_id": int(entry["memory_id"]),
+            "summary": summary if len(summary) <= 512 else summary[:512],
+            "memory_type": entry.get("memory_type") or "FACT",
+            "layer": entry.get("layer") or "fact",
+            "status": entry.get("status") or "active",
+            "event_time": int(entry.get("event_time") or 0),
+            "vector": list(entry["vector"]),
+        })
+    if dedupe:
+        for item in data:
+            try:
+                client.delete(
+                    collection_name=collection,
+                    filter=f"memory_id == {item['memory_id']}",
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("milvus v3 dedupe failed: memoryId=%s reason=%s", item["memory_id"], exc)
+    try:
+        client.insert(collection_name=collection, data=data)
+        return len(data)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("milvus v3 batch insert failed: %s", exc)
+        return 0
+
+
 def flush_v3() -> None:
     """把刚写进 growing segment 的行刷成可检索的段。
 
@@ -363,4 +406,5 @@ def reset() -> None:
     _client_v3 = None
 
 
-__all__ = ["EPISODE_ID_OFFSET", "episode_vector_id", "delete", "flush_v3", "insert", "insert_v3", "reset", "search", "search_hits", "search_hits_v3", "missing_v3_ids"]
+__all__ = ["EPISODE_ID_OFFSET", "episode_vector_id", "delete", "flush_v3", "insert", "insert_v3",
+    "insert_v3_batch", "reset", "search", "search_hits", "search_hits_v3", "missing_v3_ids"]
