@@ -75,3 +75,43 @@ def test_render_report_shows_headline_numbers():
     assert "题数 1" in text
     assert "recall@5 100.00%" in text
     assert "MRR 1.000" in text
+
+
+def test_compare_reports_wins_and_losses_per_case():
+    from app.memory import evaluation as ev
+
+    cases = [ev.Case("a", 7, 3, ("1",)), ev.Case("b", 7, 3, ("2",))]
+
+    before = ev.evaluate(cases, lambda c: ["9"] if c.query == "a" else ["2"])
+    after = ev.evaluate(cases, lambda c: ["1"] if c.query == "a" else ["9"])
+
+    diff = ev.compare(before, after)
+
+    assert diff["n"] == 2
+    assert diff["recall_delta"] == 0.0
+    assert diff["wins"] == ["a"]
+    assert diff["losses"] == ["b"]
+
+
+def test_compare_requires_identical_queries():
+    from app.memory import evaluation as ev
+
+    before = ev.evaluate([ev.Case("a", 7, 3, ("1",))], lambda c: ["1"])
+    after = ev.evaluate([ev.Case("a 改了个字", 7, 3, ("1",))], lambda c: ["1"])
+
+    diff = ev.compare(before, after)
+
+    assert diff["n"] == 0
+    assert "没有可对比" in ev.render_comparison(diff)
+
+
+def test_compare_renders_delta_and_examples():
+    from app.memory import evaluation as ev
+
+    before = ev.evaluate([ev.Case("a", 7, 3, ("1",))], lambda c: ["9"])
+    after = ev.evaluate([ev.Case("a", 7, 3, ("1",))], lambda c: ["1"])
+
+    text = ev.render_comparison(ev.compare(before, after))
+
+    assert "救回 1 条" in text
+    assert "+ a" in text

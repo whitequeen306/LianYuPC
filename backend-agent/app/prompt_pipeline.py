@@ -136,12 +136,35 @@ def _cap_memory_context(text: str, limit: int | None = None) -> str:
     return truncate_to_tokens(text, limit)
 
 
+async def _scene_topic(conversation_id: int | None) -> str | None:
+    """取当前场景的话题，给主动浮现做贴题门槛；拿不到就不设门槛。"""
+    if not conversation_id:
+        return None
+
+    from app.config import get_settings
+
+    if not getattr(get_settings(), "scene_card_enabled", False):
+        return None
+
+    from app.context.scene_card import load_card
+
+    try:
+        card = await load_card(conversation_id)
+    except Exception as exc:  # noqa: BLE001 - 没有话题就退化成"不贴题判断"
+        logger.warning("resurface topic unavailable: %s", exc)
+        return None
+
+    topic = (card or {}).get("topic")
+    return str(topic).strip() or None
+
+
 async def _attach_resurface(
     context: str,
     *,
     user_id: int,
     character_id: int | None,
     scene_key: str,
+    conversation_id: int | None = None,
 ) -> str:
     """主动开口时，允许她提一句"快要忘记但还温着"的事。
 
@@ -158,8 +181,10 @@ async def _attach_resurface(
 
     from app.memory.resurface import suggest
 
+    topic = await _scene_topic(conversation_id)
+
     try:
-        suggestion = await suggest(character_id, user_id)
+        suggestion = await suggest(character_id, user_id, topic=topic)
     except Exception as exc:  # noqa: BLE001 - 提不了就不提，别毁掉这轮主动开口
         logger.warning("resurface hint skipped: %s", exc)
         return context
@@ -292,7 +317,11 @@ async def assemble_turn_prompt(
         last_user_message=last_user_message,
     )
     memory_context = await _attach_resurface(
-        memory_context, user_id=user_id, character_id=character_id, scene_key=scene_key,
+        memory_context,
+        user_id=user_id,
+        character_id=character_id,
+        scene_key=scene_key,
+        conversation_id=conversation_id,
     )
 
     # 记忆块硬顶：画像槽位最多 80 行、召回 5 条、场景卡 200 字，极端情况下能撑到两三千字。

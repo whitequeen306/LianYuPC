@@ -164,3 +164,22 @@ async def test_proactive_turn_without_hint_stays_clean(monkeypatch):
     prompt = await _assemble(scene="PROACTIVE")
 
     assert "【可以自然提起】" not in prompt
+
+
+async def test_resurface_uses_the_current_scene_topic(monkeypatch):
+    seen = {}
+
+    async def fake_suggest(character_id, user_id, **kwargs):
+        seen.update(kwargs)
+        return {"id": 5, "summary": "她说想去看海", "reason": "fading"}
+
+    async def fake_card(conversation_id):
+        return {"conversationId": conversation_id, "topic": "周末想去看海"}
+
+    monkeypatch.setattr("app.memory.resurface.suggest", fake_suggest)
+    monkeypatch.setattr("app.context.scene_card.load_card", fake_card)
+
+    prompt = await _assemble(scene="PROACTIVE")
+
+    assert seen.get("topic") == "周末想去看海"
+    assert "【可以自然提起】" in prompt

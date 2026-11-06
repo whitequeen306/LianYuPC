@@ -887,6 +887,8 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 | PR-37 主动浮现（周频控 + 贴题门槛） | ✅ | `POST /agent/memory/resurface`：本科目每周最多一次；只挑强度 0.35–0.55 或周年（同月同日且 ≥300 天）；给了话题就要求余弦 ≥0.2，否则这周不提。Redis 挂了宁可不说 |
 | PR-38 记忆块总预算 | ✅ | `memory_context_max_tokens`（默认 1100）在拼 system 前兜底截断；画像 80 行 + 召回 5 条 + 场景卡的极端情况不再挤掉最近对话 |
 | PR-39 星图显示钉住 / 静音 | ✅ | 钉住加暖金细环；静音压到 35% 亮度、半径 ×0.78——留在图上，但不抢注意力 |
+| PR-40 主动浮现按场景话题过滤 | ✅ | PROACTIVE 组装时读场景卡 topic 传给 `suggest`，余弦 <0.2 就不提；拿不到卡则不设门槛 |
+| PR-41 评测对比 | ✅ | `evaluation.compare/render_comparison` + CLI `--json/--compare`：同一题集两次跑，给出 recall/MRR 差与逐题「救回/弄丢」 |
 | PR-31 召回超时预算 | ✅ 本次 | 召回超过 `memory_recall_timeout_seconds`（默认 80ms）就退回旧路径；`mark_injected` 超过 300ms 直接放弃，下一轮再补——记忆可以晚一轮，回复不能卡住 |
 
 **仍未做**：周记换成生成式（现在是抽取拼接；cron 已就绪但默认关）、
@@ -932,7 +934,9 @@ cron 可用 `lianyu.memory.consolidate.cron` 覆盖）。
 指标：recall@5、answer accuracy（LLM judge + 人工抽检 20%）、temporal accuracy、update accuracy、
 abstention accuracy。
 
-**跑法**：`backend-agent/app/memory/evaluation.py` 读 JSONL 题集，直接打 `recall()` 算 recall@k / MRR，
+**跑法**：`python -m app.memory.evaluation backend-agent/eval/memory_cases.jsonl --k 5 --json before.json`，开关前后各跑一次，
+再用 `--compare before.json` 看「救回几条、弄丢几条」——整体 recall 持平也可能是换掉两条，逐题对比才知道该不该开。
+`backend-agent/app/memory/evaluation.py` 读 JSONL 题集，直接打 `recall()` 算 recall@k / MRR，
 并列出未命中题与它实际召回的 top-k；模板见 `backend-agent/eval/memory_cases.sample.jsonl`。
 
 ```bash
