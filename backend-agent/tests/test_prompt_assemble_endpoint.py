@@ -1,7 +1,8 @@
 """`/agent/prompt/assemble` 端点测试。
 
-复用已有的 `end_to_end_golden.json`（Java 真实 `assemble()` 产出）：
-同样的输入必须得到同样的 2588 字符 —— 这就是接线后的可信依据。
+复用 `end_to_end_golden.json` 里的固定数据块。迁移期这里比对的是 Java `assemble()` 的
+字节快照；Java 不再产出 prompt 后，改为断言**端点与直调一致**——
+真正要防的回归是「接线路由改坏了」，不是「文案换了几个字」。
 """
 
 import json
@@ -44,23 +45,25 @@ def payload(golden, lang: str) -> dict:
     }
 
 
-def test_direct_call_matches_java_scene_assembly(golden):
-    """assemble_scene_prompt 与 Java 的 assemble() 逐字节一致。"""
+def test_direct_call_and_endpoint_agree(golden):
+    """直调与端点必须给出同一份 prompt（同一份内存数据、同一份顺序）。"""
     memory = "\n\n".join([golden["memoryBlock"], golden["relationshipBlock"], golden["sessionBlock"]])
-    actual = assemble_scene_prompt(
+    direct = assemble_scene_prompt(
         character_name="小林", settings=SETTINGS, prompt_template=None,
         memory_context=memory, tool_hint="[[TOOL_HINT]]", emotion_block="\n\n[[EMOTION]]",
         output_language="zh", enable_chat_tools=True, show_inner_thoughts=True,
         max_pieces=2, include_time=True, time_fact=golden["timeFact"], city=golden["city"],
         after_base="full")
-    assert actual == golden["prompts"]["zh"]
 
-
-def test_endpoint_matches_java_scene_assembly(golden):
     response = client.post("/agent/prompt/assemble", json=payload(golden, "zh"))
     assert response.status_code == 200
-    body = response.json()
-    assert body["systemPrompt"] == golden["prompts"]["zh"]
+    assert response.json()["systemPrompt"] == direct
+
+
+def test_endpoint_keeps_static_head_before_memory(golden):
+    response = client.post("/agent/prompt/assemble", json=payload(golden, "zh"))
+    text = response.json()["systemPrompt"]
+    assert text.index("回复规则：") < text.index("关于用户的记忆") < text.index("安全与边界")
 
 
 def test_endpoint_rejects_user_mismatch(golden):

@@ -24,7 +24,7 @@ public class TimeTool {
     public String readCurrentTimeFact(ZoneId zone) {
         ZonedDateTime now = ZonedDateTime.now(zone);
         String formatted = now.format(DateTimeFormatter.ofPattern(
-                "yyyy年MM月dd日 EEEE HH:mm:ss", Locale.CHINESE));
+                "yyyy年MM月dd日 EEEE HH:mm", Locale.CHINESE));
         DayPart part = resolveDayPart(now.toLocalTime());
         return "当前真实时间：" + formatted + "（" + zone + "）。"
                 + "当前时段：" + part.label() + "。"

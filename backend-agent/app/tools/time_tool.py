@@ -60,7 +60,7 @@ def read_current_time_fact(zone_name: str | None = None, *, now: datetime | None
     current = now.astimezone(zone) if now is not None else datetime.now(zone)
     part = resolve_day_part(current.hour, current.minute)
     weekday = _WEEKDAYS_ZH[current.weekday()]
-    formatted = f"{current.year}年{current.month:02d}月{current.day:02d}日 {weekday} {current:%H:%M:%S}"
+    formatted = f"{current.year}年{current.month:02d}月{current.day:02d}日 {weekday} {current:%H:%M}"
     return (
         f"当前真实时间：{formatted}（{zone.key}）。"
         f"当前时段：{part.label}。"

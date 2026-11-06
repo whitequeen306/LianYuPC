@@ -1,8 +1,9 @@
-"""端到端验收：Python 组装的完整 system prompt 与 Java `assemble()` 比对。
+"""端到端验收：完整 system prompt 的拼接与顺序。
 
-这是 P5.5 各层的总验收 —— 前面每一步都是分段比对，这里验证「拼起来」。
-数据块（记忆/关系/会话摘要）用 golden 里的固定字符串，所以校验的是
-**拼接与顺序**，不含取数差异。
+迁移期这里逐字节比对 Java `assemble()`；Java 已不再产出 prompt，硬编码的
+`end_to_end_golden.json#prompts` 随槽位重排作废。现在校验的是：
+静态头（人设/工具/规则）在前，动态块（记忆/称呼/情绪）在后，场景块（时间/城市/风格）最末。
+数据块仍用 golden 里的固定字符串，取数差异不在本文件范围内。
 """
 
 import json
@@ -47,22 +48,25 @@ def compose(golden, lang: str) -> str:
 
 
 @pytest.mark.parametrize("lang", ["zh", "en"])
-def test_full_prompt_matches_java(golden, lang):
+def test_full_prompt_keeps_tail_blocks(golden, lang):
+    """场景块必须都在：时间锚点、城市、自然风格；语言不同文案不同，但结构一致。"""
     actual = compose(golden, lang)
-    expected = golden["prompts"][lang]
-    assert actual == expected, (
-        f"{lang} 完整 prompt 与 Java 不一致：python={len(actual)} 字符, "
-        f"java={len(expected)} 字符"
-    )
+    assert golden["timeFact"] in actual
+    assert golden["city"] in actual
+    # 自然风格文案随语言变化（zh 是「表达要求」，en 是 Reply only in English…），
+    # 断言「结尾就是这一语言的风格块」，而不是硬编码中文标题。
+    assert actual.endswith(pa.natural_style_block(lang, True))
+    assert len(actual) > 1500
 
 
 def test_all_blocks_present_in_order(golden):
     text = compose(golden, "zh")
     order = [
         text.index("你是小林"),
+        text.index("[[TOOL_HINT]]"),
+        text.index("回复规则："),
         text.index("关于用户的记忆"),
         text.index("用户称呼（强制）"),
-        text.index("回复规则："),
         text.index("[[EMOTION]]"),
         text.index("安全与边界"),
         text.index("当前真实环境"),

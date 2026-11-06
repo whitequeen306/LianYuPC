@@ -97,7 +97,15 @@ def build_system_prompt(
     show_inner_thoughts: bool = True,
     max_pieces: int = 2,
 ) -> str:
-    """对齐 `buildSystemPrompt`：纯编排，数据块由调用方给出。"""
+    """对齐 `buildSystemPrompt`：纯编排，数据块由调用方给出。
+
+    分两段，顺序即缓存策略（见 docs/context-memory-architecture-zh.md §5）：
+
+    - **静态头**：人设 → 工具提示 → 回复规则 → 输出语言规则。同一角色、同一语言跨轮逐字一致，
+      落在 prompt cache 的可复用前缀里；任何逐轮变化的块都不许插进这一段。
+    - **动态尾**：记忆 / 称呼 / 情绪 → 安全边界（仍然最后）。每轮可变，放在前缀之后，
+      只让尾部失效，不把整段 system 判成 miss。
+    """
     persona = extract_persona(character_name, settings)
 
     if prompt_template and prompt_template.strip():
@@ -106,12 +114,7 @@ def build_system_prompt(
     else:
         prompt = build_default_prompt(character_name, persona)
 
-    memory = (memory_context or "").strip()
-    if memory:
-        prompt += MEMORY_HEADER + memory_context
-        prompt += fragment("CharacterPromptBuilder.java", 71)
-        prompt += build_user_addressing_rule(memory_context, output_language)
-
+    # ── 静态头（顺序固定，勿在中间插入逐轮变化的块）──
     if enable_chat_tools and tool_hint:
         prompt += tool_hint
 
@@ -121,6 +124,14 @@ def build_system_prompt(
         prompt += "\n\n" + reply_rules
     if output_rules.strip():
         prompt += "\n\n" + output_rules
+
+    # ── 动态尾（每轮可变）──
+    memory = (memory_context or "").strip()
+    if memory:
+        prompt += MEMORY_HEADER + memory_context
+        prompt += fragment("CharacterPromptBuilder.java", 71)
+        prompt += build_user_addressing_rule(memory_context, output_language)
+
     if emotion_block:
         prompt += emotion_block
 
