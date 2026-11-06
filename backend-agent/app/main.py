@@ -996,6 +996,17 @@ async def memory_reconcile(limit: int = 500) -> dict[str, int]:
     return await reconcile(limit=limit)
 
 
+@app.post("/agent/memory/consolidate")
+async def memory_consolidate() -> dict[str, int]:
+    """本周 episode → 一条周记。运维 cron 触发，幂等（同周同角色只写一条）。"""
+    from app.config import get_settings
+    from app.memory.consolidate import consolidate
+
+    if not get_settings().memory_consolidate_enabled:
+        return {"written": 0, "skipped": 1}
+    return {"written": await consolidate()}
+
+
 @app.post("/agent/memory/write")
 async def memory_write(
     body: MemoryWriteBody,

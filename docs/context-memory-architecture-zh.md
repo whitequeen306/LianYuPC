@@ -456,7 +456,8 @@ system 里配一条硬规则：模糊条目不许说成确定、不许补细节�
 
 - **03:00 Java 侧**：`MemoryDecayService` 结算 `strength` 并分档（纯算术，无模型；见 §7.6.3/§7.6.9），
   顺带把 `dormant` 的向量下沉、`openLoop` 过期的标 `expired`。
-- **03:30 Python 侧**：合并重复 episode（cos ≥0.9）、生成 reflection（可复用 `character_diary` 的生成链路）、
+- **03:30 Python 侧**：合并重复 episode（cos ≥0.9）、生成 reflection（单幕印象已在场景结算时产出；
+  跨天周记走 `app/memory/consolidate.py`，`POST /agent/memory/consolidate` 由 cron 触发），
   对账 `embedding_state`。衰减不在这里算——两边各算一遍必然会漂。
 
 放在夜间是刻意的：sleep-time compute（[arXiv:2504.13171](https://arxiv.org/abs/2504.13171)）报告同精度下
@@ -863,14 +864,16 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 | PR-14 静音（muted） | ✅ 本次 | `PATCH /memory/{id}/mute`；候选 SQL 已排除 `muted=1`；抽屉可切换"别再提/恢复提起" |
 | PR-13 Milvus 向量路 | ✅ `search_hits` + `_vector_rows` | Milvus 只回 `memory_id`+分数，回 MySQL 取权威行；开关 `memory_vector_recall_enabled` 默认关 |
 | PR-16 reflection 层 | ✅ `2dddae6` | 场景关闭那次调用多问一句 `impression`；写 `layer='reflection'`、tau 180d、7 天去重；不额外花钱 |
+| PR-17 周记（跨天整合） | ✅ 本次 | `app/memory/consolidate.py` + `POST /agent/memory/consolidate`；按自然周、同角色同周只一条；抽取式、不调模型 |
 
 **仍未做**：向量相似度双阈值（cos≥0.92 NOOP / <0.75 ADD / 灰区 LLM，现在只做了槽位版 supersede，
-普通事实仍按 `source_hash` 合并）、跨天夜间整合（把多天 episode 合并成周记；单幕 reflection 已由 PR-16 产出）、
+普通事实仍按 `source_hash` 合并）、周记接 cron 并换成生成式（现在靠手动打端点、文本是抽取拼接）、
 `memory_vectors_v3` 集合（现在向量路仍读 v2，且没有 status 标量过滤）、影子 diff 指标、V58 在真实库上的迁移演练、
 `memory_recall_v3_enabled` 打开前的 200 题评测。
 
 **开关**：`scene_card_enabled`（默认开）、`memory_recall_v3_enabled`（默认关，等迁移 + 评测）、
-`memory_vector_recall_enabled`（默认关，等 Milvus 里有向量且集合升级）。
+`memory_vector_recall_enabled`（默认关，等 Milvus 里有向量且集合升级）、
+`memory_consolidate_enabled`（默认开，关掉后端点直接返回 `skipped`）。
 回滚：关开关即可回到「画像槽位 + importance top20 + LIKE 5」，新表/新列不影响旧路径。
 
 ---
