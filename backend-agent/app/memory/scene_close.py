@@ -20,7 +20,8 @@ from typing import Any
 from app.config import get_settings
 from app.db import fetch_all
 from app.memory.episode_store import insert_episode
-from app.memory.extract_scene import MIN_SCENE_MESSAGES, extract_scene_episodes
+from app.memory.extract_scene import MIN_SCENE_MESSAGES, extract_scene
+from app.memory.reflection_store import insert_reflection
 from app.context.scene_card import take_pending
 
 logger = logging.getLogger(__name__)
@@ -133,7 +134,7 @@ async def close_pending_scene(
 
         factory = get_gateway()
 
-    episodes = await extract_scene_episodes(
+    result = await extract_scene(
         factory,
         base_url=base_url,
         api_key=api_key,
@@ -141,6 +142,7 @@ async def close_pending_scene(
         messages=messages,
         provider=provider,
     )
+    episodes = result.episodes
     if not episodes:
         return 0
 
@@ -165,6 +167,16 @@ async def close_pending_scene(
             continue
         if new_id:
             created += 1
+
+    if result.impression:
+        created += await insert_reflection(
+            user_id=user_id,
+            character_id=character_id,
+            conversation_id=conversation_id,
+            impression=result.impression,
+            scene=card,
+            source_msg_ids=[int(m["id"]) for m in messages if m.get("id")][:20],
+        )
 
     await _remember_closed(card)
     logger.info("scene closed conv=%s episodes=%d stored=%d", conversation_id, len(episodes), created)

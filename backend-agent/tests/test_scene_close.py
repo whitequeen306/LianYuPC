@@ -8,9 +8,10 @@ from types import SimpleNamespace
 import pytest
 
 from app.memory import scene_close
-from app.memory.extract_scene import (
+from app.memory.extract_scene import (  # noqa: F401
     MAX_EPISODES,
     SceneEpisode,
+    SceneResult,
     build_transcript,
     parse_episodes,
 )
@@ -106,7 +107,7 @@ def wired(monkeypatch):
         return state["messages"]
 
     async def extract(gateway, **kwargs):
-        return state["episodes"]
+        return SceneResult(episodes=state["episodes"], impression=state.get("impression"))
 
     async def insert(**kwargs):
         state["inserted"].append(kwargs)
@@ -114,8 +115,14 @@ def wired(monkeypatch):
 
     monkeypatch.setattr(scene_close, "take_pending", take_pending)
     monkeypatch.setattr(scene_close, "load_scene_messages", load_messages)
-    monkeypatch.setattr(scene_close, "extract_scene_episodes", extract)
+    monkeypatch.setattr(scene_close, "extract_scene", extract)
     monkeypatch.setattr(scene_close, "insert_episode", insert)
+
+    async def insert_reflection(**kwargs):
+        state.setdefault("reflections", []).append(kwargs)
+        return 1
+
+    monkeypatch.setattr(scene_close, "insert_reflection", insert_reflection)
     monkeypatch.setattr(
         scene_close, "get_settings", lambda: SimpleNamespace(scene_extract_enabled=True)
     )
@@ -212,3 +219,33 @@ async def test_load_messages_falls_back_to_recent(monkeypatch):
     assert "ORDER BY seq DESC" in captured["sql"]
     # 倒序取最近，返回前要翻回时间正序（否则 transcript 是倒着读的）。
     assert [row["id"] for row in rows] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_close_writes_one_reflection_per_scene(wired):
+    wired["pending"] = _card(updatedAt=NOW.isoformat())
+    wired["messages"] = _messages()
+    wired["episodes"] = [SceneEpisode(summary="她加班到很晚", quote="消息1")]
+    wired["impression"] = "她嘴上说没事，其实很累"
+
+    created = await close_pending_scene(
+        9, 7, 3, base_url="https://x", api_key="k", model="m", gateway=object(),
+    )
+
+    assert created == 2                     # 1 条 episode + 1 条 impression
+    assert wired["reflections"][0]["impression"] == "她嘴上说没事，其实很累"
+    assert wired["reflections"][0]["source_msg_ids"] == [1, 2, 3, 4, 5, 6]
+
+
+@pytest.mark.asyncio
+async def test_close_skips_reflection_without_impression(wired):
+    wired["pending"] = _card(updatedAt=NOW.isoformat())
+    wired["messages"] = _messages()
+    wired["episodes"] = [SceneEpisode(summary="她加班到很晚", quote="消息1")]
+
+    created = await close_pending_scene(
+        9, 7, 3, base_url="https://x", api_key="k", model="m", gateway=object(),
+    )
+
+    assert created == 1
+    assert not wired.get("reflections")

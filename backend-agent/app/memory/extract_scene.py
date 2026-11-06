@@ -34,14 +34,24 @@ SCENE_EXTRACT_PROMPT = """你是「场景档案员」。下面是一段已经结
 5) valence 情感效价 -1~1（负→正），arousal 唤醒度 0~1；拿不准填 null；
 6) 如果用户留下了一个「以后要接的话头」（约定、请求、未完成的计划），填 openLoop，否则 null；
 7) 最多 6 条，按重要性排序；寒暄、玩笑、重复内容不要；
-8) 只输出 JSON，不要 markdown：
-{"episodes":[{"summary":"...","quote":"...","eventTime":null,"valence":-0.4,"arousal":0.6,"openLoop":null}]}
+8) 另用 impression 写一句**角色第一人称**的感受（不超过 40 字），像日记落款，
+   不是事实复述，也不要重复下面任何 summary；没有感觉就填 null；
+9) 只输出 JSON，不要 markdown：
+{"impression":"...","episodes":[{"summary":"...","quote":"...","eventTime":null,"valence":-0.4,"arousal":0.6,"openLoop":null}]}
 若没有值得留下的内容，返回 {"episodes":[]}。"""
 
 MAX_TRANSCRIPT_MESSAGES = 40
 MAX_MESSAGE_CHARS = 200
 MAX_EPISODES = 6
 MIN_SCENE_MESSAGES = 4
+
+
+@dataclass(frozen=True)
+class SceneResult:
+    """一次场景结算的产物：可落库的现场 + 一句角色自己的感受。"""
+
+    episodes: list["SceneEpisode"]
+    impression: str | None = None
 
 
 @dataclass(frozen=True)
@@ -116,6 +126,16 @@ def _payload(text: str) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def parse_impression(text: str) -> str | None:
+    """角色第一人称的收尾感受；太短或只是复述摘要时丢弃。"""
+    value = _clip(_payload(text).get("impression"), 120).strip("「」\"'“”")
+    return value if len(value) >= 6 else None
+
+
+def parse_scene_result(text: str) -> SceneResult:
+    return SceneResult(episodes=parse_episodes(text), impression=parse_impression(text))
+
+
 def parse_episodes(text: str) -> list[SceneEpisode]:
     """解析模型输出；没有 quote 的条目直接丢掉（不允许无证据的现场）。"""
     payload = _payload(text)
@@ -141,7 +161,7 @@ def parse_episodes(text: str) -> list[SceneEpisode]:
     return episodes[:MAX_EPISODES]
 
 
-async def extract_scene_episodes(
+async def extract_scene(
     gateway: ModelGateway,
     *,
     base_url: str,
@@ -149,11 +169,11 @@ async def extract_scene_episodes(
     model: str,
     messages: list[dict[str, Any]],
     provider: str | None = None,
-) -> list[SceneEpisode]:
-    """调用模型抽取；失败返回空列表（关闭场景失败不该影响聊天）。"""
+) -> SceneResult:
+    """一次调用同时拿 episode 与一句 impression（多问一句不加钱）。"""
     transcript = build_transcript(messages)
     if not transcript:
-        return []
+        return SceneResult(episodes=[])
     try:
         result = await gateway.chat_messages(
             base_url=base_url,
@@ -170,8 +190,29 @@ async def extract_scene_episodes(
         )
     except Exception as exc:  # noqa: BLE001 - 抽取失败只丢这一幕
         logger.warning("scene extraction failed: %s", exc)
-        return []
-    return parse_episodes(result.content or "")
+        return SceneResult(episodes=[])
+    return parse_scene_result(result.content or "")
+
+
+async def extract_scene_episodes(
+    gateway: ModelGateway,
+    *,
+    base_url: str,
+    api_key: str,
+    model: str,
+    messages: list[dict[str, Any]],
+    provider: str | None = None,
+) -> list[SceneEpisode]:
+    """兼容入口：只要 episode 列表。"""
+    result = await extract_scene(
+        gateway,
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+        messages=messages,
+        provider=provider,
+    )
+    return result.episodes
 
 
 __all__ = [
@@ -179,6 +220,10 @@ __all__ = [
     "MAX_TRANSCRIPT_MESSAGES",
     "MIN_SCENE_MESSAGES",
     "SCENE_EXTRACT_PROMPT",
+    "SceneResult",
+    "extract_scene",
+    "parse_impression",
+    "parse_scene_result",
     "SceneEpisode",
     "build_transcript",
     "extract_scene_episodes",
