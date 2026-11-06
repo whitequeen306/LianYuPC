@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -204,8 +205,21 @@ async def _load_v3_block(character_id: int, user_id: int,
     """v3 召回的一次尝试；失败或空结果返回 None，让调用方退回旧路径。"""
     from app.memory.recall import recall, render_rows_limited
 
+    settings = get_settings()
+    # getattr 兜底：测试与旧调用方常传一个只有个别字段的 settings 替身。
+    recall_timeout = getattr(settings, "memory_recall_timeout_seconds", 0.08)
+    mark_timeout = getattr(settings, "memory_recall_mark_timeout_seconds", 0.3)
     try:
-        rows = await recall(character_id, user_id, last_user_message)
+        rows = await asyncio.wait_for(
+            recall(character_id, user_id, last_user_message),
+            timeout=recall_timeout,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "memory recall v3 timed out after %.0fms, falling back",
+            recall_timeout * 1000,
+        )
+        return None
     except Exception as exc:  # noqa: BLE001 - 召回失败不能让整块记忆消失
         logger.warning("memory recall v3 failed, falling back: %s", exc)
         return None
@@ -217,7 +231,10 @@ async def _load_v3_block(character_id: int, user_id: int,
             from app.memory.recall import mark_injected
 
             used_ids = set(used)
-            await mark_injected([row for row in rows if row.get("id") in used_ids])
+            await asyncio.wait_for(
+                mark_injected([row for row in rows if row.get("id") in used_ids]),
+                timeout=mark_timeout,
+            )
         except Exception as exc:  # noqa: BLE001 - 打点失败不该影响这一轮回复
             logger.warning("mark injected failed: %s", exc)
     return block

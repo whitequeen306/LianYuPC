@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     # v3 召回（五路 + RRF + MMR，见 docs/context-memory-architecture-zh.md §6）。
     # 默认关：它依赖 V58 的新列与 ngram 索引，迁移完成后再开。
     memory_recall_v3_enabled: bool = False
+    # 召回的超时预算：超了就退回旧路径，宁可少几条也不要拖住整轮回复。
+    memory_recall_timeout_seconds: float = 0.08
+    # 打点（mark_injected）是旁路写入，超时直接放弃，下一轮再补。
+    memory_recall_mark_timeout_seconds: float = 0.3
 
     # 工具结果注入上限：一次网页/文件读取就能吃掉整轮预算，
     # 超长结果掐头留尾（见 app.tool_loop.clip_tool_output）。

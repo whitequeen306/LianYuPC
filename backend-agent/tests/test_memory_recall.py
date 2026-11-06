@@ -349,3 +349,25 @@ def test_old_episode_ranks_below_recent_one():
     ranked = recall_mod.rank_rows([old, fresh], limit=5, now=NOW)
 
     assert [row["id"] for row in ranked] == ["ep-1", "ep-2"]
+
+
+async def test_v3_block_gives_up_when_recall_exceeds_budget(monkeypatch, caplog):
+    """召回超时不能拖住整轮回复：直接返回 None，让调用方走旧路径。"""
+    import asyncio
+
+    from app import data_readers
+
+    async def slow_recall(character_id, user_id, query, **kwargs):
+        await asyncio.sleep(0.2)
+        return [{"id": 1, "memory_type": "FACT", "summary": "a"}]
+
+    monkeypatch.setattr("app.memory.recall.recall", slow_recall)
+    monkeypatch.setattr(
+        "app.data_readers.get_settings",
+        lambda: SimpleNamespace(memory_recall_timeout_seconds=0.02,
+                                memory_recall_mark_timeout_seconds=0.02,
+                                memory_recall_v3_enabled=True),
+    )
+
+    assert await data_readers._load_v3_block(3, 7, "在吗") is None
+    assert "timed out" in caplog.text

@@ -879,6 +879,7 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 | PR-24 工具与注入共用召回 | ✅ 本次 | `memory_search` 在 `memory_recall_v3_enabled` 时先走 v3，v3 空/异常才落回 Milvus，避免「注入说记得、工具说找不到」 |
 | PR-23 段落装配器 | ✅ 本次 | `app/context/assembler.py`：先按槽截断、再按 `DROP_ORDER` 整段丢；v3 召回块已硬顶到 recall 槽 400 token |
 | PR-22 影子召回 | ✅ 本次 | `app/memory/shadow.py`：v3 未开时也跑一遍，只记 `overlap / missing`，不改注入内容；开关 `memory_shadow_enabled` 默认关 |
+| PR-31 召回超时预算 | ✅ 本次 | 召回超过 `memory_recall_timeout_seconds`（默认 80ms）就退回旧路径；`mark_injected` 超过 300ms 直接放弃，下一轮再补——记忆可以晚一轮，回复不能卡住 |
 
 **仍未做**：灰区的 LLM 判定（现在是 cos≥0.92 NOOP、<0.75 ADD，中间也按 ADD，
 因为误合并比多记一条更贵；开关默认关）、周记接 cron 并换成生成式（现在靠手动打端点、文本是抽取拼接）、
