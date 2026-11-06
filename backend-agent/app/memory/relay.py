@@ -210,11 +210,40 @@ async def _retry_or_dead(outbox_id: int, row: dict[str, Any], cap: int,
                    int(delay), outbox_id, row.get("memory_id"), attempts, reason)
 
 
-async def reconcile(limit: int = 500) -> dict[str, int]:
+_RECONCILE_SAMPLE = (
+    "SELECT id, summary, milvus_vec_id FROM memory_meta "
+    "WHERE summary IS NOT NULL AND summary <> '' "
+    "AND status <> 'dormant' "
+    "AND milvus_vec_id IS NOT NULL AND milvus_vec_id <> '' "
+    "ORDER BY id ASC LIMIT %s"
+)
+
+
+async def _missing_in_v3(limit: int) -> list[dict[str, Any]]:
+    """找出「vec_id 看起来有、v3 集合里其实没有」的行。
+
+    向量库被重建或手工清空后，milvus_vec_id 这一列仍然在，只按它判断会漏掉整库；
+    这里按批问 Milvus 本身，缺的才重投影。
+    """
+    if not getattr(get_settings(), "memory_vectors_v3_enabled", False):
+        return []
+    sample = await fetch_all(_RECONCILE_SAMPLE, (limit,))
+    missing: list[dict[str, Any]] = []
+    for start in range(0, len(sample), 200):
+        chunk = sample[start:start + 200]
+        absent = milvus_store.missing_v3_ids([int(row["id"]) for row in chunk])
+        missing.extend(row for row in chunk if int(row["id"]) in absent)
+    return missing
+
+
+async def reconcile(limit: int = 500, deep: bool = False) -> dict[str, int]:
     """全量对账：修复 vec_id 缺失/失效的记忆（等价 Java MemoryMilvusSyncService.resyncAll）。
 
     与增量 relay 的区别：relay 只处理「有 outbox 行」的变更，
     对账负责历史遗留（早期双写失败留下的空 vec_id）与手工删库后的恢复。
+
+    deep=True 时额外抽查「vec_id 有值但 v3 集合里没有」的行（向量库被重建的场景），
+    代价是多一次 Milvus 查询，所以默认关闭，由运维在重建后手动跑一次。
     """
     rows = await fetch_all(
         "SELECT id, summary, milvus_vec_id FROM memory_meta "
@@ -225,6 +254,11 @@ async def reconcile(limit: int = 500) -> dict[str, int]:
         (limit,),
     )
     stats = {"candidates": len(rows), "repaired": 0, "failed": 0}
+    if deep:
+        known = {int(row["id"]) for row in rows}
+        extra = [row for row in await _missing_in_v3(limit) if int(row["id"]) not in known]
+        stats["missing_in_v3"] = len(extra)
+        rows = list(rows) + extra
     for row in rows:
         try:
             outcome = await project_upsert(int(row["id"]))

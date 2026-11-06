@@ -1112,3 +1112,10 @@ cd backend-agent && ./.venv/Scripts/python.exe -m app.memory.evaluation eval/mem
 写库白名单（整句匹配）、归档过滤、复活（接口 + 按钮）、衰减封顶（30 天/次）、
 v3 投影失败重试、冷启动建连不阻塞、dormant 清向量、superseded 徽标、体检并发化。
 仍未做的只有历史时间戳清洗与 `reconcile` 的 v3 存在性检查。
+
+### 10.7 旧时间戳与向量库对账（2026-11-06）
+
+- 旧行（Python 用 UTC 写入）用 `python -m scripts.audit_clock_skew` 审计、`--apply` 修正；
+  判据是「记忆晚于来源消息」，可重复执行。
+- 向量库被重建后，`vec_id` 这一列不可信：`POST /agent/memory/reconcile?deep=true`
+  会问 Milvus 本身并补投影。

@@ -92,3 +92,32 @@ superseded 在列表里的徽标、健康检查的并发化、`reconcile` 的 v3
 - `relay.reconcile` 只按 `milvus_vec_id IS NULL` 找，不检查 v3 集合里是否真有该 id；
   向量库被手工清空后要重建，得先 `init_milvus_v3 --recreate` 再全量 backfill。
 - 生产上线顺序仍是 §10.3：V56–V59 迁移 → `init_milvus_v3` → `backfill_milvus_v3` → 开开关 → 看 shadow 三天。
+
+## 六、两条尾巴（2026-11-06 收尾）
+
+### 6.1 旧时间戳清洗：`backend-agent/scripts/audit_clock_skew.py`
+
+不猜时区，用「记忆一定晚于它引用的消息」判定：`created_at` 比 `source_msg_ids`
+里最新消息早 1–9 小时才可疑（Python 的 UTC 与 Java 的 +08 正好差 8 小时）。
+
+```
+python -m scripts.audit_clock_skew                     # 只报告
+python -m scripts.audit_clock_skew --apply             # 报告并 +8h
+python -m scripts.audit_clock_skew --table memory_episode --apply
+```
+
+- 演练库实测：造一条 `created_at=12:00`、来源消息 `20:00` 的记忆 →
+  第一次 `suspects=1, shifted=0`，`--apply` 后 `shifted=1`，再跑 `suspects=0`（幂等）。
+- `memory_meta` 没有 `updated_at`，脚本按 information_schema 判断列是否存在，两个表都能跑。
+- 只处理 `source_msg_ids` 非空的行；没有来源消息的旧行（早期画像槽位）需要人工看，不自动改。
+
+### 6.2 `reconcile` 现在会问向量库
+
+- `milvus_store.missing_v3_ids(ids)`：按批 `query(filter="memory_id in [...]")`，
+  返回集合里真的没有的那些 id。
+- `relay.reconcile(limit, deep=True)` 额外抽样「`milvus_vec_id` 有值但 v3 里没有」的行，
+  重投影并把 `missing_in_v3` 写进统计；`POST /agent/memory/reconcile?deep=true` 可手动触发。
+- 默认 `deep=False`：正常巡检不该每次都查 Milvus；**重建向量库之后必须跑一次 deep**。
+- 测试：`tests/test_memory_relay.py` 两例（deep 会修缺失行、默认不查 Milvus）。
+
+至此报告里的待办清零；上线顺序仍是 §10.3。

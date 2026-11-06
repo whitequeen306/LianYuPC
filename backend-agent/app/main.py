@@ -1041,11 +1041,11 @@ async def memory_relay_requeue() -> dict[str, int]:
 
 
 @app.post("/agent/memory/reconcile")
-async def memory_reconcile(limit: int = 500) -> dict[str, int]:
+async def memory_reconcile(limit: int = 500, deep: bool = False) -> dict[str, int]:
     """全量对账：修复 vec_id 缺失的记忆（等价 Java startup resync）。"""
     from app.memory.relay import reconcile
 
-    return await reconcile(limit=limit)
+    return await reconcile(limit=limit, deep=deep)
 
 
 @app.post("/agent/memory/consolidate")

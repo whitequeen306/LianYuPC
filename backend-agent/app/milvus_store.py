@@ -290,6 +290,35 @@ def flush_v3() -> None:
         logger.warning("milvus v3 flush failed: %s", exc)
 
 
+def missing_v3_ids(memory_ids: list[int]) -> set[int]:
+    """在 v3 集合里查这些 memory_id 是否真的有投影，返回缺失的那部分。
+
+    `milvus_vec_id` 只说明"曾经写成过"，向量库被重建/清空后它照样在；
+    对账必须问向量库本身，而不是信任 MySQL 里的那一列。
+    """
+    if not memory_ids:
+        return set()
+    client = _connect_v3()
+    if client is None:
+        return set()
+    settings = get_settings()
+    wanted = [int(mid) for mid in memory_ids if int(mid or 0) > 0]
+    if not wanted:
+        return set()
+    try:
+        rows = client.query(
+            collection_name=settings.milvus_v3_collection,
+            filter=f"memory_id in {wanted}",
+            output_fields=["memory_id"],
+            limit=len(wanted),
+        )
+    except Exception as exc:  # noqa: BLE001 - 查不到就当没缺，别把对账变成故障点
+        logger.warning("milvus v3 presence query failed: %s", exc)
+        return set()
+    present = {int((row or {}).get("memory_id") or 0) for row in (rows or [])}
+    return {mid for mid in wanted if mid not in present}
+
+
 def search_hits_v3(
     character_id: int,
     user_id: int,
@@ -334,4 +363,4 @@ def reset() -> None:
     _client_v3 = None
 
 
-__all__ = ["EPISODE_ID_OFFSET", "episode_vector_id", "delete", "flush_v3", "insert", "insert_v3", "reset", "search", "search_hits", "search_hits_v3"]
+__all__ = ["EPISODE_ID_OFFSET", "episode_vector_id", "delete", "flush_v3", "insert", "insert_v3", "reset", "search", "search_hits", "search_hits_v3", "missing_v3_ids"]

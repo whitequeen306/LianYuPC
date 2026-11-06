@@ -181,3 +181,28 @@ async def test_reconcile_counts_failure_without_crashing(fake, monkeypatch):
     monkeypatch.setattr(relay, "project_upsert", boom)
     stats = await relay.reconcile()
     assert stats["failed"] == 1
+
+
+@pytest.mark.asyncio
+async def test_deep_reconcile_repairs_rows_missing_from_v3(fake, monkeypatch):
+    """向量库被重建后，vec_id 这一列还在——只按它判断会漏掉整库。"""
+    import types as _types
+
+    monkeypatch.setattr(relay, "get_settings", lambda: _types.SimpleNamespace(
+        memory_vectors_v3_enabled=True))
+    monkeypatch.setattr(relay.milvus_store, "missing_v3_ids", lambda ids: {11})
+
+    stats = await relay.reconcile(limit=10, deep=True)
+
+    assert stats["missing_in_v3"] == 1
+    assert stats["repaired"] == 1
+
+
+@pytest.mark.asyncio
+async def test_shallow_reconcile_does_not_query_milvus(fake, monkeypatch):
+    def boom(ids):
+        raise AssertionError("默认对账不该查向量库")
+
+    monkeypatch.setattr(relay.milvus_store, "missing_v3_ids", boom)
+    stats = await relay.reconcile(limit=10)
+    assert "missing_in_v3" not in stats
