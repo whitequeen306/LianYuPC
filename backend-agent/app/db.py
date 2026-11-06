@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -39,10 +40,17 @@ def _assert_select(sql: str) -> None:
         raise ReadOnlyViolation(f"only SELECT is allowed on the agent read-only pool: {sql[:60]}")
 
 
+_pool_lock = asyncio.Lock()
+
+
 async def pool() -> aiomysql.Pool:
-    """惰性创建只读连接池。"""
+    """惰性创建只读连接池（并发首调用只建一个）。"""
     global _pool
-    if _pool is None:
+    if _pool is not None:
+        return _pool
+    async with _pool_lock:
+        if _pool is not None:
+            return _pool
         settings = get_settings()
         _pool = await aiomysql.create_pool(
             host=settings.mysql_host,
@@ -51,6 +59,9 @@ async def pool() -> aiomysql.Pool:
             password=settings.mysql_password,
             db=settings.mysql_database,
             charset="utf8mb4",
+            # 库里 DATETIME 是 Java 用 +08 墙钟写的；连接不设时区时 NOW() 走服务器 UTC，
+            # Python 写进去的行会比 Java 早 8 小时（前端按 +08 解析，直接差一天）。
+            init_command="SET time_zone = '+08:00'",
             autocommit=True,
             minsize=1,
             maxsize=settings.mysql_pool_size,

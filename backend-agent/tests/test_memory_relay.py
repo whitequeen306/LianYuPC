@@ -61,6 +61,8 @@ def fake(monkeypatch):
     monkeypatch.setattr(relay, "transaction", fake_transaction)
     monkeypatch.setattr(relay, "embed", fake_embed)
     monkeypatch.setattr(relay.milvus_store, "insert", fake_insert)
+    # v3 双写默认开：不桩掉会真去连 Milvus，测试环境没有那个服务。
+    monkeypatch.setattr(relay.milvus_store, "insert_v3", lambda *a, **k: "v3-1")
     monkeypatch.setattr(relay.milvus_store, "delete", fake_delete)
     monkeypatch.setattr(relay.milvus_store, "flush_v3", lambda: state["flushes"].append(1))
     return state

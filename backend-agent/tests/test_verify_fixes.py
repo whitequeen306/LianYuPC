@@ -80,3 +80,23 @@ async def test_memory_failure_degrades_instead_of_raising(monkeypatch):
     )
 
     assert await data_readers.load_profile_block(3, 7, "在吗") is None
+
+
+def test_write_guard_rejects_extra_set_columns():
+    """B4：前缀匹配会放行 `status='superseded', summary=%s` 这种追加列的句子。"""
+    from app.write import WriteNotAllowed, _assert_allowed
+
+    with pytest.raises(WriteNotAllowed):
+        _assert_allowed(
+            "UPDATE memory_meta SET status = 'superseded', summary = %s WHERE id = %s"
+        )
+
+
+def test_write_guard_still_allows_the_real_injection_statement():
+    from app.write import _assert_allowed
+
+    _assert_allowed(
+        "UPDATE memory_meta SET last_injected_at = NOW(), last_recalled_at = NOW(), "
+        "recall_count = recall_count + 1, strength = LEAST(1.000, strength + 0.05), "
+        "last_decay_at = NOW() WHERE id IN (%s, %s)"
+    )

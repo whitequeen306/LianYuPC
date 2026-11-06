@@ -92,7 +92,7 @@ class Settings(BaseSettings):
     tool_output_max_chars: int = 1200
 
     # 历史按 token 裁剪（recent 槽）。默认关：先上线测量，再决定是否让它真正丢历史。
-    history_trim_enabled: bool = False
+    history_trim_enabled: bool = True
 
     # 写入前语义去重（cos≥0.92 NOOP）。默认关：多一次 embedding 调用，先灰跑看误伤。
     memory_dedupe_similarity_enabled: bool = True

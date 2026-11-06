@@ -63,7 +63,9 @@ async def _warm_memory() -> None:
         from app.memory.embedding import embed
 
         await embed(["预热"])
-        milvus_store._connect_v3()  # noqa: SLF001 - 预热就是为了提前建连
+        # Milvus 建连是同步阻塞（约 0.8s）；直接在事件循环里调用会把首轮
+        # 召回的 500ms 预算挤爆，首轮静默退回旧渲染。
+        await asyncio.to_thread(milvus_store._connect_v3)  # noqa: SLF001
         logger.info("memory warmup done")
     except Exception as exc:  # noqa: BLE001 - 预热失败不影响启动
         logger.warning("memory warmup failed: %s", exc)

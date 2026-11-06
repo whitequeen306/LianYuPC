@@ -86,6 +86,16 @@ class MemoryDecayServiceTest {
         assertEquals(NOW, patch.getLastDecayAt());
     }
 
+    @Test
+    void settleCapsOneRoundAtThirtyDays() {
+        LocalDateTime now = LocalDateTime.of(2026, 11, 6, 3, 30);
+        double thirtyDays = MemoryDecayService.settleStrength(0.66d, 365, now.minusDays(30), now);
+        double eightHundredDays = MemoryDecayService.settleStrength(0.66d, 365, now.minusDays(800), now);
+
+        assertEquals(thirtyDays, eightHundredDays, 1e-9);
+        assertTrue(eightHundredDays > 0.4d, "离开很久不该一次打成 dormant");
+    }
+
     private static MemoryMeta row(long id, double strength) {
         return row(id, strength, NOW.minusDays(400));
     }

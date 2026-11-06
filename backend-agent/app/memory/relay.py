@@ -104,16 +104,22 @@ async def project_upsert(memory_id: int) -> str:
     )
     if vec_id is None:
         return "retry"
+
+    # v3 投影失败不能当成功：outbox 一旦标 DONE，reconcile 只挑 vec_id IS NULL 的行，
+    # 这条记忆就永远失去向量召回。宁可回滚这次 v2 插入再重试。
+    v3_ok = _project_v3(meta, summary, vectors[0])
+    if get_settings().memory_vectors_v3_enabled and not v3_ok:
+        milvus_store.delete([str(vec_id)])
+        return "retry"
     await _set_vec_id(int(meta["id"]), vec_id)
-    _project_v3(meta, summary, vectors[0])
     return "done"
 
 
-def _project_v3(meta: dict[str, Any], summary: str, vector: list[float]) -> None:
-    """v3 双写：只做增量投影，失败不影响 v2 已落的主键。"""
+def _project_v3(meta: dict[str, Any], summary: str, vector: list[float]) -> bool:
+    """v3 双写；返回是否投影成功。关着开关时视为成功（本来就不该写）。"""
     if not getattr(get_settings(), "memory_vectors_v3_enabled", False):
-        return
-    milvus_store.insert_v3(
+        return True
+    return milvus_store.insert_v3(
         int(meta["character_id"]),
         int(meta["user_id"]),
         int(meta["id"]),
@@ -123,7 +129,7 @@ def _project_v3(meta: dict[str, Any], summary: str, vector: list[float]) -> None
         str(meta.get("status") or "active"),
         _event_time_ms(meta.get("event_time")),
         vector,
-    )
+    ) is not None
 
 
 def _event_time_ms(value: Any) -> int:

@@ -58,12 +58,32 @@ public class MemoryDecayService {
      * <p>单指数在 1 天处就掉到 30%，会把"昨天刚聊过"的事也变模糊；
      * 两条指数叠加后 1 天 ≈ 0.83、30 天 ≈ 0.55、1 年 ≈ 0.18（τ=365）。
      */
+    public static final int MAX_DECAY_DAYS = 30;
+
+    /**
+     * 结算用的强度：一次最多按 30 天算。用户半年没上线，按 400 天结算会把
+     * 0.66 的记忆一次打成 dormant（实测 0.128）；封顶后仍继续衰减，只是不会
+     * 因为"离开很久"被一次性清空。
+     */
+    public static double settleStrength(double strength, int tauDays,
+                                        LocalDateTime lastDecayAt, LocalDateTime now) {
+        if (tauDays <= 0 || lastDecayAt == null || now == null) {
+            return strength;
+        }
+        double days = Math.max(0d, Duration.between(lastDecayAt, now).toSeconds() / 86400d);
+        return curve(strength, tauDays, Math.min(days, MAX_DECAY_DAYS));
+    }
+
     public static double effectiveStrength(double strength, int tauDays,
                                            LocalDateTime lastDecayAt, LocalDateTime now) {
         if (tauDays <= 0 || lastDecayAt == null || now == null) {
             return 1.0d;
         }
         double days = Math.max(0d, Duration.between(lastDecayAt, now).toSeconds() / 86400d);
+        return curve(strength, tauDays, days);
+    }
+
+    static double curve(double strength, int tauDays, double days) {
         double fast = Math.exp(-days / (tauDays / 6.0d));
         double slow = Math.exp(-days / (2.5d * tauDays));
         double value = strength * (0.7d * fast + 0.3d * slow);
@@ -117,7 +137,7 @@ public class MemoryDecayService {
         for (MemoryMeta row : rows) {
             int tau = row.getTauDays() == null ? 0 : row.getTauDays();
             double base = row.getStrength() == null ? 1.0d : row.getStrength().doubleValue();
-            double value = effectiveStrength(base, tau, row.getLastDecayAt(), now);
+            double value = settleStrength(base, tau, row.getLastDecayAt(), now);
             candidates.add(new Candidate(row, value, tierFor(value, row.getLastRecalledAt(), now)));
         }
         candidates.sort(Comparator.comparingDouble(Candidate::strength));
