@@ -82,9 +82,9 @@ class Settings(BaseSettings):
     memory_recall_v3_enabled: bool = True
     # 召回的超时预算：超了就退回旧路径，宁可少几条也不要拖住整轮回复。
     # 向量路要发一次 embedding（热连接约 200ms，线上实测 1–11s 都有）：整条召回
-    # 等不到就白等，所以向量路另有 0.35s 的单独预算（见 memory_vector_timeout_seconds），
+    # 等不到就白等，所以向量路另有单独预算（见 memory_vector_timeout_seconds），
     # 文本路出块约 200–300ms，0.65s 足够两者叠加。
-    memory_recall_timeout_seconds: float = 0.65
+    memory_recall_timeout_seconds: float = 0.45
     # 打点（mark_injected）是旁路写入，超时直接放弃，下一轮再补。
     memory_recall_mark_timeout_seconds: float = 0.3
 
@@ -146,7 +146,9 @@ class Settings(BaseSettings):
     # 低于这个门槛的基本是噪声；换 embedding 供应商时需要重新标定。
     memory_vector_min_similarity: float = 0.50
     # 向量路单独限时：外网 embedding 超时就只丢向量，别把 ngram/episode 一起拖垮。
-    memory_vector_timeout_seconds: float = 0.35
+    # 生产实测 DashScope embedding 0.6-1.5s，这个预算基本只决定"白等多久"；
+    # 等本地 embedding 落地后（~20ms），它才会真正变成收益。
+    memory_vector_timeout_seconds: float = 0.18
 
     # 记忆块（画像 + 关系 + 场景 + 召回）合起来的 token 上限；0 表示不设限
     memory_context_max_tokens: int = 1100

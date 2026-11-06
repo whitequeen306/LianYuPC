@@ -1109,8 +1109,10 @@ cd backend-agent && ./.venv/Scripts/python.exe -m app.memory.evaluation eval/mem
 0.6–1.5s/次，整条召回被它拖过 500ms，日志每轮都是 `timed out ... falling back`——表面上
 开着 v3，实际仍在走旧路径。改成两件事后恢复：
 
-1. **向量路单独限时**（`memory_vector_timeout_seconds=0.35`）：超时只丢向量，ngram /
-   episode / core 照常出块，不再整体回退旧路径；整条召回预算 0.5s → 0.65s。
+1. **向量路单独限时**（`memory_vector_timeout_seconds`）：超时只丢向量，ngram /
+   episode / core 照常出块，不再整体回退旧路径；整条召回预算 0.65s → 0.45s。
+   生产实测外网 embedding 0.6–1.5s，所以这个预算目前基本只决定"白等多久"，已压到
+   0.18s；等本地 embedding 落地（~20ms）它才会变成收益。
 2. **三条路并发**（候选 SQL / episode SQL / 向量）：串行的 SQL 两跳 + 向量预算会叠成
    544ms，并发后热路径约 300ms。
 
