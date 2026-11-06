@@ -371,3 +371,8 @@ async def test_v3_block_gives_up_when_recall_exceeds_budget(monkeypatch, caplog)
 
     assert await data_readers._load_v3_block(3, 7, "在吗") is None
     assert "timed out" in caplog.text
+
+
+def test_core_lane_respects_mute():
+    """钉住/核心记忆也要能"别再提"：muted 是用户意志，优先级高于核心身份设定。"""
+    assert "muted = 0" in recall_mod._CORE_SQL

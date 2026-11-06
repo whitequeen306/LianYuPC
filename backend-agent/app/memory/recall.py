@@ -48,6 +48,7 @@ SELECT id, summary, memory_type, importance, strength, tau_days, fade_level,
 FROM memory_meta
 WHERE character_id = %s AND user_id = %s
   AND status = 'active'
+  AND muted = 0
   AND (layer = 'core' OR pinned = 1)
 LIMIT 12
 """
