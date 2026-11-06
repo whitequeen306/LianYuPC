@@ -187,6 +187,10 @@ lianyu:
       max-context-messages: 12
     milvus:
       collection: memory_vectors_v2
+    consolidate:
+      # 周记：每周一把上周 episode 收成一条 reflection。默认关（会主动发内网 HTTP），线上显式打开
+      enabled: false
+      cron: "0 10 4 * * MON"
     retrieval:
       importance-threshold: 0.5
     cache:
