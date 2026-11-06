@@ -57,3 +57,22 @@
    `python -m scripts.backfill_milvus_v3 --limit 5000`。
 3. 灰度看 `GET /agent/memory/health`：`outbox_pending`、`outbox_dead`、
    `last_episode_at`、`last_decay_at` 四项；影子 overlap 连续三天 ≥0.6 再全量。
+
+## 四、第二轮修复（2026-11-06 晚）
+
+用户在看到上面的清单后要求「修复」。以下条目已落地：
+
+| 编号 | 修法 | 验证 |
+|---|---|---|
+| B2 | `HIGH_SIMILARITY` 0.92 → 0.97：0.90–0.97 全部交给 review（默认已开、由 Java 传凭据），不再把「妈妈/爸爸」「下周三/下个月」直接吞掉 | `tests/test_memory_dedupe.py` 边界改为 0.97/0.9699 |
+| B4 | 写库白名单从「前缀」改「整条语句全等正则」；`writer.py` 三处 `cur.execute` 收口到 `execute_write` | 新增两条回归：追加 `SET summary` 必须被拒、真实打点语句必须放行 |
+| A2 | `history_trim_enabled` 默认改 True，按预算裁历史（42 条 4495 token → 按 recent 槽裁剪） | `tests/test_chat_turn_budget_trim.py` / `test_context_history.py` 8 passed |
+| D3 | Java `MemoryDecayService` 新增 `MAX_DECAY_DAYS=30` 与 `settleStrength()`；800 天未上线也只按 30 天结算 | `MemoryDecayServiceTest.settleCapsOneRoundAtThirtyDays` |
+| B5 | v3 投影失败不再标 DONE：回滚本次 v2 插入并返回 `retry`，让 outbox 重试 | `tests/test_memory_relay.py` 17 passed |
+| E1 | 启动预热里的同步 `_connect_v3()` 改 `asyncio.to_thread`，不再阻塞首轮召回 | 代码审阅 + import 冒烟 |
+| D5 | 新增 `POST /api/memory/{id}/revive`；记忆页「让她想起来」按钮（`canRevive` 只在非 active 时出现）；四语文案 | `MemoryQueryServiceTest` 9 passed、前端 i18n/page 13 passed |
+| F2 | 只读连接池（也是写池）加 `init_command="SET time_zone='+08:00'"`，Python 的 `NOW()` 与 Java 墙钟对齐 | import 冒烟；历史行仍需要一次性清洗 |
+| E3 | `pool()` 加 `asyncio.Lock`，并发首调用只建一个连接池 | — |
+
+仍未做（留作下一轮）：dormant 的向量清理与 `embedding_state='dropped'`、D5 的 Python 侧复活分支、
+superseded 在列表里的徽标、健康检查的并发化、`reconcile` 的 v3 去重、历史时间戳清洗脚本。
