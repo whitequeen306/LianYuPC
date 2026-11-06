@@ -8,6 +8,9 @@ RUN pip install --no-cache-dir uv
 COPY pyproject.toml ./
 COPY uv.lock ./
 COPY app ./app
+# 运维脚本（Milvus 建集合 / 回填 / 时钟审计）。生产发版后要在容器内跑，
+# 不再依赖 docker cp 临时拷入，见 docs/context-memory-architecture-zh.md §10.3。
+COPY scripts ./scripts
 RUN uv sync --frozen --no-install-project --no-dev
 
 FROM python:3.12-slim-bookworm
