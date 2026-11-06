@@ -225,14 +225,26 @@ def _trim_to_budget(messages: list[dict[str, Any]],
     return system + kept
 
 
+async def _record_stats(*, estimated: int = 0, trimmed: int = 0,
+                        cache_hit: int | None = None, cache_miss: int | None = None,
+                        turns: int = 1) -> None:
+    from app.context.stats import record_turn
+
+    await record_turn(estimated_tokens=estimated, cache_hit=cache_hit,
+                      cache_miss=cache_miss, trimmed=trimmed, turns=turns)
+
+
 async def assemble_messages(state: ChatTurnState) -> dict[str, Any]:
     """节点 2：system + 历史 → 模型输入，对齐 Java `ChatTurnMessageAssembler`。"""
     system_prompt = state.get("system_prompt") or ""
 
     prepared = state.get("prepared_messages") or []
     if prepared:
-        messages = _trim_to_budget(_assemble_prepared(system_prompt, prepared), state.get("history"))
+        assembled = _assemble_prepared(system_prompt, prepared)
+        messages = _trim_to_budget(assembled, state.get("history"))
         estimated = estimate_messages(messages)
+        if state.get("invoke") is True:
+            await _record_stats(estimated=estimated, trimmed=max(0, len(assembled) - len(messages)))
         logger.info("chat_turn.assemble_messages count=%d prepared=true est=%d",
                     len(messages), estimated)
         _log_budget(estimated, state.get("history"))
@@ -271,8 +283,11 @@ async def assemble_messages(state: ChatTurnState) -> dict[str, Any]:
         messages.append({"role": "user", "content": wrap_stored_text_for_model(user_text)})
 
     messages = drop_orphan_tool_messages(messages)
+    before_trim = len(messages)
     messages = _trim_to_budget(messages, state.get("history"))
     estimated = estimate_messages(messages)
+    if state.get("invoke") is True:
+        await _record_stats(estimated=estimated, trimmed=max(0, before_trim - len(messages)))
     logger.info("chat_turn.assemble_messages count=%d prepared=false est=%d",
                 len(messages), estimated)
     _log_budget(estimated, state.get("history"))
@@ -354,6 +369,8 @@ async def invoke_model(state: ChatTurnState) -> dict[str, Any]:
     logger.info("chat_turn.invoke_model chars=%d est=%d cache_hit=%s cache_miss=%s",
                 len(result.content or ""), state.get("prompt_tokens_estimated"),
                 result.cache_hit_tokens, result.cache_miss_tokens)
+    await _record_stats(cache_hit=result.cache_hit_tokens, cache_miss=result.cache_miss_tokens,
+                        turns=0)
     return {
         "content": result.content or "",
         "prompt_tokens": result.prompt_tokens,

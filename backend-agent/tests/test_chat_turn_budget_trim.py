@@ -20,11 +20,20 @@ def _history(count: int) -> list[dict]:
 
 def _state(count: int) -> dict:
     return {
+        "invoke": True,
         "system_prompt": "人设",
         "history": _history(count),
         "user_text": "最后一句",
         "current_user_message_id": count,
     }
+
+
+@pytest.fixture(autouse=True)
+def _no_stats(monkeypatch):
+    async def noop(**kwargs):
+        return None
+
+    monkeypatch.setattr(chat_turn, "_record_stats", noop)
 
 
 @pytest.mark.asyncio

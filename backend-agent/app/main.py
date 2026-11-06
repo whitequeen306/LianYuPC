@@ -1007,6 +1007,18 @@ async def memory_consolidate() -> dict[str, int]:
     return {"written": await consolidate()}
 
 
+@app.get("/agent/context/stats")
+async def context_stats() -> dict[str, Any]:
+    """今天的上下文开销（turns / est tokens / 缓存命中）。读 Redis 日哈希，失败返回空。"""
+    from app.context.stats import read_today
+
+    try:
+        return await read_today()
+    except Exception as exc:  # noqa: BLE001 - 运维读取失败不该 500
+        logger.debug("context stats read failed: %s", exc)
+        return {"turns": 0, "est_tokens_per_turn": None, "cache_hit_rate": None, "trimmed_turns": 0}
+
+
 @app.post("/agent/memory/write")
 async def memory_write(
     body: MemoryWriteBody,

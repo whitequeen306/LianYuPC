@@ -867,6 +867,7 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 | PR-17 周记（跨天整合） | ✅ `81a9d64` | `app/memory/consolidate.py` + `POST /agent/memory/consolidate`；`MemoryConsolidateScheduler` 周一 04:10 触发（默认关）；同角色同周只一条；抽取式、不调模型 |
 | PR-18 召回评测脚手架 | ✅ 本次 | `app/memory/evaluation.py`：JSONL 题集 → recall@k / MRR / 未命中清单；同一套题可对比开 v3 前后 |
 | PR-19 历史按 token 裁剪 | ✅ 本次 | `app/context/history.py` + `chat_turn._trim_to_budget`：只为 recent 槽服务，开关 `history_trim_enabled` 默认关 |
+| PR-20 上下文日统计 | ✅ 本次 | `app/context/stats.py` 写 Redis `ctx:stats:YYYYMMDD`；`GET /agent/context/stats` 读 `turns / est_tokens_per_turn / cache_hit_rate / trimmed_turns` |
 
 **仍未做**：向量相似度双阈值（cos≥0.92 NOOP / <0.75 ADD / 灰区 LLM，现在只做了槽位版 supersede，
 普通事实仍按 `source_hash` 合并）、周记接 cron 并换成生成式（现在靠手动打端点、文本是抽取拼接）、
@@ -912,6 +913,8 @@ cd backend-agent && ./.venv/Scripts/python.exe -m app.memory.evaluation eval/mem
 **线上**：`context_tokens_p50/p95`、`cache_hit_rate`、`slot_drop_total`、`recall_used_rate`（判官：
 回复是否引用了召回内容）、`contradiction_rate`、`callback_success`（用户回"你还记得"）、
 `forgot_complaints`、`p95_latency`、`cost_per_turn`。
+其中 `turns / est_tokens_per_turn / cache_hit_rate / trimmed_turns` 已由
+`app/context/stats.py` 按天累计，`GET /agent/context/stats` 可直接读；其余待埋点。
 
 **遗忘相关**（§7.6.11）：`forget_false_negative`（问"还记得"时 `s_eff<0.3`）、`over_memory_rate`
 （同一事实 7 天被主动提 ≥2 次）、`revival_success`、`fabrication_rate`（目标 0）、
