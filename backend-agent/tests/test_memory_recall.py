@@ -55,6 +55,49 @@ def test_cooldown_rows_are_dropped():
     assert [row["id"] for row in ranked] == [2]
 
 
+@pytest.mark.asyncio
+async def test_vector_lane_merges_rows_and_uses_hit_score(monkeypatch):
+    monkeypatch.setattr(
+        recall_mod, "get_settings",
+        lambda: SimpleNamespace(memory_vector_recall_enabled=True, memory_vector_recall_top_k=10),
+    )
+
+    async def fake_fetch_all(sql, params=()):
+        if "IN (" in sql:
+            return [_row(9, quote="她说过想去看海")]
+        return []
+
+    async def fake_embed(texts):
+        return [[0.1, 0.2, 0.3]]
+
+    monkeypatch.setattr(recall_mod, "fetch_all", fake_fetch_all)
+    monkeypatch.setattr("app.memory.embedding.embed", fake_embed)
+    monkeypatch.setattr("app.milvus_store.search_hits", lambda c, u, v, top_k=20: [(9, 0.77)])
+
+    rows = await recall_mod.load_candidates(3, 7, "海")
+
+    assert {row["id"] for row in rows} == {9}
+    assert rows[0]["rel"] == 0.77
+
+
+@pytest.mark.asyncio
+async def test_vector_lane_is_off_by_default(monkeypatch):
+    def boom(*args, **kwargs):
+        raise AssertionError("vector lane must not run when disabled")
+
+    monkeypatch.setattr(
+        recall_mod, "get_settings",
+        lambda: SimpleNamespace(memory_vector_recall_enabled=False, memory_vector_recall_top_k=10),
+    )
+    monkeypatch.setattr("app.milvus_store.search_hits", boom)
+
+    async def fake_fetch_all(sql, params=()):
+        return []
+
+    monkeypatch.setattr(recall_mod, "fetch_all", fake_fetch_all)
+    assert await recall_mod.load_candidates(3, 7, "海") == []
+
+
 def test_render_groups_by_type_and_marks_confidence():
     rows = [
         _row(1, memory_type="FACT", quote="她养了一只叫团子的猫"),

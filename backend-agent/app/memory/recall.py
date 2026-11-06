@@ -10,10 +10,14 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
 
+from app.config import get_settings
 from app.data_readers import fetch_all
+
+logger = logging.getLogger(__name__)
 from app.memory import retrieve
 
 # 候选上限：多取一些再排序，避免"数据库 top5"把真正相关的挤掉。
@@ -61,6 +65,74 @@ LIMIT %s
 """
 
 
+_VECTOR_SQL_TEMPLATE = """
+SELECT id, summary, memory_type, importance, strength, tau_days, fade_level,
+       last_decay_at, last_injected_at, event_time, created_at, quote, layer, pinned,
+       1.0 AS rel
+FROM memory_meta
+WHERE id IN ({placeholders})
+  AND status = 'active'
+  AND (valid_to IS NULL OR valid_to > NOW())
+  AND muted = 0
+"""
+
+
+async def _vector_rows(
+    character_id: int,
+    user_id: int,
+    query: str | None,
+    *,
+    top_k: int | None = None,
+) -> list[dict[str, Any]]:
+    """向量路：Milvus 出 id 与相似度，回 MySQL 取权威字段。
+
+    为什么不直接用 Milvus 里的 summary：向量库是投影不是事实源。摘要可能已被
+    supersede 或改写，直接渲染会把旧名字当新名字用。取不到/没开就返回空，
+    让 ngram 候选照常工作 —— 向量是加分项，不是单点依赖。
+    """
+    settings = get_settings()
+    if not settings.memory_vector_recall_enabled:
+        return []
+    text = (query or "").strip()
+    if not text:
+        return []
+    try:
+        from app import milvus_store
+        from app.memory.embedding import embed
+
+        vectors = await embed([text])
+        if not vectors:
+            return []
+        hits = milvus_store.search_hits(
+            character_id, user_id, vectors[0],
+            top_k=top_k or settings.memory_vector_recall_top_k,
+        )
+    except Exception as exc:  # noqa: BLE001 - 向量路失败不影响关键词召回
+        logger.warning("vector recall skipped: %s", exc)
+        return []
+    if not hits:
+        return []
+
+    scores: dict[int, float] = {}
+    for memory_id, score in hits:
+        key = int(memory_id)
+        scores[key] = max(float(score), scores.get(key, -1.0))
+    placeholders = ", ".join(["%s"] * len(scores))
+    try:
+        rows = await fetch_all(
+            _VECTOR_SQL_TEMPLATE.format(placeholders=placeholders),
+            tuple(scores),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("vector rows fetch failed: %s", exc)
+        return []
+    for row in rows or []:
+        hit = scores.get(int(row.get("id") or 0))
+        if hit is not None:
+            row["rel"] = max(float(row.get("rel") or 0.0), hit)
+    return list(rows or [])
+
+
 async def load_candidates(
     character_id: int,
     user_id: int,
@@ -86,7 +158,11 @@ async def load_candidates(
         )
     except Exception:  # noqa: BLE001 - 老库没 V58 时 episode 表不存在，降级即可
         episodes = []
-    return [*merged, *[row for row in (episodes or []) if row.get("id") not in seen]]
+    episodes = [row for row in (episodes or []) if row.get("id") not in seen]
+    seen.update(row.get("id") for row in episodes)
+
+    vector_rows = await _vector_rows(character_id, user_id, query, top_k=limit)
+    return [*merged, *episodes, *[row for row in vector_rows if row.get("id") not in seen]]
 
 
 def rank_rows(

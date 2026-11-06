@@ -142,6 +142,44 @@ def search(
         return []
 
 
+def search_hits(
+    character_id: int,
+    user_id: int,
+    vector: list[float],
+    top_k: int = 20,
+) -> list[tuple[int, float]]:
+    """向量检索只取 memory_id 与分数，供调用方回 MySQL 取权威字段。
+
+    为什么不让 Milvus 直接返回 summary：向量库是投影，不是事实源。摘要可能已被
+    supersede/改写，召回必须以 MySQL 的当前行为准，否则会把旧名字当新名字用。
+    """
+    client = _connect()
+    if client is None or not vector:
+        return []
+    settings = get_settings()
+    try:
+        hits = client.search(
+            collection_name=settings.milvus_collection,
+            data=[vector],
+            anns_field="vector",
+            search_params={"metric_type": "COSINE", "params": {"nprobe": 16}},
+            limit=top_k,
+            filter=f"character_id == {int(character_id)} && user_id == {int(user_id)}",
+            output_fields=["memory_id"],
+        )
+        results: list[tuple[int, float]] = []
+        for batch in hits or []:
+            for hit in batch:
+                entity = hit.get("entity") or {}
+                memory_id = int(entity.get("memory_id") or 0)
+                if memory_id:
+                    results.append((memory_id, float(hit.get("distance", 0.0))))
+        return results
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("milvus search_hits failed: %s", exc)
+        return []
+
+
 def reset() -> None:
     """测试用：丢弃连接缓存。"""
     global _client

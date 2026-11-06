@@ -114,6 +114,9 @@ class Settings(BaseSettings):
     relationship_recent_events: int = 5
     memory_vector_ttl_hours: float = 168.0
     memory_vector_max_candidates: int = 50
+    # v3 召回的向量路：默认关，等 Milvus 里确实有向量、且 v2 集合升到带 status 的 v3 再开
+    memory_vector_recall_enabled: bool = False
+    memory_vector_recall_top_k: int = 20
 
     # 角色近况（对齐 CharacterRecentActivityService）
     recent_activity_cache_hours: float = 1.0
