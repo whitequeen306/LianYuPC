@@ -22,6 +22,11 @@ from app.db import cache_get_json, cache_put_json
 logger = logging.getLogger(__name__)
 
 SCENE_TTL_SECONDS = 21600
+# 闲置多久算「上一场聊完了」：45 分钟。太短会把「去倒杯水」切成一幕，
+# 太长则两段无关话题被塞进同一个 episode。
+SCENE_IDLE_SECONDS = 45 * 60
+# 关闭快照最多留 7 天：它的用途是「抽取失败后还能重跑」，不是长期档案。
+PENDING_TTL_SECONDS = 7 * 24 * 3600
 MAX_BEATS = 4
 MAX_OPEN_LOOPS = 3
 MAX_CALLBACKS = 3
@@ -50,10 +55,13 @@ def _now_iso(now: datetime | None = None) -> str:
 
 
 def new_card(conversation_id: int | str | None = None, now: datetime | None = None) -> dict[str, Any]:
+    stamp = _now_iso(now)
     return {
         "version": 1,
         "conversationId": conversation_id,
-        "updatedAt": _now_iso(now),
+        # startedAt 是这一幕的起点，关闭时用它圈定要抽取的消息区间。
+        "startedAt": stamp,
+        "updatedAt": stamp,
         "turnFrom": 0,
         "turnTo": 0,
         "topic": "",
@@ -85,6 +93,7 @@ def normalize_card(raw: Any, conversation_id: int | str | None = None) -> dict[s
     card.update({
         "version": int(raw.get("version") or 1),
         "conversationId": raw.get("conversationId", conversation_id),
+        "startedAt": str(raw.get("startedAt") or raw.get("updatedAt") or card["startedAt"]),
         "updatedAt": str(raw.get("updatedAt") or card["updatedAt"]),
         "turnFrom": int(raw.get("turnFrom") or 0),
         "turnTo": int(raw.get("turnTo") or 0),
@@ -222,6 +231,79 @@ def needs_model_refresh(card: dict[str, Any], turn: int | None = None) -> bool:
     return turn - int(card.get("turnTo") or 0) >= MODEL_REFRESH_TURNS
 
 
+def _parse_iso(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment
+
+
+def is_stale(card: dict[str, Any] | None, now: datetime | None = None) -> bool:
+    """卡的最后一次更新是否已经超过闲置阈值（= 上一幕聊完了）。"""
+    if not isinstance(card, dict):
+        return False
+    moment = _parse_iso(card.get("updatedAt"))
+    if moment is None:
+        return False
+    reference = now or datetime.now(timezone.utc)
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=timezone.utc)
+    return (reference - moment).total_seconds() >= SCENE_IDLE_SECONDS
+
+
+def _closed_snapshot(card: dict[str, Any]) -> dict[str, Any]:
+    """给抽取用的最小快照：不含运行期字段，落 Redis 待处理。"""
+    return {
+        "conversationId": card.get("conversationId"),
+        "startedAt": card.get("startedAt"),
+        "updatedAt": card.get("updatedAt"),
+        "topic": card.get("topic"),
+        "mood": card.get("mood"),
+        "beats": list(card.get("beats") or []),
+        "openLoops": list(card.get("openLoops") or []),
+    }
+
+
+def pending_key(conversation_id: int | str) -> str:
+    return f"scene:pending:{conversation_id}"
+
+
+async def stash_pending(card: dict[str, Any]) -> None:
+    """把已关闭的场景暂存起来，等下一次带模型凭据的请求来抽取。
+
+    为什么不在组装路径直接抽取：组装请求里没有模型凭据（Java 只在
+    extract-write 时递 base_url/api_key），硬抽只能写规则版假 episode。
+    """
+    conversation_id = card.get("conversationId")
+    if conversation_id in (None, ""):
+        return
+    try:
+        await cache_put_json(pending_key(conversation_id), _closed_snapshot(card), PENDING_TTL_SECONDS)
+    except Exception as exc:  # noqa: BLE001 - 暂存失败不影响本轮组装
+        logger.debug("scene pending stash failed key=%s: %s", conversation_id, exc)
+
+
+async def take_pending(conversation_id: int | str | None) -> dict[str, Any] | None:
+    if conversation_id in (None, ""):
+        return None
+    raw = await cache_get_json(pending_key(conversation_id))
+    if not isinstance(raw, dict):
+        return None
+    try:
+        from app.db import redis_client
+
+        client = await redis_client()
+        await client.delete(pending_key(conversation_id))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("scene pending delete failed key=%s: %s", conversation_id, exc)
+    return raw
+
+
 async def load_card(conversation_id: int | str | None) -> dict[str, Any] | None:
     if conversation_id in (None, ""):
         return None
@@ -256,15 +338,21 @@ __all__ = [
     "MAX_CALLBACKS",
     "MAX_OPEN_LOOPS",
     "MODEL_REFRESH_TURNS",
+    "PENDING_TTL_SECONDS",
+    "SCENE_IDLE_SECONDS",
     "SCENE_TTL_SECONDS",
     "clear_card",
     "detect_mood",
+    "is_stale",
     "load_card",
     "needs_model_refresh",
     "new_card",
     "normalize_card",
+    "pending_key",
     "render_card",
     "save_card",
     "scene_key",
+    "stash_pending",
+    "take_pending",
     "update_card",
 ]

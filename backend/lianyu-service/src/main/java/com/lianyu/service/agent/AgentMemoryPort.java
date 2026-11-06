@@ -13,6 +13,7 @@ import java.util.List;
 public interface AgentMemoryPort {
 
     boolean extractAndWriteIfActive(long userId,
+                                    Long conversationId,
                                     Long characterId,
                                     List<AgentMemoryMessage> messages,
                                     String provider,

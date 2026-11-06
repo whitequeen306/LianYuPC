@@ -87,7 +87,7 @@ public class MemoryWriter {
             Collections.reverse(recentMsgs);
             // Strangler: AGENT 模式下抽取与写入整体交给 Python（同一事务、同一哈希规则）
             if (agentMemoryPort != null && agentMemoryPort.extractAndWriteIfActive(
-                    task.userId(), task.characterId(), toPortMessages(recentMsgs),
+                    task.userId(), task.conversationId(), task.characterId(), toPortMessages(recentMsgs),
                     task.provider(), task.model())) {
                 memoryCacheService.invalidate(task.userId(), task.characterId());
                 return;

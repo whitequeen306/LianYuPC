@@ -900,6 +900,7 @@ class MemoryExtractBody(BaseModel):
 
     user_id: int = Field(alias="userId")
     character_id: int = Field(alias="characterId")
+    conversation_id: int | None = Field(default=None, alias="conversationId")
     messages: list[dict[str, Any]] = []
     text_base_url: str | None = Field(default=None, alias="textBaseUrl")
     text_api_key: str | None = Field(default=None, alias="textApiKey")
@@ -919,7 +920,23 @@ async def memory_extract_write(
         raise HTTPException(status_code=403, detail="user mismatch")
 
     from app.memory.extract import extract_all
+    from app.memory.scene_close import close_pending_scene
     from app.memory.writer import MemoryInput, write_memories
+
+    # 先把上一幕结算掉（卡闲置 >45 分钟时 prompt/assemble 已暂存快照）。
+    # 失败只记日志：这一幕的 episode 丢了，不能连带这一轮的记忆写入也丢。
+    try:
+        await close_pending_scene(
+            body.conversation_id,
+            body.user_id,
+            body.character_id,
+            base_url=body.text_base_url,
+            api_key=body.text_api_key,
+            model=body.text_model,
+            provider=body.provider,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("scene close failed conv=%s: %s", body.conversation_id, exc)
 
     try:
         extracted = await extract_all(

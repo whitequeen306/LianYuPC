@@ -104,3 +104,26 @@ async def test_switch_off_restores_plain_memory_block(monkeypatch, card_store):
     assert "【当前场景】" not in prompt
     assert "【记忆】她怕打雷" in prompt
     assert card_store == {}  # 连读都不读，避免半开状态
+
+
+async def test_idle_scene_is_closed_and_stashed(monkeypatch, card_store):
+    """闲置 45 分钟后再来消息：旧话题不能继续注入，而是暂存等结算。"""
+    from datetime import datetime, timedelta, timezone
+
+    old = scene_card.new_card(11, datetime.now(timezone.utc) - timedelta(hours=2))
+    old = scene_card.update_card(old, user_text="我们在聊搬家", now=datetime.now(timezone.utc) - timedelta(hours=2))
+    card_store[11] = old
+    stashed: list[dict] = []
+
+    async def fake_stash(card):
+        stashed.append(card)
+
+    monkeypatch.setattr(scene_card, "stash_pending", fake_stash)
+
+    prompt = await _assemble(last_user_message="今天加班到很晚，好累，你在吗？")
+
+    assert len(stashed) == 1
+    assert "搬家" in stashed[0]["topic"]
+    assert "搬家" not in prompt            # 上一幕已经结束，不再冒充"当前"
+    assert "加班" in prompt                # 新的一幕从这句话开始
+    assert card_store[11]["startedAt"] != old["startedAt"]

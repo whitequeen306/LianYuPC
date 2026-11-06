@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     # 留一个总开关，线上异常时先关它回到"只有记忆块"的状态。
     scene_card_enabled: bool = True
 
+    # 场景关闭时抽 episode。独立开关：抽取要花一次小模型调用，
+    # 出问题时可单独关掉而不影响场景卡本身。
+    scene_extract_enabled: bool = True
+
     # 向量化 / 重排（P5 读路径）。base_url 可配置：修掉 Java 侧硬编码 DashScope 地址的缺陷
     embedding_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     embedding_api_key: str = ""

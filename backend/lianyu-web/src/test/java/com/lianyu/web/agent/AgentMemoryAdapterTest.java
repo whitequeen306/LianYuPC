@@ -6,6 +6,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -62,13 +64,13 @@ class AgentMemoryAdapterTest {
     @Test
     void emptyMessagesDoesNotTakeOver() {
         when(client.properties()).thenReturn(props());
-        assertFalse(adapter.extractAndWriteIfActive(1L, 3L, List.of(), "dashscope", "m"));
+        assertFalse(adapter.extractAndWriteIfActive(1L, 9L, 3L, List.of(), "dashscope", "m"));
     }
 
     @Test
     void nullCharacterDoesNotTakeOver() {
         when(client.properties()).thenReturn(props());
-        assertFalse(adapter.extractAndWriteIfActive(1L, null, messages(), "dashscope", "m"));
+        assertFalse(adapter.extractAndWriteIfActive(1L, 9L, null, messages(), "dashscope", "m"));
     }
 
     @Test
@@ -76,7 +78,7 @@ class AgentMemoryAdapterTest {
         when(client.properties()).thenReturn(props());
         when(vaultService.resolveForChat(anyLong(), any())).thenReturn(null);
         when(vaultService.resolvePreferredUserVault(anyLong())).thenReturn(null);
-        assertFalse(adapter.extractAndWriteIfActive(1L, 3L, messages(), "dashscope", "m"));
+        assertFalse(adapter.extractAndWriteIfActive(1L, 9L, 3L, messages(), "dashscope", "m"));
     }
 
     @Test
@@ -84,7 +86,7 @@ class AgentMemoryAdapterTest {
         when(client.properties()).thenReturn(props());
         stubVault();
         when(client.postJson(anyString(), anyLong(), anyMap())).thenReturn(null);
-        assertFalse(adapter.extractAndWriteIfActive(1L, 3L, messages(), "dashscope", "m"));
+        assertFalse(adapter.extractAndWriteIfActive(1L, 9L, 3L, messages(), "dashscope", "m"));
     }
 
     @Test
@@ -94,7 +96,7 @@ class AgentMemoryAdapterTest {
         stubReadTree();
         when(client.postJson(anyString(), anyLong(), anyMap()))
                 .thenReturn("{\"error\":\"extract_failed\"}");
-        assertFalse(adapter.extractAndWriteIfActive(1L, 3L, messages(), "dashscope", "m"));
+        assertFalse(adapter.extractAndWriteIfActive(1L, 9L, 3L, messages(), "dashscope", "m"));
     }
 
     @Test
@@ -104,6 +106,21 @@ class AgentMemoryAdapterTest {
         stubReadTree();
         when(client.postJson(anyString(), anyLong(), anyMap()))
                 .thenReturn("{\"created\":1,\"updated\":0,\"extracted\":1}");
-        assertTrue(adapter.extractAndWriteIfActive(1L, 3L, messages(), "dashscope", "m"));
+        assertTrue(adapter.extractAndWriteIfActive(1L, 9L, 3L, messages(), "dashscope", "m"));
+    }
+
+    @Test
+    void passesConversationIdSoSceneCanBeClosed() {
+        when(client.properties()).thenReturn(props());
+        stubVault();
+        stubReadTree();
+        when(client.postJson(anyString(), anyLong(), anyMap()))
+                .thenReturn("{\"created\":0,\"updated\":0,\"extracted\":0}");
+        assertTrue(adapter.extractAndWriteIfActive(1L, 9L, 3L, messages(), "dashscope", "m"));
+        // 没有 conversationId，Python 就找不到「上一幕」，episode 永远不会生成。
+        verify(client).postJson(
+                eq("/agent/memory/extract-write"),
+                eq(1L),
+                argThat(body -> Long.valueOf(9L).equals(body.get("conversationId"))));
     }
 }

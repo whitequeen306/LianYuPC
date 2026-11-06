@@ -28,6 +28,7 @@ public class AgentMemoryAdapter implements AgentMemoryPort {
 
     @Override
     public boolean extractAndWriteIfActive(long userId,
+                                           Long conversationId,
                                            Long characterId,
                                            List<AgentMemoryMessage> messages,
                                            String provider,
@@ -86,6 +87,8 @@ public class AgentMemoryAdapter implements AgentMemoryPort {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("userId", userId);
         body.put("characterId", characterId);
+        // 会话 id 用于「上一幕结算」：闲置 >45 分钟的旧场景在这里补抽 episode。
+        body.put("conversationId", conversationId);
         body.put("messages", payloadMessages);
         body.put("textBaseUrl", baseUrl);
         body.put("textApiKey", apiKey);
