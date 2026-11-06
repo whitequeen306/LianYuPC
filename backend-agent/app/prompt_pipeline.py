@@ -115,6 +115,41 @@ def resolve_city(settings: Mapping[str, Any] | None) -> str | None:
     return city or None
 
 
+async def _attach_resurface(
+    context: str,
+    *,
+    user_id: int,
+    character_id: int | None,
+    scene_key: str,
+) -> str:
+    """主动开口时，允许她提一句"快要忘记但还温着"的事。
+
+    只在 PROACTIVE 场景调用：普通回复里突然插一句旧事会显得走神；主动找话题时才需要
+    由系统给一个由头。频控与贴题判断在 `app/memory/resurface.py` 里，这里只管拼块。
+    """
+    if scene_key != "PROACTIVE" or not character_id:
+        return context
+
+    from app.config import get_settings
+
+    if not getattr(get_settings(), "memory_resurface_enabled", True):
+        return context
+
+    from app.memory.resurface import suggest
+
+    try:
+        suggestion = await suggest(character_id, user_id)
+    except Exception as exc:  # noqa: BLE001 - 提不了就不提，别毁掉这轮主动开口
+        logger.warning("resurface hint skipped: %s", exc)
+        return context
+    if not suggestion:
+        return context
+
+    line = f"【可以自然提起】{suggestion.get('summary')}（不合适就略过，别硬提）"
+    joiner = chr(10) + chr(10)
+    return f"{context}{joiner}{line}" if context else line
+
+
 async def _attach_scene_card(
     memory_context: str,
     *,
@@ -234,6 +269,9 @@ async def assemble_turn_prompt(
         conversation_id=conversation_id,
         scene_key=scene_key,
         last_user_message=last_user_message,
+    )
+    memory_context = await _attach_resurface(
+        memory_context, user_id=user_id, character_id=character_id, scene_key=scene_key,
     )
 
     # 工具提示：Java 只传开关事实，文案由 Python 查表生成

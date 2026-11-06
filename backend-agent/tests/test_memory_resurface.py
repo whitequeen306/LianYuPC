@@ -95,10 +95,29 @@ class _FakeRedis:
 @pytest.mark.asyncio
 async def test_suggest_respects_weekly_cap(monkeypatch):
     redis = _FakeRedis(claimed=False)
+
+    async def fake_fetch(sql, params):
+        return [_row(1)]
+
     monkeypatch.setattr("app.db.redis_client", _async_callable(redis))
+    monkeypatch.setattr("app.db.fetch_all", fake_fetch)
 
     assert await resurface.suggest(3, 7, now=NOW) is None
     assert redis.calls and redis.calls[0][2] == resurface.WEEKLY_CAP_SECONDS
+
+
+@pytest.mark.asyncio
+async def test_suggest_does_not_burn_the_week_without_a_candidate(monkeypatch):
+    redis = _FakeRedis()
+
+    async def empty(sql, params):
+        return []
+
+    monkeypatch.setattr("app.db.redis_client", _async_callable(redis))
+    monkeypatch.setattr("app.db.fetch_all", empty)
+
+    assert await resurface.suggest(3, 7, now=NOW) is None
+    assert redis.calls == []  # 没有值得提的事，就别占掉这周的开口机会
 
 
 @pytest.mark.asyncio

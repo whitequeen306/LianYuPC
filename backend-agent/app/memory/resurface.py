@@ -124,14 +124,6 @@ async def suggest(
 
     now = now or datetime.now()
     key = week_key(character_id, now)
-    try:
-        redis = await redis_client()
-        claimed = await redis.set(key, "1", ex=WEEKLY_CAP_SECONDS, nx=True)
-        if not claimed:
-            return None
-    except Exception as exc:  # noqa: BLE001 - Redis 挂了宁可这周不提，也不连发
-        logger.warning("resurface skipped (redis): %s", exc)
-        return None
 
     try:
         rows = await fetch_all(
@@ -151,7 +143,20 @@ async def suggest(
             logger.warning("resurface similarity failed: %s", exc)
             return None
 
-    return pick(rows, now, topic_similarity=similarity)
+    suggestion = pick(rows, now, topic_similarity=similarity)
+    if not suggestion:
+        return None
+
+    # 先挑到人再占名额：这周没有值得提的事，就把"开口机会"留到下周。
+    try:
+        redis = await redis_client()
+        claimed = await redis.set(key, "1", ex=WEEKLY_CAP_SECONDS, nx=True)
+        if not claimed:
+            return None
+    except Exception as exc:  # noqa: BLE001 - Redis 挂了宁可这周不提，也不连发
+        logger.warning("resurface skipped (redis): %s", exc)
+        return None
+    return suggestion
 
 
 __all__ = ["in_band", "is_anniversary", "pick", "suggest", "week_key"]

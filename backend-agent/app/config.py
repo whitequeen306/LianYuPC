@@ -137,6 +137,9 @@ class Settings(BaseSettings):
     memory_vector_recall_enabled: bool = False
     memory_vector_recall_top_k: int = 20
 
+    # 主动浮现：主动开口时允许提一句快要忘记的事（每角色每周最多一次）
+    memory_resurface_enabled: bool = True
+
     # 周记（跨天整合）：把一周 episode 收成一条 reflection。
     # 它由运维 cron / 测试端点触发，不挂在聊天链路上；默认开，异常可单独关。
     memory_consolidate_enabled: bool = True

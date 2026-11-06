@@ -127,3 +127,40 @@ async def test_idle_scene_is_closed_and_stashed(monkeypatch, card_store):
     assert "搬家" not in prompt            # 上一幕已经结束，不再冒充"当前"
     assert "加班" in prompt                # 新的一幕从这句话开始
     assert card_store[11]["startedAt"] != old["startedAt"]
+
+
+async def test_proactive_turn_gets_one_resurface_hint(monkeypatch):
+    calls = []
+
+    async def fake_suggest(character_id, user_id, **kwargs):
+        calls.append((character_id, user_id))
+        return {"id": 5, "summary": "她说想去看海", "reason": "fading"}
+
+    monkeypatch.setattr("app.memory.resurface.suggest", fake_suggest)
+
+    prompt = await _assemble(scene="PROACTIVE")
+
+    assert "【可以自然提起】她说想去看海" in prompt
+    assert calls == [(3, 7)]
+
+
+async def test_resurface_is_not_used_in_normal_turns(monkeypatch):
+    async def fail(*args, **kwargs):
+        raise AssertionError("normal turns must not resurface")
+
+    monkeypatch.setattr("app.memory.resurface.suggest", fail)
+
+    prompt = await _assemble()
+
+    assert "【可以自然提起】" not in prompt
+
+
+async def test_proactive_turn_without_hint_stays_clean(monkeypatch):
+    async def empty(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr("app.memory.resurface.suggest", empty)
+
+    prompt = await _assemble(scene="PROACTIVE")
+
+    assert "【可以自然提起】" not in prompt

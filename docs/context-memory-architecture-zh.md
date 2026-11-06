@@ -884,11 +884,10 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 | PR-34 v3 历史回填 | ✅ 本次 | `scripts/backfill_milvus_v3.py`：按 `memory_id in [...]` 查 v3 跳过已有，再批量 embed 写入；`--dry-run` 只看数量。双写只覆盖开关之后的记忆，历史不回填会出现「她突然忘了很多」 |
 | PR-35 当前问句不再记成「没接住」 | ✅ 本次 | 组装时 `track_questions=False`：那句问话正是她马上要答的，记进 openLoops 会渲染出「还没接的话：你刚问的这句」。真正没接住的话由场景结算时的 impression/episode 产出 |
 | PR-36 沉底记忆被召回时复活 | ✅ 本次 | `mark_injected` 对 `fade_level=archived` 的行抬到 `strength≥0.55 / active`、`revival_count+1`；只抬强度与档位，不动摘要，写语句在 `app/write.py` 白名单里 |
-| PR-37 主动浮现（周频控 + 贴题门槛） | ✅ 本次 | `POST /agent/memory/resurface`：本科目每周最多一次；只挑强度 0.35–0.55 或周年（同月同日且 ≥300 天）；给了话题就要求余弦 ≥0.2，否则这周不提。Redis 挂了宁可不说 |
+| PR-37 主动浮现（周频控 + 贴题门槛） | ✅ | `POST /agent/memory/resurface`：本科目每周最多一次；只挑强度 0.35–0.55 或周年（同月同日且 ≥300 天）；给了话题就要求余弦 ≥0.2，否则这周不提。Redis 挂了宁可不说 |
 | PR-31 召回超时预算 | ✅ 本次 | 召回超过 `memory_recall_timeout_seconds`（默认 80ms）就退回旧路径；`mark_injected` 超过 300ms 直接放弃，下一轮再补——记忆可以晚一轮，回复不能卡住 |
 
-**仍未做**：灰区的 LLM 判定（现在是 cos≥0.92 NOOP、<0.75 ADD，中间也按 ADD，
-因为误合并比多记一条更贵；开关默认关）、周记接 cron 并换成生成式（现在靠手动打端点、文本是抽取拼接）、
+**仍未做**：周记换成生成式（现在是抽取拼接；cron 已就绪但默认关）、
 v3 集合在真机上建好并回填（代码已就绪，需 `init_milvus_v3` + `backfill_milvus_v3`）、V58/V59 在真实库上的迁移演练、
 `memory_recall_v3_enabled` 打开前的 200 题评测。
 
@@ -897,7 +896,9 @@ v3 集合在真机上建好并回填（代码已就绪，需 `init_milvus_v3` + 
 `memory_consolidate_enabled`（默认开，关掉后端点直接返回 `skipped`）、
 `history_trim_enabled`（默认关；打开后 recent 槽超预算会丢最旧的消息，system 与当前轮不动）、
 `memory_dedupe_similarity_enabled`（默认关；打开后写入前多一次 embedding，cos≥0.92 直接不写）、
-`memory_shadow_enabled`（默认关；打开后每轮多跑一次 v3 召回，只为打覆盖率日志）。
+`memory_shadow_enabled`（默认关；打开后每轮多跑一次 v3 召回，只为打覆盖率日志）、
+`memory_dedupe_llm_review_enabled`（默认关；灰区多问一次模型，详见 §7.3）、
+`memory_resurface_enabled`（默认开；主动开口时允许提一句快要忘记的事，每角色每周最多一次）。
 周记另有 Java 侧调度开关 `lianyu.memory.consolidate.enabled`（**默认关**，线上显式开启后每周一 04:10 调一次；
 cron 可用 `lianyu.memory.consolidate.cron` 覆盖）。
 回滚：关开关即可回到「画像槽位 + importance top20 + LIKE 5」，新表/新列不影响旧路径。
