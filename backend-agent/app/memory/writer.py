@@ -143,6 +143,12 @@ async def write_memories(user_id: int, character_id: int, memories: list[MemoryI
         existing = await _find_existing(source_hash, user_id, character_id, summary)
 
         if existing is None:
+            decision, similar_id = await _semantic_dedupe(character_id, user_id, summary)
+            if decision == "noop" and similar_id:
+                # 同一件事已经记过：不再插入，把 id 报给调用方即可
+                outcome.skipped += 1
+                outcome.ids.append(similar_id)
+                continue
             memory_id = await _insert_new(user_id, character_id, summary, memory_type,
                                           importance, source_ids, source_hash)
             outcome.created += 1
@@ -169,6 +175,21 @@ async def write_memories(user_id: int, character_id: int, memories: list[MemoryI
     logger.info("memory write done: user=%s character=%s created=%d updated=%d skipped=%d",
                 user_id, character_id, outcome.created, outcome.updated, outcome.skipped)
     return outcome
+
+
+async def _semantic_dedupe(character_id: int, user_id: int,
+                           summary: str) -> tuple[str, int | None]:
+    """语义去重三态；开关关着时一律 ADD（保持旧行为）。"""
+    from app.config import get_settings
+
+    if not get_settings().memory_dedupe_similarity_enabled:
+        return "add", None
+    from app.memory import dedupe
+
+    best, memory_id = await dedupe.best_similar(
+        character_id=character_id, user_id=user_id, summary=summary
+    )
+    return dedupe.decide(best), memory_id
 
 
 _SLOT_RE = re.compile(r"^【长期记忆/([^】]{1,8})】")

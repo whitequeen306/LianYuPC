@@ -444,6 +444,7 @@ system 里配一条硬规则：模糊条目不许说成确定、不许补细节�
 - `content_hash` 全等 → NOOP；
 - 与同 `(character, subject, predicate)` 的现有 fact 比 cos：
   - ≥0.92 → NOOP；<0.75 → ADD；灰区 → 一次 LLM 判定（ADD / UPDATE / SUPERSEDE / NOOP）；
+    当前实现（PR-21）灰区按 ADD、不调模型——误合并比多记一条更难收拾；
 - 更新不物理删除：旧行 `valid_to = now()`、`status='superseded'`、`superseded_by = 新 id`；
 - `importance` 用锚点示例校准（0.9 姓名/创伤、0.75 强情绪、0.6 偏好、0.4 闲聊）。
 
@@ -867,17 +868,19 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 | PR-17 周记（跨天整合） | ✅ `81a9d64` | `app/memory/consolidate.py` + `POST /agent/memory/consolidate`；`MemoryConsolidateScheduler` 周一 04:10 触发（默认关）；同角色同周只一条；抽取式、不调模型 |
 | PR-18 召回评测脚手架 | ✅ 本次 | `app/memory/evaluation.py`：JSONL 题集 → recall@k / MRR / 未命中清单；同一套题可对比开 v3 前后 |
 | PR-19 历史按 token 裁剪 | ✅ 本次 | `app/context/history.py` + `chat_turn._trim_to_budget`：只为 recent 槽服务，开关 `history_trim_enabled` 默认关 |
+| PR-21 语义去重（双阈值） | ✅ 本次 | `app/memory/dedupe.py`：cos≥0.92 NOOP / <0.75 ADD / 灰区默认 ADD（不调模型）；开关 `memory_dedupe_similarity_enabled` 默认关 |
 | PR-20 上下文日统计 | ✅ 本次 | `app/context/stats.py` 写 Redis `ctx:stats:YYYYMMDD`；`GET /agent/context/stats` 读 `turns / est_tokens_per_turn / cache_hit_rate / trimmed_turns` |
 
-**仍未做**：向量相似度双阈值（cos≥0.92 NOOP / <0.75 ADD / 灰区 LLM，现在只做了槽位版 supersede，
-普通事实仍按 `source_hash` 合并）、周记接 cron 并换成生成式（现在靠手动打端点、文本是抽取拼接）、
+**仍未做**：灰区的 LLM 判定（现在是 cos≥0.92 NOOP、<0.75 ADD，中间也按 ADD，
+因为误合并比多记一条更贵；开关默认关）、周记接 cron 并换成生成式（现在靠手动打端点、文本是抽取拼接）、
 `memory_vectors_v3` 集合（现在向量路仍读 v2，且没有 status 标量过滤）、影子 diff 指标、V58 在真实库上的迁移演练、
 `memory_recall_v3_enabled` 打开前的 200 题评测。
 
 **开关**：`scene_card_enabled`（默认开）、`memory_recall_v3_enabled`（默认关，等迁移 + 评测）、
 `memory_vector_recall_enabled`（默认关，等 Milvus 里有向量且集合升级）、
 `memory_consolidate_enabled`（默认开，关掉后端点直接返回 `skipped`）、
-`history_trim_enabled`（默认关；打开后 recent 槽超预算会丢最旧的消息，system 与当前轮不动）。
+`history_trim_enabled`（默认关；打开后 recent 槽超预算会丢最旧的消息，system 与当前轮不动）、
+`memory_dedupe_similarity_enabled`（默认关；打开后写入前多一次 embedding，cos≥0.92 直接不写）。
 周记另有 Java 侧调度开关 `lianyu.memory.consolidate.enabled`（**默认关**，线上显式开启后每周一 04:10 调一次；
 cron 可用 `lianyu.memory.consolidate.cron` 覆盖）。
 回滚：关开关即可回到「画像槽位 + importance top20 + LIKE 5」，新表/新列不影响旧路径。

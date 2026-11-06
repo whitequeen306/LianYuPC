@@ -241,3 +241,29 @@ async def test_preference_alias_normalized_to_fact(fake_db):
     await w.write_memories(7, 3, [w.MemoryInput("用户喜欢冰美式", "PREFERENCE", 0.7, ())])
     meta_params = fake_db["executed"][0][1]
     assert meta_params[3] == "FACT"
+
+
+@pytest.mark.asyncio
+async def test_semantic_noop_skips_insert(fake_db, monkeypatch):
+    async def fake_dedupe(character_id, user_id, summary):
+        assert (character_id, user_id) == (3, 7)
+        return "noop", 55
+
+    monkeypatch.setattr(w, "_semantic_dedupe", fake_dedupe)
+
+    outcome = await w.write_memories(7, 3, [w.MemoryInput("她今天加班到很晚", "EMOTION", 0.8, (11,))])
+
+    assert (outcome.created, outcome.skipped, outcome.ids) == (0, 1, [55])
+    assert not [sql for sql, _ in fake_db["executed"] if sql.lower().startswith("insert")]
+
+
+@pytest.mark.asyncio
+async def test_semantic_dedupe_is_off_by_default(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        "app.config.get_settings",
+        lambda: SimpleNamespace(memory_dedupe_similarity_enabled=False),
+    )
+
+    assert await w._semantic_dedupe(3, 7, "她喜欢冰美式") == ("add", None)
