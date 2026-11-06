@@ -35,6 +35,8 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from app.gateway import get_gateway
+from app.context.budget import plan_budget, total_of
+from app.context.tokens import estimate_messages
 from app.message_assembly import (
     image_history_text,
     is_empty_user_message_xml,
@@ -108,11 +110,14 @@ class ChatTurnState(TypedDict, total=False):
     # ── 中间 ──
     system_prompt: str
     messages: list[dict[str, str]]
+    prompt_tokens_estimated: int
 
     # ── 输出 ──
     content: str
     prompt_tokens: int | None
     completion_tokens: int | None
+    cache_hit_tokens: int | None
+    cache_miss_tokens: int | None
 
 
 async def assemble_prompt(state: ChatTurnState) -> dict[str, Any]:
@@ -174,6 +179,29 @@ def _assemble_prepared(system_prompt: str,
     return out
 
 
+def _recent_avg_chars(history: list[dict[str, Any]] | None) -> float | None:
+    """最近 20 条非空正文的平均长度，用来给 recent 槽自适应预算。"""
+    texts: list[str] = []
+    for item in history or []:
+        if str(item.get("role") or "").lower() == "system":
+            continue
+        text = _stored_text(item)
+        if text:
+            texts.append(text)
+    recent = texts[-20:]
+    if not recent:
+        return None
+    return sum(len(text) for text in recent) / len(recent)
+
+
+def _log_budget(estimated: int, history: list[dict[str, Any]] | None) -> None:
+    """只测量、不裁剪：先拿到「实际 vs 预算」的真实分布，再决定从哪一槽开始砍。"""
+    plan = plan_budget(recent_avg_chars=_recent_avg_chars(history))
+    total = total_of(plan)
+    logger.info("chat_turn.budget est=%d planned=%d over=%d recent=%d",
+                estimated, total, max(0, estimated - total), plan["recent"])
+
+
 async def assemble_messages(state: ChatTurnState) -> dict[str, Any]:
     """节点 2：system + 历史 → 模型输入，对齐 Java `ChatTurnMessageAssembler`。"""
     system_prompt = state.get("system_prompt") or ""
@@ -181,8 +209,11 @@ async def assemble_messages(state: ChatTurnState) -> dict[str, Any]:
     prepared = state.get("prepared_messages") or []
     if prepared:
         messages = _assemble_prepared(system_prompt, prepared)
-        logger.info("chat_turn.assemble_messages count=%d prepared=true", len(messages))
-        return {"messages": messages}
+        estimated = estimate_messages(messages)
+        logger.info("chat_turn.assemble_messages count=%d prepared=true est=%d",
+                    len(messages), estimated)
+        _log_budget(estimated, state.get("history"))
+        return {"messages": messages, "prompt_tokens_estimated": estimated}
 
     messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
     current_user_id = state.get("current_user_message_id")
@@ -216,8 +247,11 @@ async def assemble_messages(state: ChatTurnState) -> dict[str, Any]:
     if current_user_id is None and user_text and user_text.strip():
         messages.append({"role": "user", "content": wrap_stored_text_for_model(user_text)})
 
-    logger.info("chat_turn.assemble_messages count=%d prepared=false", len(messages))
-    return {"messages": messages}
+    estimated = estimate_messages(messages)
+    logger.info("chat_turn.assemble_messages count=%d prepared=false est=%d",
+                len(messages), estimated)
+    _log_budget(estimated, state.get("history"))
+    return {"messages": messages, "prompt_tokens_estimated": estimated}
 
 
 def _tool_context(state: ChatTurnState) -> dict[str, Any]:
@@ -292,11 +326,15 @@ async def invoke_model(state: ChatTurnState) -> dict[str, Any]:
         max_tokens=state.get("max_tokens", 1024),
         provider=state.get("provider"),
     )
-    logger.info("chat_turn.invoke_model chars=%d", len(result.content or ""))
+    logger.info("chat_turn.invoke_model chars=%d est=%d cache_hit=%s cache_miss=%s",
+                len(result.content or ""), state.get("prompt_tokens_estimated"),
+                result.cache_hit_tokens, result.cache_miss_tokens)
     return {
         "content": result.content or "",
         "prompt_tokens": result.prompt_tokens,
         "completion_tokens": result.completion_tokens,
+        "cache_hit_tokens": result.cache_hit_tokens,
+        "cache_miss_tokens": result.cache_miss_tokens,
     }
 
 

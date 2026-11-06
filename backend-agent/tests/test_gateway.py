@@ -79,6 +79,51 @@ async def test_gateway_success():
     assert result.prompt_tokens == 3
 
 
+def test_extract_cache_tokens_three_provider_shapes():
+    """缓存字段名四家不同；取不到就 None，不能返回 0 假装没命中。"""
+    from app.gateway import extract_cache_tokens
+
+    assert extract_cache_tokens(
+        {"prompt_cache_hit_tokens": 800, "prompt_cache_miss_tokens": 200}
+    ) == (800, 200)
+    assert extract_cache_tokens({"prompt_tokens_details": {"cached_tokens": 512}}) == (512, None)
+    assert extract_cache_tokens(
+        {"cache_read_input_tokens": 300, "cache_creation_input_tokens": 40}
+    ) == (300, 40)
+    assert extract_cache_tokens({}) == (None, None)
+    assert extract_cache_tokens(None) == (None, None)
+    assert extract_cache_tokens({"prompt_cache_hit_tokens": "oops"}) == (None, None)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_chat_messages_surfaces_cache_usage():
+    respx.post("https://fake/v1/chat/completions").respond(
+        json={
+            "choices": [{"message": {"content": "嗯"}}],
+            "usage": {
+                "prompt_tokens": 1000,
+                "completion_tokens": 12,
+                "prompt_cache_hit_tokens": 900,
+                "prompt_cache_miss_tokens": 100,
+            },
+        }
+    )
+    mocked_client = httpx.AsyncClient(base_url="https://fake/v1", timeout=outbound_timeout())
+    try:
+        gateway = ModelGateway(client=mocked_client)
+        result = await gateway.chat_messages(
+            base_url="https://fake/v1", api_key="k", model="m",
+            messages=[{"role": "user", "content": "在吗"}],
+            temperature=0.8, max_tokens=10,
+        )
+    finally:
+        await mocked_client.aclose()
+    assert result.prompt_tokens == 1000
+    assert result.cache_hit_tokens == 900
+    assert result.cache_miss_tokens == 100
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_gateway_http_error_raises():

@@ -116,6 +116,38 @@ class GatewayResult:
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     tool_calls: list[dict[str, Any]] | None = None
+    # 前缀缓存命中/未命中 token：四个 provider 字段名不同，统一在这里归一。
+    cache_hit_tokens: int | None = None
+    cache_miss_tokens: int | None = None
+
+
+def extract_cache_tokens(usage: dict[str, Any] | None) -> tuple[int | None, int | None]:
+    """从 usage 里取（命中, 未命中）的缓存 token。
+
+    DeepSeek / OpenAI 兼容层：`prompt_cache_hit_tokens` + `prompt_cache_miss_tokens`；
+    OpenAI 官方：`prompt_tokens_details.cached_tokens`（只有命中数）；
+    Anthropic：`cache_read_input_tokens` + `cache_creation_input_tokens`。
+    取不到就返回 None，不猜 0 —— 0 会被误读成「缓存完全没命中」。
+    """
+    if not isinstance(usage, dict):
+        return None, None
+    details = usage.get("prompt_tokens_details")
+    hit = usage.get("prompt_cache_hit_tokens")
+    miss = usage.get("prompt_cache_miss_tokens")
+    if hit is None and isinstance(details, dict):
+        hit = details.get("cached_tokens")
+    if hit is None:
+        hit = usage.get("cache_read_input_tokens")
+    if miss is None:
+        miss = usage.get("cache_creation_input_tokens")
+
+    def _int(value: Any) -> int | None:
+        try:
+            return int(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    return _int(hit), _int(miss)
 
 
 def is_thinking_model(model: str) -> bool:
@@ -443,6 +475,7 @@ class ModelGateway:
         except (KeyError, IndexError, TypeError) as exc:
             raise ModelGatewayError("model gateway malformed response") from exc
         usage = body.get("usage") or {}
+        cache_hit, cache_miss = extract_cache_tokens(usage)
         message = body["choices"][0].get("message") or {}
         tool_calls = message.get("tool_calls")
         return GatewayResult(
@@ -450,6 +483,8 @@ class ModelGateway:
             prompt_tokens=usage.get("prompt_tokens"),
             completion_tokens=usage.get("completion_tokens"),
             tool_calls=tool_calls if isinstance(tool_calls, list) else None,
+            cache_hit_tokens=cache_hit,
+            cache_miss_tokens=cache_miss,
         )
 
 
