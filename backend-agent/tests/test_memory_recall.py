@@ -422,6 +422,15 @@ async def test_mark_injected_revives_archived_rows(monkeypatch):
     assert revive_params == (7,)
 
 
+def test_episode_mark_statement_is_whitelisted():
+    from app.write import _assert_allowed
+
+    # V59 的原话冷却：不登记的话每轮都会 warning，且 last_injected_at 永远为空。
+    _assert_allowed(
+        "UPDATE memory_episode SET last_injected_at = NOW() WHERE id IN (%s, %s)"
+    )
+
+
 def test_revive_statement_is_whitelisted():
     from app.write import WriteNotAllowed, _assert_allowed
 
