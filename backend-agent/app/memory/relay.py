@@ -78,8 +78,8 @@ async def _set_vec_id(memory_id: int, vec_id: str) -> None:
 
 async def _load_meta(memory_id: int) -> dict[str, Any] | None:
     rows = await fetch_all(
-        "SELECT id, character_id, user_id, summary, memory_type, milvus_vec_id "
-        "FROM memory_meta WHERE id = %s", (memory_id,))
+        "SELECT id, character_id, user_id, summary, memory_type, layer, status, "
+        "event_time, milvus_vec_id FROM memory_meta WHERE id = %s", (memory_id,))
     return rows[0] if rows else None
 
 
@@ -105,7 +105,33 @@ async def project_upsert(memory_id: int) -> str:
     if vec_id is None:
         return "retry"
     await _set_vec_id(int(meta["id"]), vec_id)
+    _project_v3(meta, summary, vectors[0])
     return "done"
+
+
+def _project_v3(meta: dict[str, Any], summary: str, vector: list[float]) -> None:
+    """v3 双写：只做增量投影，失败不影响 v2 已落的主键。"""
+    if not getattr(get_settings(), "memory_vectors_v3_enabled", False):
+        return
+    milvus_store.insert_v3(
+        int(meta["character_id"]),
+        int(meta["user_id"]),
+        int(meta["id"]),
+        summary,
+        str(meta.get("memory_type") or "FACT"),
+        str(meta.get("layer") or "fact"),
+        str(meta.get("status") or "active"),
+        _event_time_ms(meta.get("event_time")),
+        vector,
+    )
+
+
+def _event_time_ms(value: Any) -> int:
+    if value is None:
+        return 0
+    if hasattr(value, "timestamp"):
+        return int(value.timestamp() * 1000)
+    return 0
 
 
 async def drain_once(batch_size: int | None = None, max_attempts: int | None = None) -> dict[str, int]:

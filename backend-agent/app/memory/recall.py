@@ -105,7 +105,13 @@ async def _vector_rows(
         vectors = await embed([text])
         if not vectors:
             return []
-        hits = milvus_store.search_hits(
+        # getattr：测试替身与旧配置里没有这个字段，缺省按 v2 处理
+        search = (
+            milvus_store.search_hits_v3
+            if getattr(settings, "memory_vectors_v3_enabled", False)
+            else milvus_store.search_hits
+        )
+        hits = search(
             character_id, user_id, vectors[0],
             top_k=top_k or settings.memory_vector_recall_top_k,
         )

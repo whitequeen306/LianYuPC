@@ -180,10 +180,121 @@ def search_hits(
         return []
 
 
+_client_v3: Any = None
+
+
+def _connect_v3() -> Any | None:
+    """v3 集合的连接；集合不存在时只 warning，不挡住 v2 主链路。"""
+    global _client_v3
+    if _client_v3 is not None:
+        return _client_v3
+    settings = get_settings()
+    try:
+        from pymilvus import MilvusClient
+
+        client = MilvusClient(
+            uri=f"http://{settings.milvus_host}:{settings.milvus_port}",
+            timeout=settings.milvus_timeout_seconds,
+        )
+        name = settings.milvus_v3_collection
+        if not client.has_collection(name):
+            logger.warning("milvus v3 collection missing: %s (run scripts/init_milvus_v3.py)", name)
+            return None
+        client.load_collection(name)
+        _client_v3 = client
+        logger.info("milvus v3 collection ready: %s", name)
+        return _client_v3
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("milvus v3 connect failed: %s", exc)
+        _client_v3 = None
+        return None
+
+
+def insert_v3(
+    character_id: int,
+    user_id: int,
+    memory_id: int,
+    summary: str,
+    memory_type: str,
+    layer: str,
+    status: str,
+    event_time_ms: int,
+    vector: list[float],
+) -> str | None:
+    """往 v3 集合再写一份（带 layer/status/event_time 标量）。
+
+    双写是增量投影：失败只 warning，不影响 v2 的 vec_id 回填——向量库没了可以重建，
+    写库事务不能因为 Milvus 抖动而回滚。
+    """
+    client = _connect_v3()
+    if client is None or not vector:
+        return None
+    settings = get_settings()
+    clipped = summary if len(summary) <= 512 else summary[:512]
+    try:
+        result = client.insert(
+            collection_name=settings.milvus_v3_collection,
+            data=[{
+                "character_id": int(character_id),
+                "user_id": int(user_id),
+                "memory_id": int(memory_id or 0),
+                "summary": clipped,
+                "memory_type": memory_type or "FACT",
+                "layer": layer or "fact",
+                "status": status or "active",
+                "event_time": int(event_time_ms or 0),
+                "vector": vector,
+            }],
+        )
+        ids = (result or {}).get("ids") or []
+        return str(ids[0]) if ids else None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("milvus v3 insert failed: %s", exc)
+        return None
+
+
+def search_hits_v3(
+    character_id: int,
+    user_id: int,
+    vector: list[float],
+    top_k: int = 20,
+) -> list[tuple[int, float]]:
+    """v3 检索：只返回 active 的 memory_id 与分数，字段语义同 `search_hits`。"""
+    client = _connect_v3()
+    if client is None or not vector:
+        return []
+    settings = get_settings()
+    try:
+        hits = client.search(
+            collection_name=settings.milvus_v3_collection,
+            data=[vector],
+            anns_field="vector",
+            search_params={"metric_type": "COSINE", "params": {"nprobe": 16}},
+            limit=top_k,
+            filter=(
+                f"character_id == {int(character_id)} && user_id == {int(user_id)}"
+                ' && status == "active"'
+            ),
+            output_fields=["memory_id"],
+        )
+        results: list[tuple[int, float]] = []
+        for batch in hits or []:
+            for hit in batch:
+                entity = hit.get("entity") or {}
+                memory_id = int(entity.get("memory_id") or 0)
+                if memory_id:
+                    results.append((memory_id, float(hit.get("distance", 0.0))))
+        return results
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("milvus v3 search_hits failed: %s", exc)
+        return []
+
+
 def reset() -> None:
     """测试用：丢弃连接缓存。"""
-    global _client
+    global _client, _client_v3
     _client = None
+    _client_v3 = None
 
 
-__all__ = ["delete", "insert", "reset", "search"]
+__all__ = ["delete", "insert", "insert_v3", "reset", "search", "search_hits", "search_hits_v3"]
