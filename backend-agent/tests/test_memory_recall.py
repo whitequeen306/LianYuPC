@@ -68,10 +68,13 @@ def test_render_groups_by_type_and_marks_confidence():
     assert "模糊" in block
 
 
-async def test_recall_queries_core_and_candidates(monkeypatch):
+async def test_recall_queries_core_candidates_and_episodes(monkeypatch):
     calls = []
 
     async def fake_fetch_all(sql, params):
+        if "memory_episode" in sql:
+            calls.append("episodes")
+            return []
         calls.append("core" if "layer = 'core'" in sql else "candidates")
         if "layer = 'core'" in sql:
             return [_row(1, layer="core", pinned=1, rel=1.0)]
@@ -81,8 +84,33 @@ async def test_recall_queries_core_and_candidates(monkeypatch):
 
     rows = await recall_mod.recall(3, 7, "加班", now=NOW)
 
-    assert calls == ["candidates", "core"]
+    assert calls == ["candidates", "core", "episodes"]
     assert [row["id"] for row in rows] == [1, 2]
+
+
+async def test_episode_rows_join_and_render_under_shared_experience(monkeypatch):
+    async def fake_fetch_all(sql, params):
+        if "memory_episode" in sql:
+            return [
+                _row(
+                    "ep-9",
+                    memory_type="EPISODE",
+                    fade_level=None,
+                    quote="凌晨两点她还在改方案，我陪她把窗户打开了",
+                    rel=0.9,
+                )
+            ]
+        return []
+
+    monkeypatch.setattr(recall_mod, "fetch_all", fake_fetch_all)
+
+    rows = await recall_mod.recall(3, 7, "改方案", limit=3, now=NOW)
+    assert [row["id"] for row in rows] == ["ep-9"]
+
+    block = recall_mod.render_rows(rows, NOW)
+    assert "[共同经历]" in block
+    assert "凌晨两点她还在改方案" in block
+    assert "确定" in block  # episode 没有 fade_level，强度够就该说死
 
 
 async def test_profile_block_uses_v3_when_enabled(monkeypatch):

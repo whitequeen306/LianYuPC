@@ -18,6 +18,9 @@ from app.memory import retrieve
 
 # 候选上限：多取一些再排序，避免"数据库 top5"把真正相关的挤掉。
 CANDIDATE_LIMIT = 60
+# episode 的默认衰减常数（天）。情绪唤醒越高越难忘，抽取时已写进 arousal，
+# 这里先用中位值；P3 再把 arousal 映射成 tau。
+EPISODE_TAU_DAYS = 30
 
 _CANDIDATE_SQL = """
 SELECT id, summary, memory_type, importance, strength, tau_days, fade_level,
@@ -45,6 +48,19 @@ LIMIT 12
 """
 
 
+_EPISODE_SQL = """
+SELECT CONCAT('ep-', id) AS id, summary, 'EPISODE' AS memory_type,
+       0.7 AS importance, 1.0 AS strength, %s AS tau_days,
+       NULL AS fade_level, NULL AS last_decay_at, NULL AS last_injected_at,
+       event_time, created_at, quote,
+       MATCH(summary) AGAINST (%s) AS rel
+FROM memory_episode
+WHERE character_id = %s AND user_id = %s AND status = 'active'
+ORDER BY rel DESC, event_time DESC
+LIMIT %s
+"""
+
+
 async def load_candidates(
     character_id: int,
     user_id: int,
@@ -59,7 +75,18 @@ async def load_candidates(
     # core / pinned 是"设定"，不该因为与当前话题不相关就被挤掉。
     core = await fetch_all(_CORE_SQL, (character_id, user_id))
     seen = {row.get("id") for row in core}
-    return [*core, *[row for row in rows if row.get("id") not in seen]]
+    merged = [*core, *[row for row in rows if row.get("id") not in seen]]
+
+    # 现场（episode）：事实能推断，原话不能。它只占候选的一半上限，
+    # 避免几条生动的原话把"设定"挤出去。
+    try:
+        episodes = await fetch_all(
+            _EPISODE_SQL,
+            (EPISODE_TAU_DAYS, (query or "").strip(), character_id, user_id, max(1, limit // 2)),
+        )
+    except Exception:  # noqa: BLE001 - 老库没 V58 时 episode 表不存在，降级即可
+        episodes = []
+    return [*merged, *[row for row in (episodes or []) if row.get("id") not in seen]]
 
 
 def rank_rows(
@@ -118,8 +145,7 @@ def render_rows(rows: list[dict[str, Any]], now: datetime | None = None) -> str 
             if not text or text in seen:
                 continue
             seen.add(text)
-            stamp = retrieve.effective_strength(row, now)
-            mark = "确定" if str(row.get("fade_level") or "active") == "active" and stamp >= 0.6 else "模糊"
+            mark = retrieve.confidence_mark(row, now)
             date = (row.get("event_time") or row.get("created_at"))
             prefix = f"[{date:%m-%d}·{mark}] " if isinstance(date, datetime) else f"[{mark}] "
             lines.append("- " + prefix + text)

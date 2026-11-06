@@ -176,6 +176,7 @@ TYPE_LABELS = (
     ("EMOTION", "近期情绪线索"),
     ("RELATION", "关系事件"),
     ("RITUAL", "专属仪式"),
+    ("EPISODE", "共同经历"),
 )
 
 
