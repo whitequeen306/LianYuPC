@@ -14,6 +14,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
+from app import write
 from app.config import get_settings
 from app.data_readers import fetch_all
 
@@ -165,6 +166,30 @@ async def load_candidates(
     return [*merged, *episodes, *[row for row in vector_rows if row.get("id") not in seen]]
 
 
+async def mark_injected(rows: list[dict[str, Any]]) -> int:
+    """记下"这一轮真的把哪几条给了模型"。
+
+    冷却（3 天不再重复注入）与"多久没被想起"都依赖这个时间戳；没有它，
+    `in_cooldown` 永远为假，同一句设定会每轮重复出现。episode 的 id 是
+    `ep-*`，不属于 memory_meta，跳过。
+    """
+    ids: list[int] = []
+    for row in rows or []:
+        try:
+            ids.append(int(row.get("id")))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        return 0
+    placeholders = ", ".join(["%s"] * len(ids))
+    sql = (
+        "UPDATE memory_meta SET last_injected_at = NOW(), last_recalled_at = NOW(), "
+        f"recall_count = recall_count + 1 WHERE id IN ({placeholders})"
+    )
+    async with write.transaction() as cur:
+        return await write.execute_write(cur, sql, tuple(ids))
+
+
 def rank_rows(
     rows: list[dict[str, Any]],
     *,
@@ -178,9 +203,10 @@ def rank_rows(
     max_rel = max((float(row.get("rel") or 0.0) for row in rows), default=0.0) or 1.0
     scored: list[dict[str, Any]] = []
     for row in rows:
-        if retrieve.in_cooldown(row, now):
-            continue
         core = str(row.get("layer") or "") == "core" or bool(row.get("pinned"))
+        # 设定与钉住项不受冷却约束：它们是"她是谁"，不该因为刚提过就消失。
+        if not core and retrieve.in_cooldown(row, now):
+            continue
         scored.append({
             **row,
             "score": retrieve.score_candidate(

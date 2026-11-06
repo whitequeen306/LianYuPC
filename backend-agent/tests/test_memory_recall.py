@@ -98,6 +98,39 @@ async def test_vector_lane_is_off_by_default(monkeypatch):
     assert await recall_mod.load_candidates(3, 7, "海") == []
 
 
+def test_core_rows_ignore_cooldown():
+    rows = [_row(1, layer="core", last_injected_at=NOW)]
+
+    ranked = recall_mod.rank_rows(rows, limit=3, now=NOW)
+
+    assert [row["id"] for row in ranked] == [1]
+
+
+@pytest.mark.asyncio
+async def test_mark_injected_writes_timestamp_and_skips_episode_ids(monkeypatch):
+    from contextlib import asynccontextmanager
+
+    captured = {}
+
+    @asynccontextmanager
+    async def fake_tx():
+        yield object()
+
+    async def fake_execute(cur, sql, params=()):
+        captured["sql"] = sql
+        captured["params"] = params
+        return 2
+
+    monkeypatch.setattr(recall_mod.write, "transaction", fake_tx)
+    monkeypatch.setattr(recall_mod.write, "execute_write", fake_execute)
+
+    written = await recall_mod.mark_injected([_row(4), _row("ep-9"), _row(5)])
+
+    assert written == 2
+    assert "last_injected_at = NOW()" in captured["sql"]
+    assert captured["params"] == (4, 5)
+
+
 def test_render_groups_by_type_and_marks_confidence():
     rows = [
         _row(1, memory_type="FACT", quote="她养了一只叫团子的猫"),

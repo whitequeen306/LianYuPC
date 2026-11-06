@@ -206,10 +206,18 @@ async def _load_v3_block(character_id: int, user_id: int,
 
     try:
         rows = await recall(character_id, user_id, last_user_message)
-        return render_rows(rows)
     except Exception as exc:  # noqa: BLE001 - 召回失败不能让整块记忆消失
         logger.warning("memory recall v3 failed, falling back: %s", exc)
         return None
+    block = render_rows(rows)
+    if block:
+        try:
+            from app.memory.recall import mark_injected
+
+            await mark_injected(rows)
+        except Exception as exc:  # noqa: BLE001 - 打点失败不该影响这一轮回复
+            logger.warning("mark injected failed: %s", exc)
+    return block
 
 
 async def load_profile_block(character_id: int, user_id: int,

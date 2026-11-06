@@ -38,6 +38,8 @@ _ALLOWED_UPDATES = (
     "update memory_meta set milvus_vec_id = %s where id = %s",
     # 画像槽位换值：旧行标 superseded + 关闭有效期，不物理删（可追溯"她以前叫过什么"）
     "update memory_meta set status = 'superseded'",
+    # 召回注入后打点：冷却与"多久没被想起"都靠它，只允许这一种形状
+    "update memory_meta set last_injected_at",
     "update memory_outbox set status = %s",
     "update memory_outbox set attempts = %s",
     "update memory_outbox set next_attempt_at",
