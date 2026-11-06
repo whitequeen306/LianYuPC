@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     memory_semantic_ttl_minutes: float = 15.0
     memory_recent_ttl_minutes: float = 60.0
 
+    # 工具结果注入上限：一次网页/文件读取就能吃掉整轮预算，
+    # 超长结果掐头留尾（见 app.tool_loop.clip_tool_output）。
+    tool_output_max_chars: int = 1200
+
     # 向量化 / 重排（P5 读路径）。base_url 可配置：修掉 Java 侧硬编码 DashScope 地址的缺陷
     embedding_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     embedding_api_key: str = ""

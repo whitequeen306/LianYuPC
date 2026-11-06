@@ -38,6 +38,7 @@ from app.gateway import get_gateway
 from app.context.budget import plan_budget, total_of
 from app.context.tokens import estimate_messages
 from app.message_assembly import (
+    drop_orphan_tool_messages,
     image_history_text,
     is_empty_user_message_xml,
     is_voice_call_turn,
@@ -176,7 +177,7 @@ def _assemble_prepared(system_prompt: str,
         out[0]["content"] = system_prompt
     else:
         out.insert(0, {"role": "system", "content": system_prompt})
-    return out
+    return drop_orphan_tool_messages(out)
 
 
 def _recent_avg_chars(history: list[dict[str, Any]] | None) -> float | None:
@@ -247,6 +248,7 @@ async def assemble_messages(state: ChatTurnState) -> dict[str, Any]:
     if current_user_id is None and user_text and user_text.strip():
         messages.append({"role": "user", "content": wrap_stored_text_for_model(user_text)})
 
+    messages = drop_orphan_tool_messages(messages)
     estimated = estimate_messages(messages)
     logger.info("chat_turn.assemble_messages count=%d prepared=false est=%d",
                 len(messages), estimated)

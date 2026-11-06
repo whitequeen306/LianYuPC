@@ -69,6 +69,23 @@ async def _post_with_tools(
     return result.content, list(result.tool_calls or []), result
 
 
+def clip_tool_output(output: str, limit: int | None = None) -> str:
+    """截断工具输出：保留头 60% + 尾 30%，中间标注省略字数。
+
+    整段丢弃会丢关键信息（文件末尾的报错、网页里的价格），整段保留又会
+    一次吃掉几 k token。掐头留尾是「别让最贵的那条消息挤掉记忆」的折中。
+    `limit<=0` 表示不截断（排查用）。
+    """
+    text = output if isinstance(output, str) else str(output or "")
+    cap = get_settings().tool_output_max_chars if limit is None else limit
+    if cap <= 0 or len(text) <= cap:
+        return text
+    head = int(cap * 0.6)
+    tail = int(cap * 0.3)
+    omitted = len(text) - head - tail
+    return f"{text[:head]}\n…[已省略 {omitted} 字]…\n{text[-tail:]}"
+
+
 async def execute_tool_calls(
     specs: list[Any],
     tool_calls: list[dict[str, Any]],
@@ -197,7 +214,7 @@ async def run_tool_loop(
             history.append({
                 "role": "tool",
                 "tool_call_id": call.get("id") or "",
-                "content": output,
+                "content": clip_tool_output(output),
             })
         rounds += 1
 
@@ -214,4 +231,4 @@ def _flatten(messages: list[dict[str, Any]]) -> str:
     return "\n".join(parts)
 
 
-__all__ = ["ToolLoopResult", "execute_tool_calls", "run_tool_loop"]
+__all__ = ["ToolLoopResult", "clip_tool_output", "execute_tool_calls", "run_tool_loop"]

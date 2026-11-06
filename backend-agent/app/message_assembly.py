@@ -112,12 +112,55 @@ def is_empty_user_message_xml(content: str | None) -> bool:
     return not _USER_MESSAGE_TAG.sub("", content or "").strip()
 
 
+def drop_orphan_tool_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """删掉没有配对的 tool 消息与 tool_calls。
+
+    Java 侧按条数硬截断历史，可能正好在 tool_call 与 tool_result 之间切开；
+    OpenAI 兼容接口收到孤立的 tool_call_id 会直接 400，所以进模型前先配对。
+    只删「配对缺失」的部分：assistant 的正文保留，多余的工具结果丢掉。
+    """
+    call_ids: set[str] = set()
+    for message in messages:
+        for call in message.get("tool_calls") or []:
+            call_id = call.get("id")
+            if call_id:
+                call_ids.add(str(call_id))
+    result_ids = {
+        str(message.get("tool_call_id"))
+        for message in messages
+        if message.get("role") == "tool" and message.get("tool_call_id")
+    }
+
+    cleaned: list[dict[str, Any]] = []
+    for message in messages:
+        role = message.get("role")
+        if role == "tool":
+            if str(message.get("tool_call_id")) in call_ids:
+                cleaned.append(message)
+            continue
+
+        calls = message.get("tool_calls")
+        if calls:
+            paired = [call for call in calls if str(call.get("id")) in result_ids]
+            if not paired:
+                # 整条 tool_calls 都没有结果：保留正文，去掉调用帧。
+                clone = {key: value for key, value in message.items() if key != "tool_calls"}
+                if clone.get("content"):
+                    cleaned.append(clone)
+                continue
+            if len(paired) != len(calls):
+                message = {**message, "tool_calls": paired}
+        cleaned.append(message)
+    return cleaned
+
+
 __all__ = [
     "GENERIC_SHORT",
     "GENERIC_STORED",
     "MAX_USER_MESSAGE_CHARS",
     "VOICE_CALL_TURN_MARKER",
     "clean_plain_text",
+    "drop_orphan_tool_messages",
     "escape_xml",
     "image_history_text",
     "image_placeholder",
