@@ -1029,6 +1029,18 @@ async def memory_consolidate() -> dict[str, int]:
     return {"written": await consolidate()}
 
 
+@app.get("/agent/memory/health")
+async def memory_health() -> dict[str, Any]:
+    """记忆子系统体检：开关、条数、最后一次结算时间。只读，失败也返回部分结果。"""
+    from app.memory.health import collect
+
+    try:
+        return await collect()
+    except Exception as exc:  # noqa: BLE001 - 体检不能把运维页面打挂
+        logger.warning("memory health failed: %s", exc)
+        return {"flags": {}, "counters": {}, "timestamps": {}, "warnings": [str(exc)]}
+
+
 @app.get("/agent/context/stats")
 async def context_stats() -> dict[str, Any]:
     """今天的上下文开销（turns / est tokens / 缓存命中）。读 Redis 日哈希，失败返回空。"""
