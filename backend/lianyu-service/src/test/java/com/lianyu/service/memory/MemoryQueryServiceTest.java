@@ -1,6 +1,7 @@
 package com.lianyu.service.memory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -32,6 +33,7 @@ class MemoryQueryServiceTest {
     private MemoryMetaMapper memoryMetaMapper;
     private MessageMapper messageMapper;
     private CharacterMapper characterMapper;
+    private MemoryCacheService memoryCacheService;
     private MemoryQueryService service;
 
     @BeforeEach
@@ -39,13 +41,14 @@ class MemoryQueryServiceTest {
         memoryMetaMapper = mock(MemoryMetaMapper.class);
         messageMapper = mock(MessageMapper.class);
         characterMapper = mock(CharacterMapper.class);
+        memoryCacheService = mock(MemoryCacheService.class);
         service = new MemoryQueryService(
                 memoryMetaMapper,
                 messageMapper,
                 characterMapper,
                 mock(ConversationMapper.class),
                 mock(MemoryWriter.class),
-                mock(MemoryCacheService.class));
+                memoryCacheService);
     }
 
     private MemoryMeta meta() {
@@ -140,5 +143,30 @@ class MemoryQueryServiceTest {
         assertEquals("faded", row.get("fadeLevel"));
         assertEquals("episode", row.get("layer"));
         assertEquals(List.of(), row.get("sourceMessages"));
+    }
+
+    @Test
+    void mute_only_flips_flag_and_keeps_strength() {
+        when(memoryMetaMapper.selectOne(any())).thenReturn(meta());
+
+        Result<Void> result = service.setMuted(7L, 11L, true);
+
+        assertEquals(200, result.getCode());
+        ArgumentCaptor<Wrapper<MemoryMeta>> captor = ArgumentCaptor.forClass(Wrapper.class);
+        org.mockito.Mockito.verify(memoryMetaMapper).update(any(), captor.capture());
+        String set = captor.getValue().getSqlSet();
+        assertTrue(set.contains("muted"), set);
+        assertFalse(set.contains("strength"), set);
+        assertFalse(set.contains("tau_days"), set);
+        org.mockito.Mockito.verify(memoryCacheService).invalidate(7L, 3L);
+    }
+
+    @Test
+    void mute_rejects_other_users_memory() {
+        when(memoryMetaMapper.selectOne(any())).thenReturn(null);
+
+        Result<Void> result = service.setMuted(7L, 11L, true);
+
+        assertEquals(404, result.getCode());
     }
 }

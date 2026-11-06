@@ -140,6 +140,25 @@ public class MemoryQueryService {
         return Result.ok();
     }
 
+    /**
+     * muted 只影响"要不要主动提"：检索候选会排除 muted 行，但记忆页仍能看到、能搜到。
+     * 与删除的区别——用户说的是"别再提了"，不是"当没发生过"。
+     */
+    public Result<Void> setMuted(long userId, Long id, boolean muted) {
+        MemoryMeta meta = memoryMetaMapper.selectOne(
+                new LambdaQueryWrapper<MemoryMeta>()
+                        .eq(MemoryMeta::getId, id)
+                        .eq(MemoryMeta::getUserId, userId));
+        if (meta == null) {
+            return Result.fail(404, "记忆不存在");
+        }
+        memoryMetaMapper.update(null, new UpdateWrapper<MemoryMeta>()
+                .eq("id", id)
+                .set("muted", muted));
+        memoryCacheService.invalidate(userId, meta.getCharacterId());
+        return Result.ok();
+    }
+
     public Result<Void> delete(long userId, Long id) {
         MemoryMeta meta = memoryMetaMapper.selectOne(
                 new LambdaQueryWrapper<MemoryMeta>()

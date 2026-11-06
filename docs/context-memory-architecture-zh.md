@@ -859,6 +859,7 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 | PR-9 衰减结算 | ✅ `a1825f7` | `MemoryDecayService/Scheduler`：四档、双时间尺度、每日降档配额、按 `last_decay_at` 轮转 |
 | PR-11 前端接衰减/pin | ✅ `d261e79` `030fff3` `0921a75` | 列表返回 `memoryType/fadeLevel/strength/quote`；星图按强度压暗；抽屉显示原话/档位/钉住 |
 | PR-12 槽位 supersede | ✅ `42c568f` | 同一槽位再次写入时旧行 `status='superseded'` + `valid_to` 关闭 + `superseded_by` 指向新行；不物理删 |
+| PR-14 静音（muted） | ✅ 本次 | `PATCH /memory/{id}/mute`；候选 SQL 已排除 `muted=1`；抽屉可切换"别再提/恢复提起" |
 | PR-13 Milvus 向量路 | ✅ `search_hits` + `_vector_rows` | Milvus 只回 `memory_id`+分数，回 MySQL 取权威行；开关 `memory_vector_recall_enabled` 默认关 |
 
 **仍未做**：向量相似度双阈值（cos≥0.92 NOOP / <0.75 ADD / 灰区 LLM，现在只做了槽位版 supersede，

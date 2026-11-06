@@ -181,6 +181,15 @@
             <footer class="mem-sheet__foot">
               <el-button
                 text
+                class="mem-sheet__mute"
+                :class="{ 'is-muted': detailMemory?.muted }"
+                :loading="muteLoading"
+                @click="toggleMute(detailMemory)"
+              >
+                {{ detailMemory?.muted ? t('memory.unmute') : t('memory.mute') }}
+              </el-button>
+              <el-button
+                text
                 class="mem-sheet__pin"
                 :class="{ 'is-pinned': detailMemory?.pinned }"
                 :loading="pinLoading"
@@ -203,7 +212,7 @@
 import { computed, onActivated, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useCharactersStore } from '@/stores/characters'
-import { listMemories, getMemory, deleteMemory, setMemoryPinned } from '@/api/memory'
+import { listMemories, getMemory, deleteMemory, setMemoryPinned, setMemoryMuted } from '@/api/memory'
 import { listCharacterStates, listAllDiaries } from '@/api/characterState'
 import {
   Loading,
@@ -247,6 +256,7 @@ const detailMemory = ref(null)
 const detailSources = ref([])
 const detailLoading = ref(false)
 const pinLoading = ref(false)
+const muteLoading = ref(false)
 
 const detailFadeLabel = computed(() => {
   const level = detailMemory.value?.fadeLevel
@@ -455,6 +465,31 @@ async function togglePin(mem) {
     detailMemory.value = { ...detailMemory.value, ...patch }
   }
   ElMessage.success(next ? t('memory.pinOn') : t('memory.pinOff'))
+}
+
+async function toggleMute(mem) {
+  if (!mem || muteLoading.value) return
+  const targetId = mem.memoryId ?? mem.id
+  if (targetId == null) return
+  const next = !mem.muted
+  muteLoading.value = true
+  try {
+    await setMemoryMuted(targetId, next)
+  } catch {
+    muteLoading.value = false
+    return
+  }
+  muteLoading.value = false
+
+  // 只改"要不要主动提"，不动强度：她仍记得，只是不再先开口
+  const patch = { muted: next }
+  memories.value = memories.value.map((item) =>
+    String(item.id) === String(targetId) ? { ...item, ...patch } : item
+  )
+  if (detailMemory.value) {
+    detailMemory.value = { ...detailMemory.value, ...patch }
+  }
+  ElMessage.success(next ? t('memory.muteOn') : t('memory.muteOff'))
 }
 
 async function removeMemory(mem) {
@@ -855,6 +890,15 @@ async function removeMemory(mem) {
   &:hover,
   &.is-pinned {
     color: $color-pink-light;
+  }
+}
+
+.mem-sheet__mute {
+  color: $color-text-secondary;
+
+  &:hover,
+  &.is-muted {
+    color: rgba($color-pink-rgb, 0.9);
   }
 }
 

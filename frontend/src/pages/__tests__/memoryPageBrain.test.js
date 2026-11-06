@@ -48,3 +48,11 @@ describe('MemoryPage ↔ 星图集成', () => {
     expect(mapSource).toContain('disconnect()')
   })
 })
+
+it('mute 只改"要不要主动提"，不碰强度', () => {
+  const source = readFileSync(new URL('../MemoryPage.vue', import.meta.url), 'utf-8')
+  expect(source).toContain('setMemoryMuted')
+  expect(source).toContain('toggleMute')
+  const body = source.slice(source.indexOf('async function toggleMute'))
+  expect(body.slice(0, 800)).not.toContain('strength:')
+})

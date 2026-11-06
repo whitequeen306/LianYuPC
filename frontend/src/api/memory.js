@@ -12,6 +12,10 @@ export function setMemoryPinned(id, pinned) {
   return http.patch(`/memory/${id}/pin`, { pinned: Boolean(pinned) })
 }
 
+export function setMemoryMuted(id, muted) {
+  return http.patch(`/memory/${id}/mute`, { muted: Boolean(muted) })
+}
+
 export function deleteMemory(id) {
   return http.delete(`/memory/${id}`)
 }

@@ -46,6 +46,16 @@ public class MemoryController {
     public record PinRequest(boolean pinned) {
     }
 
+    @Operation(summary = "不再主动提起/恢复提起记忆")
+    @PatchMapping("/{id}/mute")
+    public Result<Void> mute(@PathVariable Long id, @RequestBody MuteRequest request) {
+        long userId = StpUtil.getLoginIdAsLong();
+        return memoryQueryService.setMuted(userId, id, request.muted());
+    }
+
+    public record MuteRequest(boolean muted) {
+    }
+
     @Operation(summary = "删除记忆")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
