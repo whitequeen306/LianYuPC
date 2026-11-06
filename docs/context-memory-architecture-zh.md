@@ -842,6 +842,32 @@ app/memory/
 
 PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义；PR-5 之后才开始动内容。
 
+### 10.2 实施进度（2026-11-06）
+
+| 计划 | 状态 | 落点 |
+|---|---|---|
+| PR-1 修参数倒置 | ✅ `c20b253` | `memory_search_tool.py` 调 `search(character_id, user_id, …)`；测试捕获实参 |
+| PR-2 前缀分层 + 时间到分钟 | ✅ `8d210f8` | 静态头（人设/工具/回复/输出）在前，记忆/情绪/安全在后；`HH:mm`；parity 测试改为结构断言 |
+| PR-3 token 预算 + 缓存打点 | ✅ `3423dc7` | `app/context/{tokens,budget}.py`；`GatewayResult` 带 cache hit/miss；`chat_turn` 只测不裁 |
+| PR-4 工具结果卫生 | ✅ `3a605d7` | `clip_tool_output`（头 60% + 尾 30%）、`drop_orphan_tool_messages`；流式回灌同样截断 |
+| PR-5 场景卡 | ✅ `3f2df18` | 规则更新 + 6 轮/漂移刷新 + Redis 6h；`clearMessages` 删 `scene:{id}` |
+| PR-6 场景关闭抽取 + episode 表 | ✅ `8414f80` | `extract_scene.py` / `scene_close.py`；Java 侧透传 `conversationId` |
+| PR-6.5 存储底座（V58） | ✅ `024fa09` | `memory_episode` + `memory_meta` 23 列 + ngram 全文；episode 幂等写入 |
+| PR-7 召回纯函数 | ✅ `448faca` | `effective_strength` / 双路 RRF / MMR / 冷却 / 置信标记 |
+| PR-8 v3 召回接线 | ✅ `d7acbe0` | `recall.py`：`MATCH…AGAINST` + core + 强度 + 冷却；开关 `memory_recall_v3_enabled` 默认关 |
+| PR-8.5 episode 进召回 | ✅ `1f65670` | `_EPISODE_SQL`（`ep-` 前缀 id）作为第三路；`共同经历` 分组 |
+| PR-9 衰减结算 | ✅ `a1825f7` | `MemoryDecayService/Scheduler`：四档、双时间尺度、每日降档配额、按 `last_decay_at` 轮转 |
+| PR-11 前端接衰减/pin | ✅ `d261e79` `030fff3` `0921a75` | 列表返回 `memoryType/fadeLevel/strength/quote`；星图按强度压暗；抽屉显示原话/档位/钉住 |
+| PR-12 槽位 supersede | ✅ `42c568f` | 同一槽位再次写入时旧行 `status='superseded'` + `valid_to` 关闭 + `superseded_by` 指向新行；不物理删 |
+
+**仍未做**：向量相似度双阈值（cos≥0.92 NOOP / <0.75 ADD / 灰区 LLM，现在只做了槽位版 supersede，
+普通事实仍按 `source_hash` 合并）、PR-10 夜间整合（reflection 日记）、五路召回里的 Milvus 向量路
+（现在只有 MySQL ngram + 标量）、影子 diff 指标、V58 在真实库上的迁移演练、
+`memory_recall_v3_enabled` 打开前的 200 题评测。
+
+**开关**：`scene_card_enabled`（默认开）、`memory_recall_v3_enabled`（默认关，等迁移 + 评测）。
+回滚：关开关即可回到「画像槽位 + importance top20 + LIKE 5」，新表/新列不影响旧路径。
+
 ---
 
 ## 11. 评测与指标
