@@ -862,9 +862,10 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 | PR-15 注入打点 | ✅ 本次 | 注入后写 `last_injected_at`/`recall_count`；core/pinned 不受 3 天冷却约束 |
 | PR-14 静音（muted） | ✅ 本次 | `PATCH /memory/{id}/mute`；候选 SQL 已排除 `muted=1`；抽屉可切换"别再提/恢复提起" |
 | PR-13 Milvus 向量路 | ✅ `search_hits` + `_vector_rows` | Milvus 只回 `memory_id`+分数，回 MySQL 取权威行；开关 `memory_vector_recall_enabled` 默认关 |
+| PR-16 reflection 层 | ✅ `2dddae6` | 场景关闭那次调用多问一句 `impression`；写 `layer='reflection'`、tau 180d、7 天去重；不额外花钱 |
 
 **仍未做**：向量相似度双阈值（cos≥0.92 NOOP / <0.75 ADD / 灰区 LLM，现在只做了槽位版 supersede，
-普通事实仍按 `source_hash` 合并）、PR-10 夜间整合（reflection 日记）、
+普通事实仍按 `source_hash` 合并）、跨天夜间整合（把多天 episode 合并成周记；单幕 reflection 已由 PR-16 产出）、
 `memory_vectors_v3` 集合（现在向量路仍读 v2，且没有 status 标量过滤）、影子 diff 指标、V58 在真实库上的迁移演练、
 `memory_recall_v3_enabled` 打开前的 200 题评测。
 
