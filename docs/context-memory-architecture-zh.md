@@ -874,7 +874,7 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 | PR-29 episode 也进冷却 | ✅ 本次 | V59 给 `memory_episode` 加 `last_injected_at`；`mark_injected` 按 `ep-` 前缀回写这张表，`in_cooldown` 对原话同样生效——否则同一段生动原话会每轮重复出现 |
 | PR-28 记忆体检端点 | ✅ 本次 | `GET /agent/memory/health`：开关快照 + active/faded/superseded 条数 + episode 数 + outbox 积压 + 最后一次衰减/写入时间；无 episode、DEAD 积压、pending>50 会给 warning。开开关前先看它 |
 | PR-27 召回块整行裁剪 | ✅ 本次 | `render_rows_limited` 按行卡 400 token 并返回真正进块的 id；只有这些行打 `last_injected_at`，被截掉的尾巴不会被误判成"看过"而进冷却 |
-| PR-26 灰区模型判定 | ✅ 本次 | 0.75–0.92 灰区可选多问一次（`memory_dedupe_llm_review_enabled`，默认关）：同一件 → NOOP，不同 → ADD，调用失败仍按 ADD |
+| PR-26 灰区模型判定 | ✅ 本次 | 0.75–0.92 灰区可选多问一次（`memory_dedupe_llm_review_enabled`，默认开）：同一件 → NOOP，不同 → ADD，调用失败仍按 ADD |
 | PR-25 评测题集生成 | ✅ 本次 | `app/memory/eval_gen.py`：从真实记忆反推自然提问 → JSONL；生成后仍需人工过一遍同义撞车 |
 | PR-24 工具与注入共用召回 | ✅ 本次 | `memory_search` 在 `memory_recall_v3_enabled` 时先走 v3，v3 空/异常才落回 Milvus，避免「注入说记得、工具说找不到」 |
 | PR-23 段落装配器 | ✅ 本次 | `app/context/assembler.py`：先按槽截断、再按 `DROP_ORDER` 整段丢；v3 召回块已硬顶到 recall 槽 400 token |
@@ -903,7 +903,7 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 `history_trim_enabled`（默认关；打开后 recent 槽超预算会丢最旧的消息，system 与当前轮不动）、
 `memory_dedupe_similarity_enabled`（默认关；打开后写入前多一次 embedding，cos≥0.92 直接不写）、
 `memory_shadow_enabled`（默认关；打开后每轮多跑一次 v3 召回，只为打覆盖率日志）、
-`memory_dedupe_llm_review_enabled`（默认关；灰区多问一次模型，详见 §7.3）、
+`memory_dedupe_llm_review_enabled`（默认开；灰区多问一次模型，详见 §7.3）、
 `memory_resurface_enabled`（默认开；主动开口时允许提一句快要忘记的事，每角色每周最多一次）。
 周记另有 Java 侧调度开关 `lianyu.memory.consolidate.enabled`（**默认关**，线上显式开启后每周一 04:10 调一次；
 cron 可用 `lianyu.memory.consolidate.cron` 覆盖）。
@@ -921,7 +921,7 @@ cron 可用 `lianyu.memory.consolidate.cron` 覆盖）。
 | 4 | `memory_recall_v3_enabled=true`（关 shadow） | 体检 `warnings` 为空；`episodes_active>0` 或确实还没有场景 | 注入变空 → 立刻关回；`_load_v3_block` 失败会退回旧路径，但"空"不会 |
 | 5 | 建 v3 集合：`python -m scripts.init_milvus_v3` → `memory_vectors_v3_enabled=true` → 回填 `python -m scripts.backfill_milvus_v3` | 回填输出 `failed=0`；`skipped` 是重复跑的行 | 集合没建时双写只 warning（v2 照常），但这时开向量路只会命中新记忆，看起来像「她忘了很多」 |
 | 6 | `memory_vector_recall_enabled=true` | `memory_search` 日志出现 `via v3`，且 `outbox_dead=0` | 向量库为空时它只是少一路，不会更差；DEAD 多说明 relay 卡住，先修 relay |
-| 7 | `memory_dedupe_similarity_enabled=true` → 观察 2 周 → 再考虑 `memory_dedupe_llm_review_enabled` | `skipped` 占比 <15%；人工抽查无"两件事并成一件" | 误合并不可逆（只写了新行，旧行没合并），关开关即可止损 |
+| 7 | `memory_dedupe_similarity_enabled=true`、`memory_dedupe_llm_review_enabled=true`，观察 `skipped` 占比与误合并 | `skipped` 占比 <15%；人工抽查无"两件事并成一件" | 误合并不可逆（只写了新行，旧行没合并），关开关即可止损 |
 | 8 | Java `lianyu.memory.consolidate.enabled=true` | 下周一 04:10 后 `last_reflection_at` 前进，且没有重复周记 | 重复说明 `content_hash` 没带周标签，检查 `digest_hash` |
 | 9 | `history_trim_enabled=true` | `GET /agent/context/stats` 的 `trimmed_turns` 与 `est_tokens_per_turn` 同时下降 | 若"当前轮被截"报告，立即关；`trim_history` 保底 6 条且保 system |
 

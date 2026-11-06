@@ -97,7 +97,7 @@ class Settings(BaseSettings):
     # 写入前语义去重（cos≥0.92 NOOP）。默认关：多一次 embedding 调用，先灰跑看误伤。
     memory_dedupe_similarity_enabled: bool = True
     # 灰区（0.75–0.92）是否多问一次模型；默认关，靠 diff 看误合并率再开
-    memory_dedupe_llm_review_enabled: bool = False
+    memory_dedupe_llm_review_enabled: bool = True
 
     # 影子召回：v3 还没开时也跑一遍，只打覆盖率日志。默认关（每轮多一次查询）。
     memory_shadow_enabled: bool = False
