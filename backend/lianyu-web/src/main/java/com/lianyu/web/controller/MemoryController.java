@@ -36,6 +36,16 @@ public class MemoryController {
         return memoryQueryService.detail(userId, id);
     }
 
+    @Operation(summary = "钉住/取消钉住记忆（钉住即免衰减）")
+    @PatchMapping("/{id}/pin")
+    public Result<Void> pin(@PathVariable Long id, @RequestBody PinRequest request) {
+        long userId = StpUtil.getLoginIdAsLong();
+        return memoryQueryService.setPinned(userId, id, request.pinned());
+    }
+
+    public record PinRequest(boolean pinned) {
+    }
+
     @Operation(summary = "删除记忆")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {

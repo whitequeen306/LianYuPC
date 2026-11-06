@@ -30,6 +30,12 @@ describe('MemoryPage ↔ 星图集成', () => {
     expect(pageSource).toContain('await deleteMemory(targetId)')
   })
 
+  it('钉住也走节点→记忆 id 的翻译，且本地按后端口径先改', () => {
+    expect(pageSource).toContain('setMemoryPinned(targetId, next)')
+    expect(pageSource).toContain('const patch = next')
+    expect(pageSource).toContain("{ pinned: true, strength: 1, fadeLevel: 'active', status: 'active' }")
+  })
+
   it('选中态统一用记忆 id，星图才能高亮对应光点', () => {
     expect(mapSource).toContain('String(node.memoryId) === String(props.selectedMemoryId)')
     expect(pageSource).toContain(':selected-memory-id="detailId"')

@@ -1,6 +1,7 @@
 package com.lianyu.service.memory;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.lianyu.common.base.Result;
 import com.lianyu.dao.entity.Character;
 import com.lianyu.dao.entity.Conversation;
@@ -10,6 +11,7 @@ import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.ConversationMapper;
 import com.lianyu.dao.mapper.MemoryMetaMapper;
 import com.lianyu.dao.mapper.MessageMapper;
+import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -103,6 +105,39 @@ public class MemoryQueryService {
         }).toList());
 
         return Result.ok(result);
+    }
+
+    /**
+     * 钉住/取消钉住：钉住 = 免衰减（tau_days=0）且强度回满。
+     * 「别忘了这件事」不该靠用户反复提醒，也不能把行复制一份成 core —— 同一行加个开关最省。
+     */
+    public Result<Void> setPinned(long userId, Long id, boolean pinned) {
+        MemoryMeta meta = memoryMetaMapper.selectOne(
+                new LambdaQueryWrapper<MemoryMeta>()
+                        .eq(MemoryMeta::getId, id)
+                        .eq(MemoryMeta::getUserId, userId));
+        if (meta == null) {
+            return Result.fail(404, "记忆不存在");
+        }
+
+        // 用 UpdateWrapper 而不是 updateById：MyBatis-Plus 默认忽略 null 字段，
+        // 那样取消钉住时 archived_at 永远清不掉。
+        UpdateWrapper<MemoryMeta> patch = new UpdateWrapper<MemoryMeta>()
+                .eq("id", id)
+                .set("pinned", pinned);
+        if (pinned) {
+            patch.set("tau_days", 0)
+                    .set("strength", BigDecimal.ONE)
+                    .set("status", "active")
+                    .set("fade_level", "active")
+                    .set("archived_at", null);
+        } else {
+            boolean core = "core".equalsIgnoreCase(meta.getLayer());
+            patch.set("tau_days", core ? 0 : 365);
+        }
+        memoryMetaMapper.update(null, patch);
+        memoryCacheService.invalidate(userId, meta.getCharacterId());
+        return Result.ok();
     }
 
     public Result<Void> delete(long userId, Long id) {

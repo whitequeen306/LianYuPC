@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.lianyu.common.base.Result;
 import com.lianyu.dao.entity.Character;
 import com.lianyu.dao.entity.MemoryMeta;
@@ -19,6 +20,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -87,6 +89,43 @@ class MemoryQueryServiceTest {
         assertTrue(row.containsKey("strength"));
         assertTrue(row.containsKey("eventTime"));
         assertEquals("阿岚", row.get("characterName"));
+    }
+
+    @Test
+    void pin_sets_zero_tau_and_clears_archive_marker() {
+        when(memoryMetaMapper.selectOne(any())).thenReturn(meta());
+
+        Result<Void> result = service.setPinned(7L, 11L, true);
+
+        assertEquals(200, result.getCode());
+        ArgumentCaptor<Wrapper<MemoryMeta>> captor = ArgumentCaptor.forClass(Wrapper.class);
+        org.mockito.Mockito.verify(memoryMetaMapper).update(any(), captor.capture());
+        String set = captor.getValue().getSqlSet();
+        assertTrue(set.contains("tau_days"), set);
+        assertTrue(set.contains("archived_at"), set);
+        assertTrue(set.contains("fade_level"), set);
+    }
+
+    @Test
+    void unpin_restores_default_tau_for_fact_layer() {
+        when(memoryMetaMapper.selectOne(any())).thenReturn(meta());
+
+        service.setPinned(7L, 11L, false);
+
+        ArgumentCaptor<Wrapper<MemoryMeta>> captor = ArgumentCaptor.forClass(Wrapper.class);
+        org.mockito.Mockito.verify(memoryMetaMapper).update(any(), captor.capture());
+        String set = captor.getValue().getSqlSet();
+        assertTrue(set.contains("tau_days"), set);
+        assertTrue(!set.contains("archived_at"), set);  // 取消钉住不该顺手改归档标记
+    }
+
+    @Test
+    void pin_rejects_other_users_memory() {
+        when(memoryMetaMapper.selectOne(any())).thenReturn(null);
+
+        Result<Void> result = service.setPinned(7L, 99L, true);
+
+        assertEquals(404, result.getCode());
     }
 
     @Test

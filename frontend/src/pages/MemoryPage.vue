@@ -179,6 +179,15 @@
             <MemorySourceList :messages="detailSources" :loading="detailLoading" />
 
             <footer class="mem-sheet__foot">
+              <el-button
+                text
+                class="mem-sheet__pin"
+                :class="{ 'is-pinned': detailMemory?.pinned }"
+                :loading="pinLoading"
+                @click="togglePin(detailMemory)"
+              >
+                {{ detailMemory?.pinned ? t('memory.unpin') : t('memory.pin') }}
+              </el-button>
               <el-button text class="mem-sheet__delete" @click="removeMemory(detailMemory)">
                 {{ t('common.delete') }}
               </el-button>
@@ -194,7 +203,7 @@
 import { computed, onActivated, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useCharactersStore } from '@/stores/characters'
-import { listMemories, getMemory, deleteMemory } from '@/api/memory'
+import { listMemories, getMemory, deleteMemory, setMemoryPinned } from '@/api/memory'
 import { listCharacterStates, listAllDiaries } from '@/api/characterState'
 import {
   Loading,
@@ -237,6 +246,7 @@ const detailId = ref(null)
 const detailMemory = ref(null)
 const detailSources = ref([])
 const detailLoading = ref(false)
+const pinLoading = ref(false)
 
 const detailFadeLabel = computed(() => {
   const level = detailMemory.value?.fadeLevel
@@ -418,6 +428,33 @@ function closeDetail() {
   detailId.value = null
   detailMemory.value = null
   detailSources.value = []
+}
+
+async function togglePin(mem) {
+  if (!mem || pinLoading.value) return
+  const targetId = mem.memoryId ?? mem.id
+  if (targetId == null) return
+  const next = !mem.pinned
+  pinLoading.value = true
+  try {
+    await setMemoryPinned(targetId, next)
+  } catch {
+    pinLoading.value = false
+    return
+  }
+  pinLoading.value = false
+
+  // 钉住 = 免衰减：本地先按同口径改，避免等一次刷新才亮
+  const patch = next
+    ? { pinned: true, strength: 1, fadeLevel: 'active', status: 'active' }
+    : { pinned: false }
+  memories.value = memories.value.map((item) =>
+    String(item.id) === String(targetId) ? { ...item, ...patch } : item
+  )
+  if (detailMemory.value) {
+    detailMemory.value = { ...detailMemory.value, ...patch }
+  }
+  ElMessage.success(next ? t('memory.pinOn') : t('memory.pinOff'))
 }
 
 async function removeMemory(mem) {
@@ -806,8 +843,19 @@ async function removeMemory(mem) {
 
 .mem-sheet__foot {
   margin-top: auto;
+  display: flex;
+  justify-content: space-between;
   padding-top: $space-3;
   border-top: 1px solid rgba($color-pink-rgb, 0.08);
+}
+
+.mem-sheet__pin {
+  color: $color-text-secondary;
+
+  &:hover,
+  &.is-pinned {
+    color: $color-pink-light;
+  }
 }
 
 .mem-sheet__delete {
