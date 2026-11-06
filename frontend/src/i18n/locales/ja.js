@@ -428,9 +428,108 @@ export default {
   },
   memory: {
     title: '記憶',
-    desc: 'キャラが覚えている長期記憶の要約',
-    empty: '記憶がありません',
-    refresh: '更新'
+    desc: '彼女が覚えているあなたのこと：事実、気持ち、関係、そして繰り返される小さな儀式',
+    empty: 'まだ記憶がありません',
+    emptyDesc: 'もう少し話してみましょう。そのうち覚え始めます',
+    refresh: '更新',
+    allCharacters: 'すべてのキャラ',
+    count: '{count} 件の記憶',
+    viewBrain: '星図',
+    viewList: 'リスト',
+    sources: '元の会話',
+    noSources: 'この記憶には元の会話が残っていません',
+    viewSources: '出典を見る ({count})',
+    collapseSources: '出典を閉じる',
+    roleUser: 'あなた',
+    roleAssistant: '彼女',
+    roleIndex: 'キャラ #{id}',
+    importance: '記憶の重み',
+    detail: '詳細',
+    sectorUnknown: '未分類',
+    deleteConfirmTitle: '記憶を削除',
+    deleteConfirmMessage: 'この記憶は彼女の頭から消え、元に戻せません。',
+    deleted: '記憶を削除しました',
+    brain: {
+      a11y: 'キャラ記憶の星図：ドラッグで回転、スクロールで拡大、ノードをクリックで詳細',
+      hint: 'ドラッグで回転 · スクロールで拡大 · クリックで詳細',
+      autoRotate: '自動回転',
+      resetView: '視点を戻す',
+      replay: '時間再生',
+      replayAll: 'すべての記憶',
+      empty: '記憶がまだありません。もう少し話すと海馬が書き始めます',
+      statMemories: '件の記憶',
+      statWeek: '今週の書き込み',
+      statCharacters: 'キャラ',
+      statImportance: '平均の重み',
+      recent: '最近の記憶',
+      regionEmpty: 'この脳領域にはまだデータがありません',
+      selected: '選択中',
+      truncated: '星図に描ける光は最大 {count} 個まで。残りはリストにあります',
+      recallPlaceholder: 'キーワードで想起してみる…',
+      recallNote: 'ローカルのキーワード演示です。実際の想起は Milvus のベクトル検索で、ここは「命中度 × 重み × 新しさ」だけを見せています。',
+      recallEmpty: '該当なし。別の言葉で試して',
+      hits: '命中 {hits}/{total}',
+      units: {
+        messages: '件の会話',
+        written: '件の新しい記憶',
+        memories: '件の記憶',
+        sectors: '種類の索引',
+        relationMemories: '件の関係記憶',
+        characters: 'キャラ',
+        diaries: '件の日記',
+        charactersExpressing: 'キャラ'
+      },
+      regions: {
+        input: {
+          name: '会話入力',
+          desc: 'あなたの言葉はまずここへ。1 ターン終わるたびに本文は抽出へ回され、そのまま記憶にはなりません。'
+        },
+        hippo: {
+          name: '海馬 · 書き込み',
+          desc: '抽出器が会話を要約に圧縮します。重み 0.5 未満は捨て、1 ターン最大 3 件。outbox が非同期でベクトルストアへ書き込みます。'
+        },
+        ltm: {
+          name: '長期記憶庫',
+          desc: 'memory_meta の長期記憶。事実・感情・関係・儀式の 4 つの扇区に分かれます。光が大きいほど重みが高い。'
+        },
+        core: {
+          name: '中枢 · 検索',
+          desc: '毎ターン、意味的に関連する断片を記憶庫から呼び出し、関係段階と今の気分と一緒に prompt へ詰めます。'
+        },
+        relation: {
+          name: '関係の中枢',
+          desc: '関係段階（初対面 / 親しみ / 依存 / 傷つき / 修復 / 親密）は記憶の重みも口調も変えます。'
+        },
+        limbic: {
+          name: '感情 · 辺縁系',
+          desc: '今の気分とその強さが、記憶が語られるときの温度を決めます。'
+        },
+        introspect: {
+          name: '内省 · 日記',
+          desc: '彼女が毎晩遅くに書く日記。記憶とは別のもうひとつの堆積です。'
+        },
+        output: {
+          name: '表現 · 注入',
+          desc: '呼び出された記憶は「記憶の断片」として prompt に入り、最後に彼女の口から出る一文になります。'
+        }
+      },
+      sectors: {
+        FACT: '事実',
+        EMOTION: '感情',
+        RELATION: '関係',
+        RITUAL: '儀式'
+      },
+      flows: {
+        wake: '会話で呼び起こす',
+        write: '抽出して書き込む',
+        index: '索引 · 想起',
+        emotion: '感情の重み',
+        relation: '関係の重み',
+        diary: '日記の堆積',
+        inject: 'prompt へ注入',
+        topic: '今の話題'
+      }
+    }
   },
   moments: {
     title: 'モーメンツ',

@@ -433,9 +433,108 @@ export default {
   },
   memory: {
     title: 'Memory',
-    desc: 'Long-term memory summaries your characters keep',
+    desc: 'Everything she remembers about you: facts, feelings, bonds and the little rituals',
     empty: 'No memories yet',
-    refresh: 'Refresh'
+    emptyDesc: 'Talk a little more — she will start remembering you',
+    refresh: 'Refresh',
+    allCharacters: 'All characters',
+    count: '{count} memories',
+    viewBrain: 'Starmap',
+    viewList: 'List',
+    sources: 'Source conversation',
+    noSources: 'This memory kept no source messages',
+    viewSources: 'View sources ({count})',
+    collapseSources: 'Hide sources',
+    roleUser: 'You',
+    roleAssistant: 'Her',
+    roleIndex: 'Character #{id}',
+    importance: 'Weight',
+    detail: 'Details',
+    sectorUnknown: 'Unsorted',
+    deleteConfirmTitle: 'Delete memory',
+    deleteConfirmMessage: 'This memory will vanish from her mind and cannot be restored.',
+    deleted: 'Memory deleted',
+    brain: {
+      a11y: 'Character memory starmap: drag to rotate, scroll to zoom, click a node for details',
+      hint: 'Drag to rotate · scroll to zoom · click a node',
+      autoRotate: 'Auto rotate',
+      resetView: 'Reset view',
+      replay: 'Time replay',
+      replayAll: 'All memories',
+      empty: 'No memories yet. Chat a little, then the hippocampus has something to write',
+      statMemories: 'memories',
+      statWeek: 'written this week',
+      statCharacters: 'characters',
+      statImportance: 'avg. weight',
+      recent: 'Recent memories',
+      regionEmpty: 'Nothing in this region yet',
+      selected: 'Selected',
+      truncated: 'The map draws up to {count} sparks; the rest stay in the list',
+      recallPlaceholder: 'Try a keyword recall…',
+      recallNote: 'Local keyword demo: real recall uses Milvus vectors. This only shows hit strength × weight × freshness.',
+      recallEmpty: 'No hits. Try another word',
+      hits: 'Hits {hits}/{total}',
+      units: {
+        messages: 'messages',
+        written: 'new memories',
+        memories: 'memories',
+        sectors: 'sectors',
+        relationMemories: 'bond memories',
+        characters: 'characters',
+        diaries: 'diaries',
+        charactersExpressing: 'characters'
+      },
+      regions: {
+        input: {
+          name: 'Dialogue input',
+          desc: 'What you say lands here first. After each turn the raw text is queued for extraction, not turned into memory directly.'
+        },
+        hippo: {
+          name: 'Hippocampus · write',
+          desc: 'The extractor compresses the turn into a summary: weight below 0.5 is dropped, at most 3 per turn, then the outbox writes it to the vector store.'
+        },
+        ltm: {
+          name: 'Long-term store',
+          desc: 'Long-term memories in memory_meta, split into four sectors: fact, emotion, bond, ritual. Bigger sparks mean higher weight.'
+        },
+        core: {
+          name: 'Hub · recall',
+          desc: 'Each turn recalls related fragments by meaning, then packs them with the bond stage and current mood into the prompt.'
+        },
+        relation: {
+          name: 'Bond hub',
+          desc: 'The bond stage (testing, familiar, dependent, hurt, repairing, intimate) changes both memory weight and her tone.'
+        },
+        limbic: {
+          name: 'Emotion · limbic',
+          desc: 'Her current mood and intensity decide whether a memory comes out warm or cold.'
+        },
+        introspect: {
+          name: 'Introspection · diary',
+          desc: 'The diary she writes late at night — a second kind of sediment beside memory.'
+        },
+        output: {
+          name: 'Expression · inject',
+          desc: 'Recalled memories enter the prompt as fragments, and finally become the sentence she says to you.'
+        }
+      },
+      sectors: {
+        FACT: 'Fact',
+        EMOTION: 'Emotion',
+        RELATION: 'Bond',
+        RITUAL: 'Ritual'
+      },
+      flows: {
+        wake: 'Wake',
+        write: 'Extract & write',
+        index: 'Index · recall',
+        emotion: 'Mood weight',
+        relation: 'Bond weight',
+        diary: 'Diary deposit',
+        inject: 'Inject prompt',
+        topic: 'Current topic'
+      }
+    }
   },
   moments: {
     title: 'Moments',

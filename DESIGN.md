@@ -235,6 +235,17 @@ soft neutrals in light mode.
   `--ly-toast-border`, `--ly-toast-avatar-*`. Do not reuse `--ly-bg-glass-strong`.
 - **Chat scene:** Immersive `#0a0a12` background with translucent bubbles.
   User bubble = pink-tinted; assistant bubble = surface-tinted.
+- **Memory star map (记忆星图):** the character-memory page draws a 3D star
+  field on `<canvas>`, so it gets its own deep-space backdrop — `#1b2740`
+  (core) → `#101827` (mid) → `#080c14` (edge). Eight region hues label the
+  pipeline: input `#7fb4f0`, hippo `#a98bff`, ltm `#f4a6b5`, core `#fff1c9`,
+  relation `#6fdbc0`, limbic `#ff8fab`, introspect `#7ed7e8`, output `#e6eefc`.
+  Four sector hues encode `MemoryType` (data encoding, never decoration):
+  FACT `#ffd166` · EMOTION `#ff8fab` · RELATION `#6fdbc0` · RITUAL `#c8a0ff`.
+  These values live **only** in `frontend/src/components/memory/memoryBrainModel.js`
+  (`BRAIN_PALETTE` / `MEMORY_SECTORS`) and the `SPACE` constant in
+  `MemoryBrainMap.vue`; they may be painted only inside the canvas. The DOM
+  chrome around it (legend, side panel, timeline) uses the normal tokens above.
 
 **Accent is user-tunable at runtime** (6 warm presets: pink/peach/rose-gold/
 coral/warm-sun/apricot). All accent references must go through `{colors.primary}`

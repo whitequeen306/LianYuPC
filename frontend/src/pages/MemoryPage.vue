@@ -1,5 +1,5 @@
 <template>
-  <div class="memory-page stagger-container">
+  <div class="memory-page stagger-container" :class="{ 'is-brain': view === 'brain' }">
     <header class="page-header">
       <h1 class="page-title">{{ t('memory.title') }}</h1>
       <p class="page-desc">{{ t('memory.desc') }}</p>
@@ -11,7 +11,7 @@
         :placeholder="t('memory.allCharacters')"
         clearable
         class="filter-select"
-        @change="fetchMemories"
+        @change="fetchAll"
       >
         <el-option
           v-for="c in charactersStore.list"
@@ -20,7 +20,31 @@
           :value="c.id"
         />
       </el-select>
-      <el-button :icon="RefreshRight" @click="fetchMemories" :loading="loading">{{ t('memory.refresh') }}</el-button>
+
+      <div class="view-toggle" role="group">
+        <button
+          type="button"
+          class="view-toggle__btn"
+          :class="{ 'is-active': view === 'brain' }"
+          @click="setView('brain')"
+        >
+          <el-icon :size="14"><Share /></el-icon>
+          <span>{{ t('memory.viewBrain') }}</span>
+        </button>
+        <button
+          type="button"
+          class="view-toggle__btn"
+          :class="{ 'is-active': view === 'list' }"
+          @click="setView('list')"
+        >
+          <el-icon :size="14"><List /></el-icon>
+          <span>{{ t('memory.viewList') }}</span>
+        </button>
+      </div>
+
+      <el-button :icon="RefreshRight" :loading="loading" class="refresh-btn" @click="fetchAll">
+        {{ t('memory.refresh') }}
+      </el-button>
     </div>
 
     <div v-if="loading" class="loading-state">
@@ -28,94 +52,171 @@
       <span>{{ t('common.loading') }}</span>
     </div>
 
-    <div v-else-if="memories.length === 0" class="empty-state glass stagger-item">
-      <div class="empty-icon">
-        <el-icon :size="40"><Collection /></el-icon>
-      </div>
-      <h3>{{ t('memory.empty') }}</h3>
-      <p>{{ t('memory.emptyDesc') }}</p>
-    </div>
+    <!-- 星图：默认视图 -->
+    <MemoryBrainMap
+      v-else-if="view === 'brain'"
+      class="stagger-item"
+      :memories="memories"
+      :characters="charactersStore.list"
+      :states="visibleStates"
+      :diaries="visibleDiaries"
+      :selected-memory-id="detailId"
+      @select-memory="openDetail"
+    />
 
-    <div v-else class="memory-groups">
-      <div
-        v-for="group in groupedMemories"
-        :key="group.charId"
-        class="memory-group glass stagger-item"
-      >
-        <div class="group-header">
-          <div class="group-char-info">
-            <div class="group-char-avatar">
-              <CharacterAvatarImg
-                :character-id="group.charId"
-                :characters="charactersStore.list"
-                :alt="group.charName"
-                :icon-size="16"
-              />
-            </div>
-            <span class="group-char-name">{{ group.charName }}</span>
-            <span class="group-count">{{ t('memory.count', { count: group.items.length }) }}</span>
-          </div>
+    <!-- 列表视图：保留原来的分组卡片 -->
+    <template v-else>
+      <div v-if="memories.length === 0" class="empty-state glass stagger-item">
+        <div class="empty-icon">
+          <el-icon :size="40"><Collection /></el-icon>
         </div>
+        <h3>{{ t('memory.empty') }}</h3>
+        <p>{{ t('memory.emptyDesc') }}</p>
+      </div>
 
-        <div class="group-items">
-          <div
-            v-for="(mem, idx) in group.items"
-            :key="mem.id"
-            class="memory-card"
-            :style="{ animationDelay: `${idx * 0.03}s` }"
-          >
-            <div class="mem-header">
-              <span class="mem-time">{{ formatDate(mem.createdAt) }}</span>
+      <div v-else class="memory-groups">
+        <div
+          v-for="group in groupedMemories"
+          :key="group.charId"
+          class="memory-group glass stagger-item"
+        >
+          <div class="group-header">
+            <div class="group-char-info">
+              <div class="group-char-avatar">
+                <CharacterAvatarImg
+                  :character-id="group.charId"
+                  :characters="charactersStore.list"
+                  :alt="group.charName"
+                  :icon-size="16"
+                />
+              </div>
+              <span class="group-char-name">{{ group.charName }}</span>
+              <span class="group-count">{{ t('memory.count', { count: group.items.length }) }}</span>
             </div>
+          </div>
 
-            <div class="mem-summary">{{ mem.summary }}</div>
+          <div class="group-items">
+            <div
+              v-for="(mem, idx) in group.items"
+              :key="mem.id"
+              class="memory-card"
+              :style="{ animationDelay: `${idx * 0.03}s` }"
+            >
+              <div class="mem-header">
+                <span class="mem-time">{{ formatDate(mem.createdAt) }}</span>
+              </div>
 
-            <div v-if="mem.sourceMsgIds && mem.sourceMsgIds.length" class="mem-sources">
-              <el-button text size="small" @click="toggleSources(mem.id)">
-                <el-icon :size="14"><component :is="expandedId === mem.id ? ArrowDown : ArrowRight" /></el-icon>
-                {{ expandedId === mem.id ? t('memory.collapseSources') : t('memory.viewSources', { count: mem.sourceMsgIds.length }) }}
-              </el-button>
+              <div class="mem-summary">{{ mem.summary }}</div>
 
-              <div v-if="expandedId === mem.id" class="source-messages">
-                <div v-if="sourceLoading" class="source-loading">{{ t('common.loading') }}</div>
-                <div
-                  v-for="s in sourceMessages"
-                  :key="s.id"
-                  class="source-msg"
-                  :class="`role-${s.role}`"
-                >
-                  <span class="source-role">{{ s.role === 'user' ? t('memory.roleUser') : t('memory.roleAssistant') }}</span>
-                  <span class="source-time">{{ formatTime(s.createdAt) }}</span>
-                  <p class="source-content">{{ s.content }}</p>
-                </div>
+              <div v-if="mem.sourceMsgIds && mem.sourceMsgIds.length" class="mem-sources">
+                <el-button text size="small" @click="toggleSources(mem.id)">
+                  <el-icon :size="14">
+                    <component :is="expandedId === mem.id ? ArrowDown : ArrowRight" />
+                  </el-icon>
+                  {{
+                    expandedId === mem.id
+                      ? t('memory.collapseSources')
+                      : t('memory.viewSources', { count: mem.sourceMsgIds.length })
+                  }}
+                </el-button>
+
+                <MemorySourceList
+                  v-if="expandedId === mem.id"
+                  class="mem-source-list"
+                  :messages="sourceMessages"
+                  :loading="sourceLoading"
+                />
+              </div>
+
+              <div class="mem-footer">
+                <el-button text size="small" @click="openDetail(mem)">
+                  {{ t('memory.detail') }}
+                </el-button>
+                <el-button text :icon="Delete" size="small" class="btn-delete" @click="removeMemory(mem)">
+                  {{ t('common.delete') }}
+                </el-button>
               </div>
             </div>
-
-            <div class="mem-footer">
-              <el-button text :icon="Delete" size="small" class="btn-delete" @click="confirmDeleteMem(mem)">
-                {{ t('common.delete') }}
-              </el-button>
-            </div>
           </div>
         </div>
       </div>
-    </div>
+    </template>
+
+    <!-- 记忆详情抽屉（星图点击 / 列表详情共用） -->
+    <Teleport to="body">
+      <Transition name="mem-sheet">
+        <div v-if="detailVisible" class="mem-sheet-mask" @click.self="closeDetail">
+          <aside class="mem-sheet">
+            <header class="mem-sheet__head">
+              <span class="mem-sheet__sector" :style="{ color: sectorColor(detailMemory) }">
+                {{ sectorLabel(detailMemory) }}
+              </span>
+              <button type="button" class="mem-sheet__close" @click="closeDetail">
+                <el-icon :size="16"><Close /></el-icon>
+              </button>
+            </header>
+
+            <p class="mem-sheet__summary">{{ detailMemory?.summary || '' }}</p>
+
+            <div class="mem-sheet__meta">
+              <span>{{ characterName(detailMemory) }}</span>
+              <span>{{ formatDate(detailMemory?.createdAt) }}</span>
+            </div>
+
+            <div class="mem-sheet__weight">
+              <span>{{ t('memory.importance') }}</span>
+              <div class="mem-sheet__bar">
+                <i :style="{ width: `${importancePercent(detailMemory)}%` }" />
+              </div>
+              <b>{{ importancePercent(detailMemory) }}</b>
+            </div>
+
+            <h4 class="mem-sheet__title">{{ t('memory.sources') }}</h4>
+            <MemorySourceList :messages="detailSources" :loading="detailLoading" />
+
+            <footer class="mem-sheet__foot">
+              <el-button text class="mem-sheet__delete" @click="removeMemory(detailMemory)">
+                {{ t('common.delete') }}
+              </el-button>
+            </footer>
+          </aside>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onActivated } from 'vue'
-defineOptions({ name: 'MemoryPage' })
+import { computed, onActivated, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useCharactersStore } from '@/stores/characters'
 import { listMemories, getMemory, deleteMemory } from '@/api/memory'
-import { Loading, Collection, ArrowDown, ArrowRight, RefreshRight, Delete } from '@element-plus/icons-vue'
+import { listCharacterStates, listAllDiaries } from '@/api/characterState'
+import {
+  Loading,
+  Collection,
+  ArrowDown,
+  ArrowRight,
+  RefreshRight,
+  Delete,
+  Share,
+  List,
+  Close
+} from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import CharacterAvatarImg from '@/components/CharacterAvatarImg.vue'
+import MemoryBrainMap from '@/components/memory/MemoryBrainMap.vue'
+import MemorySourceList from '@/components/memory/MemorySourceList.vue'
+import { MEMORY_SECTORS } from '@/components/memory/memoryBrainModel'
 import { formatSmartTime } from '@/utils/feedTime'
+
+defineOptions({ name: 'MemoryPage' })
+
+const VIEW_STORAGE_KEY = 'lianyu-memory-view'
 
 const { t, locale } = useI18n()
 const charactersStore = useCharactersStore()
+
 const memories = ref([])
 const loading = ref(true)
 const filterCharId = ref(null)
@@ -123,12 +224,34 @@ const expandedId = ref(null)
 const sourceLoading = ref(false)
 const sourceMessages = ref([])
 
+const states = ref([])
+const diaries = ref([])
+
+const view = ref(readView())
+const detailVisible = ref(false)
+const detailId = ref(null)
+const detailMemory = ref(null)
+const detailSources = ref([])
+const detailLoading = ref(false)
+
+const visibleStates = computed(() =>
+  filterCharId.value == null
+    ? states.value
+    : states.value.filter((item) => String(item.characterId) === String(filterCharId.value))
+)
+
+const visibleDiaries = computed(() =>
+  filterCharId.value == null
+    ? diaries.value
+    : diaries.value.filter((item) => String(item.characterId) === String(filterCharId.value))
+)
+
 const groupedMemories = computed(() => {
   const groups = new Map()
   for (const mem of memories.value) {
     const charId = mem.characterId
     if (!groups.has(charId)) {
-      const char = charactersStore.list.find(c => c.id === charId)
+      const char = charactersStore.list.find((c) => c.id === charId)
       groups.set(charId, {
         charId,
         charName: mem.characterName || char?.name || t('memory.roleIndex', { id: charId }),
@@ -140,29 +263,88 @@ const groupedMemories = computed(() => {
   return Array.from(groups.values())
 })
 
+function readView() {
+  try {
+    return localStorage.getItem(VIEW_STORAGE_KEY) === 'list' ? 'list' : 'brain'
+  } catch {
+    return 'brain'
+  }
+}
+
+function setView(next) {
+  view.value = next
+  try {
+    localStorage.setItem(VIEW_STORAGE_KEY, next)
+  } catch {
+    /* 隐私模式下写不了 localStorage，视图只在本次会话生效 */
+  }
+}
+
 onMounted(async () => {
   await charactersStore.fetchList().catch(() => [])
-  fetchMemories()
+  fetchAll()
 })
 
 let firstActivation = true
 onActivated(() => {
-  if (firstActivation) { firstActivation = false; return }
-  fetchMemories()
+  if (firstActivation) {
+    firstActivation = false
+    return
+  }
+  fetchAll()
 })
 
-async function fetchMemories() {
+/**
+ * 记忆 / 情绪态 / 日记 一次性拉齐：星图要同时用到三者，
+ * 分开请求会让画面先画出「只有记忆」的图再跳一次。
+ */
+async function fetchAll() {
   loading.value = true
   try {
-    memories.value = await listMemories(filterCharId.value || undefined) || []
-  } catch {} finally {
+    const [list, stateList, diaryList] = await Promise.all([
+      listMemories(filterCharId.value || undefined).catch(() => []),
+      listCharacterStates({ silent: true }).catch(() => []),
+      listAllDiaries({ page: 1, size: 30 }, { silent: true }).catch(() => [])
+    ])
+    memories.value = Array.isArray(list) ? list : []
+    states.value = Array.isArray(stateList) ? stateList : []
+    diaries.value = Array.isArray(diaryList) ? diaryList : []
+  } finally {
     loading.value = false
   }
 }
 
-function getCharName(charId) {
-  const mem = memories.value.find(m => m.characterId === charId)
-  return mem?.characterName || charactersStore.list.find(c => c.id === charId)?.name || t('memory.roleIndex', { id: charId })
+function formatDate(value) {
+  return formatSmartTime(value, { t, locale: locale.value })
+}
+
+function characterName(mem) {
+  if (!mem) return ''
+  return (
+    mem.characterName ||
+    charactersStore.list.find((c) => String(c.id) === String(mem.characterId))?.name ||
+    t('memory.roleIndex', { id: mem.characterId })
+  )
+}
+
+function sectorOf(mem) {
+  const id = mem?.memoryType
+  return MEMORY_SECTORS.find((sector) => sector.id === id) || null
+}
+
+function sectorColor(mem) {
+  return sectorOf(mem)?.color || 'var(--ly-accent, #f4a6b5)'
+}
+
+function sectorLabel(mem) {
+  const sector = sectorOf(mem)
+  return sector ? t(sector.nameKey) : t('memory.sectorUnknown')
+}
+
+function importancePercent(mem) {
+  const value = Number(mem?.importance)
+  if (!Number.isFinite(value)) return 0
+  return Math.round(Math.min(1, Math.max(0, value)) * 100)
 }
 
 async function toggleSources(memId) {
@@ -175,7 +357,7 @@ async function toggleSources(memId) {
   sourceLoading.value = true
   try {
     const detail = await getMemory(memId)
-    sourceMessages.value = detail.sourceMessages || []
+    sourceMessages.value = detail?.sourceMessages || []
   } catch {
     sourceMessages.value = []
   } finally {
@@ -183,29 +365,90 @@ async function toggleSources(memId) {
   }
 }
 
-async function confirmDeleteMem(mem) {
+async function openDetail(mem) {
+  if (!mem) return
+  // 星图 emit 的是光点节点（id 形如 mem-123），先把节点翻译回记忆的形状，
+  // 否则抽屉会先闪一下「未知类型 / 空摘要」再被接口结果覆盖。
+  const nodeLike = mem.memoryId != null
+  const id = nodeLike ? mem.memoryId : mem.id
+  detailVisible.value = true
+  // 统一用记忆 id：星图靠它高亮选中光点，删除也靠它
+  detailId.value = id ?? null
+  detailMemory.value = nodeLike
+    ? {
+        id,
+        summary: mem.title,
+        characterId: mem.characterId,
+        characterName: mem.characterName,
+        memoryType: mem.sector,
+        importance: mem.importance,
+        sourceMsgIds: [],
+        createdAt: mem.createdAt
+      }
+    : mem
+  detailSources.value = []
+  if (id == null) return
+
+  detailLoading.value = true
+  try {
+    const detail = await getMemory(id)
+    if (detail) {
+      detailMemory.value = { ...detailMemory.value, ...detail }
+      detailSources.value = detail.sourceMessages || []
+    }
+  } catch {
+    detailSources.value = []
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+function closeDetail() {
+  detailVisible.value = false
+  detailId.value = null
+  detailMemory.value = null
+  detailSources.value = []
+}
+
+async function removeMemory(mem) {
+  if (!mem) return
   try {
     await ElMessageBox.confirm(t('memory.deleteConfirmMessage'), t('memory.deleteConfirmTitle'), {
-      type: 'warning', confirmButtonText: t('common.delete'), cancelButtonText: t('common.cancel')
+      type: 'warning',
+      confirmButtonText: t('common.delete'),
+      cancelButtonText: t('common.cancel')
     })
-    await deleteMemory(mem.id)
-    memories.value = memories.value.filter(m => m.id !== mem.id)
-    ElMessage.success(t('memory.deleted'))
-  } catch {}
-}
+  } catch {
+    return
+  }
 
-function formatDate(ts) {
-  return formatSmartTime(ts, { t, locale: locale.value })
-}
+  // 从星图点进来的是光点节点，真正的记忆 id 在 memoryId 上
+  const targetId = mem.memoryId ?? mem.id
+  if (targetId == null) return
 
-function formatTime(ts) {
-  return formatSmartTime(ts, { t, locale: locale.value })
+  try {
+    await deleteMemory(targetId)
+  } catch {
+    return
+  }
+
+  memories.value = memories.value.filter((item) => String(item.id) !== String(targetId))
+  if (String(expandedId.value) === String(targetId)) {
+    expandedId.value = null
+    sourceMessages.value = []
+  }
+  if (String(detailId.value) === String(targetId) || String(detailId.value) === String(mem.id)) closeDetail()
+  ElMessage.success(t('memory.deleted'))
 }
 </script>
 
 <style lang="scss" scoped>
 .memory-page {
   max-width: $narrow-page-max;
+
+  &.is-brain {
+    max-width: min(1180px, 100%);
+  }
 }
 
 .page-header {
@@ -228,6 +471,7 @@ function formatTime(ts) {
 .filter-row {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: $space-3;
   margin-bottom: $space-6;
   animation: fadeSlideUp 0.5s 0.04s ease both;
@@ -237,14 +481,53 @@ function formatTime(ts) {
   width: min(200px, 55vw);
 }
 
-.loading-state, .empty-state {
+.view-toggle {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: $radius-pill;
+  border: 1px solid rgba($color-pink-rgb, 0.12);
+  background: rgba($color-pink-rgb, 0.04);
+}
+
+.view-toggle__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: none;
+  border-radius: $radius-pill;
+  background: transparent;
+  color: $color-text-muted;
+  font-size: $font-size-xs;
+  font-family: inherit;
+  cursor: pointer;
+  transition: color $transition-fast, background $transition-fast;
+
+  &:hover {
+    color: $color-text-secondary;
+  }
+
+  &.is-active {
+    color: $color-text-primary;
+    background: rgba($color-pink-rgb, 0.14);
+    box-shadow: 0 0 12px rgba($color-pink-rgb, 0.12);
+  }
+}
+
+.refresh-btn {
+  margin-left: auto;
+}
+
+.loading-state,
+.empty-state {
   text-align: center;
   padding: $space-16 $space-6;
   color: $color-text-muted;
 }
 
 .empty-icon {
-  width: 80px; height: 80px;
+  width: 80px;
+  height: 80px;
   border-radius: $radius-xl;
   background: rgba($color-pink-rgb, 0.06);
   display: flex;
@@ -254,8 +537,14 @@ function formatTime(ts) {
   color: $color-pink-primary;
 }
 
-.empty-state h3 { color: $color-text-primary; margin-bottom: $space-2; }
-.empty-state p { font-size: $font-size-sm; }
+.empty-state h3 {
+  color: $color-text-primary;
+  margin-bottom: $space-2;
+}
+
+.empty-state p {
+  font-size: $font-size-sm;
+}
 
 .memory-groups {
   display: flex;
@@ -283,7 +572,8 @@ function formatTime(ts) {
 }
 
 .group-char-avatar {
-  width: 32px; height: 32px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   overflow: hidden;
   background: rgba($color-pink-rgb, 0.1);
@@ -293,7 +583,11 @@ function formatTime(ts) {
   color: $color-pink-primary;
   flex-shrink: 0;
 
-  img { width: 100%; height: 100%; object-fit: cover; }
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
 }
 
 .group-char-name {
@@ -319,7 +613,9 @@ function formatTime(ts) {
   animation: fadeSlideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1) both;
   transition: background $transition-fast;
 
-  &:last-child { border-bottom: none; }
+  &:last-child {
+    border-bottom: none;
+  }
 
   &:hover {
     background: rgba($color-pink-rgb, 0.02);
@@ -351,57 +647,156 @@ function formatTime(ts) {
   border-top: 1px solid rgba($color-pink-rgb, 0.06);
 }
 
-.source-messages {
+.mem-source-list {
   margin-top: $space-3;
-  display: flex;
-  flex-direction: column;
-  gap: $space-2;
-}
-
-.source-loading {
-  font-size: $font-size-sm;
-  color: $color-text-muted;
-  text-align: center;
-  padding: $space-3;
-}
-
-.source-msg {
-  padding: $space-2 $space-3;
-  border-radius: $radius-md;
-  background: rgba($color-bg-secondary, 0.4);
-  border-left: 3px solid transparent;
-
-  &.role-user { border-left-color: rgba($color-pink-rgb, 0.5); }
-  &.role-assistant { border-left-color: rgba($color-pink-light, 0.4); }
-}
-
-.source-role {
-  font-size: 11px;
-  font-weight: $font-weight-semibold;
-  color: $color-text-secondary;
-  margin-right: $space-2;
-}
-
-.source-time {
-  font-size: 11px;
-  color: $color-text-muted;
-  opacity: 0.5;
-}
-
-.source-content {
-  font-size: $font-size-sm;
-  color: $color-text-secondary;
-  margin-top: 2px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 .mem-footer {
   margin-top: $space-2;
   display: flex;
   justify-content: flex-end;
+  gap: $space-2;
 
-  .btn-delete:hover { color: $color-error !important; }
+  .btn-delete:hover {
+    color: $color-error !important;
+  }
+}
+
+/* 抽屉里的过渡由 Transition 负责，这里只放进入/离开的位移 */
+.mem-sheet-mask {
+  position: fixed;
+  inset: 0;
+  z-index: $z-overlay;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(4, 8, 14, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.mem-sheet {
+  width: min(440px, 92vw);
+  height: 100%;
+  padding: $space-5 $space-5 $space-6;
+  overflow-y: auto;
+  background: rgba(16, 22, 32, 0.96);
+  border-left: 1px solid rgba($color-pink-rgb, 0.14);
+  box-shadow: -18px 0 48px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+}
+
+.mem-sheet__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mem-sheet__sector {
+  font-size: 10px;
+  font-weight: $font-weight-semibold;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.mem-sheet__close {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  color: $color-text-secondary;
+  cursor: pointer;
+
+  &:hover {
+    color: $color-pink-light;
+    border-color: rgba($color-pink-rgb, 0.35);
+  }
+}
+
+.mem-sheet__summary {
+  margin: 0;
+  font-size: $font-size-base;
+  line-height: 1.8;
+  color: $color-text-primary;
+}
+
+.mem-sheet__meta {
+  display: flex;
+  gap: $space-3;
+  font-size: 11px;
+  color: $color-text-muted;
+}
+
+.mem-sheet__weight {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  font-size: 11px;
+  color: $color-text-muted;
+
+  b {
+    color: $color-pink-light;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.mem-sheet__bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+
+  i {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, rgba($color-pink-rgb, 0.45), $color-pink-primary);
+  }
+}
+
+.mem-sheet__title {
+  margin: $space-2 0 0;
+  font-size: 10px;
+  font-weight: $font-weight-semibold;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: $color-text-muted;
+}
+
+.mem-sheet__foot {
+  margin-top: auto;
+  padding-top: $space-3;
+  border-top: 1px solid rgba($color-pink-rgb, 0.08);
+}
+
+.mem-sheet__delete {
+  color: rgba($color-error, 0.85);
+
+  &:hover {
+    color: $color-error;
+  }
+}
+
+.mem-sheet-enter-active,
+.mem-sheet-leave-active {
+  transition: opacity $transition-base;
+}
+
+.mem-sheet-enter-active .mem-sheet,
+.mem-sheet-leave-active .mem-sheet {
+  transition: transform $transition-base;
+}
+
+.mem-sheet-enter-from,
+.mem-sheet-leave-to {
+  opacity: 0;
+}
+
+.mem-sheet-enter-from .mem-sheet,
+.mem-sheet-leave-to .mem-sheet {
+  transform: translateX(24px);
 }
 </style>

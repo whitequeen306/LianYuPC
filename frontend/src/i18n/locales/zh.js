@@ -434,9 +434,108 @@ export default {
   },
   memory: {
     title: '记忆',
-    desc: '查看角色对你的长期记忆摘要',
-    empty: '暂无记忆',
-    refresh: '刷新'
+    desc: '她记得关于你的一切：事实、情绪、关系，还有那些反复发生的小仪式',
+    empty: '还没有记忆',
+    emptyDesc: '多聊几句，等她开始记住你',
+    refresh: '刷新',
+    allCharacters: '全部角色',
+    count: '{count} 条记忆',
+    viewBrain: '星图',
+    viewList: '列表',
+    sources: '来源对话',
+    noSources: '这条记忆没有留下来源对话',
+    viewSources: '查看来源 ({count})',
+    collapseSources: '收起来源',
+    roleUser: '你',
+    roleAssistant: '她',
+    roleIndex: '角色 #{id}',
+    importance: '记忆权重',
+    detail: '详情',
+    sectorUnknown: '未分类',
+    deleteConfirmTitle: '删除记忆',
+    deleteConfirmMessage: '这条记忆会从她脑海里消失，且无法恢复。',
+    deleted: '记忆已删除',
+    brain: {
+      a11y: '角色记忆星图：拖动旋转，滚轮缩放，点击节点查看详情',
+      hint: '拖动旋转 · 滚轮缩放 · 点击节点查看',
+      autoRotate: '自动旋转',
+      resetView: '重置视角',
+      replay: '时光回放',
+      replayAll: '全部记忆',
+      empty: '还没有记忆。先去聊几句，海马体才有东西可写',
+      statMemories: '条记忆',
+      statWeek: '本周写入',
+      statCharacters: '个角色',
+      statImportance: '平均权重',
+      recent: '最近的记忆',
+      regionEmpty: '这个脑区还没有数据',
+      selected: '已选中',
+      truncated: '星图最多铺 {count} 颗光点，其余仍在列表里',
+      recallPlaceholder: '试试关键词召回…',
+      recallNote: '本地关键词演示：真实召回走 Milvus 向量检索，这里只演示「命中强度 × 权重 × 新鲜度」。',
+      recallEmpty: '没有命中，换个词试试',
+      hits: '命中 {hits}/{total}',
+      units: {
+        messages: '条对话',
+        written: '条新记忆',
+        memories: '条记忆',
+        sectors: '类索引',
+        relationMemories: '条关系记忆',
+        characters: '个角色',
+        diaries: '篇日记',
+        charactersExpressing: '个角色'
+      },
+      regions: {
+        input: {
+          name: '对话输入',
+          desc: '你说的话先到这里。每轮对话结束后，原文被送去抽取，而不是直接变成记忆。'
+        },
+        hippo: {
+          name: '海马体 · 写入',
+          desc: '抽取器把对话压成记忆摘要：权重低于 0.5 的丢弃，每轮最多留 3 条，再由 outbox 异步写进向量库。'
+        },
+        ltm: {
+          name: '长期记忆库',
+          desc: 'memory_meta 里的长期记忆，按类型分成四个扇区：事实、情绪、关系、仪式。光点越大，权重越高。'
+        },
+        core: {
+          name: '中枢 · 检索',
+          desc: '每轮对话按语义从记忆库里召回相关片段，连同关系阶段和当前情绪一起拼进 prompt。'
+        },
+        relation: {
+          name: '关系中枢',
+          desc: '关系阶段（初识 / 熟悉 / 依赖 / 受伤 / 修复 / 亲密）会改变记忆的权重，也改变她说话的语气。'
+        },
+        limbic: {
+          name: '情绪 · 边缘系统',
+          desc: '她此刻的情绪和强度，决定一段记忆被讲出来时是暖的还是凉的。'
+        },
+        introspect: {
+          name: '内省 · 日记',
+          desc: '她每天深夜写下的日记，是记忆之外的另一种沉淀。'
+        },
+        output: {
+          name: '表达 · 注入',
+          desc: '被召回的记忆以「记忆片段」的形式进入 prompt，最后变成她说出口的那句话。'
+        }
+      },
+      sectors: {
+        FACT: '事实',
+        EMOTION: '情绪',
+        RELATION: '关系',
+        RITUAL: '仪式'
+      },
+      flows: {
+        wake: '对话唤醒',
+        write: '抽取写入',
+        index: '索引 · 召回',
+        emotion: '情绪加权',
+        relation: '关系权重',
+        diary: '日记沉淀',
+        inject: '注入 prompt',
+        topic: '当前话题'
+      }
+    }
   },
   moments: {
     title: '朋友圈',

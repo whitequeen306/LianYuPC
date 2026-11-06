@@ -480,21 +480,109 @@ export default {
     }
   },
   memory: {
-    title: '記憶管理',
-    desc: '查看和管理 AI 角色的長期記憶',
+    title: '記憶',
+    desc: '她記得關於你的一切：事實、情緒、關係，還有那些反覆發生的小儀式',
     allCharacters: '全部角色',
     empty: '暫無記憶',
-    emptyDesc: '當對話累積足夠多後，系統會自動產生角色記憶摘要',
+    emptyDesc: '多聊幾句，等她開始記住你',
     refresh: '重新整理',
     count: '{count} 條記憶',
-    collapseSources: '收起來源',
+    viewBrain: '星圖',
+    viewList: '列表',
+    sources: '來源對話',
+    noSources: '這條記憶沒有留下來源對話',
     viewSources: '查看來源訊息 ({count})',
-    roleUser: '用戶',
-    roleAssistant: '角色',
+    collapseSources: '收起來源',
+    roleUser: '你',
+    roleAssistant: '她',
     roleIndex: '角色 #{id}',
-    deleteConfirmTitle: '刪除確認',
-    deleteConfirmMessage: '確定刪除這條記憶？',
-    deleted: '記憶已刪除'
+    importance: '記憶權重',
+    detail: '詳情',
+    sectorUnknown: '未分類',
+    deleteConfirmTitle: '刪除記憶',
+    deleteConfirmMessage: '這條記憶會從她腦海裡消失，且無法復原。',
+    deleted: '記憶已刪除',
+    brain: {
+      a11y: '角色記憶星圖：拖曳旋轉、滾輪縮放、點擊節點查看詳情',
+      hint: '拖曳旋轉 · 滾輪縮放 · 點擊節點查看',
+      autoRotate: '自動旋轉',
+      resetView: '重設視角',
+      replay: '時光回放',
+      replayAll: '全部記憶',
+      empty: '還沒有記憶。先去聊幾句，海馬體才有東西可寫',
+      statMemories: '條記憶',
+      statWeek: '本週寫入',
+      statCharacters: '個角色',
+      statImportance: '平均權重',
+      recent: '最近的記憶',
+      regionEmpty: '這個腦區還沒有資料',
+      selected: '已選中',
+      truncated: '星圖最多鋪 {count} 顆光點，其餘仍在列表裡',
+      recallPlaceholder: '試試關鍵詞召回…',
+      recallNote: '本地關鍵詞演示：真實召回走 Milvus 向量檢索，這裡只演示「命中強度 × 權重 × 新鮮度」。',
+      recallEmpty: '沒有命中，換個詞試試',
+      hits: '命中 {hits}/{total}',
+      units: {
+        messages: '條對話',
+        written: '條新記憶',
+        memories: '條記憶',
+        sectors: '類索引',
+        relationMemories: '條關係記憶',
+        characters: '個角色',
+        diaries: '篇日記',
+        charactersExpressing: '個角色'
+      },
+      regions: {
+        input: {
+          name: '對話輸入',
+          desc: '你說的話先到這裡。每輪對話結束後，原文被送去抽取，而不是直接變成記憶。'
+        },
+        hippo: {
+          name: '海馬體 · 寫入',
+          desc: '抽取器把對話壓成記憶摘要：權重低於 0.5 的丟棄，每輪最多留 3 條，再由 outbox 非同步寫進向量庫。'
+        },
+        ltm: {
+          name: '長期記憶庫',
+          desc: 'memory_meta 裡的長期記憶，按類型分成四個扇區：事實、情緒、關係、儀式。光點越大，權重越高。'
+        },
+        core: {
+          name: '中樞 · 檢索',
+          desc: '每輪對話按語意從記憶庫召回相關片段，連同關係階段和當前情緒一起拼進 prompt。'
+        },
+        relation: {
+          name: '關係中樞',
+          desc: '關係階段（初識 / 熟悉 / 依賴 / 受傷 / 修復 / 親密）會改變記憶的權重，也改變她說話的語氣。'
+        },
+        limbic: {
+          name: '情緒 · 邊緣系統',
+          desc: '她此刻的情緒和強度，決定一段記憶被講出來時是暖的還是涼的。'
+        },
+        introspect: {
+          name: '內省 · 日記',
+          desc: '她每天深夜寫下的日記，是記憶之外的另一種沉澱。'
+        },
+        output: {
+          name: '表達 · 注入',
+          desc: '被召回的記憶以「記憶片段」的形式進入 prompt，最後變成她說出口的那句話。'
+        }
+      },
+      sectors: {
+        FACT: '事實',
+        EMOTION: '情緒',
+        RELATION: '關係',
+        RITUAL: '儀式'
+      },
+      flows: {
+        wake: '對話喚醒',
+        write: '抽取寫入',
+        index: '索引 · 召回',
+        emotion: '情緒加權',
+        relation: '關係權重',
+        diary: '日記沉澱',
+        inject: '注入 prompt',
+        topic: '當前話題'
+      }
+    }
   },
   settings: {
     title: '設定中心',
