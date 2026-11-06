@@ -37,6 +37,16 @@ public class MemoryMeta {
     private LocalDateTime archivedAt;
     private Boolean pinned;
     private Boolean muted;
+    /** 事实的有效期（双时间轴）：valid_to 为空表示仍然成立。 */
+    private LocalDateTime validFrom;
+    private LocalDateTime validTo;
+    /** 事件发生时间；画像类事实回填为创建时间。 */
+    private LocalDateTime eventTime;
+    /** 支撑这条记忆的原话（逐字），渲染时优先于 summary。 */
+    private String quote;
+    /** 被哪一条取代；不物理删，保留可追溯。 */
+    private Long supersededBy;
+    private Integer revision;
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 }

@@ -65,10 +65,7 @@ public class MemoryQueryService {
             m1.put("id", m.getId());
             m1.put("characterId", m.getCharacterId());
             m1.put("characterName", character != null ? character.getName() : "角色#" + m.getCharacterId());
-            m1.put("summary", m.getSummary());
-            m1.put("importance", m.getImportance());
-            m1.put("sourceMsgIds", m.getSourceMsgIds());
-            m1.put("createdAt", m.getCreatedAt());
+            putMemoryFields(m1, m);
             return m1;
         }).toList();
 
@@ -95,9 +92,7 @@ public class MemoryQueryService {
         result.put("id", meta.getId());
         result.put("characterId", meta.getCharacterId());
         result.put("characterName", character != null ? character.getName() : "角色#" + meta.getCharacterId());
-        result.put("summary", meta.getSummary());
-        result.put("sourceMsgIds", meta.getSourceMsgIds());
-        result.put("createdAt", meta.getCreatedAt());
+        putMemoryFields(result, meta);
         result.put("sourceMessages", sourceMsgs.stream().map(msg -> {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id", msg.getId());
@@ -124,6 +119,28 @@ public class MemoryQueryService {
         memoryMetaMapper.deleteById(id);
         memoryCacheService.invalidate(userId, meta.getCharacterId());
         return Result.ok();
+    }
+
+    /**
+     * 列表与详情共用一份字段口径：前端星图靠 memoryType 分扇区、靠 fadeLevel
+     * 画"模糊"，少一个字段就会整片退化成同一种颜色。
+     */
+    private void putMemoryFields(Map<String, Object> target, MemoryMeta meta) {
+        target.put("summary", meta.getSummary());
+        target.put("memoryType", meta.getMemoryType() == null ? null : meta.getMemoryType().name());
+        target.put("importance", meta.getImportance());
+        target.put("sourceMsgIds", meta.getSourceMsgIds());
+        target.put("createdAt", meta.getCreatedAt());
+        target.put("layer", meta.getLayer());
+        target.put("strength", meta.getStrength());
+        target.put("fadeLevel", meta.getFadeLevel());
+        target.put("pinned", meta.getPinned());
+        target.put("muted", meta.getMuted());
+        target.put("status", meta.getStatus());
+        target.put("eventTime", meta.getEventTime());
+        target.put("quote", meta.getQuote());
+        target.put("revision", meta.getRevision());
+        target.put("lastRecalledAt", meta.getLastRecalledAt());
     }
 
     private List<Message> filterMessagesOwnedByUser(long userId, List<Message> messages) {
