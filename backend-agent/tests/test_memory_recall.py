@@ -246,3 +246,38 @@ async def test_profile_block_falls_back_when_v3_raises(monkeypatch):
 
 async def _empty():
     return []
+
+
+async def test_shadow_logs_overlap_without_changing_block(monkeypatch, caplog):
+    from app import data_readers
+
+    legacy = [{"id": 1, "memory_type": "FACT", "summary": "她叫阿岚", "importance": 0.9}]
+
+    async def fake_facts(character_id, user_id):
+        return legacy
+
+    async def fake_base(character_id, user_id):
+        return []
+
+    async def fake_like(character_id, user_id, query):
+        return []
+
+    async def fake_recall(character_id, user_id, query, **kwargs):
+        return [{"id": 2, "memory_type": "FACT", "summary": "别的"}]
+
+    monkeypatch.setattr(data_readers, "_load_profile_facts", fake_facts)
+    monkeypatch.setattr(data_readers, "_load_recent_rows", fake_base)
+    monkeypatch.setattr(data_readers, "_load_like_boosted", fake_like)
+    monkeypatch.setattr("app.memory.recall.recall", fake_recall)
+    monkeypatch.setattr(
+        data_readers,
+        "get_settings",
+        lambda: SimpleNamespace(memory_recall_v3_enabled=False, memory_shadow_enabled=True),
+    )
+
+    with caplog.at_level("INFO", logger="app.data_readers"):
+        block = await data_readers.load_profile_block(3, 7, "在吗")
+
+    assert "她叫阿岚" in block          # 影子不改变注入内容
+    assert "memory shadow overlap=0.00" in caplog.text
+    assert "missing=['1']" in caplog.text

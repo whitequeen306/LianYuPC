@@ -249,7 +249,31 @@ async def load_profile_block(character_id: int, user_id: int,
                 continue
             seen_ids.add(int(row_id))
         merged.append(row)
-    return _render_profile_block(merged)
+    block = _render_profile_block(merged)
+    settings = get_settings()
+    if getattr(settings, "memory_shadow_enabled", False) and not getattr(
+        settings, "memory_recall_v3_enabled", False
+    ):
+        await _log_shadow(character_id, user_id, last_user_message, merged)
+    return block
+
+
+async def _log_shadow(character_id: int, user_id: int, query: str | None,
+                      legacy_rows: list[dict[str, Any]]) -> None:
+    """只打日志、不改变注入内容：翻转开关前先看覆盖率。"""
+    from app.memory.shadow import compare
+
+    try:
+        from app.memory.recall import recall
+
+        rows = await recall(character_id, user_id, query)
+        snap = compare(legacy_rows, rows)
+        logger.info(
+            "memory shadow overlap=%.2f missing=%s legacy=%d v3=%d",
+            snap["overlap"], snap["missing"], len(snap["legacy"]), len(snap["v3"]),
+        )
+    except Exception as exc:  # noqa: BLE001 - 影子对比不能影响主路径
+        logger.warning("memory shadow failed: %s", exc)
 
 
 async def load_memory_context(user_id: int, character_id: int,

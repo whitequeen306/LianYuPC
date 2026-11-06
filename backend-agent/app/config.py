@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     # 写入前语义去重（cos≥0.92 NOOP）。默认关：多一次 embedding 调用，先灰跑看误伤。
     memory_dedupe_similarity_enabled: bool = False
 
+    # 影子召回：v3 还没开时也跑一遍，只打覆盖率日志。默认关（每轮多一次查询）。
+    memory_shadow_enabled: bool = False
+
     # 场景卡开关：它是"当前场景"的唯一载体，但接线出问题会污染每一轮 prompt。
     # 留一个总开关，线上异常时先关它回到"只有记忆块"的状态。
     scene_card_enabled: bool = True

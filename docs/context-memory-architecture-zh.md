@@ -870,17 +870,19 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 | PR-19 历史按 token 裁剪 | ✅ 本次 | `app/context/history.py` + `chat_turn._trim_to_budget`：只为 recent 槽服务，开关 `history_trim_enabled` 默认关 |
 | PR-21 语义去重（双阈值） | ✅ 本次 | `app/memory/dedupe.py`：cos≥0.92 NOOP / <0.75 ADD / 灰区默认 ADD（不调模型）；开关 `memory_dedupe_similarity_enabled` 默认关 |
 | PR-20 上下文日统计 | ✅ 本次 | `app/context/stats.py` 写 Redis `ctx:stats:YYYYMMDD`；`GET /agent/context/stats` 读 `turns / est_tokens_per_turn / cache_hit_rate / trimmed_turns` |
+| PR-22 影子召回 | ✅ 本次 | `app/memory/shadow.py`：v3 未开时也跑一遍，只记 `overlap / missing`，不改注入内容；开关 `memory_shadow_enabled` 默认关 |
 
 **仍未做**：灰区的 LLM 判定（现在是 cos≥0.92 NOOP、<0.75 ADD，中间也按 ADD，
 因为误合并比多记一条更贵；开关默认关）、周记接 cron 并换成生成式（现在靠手动打端点、文本是抽取拼接）、
-`memory_vectors_v3` 集合（现在向量路仍读 v2，且没有 status 标量过滤）、影子 diff 指标、V58 在真实库上的迁移演练、
+`memory_vectors_v3` 集合（现在向量路仍读 v2，且没有 status 标量过滤）、V58 在真实库上的迁移演练、
 `memory_recall_v3_enabled` 打开前的 200 题评测。
 
 **开关**：`scene_card_enabled`（默认开）、`memory_recall_v3_enabled`（默认关，等迁移 + 评测）、
 `memory_vector_recall_enabled`（默认关，等 Milvus 里有向量且集合升级）、
 `memory_consolidate_enabled`（默认开，关掉后端点直接返回 `skipped`）、
 `history_trim_enabled`（默认关；打开后 recent 槽超预算会丢最旧的消息，system 与当前轮不动）、
-`memory_dedupe_similarity_enabled`（默认关；打开后写入前多一次 embedding，cos≥0.92 直接不写）。
+`memory_dedupe_similarity_enabled`（默认关；打开后写入前多一次 embedding，cos≥0.92 直接不写）、
+`memory_shadow_enabled`（默认关；打开后每轮多跑一次 v3 召回，只为打覆盖率日志）。
 周记另有 Java 侧调度开关 `lianyu.memory.consolidate.enabled`（**默认关**，线上显式开启后每周一 04:10 调一次；
 cron 可用 `lianyu.memory.consolidate.cron` 覆盖）。
 回滚：关开关即可回到「画像槽位 + importance top20 + LIKE 5」，新表/新列不影响旧路径。
