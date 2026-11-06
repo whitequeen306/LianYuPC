@@ -14,6 +14,7 @@ import com.lianyu.dao.mapper.MemoryEpisodeMapper;
 import com.lianyu.dao.mapper.MemoryMetaMapper;
 import com.lianyu.dao.mapper.MessageMapper;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -205,6 +206,33 @@ public class MemoryQueryService {
         memoryMetaMapper.update(null, new UpdateWrapper<MemoryMeta>()
                 .eq("id", id)
                 .set("muted", muted));
+        memoryCacheService.invalidate(userId, meta.getCharacterId());
+        return Result.ok();
+    }
+
+    /**
+     * 让她想起来：用户手动把沉底/归档的记忆拉回来。
+     *
+     * <p>只抬强度与档位、重置衰减起点，不改摘要——"想起来"不是"改写回忆"。
+     * dormant 的行也允许复活：留着行就是为了这一天。
+     */
+    public Result<Void> revive(long userId, Long id) {
+        MemoryMeta meta = memoryMetaMapper.selectOne(
+                new LambdaQueryWrapper<MemoryMeta>()
+                        .eq(MemoryMeta::getId, id)
+                        .eq(MemoryMeta::getUserId, userId));
+        if (meta == null) {
+            return Result.fail(404, "记忆不存在");
+        }
+        memoryMetaMapper.update(null, new UpdateWrapper<MemoryMeta>()
+                .eq("id", id)
+                .eq("user_id", userId)
+                .set("strength", new BigDecimal("0.55"))
+                .set("fade_level", "active")
+                .set("status", "active")
+                .set("archived_at", null)
+                .set("last_decay_at", LocalDateTime.now())
+                .setSql("revival_count = revival_count + 1"));
         memoryCacheService.invalidate(userId, meta.getCharacterId());
         return Result.ok();
     }

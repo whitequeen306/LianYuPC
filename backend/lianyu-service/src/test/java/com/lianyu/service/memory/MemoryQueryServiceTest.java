@@ -131,6 +131,29 @@ class MemoryQueryServiceTest {
     }
 
     @Test
+    void revive_lifts_strength_and_clears_archive_mark() {
+        when(memoryMetaMapper.selectOne(any())).thenReturn(meta());
+
+        Result<Void> result = service.revive(7L, 11L);
+
+        assertEquals(200, result.getCode());
+        ArgumentCaptor<Wrapper<MemoryMeta>> captor = ArgumentCaptor.forClass(Wrapper.class);
+        org.mockito.Mockito.verify(memoryMetaMapper).update(any(), captor.capture());
+        String set = captor.getValue().getSqlSet();
+        assertTrue(set.contains("strength"), set);
+        assertTrue(set.contains("archived_at"), set);
+        assertTrue(set.contains("revival_count"), set);
+        assertTrue(!set.contains("summary"), set);  // 不许改写回忆本身
+    }
+
+    @Test
+    void revive_rejects_other_users_memory() {
+        when(memoryMetaMapper.selectOne(any())).thenReturn(null);
+
+        assertEquals(404, service.revive(7L, 99L).getCode());
+    }
+
+    @Test
     void pin_rejects_other_users_memory() {
         when(memoryMetaMapper.selectOne(any())).thenReturn(null);
 

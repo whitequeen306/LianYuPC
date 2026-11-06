@@ -230,6 +230,15 @@
                 {{ detailMemory?.muted ? t('memory.unmute') : t('memory.mute') }}
               </el-button>
               <el-button
+                v-if="canRevive(detailMemory)"
+                text
+                class="mem-sheet__revive"
+                :loading="reviveLoading"
+                @click="reviveMemory(detailMemory)"
+              >
+                {{ t('memory.revive') }}
+              </el-button>
+              <el-button
                 text
                 class="mem-sheet__pin"
                 :class="{ 'is-pinned': detailMemory?.pinned }"
@@ -259,7 +268,8 @@ import {
   getMemory,
   deleteMemory,
   setMemoryPinned,
-  setMemoryMuted
+  setMemoryMuted,
+  reviveMemory as reviveMemoryRequest
 } from '@/api/memory'
 import { listCharacterStates, listAllDiaries } from '@/api/characterState'
 import {
@@ -307,6 +317,7 @@ const detailSources = ref([])
 const detailLoading = ref(false)
 const pinLoading = ref(false)
 const muteLoading = ref(false)
+const reviveLoading = ref(false)
 
 const LAYER_NAMES = ['core', 'fact', 'episode', 'reflection']
 
@@ -541,6 +552,38 @@ async function togglePin(mem) {
     detailMemory.value = { ...detailMemory.value, ...patch }
   }
   ElMessage.success(next ? t('memory.pinOn') : t('memory.pinOff'))
+}
+
+/** 只有真的"沉下去"的记忆才需要这个按钮：active 的行点了也没有意义。 */
+function canRevive(mem) {
+  if (!mem) return false
+  return mem.status === 'dormant' || (mem.fadeLevel && mem.fadeLevel !== 'active')
+}
+
+/**
+ * 让她想起来：把沉底的记忆拉回 active。
+ * 本地先按后端口径打补丁（strength 0.55 / active），不用等下一次刷新。
+ */
+async function reviveMemory(mem) {
+  if (!mem || reviveLoading.value) return
+  const targetId = mem.memoryId ?? mem.id
+  if (targetId == null) return
+  reviveLoading.value = true
+  try {
+    await reviveMemoryRequest(targetId)
+  } catch {
+    reviveLoading.value = false
+    return
+  }
+  reviveLoading.value = false
+  const patch = { strength: 0.55, fadeLevel: 'active', status: 'active' }
+  memories.value = memories.value.map((item) =>
+    String(item.id) === String(targetId) ? { ...item, ...patch } : item
+  )
+  if (detailMemory.value) {
+    detailMemory.value = { ...detailMemory.value, ...patch }
+  }
+  ElMessage.success(t('memory.reviveDone'))
 }
 
 async function toggleMute(mem) {
@@ -986,6 +1029,14 @@ async function removeMemory(mem) {
   justify-content: space-between;
   padding-top: $space-3;
   border-top: 1px solid rgba($color-pink-rgb, 0.08);
+}
+
+.mem-sheet__revive {
+  color: $color-text-secondary;
+
+  &:hover {
+    color: $color-pink-light;
+  }
 }
 
 .mem-sheet__pin {

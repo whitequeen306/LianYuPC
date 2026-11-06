@@ -65,6 +65,13 @@ public class MemoryController {
     public record MuteRequest(boolean muted) {
     }
 
+    @Operation(summary = "让她想起来（把沉底的记忆拉回来）")
+    @PostMapping("/{id}/revive")
+    public Result<Void> revive(@PathVariable Long id) {
+        long userId = StpUtil.getLoginIdAsLong();
+        return memoryQueryService.revive(userId, id);
+    }
+
     @Operation(summary = "删除记忆")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
