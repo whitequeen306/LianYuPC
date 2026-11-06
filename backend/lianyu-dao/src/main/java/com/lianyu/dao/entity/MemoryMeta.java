@@ -22,6 +22,21 @@ public class MemoryMeta {
     private List<Long> sourceMsgIds;
     private String sourceHash;
     private String milvusVecId;
+    /** 四层：core / fact / episode / reflection（V58）。 */
+    private String layer;
+    /** 可及性强度：夜间衰减只改这一列与 last_decay_at，不删行。 */
+    private BigDecimal strength;
+    /** 时间常数（天）；0 表示不衰减（core / pinned）。 */
+    private Integer tauDays;
+    /** active / faded / archived / dormant。 */
+    private String fadeLevel;
+    private String status;
+    @TableField(value = "last_decay_at")
+    private LocalDateTime lastDecayAt;
+    private LocalDateTime lastRecalledAt;
+    private LocalDateTime archivedAt;
+    private Boolean pinned;
+    private Boolean muted;
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 }
