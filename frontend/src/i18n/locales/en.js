@@ -445,6 +445,12 @@ export default {
     episodesEmpty: 'No moments yet',
     episodesEmptyDesc: 'When a conversation settles, she writes down what you actually said.',
     episodeOpenLoop: 'left hanging',
+    layer: {
+      core: 'Core',
+      fact: 'Fact',
+      episode: 'Moment',
+      reflection: 'Impression'
+    },
     sources: 'Source conversation',
     noSources: 'This memory kept no source messages',
     viewSources: 'View sources ({count})',

@@ -57,3 +57,11 @@ it('mute 只改"要不要主动提"，不碰强度', () => {
   const body = source.slice(source.indexOf('async function toggleMute'))
   expect(body.slice(0, 800)).not.toContain('strength:')
 })
+
+describe('记忆页的层标签', () => {
+  it('列表卡片与详情抽屉都显示「这是哪一层」', () => {
+    expect(pageSource).toContain("memory.layer.${layer}")
+    expect(pageSource).toContain('class="mem-layer"')
+    expect(pageSource).toContain('class="mem-sheet__layer"')
+  })
+})

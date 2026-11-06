@@ -493,6 +493,12 @@ export default {
     episodesEmpty: '還沒有共同經歷',
     episodesEmptyDesc: '一段對話聊夠了、安靜下來之後，她會把當時你說的話記下來。',
     episodeOpenLoop: '當時沒接住',
+    layer: {
+      core: '核心設定',
+      fact: '事實',
+      episode: '經歷',
+      reflection: '印象'
+    },
     sources: '來源對話',
     noSources: '這條記憶沒有留下來源對話',
     viewSources: '查看來源訊息 ({count})',

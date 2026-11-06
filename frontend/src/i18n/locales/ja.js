@@ -440,6 +440,12 @@ export default {
     episodesEmpty: 'まだ一緒の出来事はありません',
     episodesEmptyDesc: '会話が落ち着いたころ、そのときのあなたの言葉を書き留めます。',
     episodeOpenLoop: '言いそびれ',
+    layer: {
+      core: 'コア設定',
+      fact: '事実',
+      episode: '出来事',
+      reflection: '印象'
+    },
     sources: '元の会話',
     noSources: 'この記憶には元の会話が残っていません',
     viewSources: '出典を見る ({count})',

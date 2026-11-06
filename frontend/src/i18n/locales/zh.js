@@ -446,6 +446,12 @@ export default {
     episodesEmpty: '还没有共同经历',
     episodesEmptyDesc: '一段对话聊够了、安静下来之后，她会把当时你说的话记下来。',
     episodeOpenLoop: '当时没接住',
+    layer: {
+      core: '核心设定',
+      fact: '事实',
+      episode: '经历',
+      reflection: '印象'
+    },
     sources: '来源对话',
     noSources: '这条记忆没有留下来源对话',
     viewSources: '查看来源 ({count})',
