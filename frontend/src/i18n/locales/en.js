@@ -470,6 +470,8 @@ export default {
     unpin: 'Unpin',
     pinOn: 'Pinned — she will not forget this',
     pinOff: 'Unpinned',
+    recalledTimes: 'Recalled {count}×',
+    recalledWithTime: 'Recalled {count}× · last {time}',
     fade: { faded: 'Fading', archived: 'Deep', dormant: 'Echo' },
     deleteConfirmTitle: 'Delete memory',
     deleteConfirmMessage: 'This memory will vanish from her mind and cannot be restored.',

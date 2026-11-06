@@ -65,3 +65,12 @@ describe('记忆页的层标签', () => {
     expect(pageSource).toContain('class="mem-sheet__layer"')
   })
 })
+
+describe('记忆页的「被想起过几次」', () => {
+  it('抽屉用 recallCount 与 lastRecalledAt 说明这条记忆被用过多少次', () => {
+    expect(pageSource).toContain('detailRecallLabel')
+    expect(pageSource).toContain("memory.recalledWithTime")
+    expect(pageSource).toContain("memory.recalledTimes")
+    expect(pageSource).toContain('.mem-sheet__recalled')
+  })
+})

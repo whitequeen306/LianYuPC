@@ -72,6 +72,8 @@ class MemoryQueryServiceTest {
         meta.setStatus("active");
         meta.setQuote("她说最近睡不好，两点还醒着");
         meta.setRevision(2);
+        meta.setRecallCount(3);
+        meta.setLastRecalledAt(LocalDateTime.of(2026, 11, 6, 8, 30));
         meta.setEventTime(LocalDateTime.of(2026, 11, 5, 23, 40));
         meta.setCreatedAt(LocalDateTime.of(2026, 11, 6, 9, 0));
         return meta;
@@ -96,6 +98,7 @@ class MemoryQueryServiceTest {
         assertEquals("她说最近睡不好，两点还醒着", row.get("quote"));
         assertTrue(row.containsKey("strength"));
         assertTrue(row.containsKey("eventTime"));
+        assertEquals(3, row.get("recallCount"));
         assertEquals("阿岚", row.get("characterName"));
     }
 

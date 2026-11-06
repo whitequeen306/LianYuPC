@@ -192,6 +192,7 @@
                 {{ layerLabel(detailMemory?.layer) }}
               </span>
               <span v-if="detailFadeLabel" class="mem-sheet__fade">{{ detailFadeLabel }}</span>
+              <span v-if="detailRecallLabel" class="mem-sheet__recalled">{{ detailRecallLabel }}</span>
               <button type="button" class="mem-sheet__close" @click="closeDetail">
                 <el-icon :size="16"><Close /></el-icon>
               </button>
@@ -318,6 +319,16 @@ const detailFadeLabel = computed(() => {
   const level = detailMemory.value?.fadeLevel
   if (!level || level === 'active') return ''
   return t(`memory.fade.${level}`)
+})
+
+const detailRecallLabel = computed(() => {
+  const memory = detailMemory.value
+  const count = Number(memory?.recallCount || 0)
+  if (!count) return ''
+  const when = memory?.lastRecalledAt ? formatSmartTime(memory.lastRecalledAt, { t, locale: locale.value }) : ''
+  return when
+    ? t('memory.recalledWithTime', { count, time: when })
+    : t('memory.recalledTimes', { count })
 })
 
 const visibleStates = computed(() =>
@@ -873,6 +884,14 @@ async function removeMemory(mem) {
   color: $color-text-secondary;
   background: rgba($color-pink-rgb, 0.08);
   border: 1px solid rgba($color-pink-rgb, 0.24);
+}
+
+.mem-sheet__recalled {
+  padding: 1px 8px;
+  border-radius: $radius-pill;
+  font-size: 10px;
+  color: $color-text-muted;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .mem-sheet__quote {

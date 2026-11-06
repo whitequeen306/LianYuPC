@@ -518,6 +518,8 @@ export default {
     unpin: '取消釘住',
     pinOn: '已釘住：這條不會再淡忘',
     pinOff: '已取消釘住',
+    recalledTimes: '被想起過 {count} 次',
+    recalledWithTime: '被想起過 {count} 次 · 最近 {time}',
     fade: { faded: '有點模糊', archived: '沉底', dormant: '只剩影子' },
     deleteConfirmTitle: '刪除記憶',
     deleteConfirmMessage: '這條記憶會從她腦海裡消失，且無法復原。',

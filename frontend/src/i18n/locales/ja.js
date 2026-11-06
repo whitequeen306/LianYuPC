@@ -465,6 +465,8 @@ export default {
     unpin: 'ピン解除',
     pinOn: 'ピン留めしました：これは忘れません',
     pinOff: 'ピンを外しました',
+    recalledTimes: '{count} 回思い出した',
+    recalledWithTime: '{count} 回思い出した · 最近 {time}',
     fade: { faded: 'うっすら', archived: '奥底', dormant: '残響' },
     deleteConfirmTitle: '記憶を削除',
     deleteConfirmMessage: 'この記憶は彼女の頭から消え、元に戻せません。',

@@ -471,6 +471,8 @@ export default {
     unpin: '取消钉住',
     pinOn: '已钉住：这条不会再淡忘',
     pinOff: '已取消钉住',
+    recalledTimes: '被想起过 {count} 次',
+    recalledWithTime: '被想起过 {count} 次 · 最近 {time}',
     fade: { faded: '有点模糊', archived: '沉底', dormant: '只剩影子' },
     deleteConfirmTitle: '删除记忆',
     deleteConfirmMessage: '这条记忆会从她脑海里消失，且无法恢复。',

@@ -245,6 +245,7 @@ public class MemoryQueryService {
         target.put("quote", meta.getQuote());
         target.put("revision", meta.getRevision());
         target.put("lastRecalledAt", meta.getLastRecalledAt());
+        target.put("recallCount", meta.getRecallCount());
     }
 
     private List<Message> filterMessagesOwnedByUser(long userId, List<Message> messages) {

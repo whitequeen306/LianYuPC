@@ -34,6 +34,9 @@ public class MemoryMeta {
     @TableField(value = "last_decay_at")
     private LocalDateTime lastDecayAt;
     private LocalDateTime lastRecalledAt;
+
+    /** 被召回注入过的次数；记忆页用来说明「这条被想起过几次」 */
+    private Integer recallCount;
     private LocalDateTime archivedAt;
     private Boolean pinned;
     private Boolean muted;
