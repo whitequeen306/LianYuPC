@@ -198,6 +198,19 @@ def _render_profile_block(rows: list[dict[str, Any]]) -> str | None:
     return "\n\n".join(parts) if parts else None
 
 
+async def _load_v3_block(character_id: int, user_id: int,
+                         last_user_message: str | None) -> str | None:
+    """v3 召回的一次尝试；失败或空结果返回 None，让调用方退回旧路径。"""
+    from app.memory.recall import recall, render_rows
+
+    try:
+        rows = await recall(character_id, user_id, last_user_message)
+        return render_rows(rows)
+    except Exception as exc:  # noqa: BLE001 - 召回失败不能让整块记忆消失
+        logger.warning("memory recall v3 failed, falling back: %s", exc)
+        return None
+
+
 async def load_profile_block(character_id: int, user_id: int,
                              last_user_message: str | None = None) -> str | None:
     """记忆画像块：镜像 Java `retrieveProfileContext` 的取数与合并顺序。
@@ -205,7 +218,15 @@ async def load_profile_block(character_id: int, user_id: int,
     顺序很重要：**长期画像事实优先**，再追加基础候选里未出现过的条目，
     最后补充按关键词 LIKE 命中的条目（同样去重）。
     Java 侧 `joinByType` 用 `distinct()` 保序去重，所以合并顺序会改变最终内容。
+
+    `memory_recall_v3_enabled` 打开时走 v3（全文相关度 + 强度 + 冷却 + MMR）；
+    它为空（新库没数据）或失败时仍回旧路径，避免"开了开关反而没记忆"。
     """
+    if get_settings().memory_recall_v3_enabled:
+        block = await _load_v3_block(character_id, user_id, last_user_message)
+        if block:
+            return block
+
     facts = await _load_profile_facts(character_id, user_id)
     base = await _load_recent_rows(character_id, user_id)
     boosted = await _load_like_boosted(character_id, user_id, last_user_message)

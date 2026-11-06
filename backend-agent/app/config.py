@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     memory_semantic_ttl_minutes: float = 15.0
     memory_recent_ttl_minutes: float = 60.0
 
+    # v3 召回（五路 + RRF + MMR，见 docs/context-memory-architecture-zh.md §6）。
+    # 默认关：它依赖 V58 的新列与 ngram 索引，迁移完成后再开。
+    memory_recall_v3_enabled: bool = False
+
     # 工具结果注入上限：一次网页/文件读取就能吃掉整轮预算，
     # 超长结果掐头留尾（见 app.tool_loop.clip_tool_output）。
     tool_output_max_chars: int = 1200
