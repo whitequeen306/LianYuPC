@@ -895,6 +895,16 @@ class MemoryWriteBody(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class ResurfaceBody(BaseModel):
+    """主动浮现：这周要不要提一句、提哪一句。"""
+
+    user_id: int = Field(alias="userId")
+    character_id: int = Field(alias="characterId")
+    topic: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
 class MemoryExtractBody(BaseModel):
     """抽取 + 写入一步到位：Java 只需把最近消息与凭据递过来。"""
 
@@ -1027,6 +1037,19 @@ async def memory_consolidate() -> dict[str, int]:
     if not get_settings().memory_consolidate_enabled:
         return {"written": 0, "skipped": 1}
     return {"written": await consolidate()}
+
+
+@app.post("/agent/memory/resurface")
+async def memory_resurface(body: ResurfaceBody) -> dict[str, Any]:
+    """本周的主动浮现建议；没有就返回 null（不编一条来凑数）。"""
+    from app.memory.resurface import suggest
+
+    try:
+        suggestion = await suggest(body.character_id, body.user_id, topic=body.topic)
+    except Exception as exc:  # noqa: BLE001 - 主动开口失败不该影响主链路
+        logger.warning("memory resurface failed: %s", exc)
+        return {"suggestion": None}
+    return {"suggestion": suggestion}
 
 
 @app.get("/agent/memory/health")
