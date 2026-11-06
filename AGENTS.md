@@ -31,8 +31,17 @@ Electron 主进程          服务端 Java                  Python backend-agent
 | 层 | 只做 | 绝不做 |
 |---|---|---|
 | **Java** | 取事实（时间/开关/语言/桥状态）、Sa-Token、事务与落库、MQ、通知、SSE 收尾、加解密 | ❌ 拼 prompt 文案、❌ 调模型、❌ 定义工具 schema |
-| **Python** | prompt 组装、模型调用、工具循环与预算、错误码→文案、能力注册表 | ❌ 写 MySQL（只读）、❌ 直接操作桌面 |
+| **Python** | prompt 组装、模型调用、工具循环与预算、错误码→文案、能力注册表、**记忆域写库（白名单）** | ❌ 写 MySQL（除 §2.1 白名单）、❌ 直接操作桌面 |
 | **Electron** | 窗口/托盘/更新、录音推流、TTS 播放、桌宠感知与主动问候 | ❌ 调模型、❌ 操控用户电脑（能力层已于 2026-10-25 删除） |
+
+### 2.1 记忆域写库的唯一例外
+
+`backend-agent/app/write.py` 是 Python 侧唯一允许写 MySQL 的入口，只放行
+**INSERT** `memory_meta` / `memory_outbox` / `memory_episode` 与少数固定前缀的 UPDATE。
+原因：要不要记、记成什么、合并还是新增，都是模型判断，属于 agent 层；把这套判断搬回 Java
+既会触发「Java 零 AI 逻辑」棘轮，也会让同一条记忆的读写分居两侧、口径漂移。
+新增表/语句必须在 `_ALLOWED_INSERTS` / `_ALLOWED_UPDATE_PREFIXES` 里显式登记，
+并补 `backend-agent/tests/test_episode_store.py` 同款的白名单拒绝用例。
 
 辅助事实：`backend/lianyu-web/.../JavaAiLogicRatchetTest` + `scripts/check-java-ai-free.ps1`
 会**失败**任何长在 Java 里的 AI 逻辑（prompt 文本 / 模型调用点 / 已知 AI 类），基线是 `0/0/0`。
