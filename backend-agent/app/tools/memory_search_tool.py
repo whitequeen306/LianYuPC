@@ -1,9 +1,7 @@
-"""`memory_search` —— 长期记忆检索（MySQL + Redis 版本）。
+"""`memory_search` —— 长期记忆检索（Milvus 向量 → Redis 语义缓存 → MySQL 兜底）。
 
-**与 Java 的差异（必须知道）**：Java 是 `Redis 向量缓存 → Milvus 向量检索 → Rerank → MySQL 兜底`；
-本实现走的是 Java **向量不可用时的降级分支**——语义缓存 →（关键词 LIKE 提升 + 重要性排序）→ topK。
-排序质量低于向量+rerank，但语义与 Java 的 fallback 完全一致，且不引入 Milvus/embedding 依赖（总纲 D7）。
-Milvus 接入留待 P5；届时只需替换 `search_semantic()` 内部实现，工具契约不变。
+三级顺序：Milvus 向量召回（与 Java 同源）→ Redis 余弦（本地语义缓存）→ 关键词 LIKE 提升 +
+重要性排序。任何一级失败都退回下一级，工具契约不变。
 """
 
 from __future__ import annotations
@@ -97,7 +95,10 @@ async def search_semantic(
     from app.memory.embedding import embed
     query_vectors = await embed([query.strip()])
     if query_vectors:
-        hits = milvus_store.search(user_id, character_id, query_vectors[0], top_k=max(limit * 2, 6))
+        # 注意参数顺序：milvus_store.search(character_id, user_id, ...)。
+        # 这里曾经把 user_id / character_id 传反，filter 变成「角色 id 当用户、用户 id 当角色」，
+        # 语义检索恒空且静默降级到 LIKE——线上看起来「能用」，实际一次都没命中过向量库。
+        hits = milvus_store.search(character_id, user_id, query_vectors[0], top_k=max(limit * 2, 6))
         summaries_from_milvus = [summary for summary, _t, _s in hits if summary.strip()]
         if summaries_from_milvus:
             ordered_hits = await rerank_docs(query, summaries_from_milvus, top_n=limit)

@@ -99,3 +99,26 @@ async def test_milvus_hits_still_capped_by_top_k(env):
 @pytest.mark.asyncio
 async def test_blank_query_short_circuits(env):
     assert await ms.search_semantic(7, 3, "  ") == []
+
+
+@pytest.mark.asyncio
+async def test_milvus_search_receives_character_then_user(env, monkeypatch):
+    """milvus_store.search 的签名是 (character_id, user_id, vector, top_k)。
+
+    这两个 id 传反时 filter 会让所有行都匹配不到，Milvus 返回空、检索静默降级到 LIKE——
+    线上表现得「还能用」，实际上向量库一次都没查中过。用参数捕获把这个顺序钉死。
+    """
+    state, _store, _calls = env
+    state["milvus"] = [("【长期记忆/宠物】猫叫团子", "FACT", 0.9)]
+    seen: dict[str, tuple[int, int]] = {}
+
+    def capturing_search(character_id, user_id, vector, top_k=5):
+        seen["ids"] = (character_id, user_id)
+        return state["milvus"]
+
+    monkeypatch.setattr(ms.milvus_store, "search", capturing_search)
+
+    # search_semantic(user_id=7, character_id=3)
+    await ms.search_semantic(7, 3, "团子")
+
+    assert seen["ids"] == (3, 7)
