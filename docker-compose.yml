@@ -130,8 +130,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    mem_limit: 512m
-    cpus: "1.0"
+    # 宿主机 8C/16G，实测两实例各占 0.3% CPU / 128MB，原 1C/512MB 卡得太死：
+    # 本地 embedding（bge-small int8，约 300MB 常驻）要留出空间，回填时也不跟聊天抢核。
+    mem_limit: 2g
+    cpus: "2.0"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/agent/health', timeout=3)"]
       interval: 30s
@@ -175,8 +177,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    mem_limit: 512m
-    cpus: "1.0"
+    # 宿主机 8C/16G，实测两实例各占 0.3% CPU / 128MB，原 1C/512MB 卡得太死：
+    # 本地 embedding（bge-small int8，约 300MB 常驻）要留出空间，回填时也不跟聊天抢核。
+    mem_limit: 2g
+    cpus: "2.0"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/agent/health', timeout=3)"]
       interval: 30s
