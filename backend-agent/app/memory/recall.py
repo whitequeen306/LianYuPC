@@ -239,11 +239,20 @@ async def recall(
     return rank_rows(rows, limit=limit, now=now)
 
 
-def render_rows(rows: list[dict[str, Any]], now: datetime | None = None) -> str | None:
-    """按类型分组渲染（与旧块同样的标题），行内用原话 + 置信标记。"""
+def render_rows_limited(rows: list[dict[str, Any]], now: datetime | None = None,
+                        max_tokens: int = 400) -> tuple[str | None, list[Any]]:
+    """按类型分组渲染，**整行**地卡预算，并返回真正进了块的行 id。
+
+    之前是先渲染再按字符截断：尾巴上被截掉半截的行也会被记成「已经注入过」，
+    冷却期里它反而再也不出现。宁可不写半行，也不能把没看见的算成看过。
+    """
+    from app.context.tokens import estimate_tokens
     from app.data_readers import TYPE_LABELS
 
     parts: list[str] = []
+    used: list[Any] = []
+    budget = max(0, max_tokens)
+    spent = 0
     for memory_type, label in TYPE_LABELS:
         seen: set[str] = set()
         lines: list[str] = []
@@ -257,10 +266,22 @@ def render_rows(rows: list[dict[str, Any]], now: datetime | None = None) -> str 
             mark = retrieve.confidence_mark(row, now)
             date = (row.get("event_time") or row.get("created_at"))
             prefix = f"[{date:%m-%d}·{mark}] " if isinstance(date, datetime) else f"[{mark}] "
-            lines.append("- " + prefix + text)
+            line = "- " + prefix + text
+            cost = estimate_tokens(line) + 1
+            if spent + cost > budget:
+                break
+            spent += cost
+            lines.append(line)
+            used.append(row.get("id"))
         if lines:
             parts.append("[" + label + "]\n" + "\n".join(lines))
-    return "\n\n".join(parts) if parts else None
+    return ("\n\n".join(parts) if parts else None), used
 
 
-__all__ = ["CANDIDATE_LIMIT", "load_candidates", "rank_rows", "recall", "render_rows"]
+def render_rows(rows: list[dict[str, Any]], now: datetime | None = None) -> str | None:
+    """按类型分组渲染（与旧块同样的标题），行内用原话 + 置信标记。"""
+    return render_rows_limited(rows, now)[0]
+
+
+__all__ = ["CANDIDATE_LIMIT", "load_candidates", "rank_rows", "recall", "render_rows",
+           "render_rows_limited"]

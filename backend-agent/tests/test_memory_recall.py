@@ -155,6 +155,19 @@ def test_render_groups_by_type_and_marks_confidence():
     assert "模糊" in block
 
 
+def test_render_limited_drops_whole_rows_and_reports_only_used_ids():
+    rows = [
+        _row(i, memory_type="FACT", quote="这是一条很长的记忆" * 12)
+        for i in range(1, 7)
+    ]
+
+    block, used = recall_mod.render_rows_limited(rows, NOW, max_tokens=260)
+
+    assert used, "至少要留下一条"
+    assert len(used) < len(rows), "预算卡住时必须丢掉尾巴"
+    assert block.count("- [") == len(used)
+
+
 async def test_recall_queries_core_candidates_and_episodes(monkeypatch):
     calls = []
 
@@ -283,19 +296,26 @@ async def test_shadow_logs_overlap_without_changing_block(monkeypatch, caplog):
     assert "missing=['1']" in caplog.text
 
 
-async def test_v3_block_is_capped_to_the_recall_slot(monkeypatch):
+async def test_v3_block_marks_only_rows_that_made_it_in(monkeypatch):
     from app import data_readers
 
-    async def fake_recall(character_id, user_id, query, **kwargs):
-        return [{"id": 1, "memory_type": "FACT", "summary": "记" * 800}]
+    seen = {}
 
-    def fake_render(rows, now=None):
-        return "记" * 800
+    async def fake_recall(character_id, user_id, query, **kwargs):
+        return [{"id": 1, "memory_type": "FACT", "summary": "a"},
+                {"id": 2, "memory_type": "FACT", "summary": "b"}]
+
+    def fake_render(rows, now=None, max_tokens=400):
+        return "块", [1]
+
+    async def fake_mark(rows):
+        seen["ids"] = [row["id"] for row in rows]
 
     monkeypatch.setattr("app.memory.recall.recall", fake_recall)
-    monkeypatch.setattr("app.memory.recall.render_rows", fake_render)
+    monkeypatch.setattr("app.memory.recall.render_rows_limited", fake_render)
+    monkeypatch.setattr("app.memory.recall.mark_injected", fake_mark)
 
     block = await data_readers._load_v3_block(3, 7, "在吗")
 
-    assert block.endswith("…")
-    assert len(block) <= 401
+    assert block == "块"
+    assert seen["ids"] == [1]   # 被预算丢掉的行不算注入过

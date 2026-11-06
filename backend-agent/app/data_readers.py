@@ -202,24 +202,22 @@ def _render_profile_block(rows: list[dict[str, Any]]) -> str | None:
 async def _load_v3_block(character_id: int, user_id: int,
                          last_user_message: str | None) -> str | None:
     """v3 召回的一次尝试；失败或空结果返回 None，让调用方退回旧路径。"""
-    from app.memory.recall import recall, render_rows
+    from app.memory.recall import recall, render_rows_limited
 
     try:
         rows = await recall(character_id, user_id, last_user_message)
     except Exception as exc:  # noqa: BLE001 - 召回失败不能让整块记忆消失
         logger.warning("memory recall v3 failed, falling back: %s", exc)
         return None
-    block = render_rows(rows)
-    if block:
-        # recall 槽 400 token：条数在上游已经限过，这里兜住"每条都很长"的情况
-        from app.context.assembler import truncate_to_tokens
-
-        block = truncate_to_tokens(block, 400)
-    if block:
+    # recall 槽 400 token：按整行卡。块里没出现的行不算「注入过」，
+    # 否则被截掉的尾巴会被打进冷却期，反而再也不出现。
+    block, used = render_rows_limited(rows, max_tokens=400)
+    if block and used:
         try:
             from app.memory.recall import mark_injected
 
-            await mark_injected(rows)
+            used_ids = set(used)
+            await mark_injected([row for row in rows if row.get("id") in used_ids])
         except Exception as exc:  # noqa: BLE001 - 打点失败不该影响这一轮回复
             logger.warning("mark injected failed: %s", exc)
     return block

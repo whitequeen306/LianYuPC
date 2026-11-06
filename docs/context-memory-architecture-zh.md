@@ -870,6 +870,7 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 | PR-19 历史按 token 裁剪 | ✅ 本次 | `app/context/history.py` + `chat_turn._trim_to_budget`：只为 recent 槽服务，开关 `history_trim_enabled` 默认关 |
 | PR-21 语义去重（双阈值） | ✅ 本次 | `app/memory/dedupe.py`：cos≥0.92 NOOP / <0.75 ADD / 灰区默认 ADD（不调模型）；开关 `memory_dedupe_similarity_enabled` 默认关 |
 | PR-20 上下文日统计 | ✅ 本次 | `app/context/stats.py` 写 Redis `ctx:stats:YYYYMMDD`；`GET /agent/context/stats` 读 `turns / est_tokens_per_turn / cache_hit_rate / trimmed_turns` |
+| PR-27 召回块整行裁剪 | ✅ 本次 | `render_rows_limited` 按行卡 400 token 并返回真正进块的 id；只有这些行打 `last_injected_at`，被截掉的尾巴不会被误判成"看过"而进冷却 |
 | PR-26 灰区模型判定 | ✅ 本次 | 0.75–0.92 灰区可选多问一次（`memory_dedupe_llm_review_enabled`，默认关）：同一件 → NOOP，不同 → ADD，调用失败仍按 ADD |
 | PR-25 评测题集生成 | ✅ 本次 | `app/memory/eval_gen.py`：从真实记忆反推自然提问 → JSONL；生成后仍需人工过一遍同义撞车 |
 | PR-24 工具与注入共用召回 | ✅ 本次 | `memory_search` 在 `memory_recall_v3_enabled` 时先走 v3，v3 空/异常才落回 Milvus，避免「注入说记得、工具说找不到」 |
