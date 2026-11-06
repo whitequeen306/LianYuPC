@@ -672,7 +672,7 @@ MemoryBank 自认简化且无对照）；"因记错被投诉"的一手报道。�
 `revision`、`strength`、`fade_level`、`last_decay_at`、`last_recalled_at`、`recall_count`、`revival_count`、
 `archived_at`；新增 `memory_episode`（场景快照 + 原话 + 自己的 `strength`）；
 `memory_meta` 建 `FULLTEXT ... WITH PARSER ngram`。
-`memory_vectors_v3`：HNSW、partition key `character_id`、标量 `status/fade_level/event_time/importance`。
+`memory_vectors_v3`：HNSW、COSINE、标量 `layer/status/event_time`（partition key 暂未启用——单集合按 character_id/user_id 过滤已够，等量级上来再切 partition）。
 
 ### 8.2.1 DDL 草案（示意；正式迁移见 `V58__memory_layers_and_episodes.sql`）
 
@@ -881,11 +881,12 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 | PR-22 影子召回 | ✅ 本次 | `app/memory/shadow.py`：v3 未开时也跑一遍，只记 `overlap / missing`，不改注入内容；开关 `memory_shadow_enabled` 默认关 |
 | PR-32 记忆页层标签 | ✅ `2437fcb` | 列表卡片与抽屉显示「核心设定/事实/经历/印象」，四语齐；未知 layer 不渲染 |
 | PR-33 向量集合 v3 双写 | ✅ 本次 | 新集合多带 layer/status/event_time；开启后 relay 双写、召回只捞 `status == "active"`。v2 仍是主键来源，v3 可随时重建；建集合用 `python -m scripts.init_milvus_v3` |
+| PR-34 v3 历史回填 | ✅ 本次 | `scripts/backfill_milvus_v3.py`：按 `memory_id in [...]` 查 v3 跳过已有，再批量 embed 写入；`--dry-run` 只看数量。双写只覆盖开关之后的记忆，历史不回填会出现「她突然忘了很多」 |
 | PR-31 召回超时预算 | ✅ 本次 | 召回超过 `memory_recall_timeout_seconds`（默认 80ms）就退回旧路径；`mark_injected` 超过 300ms 直接放弃，下一轮再补——记忆可以晚一轮，回复不能卡住 |
 
 **仍未做**：灰区的 LLM 判定（现在是 cos≥0.92 NOOP、<0.75 ADD，中间也按 ADD，
 因为误合并比多记一条更贵；开关默认关）、周记接 cron 并换成生成式（现在靠手动打端点、文本是抽取拼接）、
-`memory_vectors_v3` 集合（现在向量路仍读 v2，且没有 status 标量过滤）、V58 在真实库上的迁移演练、
+v3 集合在真机上建好并回填（代码已就绪，需 `init_milvus_v3` + `backfill_milvus_v3`）、V58/V59 在真实库上的迁移演练、
 `memory_recall_v3_enabled` 打开前的 200 题评测。
 
 **开关**：`scene_card_enabled`（默认开）、`memory_recall_v3_enabled`（默认关，等迁移 + 评测）、
@@ -908,12 +909,13 @@ cron 可用 `lianyu.memory.consolidate.cron` 覆盖）。
 | 2 | 校验全文索引：`SELECT id FROM memory_meta WHERE MATCH(summary) AGAINST ('加班') LIMIT 1` | 有返回；若报 `unknown parser ngram`，先确认 MySQL `ngram_token_size` | 索引没建成时 v3 的 ngram 一路为空，但不会报错——必须显式验一次 |
 | 3 | `memory_shadow_enabled=true` | 日志 `memory shadow overlap=…` 连续 3 天 ≥0.60 | <0.4 说明 v3 召回与旧路径分歧大，先看 `missing` 里是哪些 id |
 | 4 | `memory_recall_v3_enabled=true`（关 shadow） | 体检 `warnings` 为空；`episodes_active>0` 或确实还没有场景 | 注入变空 → 立刻关回；`_load_v3_block` 失败会退回旧路径，但"空"不会 |
-| 5 | `memory_vector_recall_enabled=true` | `memory_search` 日志出现 `via v3`，且 `outbox_dead=0` | 向量库为空时它只是少一路，不会更差；DEAD 多说明 relay 卡住，先修 relay |
-| 6 | `memory_dedupe_similarity_enabled=true` → 观察 2 周 → 再考虑 `memory_dedupe_llm_review_enabled` | `skipped` 占比 <15%；人工抽查无"两件事并成一件" | 误合并不可逆（只写了新行，旧行没合并），关开关即可止损 |
-| 7 | Java `lianyu.memory.consolidate.enabled=true` | 下周一 04:10 后 `last_reflection_at` 前进，且没有重复周记 | 重复说明 `content_hash` 没带周标签，检查 `digest_hash` |
-| 8 | `history_trim_enabled=true` | `GET /agent/context/stats` 的 `trimmed_turns` 与 `est_tokens_per_turn` 同时下降 | 若"当前轮被截"报告，立即关；`trim_history` 保底 6 条且保 system |
+| 5 | 建 v3 集合：`python -m scripts.init_milvus_v3` → `memory_vectors_v3_enabled=true` → 回填 `python -m scripts.backfill_milvus_v3` | 回填输出 `failed=0`；`skipped` 是重复跑的行 | 集合没建时双写只 warning（v2 照常），但这时开向量路只会命中新记忆，看起来像「她忘了很多」 |
+| 6 | `memory_vector_recall_enabled=true` | `memory_search` 日志出现 `via v3`，且 `outbox_dead=0` | 向量库为空时它只是少一路，不会更差；DEAD 多说明 relay 卡住，先修 relay |
+| 7 | `memory_dedupe_similarity_enabled=true` → 观察 2 周 → 再考虑 `memory_dedupe_llm_review_enabled` | `skipped` 占比 <15%；人工抽查无"两件事并成一件" | 误合并不可逆（只写了新行，旧行没合并），关开关即可止损 |
+| 8 | Java `lianyu.memory.consolidate.enabled=true` | 下周一 04:10 后 `last_reflection_at` 前进，且没有重复周记 | 重复说明 `content_hash` 没带周标签，检查 `digest_hash` |
+| 9 | `history_trim_enabled=true` | `GET /agent/context/stats` 的 `trimmed_turns` 与 `est_tokens_per_turn` 同时下降 | 若"当前轮被截"报告，立即关；`trim_history` 保底 6 条且保 system |
 
-两条硬约束：**第 3 步之前不要开第 4 步**（没有影子数据就没有分歧证据）；**第 1 步之前不要开第 5 步**
+两条硬约束：**第 3 步之前不要开第 4 步**（没有影子数据就没有分歧证据）；**第 1、5 步之前不要开第 6 步**
 （向量路要读 v2 集合并回 `memory_meta` 取权威行，迁移没跑时回表会全部失败）。
 
 ---
