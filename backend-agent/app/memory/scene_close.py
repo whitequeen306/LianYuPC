@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import Any
 
 from app.config import get_settings
@@ -41,6 +42,18 @@ def _moment(value: Any) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
+_DB_TZ = ZoneInfo("Asia/Shanghai")
+
+
+def _db_local(value: datetime | None) -> datetime | None:
+    """把卡片里的 UTC 时间换成本地墙钟——库里 message.created_at 是 +08。"""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(_DB_TZ).replace(tzinfo=None)
+
+
 async def load_scene_messages(
     conversation_id: int,
     started_at: datetime | None,
@@ -48,6 +61,8 @@ async def load_scene_messages(
 ) -> list[dict[str, Any]]:
     """取这一幕里的消息；时间缺失时退化成最近 40 条（宁可多抽，不可空转）。"""
     if started_at and updated_at:
+        started_at = _db_local(started_at)
+        updated_at = _db_local(updated_at)
         rows = await fetch_all(
             "SELECT id, role, content, created_at FROM message "
             "WHERE conversation_id = %s AND created_at >= %s AND created_at <= %s "

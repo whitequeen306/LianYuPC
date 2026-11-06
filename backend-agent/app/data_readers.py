@@ -268,9 +268,13 @@ async def load_profile_block(character_id: int, user_id: int,
         if block:
             return block
 
-    facts = await _load_profile_facts(character_id, user_id)
-    base = await _load_recent_rows(character_id, user_id)
-    boosted = await _load_like_boosted(character_id, user_id, last_user_message)
+    try:
+        facts = await _load_profile_facts(character_id, user_id)
+        base = await _load_recent_rows(character_id, user_id)
+        boosted = await _load_like_boosted(character_id, user_id, last_user_message)
+    except Exception as exc:  # noqa: BLE001 - 记忆库挂了不该让整轮对话没有回复
+        logger.warning("memory profile load failed, continuing without memory: %s", exc)
+        return None
 
     merged: list[dict[str, Any]] = []
     seen_ids: set[int] = set()

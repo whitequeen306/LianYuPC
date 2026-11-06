@@ -308,6 +308,10 @@ async def assemble_turn_prompt(
             session_summary=session_summary,
         )
 
+    # 记忆块硬顶：先压「记忆 + 关系 + 摘要」，再挂场景卡与浮现提示。
+    # 反过来做的话，超预算时第一个被截掉的恰好是本轮最要紧的场景卡。
+    memory_context = _cap_memory_context(memory_context)
+
     # 场景卡：本轮「在聊什么」的唯一载体。取不到就退化成没有场景（不影响回复），
     # 但它必须是 Python 侧的事实 —— Java 只传最后一句话，不知道话题。
     memory_context = await _attach_scene_card(
@@ -323,10 +327,6 @@ async def assemble_turn_prompt(
         scene_key=scene_key,
         conversation_id=conversation_id,
     )
-
-    # 记忆块硬顶：画像槽位最多 80 行、召回 5 条、场景卡 200 字，极端情况下能撑到两三千字。
-    # 这里按总预算兜一次，宁可少说两件旧事，也不能把最近的对话挤出去。
-    memory_context = _cap_memory_context(memory_context)
 
     # 工具提示：Java 只传开关事实，文案由 Python 查表生成
     if tool_flags is not None:

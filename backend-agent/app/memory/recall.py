@@ -23,9 +23,9 @@ from app.memory import retrieve
 
 # 候选上限：多取一些再排序，避免"数据库 top5"把真正相关的挤掉。
 CANDIDATE_LIMIT = 60
-# episode 的默认衰减常数（天）。情绪唤醒越高越难忘，抽取时已写进 arousal，
-# 这里先用中位值；P3 再把 arousal 映射成 tau。
-EPISODE_TAU_DAYS = 30
+# episode 的默认衰减常数（天）。原话回答的是“那天到底怎么说的”，
+# 不该比一条事实更快消失；30 天会让一年前的强匹配还排在十几名。
+EPISODE_TAU_DAYS = 180
 
 _CANDIDATE_SQL = """
 SELECT id, summary, memory_type, importance, strength, tau_days, fade_level,
@@ -38,6 +38,7 @@ WHERE character_id = %s AND user_id = %s
   AND muted = 0
   AND pinned = 0
   AND layer <> 'core'
+  AND (fade_level IS NULL OR fade_level <> 'archived')
 ORDER BY rel DESC, importance DESC, created_at DESC
 LIMIT %s
 """
@@ -59,6 +60,7 @@ WHERE character_id = %s AND user_id = %s
   AND status = 'active'
   AND muted = 0
   AND (layer = 'core' OR pinned = 1)
+ORDER BY pinned DESC, importance DESC, created_at DESC
 LIMIT 12
 """
 
@@ -104,6 +106,7 @@ WHERE id IN ({placeholders})
   AND muted = 0
   AND pinned = 0
   AND layer <> 'core'
+  AND (fade_level IS NULL OR fade_level <> 'archived')
 """
 
 
@@ -307,7 +310,9 @@ async def mark_injected(rows: list[dict[str, Any]]) -> int:
             touched += await write.execute_write(
                 cur,
                 "UPDATE memory_meta SET last_injected_at = NOW(), last_recalled_at = NOW(), "
-                f"recall_count = recall_count + 1 WHERE id IN ({placeholders})",
+                "recall_count = recall_count + 1, "
+                "strength = LEAST(1.000, strength + 0.05), last_decay_at = NOW() "
+                f"WHERE id IN ({placeholders})",
                 tuple(meta_ids),
             )
         if archived_ids:
@@ -316,6 +321,7 @@ async def mark_injected(rows: list[dict[str, Any]]) -> int:
                 cur,
                 "UPDATE memory_meta SET strength = GREATEST(strength, 0.55), "
                 "fade_level = 'active', status = 'active', archived_at = NULL, "
+                "last_decay_at = NOW(), "
                 f"revival_count = revival_count + 1 WHERE id IN ({placeholders})",
                 tuple(archived_ids),
             )
@@ -406,8 +412,10 @@ def rank_rows(
 
 async def core_rows(character_id: int, user_id: int, *, limit: int = 6) -> list[dict[str, Any]]:
     """设定类记忆（core / pinned）；单独渲染，不参与 recall 排序。"""
-    rows = await fetch_all(_CORE_SQL, (character_id, user_id))
-    return [{**row, "rel": 1.0, "_lane": "core"} for row in rows or []][:limit]
+    rows = list(await fetch_all(_CORE_SQL, (character_id, user_id)) or [])
+    if len(rows) > limit:
+        logger.warning("core lane truncated: %d rows, only %d fit the slot", len(rows), limit)
+    return [{**row, "rel": 1.0, "_lane": "core"} for row in rows[:limit]]
 
 
 async def recall(

@@ -49,7 +49,12 @@ async def best_similar(*, character_id: int, user_id: int, summary: str) -> tupl
         return None, None
 
     best = None
+    from app.milvus_store import EPISODE_ID_OFFSET
+
     for memory_id, score in hits:
+        # 原话向量用的是 offset + episode id；那不是 memory_meta 的行，不能拿来判重。
+        if int(memory_id) >= EPISODE_ID_OFFSET:
+            continue
         if memory_id <= 0:
             continue
         if best is None or float(score) > best[0]:
