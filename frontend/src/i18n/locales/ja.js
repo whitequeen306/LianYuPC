@@ -446,6 +446,8 @@ export default {
     importance: '記憶の重み',
     detail: '詳細',
     sectorUnknown: '未分類',
+    quoteLabel: '本人の言葉',
+    fade: { faded: 'うっすら', archived: '奥底', dormant: '残響' },
     deleteConfirmTitle: '記憶を削除',
     deleteConfirmMessage: 'この記憶は彼女の頭から消え、元に戻せません。',
     deleted: '記憶を削除しました',

@@ -499,6 +499,8 @@ export default {
     importance: '記憶權重',
     detail: '詳情',
     sectorUnknown: '未分類',
+    quoteLabel: '原話',
+    fade: { faded: '有點模糊', archived: '沉底', dormant: '只剩影子' },
     deleteConfirmTitle: '刪除記憶',
     deleteConfirmMessage: '這條記憶會從她腦海裡消失，且無法復原。',
     deleted: '記憶已刪除',

@@ -452,6 +452,8 @@ export default {
     importance: '记忆权重',
     detail: '详情',
     sectorUnknown: '未分类',
+    quoteLabel: '原话',
+    fade: { faded: '有点模糊', archived: '沉底', dormant: '只剩影子' },
     deleteConfirmTitle: '删除记忆',
     deleteConfirmMessage: '这条记忆会从她脑海里消失，且无法恢复。',
     deleted: '记忆已删除',

@@ -151,11 +151,15 @@
               <span class="mem-sheet__sector" :style="{ color: sectorColor(detailMemory) }">
                 {{ sectorLabel(detailMemory) }}
               </span>
+              <span v-if="detailFadeLabel" class="mem-sheet__fade">{{ detailFadeLabel }}</span>
               <button type="button" class="mem-sheet__close" @click="closeDetail">
                 <el-icon :size="16"><Close /></el-icon>
               </button>
             </header>
 
+            <p v-if="detailMemory?.quote" class="mem-sheet__quote">
+              <em>{{ t('memory.quoteLabel') }}</em>{{ detailMemory.quote }}
+            </p>
             <p class="mem-sheet__summary">{{ detailMemory?.summary || '' }}</p>
 
             <div class="mem-sheet__meta">
@@ -233,6 +237,12 @@ const detailId = ref(null)
 const detailMemory = ref(null)
 const detailSources = ref([])
 const detailLoading = ref(false)
+
+const detailFadeLabel = computed(() => {
+  const level = detailMemory.value?.fadeLevel
+  if (!level || level === 'active') return ''
+  return t(`memory.fade.${level}`)
+})
 
 const visibleStates = computed(() =>
   filterCharId.value == null
@@ -689,7 +699,7 @@ async function removeMemory(mem) {
 .mem-sheet__head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: $space-2;
 }
 
 .mem-sheet__sector {
@@ -699,7 +709,35 @@ async function removeMemory(mem) {
   text-transform: uppercase;
 }
 
+.mem-sheet__fade {
+  padding: 1px 8px;
+  border-radius: $radius-pill;
+  font-size: 10px;
+  color: $color-text-secondary;
+  background: rgba($color-pink-rgb, 0.08);
+  border: 1px solid rgba($color-pink-rgb, 0.24);
+}
+
+.mem-sheet__quote {
+  margin: 0;
+  padding-left: $space-3;
+  border-left: 2px solid rgba($color-pink-rgb, 0.32);
+  font-size: $font-size-sm;
+  line-height: 1.75;
+  color: $color-text-secondary;
+
+  em {
+    display: block;
+    margin-bottom: 2px;
+    font-style: normal;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: $color-text-muted;
+  }
+}
+
 .mem-sheet__close {
+  margin-left: auto;
   display: grid;
   place-items: center;
   width: 26px;

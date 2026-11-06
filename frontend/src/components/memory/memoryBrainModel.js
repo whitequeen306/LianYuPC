@@ -212,6 +212,10 @@ export function normalizeMemory(raw = {}) {
   const importanceRaw = typeof raw.importance === 'string' ? Number(raw.importance) : raw.importance
   const sourceIds = Array.isArray(raw.sourceMsgIds) ? raw.sourceMsgIds : []
   const type = SECTOR_BY_ID.has(raw.memoryType) ? raw.memoryType : 'FACT'
+  const fadeLevel = ['active', 'faded', 'archived', 'dormant'].includes(raw.fadeLevel)
+    ? raw.fadeLevel
+    : 'active'
+  const strengthRaw = typeof raw.strength === 'string' ? Number(raw.strength) : raw.strength
   return {
     id: raw.id,
     characterId: raw.characterId,
@@ -219,6 +223,13 @@ export function normalizeMemory(raw = {}) {
     summary: String(raw.summary || '').trim(),
     memoryType: type,
     importance: clamp01(Number(importanceRaw)),
+    // 夜间衰减只改 strength/fadeLevel，不删行；星图据此把"想不起来"画暗，而不是画没
+    strength: Number.isFinite(Number(strengthRaw)) ? clamp01(Number(strengthRaw)) : 1,
+    fadeLevel,
+    pinned: Boolean(raw.pinned),
+    muted: Boolean(raw.muted),
+    layer: raw.layer || 'fact',
+    quote: String(raw.quote || '').trim(),
     sourceCount: sourceIds.length,
     createdAt: raw.createdAt,
     at: toTimestamp(raw.createdAt)
@@ -329,13 +340,18 @@ export function buildBrainGraph({
         sourceCount: memory.sourceCount,
         at: memory.at,
         createdAt: memory.createdAt,
+        strength: memory.strength,
+        fadeLevel: memory.fadeLevel,
+        pinned: memory.pinned,
+        layer: memory.layer,
         // 半径方向压扁、z 方向拉开：转动时四瓣会前后错开，不再是平面色块
         pos: [
           lobe[0] + Math.cos(theta) * spread * jitter * 1.06,
           lobe[1] + Math.sin(theta) * spread * jitter * 0.8,
           lobe[2] + (rng() - 0.5) * 56
         ],
-        size: 1.8 + memory.importance * 3
+        // 强度不决定"有没有"，只决定"亮不亮"：衰减到 0.15 仍可被搜到
+        size: (1.8 + memory.importance * 3) * (0.62 + 0.38 * memory.strength)
       })
     })
   }

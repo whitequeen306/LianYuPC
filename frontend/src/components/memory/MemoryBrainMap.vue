@@ -868,7 +868,8 @@ function render(now) {
       (highlight.value.size > 0 && !isHighlighted)
 
     const base = depthFade(point.depth)
-    const alpha = dimmed ? base * 0.14 : base * (0.78 + node.importance * 0.22)
+    const strength = Number.isFinite(node.strength) ? node.strength : 1
+    const alpha = dimmed ? base * 0.14 : base * (0.78 + node.importance * 0.22) * (0.55 + 0.45 * strength)
     const radius = Math.max(1.6, node.size * point.scale)
 
     glow(point.x, point.y, radius * (isSelected || isHovered ? 3.2 : 1.75), node.color, alpha)
@@ -876,7 +877,7 @@ function render(now) {
     ctx.globalCompositeOperation = 'source-over'
     ctx.beginPath()
     ctx.arc(point.x, point.y, Math.max(0.9, radius * 0.74), 0, TAU)
-    ctx.fillStyle = rgba(node.color, dimmed ? 0.22 : 0.95)
+    ctx.fillStyle = rgba(node.color, dimmed ? 0.22 : 0.55 + 0.4 * strength)
     ctx.fill()
     ctx.beginPath()
     ctx.arc(point.x, point.y, Math.max(0.42, radius * 0.3), 0, TAU)

@@ -60,6 +60,30 @@ describe('normalizeMemory', () => {
     expect(Number.isFinite(normalized.at)).toBe(true)
   })
 
+  it('衰减字段：缺省按 active/1，未知档位回落 active，强度夹到 0..1', () => {
+    const fallback = normalizeMemory({ id: '8', summary: '没写衰减' })
+    expect(fallback.fadeLevel).toBe('active')
+    expect(fallback.strength).toBe(1)
+
+    const archived = normalizeMemory({ id: '9', summary: '旧事', fadeLevel: 'archived', strength: '0.22' })
+    expect(archived.fadeLevel).toBe('archived')
+    expect(archived.strength).toBeCloseTo(0.22)
+
+    expect(normalizeMemory({ id: '10', summary: 'x', fadeLevel: 'gone' }).fadeLevel).toBe('active')
+    expect(normalizeMemory({ id: '11', summary: 'x', strength: '3' }).strength).toBe(1)
+  })
+
+  it('强度只影响亮度：衰减的记忆节点更小，但仍在图里', () => {
+    const { memoryNodes } = buildBrainGraph({
+      memories: [memory(1, { importance: 0.8 }), memory(2, { importance: 0.8, strength: 0.2, fadeLevel: 'archived' })],
+      now: NOW
+    })
+    const fresh = memoryNodes.find((node) => node.memoryId === 1)
+    const old = memoryNodes.find((node) => node.memoryId === 2)
+    expect(old.size).toBeLessThan(fresh.size)
+    expect(old.size).toBeGreaterThan(0)
+  })
+
   it('权重越界会被夹到 0..1，来源消息数量从数组长度算出', () => {
     expect(normalizeMemory({ id: 1, importance: 3 }).importance).toBe(1)
     expect(normalizeMemory({ id: 2, importance: -1 }).importance).toBe(0)

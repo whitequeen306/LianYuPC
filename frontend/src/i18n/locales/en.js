@@ -451,6 +451,8 @@ export default {
     importance: 'Weight',
     detail: 'Details',
     sectorUnknown: 'Unsorted',
+    quoteLabel: 'Her words',
+    fade: { faded: 'Fading', archived: 'Deep', dormant: 'Echo' },
     deleteConfirmTitle: 'Delete memory',
     deleteConfirmMessage: 'This memory will vanish from her mind and cannot be restored.',
     deleted: 'Memory deleted',
