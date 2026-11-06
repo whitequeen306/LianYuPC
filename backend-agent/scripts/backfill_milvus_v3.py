@@ -50,7 +50,7 @@ async def backfill(limit: int = 5000, batch_size: int = 64, dry_run: bool = Fals
     from app.db import fetch_all
     from app.memory.embedding import embed
 
-    stats = {"scanned": 0, "written": 0, "skipped": 0, "failed": 0}
+    stats = {"scanned": 0, "would_write": 0, "written": 0, "skipped": 0, "failed": 0}
     offset = 0
     while stats["scanned"] < limit:
         rows = await fetch_all(_SELECT, (min(batch_size, limit - stats["scanned"]), offset))
@@ -60,7 +60,8 @@ async def backfill(limit: int = 5000, batch_size: int = 64, dry_run: bool = Fals
         offset += len(rows)
 
         if dry_run:
-            stats["written"] += len(rows)
+            # 不连 Milvus：dry-run 只回答"会处理多少行"，真正的去重发生在正式跑里。
+            stats["would_write"] += len(rows)
             continue
 
         client = milvus_store._connect_v3()  # noqa: SLF001 - 脚本就是运维入口

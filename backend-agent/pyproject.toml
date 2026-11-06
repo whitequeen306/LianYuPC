@@ -15,6 +15,8 @@ dependencies = [
     "tzdata>=2024.2",
     # 只读数据访问（总纲 D7）：MySQL 只读查询 + Redis 缓存读取
     "aiomysql>=0.2.0",
+    # MySQL 8 默认 caching_sha2_password：aiomysql 需要它才能完成认证
+    "cryptography>=42",
     "redis>=5.2",
     # 记忆写路径：向量投影（Python 侧接管 relay）
     "pymilvus>=2.4",

@@ -894,8 +894,8 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 | PR-31 召回超时预算 | ✅ 本次 | 召回超过 `memory_recall_timeout_seconds`（默认 80ms）就退回旧路径；`mark_injected` 超过 300ms 直接放弃，下一轮再补——记忆可以晚一轮，回复不能卡住 |
 
 **仍未做**：周记换成生成式（现在是抽取拼接；cron 已就绪但默认关）、
-v3 集合在真机上建好并回填（代码已就绪，需 `init_milvus_v3` + `backfill_milvus_v3`）、V58/V59 在真实库上的迁移演练、
-`memory_recall_v3_enabled` 打开前的 200 题评测。
+生产库的 V58/V59 迁移与 Milvus v3 回填（本地 8.4/2.4.15 已演练通过，见 §10.4）、
+`memory_recall_v3_enabled` 打开前的 200 题评测与 3 天影子数据。
 
 **开关**：`scene_card_enabled`（默认开）、`memory_recall_v3_enabled`（默认关，等迁移 + 评测）、
 `memory_vector_recall_enabled`（默认关，等 Milvus 里有向量且集合升级）、
@@ -927,6 +927,29 @@ cron 可用 `lianyu.memory.consolidate.cron` 覆盖）。
 
 两条硬约束：**第 3 步之前不要开第 4 步**（没有影子数据就没有分歧证据）；**第 1、5 步之前不要开第 6 步**
 （向量路要读 v2 集合并回 `memory_meta` 取权威行，迁移没跑时回表会全部失败）。
+
+### 10.4 真机演练记录（2026-11-06，MySQL 8.4 + Milvus 2.4.15）
+
+本地 docker 起了 mysql:8.4 与 milvusdb/milvus:v2.4.15（standalone，embedded etcd），
+在克隆库 `lianyu_rehearsal` 上把迁移与召回各跑了一遍。
+
+| 项 | 结果 |
+|---|---|
+| V56/V57/V58/V59 依次执行 | 4/4 exit 0；`memory_meta` 34 列、`memory_episode` 18 列 |
+| 全文索引 | `FULLTEXT KEY ft_mem_summary (summary) WITH PARSER ngram`，`ngram_token_size=2`；两行数据时 `MATCH('加班')` 得 0.271857 |
+| 真库 `recall(3,7,"加班")` | 修了三处：候选必须 `rel > 0`；lane 归一再乘「这一路最强分」折扣；episode 单行 IDF=0 时用 `LIKE` 兜底 0.05 |
+| Milvus v3 建集合 | `python -m scripts.init_milvus_v3` → `memory_vectors_v3`（1024 维、HNSW COSINE） |
+| v3 写入/检索 | 插入 active + superseded 两行；`search_hits_v3` 只返回 active，换角色过滤返回空（租户隔离成立） |
+| backfill dry-run | `{'scanned': 2, 'would_write': 2, 'written': 0, ...}`（dry-run 不连 Milvus、不调 embedding） |
+
+两个只在真机上才暴露的坑：
+
+1. **刚写入的向量搜不到**。`insert` 后立刻 `search` 返回空，`query` 却能看到；`flush` 之后立刻可见。
+   已给 `relay` 的写批末尾加 `milvus_store.flush_v3()`（并给 v3 客户端加 `consistency_level="Strong"`）。
+   不刷的话，表现为「她刚记住的事，下一轮问她说不记得」。
+2. **aiomysql 连 MySQL 8 要 cryptography**。报
+   `'cryptography' package is required for sha256_password or caching_sha2_password auth methods`，
+   `pyproject.toml` 已加 `cryptography>=42`——生产 venv 构建同样需要，否则整套召回在启动时就连不上库。
 
 ---
 

@@ -195,6 +195,9 @@ def _connect_v3() -> Any | None:
         client = MilvusClient(
             uri=f"http://{settings.milvus_host}:{settings.milvus_port}",
             timeout=settings.milvus_timeout_seconds,
+            # 刚写进去的行还在 growing segment 里，Bounded 一致性下可能搜不到；
+            # 记忆是"这一轮刚记住、下一轮就要想起来"，这里用 Strong 换确定性。
+            consistency_level="Strong",
         )
         name = settings.milvus_v3_collection
         if not client.has_collection(name):
@@ -253,6 +256,21 @@ def insert_v3(
         return None
 
 
+def flush_v3() -> None:
+    """把刚写进 growing segment 的行刷成可检索的段。
+
+    实测（Milvus 2.4.15 standalone）刚 insert 的行在 search 里看不见，flush 之后立刻可见；
+    记忆是"这一轮记住、下一轮就要想起来"，所以写批末尾必须刷一次。
+    """
+    client = _connect_v3()
+    if client is None:
+        return
+    try:
+        client.flush(get_settings().milvus_v3_collection)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("milvus v3 flush failed: %s", exc)
+
+
 def search_hits_v3(
     character_id: int,
     user_id: int,
@@ -297,4 +315,4 @@ def reset() -> None:
     _client_v3 = None
 
 
-__all__ = ["delete", "insert", "insert_v3", "reset", "search", "search_hits", "search_hits_v3"]
+__all__ = ["delete", "flush_v3", "insert", "insert_v3", "reset", "search", "search_hits", "search_hits_v3"]

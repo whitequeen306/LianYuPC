@@ -20,6 +20,7 @@ def fake(monkeypatch):
         "delete_ok": True,
         "embed": [[0.1, 0.2]],
         "reconcile_rows": [],
+        "flushes": [],
         "meta": {"id": 11, "character_id": 3, "user_id": 7, "summary": "用户喜欢猫",
                  "memory_type": "FACT", "milvus_vec_id": None},
     }
@@ -61,6 +62,7 @@ def fake(monkeypatch):
     monkeypatch.setattr(relay, "embed", fake_embed)
     monkeypatch.setattr(relay.milvus_store, "insert", fake_insert)
     monkeypatch.setattr(relay.milvus_store, "delete", fake_delete)
+    monkeypatch.setattr(relay.milvus_store, "flush_v3", lambda: state["flushes"].append(1))
     return state
 
 
@@ -79,6 +81,7 @@ async def test_upsert_projects_and_backfills(fake):
     sqls = [sql.lower() for sql, _ in fake["executed"]]
     assert any("update memory_meta set milvus_vec_id" in s for s in sqls)
     assert any("status = %s" in s for s in sqls)
+    assert fake["flushes"] == [1], "写批末尾要 flush，否则下一轮搜不到刚记住的事"
 
 
 @pytest.mark.asyncio

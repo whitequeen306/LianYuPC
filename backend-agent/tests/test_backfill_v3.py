@@ -41,7 +41,7 @@ async def test_backfill_dry_run_does_not_write(monkeypatch):
 
     stats = await backfill.backfill(limit=10, batch_size=10, dry_run=True)
 
-    assert stats == {"scanned": 1, "written": 1, "skipped": 0, "failed": 0}
+    assert stats == {"scanned": 1, "would_write": 1, "written": 0, "skipped": 0, "failed": 0}
 
 
 @pytest.mark.asyncio

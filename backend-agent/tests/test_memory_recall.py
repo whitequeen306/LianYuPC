@@ -415,3 +415,42 @@ def test_revive_statement_is_whitelisted():
 
     with pytest.raises(WriteNotAllowed):
         _assert_allowed("UPDATE memory_meta SET strength = 1 WHERE id IN (%s)")
+
+
+@pytest.mark.asyncio
+async def test_only_matching_rows_reach_the_candidate_pool(monkeypatch):
+    seen: list[str] = []
+
+    async def fake_fetch(sql, params):
+        seen.append(sql)
+        return []
+
+    monkeypatch.setattr(recall_mod, "fetch_all", fake_fetch)
+
+    await recall_mod.load_candidates(3, 7, "加班")
+    assert any("HAVING rel > 0" in sql for sql in seen)
+
+    seen.clear()
+    await recall_mod.load_candidates(3, 7, "")
+    # 没话题时保留按重要度兜底的行为，不能一刀切成空
+    assert seen and all("HAVING rel > 0" not in sql for sql in seen)
+
+
+def test_near_zero_match_is_not_normalised_to_a_full_hit():
+    # 同一路只有一条时 IDF 会掉到 1e-8：按池子归一会被放大成 1.0，
+    # 跟「真的沾边」拿一样的分，等于把无关记忆塞进块里。
+    real = _row(1, rel=0.09, _lane="ngram", summary="今天加班到很晚")
+    ghost = _row("ep-9", rel=1e-8, _lane="episode", summary="她养了一只猫")
+
+    ranked = recall_mod.rank_rows([real, ghost], limit=2, now=NOW)
+
+    assert [row["id"] for row in ranked] == [1]
+
+
+def test_weak_lane_signal_ranks_below_a_stronger_one():
+    meta = _row(1, rel=0.09, _lane="ngram", summary="今天加班到很晚")
+    ep = _row("ep-9", rel=0.05, _lane="episode", summary="她说加班到很晚")
+
+    ranked = recall_mod.rank_rows([meta, ep], limit=2, now=NOW)
+
+    assert [row["id"] for row in ranked] == [1, "ep-9"]

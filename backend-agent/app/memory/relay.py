@@ -181,6 +181,9 @@ async def drain_once(batch_size: int | None = None, max_attempts: int | None = N
         except Exception as exc:  # noqa: BLE001 - 单行失败不影响整批
             await _retry_or_dead(outbox_id, row, attempts_cap, str(exc), stats)
 
+    if stats.get("done"):
+        # 写批末尾刷一次，刚记住的事下一轮就能被想起来（见 milvus_store.flush_v3）。
+        milvus_store.flush_v3()
     return stats
 
 
@@ -227,6 +230,8 @@ async def reconcile(limit: int = 500) -> dict[str, int]:
             stats["failed"] += 1
     if stats["candidates"]:
         logger.info("memory reconcile: %s", stats)
+    if stats.get("repaired"):
+        milvus_store.flush_v3()
     return stats
 
 

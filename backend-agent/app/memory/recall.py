@@ -40,6 +40,13 @@ ORDER BY rel DESC, importance DESC, created_at DESC
 LIMIT %s
 """
 
+# 有话题时只看"真的沾边"的行：MATCH 为 0 的候选只是按重要度排进来的，
+# 在真机上会把"她养了一只猫"塞进「加班」的召回块（rel=0 仍能拿到 0.44 分）。
+_CANDIDATE_SQL_RELEVANT = _CANDIDATE_SQL.replace(
+    "ORDER BY rel DESC, importance DESC, created_at DESC",
+    "HAVING rel > 0\nORDER BY rel DESC, importance DESC, created_at DESC",
+)
+
 
 _CORE_SQL = """
 SELECT id, summary, memory_type, importance, strength, tau_days, fade_level,
@@ -59,12 +66,18 @@ SELECT CONCAT('ep-', id) AS id, summary, 'EPISODE' AS memory_type,
        0.7 AS importance, 1.0 AS strength, %s AS tau_days,
        NULL AS fade_level, event_time AS last_decay_at, last_injected_at,
        event_time, created_at, quote,
-       MATCH(summary) AGAINST (%s) AS rel
+       GREATEST(MATCH(summary) AGAINST (%s),
+                IF(summary LIKE CONCAT('%%', %s, '%%'), 0.05, 0)) AS rel
 FROM memory_episode
 WHERE character_id = %s AND user_id = %s AND status = 'active'
 ORDER BY rel DESC, event_time DESC
 LIMIT %s
 """
+
+_EPISODE_SQL_RELEVANT = _EPISODE_SQL.replace(
+    "ORDER BY rel DESC, event_time DESC",
+    "HAVING rel > 0\nORDER BY rel DESC, event_time DESC",
+)
 
 
 _VECTOR_SQL_TEMPLATE = """
@@ -148,9 +161,10 @@ async def load_candidates(
     *,
     limit: int = CANDIDATE_LIMIT,
 ) -> list[dict[str, Any]]:
+    text = (query or "").strip()
     rows = await fetch_all(
-        _CANDIDATE_SQL,
-        ((query or "").strip(), character_id, user_id, limit),
+        _CANDIDATE_SQL_RELEVANT if text else _CANDIDATE_SQL,
+        (text, character_id, user_id, limit),
     )
     # 每个候选都带 lane：ngram 的 MATCH 分数与向量的 cosine 不可比，
     # 必须先按各自池子的最大值归一，再进同一个打分器（否则余弦 0.8 会被
@@ -166,8 +180,8 @@ async def load_candidates(
     # 避免几条生动的原话把"设定"挤出去。
     try:
         episodes = await fetch_all(
-            _EPISODE_SQL,
-            (EPISODE_TAU_DAYS, (query or "").strip(), character_id, user_id, max(1, limit // 2)),
+            _EPISODE_SQL_RELEVANT if text else _EPISODE_SQL,
+            (EPISODE_TAU_DAYS, text, text, character_id, user_id, max(1, limit // 2)),
         )
     except Exception as exc:  # noqa: BLE001 - 老库没 V58/V59 时降级，但要留下线索
         logger.warning("memory episode lane failed (migration V58/V59?): %s", exc)
@@ -239,6 +253,19 @@ async def mark_injected(rows: list[dict[str, Any]]) -> int:
     return touched
 
 
+# 单个候选只有 1e-8 级别的 MATCH 分数时（同一路只有一条、IDF 为 0），
+# 按 lane 归一会被放大成 1.0，和"真的命中"平起平坐。低于此值就当没命中。
+# 这一路的最强分到什么程度才算"可信"：ngram 的 0.1、cosine 的 0.1 都可视为强信号。
+LANE_STRONG_REL = 0.1
+
+MIN_LANE_REL = 1e-4
+
+
+def _raw_rel(row: dict[str, Any]) -> float:
+    raw = float(row.get("rel") or 0.0)
+    return raw if raw >= MIN_LANE_REL else 0.0
+
+
 def rank_rows(
     rows: list[dict[str, Any]],
     *,
@@ -252,7 +279,7 @@ def rank_rows(
     lane_max: dict[str, float] = {}
     for row in rows:
         lane = str(row.get("_lane") or "ngram")
-        lane_max[lane] = max(lane_max.get(lane, 0.0), float(row.get("rel") or 0.0))
+        lane_max[lane] = max(lane_max.get(lane, 0.0), _raw_rel(row))
     scored: list[dict[str, Any]] = []
     for row in rows:
         core = str(row.get("layer") or "") == "core" or bool(row.get("pinned"))
@@ -260,8 +287,20 @@ def rank_rows(
         if not core and retrieve.in_cooldown(row, now):
             continue
         lane = str(row.get("_lane") or "ngram")
-        raw = float(row.get("rel") or 0.0)
-        relevance = 1.0 if core or lane_max.get(lane, 0.0) <= 0 else raw / lane_max[lane]
+        raw = _raw_rel(row)
+        # 非设定项必须有真实信号才进块：MATCH 只有 1e-8 的行只是"按重要度排进来的"，
+        # 放进去会让「加班」的召回块里出现「她养了一只猫」。
+        if not core and raw <= 0:
+            continue
+        # 这一路全是"没真的命中"的行时 relevance 是 0，而不是 1。
+        # 再有：整路最强也只有 0.05（episode 的 LIKE 兜底）时，按池子归一仍会给它 1.0，
+        # 这里再乘一个"这一路本身有多强"的折扣，弱信号就排在强信号后面。
+        if core:
+            relevance = 1.0
+        elif lane_max.get(lane, 0.0) <= 0:
+            relevance = 0.0
+        else:
+            relevance = (raw / lane_max[lane]) * min(1.0, lane_max[lane] / LANE_STRONG_REL)
         scored.append({
             **row,
             "score": retrieve.score_candidate(row, relevance=relevance, now=now),
