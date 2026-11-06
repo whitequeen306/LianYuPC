@@ -120,8 +120,13 @@ async def _find_existing(source_hash: str, user_id: int, character_id: int, summ
     return rows[0] if rows else None
 
 
-async def write_memories(user_id: int, character_id: int, memories: list[MemoryInput]) -> WriteOutcome:
-    """批量写入；整批在同一事务内，任一失败全回滚。"""
+async def write_memories(user_id: int, character_id: int, memories: list[MemoryInput],
+                         *, review=None) -> WriteOutcome:
+    """批量写入；整批在同一事务内，任一失败全回滚。
+
+    `review(messages) -> str` 只在「灰区 + 开关打开」时被调用一次，用来判断
+    两条记忆是不是同一件事；不传就保持「灰区当 ADD」。
+    """
     outcome = WriteOutcome()
     if not memories:
         return outcome
@@ -143,7 +148,8 @@ async def write_memories(user_id: int, character_id: int, memories: list[MemoryI
         existing = await _find_existing(source_hash, user_id, character_id, summary)
 
         if existing is None:
-            decision, similar_id = await _semantic_dedupe(character_id, user_id, summary)
+            decision, similar_id = await _semantic_dedupe(character_id, user_id, summary,
+                                                          review=review)
             if decision == "noop" and similar_id:
                 # 同一件事已经记过：不再插入，把 id 报给调用方即可
                 outcome.skipped += 1
@@ -177,19 +183,35 @@ async def write_memories(user_id: int, character_id: int, memories: list[MemoryI
     return outcome
 
 
-async def _semantic_dedupe(character_id: int, user_id: int,
-                           summary: str) -> tuple[str, int | None]:
+async def _semantic_dedupe(character_id: int, user_id: int, summary: str,
+                           review=None) -> tuple[str, int | None]:
     """语义去重三态；开关关着时一律 ADD（保持旧行为）。"""
     from app.config import get_settings
 
-    if not get_settings().memory_dedupe_similarity_enabled:
+    settings = get_settings()
+    if not settings.memory_dedupe_similarity_enabled:
         return "add", None
     from app.memory import dedupe
 
     best, memory_id = await dedupe.best_similar(
         character_id=character_id, user_id=user_id, summary=summary
     )
-    return dedupe.decide(best), memory_id
+    decision = dedupe.decide(best)
+    if decision != "review" or memory_id is None or review is None:
+        return decision, memory_id
+    if not getattr(settings, "memory_dedupe_llm_review_enabled", False):
+        return decision, memory_id
+
+    rows = await fetch_all("SELECT summary FROM memory_meta WHERE id = %s LIMIT 1", (memory_id,))
+    existing_summary = str((rows[0].get("summary") if rows else "") or "").strip()
+    if not existing_summary:
+        return decision, memory_id
+    verdict = await dedupe.review_same(existing_summary, summary, review)
+    if verdict is True:
+        return "noop", memory_id
+    if verdict is False:
+        return "add", None
+    return decision, memory_id
 
 
 _SLOT_RE = re.compile(r"^【长期记忆/([^】]{1,8})】")

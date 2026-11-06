@@ -46,3 +46,34 @@ async def test_embedding_failure_degrades_to_add(monkeypatch):
 
     assert await dedupe.best_similar(character_id=3, user_id=7, summary="x") == (None, None)
     assert dedupe.decide(None) == "add"
+
+
+def test_review_messages_carry_both_summaries():
+    messages = dedupe.build_review_messages("她喜欢冰美式", "她每天早上都要冰美式")
+
+    assert messages[0]["role"] == "system"
+    assert "同一件事" in messages[0]["content"]
+    assert "她喜欢冰美式" in messages[1]["content"]
+    assert "她每天早上都要冰美式" in messages[1]["content"]
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ('{"same": true}', True),
+        ('```json\n{"same": false}\n```', False),
+        ('{"same": "yes"}', None),
+        ("不是 json", None),
+        (None, None),
+    ],
+)
+def test_parse_same(raw, expected):
+    assert dedupe.parse_same(raw) is expected
+
+
+@pytest.mark.asyncio
+async def test_review_failure_returns_none():
+    async def boom(messages):
+        raise RuntimeError("model down")
+
+    assert await dedupe.review_same("a", "b", boom) is None

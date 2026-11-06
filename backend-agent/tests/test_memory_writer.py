@@ -245,7 +245,7 @@ async def test_preference_alias_normalized_to_fact(fake_db):
 
 @pytest.mark.asyncio
 async def test_semantic_noop_skips_insert(fake_db, monkeypatch):
-    async def fake_dedupe(character_id, user_id, summary):
+    async def fake_dedupe(character_id, user_id, summary, review=None):
         assert (character_id, user_id) == (3, 7)
         return "noop", 55
 
@@ -267,3 +267,79 @@ async def test_semantic_dedupe_is_off_by_default(monkeypatch):
     )
 
     assert await w._semantic_dedupe(3, 7, "她喜欢冰美式") == ("add", None)
+
+
+def _gray_settings(monkeypatch, review_enabled: bool):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        "app.config.get_settings",
+        lambda: SimpleNamespace(
+            memory_dedupe_similarity_enabled=True,
+            memory_dedupe_llm_review_enabled=review_enabled,
+        ),
+    )
+
+
+async def _ask(messages):
+    return '{"same": true}'
+
+
+@pytest.mark.asyncio
+async def test_gray_zone_without_switch_stays_review(monkeypatch):
+    from app.memory import dedupe
+
+    _gray_settings(monkeypatch, False)
+
+    async def fake_best(**kwargs):
+        return 0.85, 55
+
+    monkeypatch.setattr(dedupe, "best_similar", fake_best)
+
+    assert await w._semantic_dedupe(3, 7, "她每天早上都要冰美式") == ("review", 55)
+
+
+@pytest.mark.asyncio
+async def test_gray_zone_merges_when_model_says_same(monkeypatch):
+    from app.memory import dedupe
+
+    _gray_settings(monkeypatch, True)
+
+    async def fake_best(**kwargs):
+        return 0.85, 55
+
+    async def fake_fetch(sql, params=()):
+        return [{"summary": "她喜欢冰美式"}]
+
+    async def fake_review(existing, candidate, ask):
+        assert existing == "她喜欢冰美式"
+        assert candidate == "她每天早上都要冰美式"
+        return True
+
+    monkeypatch.setattr(dedupe, "best_similar", fake_best)
+    monkeypatch.setattr(w, "fetch_all", fake_fetch)
+    monkeypatch.setattr(dedupe, "review_same", fake_review)
+
+    assert await w._semantic_dedupe(3, 7, "她每天早上都要冰美式", review=_ask) == ("noop", 55)
+
+
+@pytest.mark.asyncio
+async def test_gray_zone_adds_when_model_says_different(monkeypatch):
+    from app.memory import dedupe
+
+    _gray_settings(monkeypatch, True)
+
+    async def fake_best(**kwargs):
+        return 0.85, 55
+
+    async def fake_fetch(sql, params=()):
+        return [{"summary": "她喜欢冰美式"}]
+
+    async def fake_review(existing, candidate, ask):
+        return False
+
+    monkeypatch.setattr(dedupe, "best_similar", fake_best)
+    monkeypatch.setattr(w, "fetch_all", fake_fetch)
+    monkeypatch.setattr(dedupe, "review_same", fake_review)
+
+    assert await w._semantic_dedupe(3, 7, "她讨厌下雨天", review=_ask) == ("add", None)

@@ -910,6 +910,27 @@ class MemoryExtractBody(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+def _dedupe_reviewer(body) -> Any | None:
+    """灰区判重的模型调用；没有凭据就返回 None（writer 会保持"灰区当 ADD"）。"""
+    if not (body.text_base_url and body.text_api_key and body.text_model):
+        return None
+
+    async def review(messages: list[dict[str, Any]]) -> str:
+        result = await get_gateway().chat_messages(
+            base_url=body.text_base_url,
+            api_key=body.text_api_key,
+            model=body.text_model,
+            messages=messages,
+            temperature=0.1,
+            max_tokens=60,
+            provider=body.provider,
+            lane_name="background",
+        )
+        return result.content or ""
+
+    return review
+
+
 @app.post("/agent/memory/extract-write")
 async def memory_extract_write(
     body: MemoryExtractBody,
@@ -964,7 +985,8 @@ async def memory_extract_write(
         for m in extracted
     ]
     try:
-        outcome = await write_memories(body.user_id, body.character_id, inputs)
+        outcome = await write_memories(body.user_id, body.character_id, inputs,
+                                          review=_dedupe_reviewer(body))
     except Exception as exc:  # noqa: BLE001
         logger.warning("memory write failed: %s", exc)
         raise HTTPException(status_code=500, detail="memory write failed") from exc
@@ -1040,7 +1062,8 @@ async def memory_write(
         for item in body.memories
     ]
     try:
-        outcome = await write_memories(body.user_id, body.character_id, inputs)
+        outcome = await write_memories(body.user_id, body.character_id, inputs,
+                                          review=_dedupe_reviewer(body))
     except Exception as exc:  # noqa: BLE001 - 写失败要显式返回，便于 Java 回退
         logger.warning("memory write failed: %s", exc)
         raise HTTPException(status_code=500, detail="memory write failed") from exc
