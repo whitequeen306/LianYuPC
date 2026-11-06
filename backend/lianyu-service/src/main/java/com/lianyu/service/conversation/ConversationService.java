@@ -71,6 +71,7 @@ public class ConversationService {
 
     private static final String SEQ_KEY_PREFIX = "msg_seq:";
     private static final String GROUP_TURN_KEY_PREFIX = "group_chat:turn:";
+    private static final String SCENE_KEY_PREFIX = "scene:";
     private final ConversationMapper conversationMapper;
     private final MessageMapper messageMapper;
     private final GroupMemberMapper groupMemberMapper;
@@ -245,6 +246,10 @@ public class ConversationService {
             redisTemplate.delete(GROUP_TURN_KEY_PREFIX + conversationId);
         }
         sessionSummaryService.invalidate(conversationId);
+        // 场景卡是这轮对话的"现在在聊什么"，清空消息后必须一起作废，
+        // 否则下一轮仍会带着旧话题。键格式与
+        // backend-agent/app/context/scene_card.py::scene_key 一致（缓存键，不属于持久化契约）。
+        redisTemplate.delete(SCENE_KEY_PREFIX + conversationId);
         log.info("Conversation messages cleared (row kept): id={}, mode={}", conversationId, conversation.getMode());
     }
 

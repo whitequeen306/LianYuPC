@@ -115,6 +115,55 @@ def resolve_city(settings: Mapping[str, Any] | None) -> str | None:
     return city or None
 
 
+async def _attach_scene_card(
+    memory_context: str,
+    *,
+    conversation_id: int | None,
+    scene_key: str,
+    last_user_message: str | None,
+) -> str:
+    """把「当前场景」接在关系/记忆块之后。
+
+    为什么放在这里而不是 Java：话题漂移是语言判断，Java 拿不到；
+    为什么只对 SINGLE：群聊的话题是复数的，一张卡会互相踩（P3 再拆）。
+
+    任何异常都只让场景缺位，不能让整轮回复失败 —— 卡的收益是"更贴题"，
+    不是"能说话"。
+    """
+    if scene_key != "SINGLE" or not conversation_id or not (last_user_message or "").strip():
+        return memory_context
+
+    from app.config import get_settings
+
+    if not get_settings().scene_card_enabled:
+        return memory_context
+
+    from app.context.scene_card import (
+        load_card,
+        new_card,
+        render_card,
+        save_card,
+        update_card,
+    )
+
+    try:
+        card = await load_card(conversation_id) or new_card(conversation_id)
+        card = update_card(
+            card,
+            user_text=last_user_message,
+            turn=int(card.get("turnTo") or 0) + 1,
+        )
+        await save_card(card)
+        block = render_card(card)
+    except Exception as exc:  # noqa: BLE001 - 场景卡坏了不能拖垮整轮
+        logger.warning("scene card skipped: %s", exc)
+        return memory_context
+
+    if not block:
+        return memory_context
+    return f"{memory_context}\n\n{block}" if memory_context else block
+
+
 async def assemble_turn_prompt(
     *,
     user_id: int,
@@ -166,6 +215,15 @@ async def assemble_turn_prompt(
             last_user_message=last_user_message,
             session_summary=session_summary,
         )
+
+    # 场景卡：本轮「在聊什么」的唯一载体。取不到就退化成没有场景（不影响回复），
+    # 但它必须是 Python 侧的事实 —— Java 只传最后一句话，不知道话题。
+    memory_context = await _attach_scene_card(
+        memory_context,
+        conversation_id=conversation_id,
+        scene_key=scene_key,
+        last_user_message=last_user_message,
+    )
 
     # 工具提示：Java 只传开关事实，文案由 Python 查表生成
     if tool_flags is not None:

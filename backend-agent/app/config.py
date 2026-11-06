@@ -79,6 +79,10 @@ class Settings(BaseSettings):
     # 超长结果掐头留尾（见 app.tool_loop.clip_tool_output）。
     tool_output_max_chars: int = 1200
 
+    # 场景卡开关：它是"当前场景"的唯一载体，但接线出问题会污染每一轮 prompt。
+    # 留一个总开关，线上异常时先关它回到"只有记忆块"的状态。
+    scene_card_enabled: bool = True
+
     # 向量化 / 重排（P5 读路径）。base_url 可配置：修掉 Java 侧硬编码 DashScope 地址的缺陷
     embedding_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     embedding_api_key: str = ""

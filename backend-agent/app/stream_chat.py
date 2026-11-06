@@ -75,7 +75,11 @@ async def stream_chat_events(
     非流式的 `run_tool_loop` 补一次，避免这一轮变成「对方没有回复内容」。
     """
     settings = get_settings()
-    from app.tool_loop import execute_tool_calls, resolve_tools  # 局部导入：避免启动期耦合
+    from app.tool_loop import (
+        clip_tool_output,
+        execute_tool_calls,
+        resolve_tools,
+    )  # 局部导入：避免启动期耦合
 
     specs = resolve_tools(tool_names) if tool_names else []
     # 没有可执行工具时不下发 schema：只给提示词会让模型以为能调，
@@ -127,7 +131,7 @@ async def stream_chat_events(
                 history.append({
                     "role": "tool",
                     "tool_call_id": call.get("id") or "",
-                    "content": output,
+                    "content": clip_tool_output(output),
                 })
             rounds += 1
     except GatewayRejectedError:
