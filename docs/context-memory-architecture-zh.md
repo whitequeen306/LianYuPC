@@ -894,6 +894,24 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 cron 可用 `lianyu.memory.consolidate.cron` 覆盖）。
 回滚：关开关即可回到「画像槽位 + importance top20 + LIKE 5」，新表/新列不影响旧路径。
 
+### 10.3 切换手册（按顺序，每步都看体检）
+
+`GET /agent/memory/health` 是每一步的判据；不要"全开再看"。
+
+| 步 | 动作 | 通过条件 | 失败怎么办 |
+|---|---|---|---|
+| 1 | 跑 Flyway：`V58__memory_layers_and_episodes.sql`、`V59__memory_episode_injected.sql` | `health.timestamps.last_decay_at` 非 null；`counters.memories_active` 与迁移前一致 | 回滚迁移前先停写入（`MemoryWriter` 的 extract-write 开关） |
+| 2 | 校验全文索引：`SELECT id FROM memory_meta WHERE MATCH(summary) AGAINST ('加班') LIMIT 1` | 有返回；若报 `unknown parser ngram`，先确认 MySQL `ngram_token_size` | 索引没建成时 v3 的 ngram 一路为空，但不会报错——必须显式验一次 |
+| 3 | `memory_shadow_enabled=true` | 日志 `memory shadow overlap=…` 连续 3 天 ≥0.60 | <0.4 说明 v3 召回与旧路径分歧大，先看 `missing` 里是哪些 id |
+| 4 | `memory_recall_v3_enabled=true`（关 shadow） | 体检 `warnings` 为空；`episodes_active>0` 或确实还没有场景 | 注入变空 → 立刻关回；`_load_v3_block` 失败会退回旧路径，但"空"不会 |
+| 5 | `memory_vector_recall_enabled=true` | `memory_search` 日志出现 `via v3`，且 `outbox_dead=0` | 向量库为空时它只是少一路，不会更差；DEAD 多说明 relay 卡住，先修 relay |
+| 6 | `memory_dedupe_similarity_enabled=true` → 观察 2 周 → 再考虑 `memory_dedupe_llm_review_enabled` | `skipped` 占比 <15%；人工抽查无"两件事并成一件" | 误合并不可逆（只写了新行，旧行没合并），关开关即可止损 |
+| 7 | Java `lianyu.memory.consolidate.enabled=true` | 下周一 04:10 后 `last_reflection_at` 前进，且没有重复周记 | 重复说明 `content_hash` 没带周标签，检查 `digest_hash` |
+| 8 | `history_trim_enabled=true` | `GET /agent/context/stats` 的 `trimmed_turns` 与 `est_tokens_per_turn` 同时下降 | 若"当前轮被截"报告，立即关；`trim_history` 保底 6 条且保 system |
+
+两条硬约束：**第 3 步之前不要开第 4 步**（没有影子数据就没有分歧证据）；**第 1 步之前不要开第 5 步**
+（向量路要读 v2 集合并回 `memory_meta` 取权威行，迁移没跑时回表会全部失败）。
+
 ---
 
 ## 11. 评测与指标
