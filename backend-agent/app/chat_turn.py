@@ -36,6 +36,7 @@ from langgraph.graph import END, START, StateGraph
 
 from app.gateway import get_gateway
 from app.context.budget import plan_budget, total_of
+from app.context.history import trim_history
 from app.context.tokens import estimate_messages
 from app.message_assembly import (
     drop_orphan_tool_messages,
@@ -203,13 +204,34 @@ def _log_budget(estimated: int, history: list[dict[str, Any]] | None) -> None:
                 estimated, total, max(0, estimated - total), plan["recent"])
 
 
+def _trim_to_budget(messages: list[dict[str, Any]],
+                    history: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """按 recent 槽裁历史；`history_trim_enabled` 关着就原样返回。
+
+    保留 system，其余只在超预算时从最旧开始丢；短对话不会被动。
+    """
+    from app.config import get_settings
+
+    if not get_settings().history_trim_enabled:
+        return messages
+
+    plan = plan_budget(recent_avg_chars=_recent_avg_chars(history))
+    system = [m for m in messages if str(m.get("role") or "").lower() == "system"][:1]
+    rest = [m for m in messages if str(m.get("role") or "").lower() != "system"]
+    kept = trim_history(rest, plan["recent"])
+    if len(kept) < len(rest):
+        logger.info("chat_turn.history_trim kept=%d of %d budget=%d",
+                    len(kept), len(rest), plan["recent"])
+    return system + kept
+
+
 async def assemble_messages(state: ChatTurnState) -> dict[str, Any]:
     """节点 2：system + 历史 → 模型输入，对齐 Java `ChatTurnMessageAssembler`。"""
     system_prompt = state.get("system_prompt") or ""
 
     prepared = state.get("prepared_messages") or []
     if prepared:
-        messages = _assemble_prepared(system_prompt, prepared)
+        messages = _trim_to_budget(_assemble_prepared(system_prompt, prepared), state.get("history"))
         estimated = estimate_messages(messages)
         logger.info("chat_turn.assemble_messages count=%d prepared=true est=%d",
                     len(messages), estimated)
@@ -249,6 +271,7 @@ async def assemble_messages(state: ChatTurnState) -> dict[str, Any]:
         messages.append({"role": "user", "content": wrap_stored_text_for_model(user_text)})
 
     messages = drop_orphan_tool_messages(messages)
+    messages = _trim_to_budget(messages, state.get("history"))
     estimated = estimate_messages(messages)
     logger.info("chat_turn.assemble_messages count=%d prepared=false est=%d",
                 len(messages), estimated)

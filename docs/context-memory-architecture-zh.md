@@ -866,6 +866,7 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 | PR-16 reflection 层 | ✅ `2dddae6` | 场景关闭那次调用多问一句 `impression`；写 `layer='reflection'`、tau 180d、7 天去重；不额外花钱 |
 | PR-17 周记（跨天整合） | ✅ `81a9d64` | `app/memory/consolidate.py` + `POST /agent/memory/consolidate`；`MemoryConsolidateScheduler` 周一 04:10 触发（默认关）；同角色同周只一条；抽取式、不调模型 |
 | PR-18 召回评测脚手架 | ✅ 本次 | `app/memory/evaluation.py`：JSONL 题集 → recall@k / MRR / 未命中清单；同一套题可对比开 v3 前后 |
+| PR-19 历史按 token 裁剪 | ✅ 本次 | `app/context/history.py` + `chat_turn._trim_to_budget`：只为 recent 槽服务，开关 `history_trim_enabled` 默认关 |
 
 **仍未做**：向量相似度双阈值（cos≥0.92 NOOP / <0.75 ADD / 灰区 LLM，现在只做了槽位版 supersede，
 普通事实仍按 `source_hash` 合并）、周记接 cron 并换成生成式（现在靠手动打端点、文本是抽取拼接）、
@@ -874,7 +875,8 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 
 **开关**：`scene_card_enabled`（默认开）、`memory_recall_v3_enabled`（默认关，等迁移 + 评测）、
 `memory_vector_recall_enabled`（默认关，等 Milvus 里有向量且集合升级）、
-`memory_consolidate_enabled`（默认开，关掉后端点直接返回 `skipped`）。
+`memory_consolidate_enabled`（默认开，关掉后端点直接返回 `skipped`）、
+`history_trim_enabled`（默认关；打开后 recent 槽超预算会丢最旧的消息，system 与当前轮不动）。
 周记另有 Java 侧调度开关 `lianyu.memory.consolidate.enabled`（**默认关**，线上显式开启后每周一 04:10 调一次；
 cron 可用 `lianyu.memory.consolidate.cron` 覆盖）。
 回滚：关开关即可回到「画像槽位 + importance top20 + LIKE 5」，新表/新列不影响旧路径。
