@@ -437,6 +437,7 @@ def test_revive_statement_is_whitelisted():
     _assert_allowed(
         "UPDATE memory_meta SET strength = GREATEST(strength, 0.55), "
         "fade_level = 'active', status = 'active', archived_at = NULL, "
+        "last_decay_at = NOW(), "
         "revival_count = revival_count + 1 WHERE id IN (%s)"
     )
 

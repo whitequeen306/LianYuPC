@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
@@ -34,19 +35,60 @@ class WriteNotAllowed(RuntimeError):
     """试图写入白名单外的表，或使用非 INSERT 语句。"""
 
 
+_UID_LIST = r"\((?:%s, )*%s\)"
+
+# 每条 UPDATE 都按「整条语句」全等匹配，不是前缀。前缀匹配曾经允许
+# `UPDATE memory_meta SET status='superseded', summary=%s WHERE id=%s`
+# 这类追加列的句子一路放行——白名单就变成了摆设。
 _ALLOWED_UPDATES = (
-    "update memory_meta set milvus_vec_id = %s where id = %s",
+    re.compile(r"^update memory_meta set milvus_vec_id = %s where id = %s$"),
     # 画像槽位换值：旧行标 superseded + 关闭有效期，不物理删（可追溯"她以前叫过什么"）
-    "update memory_meta set status = 'superseded'",
-    # 召回注入后打点：冷却与"多久没被想起"都靠它，只允许这一种形状
-    "update memory_meta set last_injected_at",
-    # 原话也有冷却（V59）：不记的话同一段 quote 每轮都会冒出来
-    "update memory_episode set last_injected_at",
+    re.compile(
+        r"^update memory_meta set status = 'superseded', valid_to = now\(\), "
+        r"superseded_by = %s where user_id = %s and character_id = %s and id <> %s "
+        r"and status = 'active' and summary like %s$"
+    ),
+    # 摘要未变：只合并来源与重要度，不碰 vec_id
+    re.compile(
+        r"^update memory_meta set memory_type = %s, importance = %s, "
+        r"source_msg_ids = %s, source_hash = %s where id = %s$"
+    ),
+    # 摘要变化：覆盖内容并清空 vec_id，由 outbox 重投影
+    re.compile(
+        r"^update memory_meta set summary = %s, memory_type = %s, importance = %s, "
+        r"source_msg_ids = %s, source_hash = %s, milvus_vec_id = null where id = %s$"
+    ),
+    # 召回注入后打点 + 巩固：冷却、被想起次数、强度 +0.05、衰减起点重置
+    re.compile(
+        r"^update memory_meta set last_injected_at = now\(\), last_recalled_at = now\(\), "
+        r"recall_count = recall_count \+ 1, strength = least\(1\.000, strength \+ 0\.05\), "
+        r"last_decay_at = now\(\) where id in " + _UID_LIST + r"$"
+    ),
     # 复活：沉底的记忆被强 cue 命中，抬回 active（只抬强度与档位，不动摘要）
-    "update memory_meta set strength = greatest(strength, 0.55)",
-    "update memory_outbox set status = %s",
-    "update memory_outbox set attempts = %s",
-    "update memory_outbox set next_attempt_at",
+    re.compile(
+        r"^update memory_meta set strength = greatest\(strength, 0\.55\), "
+        r"fade_level = 'active', status = 'active', archived_at = null, "
+        r"last_decay_at = now\(\), revival_count = revival_count \+ 1 where id in "
+        + _UID_LIST + r"$"
+    ),
+    # 手动复活单条：记忆页「让她想起来」
+    re.compile(
+        r"^update memory_meta set strength = %s, fade_level = 'active', status = 'active', "
+        r"archived_at = null, last_decay_at = now\(\), "
+        r"revival_count = revival_count \+ 1 where id = %s and user_id = %s$"
+    ),
+    # 原话也有冷却（V59）：不记的话同一段 quote 每轮都会冒出来
+    re.compile(r"^update memory_episode set last_injected_at = now\(\) where id in " + _UID_LIST + r"$"),
+    re.compile(
+        r"^update memory_outbox set status = %s where id = %s(?: and status = %s)?$"
+    ),
+    re.compile(
+        r"^update memory_outbox set attempts = %s, status = %s, last_error = %s where id = %s$"
+    ),
+    re.compile(
+        r"^update memory_outbox set next_attempt_at = "
+        r"(?:now\(\)|date_add\(now\(\), interval %s second\)) where id = %s$"
+    ),
 )
 
 
@@ -54,9 +96,10 @@ def _assert_allowed(sql: str) -> None:
     normalized = " ".join((sql or "").split())
     lower = normalized.lower()
     if lower.startswith("update "):
-        # 只放行 relay 的两类状态更新（前缀匹配，参数仍是占位符）
-        if any(lower.startswith(prefix) for prefix in _ALLOWED_UPDATES):
-            return
+        # 全等匹配：多一个 SET 列、多一个 WHERE 条件都不放行。
+        for pattern in _ALLOWED_UPDATES:
+            if pattern.match(lower):
+                return
         raise WriteNotAllowed(f"update not allowed on the write pool: {sql[:80]}")
     if not lower.startswith("insert into "):
         raise WriteNotAllowed(f"only INSERT is allowed on the write pool: {sql[:60]}")

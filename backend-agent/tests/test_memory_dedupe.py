@@ -7,9 +7,9 @@ from app.memory import dedupe
 
 def test_thresholds_are_inclusive_on_the_high_side():
     assert dedupe.decide(None) == "add"
-    assert dedupe.decide(0.95) == "noop"
-    assert dedupe.decide(0.92) == "noop"
-    assert dedupe.decide(0.9199) == "review"
+    assert dedupe.decide(0.95) == "review"
+    assert dedupe.decide(0.97) == "noop"
+    assert dedupe.decide(0.9699) == "review"
     assert dedupe.decide(0.75) == "review"
     assert dedupe.decide(0.7499) == "add"
 

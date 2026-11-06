@@ -22,7 +22,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Iterable
 
 from app.db import fetch_all
-from app.write import insert_returning_id, transaction
+from app.write import execute_write, insert_returning_id, transaction
 
 logger = logging.getLogger(__name__)
 
@@ -230,7 +230,8 @@ async def _supersede_slot(cur, *, memory_id: int, user_id: int, character_id: in
     换名字、改口味这类"新事实推翻旧事实"必须能追溯；物理删会让"她以前叫什么"
     彻底消失，也会让旧向量的清理与行删除脱节。
     """
-    await cur.execute(
+    await execute_write(
+        cur,
         "UPDATE memory_meta SET status = 'superseded', valid_to = NOW(), superseded_by = %s "
         "WHERE user_id = %s AND character_id = %s AND id <> %s AND status = 'active' "
         "AND summary LIKE %s",
@@ -266,7 +267,8 @@ async def _update_meta(memory_id: int, summary: str, memory_type: str,
                        importance: Decimal, merged: list[int], source_hash: str) -> None:
     """摘要未变：只合并来源与重要度，**不触碰 vec_id、不入队**（向量仍有效）。"""
     async with transaction() as cur:
-        await cur.execute(
+        await execute_write(
+            cur,
             "UPDATE memory_meta SET memory_type = %s, importance = %s, "
             "source_msg_ids = %s, source_hash = %s WHERE id = %s",
             (memory_type, str(importance), json.dumps(merged, ensure_ascii=False),
@@ -279,7 +281,8 @@ async def _replace_and_enqueue(memory_id: int, summary: str, memory_type: str,
                                old_vec: str | None) -> None:
     """摘要变化：覆盖内容、清空 vec_id，并入队「删旧向量 + 重投影」，同一事务。"""
     async with transaction() as cur:
-        await cur.execute(
+        await execute_write(
+            cur,
             "UPDATE memory_meta SET summary = %s, memory_type = %s, importance = %s, "
             "source_msg_ids = %s, source_hash = %s, milvus_vec_id = NULL WHERE id = %s",
             (summary, memory_type, str(importance),
