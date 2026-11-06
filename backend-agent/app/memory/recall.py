@@ -56,7 +56,7 @@ LIMIT 12
 _EPISODE_SQL = """
 SELECT CONCAT('ep-', id) AS id, summary, 'EPISODE' AS memory_type,
        0.7 AS importance, 1.0 AS strength, %s AS tau_days,
-       NULL AS fade_level, NULL AS last_decay_at, last_injected_at,
+       NULL AS fade_level, event_time AS last_decay_at, last_injected_at,
        event_time, created_at, quote,
        MATCH(summary) AGAINST (%s) AS rel
 FROM memory_episode

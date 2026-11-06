@@ -333,3 +333,19 @@ def test_episode_row_in_cooldown_is_skipped():
     ranked = recall_mod.rank_rows([fresh, stale], limit=5, now=NOW)
 
     assert [row["id"] for row in ranked] == ["ep-1"]
+
+
+def test_episode_decays_from_its_event_time():
+    # 原话没有单独的"上次结算"列：衰减起点就是它发生的那天。
+    assert "event_time AS last_decay_at" in recall_mod._EPISODE_SQL
+
+
+def test_old_episode_ranks_below_recent_one():
+    fresh = _row("ep-1", memory_type="EPISODE", rel=0.9,
+                 last_decay_at=NOW - timedelta(days=1))
+    old = _row("ep-2", memory_type="EPISODE", rel=0.9,
+               last_decay_at=NOW - timedelta(days=240))
+
+    ranked = recall_mod.rank_rows([old, fresh], limit=5, now=NOW)
+
+    assert [row["id"] for row in ranked] == ["ep-1", "ep-2"]
