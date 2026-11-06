@@ -1105,6 +1105,20 @@ cd backend-agent && ./.venv/Scripts/python.exe -m app.memory.evaluation eval/mem
 
 默认开关（2026-11-06 起）：`memory_recall_v3_enabled=true`、`memory_vector_recall_enabled=true`、`memory_dedupe_similarity_enabled=true`。旧路径只在 v3 抛错/超时（80ms 预算）时兜底，不再作为主路径。没有配 `embedding_api_key` 时向量路直接返回空，不会去等 HTTP 超时。召回超时预算从 80ms 提到 500ms（实测：冷启动 1088ms、热路径 176–260ms、整块 208–251ms），并在启动时预热 embedding 与 Milvus 连接；超过 500ms 的慢请求仍落回旧路径，宁可少召回也不拖住回复。
 
+**上线后（2026-11-06 夜，生产 15,528 条记忆）**：服务器到 DashScope 的 embedding 实测
+0.6–1.5s/次，整条召回被它拖过 500ms，日志每轮都是 `timed out ... falling back`——表面上
+开着 v3，实际仍在走旧路径。改成两件事后恢复：
+
+1. **向量路单独限时**（`memory_vector_timeout_seconds=0.35`）：超时只丢向量，ngram /
+   episode / core 照常出块，不再整体回退旧路径；整条召回预算 0.5s → 0.65s。
+2. **三条路并发**（候选 SQL / episode SQL / 向量）：串行的 SQL 两跳 + 向量预算会叠成
+   544ms，并发后热路径约 300ms。
+
+同期回填也改成批量投影（`insert_v3_batch`，一次 RPC 写 50 条）：逐条 delete+insert 在
+生产跑了一小时只到 8.7k，批量后 8.7k → 15,528 条不到十分钟。代价是外网 embedding 慢时
+向量路在热路径基本拿不到分——这是"本地 embedding 未落地"的已知限制；要真正用上语义召回，
+下一步应把 embedding 换成本地小模型（如 bge-small-zh），或改成轮次外异步预取。
+
 ### 10.6 验证后的收尾（2026-11-06）
 
 大验证组（见 `docs/memory-verification-2026-11-06.md`）暴露的问题已按三轮修完：

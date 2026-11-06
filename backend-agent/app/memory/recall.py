@@ -237,18 +237,56 @@ async def load_candidates(
     limit: int = CANDIDATE_LIMIT,
 ) -> list[dict[str, Any]]:
     text = (query or "").strip()
-    rows = await fetch_all(
-        _CANDIDATE_SQL_RELEVANT if text else _CANDIDATE_SQL,
-        (text, character_id, user_id, limit),
+    vector_budget = float(getattr(get_settings(), "memory_vector_timeout_seconds", 0.35))
+
+    async def _text_lane(sql: str, params: tuple, label: str) -> list[dict[str, Any]]:
+        try:
+            return list(await fetch_all(sql, params) or [])
+        except Exception as exc:  # noqa: BLE001 - 老库没 V58/V59 时降级，但要留下线索
+            logger.warning("memory %s lane failed: %s", label, exc)
+            return []
+
+    async def _vector_lane() -> list[dict[str, Any]]:
+        # 向量路单独限时：它要走一次外网 embedding，线上实测 1–1.5 秒。等它会把整条
+        # 召回拖过预算、连带 SQL 路一起作废；超时就只丢向量，文本路照常出块。
+        try:
+            return await asyncio.wait_for(
+                _vector_rows(character_id, user_id, query, top_k=limit),
+                timeout=vector_budget,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("vector recall timed out after %.2fs; text lanes only", vector_budget)
+        except Exception as exc:  # noqa: BLE001 - 向量是加分项
+            logger.warning("vector recall skipped: %s", exc)
+        return []
+
+    # 三条路并发：串行时 SQL 两跳 + 向量预算会叠成 600ms+（生产实测 544ms），
+    # 而它们互不依赖。候选路失败仍抛给上层（data_readers 会退回旧路径），
+    # 另两条失败只降级。
+    candidate_result, episode_rows, vector_rows = await asyncio.gather(
+        fetch_all(
+            _CANDIDATE_SQL_RELEVANT if text else _CANDIDATE_SQL,
+            (text, character_id, user_id, limit),
+        ),
+        _text_lane(
+            _EPISODE_SQL_RELEVANT if text else _EPISODE_SQL,
+            (EPISODE_TAU_DAYS, text, text, character_id, user_id, max(1, limit // 2)),
+            "episode",
+        ),
+        _vector_lane(),
+        return_exceptions=True,
     )
+    if isinstance(candidate_result, BaseException):
+        raise candidate_result
+    rows = list(candidate_result or [])
     # 每个候选都带 lane：ngram 的 MATCH 分数与向量的 cosine 不可比，
     # 必须先按各自池子的最大值归一，再进同一个打分器（否则余弦 0.8 会被
     # 当成 0.8/20 的 4 分，向量路等于没开）。
     content = _content_bigrams(text)
     if content:
-        rows = [row for row in rows or []
+        rows = [row for row in rows
                 if _mentions_any(str(row.get("summary") or ""), content)]
-    rows = [{**row, "_lane": "ngram"} for row in rows or []]
+    rows = [{**row, "_lane": "ngram"} for row in rows]
     # core / pinned 是"设定"，单独占 core 槽位，不参与 recall 的名次竞争：
     # 混在一起时它们每轮都排前 5，把真正相关的记忆挤出去（演练里 5 个位置被
     # 501/517/533/527/504 占满，等于没召回）。
@@ -257,32 +295,14 @@ async def load_candidates(
 
     # 现场（episode）：事实能推断，原话不能。它只占候选的一半上限，
     # 避免几条生动的原话把"设定"挤出去。
-    try:
-        episodes = await fetch_all(
-            _EPISODE_SQL_RELEVANT if text else _EPISODE_SQL,
-            (EPISODE_TAU_DAYS, text, text, character_id, user_id, max(1, limit // 2)),
-        )
-    except Exception as exc:  # noqa: BLE001 - 老库没 V58/V59 时降级，但要留下线索
-        logger.warning("memory episode lane failed (migration V58/V59?): %s", exc)
-        episodes = []
-    episodes = [{**row, "_lane": "episode"} for row in (episodes or []) if row.get("id") not in seen]
+    if isinstance(episode_rows, BaseException):
+        episode_rows = []
+    episodes = [{**row, "_lane": "episode"} for row in episode_rows if row.get("id") not in seen]
     seen.update(row.get("id") for row in episodes)
 
-    # 向量路单独限时：它要走一次外网 embedding，线上实测 1–11 秒。等它会把整条
-    # 召回拖过预算、连带 SQL 路一起作废（生产日志里每轮都 "timed out ... falling
-    # back"）。超时就只丢向量，文本路照常出块。
-    vector_budget = float(getattr(get_settings(), "memory_vector_timeout_seconds", 0.35))
-    try:
-        vector_rows = [{**row, "_lane": "vector"} for row in await asyncio.wait_for(
-            _vector_rows(character_id, user_id, query, top_k=limit),
-            timeout=vector_budget,
-        )]
-    except asyncio.TimeoutError:
-        logger.warning("vector recall timed out after %.2fs; text lanes only", vector_budget)
+    if isinstance(vector_rows, BaseException):
         vector_rows = []
-    except Exception as exc:  # noqa: BLE001 - 向量是加分项
-        logger.warning("vector recall skipped: %s", exc)
-        vector_rows = []
+    vector_rows = [{**row, "_lane": "vector"} for row in vector_rows]
     # 同一 id 可能同时被 ngram 与向量召回：都留着，交给 rank_rows 合并取较高的 rel，
     # 而不是"先到先得"——否则原话先被 ngram 以低分收录，就把向量的高分版本丢了。
     return [*merged, *episodes, *vector_rows]
