@@ -31,14 +31,19 @@ def decide(best_similarity: float | None) -> str:
 
 async def best_similar(*, character_id: int, user_id: int, summary: str) -> tuple[float | None, int | None]:
     """返回 (最高余弦相似度, 对应 memory_id)；拿不到就 (None, None)，由调用方按 ADD 处理。"""
+    from app.config import get_settings
     from app.memory.embedding import embed_one
-    from app.milvus_store import search_hits
+    from app.milvus_store import search_hits, search_hits_v3
+
+    # 与召回同源：v3 开了就查 v3。只查 v2 会让「v3 单写」的部署永远判不到重复。
+    use_v3 = bool(getattr(get_settings(), "memory_vectors_v3_enabled", False))
+    search = search_hits_v3 if use_v3 else search_hits
 
     try:
         vector = await embed_one(summary)
         if not vector:
             return None, None
-        hits = await search_hits(character_id, user_id, vector, top_k=3)
+        hits = search(character_id, user_id, vector, top_k=3)
     except Exception as exc:  # noqa: BLE001 - 向量不可用不该挡住写入
         logger.debug("semantic dedupe skipped: %s", exc)
         return None, None

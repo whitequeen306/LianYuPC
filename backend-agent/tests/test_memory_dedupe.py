@@ -16,16 +16,20 @@ def test_thresholds_are_inclusive_on_the_high_side():
 
 @pytest.mark.asyncio
 async def test_best_similar_picks_the_highest_and_skips_zero_ids(monkeypatch):
+    from app import config, milvus_store
     from app.memory import embedding
-    from app import milvus_store
+
+    class _Settings:
+        memory_vectors_v3_enabled = False
 
     async def fake_embed_one(text, client=None):
         return [0.1, 0.2]
 
-    async def fake_search_hits(character_id, user_id, vector, top_k=20):
+    def fake_search_hits(character_id, user_id, vector, top_k=20):
         assert character_id == 3 and user_id == 7
         return [(0, 0.99), (41, 0.88), (42, 0.93)]
 
+    monkeypatch.setattr(config, "get_settings", lambda: _Settings())
     monkeypatch.setattr(embedding, "embed_one", fake_embed_one)
     monkeypatch.setattr(milvus_store, "search_hits", fake_search_hits)
 
@@ -77,3 +81,36 @@ async def test_review_failure_returns_none():
         raise RuntimeError("model down")
 
     assert await dedupe.review_same("a", "b", boom) is None
+
+
+@pytest.mark.asyncio
+async def test_best_similar_follows_the_v3_projection(monkeypatch):
+    """只查 v2 会让「v3 单写」的部署永远判不到重复，去重静默失效。"""
+    from app import config, milvus_store
+    from app.memory import embedding
+
+    class _Settings:
+        memory_vectors_v3_enabled = True
+
+    called = {"v2": 0, "v3": 0}
+
+    async def fake_embed_one(text, client=None):
+        return [0.1, 0.2]
+
+    def fake_v2(*args, **kwargs):
+        called["v2"] += 1
+        return []
+
+    def fake_v3(character_id, user_id, vector, top_k=20):
+        called["v3"] += 1
+        return [(508, 0.97)]
+
+    monkeypatch.setattr(config, "get_settings", lambda: _Settings())
+    monkeypatch.setattr(embedding, "embed_one", fake_embed_one)
+    monkeypatch.setattr(milvus_store, "search_hits", fake_v2)
+    monkeypatch.setattr(milvus_store, "search_hits_v3", fake_v3)
+
+    best, memory_id = await dedupe.best_similar(character_id=3, user_id=7, summary="她常加班")
+
+    assert (best, memory_id) == (0.97, 508)
+    assert called == {"v2": 0, "v3": 1}

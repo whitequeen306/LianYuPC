@@ -125,7 +125,7 @@ class Settings(BaseSettings):
     milvus_collection: str = "memory_vectors_v2"
     # v3：多带 layer/status/event_time 三个标量，检索时只捞 active 的行。
     # 双写期间 v2 仍是投影主键的来源（outbox 的 vec_id 记在 v2 上），v3 只做增量。
-    memory_vectors_v3_enabled: bool = False
+    memory_vectors_v3_enabled: bool = True
     milvus_v3_collection: str = "memory_vectors_v3"
     milvus_timeout_seconds: float = 10.0
     # outbox relay（Python 侧单写者）
