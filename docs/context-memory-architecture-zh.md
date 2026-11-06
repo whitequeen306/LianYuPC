@@ -1103,4 +1103,4 @@ cd backend-agent && ./.venv/Scripts/python.exe -m app.memory.evaluation eval/mem
 2. **跨路要按名次融合，不能各自归一**。`MATCH` 分数与 cosine 不是一个量纲，各自除以本路最大值会让每路第一名都变成 1.0，事实永远挤满前五。改成 RRF（k=60）后，原话与事实按"被几路同时认可"排序。
 3. **原话也要进向量**。episode 只有 ngram 时，「猫生病那晚」对不上「团子吐了一夜」，8 道原话题全灭。现在场景结算时把原话投影进 v3（`memory_id = EPISODE_ID_OFFSET + episode_id`），回填脚本一并补历史。
 
-默认开关（2026-11-06 起）：`memory_recall_v3_enabled=true`、`memory_vector_recall_enabled=true`、`memory_dedupe_similarity_enabled=true`。旧路径只在 v3 抛错/超时（80ms 预算）时兜底，不再作为主路径。没有配 `embedding_api_key` 时向量路直接返回空，不会去等 HTTP 超时。
+默认开关（2026-11-06 起）：`memory_recall_v3_enabled=true`、`memory_vector_recall_enabled=true`、`memory_dedupe_similarity_enabled=true`。旧路径只在 v3 抛错/超时（80ms 预算）时兜底，不再作为主路径。没有配 `embedding_api_key` 时向量路直接返回空，不会去等 HTTP 超时。召回超时预算从 80ms 提到 350ms（实测热路径 200–236ms），并在启动时预热 embedding 与 Milvus 连接（冷启动 1.3s，预热后首轮不再退回旧路径）。
