@@ -1,0 +1,8 @@
+// 召回评测题集模板：一行一题。id 要换成目标环境里真实的 memory_meta.id / ep-<id>。
+// 用法：python -m app.memory.evaluation backend-agent/eval/memory_cases.sample.jsonl 5
+// 题要「场景化」：用当时会说的话问，不要用记忆摘要本身当 query——那测的是字符串匹配。
+{"query": "我上次说我想养什么来着", "userId": 7, "characterId": 3, "expected": ["101"]}
+{"query": "我生日是哪天你还记得吗", "userId": 7, "characterId": 3, "expected": ["102"]}
+{"query": "我不吃什么", "userId": 7, "characterId": 3, "expected": ["103"]}
+{"query": "那天我们为什么吵架", "userId": 7, "characterId": 3, "expected": ["ep-21"]}
+{"query": "上周是不是一直在忙搬家", "userId": 7, "characterId": 3, "expected": ["ep-22", "ep-23"]}

@@ -865,6 +865,7 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 | PR-13 Milvus 向量路 | ✅ `search_hits` + `_vector_rows` | Milvus 只回 `memory_id`+分数，回 MySQL 取权威行；开关 `memory_vector_recall_enabled` 默认关 |
 | PR-16 reflection 层 | ✅ `2dddae6` | 场景关闭那次调用多问一句 `impression`；写 `layer='reflection'`、tau 180d、7 天去重；不额外花钱 |
 | PR-17 周记（跨天整合） | ✅ `81a9d64` | `app/memory/consolidate.py` + `POST /agent/memory/consolidate`；`MemoryConsolidateScheduler` 周一 04:10 触发（默认关）；同角色同周只一条；抽取式、不调模型 |
+| PR-18 召回评测脚手架 | ✅ 本次 | `app/memory/evaluation.py`：JSONL 题集 → recall@k / MRR / 未命中清单；同一套题可对比开 v3 前后 |
 
 **仍未做**：向量相似度双阈值（cos≥0.92 NOOP / <0.75 ADD / 灰区 LLM，现在只做了槽位版 supersede，
 普通事实仍按 `source_hash` 合并）、周记接 cron 并换成生成式（现在靠手动打端点、文本是抽取拼接）、
@@ -885,6 +886,15 @@ cron 可用 `lianyu.memory.consolidate.cron` 覆盖）。
 **离线 200 题**（中文，自建）：单跳事实 / 多跳 / 时间 / 更新 / 指代 / 约定 / 拒答，各 ~28 题。
 指标：recall@5、answer accuracy（LLM judge + 人工抽检 20%）、temporal accuracy、update accuracy、
 abstention accuracy。
+
+**跑法**：`backend-agent/app/memory/evaluation.py` 读 JSONL 题集，直接打 `recall()` 算 recall@k / MRR，
+并列出未命中题与它实际召回的 top-k；模板见 `backend-agent/eval/memory_cases.sample.jsonl`。
+
+```bash
+cd backend-agent && ./.venv/Scripts/python.exe -m app.memory.evaluation eval/memory_cases.sample.jsonl 5
+```
+
+它测的是**当前开关下**的链路：`memory_recall_v3_enabled=false` 时测旧路径，开 v3 后同一套题可以直接对比。
 
 **三档必跑消融**（对应 §3.2 / §6.6 的证据）：
 
