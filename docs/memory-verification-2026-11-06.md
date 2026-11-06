@@ -76,3 +76,19 @@
 
 仍未做（留作下一轮）：dormant 的向量清理与 `embedding_state='dropped'`、D5 的 Python 侧复活分支、
 superseded 在列表里的徽标、健康检查的并发化、`reconcile` 的 v3 去重、历史时间戳清洗脚本。
+
+## 五、第三轮修复（2026-11-06 深夜）
+
+| 编号 | 修法 | 验证 |
+|---|---|---|
+| D4 | dormant 落档时 `embedding_state='dropped'` 并给 outbox 入队删向量；`relay.reconcile` 跳过 dormant，避免对账把刚删的向量又补回来 | `MemoryDecayServiceTest.dormantRowsDropTheirVectorProjection` |
+| B11 | `milvus_store.insert_v3` 写前先按 `memory_id` 删旧投影，同一条记忆不再在向量库里堆两份 | `tests/test_milvus_v3.py::test_insert_v3_drops_previous_projection` |
+| E4 | 记忆列表与抽屉给「已被更新」虚线徽标；`canRevive` 排除 superseded（旧事实复活会和新事实同时生效） | `frontend/src/pages/__tests__/memoryPageBrain.test.js` 2 例 |
+| E2 | `/agent/memory/health` 九条查询改并发 + 2.5s 总预算（原来 MySQL 全挂要等 18s） | `tests/test_memory_health.py::test_collect_gives_up_at_the_total_budget` |
+
+仍未做（已知、有记录）：
+- 历史时间戳清洗：本轮之前 Python 写入的 `created_at/updated_at` 是服务器 UTC，比 Java 的 +08 早 8 小时。
+  新写入已对齐（连接池 `SET time_zone='+08:00'`），历史行需要一次性脚本核对后再迁移，不能盲加 8 小时。
+- `relay.reconcile` 只按 `milvus_vec_id IS NULL` 找，不检查 v3 集合里是否真有该 id；
+  向量库被手工清空后要重建，得先 `init_milvus_v3 --recreate` 再全量 backfill。
+- 生产上线顺序仍是 §10.3：V56–V59 迁移 → `init_milvus_v3` → `backfill_milvus_v3` → 开开关 → 看 shadow 三天。

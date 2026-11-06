@@ -511,6 +511,7 @@ export default {
     sectorUnknown: '未分類',
     revive: '讓她想起來',
   reviveDone: '她想起來了',
+  superseded: '已被更新',
   quoteLabel: '原話',
     mute: '別再提',
     unmute: '恢復提起',

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Any
@@ -15,6 +16,8 @@ from app.db import fetch_all
 logger = logging.getLogger(__name__)
 
 # key -> (SQL, 说明)。SQL 必须只读且单行聚合，避免体检拖慢主库。
+HEALTH_TIMEOUT_SECONDS = 2.5
+
 QUERIES: dict[str, str] = {
     "memories_active": (
         "SELECT COUNT(*) AS n FROM memory_meta WHERE status = 'active' AND muted = 0"
@@ -99,13 +102,32 @@ def build_health(
 
 
 async def collect(now: datetime | None = None) -> dict[str, Any]:
-    results: dict[str, list[dict[str, Any]] | None] = {}
-    for key, sql in QUERIES.items():
+    """并发跑九条只读体检。
+
+    串行时 MySQL 一旦不可达，每条 2s 超时会叠成 18s，健康检查自己先超时；
+    这里并发 + 总预算，坏消息也要在两秒内说出口。
+    """
+
+    async def one(key: str, sql: str) -> tuple[str, list[dict[str, Any]] | None]:
         try:
-            results[key] = await fetch_all(sql)
+            return key, await fetch_all(sql)
         except Exception as exc:  # noqa: BLE001 - 体检部分失败也要能返回其余部分
             logger.warning("memory health query failed: %s (%s)", key, exc)
-            results[key] = None
+            return key, None
+
+    results: dict[str, list[dict[str, Any]] | None] = {}
+    try:
+        pairs = await asyncio.wait_for(
+            asyncio.gather(*(one(key, sql) for key, sql in QUERIES.items())),
+            timeout=HEALTH_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("memory health timed out after %ss", HEALTH_TIMEOUT_SECONDS)
+        pairs = []
+    for key, rows in pairs:
+        results[key] = rows
+    for key in QUERIES:
+        results.setdefault(key, None)
     return build_health(flags(), results, now)
 
 

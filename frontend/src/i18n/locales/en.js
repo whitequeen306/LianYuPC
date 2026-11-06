@@ -463,6 +463,7 @@ export default {
     sectorUnknown: 'Unsorted',
     revive: 'Help her remember',
   reviveDone: 'She remembers it now',
+  superseded: 'Superseded',
   quoteLabel: 'Her words',
     mute: "Don't bring it up",
     unmute: 'Allow bringing it up',

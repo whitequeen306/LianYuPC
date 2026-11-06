@@ -1104,3 +1104,11 @@ cd backend-agent && ./.venv/Scripts/python.exe -m app.memory.evaluation eval/mem
 3. **原话也要进向量**。episode 只有 ngram 时，「猫生病那晚」对不上「团子吐了一夜」，8 道原话题全灭。现在场景结算时把原话投影进 v3（`memory_id = EPISODE_ID_OFFSET + episode_id`），回填脚本一并补历史。
 
 默认开关（2026-11-06 起）：`memory_recall_v3_enabled=true`、`memory_vector_recall_enabled=true`、`memory_dedupe_similarity_enabled=true`。旧路径只在 v3 抛错/超时（80ms 预算）时兜底，不再作为主路径。没有配 `embedding_api_key` 时向量路直接返回空，不会去等 HTTP 超时。召回超时预算从 80ms 提到 500ms（实测：冷启动 1088ms、热路径 176–260ms、整块 208–251ms），并在启动时预热 embedding 与 Milvus 连接；超过 500ms 的慢请求仍落回旧路径，宁可少召回也不拖住回复。
+
+### 10.6 验证后的收尾（2026-11-06）
+
+大验证组（见 `docs/memory-verification-2026-11-06.md`）暴露的问题已按三轮修完：
+时区（Python 连接池对齐 +08）、截断顺序（先按预算再拼场景）、判重阈值（0.97 + 灰区 review）、
+写库白名单（整句匹配）、归档过滤、复活（接口 + 按钮）、衰减封顶（30 天/次）、
+v3 投影失败重试、冷启动建连不阻塞、dormant 清向量、superseded 徽标、体检并发化。
+仍未做的只有历史时间戳清洗与 `reconcile` 的 v3 存在性检查。

@@ -242,6 +242,16 @@ def insert_v3(
     if client is None or not vector:
         return None
     settings = get_settings()
+    # 同一条记忆重试/重建会把同一个 memory_id 再插一遍；先删旧投影，避免同一条记忆
+    # 在向量库里出现两份（验证组 B11：集合从 49 涨到 95 就是重复投影堆出来的）。
+    if memory_id:
+        try:
+            client.delete(
+                collection_name=settings.milvus_v3_collection,
+                filter=f"memory_id == {int(memory_id)}",
+            )
+        except Exception as exc:  # noqa: BLE001 - 删不掉就让 insert 自己兜底
+            logger.debug("milvus v3 dedupe failed: memoryId=%s reason=%s", memory_id, exc)
     clipped = summary if len(summary) <= 512 else summary[:512]
     try:
         result = client.insert(

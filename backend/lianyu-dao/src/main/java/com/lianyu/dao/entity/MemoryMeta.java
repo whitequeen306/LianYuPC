@@ -31,6 +31,8 @@ public class MemoryMeta {
     /** active / faded / archived / dormant。 */
     private String fadeLevel;
     private String status;
+    /** 向量投影状态：active / dropped（dormant 时置 dropped，向量不再参与召回）。 */
+    private String embeddingState;
     @TableField(value = "last_decay_at")
     private LocalDateTime lastDecayAt;
     private LocalDateTime lastRecalledAt;

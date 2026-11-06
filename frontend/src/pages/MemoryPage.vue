@@ -114,6 +114,7 @@
               <div class="mem-header">
                 <span class="mem-time">{{ formatDate(mem.createdAt) }}</span>
                 <span v-if="layerLabel(mem.layer)" class="mem-layer">{{ layerLabel(mem.layer) }}</span>
+                <span v-if="mem.status === 'superseded'" class="mem-superseded">{{ t('memory.superseded') }}</span>
               </div>
 
               <div class="mem-summary">{{ mem.summary }}</div>
@@ -192,6 +193,9 @@
                 {{ layerLabel(detailMemory?.layer) }}
               </span>
               <span v-if="detailFadeLabel" class="mem-sheet__fade">{{ detailFadeLabel }}</span>
+              <span v-if="detailMemory?.status === 'superseded'" class="mem-sheet__superseded">
+                {{ t('memory.superseded') }}
+              </span>
               <span v-if="detailRecallLabel" class="mem-sheet__recalled">{{ detailRecallLabel }}</span>
               <button type="button" class="mem-sheet__close" @click="closeDetail">
                 <el-icon :size="16"><Close /></el-icon>
@@ -557,6 +561,8 @@ async function togglePin(mem) {
 /** 只有真的"沉下去"的记忆才需要这个按钮：active 的行点了也没有意义。 */
 function canRevive(mem) {
   if (!mem) return false
+  // 被新事实取代的旧行只用来追溯，不能复活——否则会和新事实同时生效。
+  if (mem.status === 'superseded') return false
   return mem.status === 'dormant' || (mem.fadeLevel && mem.fadeLevel !== 'active')
 }
 
@@ -834,6 +840,23 @@ async function removeMemory(mem) {
   font-size: 11px;
   color: $color-text-muted;
   opacity: 0.5;
+}
+
+.mem-superseded {
+  padding: 1px 6px;
+  border: 1px dashed rgba($color-text-muted, 0.5);
+  border-radius: $radius-sm;
+  color: $color-text-muted;
+  font-size: $font-size-xs;
+}
+
+.mem-sheet__superseded {
+  margin-left: $space-2;
+  padding: 1px 6px;
+  border: 1px dashed rgba($color-text-muted, 0.5);
+  border-radius: $radius-sm;
+  color: $color-text-muted;
+  font-size: $font-size-xs;
 }
 
 .mem-layer {

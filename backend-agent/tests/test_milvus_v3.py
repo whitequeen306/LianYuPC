@@ -32,6 +32,11 @@ class _FakeClient:
     def __init__(self):
         self.inserted: list[dict] = []
         self.searches: list[dict] = []
+        self.deletes: list[dict] = []
+
+    def delete(self, collection_name, filter=None):  # noqa: A002 - pymilvus 的形参就叫 filter
+        self.deletes.append({"collection": collection_name, "filter": filter})
+        return {"delete_count": 1}
 
     def insert(self, collection_name, data):
         self.inserted.append({"collection": collection_name, "row": data[0]})
@@ -40,6 +45,19 @@ class _FakeClient:
     def search(self, **kwargs):
         self.searches.append(kwargs)
         return [[{"distance": 0.81, "entity": {"memory_id": 7}}]]
+
+
+def test_insert_v3_drops_previous_projection(monkeypatch):
+    """同一条记忆重试/重建时先删旧投影，避免向量库里一条记忆两份（验证组 B11）。"""
+    fake = _FakeClient()
+    monkeypatch.setattr(milvus_store, "_connect_v3", lambda: fake)
+    monkeypatch.setattr(milvus_store, "get_settings", lambda: _settings())
+
+    milvus_store.insert_v3(
+        3, 7, 11, "她喜欢冰美式", "FACT", "fact", "active", 1_760_000_000_000, [0.1, 0.2],
+    )
+
+    assert fake.deletes == [{"collection": "memory_vectors_v3", "filter": "memory_id == 11"}]
 
 
 def test_insert_v3_writes_layer_status_and_event_time(monkeypatch):

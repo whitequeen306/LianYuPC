@@ -45,6 +45,7 @@ public class MemoryDecayService {
     private static final List<String> TIERS = List.of("active", "faded", "archived", "dormant");
 
     private final MemoryMetaMapper memoryMetaMapper;
+    private final MemoryOutboxService memoryOutboxService;
 
     @Value("${lianyu.memory.decay.batch-limit:2000}")
     private int batchLimit = 2000;
@@ -167,6 +168,10 @@ public class MemoryDecayService {
             }
             if ("dormant".equals(next) && !"dormant".equals(row.getStatus())) {
                 patch.setStatus("dormant");
+                // dormant 的向量不再参与召回，留着只会让同一条记忆有两份来源；
+                // 行本身保留（可被用户"让她想起来"复活），所以标记 dropped 而不是删行。
+                patch.setEmbeddingState("dropped");
+                memoryOutboxService.enqueueDelete(row.getId(), row.getMilvusVecId());
             }
             updated += memoryMetaMapper.updateById((MemoryMeta) patch);
         }

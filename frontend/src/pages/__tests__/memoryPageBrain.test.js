@@ -74,3 +74,18 @@ describe('记忆页的「被想起过几次」', () => {
     expect(pageSource).toContain('.mem-sheet__recalled')
   })
 })
+
+describe('沉底与被取代的记忆', () => {
+  it('非 active 才给「让她想起来」，被取代的旧行不给', () => {
+    expect(pageSource).toContain('function canRevive')
+    expect(pageSource).toContain("if (mem.status === 'superseded') return false")
+    expect(pageSource).toContain("mem.status === 'dormant' || (mem.fadeLevel && mem.fadeLevel !== 'active')")
+    expect(pageSource).toContain('reviveMemory(')
+  })
+
+  it('被新事实取代的旧行在列表和抽屉里都标出来', () => {
+    expect(pageSource).toContain("mem.status === 'superseded'")
+    expect(pageSource).toContain("memory.superseded")
+    expect(pageSource).toContain('.mem-superseded')
+  })
+})

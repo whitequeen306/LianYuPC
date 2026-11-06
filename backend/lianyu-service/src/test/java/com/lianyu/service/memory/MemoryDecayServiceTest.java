@@ -52,7 +52,7 @@ class MemoryDecayServiceTest {
     @Test
     void settleDemotesAtMostDailyCap() {
         MemoryMetaMapper mapper = mock(MemoryMetaMapper.class);
-        MemoryDecayService service = new MemoryDecayService(mapper);
+        MemoryDecayService service = new MemoryDecayService(mapper, mock(MemoryOutboxService.class));
         List<MemoryMeta> rows = List.of(
                 row(1L, 0.10), row(2L, 0.12), row(3L, 0.14));
         when(mapper.selectList(any())).thenReturn(rows);
@@ -71,7 +71,7 @@ class MemoryDecayServiceTest {
     @Test
     void settleMaterializesDecayWithoutChangingTier() {
         MemoryMetaMapper mapper = mock(MemoryMetaMapper.class);
-        MemoryDecayService service = new MemoryDecayService(mapper);
+        MemoryDecayService service = new MemoryDecayService(mapper, mock(MemoryOutboxService.class));
         // 7 天、τ=365：s≈0.922，仍是 active。强度要写回（否则下次从旧基数继续乘，
         // 越滚越慢），但档位不该动。
         when(mapper.selectList(any())).thenReturn(List.of(row(9L, 1.0, NOW.minusDays(7))));
@@ -98,6 +98,26 @@ class MemoryDecayServiceTest {
 
     private static MemoryMeta row(long id, double strength) {
         return row(id, strength, NOW.minusDays(400));
+    }
+
+    @Test
+    void dormantRowsDropTheirVectorProjection() {
+        MemoryMetaMapper mapper = mock(MemoryMetaMapper.class);
+        MemoryOutboxService outbox = mock(MemoryOutboxService.class);
+        MemoryDecayService service = new MemoryDecayService(mapper, outbox);
+        MemoryMeta row = row(9L, 0.10);
+        row.setMilvusVecId("v-9");
+        when(mapper.selectList(any())).thenReturn(List.of(row));
+        when(mapper.updateById(any(MemoryMeta.class))).thenReturn(1);
+
+        service.settle(NOW);
+
+        ArgumentCaptor<MemoryMeta> captor = ArgumentCaptor.forClass(MemoryMeta.class);
+        verify(mapper).updateById((MemoryMeta) captor.capture());
+        assertEquals("dormant", captor.getValue().getStatus());
+        // 行留着（可以复活），但向量不再参与召回：标记 dropped 并让 outbox 删旧投影。
+        assertEquals("dropped", captor.getValue().getEmbeddingState());
+        verify(outbox).enqueueDelete(9L, "v-9");
     }
 
     private static MemoryMeta row(long id, double strength, LocalDateTime lastDecayAt) {

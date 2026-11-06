@@ -84,3 +84,21 @@ async def test_collect_survives_a_failing_query(monkeypatch):
 
     assert report["counters"]["memories_active"] == 1
     assert report["counters"]["episodes_active"] is None   # 单条查询挂了只标 None
+
+
+def test_collect_gives_up_at_the_total_budget(monkeypatch):
+    """MySQL 全挂时不能九条各等 2s（18s），并发 + 总预算才是体检该有的样子。"""
+
+    import asyncio
+
+    async def slow(_sql):
+        await asyncio.sleep(5)
+        return []
+
+    monkeypatch.setattr(health, "fetch_all", slow)
+    monkeypatch.setattr(health, "flags", lambda: health_flags())
+    monkeypatch.setattr(health, "HEALTH_TIMEOUT_SECONDS", 0.05)
+
+    snapshot = asyncio.run(health.collect())
+    assert snapshot["counters"]["memories_active"] is None
+    assert set(snapshot["counters"].values()) == {None}

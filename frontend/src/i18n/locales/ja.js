@@ -458,6 +458,7 @@ export default {
     sectorUnknown: '未分類',
     revive: '思い出させてあげる',
   reviveDone: '思い出したみたい',
+  superseded: '更新済み',
   quoteLabel: '本人の言葉',
     mute: 'もう話題にしないで',
     unmute: '話題にしてもいい',

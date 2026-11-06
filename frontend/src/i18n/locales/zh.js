@@ -464,6 +464,7 @@ export default {
     sectorUnknown: '未分类',
     revive: '让她想起来',
   reviveDone: '她想起来了',
+  superseded: '已被更新',
   quoteLabel: '原话',
     mute: '别再提',
     unmute: '恢复提起',
