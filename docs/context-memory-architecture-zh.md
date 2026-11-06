@@ -1088,3 +1088,19 @@ cd backend-agent && ./.venv/Scripts/python.exe -m app.memory.evaluation eval/mem
   `local/research/context-engineering-survey-2026-11.md`（生产）
 - 长期记忆部分见 [`memory-architecture-zh.md`](./memory-architecture-zh.md) 的参考列表（MemGPT / Mem0 /
   Zep / A-Mem / HippoRAG / MemoryBank / Generative Agents / MemoryOS / LoCoMo / LongMemEval）
+
+### 10.5 召回质量实测（2026-11-06，演练库 26 题）
+
+| 版本 | recall@5 | MRR | 负例 | 隔离 |
+|---|---|---|---|---|
+| 旧路径（画像槽位 + importance top20 + LIKE） | 7/24 | 0.112 | 0/2 | PASS |
+| v3 + 向量，但 core 混在 recall 里 | 11/24 | 0.147 | 0/2 | PASS |
+| core 独立槽 + 整行预算 + episode 原话 | 18/24 | 0.681 | 2/2 | PASS |
+
+三处改动对应三个真实故障：
+
+1. **core 记忆不能参与 recall 排名**。core/pinned 每轮都该出现，但它们一旦混进候选，就把 5 个位置占满（实测 501/517/533/527/504），真正相关的记忆一条进不来。现在 `core_rows()` 单独取、单独渲染，占 `core` 槽 260 token。
+2. **跨路要按名次融合，不能各自归一**。`MATCH` 分数与 cosine 不是一个量纲，各自除以本路最大值会让每路第一名都变成 1.0，事实永远挤满前五。改成 RRF（k=60）后，原话与事实按"被几路同时认可"排序。
+3. **原话也要进向量**。episode 只有 ngram 时，「猫生病那晚」对不上「团子吐了一夜」，8 道原话题全灭。现在场景结算时把原话投影进 v3（`memory_id = EPISODE_ID_OFFSET + episode_id`），回填脚本一并补历史。
+
+默认开关（2026-11-06 起）：`memory_recall_v3_enabled=true`、`memory_vector_recall_enabled=true`、`memory_dedupe_similarity_enabled=true`。旧路径只在 v3 抛错/超时（80ms 预算）时兜底，不再作为主路径。没有配 `embedding_api_key` 时向量路直接返回空，不会去等 HTTP 超时。

@@ -171,24 +171,36 @@ def test_render_limited_drops_whole_rows_and_reports_only_used_ids():
     assert block.count("- [") == len(used)
 
 
-async def test_recall_queries_core_candidates_and_episodes(monkeypatch):
+async def test_recall_queries_candidates_and_episodes(monkeypatch):
     calls = []
 
     async def fake_fetch_all(sql, params):
         if "memory_episode" in sql:
             calls.append("episodes")
             return []
-        calls.append("core" if "layer = 'core'" in sql else "candidates")
-        if "layer = 'core'" in sql:
-            return [_row(1, layer="core", pinned=1, rel=1.0)]
-        return [_row(2, rel=0.7)]
+        calls.append("candidates")
+        return [_row(2, summary="今天加班到十点", rel=0.7)]
 
     monkeypatch.setattr(recall_mod, "fetch_all", fake_fetch_all)
 
     rows = await recall_mod.recall(3, 7, "加班", now=NOW)
 
-    assert calls == ["candidates", "core", "episodes"]
-    assert [row["id"] for row in rows] == [1, 2]
+    # core 不再参与 recall 排名：它由 core_rows 单独取、单独占 core 槽。
+    assert calls == ["candidates", "episodes"]
+    assert [row["id"] for row in rows] == [2]
+
+
+async def test_core_rows_are_fetched_by_their_own_lane(monkeypatch):
+    async def fake_fetch_all(sql, params):
+        assert "layer = 'core'" in sql
+        return [_row(1, layer="core", pinned=1)]
+
+    monkeypatch.setattr(recall_mod, "fetch_all", fake_fetch_all)
+
+    rows = await recall_mod.core_rows(3, 7)
+
+    assert [row["id"] for row in rows] == [1]
+    assert rows[0]["rel"] == 1.0
 
 
 async def test_episode_rows_join_and_render_under_shared_experience(monkeypatch):
@@ -309,12 +321,18 @@ async def test_v3_block_marks_only_rows_that_made_it_in(monkeypatch):
                 {"id": 2, "memory_type": "FACT", "summary": "b"}]
 
     def fake_render(rows, now=None, max_tokens=400):
+        if not rows:
+            return "", []
         return "块", [1]
 
     async def fake_mark(rows):
         seen["ids"] = [row["id"] for row in rows]
 
+    async def fake_core(character_id, user_id, **kwargs):
+        return []
+
     monkeypatch.setattr("app.memory.recall.recall", fake_recall)
+    monkeypatch.setattr("app.memory.recall.core_rows", fake_core)
     monkeypatch.setattr("app.memory.recall.render_rows_limited", fake_render)
     monkeypatch.setattr("app.memory.recall.mark_injected", fake_mark)
 

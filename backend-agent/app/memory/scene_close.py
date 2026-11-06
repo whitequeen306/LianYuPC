@@ -167,6 +167,13 @@ async def close_pending_scene(
             continue
         if new_id:
             created += 1
+            await _project_episode(
+                user_id=user_id,
+                character_id=character_id,
+                episode_id=new_id,
+                summary=episode.summary,
+                event_time=episode.event_time or updated_at,
+            )
 
     if result.impression:
         created += await insert_reflection(
@@ -181,6 +188,34 @@ async def close_pending_scene(
     await _remember_closed(card)
     logger.info("scene closed conv=%s episodes=%d stored=%d", conversation_id, len(episodes), created)
     return created
+
+
+async def _project_episode(*, user_id: int, character_id: int, episode_id: int,
+                           summary: str, event_time: datetime) -> None:
+    """把原话投影进向量库；失败只记日志，原话已经落库了。"""
+    settings = get_settings()
+    if not getattr(settings, "memory_vectors_v3_enabled", False):
+        return
+    try:
+        from app import milvus_store
+        from app.memory.embedding import embed
+
+        vectors = await embed([summary])
+        if not vectors:
+            return
+        milvus_store.insert_v3(
+            character_id=character_id,
+            user_id=user_id,
+            memory_id=milvus_store.episode_vector_id(episode_id),
+            summary=summary,
+            memory_type="EPISODE",
+            layer="episode",
+            status="active",
+            event_time_ms=int(event_time.timestamp() * 1000),
+            vector=vectors[0],
+        )
+    except Exception as exc:  # noqa: BLE001 - 投影失败不影响原话
+        logger.warning("episode vector projection failed id=%s: %s", episode_id, exc)
 
 
 __all__ = ["MAX_SCENE_MESSAGES", "close_pending_scene", "load_scene_messages"]

@@ -286,3 +286,28 @@ async def test_memory_search_uses_vector_recall(memory_rows, monkeypatch):
 
     lines = await search_semantic(7, 3, "猫")
     assert lines[0] == "- 用户喜欢猫"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_embed_splits_requests_at_provider_batch_limit(client):
+    """DashScope 单次最多 10 条：一次发 25 条会 400，整批回填都会失败。"""
+    import json
+
+    sizes: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        n = len(body["input"])
+        sizes.append(n)
+        return httpx.Response(200, json={"data": [
+            {"index": i, "embedding": [float(i)]} for i in range(n)
+        ]})
+
+    respx.post(f"{EMB_BASE}/embeddings").mock(side_effect=handler)
+
+    vectors = await embed([f"t{i}" for i in range(25)], client=client)
+
+    assert sizes == [10, 10, 5]
+    assert vectors is not None and len(vectors) == 25
+    assert vectors[0] == [0.0]

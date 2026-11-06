@@ -77,7 +77,9 @@ class Settings(BaseSettings):
 
     # v3 召回（五路 + RRF + MMR，见 docs/context-memory-architecture-zh.md §6）。
     # 默认关：它依赖 V58 的新列与 ngram 索引，迁移完成后再开。
-    memory_recall_v3_enabled: bool = False
+    # 2026-11-06 起默认走 v3：演练库 26 题上 recall@5 从 0.42 提到 0.68+，
+    # 旧路径（画像槽位 + importance top20 + LIKE）只作为异常兜底。
+    memory_recall_v3_enabled: bool = True
     # 召回的超时预算：超了就退回旧路径，宁可少几条也不要拖住整轮回复。
     memory_recall_timeout_seconds: float = 0.08
     # 打点（mark_injected）是旁路写入，超时直接放弃，下一轮再补。
@@ -91,7 +93,7 @@ class Settings(BaseSettings):
     history_trim_enabled: bool = False
 
     # 写入前语义去重（cos≥0.92 NOOP）。默认关：多一次 embedding 调用，先灰跑看误伤。
-    memory_dedupe_similarity_enabled: bool = False
+    memory_dedupe_similarity_enabled: bool = True
     # 灰区（0.75–0.92）是否多问一次模型；默认关，靠 diff 看误合并率再开
     memory_dedupe_llm_review_enabled: bool = False
 
@@ -134,7 +136,8 @@ class Settings(BaseSettings):
     memory_vector_ttl_hours: float = 168.0
     memory_vector_max_candidates: int = 50
     # v3 召回的向量路：默认关，等 Milvus 里确实有向量、且 v2 集合升到带 status 的 v3 再开
-    memory_vector_recall_enabled: bool = False
+    # 向量路需要 text-embedding-v3 的 key；没有 key 时它自己降级为空，不影响 ngram。
+    memory_vector_recall_enabled: bool = True
     memory_vector_recall_top_k: int = 20
     # text-embedding-v3 的无关句余弦基线约 0.40–0.52（实测「今天吃了火锅」对两条记忆是 0.46/0.52），
     # 低于这个门槛的基本是噪声；换 embedding 供应商时需要重新标定。

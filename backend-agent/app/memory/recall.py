@@ -36,6 +36,8 @@ WHERE character_id = %s AND user_id = %s
   AND status = 'active'
   AND (valid_to IS NULL OR valid_to > NOW())
   AND muted = 0
+  AND pinned = 0
+  AND layer <> 'core'
 ORDER BY rel DESC, importance DESC, created_at DESC
 LIMIT %s
 """
@@ -80,15 +82,28 @@ _EPISODE_SQL_RELEVANT = _EPISODE_SQL.replace(
 )
 
 
+_EPISODE_VECTOR_SQL = """
+SELECT id, summary, 'EPISODE' AS memory_type, 0.7 AS importance, 1.0 AS strength,
+       %s AS tau_days, NULL AS fade_level, event_time AS last_decay_at,
+       last_injected_at, event_time, created_at, quote, 'episode' AS layer, 0 AS pinned,
+       0.0 AS rel
+FROM memory_episode
+WHERE id IN ({placeholders})
+  AND status = 'active'
+"""
+
+
 _VECTOR_SQL_TEMPLATE = """
 SELECT id, summary, memory_type, importance, strength, tau_days, fade_level,
        last_decay_at, last_injected_at, event_time, created_at, quote, layer, pinned,
-       1.0 AS rel
+       0.0 AS rel
 FROM memory_meta
 WHERE id IN ({placeholders})
   AND status = 'active'
   AND (valid_to IS NULL OR valid_to > NOW())
   AND muted = 0
+  AND pinned = 0
+  AND layer <> 'core'
 """
 
 
@@ -107,6 +122,9 @@ async def _vector_rows(
     """
     settings = get_settings()
     if not settings.memory_vector_recall_enabled:
+        return []
+    # 没配 key 时别去试：embed() 会等 HTTP 超时，一次召回能把回复拖慢好几秒。
+    if getattr(settings, "embedding_api_key", None) == "":
         return []
     text = (query or "").strip()
     if not text:
@@ -134,29 +152,57 @@ async def _vector_rows(
     if not hits:
         return []
 
+    from app import milvus_store
+
+    offset = int(getattr(milvus_store, "EPISODE_ID_OFFSET", 0))
     floor = float(getattr(settings, "memory_vector_min_similarity", 0.0) or 0.0)
     scores: dict[int, float] = {}
+    episode_scores: dict[int, float] = {}
     for memory_id, score in hits:
         if float(score) < floor:
             continue
         key = int(memory_id)
-        scores[key] = max(float(score), scores.get(key, -1.0))
-    if not scores:
+        bucket = episode_scores if offset and key >= offset else scores
+        bucket[key] = max(float(score), bucket.get(key, -1.0))
+    if not scores and not episode_scores:
         return []
-    placeholders = ", ".join(["%s"] * len(scores))
-    try:
-        rows = await fetch_all(
-            _VECTOR_SQL_TEMPLATE.format(placeholders=placeholders),
-            tuple(scores),
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("vector rows fetch failed: %s", exc)
-        return []
-    for row in rows or []:
-        hit = scores.get(int(row.get("id") or 0))
-        if hit is not None:
+
+    rows: list[dict[str, Any]] = []
+    if scores:
+        placeholders = ", ".join(["%s"] * len(scores))
+        try:
+            rows = list(await fetch_all(
+                _VECTOR_SQL_TEMPLATE.format(placeholders=placeholders),
+                tuple(scores),
+            ) or [])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("vector rows fetch failed: %s", exc)
+        for row in rows:
+            hit = scores.get(int(row.get("id") or 0))
+            if hit is not None:
+                row["rel"] = max(float(row.get("rel") or 0.0), hit)
+
+    if episode_scores:
+        # 原话也进向量：只靠 ngram 时「猫生病那晚」对不上「团子吐了一夜」。
+        placeholders = ", ".join(["%s"] * len(episode_scores))
+        try:
+            raw_ids = [key - offset for key in episode_scores]
+            episodes = await fetch_all(
+                _EPISODE_VECTOR_SQL.format(placeholders=placeholders),
+                (EPISODE_TAU_DAYS, *raw_ids),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("episode vector rows failed: %s", exc)
+            episodes = []
+        for row in episodes or []:
+            hit = episode_scores.get(offset + int(row.get("id") or 0))
+            if hit is None:
+                continue
+            row["id"] = "ep-" + str(row["id"])
             row["rel"] = max(float(row.get("rel") or 0.0), hit)
-    return list(rows or [])
+            row["_lane"] = "vector"
+            rows.append(row)
+    return rows
 
 
 # MySQL 的 ngram 分词没有停用词：短句里「今天」这种高频二元组会把不相干的行
@@ -199,11 +245,11 @@ async def load_candidates(
         rows = [row for row in rows or []
                 if _mentions_any(str(row.get("summary") or ""), content)]
     rows = [{**row, "_lane": "ngram"} for row in rows or []]
-    # core / pinned 是"设定"，不该因为与当前话题不相关就被挤掉。
-    core = await fetch_all(_CORE_SQL, (character_id, user_id))
-    seen = {row.get("id") for row in core}
-    merged = [{**row, "_lane": "core"} for row in core]
-    merged += [row for row in rows if row.get("id") not in seen]
+    # core / pinned 是"设定"，单独占 core 槽位，不参与 recall 的名次竞争：
+    # 混在一起时它们每轮都排前 5，把真正相关的记忆挤出去（演练里 5 个位置被
+    # 501/517/533/527/504 占满，等于没召回）。
+    merged = list(rows)
+    seen = {row.get("id") for row in merged}
 
     # 现场（episode）：事实能推断，原话不能。它只占候选的一半上限，
     # 避免几条生动的原话把"设定"挤出去。
@@ -219,7 +265,9 @@ async def load_candidates(
     seen.update(row.get("id") for row in episodes)
 
     vector_rows = [{**row, "_lane": "vector"} for row in await _vector_rows(character_id, user_id, query, top_k=limit)]
-    return [*merged, *episodes, *[row for row in vector_rows if row.get("id") not in seen]]
+    # 同一 id 可能同时被 ngram 与向量召回：都留着，交给 rank_rows 合并取较高的 rel，
+    # 而不是"先到先得"——否则原话先被 ngram 以低分收录，就把向量的高分版本丢了。
+    return [*merged, *episodes, *vector_rows]
 
 
 async def mark_injected(rows: list[dict[str, Any]]) -> int:
@@ -301,35 +349,52 @@ def rank_rows(
     limit: int = retrieve.DEFAULT_RECALL_LIMIT,
     now: datetime | None = None,
 ) -> list[dict[str, Any]]:
-    """打分 + 冷却 + MMR。纯函数，便于用固定行做回归。"""
+    """跨路融合 + 打分 + 冷却 + MMR。
+
+    为什么要融合而不是把每一路各自归一：ngram 的 MATCH 分数与向量 cosine 不在
+    一个量纲上，各自除以本路最大值会让"这一路最强的那个"都变成 1.0 —— 40 条
+    事实里总有一条 MATCH 最高，于是事实永远挤满前五，向量召回到的原话反而排不进来。
+    这里按名次做 RRF（k=60），只在同一路内部比高低，跨路比的是"被几路同时认可"。
+    """
     if not rows:
         return []
 
-    lane_max: dict[str, float] = {}
+    merged: dict[str, dict[str, Any]] = {}
     for row in rows:
+        key = str(row.get("id"))
         lane = str(row.get("_lane") or "ngram")
-        lane_max[lane] = max(lane_max.get(lane, 0.0), _raw_rel(row))
+        rel = _raw_rel(row)
+        current = merged.get(key)
+        if current is None:
+            merged[key] = {**row, "_lanes": {lane: rel}}
+            continue
+        current["_lanes"][lane] = max(rel, current["_lanes"].get(lane, 0.0))
+        if rel > _raw_rel(current):
+            current["rel"] = rel
+
+    lanes: dict[str, list[dict[str, Any]]] = {}
+    for row in merged.values():
+        for lane in row["_lanes"]:
+            lanes.setdefault(lane, []).append(row)
+    for ranked in lanes.values():
+        ranked.sort(key=lambda item: item["_lanes"].get(str(item.get("_lane") or ""), 0.0)
+                    or max(item["_lanes"].values()), reverse=True)
+        for position, row in enumerate(ranked, start=1):
+            row["_rrf"] = row.get("_rrf", 0.0) + 1.0 / (retrieve.RRF_K + position)
+
+    best = max((row.get("_rrf", 0.0) for row in merged.values()), default=0.0)
+    if best <= 0:
+        return []
+
     scored: list[dict[str, Any]] = []
-    for row in rows:
+    for row in merged.values():
         core = str(row.get("layer") or "") == "core" or bool(row.get("pinned"))
         # 设定与钉住项不受冷却约束：它们是"她是谁"，不该因为刚提过就消失。
         if not core and retrieve.in_cooldown(row, now):
             continue
-        lane = str(row.get("_lane") or "ngram")
-        raw = _raw_rel(row)
-        # 非设定项必须有真实信号才进块：MATCH 只有 1e-8 的行只是"按重要度排进来的"，
-        # 放进去会让「加班」的召回块里出现「她养了一只猫」。
-        if not core and raw <= 0:
+        if not core and max(row["_lanes"].values(), default=0.0) <= 0:
             continue
-        # 这一路全是"没真的命中"的行时 relevance 是 0，而不是 1。
-        # 再有：整路最强也只有 0.05（episode 的 LIKE 兜底）时，按池子归一仍会给它 1.0，
-        # 这里再乘一个"这一路本身有多强"的折扣，弱信号就排在强信号后面。
-        if core:
-            relevance = 1.0
-        elif lane_max.get(lane, 0.0) <= 0:
-            relevance = 0.0
-        else:
-            relevance = (raw / lane_max[lane]) * min(1.0, lane_max[lane] / LANE_STRONG_REL)
+        relevance = 1.0 if core else row.get("_rrf", 0.0) / best
         scored.append({
             **row,
             "score": retrieve.score_candidate(row, relevance=relevance, now=now),
@@ -337,6 +402,12 @@ def rank_rows(
 
     scored.sort(key=lambda row: row["score"], reverse=True)
     return retrieve.mmr_select(scored, limit=limit)
+
+
+async def core_rows(character_id: int, user_id: int, *, limit: int = 6) -> list[dict[str, Any]]:
+    """设定类记忆（core / pinned）；单独渲染，不参与 recall 排序。"""
+    rows = await fetch_all(_CORE_SQL, (character_id, user_id))
+    return [{**row, "rel": 1.0, "_lane": "core"} for row in rows or []][:limit]
 
 
 async def recall(
@@ -395,5 +466,5 @@ def render_rows(rows: list[dict[str, Any]], now: datetime | None = None) -> str 
     return render_rows_limited(rows, now)[0]
 
 
-__all__ = ["CANDIDATE_LIMIT", "load_candidates", "rank_rows", "recall", "render_rows",
+__all__ = ["core_rows", "CANDIDATE_LIMIT", "load_candidates", "rank_rows", "recall", "render_rows",
            "render_rows_limited"]

@@ -24,10 +24,26 @@ from app.http_client import new_client
 logger = logging.getLogger(__name__)
 
 
+# DashScope text-embedding-v3 单次最多 10 条；超了直接 400，整批回填会全失败。
+MAX_BATCH = 10
+
+
 async def embed(texts: list[str], *, client: httpx.AsyncClient | None = None) -> list[list[float]] | None:
-    """批量向量化；失败返回 None。"""
+    """批量向量化；按供应商上限切片，失败返回 None。"""
     if not texts:
         return []
+    vectors: list[list[float]] = []
+    for start in range(0, len(texts), MAX_BATCH):
+        chunk = texts[start:start + MAX_BATCH]
+        part = await _embed_batch(chunk, client=client)
+        if part is None:
+            return None
+        vectors.extend(part)
+    return vectors
+
+
+async def _embed_batch(texts: list[str], *, client: httpx.AsyncClient | None = None) -> list[list[float]] | None:
+    """一次 HTTP 请求（调用方保证 <= MAX_BATCH）。"""
     settings = get_settings()
     if not settings.embedding_api_key:
         logger.debug("embedding skipped: no api key")

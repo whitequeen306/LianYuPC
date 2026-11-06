@@ -203,7 +203,7 @@ def _render_profile_block(rows: list[dict[str, Any]]) -> str | None:
 async def _load_v3_block(character_id: int, user_id: int,
                          last_user_message: str | None) -> str | None:
     """v3 召回的一次尝试；失败或空结果返回 None，让调用方退回旧路径。"""
-    from app.memory.recall import recall, render_rows_limited
+    from app.memory.recall import core_rows, recall, render_rows_limited
 
     settings = get_settings()
     # getattr 兜底：测试与旧调用方常传一个只有个别字段的 settings 替身。
@@ -223,9 +223,21 @@ async def _load_v3_block(character_id: int, user_id: int,
     except Exception as exc:  # noqa: BLE001 - 召回失败不能让整块记忆消失
         logger.warning("memory recall v3 failed, falling back: %s", exc)
         return None
+    # 设定（core/pinned）占 core 槽 260 token，单独渲染、不参与 recall 排序；
+    # 否则每轮前 5 个位置都被它们占满，真正和当下有关的记忆挤不进来。
+    try:
+        pinned = await asyncio.wait_for(core_rows(character_id, user_id), timeout=recall_timeout)
+    except Exception as exc:  # noqa: BLE001 - 设定取不到不该拖垮召回
+        logger.warning("memory core rows failed: %s", exc)
+        pinned = []
+    core_block, _ = render_rows_limited(pinned, max_tokens=260)
+
     # recall 槽 400 token：按整行卡。块里没出现的行不算「注入过」，
     # 否则被截掉的尾巴会被打进冷却期，反而再也不出现。
     block, used = render_rows_limited(rows, max_tokens=400)
+    if core_block:
+        joiner = chr(10) + chr(10)
+        block = core_block + joiner + block if block else core_block
     if block and used:
         try:
             from app.memory.recall import mark_injected

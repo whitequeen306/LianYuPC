@@ -22,6 +22,15 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# 原话（memory_episode）也进同一集合：用偏移量把两类 id 区分开，避免和
+# memory_meta 的自增 id 撞车（episode 901 与记忆 901 是两条不同的东西）。
+EPISODE_ID_OFFSET = 1_000_000_000
+
+
+def episode_vector_id(episode_id: int) -> int:
+    return EPISODE_ID_OFFSET + int(episode_id)
+
+
 _client: Any = None
 
 
@@ -315,4 +324,4 @@ def reset() -> None:
     _client_v3 = None
 
 
-__all__ = ["delete", "flush_v3", "insert", "insert_v3", "reset", "search", "search_hits", "search_hits_v3"]
+__all__ = ["EPISODE_ID_OFFSET", "episode_vector_id", "delete", "flush_v3", "insert", "insert_v3", "reset", "search", "search_hits", "search_hits_v3"]

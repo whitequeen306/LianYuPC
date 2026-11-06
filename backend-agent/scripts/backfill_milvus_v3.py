@@ -19,6 +19,13 @@ import sys
 
 from app.config import get_settings
 
+_EPISODE_SELECT = (
+    "SELECT id, character_id, user_id, summary, event_time "
+    "FROM memory_episode "
+    "WHERE status = 'active' AND summary IS NOT NULL AND summary <> '' "
+    "ORDER BY id LIMIT %s"
+)
+
 _SELECT = (
     "SELECT id, character_id, user_id, summary, memory_type, layer, status, event_time "
     "FROM memory_meta "
@@ -100,6 +107,43 @@ async def backfill(limit: int = 5000, batch_size: int = 64, dry_run: bool = Fals
                 stats["failed"] += 1
             else:
                 stats["written"] += 1
+    if not dry_run:
+        # 原话单独一遍：它们和 memory_meta 共用集合，靠 EPISODE_ID_OFFSET 区分。
+        episodes = await fetch_all(_EPISODE_SELECT, (limit,))
+        stats["scanned"] += len(episodes or [])
+        if episodes:
+            client = milvus_store._connect_v3()  # noqa: SLF001
+            offset = int(milvus_store.EPISODE_ID_OFFSET)
+            vector_ids = [offset + int(row["id"]) for row in episodes]
+            try:
+                found = client.query(
+                    collection_name=get_settings().milvus_v3_collection,
+                    filter="memory_id in [" + ", ".join(str(i) for i in vector_ids) + "]",
+                    output_fields=["memory_id"],
+                )
+                existing = {int(item.get("memory_id") or 0) for item in found or []}
+            except Exception as exc:  # noqa: BLE001
+                print(f"query existing episodes failed, write anyway: {exc}")
+                existing = set()
+            pending = [row for row in episodes if offset + int(row["id"]) not in existing]
+            stats["skipped"] += len(episodes) - len(pending)
+            if pending:
+                vectors = await embed([row["summary"] for row in pending])
+                if not vectors or len(vectors) != len(pending):
+                    stats["failed"] += len(pending)
+                else:
+                    for row, vector in zip(pending, vectors):
+                        written = milvus_store.insert_v3(
+                            int(row["character_id"]), int(row["user_id"]),
+                            offset + int(row["id"]), str(row["summary"]),
+                            "EPISODE", "episode", "active",
+                            _event_time_ms(row.get("event_time")), vector,
+                        )
+                        if written is None:
+                            stats["failed"] += 1
+                        else:
+                            stats["written"] += 1
+
     if stats["written"]:
         # 和 relay 一样：不刷的话刚回填的向量在 search 里看不见。
         milvus_store.flush_v3()
