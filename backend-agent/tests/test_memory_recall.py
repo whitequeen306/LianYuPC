@@ -376,3 +376,42 @@ async def test_v3_block_gives_up_when_recall_exceeds_budget(monkeypatch, caplog)
 def test_core_lane_respects_mute():
     """钉住/核心记忆也要能"别再提"：muted 是用户意志，优先级高于核心身份设定。"""
     assert "muted = 0" in recall_mod._CORE_SQL
+
+
+@pytest.mark.asyncio
+async def test_mark_injected_revives_archived_rows(monkeypatch):
+    from contextlib import asynccontextmanager
+
+    calls = []
+
+    @asynccontextmanager
+    async def fake_tx():
+        yield object()
+
+    async def fake_execute(cur, sql, params=()):
+        calls.append((sql, params))
+        return 1
+
+    monkeypatch.setattr(recall_mod.write, "transaction", fake_tx)
+    monkeypatch.setattr(recall_mod.write, "execute_write", fake_execute)
+
+    await recall_mod.mark_injected([_row(7, fade_level="archived")])
+
+    assert len(calls) == 2
+    revive_sql, revive_params = calls[1]
+    assert "GREATEST(strength, 0.55)" in revive_sql
+    assert "fade_level = 'active'" in revive_sql
+    assert revive_params == (7,)
+
+
+def test_revive_statement_is_whitelisted():
+    from app.write import WriteNotAllowed, _assert_allowed
+
+    _assert_allowed(
+        "UPDATE memory_meta SET strength = GREATEST(strength, 0.55), "
+        "fade_level = 'active', status = 'active', archived_at = NULL, "
+        "revival_count = revival_count + 1 WHERE id IN (%s)"
+    )
+
+    with pytest.raises(WriteNotAllowed):
+        _assert_allowed("UPDATE memory_meta SET strength = 1 WHERE id IN (%s)")

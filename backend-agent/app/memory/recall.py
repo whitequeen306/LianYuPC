@@ -189,6 +189,7 @@ async def mark_injected(rows: list[dict[str, Any]]) -> int:
     """
     meta_ids: list[int] = []
     episode_ids: list[int] = []
+    archived_ids: list[int] = []
     for row in rows or []:
         raw = str(row.get("id") or "")
         if raw.startswith("ep-"):
@@ -198,9 +199,13 @@ async def mark_injected(rows: list[dict[str, Any]]) -> int:
                 continue
             continue
         try:
-            meta_ids.append(int(raw))
+            memory_id = int(raw)
         except ValueError:
             continue
+        meta_ids.append(memory_id)
+        if str(row.get("fade_level") or "") == "archived":
+            # 被召回到 = 她想起来了：抬回 faded 以上，否则每次都要重新"挖"一遍
+            archived_ids.append(memory_id)
     if not meta_ids and not episode_ids:
         return 0
 
@@ -213,6 +218,15 @@ async def mark_injected(rows: list[dict[str, Any]]) -> int:
                 "UPDATE memory_meta SET last_injected_at = NOW(), last_recalled_at = NOW(), "
                 f"recall_count = recall_count + 1 WHERE id IN ({placeholders})",
                 tuple(meta_ids),
+            )
+        if archived_ids:
+            placeholders = ", ".join(["%s"] * len(archived_ids))
+            touched += await write.execute_write(
+                cur,
+                "UPDATE memory_meta SET strength = GREATEST(strength, 0.55), "
+                "fade_level = 'active', status = 'active', archived_at = NULL, "
+                f"revival_count = revival_count + 1 WHERE id IN ({placeholders})",
+                tuple(archived_ids),
             )
         if episode_ids:
             placeholders = ", ".join(["%s"] * len(episode_ids))

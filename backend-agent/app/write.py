@@ -40,6 +40,8 @@ _ALLOWED_UPDATES = (
     "update memory_meta set status = 'superseded'",
     # 召回注入后打点：冷却与"多久没被想起"都靠它，只允许这一种形状
     "update memory_meta set last_injected_at",
+    # 复活：沉底的记忆被强 cue 命中，抬回 active（只抬强度与档位，不动摘要）
+    "update memory_meta set strength = greatest(strength, 0.55)",
     "update memory_outbox set status = %s",
     "update memory_outbox set attempts = %s",
     "update memory_outbox set next_attempt_at",
