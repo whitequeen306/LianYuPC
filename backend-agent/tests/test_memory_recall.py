@@ -98,6 +98,17 @@ async def test_vector_lane_is_off_by_default(monkeypatch):
     assert await recall_mod.load_candidates(3, 7, "海") == []
 
 
+def test_relevance_is_normalised_per_lane():
+    # ngram 的 MATCH 分数可以到 20+，向量的 cosine 只在 0-1；不按池子归一，
+    # 向量路会被永久压死。
+    ngram = _row(1, rel=30.0, _lane="ngram")
+    vector = _row(2, rel=0.6, _lane="vector")
+
+    ranked = recall_mod.rank_rows([ngram, vector], limit=2, now=NOW)
+
+    assert [row["score"] for row in ranked][0] == pytest.approx(ranked[1]["score"])
+
+
 def test_core_rows_ignore_cooldown():
     rows = [_row(1, layer="core", last_injected_at=NOW)]
 

@@ -145,10 +145,15 @@ async def load_candidates(
         _CANDIDATE_SQL,
         ((query or "").strip(), character_id, user_id, limit),
     )
+    # 每个候选都带 lane：ngram 的 MATCH 分数与向量的 cosine 不可比，
+    # 必须先按各自池子的最大值归一，再进同一个打分器（否则余弦 0.8 会被
+    # 当成 0.8/20 的 4 分，向量路等于没开）。
+    rows = [{**row, "_lane": "ngram"} for row in rows or []]
     # core / pinned 是"设定"，不该因为与当前话题不相关就被挤掉。
     core = await fetch_all(_CORE_SQL, (character_id, user_id))
     seen = {row.get("id") for row in core}
-    merged = [*core, *[row for row in rows if row.get("id") not in seen]]
+    merged = [{**row, "_lane": "core"} for row in core]
+    merged += [row for row in rows if row.get("id") not in seen]
 
     # 现场（episode）：事实能推断，原话不能。它只占候选的一半上限，
     # 避免几条生动的原话把"设定"挤出去。
@@ -159,10 +164,10 @@ async def load_candidates(
         )
     except Exception:  # noqa: BLE001 - 老库没 V58 时 episode 表不存在，降级即可
         episodes = []
-    episodes = [row for row in (episodes or []) if row.get("id") not in seen]
+    episodes = [{**row, "_lane": "episode"} for row in (episodes or []) if row.get("id") not in seen]
     seen.update(row.get("id") for row in episodes)
 
-    vector_rows = await _vector_rows(character_id, user_id, query, top_k=limit)
+    vector_rows = [{**row, "_lane": "vector"} for row in await _vector_rows(character_id, user_id, query, top_k=limit)]
     return [*merged, *episodes, *[row for row in vector_rows if row.get("id") not in seen]]
 
 
@@ -200,20 +205,22 @@ def rank_rows(
     if not rows:
         return []
 
-    max_rel = max((float(row.get("rel") or 0.0) for row in rows), default=0.0) or 1.0
+    lane_max: dict[str, float] = {}
+    for row in rows:
+        lane = str(row.get("_lane") or "ngram")
+        lane_max[lane] = max(lane_max.get(lane, 0.0), float(row.get("rel") or 0.0))
     scored: list[dict[str, Any]] = []
     for row in rows:
         core = str(row.get("layer") or "") == "core" or bool(row.get("pinned"))
         # 设定与钉住项不受冷却约束：它们是"她是谁"，不该因为刚提过就消失。
         if not core and retrieve.in_cooldown(row, now):
             continue
+        lane = str(row.get("_lane") or "ngram")
+        raw = float(row.get("rel") or 0.0)
+        relevance = 1.0 if core or lane_max.get(lane, 0.0) <= 0 else raw / lane_max[lane]
         scored.append({
             **row,
-            "score": retrieve.score_candidate(
-                row,
-                relevance=1.0 if core else float(row.get("rel") or 0.0) / max_rel,
-                now=now,
-            ),
+            "score": retrieve.score_candidate(row, relevance=relevance, now=now),
         })
 
     scored.sort(key=lambda row: row["score"], reverse=True)
