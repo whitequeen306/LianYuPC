@@ -568,6 +568,10 @@ function glow(x, y, radius, hex, alpha) {
   ctx.globalAlpha = prevAlpha
 }
 
+function mutedAlpha(alpha, muted) {
+  return muted ? alpha * 0.35 : alpha
+}
+
 function drawBackground() {
   if (!ctx) return
   const { width, height } = viewport
@@ -869,8 +873,12 @@ function render(now) {
 
     const base = depthFade(point.depth)
     const strength = Number.isFinite(node.strength) ? node.strength : 1
-    const alpha = dimmed ? base * 0.14 : base * (0.78 + node.importance * 0.22) * (0.55 + 0.45 * strength)
-    const radius = Math.max(1.6, node.size * point.scale)
+    // 静音是「别再提了」，不是「没有过」：留在图上，但暗到不会先被看见。
+    const alpha = mutedAlpha(
+      dimmed ? base * 0.14 : base * (0.78 + node.importance * 0.22) * (0.55 + 0.45 * strength),
+      node.muted
+    )
+    const radius = Math.max(1.6, node.size * point.scale * (node.muted ? 0.78 : 1))
 
     glow(point.x, point.y, radius * (isSelected || isHovered ? 3.2 : 1.75), node.color, alpha)
     // 芯用扇区色画实心、再点一颗小白点：颜色负责「是哪一类」，白点负责「这里有一颗」
@@ -883,6 +891,15 @@ function render(now) {
     ctx.arc(point.x, point.y, Math.max(0.42, radius * 0.3), 0, TAU)
     ctx.fillStyle = rgba('#ffffff', dimmed ? 0.28 : 0.88)
     ctx.fill()
+
+    // 钉住的记忆加一圈暖金细环：它不衰减，图上也不该显得"快没了"。
+    if (node.pinned) {
+      ctx.beginPath()
+      ctx.arc(point.x, point.y, radius + 2.6, 0, TAU)
+      ctx.strokeStyle = rgba('#fff1c9', dimmed ? 0.18 : 0.5)
+      ctx.lineWidth = 0.9
+      ctx.stroke()
+    }
     ctx.globalCompositeOperation = 'lighter'
 
     if (isSelected || isHovered || isHighlighted) {

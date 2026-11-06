@@ -343,6 +343,7 @@ export function buildBrainGraph({
         strength: memory.strength,
         fadeLevel: memory.fadeLevel,
         pinned: memory.pinned,
+        muted: memory.muted,
         layer: memory.layer,
         // 半径方向压扁、z 方向拉开：转动时四瓣会前后错开，不再是平面色块
         pos: [

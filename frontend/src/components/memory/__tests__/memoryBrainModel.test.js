@@ -216,3 +216,23 @@ describe('mulberry32', () => {
     expect(mulberry32(42)()).not.toBe(c())
   })
 })
+
+describe('钉住与静音', () => {
+  it('节点带上 pinned / muted，静音的记忆仍然留在图里', () => {
+    const graph = buildBrainGraph({
+      memories: [
+        memory(1, { pinned: true }),
+        memory(2, { muted: true, importance: 0.9 })
+      ],
+      now: NOW
+    })
+
+    const pinned = graph.memoryNodes.find((node) => node.memoryId === 1)
+    const muted = graph.memoryNodes.find((node) => node.memoryId === 2)
+
+    expect(pinned.pinned).toBe(true)
+    expect(pinned.muted).toBe(false)
+    expect(muted.muted).toBe(true)
+    expect(muted.pos).toHaveLength(3)
+  })
+})
