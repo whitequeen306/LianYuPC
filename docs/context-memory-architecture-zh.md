@@ -941,6 +941,15 @@ cron 可用 `lianyu.memory.consolidate.cron` 覆盖）。
 | Milvus v3 建集合 | `python -m scripts.init_milvus_v3` → `memory_vectors_v3`（1024 维、HNSW COSINE） |
 | v3 写入/检索 | 插入 active + superseded 两行；`search_hits_v3` 只返回 active，换角色过滤返回空（租户隔离成立） |
 | backfill dry-run | `{'scanned': 2, 'would_write': 2, 'written': 0, ...}`（dry-run 不连 Milvus、不调 embedding） |
+| 真实回填（text-embedding-v3） | 2 条记忆写入 v3，`failed=0`；查询「加班」cos=1.0、「工作到深夜很疲惫」0.847 |
+| 向量路开关对比 | 关：改写句（「工作到深夜，身心俱疲」）召回 **0 条**；开：正确召回「今天加班到很晚」；无关句（「今天吃了火锅」）两档都为 0 条 |
+
+embedding 接通后又补了两道精度闸：
+
+- **相似度下限** `memory_vector_min_similarity=0.55`：text-embedding-v3 对无关句也给 0.40–0.52
+  （「今天吃了火锅」对两条记忆是 0.46/0.52），不设下限会把不相干的记忆召回来。
+- **实词二元组闸**：MySQL 的 ngram 没有停用词，短句里「今天」会把「今天加班到很晚」拉进来；
+  Python 侧在候选出库后要求命中至少一个非停用词二元组，避免「今天吃了火锅」召回加班记忆。
 
 两个只在真机上才暴露的坑：
 

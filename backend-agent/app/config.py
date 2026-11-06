@@ -136,6 +136,9 @@ class Settings(BaseSettings):
     # v3 召回的向量路：默认关，等 Milvus 里确实有向量、且 v2 集合升到带 status 的 v3 再开
     memory_vector_recall_enabled: bool = False
     memory_vector_recall_top_k: int = 20
+    # text-embedding-v3 的无关句余弦基线约 0.40–0.52（实测「今天吃了火锅」对两条记忆是 0.46/0.52），
+    # 低于这个门槛的基本是噪声；换 embedding 供应商时需要重新标定。
+    memory_vector_min_similarity: float = 0.55
 
     # 记忆块（画像 + 关系 + 场景 + 召回）合起来的 token 上限；0 表示不设限
     memory_context_max_tokens: int = 1100

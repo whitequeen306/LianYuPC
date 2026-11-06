@@ -134,10 +134,15 @@ async def _vector_rows(
     if not hits:
         return []
 
+    floor = float(getattr(settings, "memory_vector_min_similarity", 0.0) or 0.0)
     scores: dict[int, float] = {}
     for memory_id, score in hits:
+        if float(score) < floor:
+            continue
         key = int(memory_id)
         scores[key] = max(float(score), scores.get(key, -1.0))
+    if not scores:
+        return []
     placeholders = ", ".join(["%s"] * len(scores))
     try:
         rows = await fetch_all(
@@ -152,6 +157,26 @@ async def _vector_rows(
         if hit is not None:
             row["rel"] = max(float(row.get("rel") or 0.0), hit)
     return list(rows or [])
+
+
+# MySQL 的 ngram 分词没有停用词：短句里「今天」这种高频二元组会把不相干的行
+# 拉进来（实测「今天吃了火锅」召回「今天加班到很晚」）。生产库靠 IDF 压住大部分，
+# 但只含常见词的问句仍会漏进来，所以在 Python 侧再要求命中一个"实词二元组"。
+_STOP_BIGRAMS = frozenset(
+    """今天 明天 昨天 现在 刚才 时候 什么 怎么 真的 有点 还是 就是 可以 因为 所以
+    但是 然后 已经 一直 我们 你们 他们 自己 一个 一下 觉得 知道 感觉""".split()
+)
+
+
+def _content_bigrams(text: str) -> set[str]:
+    chars = [ch for ch in (text or "") if not ch.isspace()]
+    grams = {chars[i] + chars[i + 1] for i in range(len(chars) - 1)}
+    return {g for g in grams if g not in _STOP_BIGRAMS}
+
+
+def _mentions_any(summary: str, grams: set[str]) -> bool:
+    text = summary or ""
+    return any(gram in text for gram in grams)
 
 
 async def load_candidates(
@@ -169,6 +194,10 @@ async def load_candidates(
     # 每个候选都带 lane：ngram 的 MATCH 分数与向量的 cosine 不可比，
     # 必须先按各自池子的最大值归一，再进同一个打分器（否则余弦 0.8 会被
     # 当成 0.8/20 的 4 分，向量路等于没开）。
+    content = _content_bigrams(text)
+    if content:
+        rows = [row for row in rows or []
+                if _mentions_any(str(row.get("summary") or ""), content)]
     rows = [{**row, "_lane": "ngram"} for row in rows or []]
     # core / pinned 是"设定"，不该因为与当前话题不相关就被挤掉。
     core = await fetch_all(_CORE_SQL, (character_id, user_id))

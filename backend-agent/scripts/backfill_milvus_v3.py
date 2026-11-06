@@ -100,6 +100,9 @@ async def backfill(limit: int = 5000, batch_size: int = 64, dry_run: bool = Fals
                 stats["failed"] += 1
             else:
                 stats["written"] += 1
+    if stats["written"]:
+        # 和 relay 一样：不刷的话刚回填的向量在 search 里看不见。
+        milvus_store.flush_v3()
     return stats
 
 

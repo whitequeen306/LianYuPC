@@ -454,3 +454,53 @@ def test_weak_lane_signal_ranks_below_a_stronger_one():
     ranked = recall_mod.rank_rows([meta, ep], limit=2, now=NOW)
 
     assert [row["id"] for row in ranked] == [1, "ep-9"]
+
+
+@pytest.mark.asyncio
+async def test_vector_lane_drops_hits_below_similarity_floor(monkeypatch):
+    # text-embedding-v3 对无关句也给 0.4–0.5，没有下限时「今天吃了火锅」会把
+    # 她昨天加班的事召回来。门槛是配置项，换 embedding 供应商时要重标。
+    monkeypatch.setattr(
+        recall_mod, "get_settings",
+        lambda: SimpleNamespace(
+            memory_vector_recall_enabled=True,
+            memory_vector_recall_top_k=10,
+            memory_vector_min_similarity=0.55,
+        ),
+    )
+
+    async def fake_embed(texts):
+        return [[0.1, 0.2, 0.3]]
+
+    async def fake_fetch_all(sql, params=()):
+        if "IN (" in sql:
+            raise AssertionError("below-floor hits must not reach MySQL")
+        return []
+
+    monkeypatch.setattr(recall_mod, "fetch_all", fake_fetch_all)
+    monkeypatch.setattr("app.memory.embedding.embed", fake_embed)
+    monkeypatch.setattr("app.milvus_store.search_hits", lambda c, u, v, top_k=20: [(9, 0.42)])
+
+    assert await recall_mod.load_candidates(3, 7, "今天吃了火锅") == []
+
+
+@pytest.mark.asyncio
+async def test_common_bigram_only_match_is_dropped(monkeypatch):
+    # 「今天」单独命中不算数：短句里它太常见，会把不相干的行拉进来。
+    async def fake_fetch_all(sql, params=()):
+        if sql is recall_mod._CANDIDATE_SQL_RELEVANT:
+            return [_row(1, rel=0.09, summary="今天加班到很晚")]
+        return []
+
+    monkeypatch.setattr(recall_mod, "fetch_all", fake_fetch_all)
+
+    assert await recall_mod.load_candidates(3, 7, "今天吃了火锅") == []
+
+    async def fake_fetch_all_hit(sql, params=()):
+        if sql is recall_mod._CANDIDATE_SQL_RELEVANT:
+            return [_row(1, rel=0.09, summary="今天加班到很晚")]
+        return []
+
+    monkeypatch.setattr(recall_mod, "fetch_all", fake_fetch_all_hit)
+    rows = await recall_mod.load_candidates(3, 7, "加班")
+    assert [row["id"] for row in rows] == [1]
