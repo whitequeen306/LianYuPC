@@ -132,6 +132,34 @@ async def test_new_memory_inserts_meta_and_outbox(fake_db):
     assert "NOW(), NOW(), NOW()" in meta_sql
 
 
+def test_slot_of_only_matches_profile_prefix():
+    assert w.slot_of("【长期记忆/姓名】阿岚") == "姓名"
+    assert w.slot_of("【长期记忆/忌口】不吃香菜") == "忌口"
+    assert w.slot_of("她今天加班到很晚") is None
+    assert w.slot_of("【长期记忆/】空槽位") is None
+
+
+@pytest.mark.asyncio
+async def test_new_slot_memory_supersedes_older_slot_rows(fake_db):
+    await w.write_memories(7, 3, [w.MemoryInput("【长期记忆/姓名】阿岚", "FACT", 0.9, (11,))])
+
+    sql, params = [item for item in fake_db["executed"] if item[0].lower().startswith("update memory_meta")][0]
+    assert "set status = 'superseded'" in sql.lower()
+    assert "valid_to = now()" in sql.lower()
+    assert "summary like %s" in sql.lower()
+    assert params[0] == 101            # superseded_by = 新行 id
+    assert params[1] == 7 and params[2] == 3
+    assert params[3] == 101            # 不要把自己标成 superseded
+    assert params[4] == "【长期记忆/姓名】%"
+
+
+@pytest.mark.asyncio
+async def test_plain_memory_does_not_touch_other_rows(fake_db):
+    await w.write_memories(7, 3, [w.MemoryInput("她今天加班到很晚", "EMOTION", 0.7, (11,))])
+
+    assert not [sql for sql, _ in fake_db["executed"] if sql.lower().startswith("update memory_meta")]
+
+
 @pytest.mark.asyncio
 async def test_same_summary_merges_without_reindexing(fake_db):
     fake_db["existing"] = {

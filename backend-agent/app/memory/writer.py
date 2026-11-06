@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Iterable
@@ -170,6 +171,30 @@ async def write_memories(user_id: int, character_id: int, memories: list[MemoryI
     return outcome
 
 
+_SLOT_RE = re.compile(r"^【长期记忆/([^】]{1,8})】")
+
+
+def slot_of(summary: str) -> str | None:
+    """画像槽位（姓名/爱好/忌口/偏好/禁忌/事件/习惯）；非槽位返回 None。"""
+    match = _SLOT_RE.match((summary or "").strip())
+    return match.group(1) if match else None
+
+
+async def _supersede_slot(cur, *, memory_id: int, user_id: int, character_id: int,
+                          slot: str) -> None:
+    """同一槽位只留一条 active：旧行标 superseded 并关掉有效期，不删。
+
+    换名字、改口味这类"新事实推翻旧事实"必须能追溯；物理删会让"她以前叫什么"
+    彻底消失，也会让旧向量的清理与行删除脱节。
+    """
+    await cur.execute(
+        "UPDATE memory_meta SET status = 'superseded', valid_to = NOW(), superseded_by = %s "
+        "WHERE user_id = %s AND character_id = %s AND id <> %s AND status = 'active' "
+        "AND summary LIKE %s",
+        (memory_id, user_id, character_id, memory_id, f"【长期记忆/{slot}】%"),
+    )
+
+
 async def _insert_new(user_id: int, character_id: int, summary: str, memory_type: str,
                       importance: Decimal, source_ids: tuple[int, ...], source_hash: str) -> int:
     async with transaction() as cur:
@@ -187,6 +212,10 @@ async def _insert_new(user_id: int, character_id: int, summary: str, memory_type
             "VALUES (%s, %s, %s, %s, NOW())",
             (memory_id, "UPSERT", "PENDING", 0),
         )
+        slot = slot_of(summary)
+        if slot:
+            await _supersede_slot(cur, memory_id=memory_id, user_id=user_id,
+                                  character_id=character_id, slot=slot)
     return memory_id
 
 

@@ -3,7 +3,8 @@
 与 `db.py`（只读）互为镜像。这里的约束比只读守卫更强，因为写错会污染数据：
 
 1. **语句白名单**：只允许 `INSERT INTO memory_meta` / `INSERT INTO memory_outbox` /
-   `INSERT INTO memory_episode`。连 SELECT 都不放行（读走 `db.py`）、UPDATE/DELETE 一律拒绝。
+   `INSERT INTO memory_episode`，以及 relay 回填 vec_id、槽位 supersede 两类固定形状的 UPDATE。
+   连 SELECT 都不放行（读走 `db.py`）、DELETE 一律拒绝。
 2. **显式事务**：一次写操作要么全成要么全不成，避免「记忆写了一半、outbox 没入队」
    导致向量永不投影。
 3. **参数化**：只接受 `%s` 占位，禁止拼接用户输入。
@@ -35,6 +36,8 @@ class WriteNotAllowed(RuntimeError):
 
 _ALLOWED_UPDATES = (
     "update memory_meta set milvus_vec_id = %s where id = %s",
+    # 画像槽位换值：旧行标 superseded + 关闭有效期，不物理删（可追溯"她以前叫过什么"）
+    "update memory_meta set status = 'superseded'",
     "update memory_outbox set status = %s",
     "update memory_outbox set attempts = %s",
     "update memory_outbox set next_attempt_at",
