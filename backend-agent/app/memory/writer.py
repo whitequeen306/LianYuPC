@@ -176,8 +176,8 @@ async def _insert_new(user_id: int, character_id: int, summary: str, memory_type
         memory_id = await insert_returning_id(
             cur,
             "INSERT INTO memory_meta (character_id, user_id, summary, memory_type, importance, "
-            "source_msg_ids, source_hash, milvus_vec_id, created_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, NULL, NOW())",
+            "source_msg_ids, source_hash, milvus_vec_id, event_time, last_decay_at, created_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, NULL, NOW(), NOW(), NOW())",
             (character_id, user_id, summary, memory_type, str(importance),
              json.dumps(list(source_ids), ensure_ascii=False), source_hash),
         )

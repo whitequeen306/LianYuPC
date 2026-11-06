@@ -126,6 +126,10 @@ async def test_new_memory_inserts_meta_and_outbox(fake_db):
     meta_params = fake_db["executed"][0][1]
     assert meta_params[5] == "[11]"          # source_msg_ids 以 JSON 写入
     assert meta_params[6] == w.compute_source_ids_hash([11], "用户喜欢猫")
+    # 新行必须自带衰减起点：夜间结算按 last_decay_at < now-7d 取批，NULL 会永远挑不到
+    meta_sql = " ".join([sql for sql, _ in fake_db["executed"] if "insert into memory_meta" in sql.lower()][0].split())
+    assert "last_decay_at" in meta_sql
+    assert "NOW(), NOW(), NOW()" in meta_sql
 
 
 @pytest.mark.asyncio
