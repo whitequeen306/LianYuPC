@@ -56,7 +56,7 @@ LIMIT 12
 _EPISODE_SQL = """
 SELECT CONCAT('ep-', id) AS id, summary, 'EPISODE' AS memory_type,
        0.7 AS importance, 1.0 AS strength, %s AS tau_days,
-       NULL AS fade_level, NULL AS last_decay_at, NULL AS last_injected_at,
+       NULL AS fade_level, NULL AS last_decay_at, last_injected_at,
        event_time, created_at, quote,
        MATCH(summary) AGAINST (%s) AS rel
 FROM memory_episode
@@ -162,7 +162,8 @@ async def load_candidates(
             _EPISODE_SQL,
             (EPISODE_TAU_DAYS, (query or "").strip(), character_id, user_id, max(1, limit // 2)),
         )
-    except Exception:  # noqa: BLE001 - 老库没 V58 时 episode 表不存在，降级即可
+    except Exception as exc:  # noqa: BLE001 - 老库没 V58/V59 时降级，但要留下线索
+        logger.warning("memory episode lane failed (migration V58/V59?): %s", exc)
         episodes = []
     episodes = [{**row, "_lane": "episode"} for row in (episodes or []) if row.get("id") not in seen]
     seen.update(row.get("id") for row in episodes)
@@ -175,24 +176,46 @@ async def mark_injected(rows: list[dict[str, Any]]) -> int:
     """记下"这一轮真的把哪几条给了模型"。
 
     冷却（3 天不再重复注入）与"多久没被想起"都依赖这个时间戳；没有它，
-    `in_cooldown` 永远为假，同一句设定会每轮重复出现。episode 的 id 是
-    `ep-*`，不属于 memory_meta，跳过。
+    `in_cooldown` 永远为假，同一句设定会每轮重复出现。episode 的 id 形如
+    `ep-9`，要回到 `memory_episode` 记（V59 才有的列），否则同一段原话会
+    每轮都冒出来。
     """
-    ids: list[int] = []
+    meta_ids: list[int] = []
+    episode_ids: list[int] = []
     for row in rows or []:
-        try:
-            ids.append(int(row.get("id")))
-        except (TypeError, ValueError):
+        raw = str(row.get("id") or "")
+        if raw.startswith("ep-"):
+            try:
+                episode_ids.append(int(raw[3:]))
+            except ValueError:
+                continue
             continue
-    if not ids:
+        try:
+            meta_ids.append(int(raw))
+        except ValueError:
+            continue
+    if not meta_ids and not episode_ids:
         return 0
-    placeholders = ", ".join(["%s"] * len(ids))
-    sql = (
-        "UPDATE memory_meta SET last_injected_at = NOW(), last_recalled_at = NOW(), "
-        f"recall_count = recall_count + 1 WHERE id IN ({placeholders})"
-    )
+
+    touched = 0
     async with write.transaction() as cur:
-        return await write.execute_write(cur, sql, tuple(ids))
+        if meta_ids:
+            placeholders = ", ".join(["%s"] * len(meta_ids))
+            touched += await write.execute_write(
+                cur,
+                "UPDATE memory_meta SET last_injected_at = NOW(), last_recalled_at = NOW(), "
+                f"recall_count = recall_count + 1 WHERE id IN ({placeholders})",
+                tuple(meta_ids),
+            )
+        if episode_ids:
+            placeholders = ", ".join(["%s"] * len(episode_ids))
+            touched += await write.execute_write(
+                cur,
+                "UPDATE memory_episode SET last_injected_at = NOW() "
+                f"WHERE id IN ({placeholders})",
+                tuple(episode_ids),
+            )
+    return touched
 
 
 def rank_rows(

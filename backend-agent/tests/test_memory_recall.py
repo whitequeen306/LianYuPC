@@ -118,19 +118,18 @@ def test_core_rows_ignore_cooldown():
 
 
 @pytest.mark.asyncio
-async def test_mark_injected_writes_timestamp_and_skips_episode_ids(monkeypatch):
+async def test_mark_injected_writes_both_tables(monkeypatch):
     from contextlib import asynccontextmanager
 
-    captured = {}
+    calls = []
 
     @asynccontextmanager
     async def fake_tx():
         yield object()
 
     async def fake_execute(cur, sql, params=()):
-        captured["sql"] = sql
-        captured["params"] = params
-        return 2
+        calls.append((sql, params))
+        return 1
 
     monkeypatch.setattr(recall_mod.write, "transaction", fake_tx)
     monkeypatch.setattr(recall_mod.write, "execute_write", fake_execute)
@@ -138,8 +137,12 @@ async def test_mark_injected_writes_timestamp_and_skips_episode_ids(monkeypatch)
     written = await recall_mod.mark_injected([_row(4), _row("ep-9"), _row(5)])
 
     assert written == 2
-    assert "last_injected_at = NOW()" in captured["sql"]
-    assert captured["params"] == (4, 5)
+    meta_sql, meta_params = calls[0]
+    assert "UPDATE memory_meta SET last_injected_at = NOW()" in meta_sql
+    assert meta_params == (4, 5)
+    episode_sql, episode_params = calls[1]
+    assert "UPDATE memory_episode SET last_injected_at = NOW()" in episode_sql
+    assert episode_params == (9,)   # 原话也要进冷却，否则每轮都冒出来
 
 
 def test_render_groups_by_type_and_marks_confidence():
@@ -319,3 +322,14 @@ async def test_v3_block_marks_only_rows_that_made_it_in(monkeypatch):
 
     assert block == "块"
     assert seen["ids"] == [1]   # 被预算丢掉的行不算注入过
+
+
+def test_episode_row_in_cooldown_is_skipped():
+    fresh = _row("ep-1", memory_type="EPISODE")
+    fresh["last_injected_at"] = None
+    stale = _row("ep-2", memory_type="EPISODE")
+    stale["last_injected_at"] = NOW - timedelta(hours=12)
+
+    ranked = recall_mod.rank_rows([fresh, stale], limit=5, now=NOW)
+
+    assert [row["id"] for row in ranked] == ["ep-1"]

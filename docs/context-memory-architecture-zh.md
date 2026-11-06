@@ -870,6 +870,7 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 | PR-19 历史按 token 裁剪 | ✅ 本次 | `app/context/history.py` + `chat_turn._trim_to_budget`：只为 recent 槽服务，开关 `history_trim_enabled` 默认关 |
 | PR-21 语义去重（双阈值） | ✅ 本次 | `app/memory/dedupe.py`：cos≥0.92 NOOP / <0.75 ADD / 灰区默认 ADD（不调模型）；开关 `memory_dedupe_similarity_enabled` 默认关 |
 | PR-20 上下文日统计 | ✅ 本次 | `app/context/stats.py` 写 Redis `ctx:stats:YYYYMMDD`；`GET /agent/context/stats` 读 `turns / est_tokens_per_turn / cache_hit_rate / trimmed_turns` |
+| PR-29 episode 也进冷却 | ✅ 本次 | V59 给 `memory_episode` 加 `last_injected_at`；`mark_injected` 按 `ep-` 前缀回写这张表，`in_cooldown` 对原话同样生效——否则同一段生动原话会每轮重复出现 |
 | PR-28 记忆体检端点 | ✅ 本次 | `GET /agent/memory/health`：开关快照 + active/faded/superseded 条数 + episode 数 + outbox 积压 + 最后一次衰减/写入时间；无 episode、DEAD 积压、pending>50 会给 warning。开开关前先看它 |
 | PR-27 召回块整行裁剪 | ✅ 本次 | `render_rows_limited` 按行卡 400 token 并返回真正进块的 id；只有这些行打 `last_injected_at`，被截掉的尾巴不会被误判成"看过"而进冷却 |
 | PR-26 灰区模型判定 | ✅ 本次 | 0.75–0.92 灰区可选多问一次（`memory_dedupe_llm_review_enabled`，默认关）：同一件 → NOOP，不同 → ADD，调用失败仍按 ADD |
