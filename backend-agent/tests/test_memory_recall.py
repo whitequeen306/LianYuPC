@@ -281,3 +281,21 @@ async def test_shadow_logs_overlap_without_changing_block(monkeypatch, caplog):
     assert "她叫阿岚" in block          # 影子不改变注入内容
     assert "memory shadow overlap=0.00" in caplog.text
     assert "missing=['1']" in caplog.text
+
+
+async def test_v3_block_is_capped_to_the_recall_slot(monkeypatch):
+    from app import data_readers
+
+    async def fake_recall(character_id, user_id, query, **kwargs):
+        return [{"id": 1, "memory_type": "FACT", "summary": "记" * 800}]
+
+    def fake_render(rows, now=None):
+        return "记" * 800
+
+    monkeypatch.setattr("app.memory.recall.recall", fake_recall)
+    monkeypatch.setattr("app.memory.recall.render_rows", fake_render)
+
+    block = await data_readers._load_v3_block(3, 7, "在吗")
+
+    assert block.endswith("…")
+    assert len(block) <= 401

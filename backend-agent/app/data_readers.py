@@ -211,6 +211,11 @@ async def _load_v3_block(character_id: int, user_id: int,
         return None
     block = render_rows(rows)
     if block:
+        # recall 槽 400 token：条数在上游已经限过，这里兜住"每条都很长"的情况
+        from app.context.assembler import truncate_to_tokens
+
+        block = truncate_to_tokens(block, 400)
+    if block:
         try:
             from app.memory.recall import mark_injected
 
