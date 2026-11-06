@@ -115,6 +115,27 @@ def resolve_city(settings: Mapping[str, Any] | None) -> str | None:
     return city or None
 
 
+MAX_MEMORY_CONTEXT_TOKENS = 1100
+
+
+def _cap_memory_context(text: str, limit: int | None = None) -> str:
+    """把记忆/关系/场景三块合起来的体积压到预算内（0 表示不设限）。"""
+    from app.config import get_settings
+
+    if limit is None:
+        limit = int(getattr(get_settings(), "memory_context_max_tokens", MAX_MEMORY_CONTEXT_TOKENS))
+
+    if limit <= 0 or not text:
+        return text
+
+    from app.context.assembler import truncate_to_tokens
+    from app.context.tokens import estimate_tokens
+
+    if estimate_tokens(text) <= limit:
+        return text
+    return truncate_to_tokens(text, limit)
+
+
 async def _attach_resurface(
     context: str,
     *,
@@ -273,6 +294,10 @@ async def assemble_turn_prompt(
     memory_context = await _attach_resurface(
         memory_context, user_id=user_id, character_id=character_id, scene_key=scene_key,
     )
+
+    # 记忆块硬顶：画像槽位最多 80 行、召回 5 条、场景卡 200 字，极端情况下能撑到两三千字。
+    # 这里按总预算兜一次，宁可少说两件旧事，也不能把最近的对话挤出去。
+    memory_context = _cap_memory_context(memory_context)
 
     # 工具提示：Java 只传开关事实，文案由 Python 查表生成
     if tool_flags is not None:

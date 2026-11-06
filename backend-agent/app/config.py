@@ -137,6 +137,9 @@ class Settings(BaseSettings):
     memory_vector_recall_enabled: bool = False
     memory_vector_recall_top_k: int = 20
 
+    # 记忆块（画像 + 关系 + 场景 + 召回）合起来的 token 上限；0 表示不设限
+    memory_context_max_tokens: int = 1100
+
     # 主动浮现：主动开口时允许提一句快要忘记的事（每角色每周最多一次）
     memory_resurface_enabled: bool = True
 

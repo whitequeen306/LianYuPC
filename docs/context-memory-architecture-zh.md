@@ -885,6 +885,8 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 | PR-35 当前问句不再记成「没接住」 | ✅ 本次 | 组装时 `track_questions=False`：那句问话正是她马上要答的，记进 openLoops 会渲染出「还没接的话：你刚问的这句」。真正没接住的话由场景结算时的 impression/episode 产出 |
 | PR-36 沉底记忆被召回时复活 | ✅ 本次 | `mark_injected` 对 `fade_level=archived` 的行抬到 `strength≥0.55 / active`、`revival_count+1`；只抬强度与档位，不动摘要，写语句在 `app/write.py` 白名单里 |
 | PR-37 主动浮现（周频控 + 贴题门槛） | ✅ | `POST /agent/memory/resurface`：本科目每周最多一次；只挑强度 0.35–0.55 或周年（同月同日且 ≥300 天）；给了话题就要求余弦 ≥0.2，否则这周不提。Redis 挂了宁可不说 |
+| PR-38 记忆块总预算 | ✅ | `memory_context_max_tokens`（默认 1100）在拼 system 前兜底截断；画像 80 行 + 召回 5 条 + 场景卡的极端情况不再挤掉最近对话 |
+| PR-39 星图显示钉住 / 静音 | ✅ | 钉住加暖金细环；静音压到 35% 亮度、半径 ×0.78——留在图上，但不抢注意力 |
 | PR-31 召回超时预算 | ✅ 本次 | 召回超过 `memory_recall_timeout_seconds`（默认 80ms）就退回旧路径；`mark_injected` 超过 300ms 直接放弃，下一轮再补——记忆可以晚一轮，回复不能卡住 |
 
 **仍未做**：周记换成生成式（现在是抽取拼接；cron 已就绪但默认关）、
