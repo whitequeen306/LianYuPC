@@ -52,8 +52,8 @@ async def test_scene_block_lands_after_memory_block(card_store):
     assert "【当前场景】" in prompt
     assert "话题" in prompt
     assert prompt.index("【记忆】她怕打雷") < prompt.index("【当前场景】")
-    # 问句进了"还没接的话"，这一轮模型能看到"她刚问了我一句"
-    assert "还没接的话" in prompt
+    # 这句正是她马上要回答的，不能被记成「还没接的话」（否则 prompt 自相矛盾）
+    assert "还没接的话" not in prompt
 
 
 async def test_scene_card_persists_across_turns(card_store):

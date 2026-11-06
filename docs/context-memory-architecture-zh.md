@@ -882,6 +882,7 @@ PR-1 可以今天就合；PR-2～PR-4 是"腾位置"，不改任何记忆语义�
 | PR-32 记忆页层标签 | ✅ `2437fcb` | 列表卡片与抽屉显示「核心设定/事实/经历/印象」，四语齐；未知 layer 不渲染 |
 | PR-33 向量集合 v3 双写 | ✅ 本次 | 新集合多带 layer/status/event_time；开启后 relay 双写、召回只捞 `status == "active"`。v2 仍是主键来源，v3 可随时重建；建集合用 `python -m scripts.init_milvus_v3` |
 | PR-34 v3 历史回填 | ✅ 本次 | `scripts/backfill_milvus_v3.py`：按 `memory_id in [...]` 查 v3 跳过已有，再批量 embed 写入；`--dry-run` 只看数量。双写只覆盖开关之后的记忆，历史不回填会出现「她突然忘了很多」 |
+| PR-35 当前问句不再记成「没接住」 | ✅ 本次 | 组装时 `track_questions=False`：那句问话正是她马上要答的，记进 openLoops 会渲染出「还没接的话：你刚问的这句」。真正没接住的话由场景结算时的 impression/episode 产出 |
 | PR-31 召回超时预算 | ✅ 本次 | 召回超过 `memory_recall_timeout_seconds`（默认 80ms）就退回旧路径；`mark_injected` 超过 300ms 直接放弃，下一轮再补——记忆可以晚一轮，回复不能卡住 |
 
 **仍未做**：灰区的 LLM 判定（现在是 cos≥0.92 NOOP、<0.75 ADD，中间也按 ADD，

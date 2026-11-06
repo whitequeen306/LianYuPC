@@ -173,8 +173,13 @@ def update_card(card: dict[str, Any] | None, *,
                 user_text: str,
                 assistant_text: str = "",
                 turn: int | None = None,
-                now: datetime | None = None) -> dict[str, Any]:
-    """用这一轮的用户话与回复，规则化地推进场景卡。"""
+                now: datetime | None = None,
+                track_questions: bool = True) -> dict[str, Any]:
+    """用这一轮的用户话与回复，规则化地推进场景卡。
+
+    `track_questions=False`：组装路径专用——那句问话正是她**马上要回答**的，
+    记成"还没接的话"会让 prompt 里出现「还没接：你刚问的这句」这种自相矛盾。
+    """
     card = normalize_card(card, (card or {}).get("conversationId") if isinstance(card, dict) else None)
     user_text = (user_text or "").strip()
     if turn is not None:
@@ -204,7 +209,8 @@ def update_card(card: dict[str, Any] | None, *,
         if is_new_turn:
             card["beats"] = _clip_list([*card["beats"], beat], MAX_BEATS)
 
-        if user_text.rstrip().endswith(("？", "?")) or "吗" in user_text[-6:]:
+        is_question = user_text.rstrip().endswith(("？", "?")) or "吗" in user_text[-6:]
+        if track_questions and is_question:
             card["openLoops"] = _clip_list(
                 [*card["openLoops"], _snippet(user_text, 40)], MAX_OPEN_LOOPS)
 

@@ -101,3 +101,13 @@ def test_model_refresh_every_n_turns():
     assert needs_model_refresh(card, 1 + MODEL_REFRESH_TURNS) is True
     card["drift"] = True
     assert needs_model_refresh(card, 2) is True
+
+
+def test_assembly_does_not_record_current_question_as_open_loop():
+    from datetime import datetime
+
+    card = new_card(11, datetime.now())
+    card = update_card(card, user_text="你在吗？", turn=1, track_questions=False)
+
+    assert card["openLoops"] == []
+    assert "还没接的话" not in render_card(card)

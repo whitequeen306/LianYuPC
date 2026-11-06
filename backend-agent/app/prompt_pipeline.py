@@ -161,6 +161,8 @@ async def _attach_scene_card(
             card,
             user_text=last_user_message,
             turn=int(card.get("turnTo") or 0) + 1,
+            # 这句是马上要回答的，不算"没接住的话"；真正的 openLoop 由场景结算产出
+            track_questions=False,
         )
         await save_card(card)
         block = render_card(card)
