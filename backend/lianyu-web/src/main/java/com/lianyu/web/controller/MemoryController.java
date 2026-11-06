@@ -29,6 +29,15 @@ public class MemoryController {
         return memoryQueryService.list(userId, characterId, page, size);
     }
 
+    @Operation(summary = "共同经历列表（原话 + 发生时间）")
+    @GetMapping("/episodes")
+    public Result<List<Map<String, Object>>> episodes(
+            @RequestParam(required = false) Long characterId,
+            @RequestParam(defaultValue = "50") int limit) {
+        long userId = StpUtil.getLoginIdAsLong();
+        return memoryQueryService.episodes(userId, characterId, limit);
+    }
+
     @Operation(summary = "获取记忆详情（含来源消息）")
     @GetMapping("/{id}")
     public Result<Map<String, Object>> detail(@PathVariable Long id) {

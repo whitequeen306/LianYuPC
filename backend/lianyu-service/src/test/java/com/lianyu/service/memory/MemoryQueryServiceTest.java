@@ -10,10 +10,12 @@ import static org.mockito.Mockito.when;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.lianyu.common.base.Result;
 import com.lianyu.dao.entity.Character;
+import com.lianyu.dao.entity.MemoryEpisode;
 import com.lianyu.dao.entity.MemoryMeta;
 import com.lianyu.dao.enums.MemoryType;
 import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.ConversationMapper;
+import com.lianyu.dao.mapper.MemoryEpisodeMapper;
 import com.lianyu.dao.mapper.MemoryMetaMapper;
 import com.lianyu.dao.mapper.MessageMapper;
 import java.math.BigDecimal;
@@ -31,6 +33,7 @@ import org.junit.jupiter.api.Test;
 class MemoryQueryServiceTest {
 
     private MemoryMetaMapper memoryMetaMapper;
+    private MemoryEpisodeMapper memoryEpisodeMapper;
     private MessageMapper messageMapper;
     private CharacterMapper characterMapper;
     private MemoryCacheService memoryCacheService;
@@ -39,11 +42,13 @@ class MemoryQueryServiceTest {
     @BeforeEach
     void setUp() {
         memoryMetaMapper = mock(MemoryMetaMapper.class);
+        memoryEpisodeMapper = mock(MemoryEpisodeMapper.class);
         messageMapper = mock(MessageMapper.class);
         characterMapper = mock(CharacterMapper.class);
         memoryCacheService = mock(MemoryCacheService.class);
         service = new MemoryQueryService(
                 memoryMetaMapper,
+                memoryEpisodeMapper,
                 messageMapper,
                 characterMapper,
                 mock(ConversationMapper.class),
@@ -168,5 +173,30 @@ class MemoryQueryServiceTest {
         Result<Void> result = service.setMuted(7L, 11L, true);
 
         assertEquals(404, result.getCode());
+    }
+
+    @Test
+    void episodes_carry_quote_and_character_name() {
+        MemoryEpisode episode = new MemoryEpisode();
+        episode.setId(9L);
+        episode.setCharacterId(3L);
+        episode.setUserId(7L);
+        episode.setSummary("搬家那天");
+        episode.setQuote("我明天要搬家了");
+        episode.setEventTime(LocalDateTime.of(2026, 11, 1, 22, 0));
+        when(memoryEpisodeMapper.selectList(any())).thenReturn(List.of(episode));
+
+        Character character = new Character();
+        character.setId(3L);
+        character.setName("阿岚");
+        when(characterMapper.selectBatchIds(any())).thenReturn(List.of(character));
+
+        Result<List<Map<String, Object>>> result = service.episodes(7L, null, 50);
+
+        assertEquals(200, result.getCode());
+        Map<String, Object> row = result.getData().get(0);
+        assertEquals("我明天要搬家了", row.get("quote"));
+        assertEquals("阿岚", row.get("characterName"));
+        assertEquals(LocalDateTime.of(2026, 11, 1, 22, 0), row.get("eventTime"));
     }
 }

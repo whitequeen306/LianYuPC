@@ -5,10 +5,12 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.lianyu.common.base.Result;
 import com.lianyu.dao.entity.Character;
 import com.lianyu.dao.entity.Conversation;
+import com.lianyu.dao.entity.MemoryEpisode;
 import com.lianyu.dao.entity.MemoryMeta;
 import com.lianyu.dao.entity.Message;
 import com.lianyu.dao.mapper.CharacterMapper;
 import com.lianyu.dao.mapper.ConversationMapper;
+import com.lianyu.dao.mapper.MemoryEpisodeMapper;
 import com.lianyu.dao.mapper.MemoryMetaMapper;
 import com.lianyu.dao.mapper.MessageMapper;
 import java.math.BigDecimal;
@@ -29,13 +31,61 @@ import org.springframework.stereotype.Service;
 public class MemoryQueryService {
 
     private static final int MAX_LIST_SIZE = 200;
+    private static final int MAX_EPISODE_SIZE = 100;
 
     private final MemoryMetaMapper memoryMetaMapper;
+    private final MemoryEpisodeMapper memoryEpisodeMapper;
     private final MessageMapper messageMapper;
     private final CharacterMapper characterMapper;
     private final ConversationMapper conversationMapper;
     private final MemoryWriter memoryWriter;
     private final MemoryCacheService memoryCacheService;
+
+    /**
+     * 共同经历列表：星图之外给人看的那一层。
+     *
+     * <p>原话（quote）一定带出来——只给摘要的话，用户没法确认"她记住的是不是我真说的那句"。
+     */
+    public Result<List<Map<String, Object>>> episodes(long userId, Long characterId, int limit) {
+        int safeLimit = Math.min(MAX_EPISODE_SIZE, Math.max(1, limit));
+
+        LambdaQueryWrapper<MemoryEpisode> q = new LambdaQueryWrapper<MemoryEpisode>()
+                .eq(MemoryEpisode::getUserId, userId)
+                .eq(MemoryEpisode::getStatus, "active")
+                .orderByDesc(MemoryEpisode::getEventTime);
+        if (characterId != null) {
+            q.eq(MemoryEpisode::getCharacterId, characterId);
+        }
+        q.last("LIMIT " + safeLimit);
+
+        List<MemoryEpisode> episodes = memoryEpisodeMapper.selectList(q);
+        Set<Long> characterIds = episodes.stream()
+                .map(MemoryEpisode::getCharacterId)
+                .filter(id -> id != null && id > 0)
+                .collect(Collectors.toSet());
+        Map<Long, Character> characterMap = characterIds.isEmpty()
+                ? Map.of()
+                : characterMapper.selectBatchIds(characterIds).stream()
+                        .collect(Collectors.toMap(Character::getId, c -> c, (a, b) -> a));
+
+        List<Map<String, Object>> result = episodes.stream().map(e -> {
+            Character character = characterMap.get(e.getCharacterId());
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", e.getId());
+            row.put("characterId", e.getCharacterId());
+            row.put("characterName", character != null ? character.getName() : "角色#" + e.getCharacterId());
+            row.put("summary", e.getSummary());
+            row.put("quote", e.getQuote());
+            row.put("eventTime", e.getEventTime());
+            row.put("valence", e.getValence());
+            row.put("arousal", e.getArousal());
+            row.put("openLoop", e.getOpenLoop());
+            row.put("createdAt", e.getCreatedAt());
+            return row;
+        }).toList();
+
+        return Result.ok(result);
+    }
 
     public Result<List<Map<String, Object>>> list(
             long userId, Long characterId, int page, int size) {

@@ -11,7 +11,8 @@ const modelSource = readFileSync(resolve(currentDir, '../../components/memory/me
 describe('MemoryPage ↔ 星图集成', () => {
   it('星图是默认视图，列表视图仍然保留', () => {
     expect(pageSource).toContain("ref(readView())")
-    expect(pageSource).toContain("return localStorage.getItem(VIEW_STORAGE_KEY) === 'list' ? 'list' : 'brain'")
+    expect(pageSource).toContain("const VIEWS = ['brain', 'list', 'episodes']")
+    expect(pageSource).toContain('VIEWS.includes(saved)')
     expect(pageSource).toContain('<MemoryBrainMap')
     expect(pageSource).toContain('v-else-if="view === \'brain\'"')
   })
