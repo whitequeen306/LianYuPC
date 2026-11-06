@@ -2,8 +2,8 @@
 
 与 `db.py`（只读）互为镜像。这里的约束比只读守卫更强，因为写错会污染数据：
 
-1. **语句白名单**：只允许 `INSERT INTO memory_meta` / `INSERT INTO memory_outbox`。
-   连 SELECT 都不放行（读走 `db.py`）、UPDATE/DELETE 一律拒绝。
+1. **语句白名单**：只允许 `INSERT INTO memory_meta` / `INSERT INTO memory_outbox` /
+   `INSERT INTO memory_episode`。连 SELECT 都不放行（读走 `db.py`）、UPDATE/DELETE 一律拒绝。
 2. **显式事务**：一次写操作要么全成要么全不成，避免「记忆写了一半、outbox 没入队」
    导致向量永不投影。
 3. **参数化**：只接受 `%s` 占位，禁止拼接用户输入。
@@ -26,7 +26,7 @@ from app.db import pool
 logger = logging.getLogger(__name__)
 
 # 允许的写目标：(表名, 必需出现的列前缀校验用不到，改为语句形状校验)
-_ALLOWED_INSERTS = frozenset({"memory_meta", "memory_outbox"})
+_ALLOWED_INSERTS = frozenset({"memory_meta", "memory_outbox", "memory_episode"})
 
 
 class WriteNotAllowed(RuntimeError):

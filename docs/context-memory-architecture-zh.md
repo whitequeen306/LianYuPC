@@ -663,7 +663,7 @@ MemoryBank 自认简化且无对照）；"因记错被投诉"的一手报道。�
 
 保留 `session:summary:*` 直到 P1 验收，作为回滚路径。
 
-### 8.2 MySQL（V57）
+### 8.2 MySQL（V58）
 
 在既有 `memory_meta` 上加：`layer`、`subject`、`predicate`、`event_time`、`valid_from/valid_to`、
 `status`、`superseded_by`、`source_episode_id`、`content_hash`、`embedding_state`、`pinned`、`muted`、`quote`、
@@ -672,10 +672,14 @@ MemoryBank 自认简化且无对照）；"因记错被投诉"的一手报道。�
 `memory_meta` 建 `FULLTEXT ... WITH PARSER ngram`。
 `memory_vectors_v3`：HNSW、partition key `character_id`、标量 `status/fade_level/event_time/importance`。
 
-### 8.2.1 DDL 草案（示意，正式迁移另写）
+### 8.2.1 DDL 草案（示意；正式迁移见 `V58__memory_layers_and_episodes.sql`）
+
+> V57 已被关系信任修复占用，正式迁移顺延为 V58；落地版去掉了 `AFTER` 子句、统一用
+> `DATETIME`（与既有表一致），并补了 `tau_days / last_injected_at / archived_at` 与
+> `idx_mem_decay`。
 
 ```sql
--- V57：四层 + 双时间轴 + 原话 + 去重哈希
+-- V58：四层 + 双时间轴 + 原话 + 去重哈希
 ALTER TABLE memory_meta
   ADD COLUMN layer             VARCHAR(16)  NOT NULL DEFAULT 'fact' AFTER memory_type,
   ADD COLUMN subject           VARCHAR(64)  NULL,
@@ -829,8 +833,8 @@ app/memory/
 | PR-3 | token 估算 + 预算骨架 + gateway 打点 | `app/context/{tokens,budget}.py`、`gateway.py` | 预算断言 + `ctx:stats` 落一行 |
 | PR-4 | 工具结果入口截断 + 旧结果成对清理 | `app/tool_loop.py`、`app/context/assembler.py` | tool_call/result 成对；超限不 400 |
 | PR-5 | SceneCard（读写/规则更新/6 轮刷新/关闭） | `app/context/scene_card.py`、`ConversationService`（只加删 key） | 卡 schema 校验；Redis 挂时能重建 |
-| PR-6 | 场景关闭抽取 + `memory_episode`（V57 上半） | `app/memory/extract_scene.py`、`V57__*.sql` | 一次场景只抽一次；quote 必填 |
-| PR-7 | 四层 + 双阈值 + supersede（V57 下半） | `app/memory/writer.py`、`relay.py` | cos 边界三例；旧版本 `valid_to` 有值、不物理删 |
+| PR-6 | 场景关闭抽取 + `memory_episode`（V58 上半） | `app/memory/extract_scene.py`、`V58__memory_layers_and_episodes.sql` | 一次场景只抽一次；quote 必填 |
+| PR-7 | 四层 + 双阈值 + supersede（V58 下半） | `app/memory/writer.py`、`relay.py` | cos 边界三例；旧版本 `valid_to` 有值、不物理删 |
 | PR-8 | 五路召回 + RRF/MMR + 去重 + 影子 | `app/memory/retrieve.py`、`milvus_store.py` | recall@5；与 recent 去重率；影子 diff 日志 |
 | PR-9 | **衰减结算**（`strength`/`fade_level`/`dormant`）+ 复活 | `MemoryDecayScheduler`、`MemoryDecayService`、`MemoryDecayServiceTest` | τ 表四层各一例；`MAX_DECAY_DAYS` 封顶；批轮转（不重复扫同一批）；单日降级 ≤30；pinned 永不降；跑两次结果一致 |
 | PR-10 | 夜间整合 + reflection + 对账 | `app/memory/consolidate.py`（新）、定时任务 | 幂等；一天跑两次结果一致 |
