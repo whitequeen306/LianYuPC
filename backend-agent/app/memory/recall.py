@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import Any
 
@@ -20,7 +21,7 @@ from app.config import get_settings
 from app.data_readers import fetch_all
 
 logger = logging.getLogger(__name__)
-from app.memory import retrieve
+from app.memory import local_rerank, retrieve
 
 # 候选上限：多取一些再排序，避免"数据库 top5"把真正相关的挤掉。
 CANDIDATE_LIMIT = 60
@@ -391,7 +392,7 @@ def _raw_rel(row: dict[str, Any]) -> float:
 def rank_rows(
     rows: list[dict[str, Any]],
     *,
-    limit: int = retrieve.DEFAULT_RECALL_LIMIT,
+    limit: int | None = retrieve.DEFAULT_RECALL_LIMIT,
     now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """跨路融合 + 打分 + 冷却 + MMR。
@@ -446,6 +447,10 @@ def rank_rows(
         })
 
     scored.sort(key=lambda row: row["score"], reverse=True)
+    if limit is None:
+        # 交给调用方（recall）先做精排再 MMR：MMR 需要看全量候选的相似度，
+        # 若在这里就截断到 limit，精排只能在已经定好的 5 条里挪位置。
+        return scored
     return retrieve.mmr_select(scored, limit=limit)
 
 
@@ -465,8 +470,19 @@ async def recall(
     limit: int = retrieve.DEFAULT_RECALL_LIMIT,
     now: datetime | None = None,
 ) -> list[dict[str, Any]]:
+    started = time.monotonic()
     rows = await load_candidates(character_id, user_id, query)
-    return rank_rows(rows, limit=limit, now=now)
+    scored = rank_rows(rows, limit=None, now=now)
+    if not scored:
+        return []
+    # 精排只能用「本轮剩余预算」：外层整体超时（memory_recall_timeout_seconds）一旦触发，
+    # 整段召回会被丢弃、退回旧路径——那比不精排糟得多。
+    settings = get_settings()
+    budget = float(getattr(settings, "memory_recall_timeout_seconds", 0.45) or 0.45)
+    remaining = budget - (time.monotonic() - started) - 0.02
+    rerank_budget = max(0.02, min(float(getattr(settings, "local_rerank_timeout_seconds", 0.12) or 0.12), remaining))
+    reranked = await local_rerank.rerank_rows(query or "", scored, timeout=rerank_budget)
+    return retrieve.mmr_select(reranked, limit=limit)
 
 
 def render_rows_limited(rows: list[dict[str, Any]], now: datetime | None = None,

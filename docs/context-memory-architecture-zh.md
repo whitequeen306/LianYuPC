@@ -1182,3 +1182,55 @@ v3 投影失败重试、冷启动建连不阻塞、dormant 清向量、supersede
 4. `python -m scripts.backfill_milvus_v3 --limit 40000 --batch-size 64`（**只能跑一个**：
    两个进程并行写同一集合会产生重复投影，检索 top_k 里一半是同一条）
 5. 重启 agent，日志出现 `local embedding ready` 与 `memory warmup done`
+
+### 10.9 本地精排（rerank）落地（2026-11-07）
+
+**为什么加**：向量召回只比「大意像不像」。绕词的问法（「每天早上不喝点什么就睁不开眼」
+→ 冰美式）在 49 题里被排到第 6 位，整段 pipeline 救不回来——第一段召回本该宽，缺的是
+「query 与这条记忆一起读」的第二段判断。
+
+**选型**（同一套 51 题、纯 cosine，`local/_rank_eval.py --all`）：
+
+| 模型 | 参数/体积 | recall@5 | MRR | 单条延迟(2 线程) |
+|---|---|---|---|---|
+| gte-multilingual-reranker-base (int8) | 306M / 341MB | — | — | 15.8ms |
+| bge-reranker-base (int8) | 278M / 279MB | — | — | 类似 |
+| bge-reranker-v2-m3 | 568M | — | — | CPU 不可接受（前人实测 150–300ms/pair） |
+
+选 **gte-multilingual-reranker-base**：与 embedding 同族（同样的 zh/en/ja 覆盖）、
+int8 ONNX 341MB、2 线程单条 15.8ms，ModelScope 有现成 ONNX。
+
+**关键发现：纯精排是负收益，必须混合**
+- 纯 cross-encoder 重排 top-20：recall@5 **43/49 → 39/49**、MRR 0.799 → 0.688（bge-reranker-base
+  同为 40/49）。原因：这类模型偏爱「字面更像」的那条，而我们的真答案常常需要一步推理。
+- 与融合分按比例混合（各自 min-max 后 `(1-w)*base + w*ce`），49 题扫描：
+
+| weight | recall@5 | MRR |
+|---|---|---|
+| 0（不精排） | 43/49 | 0.799 |
+| 0.2 | 43/49 | 0.810 |
+| 0.35 | 43/49 | 0.809 |
+| **0.5** | **44/49** | **0.845** |
+| 0.65 | 44/49 | 0.814 |
+| 0.8 | 41/49 | 0.776 |
+| 1.0（纯精排） | 40/49 | 0.726 |
+
+取 **weight 0.5**；候选只要前 6 条（6 条与 12 条质量持平，6 条约 85ms）。
+
+**两个必须踩对的工程点**
+1. **混合分要写回 `row["score"]`**：`mmr_select` 按 `score` 排序，只调整列表顺序等于白干
+   （实测 on/off 指标一模一样就是这么来的）。混合分在前 top_k 内做过 min-max，必须映回原量纲。
+2. **精排只能用「本轮剩余预算」**：`recall()` 算出 `memory_recall_timeout_seconds - 已耗时`，
+   与 `local_rerank_timeout_seconds` 取小。否则精排把整段召回推过外层超时，`data_readers`
+   会直接退回旧路径——比不精排糟得多。缺模型/超时/异常一律返回融合顺序。
+
+**配置**：`memory_rerank_local_enabled=True`（默认开）、`local_rerank_max_candidates=6`、
+`local_rerank_weight=0.5`、`local_rerank_timeout_seconds=0.12`、
+`local_rerank_model_dir=/app/models/gte-multilingual-reranker-base`。
+
+**上线**：`docker run --rm -v /opt/lianyu/models:/models ... python -m scripts.fetch_rerank_model
+--model gte-multilingual-reranker-base --dir /models/gte-multilingual-reranker-base`（341MB），
+重启 agent；日志 `local rerank ready`。模型不在时开关自动失效，不会报错。
+
+**调参提醒**：换 embedding 或换语料后必须重跑 `local/_rerank_weight.py`；`Settings` 是
+`@lru_cache`，脚本里改完环境变量要 `get_settings.cache_clear()`，否则读到的还是旧值。
