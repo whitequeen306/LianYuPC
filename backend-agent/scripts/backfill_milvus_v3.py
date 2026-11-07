@@ -18,6 +18,7 @@ import asyncio
 import sys
 
 from app.config import get_settings
+from app.milvus_store import v3_collection_name
 
 _EPISODE_SELECT = (
     "SELECT id, character_id, user_id, summary, event_time "
@@ -78,7 +79,7 @@ async def backfill(limit: int = 5000, batch_size: int = 64, dry_run: bool = Fals
         ids = [int(row["id"]) for row in rows]
         try:
             found = client.query(
-                collection_name=get_settings().milvus_v3_collection,
+                collection_name=v3_collection_name(),
                 filter=f"memory_id in [{', '.join(str(i) for i in ids)}]",
                 output_fields=["memory_id"],
             )
@@ -125,7 +126,7 @@ async def backfill(limit: int = 5000, batch_size: int = 64, dry_run: bool = Fals
             vector_ids = [offset + int(row["id"]) for row in episodes]
             try:
                 found = client.query(
-                    collection_name=get_settings().milvus_v3_collection,
+                    collection_name=v3_collection_name(),
                     filter="memory_id in [" + ", ".join(str(i) for i in vector_ids) + "]",
                     output_fields=["memory_id"],
                 )

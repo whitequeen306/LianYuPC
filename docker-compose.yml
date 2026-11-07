@@ -1,22 +1,22 @@
-# LianYu-PC Docker Compose（云端：api-gateway + backend + 中间件；前端仅 Electron 本地打包）
+﻿# LianYu-PC Docker Compose锛堜簯绔細api-gateway + backend + 涓棿浠讹紱鍓嶇浠?Electron 鏈湴鎵撳寘锛?
 #
-# 一键启动（API 网关 + 后端 + 全部中间件）:
+# 涓€閿惎鍔紙API 缃戝叧 + 鍚庣 + 鍏ㄩ儴涓棿浠讹級:
 #   docker compose up -d --build
 #
-# 访问:
-#   API: https://localhost/api/  （经 api-gateway TLS 反代 backend:8080）
-#   文档: https://localhost/doc.html
+# 璁块棶:
+#   API: https://localhost/api/  锛堢粡 api-gateway TLS 鍙嶄唬 backend:8080锛?
+#   鏂囨。: https://localhost/doc.html
 #
-# 清库重建（会清空 MySQL/Redis/MinIO/Milvus/RabbitMQ 数据）:
+# 娓呭簱閲嶅缓锛堜細娓呯┖ MySQL/Redis/MinIO/Milvus/RabbitMQ 鏁版嵁锛?
 #   docker compose down -v && docker compose up -d --build
 #
-# 仅本地联调网关（反代宿主机 5173/8080）:
+# 浠呮湰鍦拌仈璋冪綉鍏筹紙鍙嶄唬瀹夸富鏈?5173/8080锛?
 #   docker compose --profile dev-proxy up -d web-gateway
 
 name: lianyu-pc
 
 services:
-  # 可选：本地联调网关（不打包前后端代码）
+  # 鍙€夛細鏈湴鑱旇皟缃戝叧锛堜笉鎵撳寘鍓嶅悗绔唬鐮侊級
   web-gateway:
     profiles: ["dev-proxy"]
     build:
@@ -30,7 +30,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  # 后端服务（镜像内构建当前源码）
+  # 鍚庣鏈嶅姟锛堥暅鍍忓唴鏋勫缓褰撳墠婧愮爜锛?
   backend:
     build:
       context: ./backend
@@ -43,8 +43,8 @@ services:
     env_file:
       - .env
     environment:
-      # 生产容器必须跑 prod profile（关文档 / WS origin 白名单 / prod CORS）；
-      # 本地 compose 联调如需 dev 行为，在 .env 覆盖 SPRING_PROFILES_ACTIVE=dev
+      # 鐢熶骇瀹瑰櫒蹇呴』璺?prod profile锛堝叧鏂囨。 / WS origin 鐧藉悕鍗?/ prod CORS锛夛紱
+      # 鏈湴 compose 鑱旇皟濡傞渶 dev 琛屼负锛屽湪 .env 瑕嗙洊 SPRING_PROFILES_ACTIVE=dev
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
@@ -54,15 +54,15 @@ services:
       MILVUS_HOST: milvus
       LIANYU_ASR_BASE_URL: http://asr:8080
       SERVER_PORT: 8080
-      # OFF 已退役：agent 运行时始终启用
-      # outbox 投影由 Python relay 独占（记忆域单写者）；Java relay 保留但默认关闭
+      # OFF 宸查€€褰癸細agent 杩愯鏃跺缁堝惎鐢?
+      # outbox 鎶曞奖鐢?Python relay 鐙崰锛堣蹇嗗煙鍗曞啓鑰咃級锛汮ava relay 淇濈暀浣嗛粯璁ゅ叧闂?
       LIANYU_MEMORY_OUTBOX_ENABLED: ${LIANYU_MEMORY_OUTBOX_ENABLED:-false}
       LIANYU_AGENT_BASE_URL: ${LIANYU_AGENT_BASE_URL:-http://agent-lb:8001}
       TZ: Asia/Shanghai
-      # 与 Dockerfile ENTRYPOINT 双保险：出站优先 IPv4，避免 DashScope AAAA 不通导致 TTS 失败
+      # 涓?Dockerfile ENTRYPOINT 鍙屼繚闄╋細鍑虹珯浼樺厛 IPv4锛岄伩鍏?DashScope AAAA 涓嶉€氬鑷?TTS 澶辫触
       JAVA_TOOL_OPTIONS: "-Djava.net.preferIPv4Addresses=true"
-    # 绕过宿主机 systemd-resolved 抖动：embedded 127.0.0.11 仍解析 mysql/redis，
-    # 出站 DeepSeek/DashScope 走公共 DNS（实测偶发 UnknownHost / connect timeout）
+    # 缁曡繃瀹夸富鏈?systemd-resolved 鎶栧姩锛歟mbedded 127.0.0.11 浠嶈В鏋?mysql/redis锛?
+    # 鍑虹珯 DeepSeek/DashScope 璧板叕鍏?DNS锛堝疄娴嬪伓鍙?UnknownHost / connect timeout锛?
     dns:
       - ${LIANYU_DNS_PRIMARY:-223.5.5.5}
       - ${LIANYU_DNS_SECONDARY:-119.29.29.29}
@@ -73,7 +73,7 @@ services:
       - timeout:1
       - attempts:2
       - rotate
-    # 仅绑定本机，避免公网明文 HTTP 绕过 TLS 网关（云端经 api-gateway:443 反代 backend:8080）
+    # 浠呯粦瀹氭湰鏈猴紝閬垮厤鍏綉鏄庢枃 HTTP 缁曡繃 TLS 缃戝叧锛堜簯绔粡 api-gateway:443 鍙嶄唬 backend:8080锛?
     ports:
       - "127.0.0.1:${SERVER_PORT:-8080}:8080"
     depends_on:
@@ -90,8 +90,8 @@ services:
       asr:
         condition: service_healthy
 
-  # Agent 运行时（FastAPI + LangGraph，strangler 阶段 1：桌面感知等 agent 链路）
-  # 仅内网：经 api-gateway 分流 /api/agent/**，不对外暴露端口
+  # Agent 杩愯鏃讹紙FastAPI + LangGraph锛宻trangler 闃舵 1锛氭闈㈡劅鐭ョ瓑 agent 閾捐矾锛?
+  # 浠呭唴缃戯細缁?api-gateway 鍒嗘祦 /api/agent/**锛屼笉瀵瑰鏆撮湶绔彛
   agent:
     build:
       context: ./backend-agent
@@ -102,37 +102,45 @@ services:
     env_file:
       - .env
     environment:
-      # 与 Java lianyu.ai.multimodal.* 同源：Stage 1 视觉模型凭据
+      # 涓?Java lianyu.ai.multimodal.* 鍚屾簮锛歋tage 1 瑙嗚妯″瀷鍑嵁
       LIANYU_AGENT_MULTIMODAL_ENABLED: "true"
       LIANYU_AGENT_MULTIMODAL_BASE_URL: ${MULTIMODAL_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       LIANYU_AGENT_MULTIMODAL_API_KEY: ${MULTIMODAL_API_KEY:-${DASHSCOPE_API_KEY:-}}
       LIANYU_AGENT_MULTIMODAL_MODEL: ${MULTIMODAL_MODEL:-qwen3.7-flash}
       LIANYU_AGENT_SHADOW_MODE: ${LIANYU_AGENT_SHADOW_MODE:-false}
-      # 只读数据访问（总纲 D7）：memory_search / get_my_recent_life 需要
+      # 鍙鏁版嵁璁块棶锛堟€荤翰 D7锛夛細memory_search / get_my_recent_life 闇€瑕?
       LIANYU_AGENT_MYSQL_HOST: mysql
       LIANYU_AGENT_MYSQL_PORT: "3306"
       LIANYU_AGENT_MYSQL_USER: ${MYSQL_USER:-lianyu}
       LIANYU_AGENT_MYSQL_PASSWORD: ${MYSQL_PASSWORD:-}
       LIANYU_AGENT_MYSQL_DATABASE: lianyu
       LIANYU_AGENT_REDIS_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/0
-      # 记忆读路径：向量化 + 重排（P5）
+      # 璁板繂璇昏矾寰勶細鍚戦噺鍖?+ 閲嶆帓锛圥5锛?
       LIANYU_AGENT_EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
       LIANYU_AGENT_EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       LIANYU_AGENT_EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-v3}
+      # 鍚戦噺鍖栬窇鍦ㄨ繘绋嬪唴锛坆ge-small-zh-v1.5 ONNX int8锛?12 缁达級锛氬缃?embedding 寰€杩?
+      # 0.6鈥?.5s锛屽彫鍥為绠?0.45s 鏍规湰瑁呬笉涓嬶紝鐢熶骇涓婄瓑浜庡悜閲忚矾姘歌繙瓒呮椂銆傛ā鍨嬭蛋鍙鎸傝浇锛?
+      # 鎹㈡ā鍨嬪彧鎹㈠涓绘満鐩綍銆佷笉閲嶅缓闀滃儚锛涙敼鍥?dashscope 鍙渶璁捐繖涓彉閲忎负 dashscope銆?
+      LIANYU_AGENT_MEMORY_EMBEDDING_BACKEND: ${MEMORY_EMBEDDING_BACKEND:-local}
+      LIANYU_AGENT_LOCAL_EMBEDDING_MODEL_DIR: ${MEMORY_EMBEDDING_MODEL_DIR:-/app/models/gte-multilingual-base}
       LIANYU_AGENT_RERANK_API_KEY: ${RERANKER_API_KEY:-}
       LIANYU_AGENT_MILVUS_HOST: milvus
       LIANYU_AGENT_MILVUS_PORT: "19530"
       LIANYU_AGENT_RELAY_ENABLED: ${LIANYU_AGENT_RELAY_ENABLED:-true}
       LIANYU_AGENT_RERANK_BASE_URL: ${RERANKER_BASE_URL:-https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank}
       TZ: Asia/Shanghai
+    volumes:
+      # 鏈湴鍚戦噺妯″瀷锛堢害 24MB锛屽凡 gitignore锛夈€傜洰褰曚笉瀛樺湪鏃跺鍣ㄧ収甯歌捣锛屽悜閲忚矾鑷姩闄嶇骇銆?
+      - ./models:/app/models:ro
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # 宿主机 8C/16G：整机容器合计约 4GB、负载 0.4–0.6，两实例实测各 0.3–9% CPU / 130MB。
-    # 这些是上限不是预留，其他项目要核时照样能抢到；留出本地 embedding（bge-small int8
-    # 约 300MB）与 15k 条回填的空间，回填时也不跟聊天抢同一个核。
+    # 瀹夸富鏈?8C/16G锛氭暣鏈哄鍣ㄥ悎璁＄害 4GB銆佽礋杞?0.4鈥?.6锛屼袱瀹炰緥瀹炴祴鍚?0.3鈥?% CPU / 130MB銆?
+    # 杩欎簺鏄笂闄愪笉鏄鐣欙紝鍏朵粬椤圭洰瑕佹牳鏃剁収鏍疯兘鎶㈠埌锛涚暀鍑烘湰鍦?embedding锛坆ge-small int8
+    # 绾?300MB锛変笌 15k 鏉″洖濉殑绌洪棿锛屽洖濉椂涔熶笉璺熻亰澶╂姠鍚屼竴涓牳銆?
     mem_limit: 3g
     cpus: "3.0"
     healthcheck:
@@ -142,7 +150,7 @@ services:
       retries: 3
       start_period: 15s
 
-  # agent 第二个实例：与 agent 完全同构，只用于高可用（OFF 退役的前置条件）
+  # agent 绗簩涓疄渚嬶細涓?agent 瀹屽叏鍚屾瀯锛屽彧鐢ㄤ簬楂樺彲鐢紙OFF 閫€褰圭殑鍓嶇疆鏉′欢锛?
   agent2:
     build:
       context: ./backend-agent
@@ -167,20 +175,25 @@ services:
       LIANYU_AGENT_EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
       LIANYU_AGENT_EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       LIANYU_AGENT_EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-v3}
+      # 涓?agent 鍚屾瀯锛氭湰鍦板悜閲忓寲 + 鍙妯″瀷鎸傝浇
+      LIANYU_AGENT_MEMORY_EMBEDDING_BACKEND: ${MEMORY_EMBEDDING_BACKEND:-local}
+      LIANYU_AGENT_LOCAL_EMBEDDING_MODEL_DIR: ${MEMORY_EMBEDDING_MODEL_DIR:-/app/models/gte-multilingual-base}
       LIANYU_AGENT_RERANK_API_KEY: ${RERANKER_API_KEY:-}
       LIANYU_AGENT_MILVUS_HOST: milvus
       LIANYU_AGENT_MILVUS_PORT: "19530"
       LIANYU_AGENT_RELAY_ENABLED: "false"
       LIANYU_AGENT_RERANK_BASE_URL: ${RERANKER_BASE_URL:-https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank}
       TZ: Asia/Shanghai
+    volumes:
+      - ./models:/app/models:ro
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # 宿主机 8C/16G：整机容器合计约 4GB、负载 0.4–0.6，两实例实测各 0.3–9% CPU / 130MB。
-    # 这些是上限不是预留，其他项目要核时照样能抢到；留出本地 embedding（bge-small int8
-    # 约 300MB）与 15k 条回填的空间，回填时也不跟聊天抢同一个核。
+    # 瀹夸富鏈?8C/16G锛氭暣鏈哄鍣ㄥ悎璁＄害 4GB銆佽礋杞?0.4鈥?.6锛屼袱瀹炰緥瀹炴祴鍚?0.3鈥?% CPU / 130MB銆?
+    # 杩欎簺鏄笂闄愪笉鏄鐣欙紝鍏朵粬椤圭洰瑕佹牳鏃剁収鏍疯兘鎶㈠埌锛涚暀鍑烘湰鍦?embedding锛坆ge-small int8
+    # 绾?300MB锛変笌 15k 鏉″洖濉殑绌洪棿锛屽洖濉椂涔熶笉璺熻亰澶╂姠鍚屼竴涓牳銆?
     mem_limit: 3g
     cpus: "3.0"
     healthcheck:
@@ -190,12 +203,12 @@ services:
       retries: 3
       start_period: 15s
 
-  # agent 内部负载均衡：Java 只认识这个地址，一个实例挂了自动切另一个
+  # agent 鍐呴儴璐熻浇鍧囪　锛欽ava 鍙璇嗚繖涓湴鍧€锛屼竴涓疄渚嬫寕浜嗚嚜鍔ㄥ垏鍙︿竴涓?
   agent-lb:
     image: nginx:1.27-alpine
     container_name: lianyu-agent-lb
     restart: unless-stopped
-    # 仅绑回环：巡检脚本（宿主机）可达，公网不可达（agent 只服务内网）
+    # 浠呯粦鍥炵幆锛氬贰妫€鑴氭湰锛堝涓绘満锛夊彲杈撅紝鍏綉涓嶅彲杈撅紙agent 鍙湇鍔″唴缃戯級
     ports:
       - "127.0.0.1:18001:8001"
     volumes:
@@ -203,7 +216,7 @@ services:
     depends_on:
       - agent
       - agent2
-  # 中文 ASR（SenseVoice final + Zipformer stream，仅内网供 backend 调用）
+  # 涓枃 ASR锛圫enseVoice final + Zipformer stream锛屼粎鍐呯綉渚?backend 璋冪敤锛?
   asr:
     build:
       context: ./deploy/asr
@@ -216,7 +229,7 @@ services:
       ASR_STREAM_THREADS: "2"
       ASR_STREAM_ENABLED: "true"
       ASR_PORT: "8080"
-    # int8 SenseVoice + Zipformer 常驻约 1.3–1.6G；3G 给识别峰值留余量
+    # int8 SenseVoice + Zipformer 甯搁┗绾?1.3鈥?.6G锛?G 缁欒瘑鍒嘲鍊肩暀浣欓噺
     mem_limit: 3072m
     cpus: "2.5"
     healthcheck:
@@ -228,7 +241,7 @@ services:
     ports:
       - "127.0.0.1:18081:8080"
 
-  # API 网关（仅 TLS + /api /ws 反代，不托管前端静态资源；桌面端走 Electron）
+  # API 缃戝叧锛堜粎 TLS + /api /ws 鍙嶄唬锛屼笉鎵樼鍓嶇闈欐€佽祫婧愶紱妗岄潰绔蛋 Electron锛?
   api-gateway:
     build:
       context: ./deploy/api-gateway
@@ -240,7 +253,7 @@ services:
     restart: unless-stopped
     environment:
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,https://localhost}
-      # 运营台 dashboard 反代上游（/ops /static；dashboard 本体不在本仓库）
+      # 杩愯惀鍙?dashboard 鍙嶄唬涓婃父锛?ops /static锛沝ashboard 鏈綋涓嶅湪鏈粨搴擄級
       OPS_DASHBOARD_UPSTREAM: ${OPS_DASHBOARD_UPSTREAM:-http://172.18.0.1:8090}
     ports:
       - "${LIANYU_GATEWAY_HTTP_PORT:-80}:80"
@@ -256,8 +269,8 @@ services:
     image: mysql:8.4
     container_name: lianyu-mysql
     restart: unless-stopped
-    # 空闲会话 30min 服务端回收（hikari max-lifetime=20min < 此值，兼容）：
-    # 僵尸事务（idle in transaction）不再挂 8h，自动回滚释放行锁
+    # 绌洪棽浼氳瘽 30min 鏈嶅姟绔洖鏀讹紙hikari max-lifetime=20min < 姝ゅ€硷紝鍏煎锛夛細
+    # 鍍靛案浜嬪姟锛坕dle in transaction锛変笉鍐嶆寕 8h锛岃嚜鍔ㄥ洖婊氶噴鏀捐閿?
     command: --wait_timeout=1800 --interactive_timeout=1800
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}

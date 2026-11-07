@@ -20,6 +20,10 @@ dependencies = [
     "redis>=5.2",
     # 记忆写路径：向量投影（Python 侧接管 relay）
     "pymilvus>=2.4",
+    # 本地向量化：bge-small-zh-v1.5 的 ONNX int8 推理（外网 embedding 往返 0.6–1.5s，
+    # 会把召回预算整个吃掉）。onnxruntime 与 tokenizers 加起来约 60MB，不含 torch
+    "onnxruntime>=1.20",
+    "tokenizers>=0.20",
 ]
 
 [dependency-groups]

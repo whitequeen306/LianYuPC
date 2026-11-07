@@ -10,6 +10,10 @@ backend/scripts/out/
 # Local one-shot ship scripts / notes (never commit; see AGENTS.md → 发布发版)
 local/
 
+# 本地向量模型权重（onnx，约 24MB）。用 backend-agent/scripts/fetch_embedding_model.py 拉取，
+# compose 以只读方式挂到 /app/models；二进制不进仓库
+models/
+
 # Java / Maven
 backend/target/
 backend/*/target/

@@ -192,6 +192,20 @@ def search_hits(
 _client_v3: Any = None
 
 
+def v3_collection_name() -> str:
+    """v3 集合名：配置留空时按当前向量维度自动取（`memory_vectors_d768`）。
+
+    集合维度是建表时定死的，换 embedding 模型必须换集合。名字跟维度绑定以后，
+    改模型只改配置里的后端，不会出现"512 维向量写进 1024 维集合"的运行时错误。
+    """
+    configured = (get_settings().milvus_v3_collection or "").strip()
+    if configured:
+        return configured
+    from app.memory.embedding import active_dim
+
+    return f"memory_vectors_d{active_dim()}"
+
+
 def _connect_v3() -> Any | None:
     """v3 集合的连接；集合不存在时只 warning，不挡住 v2 主链路。"""
     global _client_v3
@@ -208,7 +222,7 @@ def _connect_v3() -> Any | None:
             # 记忆是"这一轮刚记住、下一轮就要想起来"，这里用 Strong 换确定性。
             consistency_level="Strong",
         )
-        name = settings.milvus_v3_collection
+        name = v3_collection_name()
         if not client.has_collection(name):
             logger.warning("milvus v3 collection missing: %s (run scripts/init_milvus_v3.py)", name)
             return None
@@ -247,7 +261,7 @@ def insert_v3(
     if memory_id:
         try:
             client.delete(
-                collection_name=settings.milvus_v3_collection,
+                collection_name=v3_collection_name(),
                 filter=f"memory_id == {int(memory_id)}",
             )
         except Exception as exc:  # noqa: BLE001 - 删不掉就让 insert 自己兜底
@@ -255,7 +269,7 @@ def insert_v3(
     clipped = summary if len(summary) <= 512 else summary[:512]
     try:
         result = client.insert(
-            collection_name=settings.milvus_v3_collection,
+            collection_name=v3_collection_name(),
             data=[{
                 "character_id": int(character_id),
                 "user_id": int(user_id),
@@ -286,7 +300,7 @@ def insert_v3_batch(entries: list[dict], *, dedupe: bool = False) -> int:
     if client is None or not entries:
         return 0
     settings = get_settings()
-    collection = settings.milvus_v3_collection
+    collection = v3_collection_name()
     data: list[dict] = []
     for entry in entries:
         summary = str(entry.get("summary") or "")
@@ -328,7 +342,7 @@ def flush_v3() -> None:
     if client is None:
         return
     try:
-        client.flush(get_settings().milvus_v3_collection)
+        client.flush(v3_collection_name())
     except Exception as exc:  # noqa: BLE001
         logger.warning("milvus v3 flush failed: %s", exc)
 
@@ -350,7 +364,7 @@ def missing_v3_ids(memory_ids: list[int]) -> set[int]:
         return set()
     try:
         rows = client.query(
-            collection_name=settings.milvus_v3_collection,
+            collection_name=v3_collection_name(),
             filter=f"memory_id in {wanted}",
             output_fields=["memory_id"],
             limit=len(wanted),
@@ -375,7 +389,7 @@ def search_hits_v3(
     settings = get_settings()
     try:
         hits = client.search(
-            collection_name=settings.milvus_v3_collection,
+            collection_name=v3_collection_name(),
             data=[vector],
             anns_field="vector",
             search_params={"metric_type": "COSINE", "params": {"nprobe": 16}},

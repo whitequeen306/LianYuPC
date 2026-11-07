@@ -127,8 +127,11 @@ async def _vector_rows(
     settings = get_settings()
     if not settings.memory_vector_recall_enabled:
         return []
-    # 没配 key 时别去试：embed() 会等 HTTP 超时，一次召回能把回复拖慢好几秒。
-    if getattr(settings, "embedding_api_key", None) == "":
+    # 没有可用的向量化能力时别去试：外网后端没 key 会等满 HTTP 超时，一次召回能把
+    # 回复拖慢好几秒。本地后端只看模型文件在不在。
+    from app.memory.embedding import is_configured
+
+    if not is_configured():
         return []
     text = (query or "").strip()
     if not text:
@@ -157,9 +160,10 @@ async def _vector_rows(
         return []
 
     from app import milvus_store
+    from app.memory.embedding import min_similarity
 
     offset = int(getattr(milvus_store, "EPISODE_ID_OFFSET", 0))
-    floor = float(getattr(settings, "memory_vector_min_similarity", 0.0) or 0.0)
+    floor = min_similarity()
     scores: dict[int, float] = {}
     episode_scores: dict[int, float] = {}
     for memory_id, score in hits:

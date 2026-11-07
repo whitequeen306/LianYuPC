@@ -35,6 +35,9 @@ def _clear_query_cache():
 @pytest.fixture(autouse=True)
 def _settings(monkeypatch):
     settings = get_settings()
+    # 这一组用例测的是 DashScope HTTP 协议（分批、乱序还原、缓存、rerank）。
+    # 默认后端已改成进程内本地模型，必须显式钉回 dashscope，否则走不到 respx 的路由。
+    monkeypatch.setattr(settings, "memory_embedding_backend", "dashscope", raising=False)
     monkeypatch.setattr(settings, "embedding_base_url", EMB_BASE, raising=False)
     monkeypatch.setattr(settings, "embedding_api_key", "emb-key", raising=False)
     monkeypatch.setattr(settings, "embedding_model", "text-embedding-v3", raising=False)

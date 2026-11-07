@@ -141,6 +141,9 @@ async def test_vector_lane_prefers_v3_when_enabled(monkeypatch):
         return [[0.3, 0.4]]
 
     monkeypatch.setattr(recall_mod, "get_settings", lambda: _settings())
+    # 测试机没有本地模型文件，否则 is_configured() 会判"没配"、向量路直接空返回
+    monkeypatch.setattr("app.memory.embedding.is_configured", lambda: True)
+    monkeypatch.setattr("app.memory.embedding.min_similarity", lambda: 0.0)
     monkeypatch.setattr("app.memory.embedding.embed", fake_embed)
     monkeypatch.setattr(milvus_store, "search_hits", lambda *a, **kw: calls.append("v2") or [])
     monkeypatch.setattr(milvus_store, "search_hits_v3", lambda *a, **kw: calls.append("v3") or [])

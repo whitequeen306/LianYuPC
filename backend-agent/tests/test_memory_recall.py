@@ -13,6 +13,18 @@ from app.memory import recall as recall_mod
 NOW = datetime(2026, 11, 6, 12, 0, tzinfo=timezone.utc)
 
 
+@pytest.fixture(autouse=True)
+def _embeddings_available(monkeypatch):
+    """这些用例测的是召回编排，不是模型文件在不在。
+
+    线上 `is_configured()` 会去看 `/app/models/...` 有没有落盘；测试机没有，
+    向量路会被提前关掉，用例就会"什么都没发生"地通过。这里显式声明"向量能力可用"，
+    真正测门槛的用例再用 `min_similarity` 自己覆盖。
+    """
+    monkeypatch.setattr("app.memory.embedding.is_configured", lambda: True)
+    monkeypatch.setattr("app.memory.embedding.min_similarity", lambda: 0.0)
+
+
 def _row(row_id, **overrides):
     payload = dict(
         id=row_id,
@@ -497,6 +509,8 @@ async def test_vector_lane_drops_hits_below_similarity_floor(monkeypatch):
             memory_vector_min_similarity=0.55,
         ),
     )
+    # 门槛住 embedding 层（不同模型余弦尺度不同），测试直接钉住解析结果
+    monkeypatch.setattr("app.memory.embedding.min_similarity", lambda: 0.55)
 
     async def fake_embed(texts):
         return [[0.1, 0.2, 0.3]]

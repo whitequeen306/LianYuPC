@@ -56,11 +56,17 @@ def main(argv: list[str] | None = None) -> int:
     settings = get_settings()
     from pymilvus import MilvusClient
 
+    from app.memory.embedding import active_backend, active_dim
+    from app.milvus_store import v3_collection_name
+
+    dim = active_dim()
     client = MilvusClient(
         uri=f"http://{settings.milvus_host}:{settings.milvus_port}",
         timeout=settings.milvus_timeout_seconds,
     )
-    name = settings.milvus_v3_collection
+    # 集合名跟维度走（配置留空时自动 memory_vectors_d{dim}），别直接读配置——空串会报
+    # ParamError: collection_name value is illegal
+    name = v3_collection_name()
     if client.has_collection(name):
         if not args.recreate:
             print(f"{name} already exists; pass --recreate to rebuild")
@@ -70,11 +76,11 @@ def main(argv: list[str] | None = None) -> int:
 
     client.create_collection(
         collection_name=name,
-        schema=build_schema(settings.embedding_dim),
+        schema=build_schema(dim),
         index_params=build_index_params(),
     )
     client.load_collection(name)
-    print(f"created {name} (dim={settings.embedding_dim}, COSINE/HNSW)")
+    print(f"created {name} (backend={active_backend()}, dim={dim}, COSINE/HNSW)")
     return 0
 
 

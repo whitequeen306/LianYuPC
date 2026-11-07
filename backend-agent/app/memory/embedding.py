@@ -34,6 +34,54 @@ _QUERY_TTL_SECONDS = 60.0
 _QUERY_CACHE_MAX = 256
 
 
+def active_backend() -> str:
+    """当前向量化后端：`local`（进程内 bge）或 `dashscope`（外网 HTTP）。"""
+    name = (getattr(get_settings(), "memory_embedding_backend", "dashscope") or "").strip().lower()
+    return name or "dashscope"
+
+
+def active_dim() -> int:
+    """当前后端的向量维度。集合维度必须与它一致，否则写入直接报维度不匹配。"""
+    settings = get_settings()
+    if active_backend() == "local":
+        return int(getattr(settings, "local_embedding_dim", 768) or 768)
+    return int(settings.embedding_dim)
+
+
+def is_configured() -> bool:
+    """向量路是否有可用的向量化能力。本地后端只看模型文件在不在。"""
+    if active_backend() == "local":
+        from pathlib import Path
+
+        from app.memory import local_embedding
+
+        settings = get_settings()
+        model_dir = Path(getattr(settings, "local_embedding_model_dir", ""))
+        # 图文件名随导出方式变（model_quantized / model_int8 / …），交给同一个解析函数判断，
+        # 免得换模型时 is_configured 说"没配"、向量路被静默关掉。
+        graph = local_embedding.resolve_graph(model_dir)
+        return graph is not None and (model_dir / local_embedding.TOKENIZER_FILE).exists()
+    return bool(getattr(get_settings(), "embedding_api_key", ""))
+
+
+# 不同模型的余弦尺度不可比，门槛必须跟后端走：
+# - text-embedding-v3（1024 维）：无关句基线 0.46–0.52，同义 0.85+ → 0.50
+# - gte-multilingual-base（768 维）：标定集正样本最低 0.566、噪声最高 0.438 → 0.50
+# 数字来自 local/_threshold.py，换模型时用它重新标定。
+DEFAULT_MIN_SIMILARITY: dict[str, float] = {"local": 0.50, "dashscope": 0.50}
+
+
+def min_similarity() -> float:
+    """向量路相似度下限；配置项为 0 时按当前后端取默认值。"""
+    settings = get_settings()
+    configured = float(getattr(settings, "memory_vector_min_similarity", 0.0) or 0.0)
+    if configured > 0:
+        return configured
+    if active_backend() == "local":
+        return float(getattr(settings, "local_embedding_min_similarity", DEFAULT_MIN_SIMILARITY["local"]))
+    return DEFAULT_MIN_SIMILARITY["dashscope"]
+
+
 async def embed_query(text: str) -> list[float] | None:
     """单条查询向量（60 秒内存缓存）。失败返回 None，调用方照常走文本路。"""
     import time
@@ -55,9 +103,13 @@ async def embed_query(text: str) -> list[float] | None:
 
 
 async def embed(texts: list[str], *, client: httpx.AsyncClient | None = None) -> list[list[float]] | None:
-    """批量向量化；按供应商上限切片，失败返回 None。"""
+    """批量向量化；本地后端直接算，外网后端按供应商上限切片。失败返回 None。"""
     if not texts:
         return []
+    if active_backend() == "local":
+        from app.memory import local_embedding
+
+        return await local_embedding.embed(texts)
     vectors: list[list[float]] = []
     for start in range(0, len(texts), MAX_BATCH):
         chunk = texts[start:start + MAX_BATCH]
@@ -174,4 +226,14 @@ async def rerank(
     return scored
 
 
-__all__ = ["embed", "embed_one", "rerank"]
+__all__ = [
+    "DEFAULT_MIN_SIMILARITY",
+    "active_backend",
+    "active_dim",
+    "embed",
+    "embed_one",
+    "embed_query",
+    "is_configured",
+    "min_similarity",
+    "rerank",
+]

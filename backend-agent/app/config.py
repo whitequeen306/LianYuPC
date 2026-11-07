@@ -81,9 +81,8 @@ class Settings(BaseSettings):
     # 旧路径（画像槽位 + importance top20 + LIKE）只作为异常兜底。
     memory_recall_v3_enabled: bool = True
     # 召回的超时预算：超了就退回旧路径，宁可少几条也不要拖住整轮回复。
-    # 向量路要发一次 embedding（热连接约 200ms，线上实测 1–11s 都有）：整条召回
-    # 等不到就白等，所以向量路另有单独预算（见 memory_vector_timeout_seconds），
-    # 文本路出块约 200–300ms，0.65s 足够两者叠加。
+    # 向量路本地推理热态 10ms、Milvus 检索 3–5ms（首次检索 600ms，已在启动时预热），
+    # 整条召回主要是文本路 SQL 的 200–300ms，0.45s 留了两倍余量。
     memory_recall_timeout_seconds: float = 0.45
     # 打点（mark_injected）是旁路写入，超时直接放弃，下一轮再补。
     memory_recall_mark_timeout_seconds: float = 0.3
@@ -116,6 +115,19 @@ class Settings(BaseSettings):
     embedding_api_key: str = ""
     embedding_model: str = "text-embedding-v3"
     embedding_dim: int = 1024
+    # 向量化后端：dashscope（外网，0.6–1.5s）或 local（进程内 ONNX，约 10ms）。
+    # 本地后端让向量路第一次真正跑进召回预算；dashscope 留作回滚。
+    memory_embedding_backend: str = "local"
+    # 默认模型 gte-multilingual-base：中文 51 题 MRR 0.898（与 bge-base-zh 持平），
+    # 但跨语言召回 4/4（bge-*-zh 只有 2–3/4）——产品支持 zh/en/ja，用户可能用英文或
+    # 日文问，而记忆是当时那句话写的。int8 ONNX 340MB，2 线程单条约 9ms。
+    local_embedding_model_dir: str = "/app/models/gte-multilingual-base"
+    local_embedding_dim: int = 768
+    local_embedding_max_length: int = 256
+    local_embedding_threads: int = 2
+    # 本地模型的余弦尺度：标定集上正样本最低 0.566、噪声最高 0.438 → 取 0.50。
+    # 换模型必须重新标定（local/_threshold.py）。
+    local_embedding_min_similarity: float = 0.50
     rerank_base_url: str = "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
     rerank_api_key: str = ""
     rerank_model: str = "gte-rerank-v2"
@@ -124,10 +136,12 @@ class Settings(BaseSettings):
     milvus_host: str = "milvus"
     milvus_port: int = 19530
     milvus_collection: str = "memory_vectors_v2"
-    # v3：多带 layer/status/event_time 三个标量，检索时只捞 active 的行。
+    # v3/v4：多带 layer/status/event_time 三个标量，检索时只捞 active 的行。
     # 双写期间 v2 仍是投影主键的来源（outbox 的 vec_id 记在 v2 上），v3 只做增量。
+    # 集合名留空 = 按当前向量维度自动取（memory_vectors_d768）。集合维度建表时定死，
+    # 换 embedding 模型必须换集合；自动命名保证不会把 512 维向量写进 1024 维集合。
     memory_vectors_v3_enabled: bool = True
-    milvus_v3_collection: str = "memory_vectors_v3"
+    milvus_v3_collection: str = ""
     milvus_timeout_seconds: float = 10.0
     # outbox relay（Python 侧单写者）
     relay_enabled: bool = True
@@ -143,11 +157,11 @@ class Settings(BaseSettings):
     memory_vector_recall_enabled: bool = True
     memory_vector_recall_top_k: int = 20
     # text-embedding-v3 的无关句余弦基线约 0.40–0.52（实测「今天吃了火锅」对两条记忆是 0.46/0.52），
-    # 低于这个门槛的基本是噪声；换 embedding 供应商时需要重新标定。
-    memory_vector_min_similarity: float = 0.50
-    # 向量路单独限时：外网 embedding 超时就只丢向量，别把 ngram/episode 一起拖垮。
-    # 生产实测 DashScope embedding 0.6-1.5s，这个预算基本只决定"白等多久"；
-    # 等本地 embedding 落地后（~20ms），它才会真正变成收益。
+    # 低于这个门槛的基本是噪声。0 表示按后端自动取（见 app/memory/embedding.py
+    # DEFAULT_MIN_SIMILARITY）：不同模型的余弦尺度不可比，写死一个数换后端就全错。
+    memory_vector_min_similarity: float = 0.0
+    # 向量路单独限时：超时就只丢向量，别把 ngram/episode 一起拖垮。
+    # 本地推理热态约 10ms，0.18s 只用来兜"模型冷启动/机器被别的项目抢满"的极端情况。
     memory_vector_timeout_seconds: float = 0.18
 
     # 记忆块（画像 + 关系 + 场景 + 召回）合起来的 token 上限；0 表示不设限

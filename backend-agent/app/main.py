@@ -54,18 +54,25 @@ async def lifespan(app: FastAPI):
 
 
 async def _warm_memory() -> None:
-    """预热 embedding 与 Milvus 连接：首次召回要 1.3s，预热后约 200ms。"""
-    settings = get_settings()
-    if not getattr(settings, "embedding_api_key", ""):
+    """预热 embedding、Milvus 连接与一次检索：首次召回要 1.3s，预热后约 10ms。"""
+    from app.memory.embedding import active_dim, embed, is_configured
+
+    if not is_configured():
         return
     try:
         from app import milvus_store
-        from app.memory.embedding import embed
 
-        await embed(["预热"])
+        vectors = await embed(["预热"])
         # Milvus 建连是同步阻塞（约 0.8s）；直接在事件循环里调用会把首轮
         # 召回的 500ms 预算挤爆，首轮静默退回旧渲染。
         await asyncio.to_thread(milvus_store._connect_v3)  # noqa: SLF001
+        # 第一次检索还要额外 600ms（加载集合 + 建立检索上下文）。不预热的话，
+        # 上线后第一轮真实提问必然丢掉向量路——那正是用户会先开口的那一轮。
+        if vectors:
+            warm_vector = vectors[0]
+            await asyncio.to_thread(milvus_store.search_hits_v3, 0, 0, warm_vector, 1)
+        else:
+            await asyncio.to_thread(milvus_store.search_hits_v3, 0, 0, [0.0] * active_dim(), 1)
         logger.info("memory warmup done")
     except Exception as exc:  # noqa: BLE001 - 预热失败不影响启动
         logger.warning("memory warmup failed: %s", exc)
