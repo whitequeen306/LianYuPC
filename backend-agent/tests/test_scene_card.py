@@ -111,3 +111,47 @@ def test_assembly_does_not_record_current_question_as_open_loop():
 
     assert card["openLoops"] == []
     assert "还没接的话" not in render_card(card)
+
+
+def test_close_reason_covers_the_three_triggers():
+    from datetime import datetime, timedelta, timezone
+
+    from app.context.scene_card import (
+        SCENE_IDLE_SECONDS,
+        SCENE_MAX_TURNS,
+        close_reason,
+        is_stale,
+        turn_count,
+    )
+
+    now = datetime(2026, 11, 7, 12, 0, tzinfo=timezone.utc)
+    fresh = new_card(1, now)
+    fresh = update_card(fresh, user_text="今天加班到很晚，好累", turn=1, now=now)
+    assert close_reason(fresh, now=now) is None
+    assert is_stale(fresh, now) is False
+
+    # ① 闲置：门槛是 20 分钟（原来是 45 分钟，生产上几乎不触发）
+    assert SCENE_IDLE_SECONDS == 20 * 60
+    later = now + timedelta(seconds=SCENE_IDLE_SECONDS)
+    assert close_reason(fresh, now=later) == "idle"
+    assert is_stale(fresh, later) is True
+
+    # ② 轮次：连聊不歇也要收场
+    long_card = new_card(2, now)
+    long_card["turnFrom"] = 1
+    long_card["turnTo"] = SCENE_MAX_TURNS
+    assert turn_count(long_card) == SCENE_MAX_TURNS
+    assert close_reason(long_card, now=now) == "turns"
+
+    # ③ 话题漂移：换题即换幕（同一句里含旧话题词不算）
+    assert close_reason(fresh, "帮我看看这个 Python 报错是什么原因", now) == "drift"
+    assert close_reason(fresh, "加班的时候领导还在催进度", now) is None
+
+
+def test_turn_count_is_zero_for_cards_without_turns():
+    from app.context.scene_card import turn_count
+
+    assert turn_count(None) == 0
+    assert turn_count({}) == 0
+    assert turn_count({"turnFrom": 0, "turnTo": 9}) == 0
+    assert turn_count({"turnFrom": 5, "turnTo": 9}) == 5

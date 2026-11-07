@@ -124,12 +124,27 @@ async def test_new_memory_inserts_meta_and_outbox(fake_db):
     assert any("insert into memory_outbox" in s.lower() for s in sqls)
     # 新记忆不写 vec_id（由 relay 投影后回填）
     meta_params = fake_db["executed"][0][1]
-    assert meta_params[5] == "[11]"          # source_msg_ids 以 JSON 写入
-    assert meta_params[6] == w.compute_source_ids_hash([11], "用户喜欢猫")
+    # 参数顺序：character_id, user_id, summary, memory_type, importance,
+    #           layer, strength, tau_days, source_msg_ids(JSON), source_hash
+    assert meta_params[5] == "fact"
+    assert meta_params[7] == 365             # 普通事实一年半衰期
+    assert meta_params[8] == "[11]"          # source_msg_ids 以 JSON 写入
+    assert meta_params[9] == w.compute_source_ids_hash([11], "用户喜欢猫")
     # 新行必须自带衰减起点：夜间结算按 last_decay_at < now-7d 取批，NULL 会永远挑不到
     meta_sql = " ".join([sql for sql, _ in fake_db["executed"] if "insert into memory_meta" in sql.lower()][0].split())
     assert "last_decay_at" in meta_sql
     assert "NOW(), NOW(), NOW()" in meta_sql
+
+
+@pytest.mark.asyncio
+async def test_profile_slot_lands_in_core_and_never_decays(fake_db):
+    # 画像槽位是"她是谁/你是谁"的设定：只有落 core 才会进 core 槽，
+    # 而 tau_days=0 才不会在夜里被降档（生产上 core 曾经是 0 条）。
+    await w.write_memories(7, 3, [w.MemoryInput("【长期记忆/姓名】阿岚", "FACT", 0.9, (11,))])
+
+    params = [item for item in fake_db["executed"] if "insert into memory_meta" in item[0].lower()][0][1]
+    assert params[5] == "core"
+    assert params[7] == 0
 
 
 def test_slot_of_only_matches_profile_prefix():

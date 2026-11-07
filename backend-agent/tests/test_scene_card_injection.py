@@ -129,6 +129,49 @@ async def test_idle_scene_is_closed_and_stashed(monkeypatch, card_store):
     assert card_store[11]["startedAt"] != old["startedAt"]
 
 
+async def test_topic_drift_closes_the_previous_scene(monkeypatch, card_store):
+    """话题换了就该收场：旧话题进 stash，新话题从头起一张卡。
+
+    之前只在卡里把旧话题降级成"可以回扣"，结果整晚只有一幕，
+    episode 抽取永远等不到"闲置 45 分钟"那一刻。
+    """
+    await _assemble(last_user_message="今天加班到很晚，好累，你在吗？")
+    assert "加班" in card_store[11]["topic"]
+    stashed: list[dict] = []
+
+    async def fake_stash(card):
+        stashed.append(card)
+
+    monkeypatch.setattr(scene_card, "stash_pending", fake_stash)
+
+    prompt = await _assemble(last_user_message="帮我看看这个 Python 报错是什么原因")
+
+    assert len(stashed) == 1 and "加班" in stashed[0]["topic"]
+    assert "加班" not in prompt
+    assert "Python" in prompt
+    # 新卡是干净的：旧话题不再以"可以回扣"的形式留在卡里
+    assert card_store[11]["callbacks"] == []
+
+
+async def test_long_scene_is_closed_by_turn_cap(monkeypatch, card_store):
+    """连聊不歇也要收场：轮次到 40 就结算，不能永远挂着一幕。"""
+    card = scene_card.new_card(11)
+    card["topic"] = "一直在聊同一件事"
+    card["turnFrom"] = 1
+    card["turnTo"] = scene_card.SCENE_MAX_TURNS
+    card_store[11] = card
+    stashed: list[dict] = []
+
+    async def fake_stash(item):
+        stashed.append(item)
+
+    monkeypatch.setattr(scene_card, "stash_pending", fake_stash)
+
+    await _assemble(last_user_message="一直在聊同一件事，接着说吧")
+
+    assert len(stashed) == 1
+
+
 async def test_proactive_turn_gets_one_resurface_hint(monkeypatch):
     calls = []
 

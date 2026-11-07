@@ -22,9 +22,15 @@ from app.db import cache_get_json, cache_put_json
 logger = logging.getLogger(__name__)
 
 SCENE_TTL_SECONDS = 21600
-# 闲置多久算「上一场聊完了」：45 分钟。太短会把「去倒杯水」切成一幕，
-# 太长则两段无关话题被塞进同一个 episode。
-SCENE_IDLE_SECONDS = 45 * 60
+# 闲置多久算「上一场聊完了」：20 分钟。
+#
+# 原来是 45 分钟，生产上几乎不触发：用户常常隔半小时回来接着说，
+# 却因为没跨过 45 分钟门槛，整晚只有一张卡、一次也结算不了
+# （上线一天后 episode 只有 3 条）。20 分钟对"去忙一下回来"仍算短，
+# 但足以把「晚上聊工作」和「睡前聊别的」分成两幕。
+SCENE_IDLE_SECONDS = 20 * 60
+# 一幕最多 40 轮：连聊两小时不歇的情况靠轮次兜底，否则这一场永远不结束。
+SCENE_MAX_TURNS = 40
 # 关闭快照最多留 7 天：它的用途是「抽取失败后还能重跑」，不是长期档案。
 PENDING_TTL_SECONDS = 7 * 24 * 3600
 MAX_BEATS = 4
@@ -250,16 +256,65 @@ def _parse_iso(value: Any) -> datetime | None:
 
 
 def is_stale(card: dict[str, Any] | None, now: datetime | None = None) -> bool:
-    """卡的最后一次更新是否已经超过闲置阈值（= 上一幕聊完了）。"""
+    """卡是否该结束（闲置超时或轮次超限）；话题漂移由 `topic_drifted` 单独判。"""
+    return close_reason(card, now=now) is not None
+
+
+def turn_count(card: dict[str, Any] | None) -> int:
+    """这一幕已经聊了几轮（卡里没记轮次时返回 0）。"""
     if not isinstance(card, dict):
-        return False
+        return 0
+    try:
+        first = int(card.get("turnFrom") or 0)
+        last = int(card.get("turnTo") or 0)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, last - first + 1) if first else 0
+
+
+def _idle_seconds(card: dict[str, Any], now: datetime | None) -> float | None:
     moment = _parse_iso(card.get("updatedAt"))
     if moment is None:
-        return False
+        return None
     reference = now or datetime.now(timezone.utc)
     if reference.tzinfo is None:
         reference = reference.replace(tzinfo=timezone.utc)
-    return (reference - moment).total_seconds() >= SCENE_IDLE_SECONDS
+    return (reference - moment).total_seconds()
+
+
+def topic_drifted(card: dict[str, Any] | None, text: str) -> bool:
+    """这句话是不是已经换了个话题（与卡里的话题 + 刚发生的事几乎不重叠）。
+
+    与 `update_card` 内部用的判据一致（包含度 < 0.08 且长度 ≥ 6），
+    只是搬到「先判要不要收场」的位置：一旦漂移就先把上一幕结算掉，
+    再从新话题起一张干净的卡，而不是在同一张卡里覆盖话题。
+    """
+    if not isinstance(card, dict):
+        return False
+    topic = str(card.get("topic") or "").strip()
+    clean = (text or "").strip()
+    if not topic or len(clean) < 6:
+        return False
+    anchor = f"{topic} {' '.join(card.get('beats') or [])}"
+    return _overlap(clean, anchor) < 0.08
+
+
+def close_reason(card: dict[str, Any] | None, text: str | None = None,
+                 now: datetime | None = None) -> str | None:
+    """这一幕是否该收场，以及为什么：`idle` / `turns` / `drift` / None。
+
+    收场理由要能落日志：生产上「为什么一整天没结算」只能靠它定位。
+    """
+    if not isinstance(card, dict):
+        return None
+    idle = _idle_seconds(card, now)
+    if idle is not None and idle >= SCENE_IDLE_SECONDS:
+        return "idle"
+    if turn_count(card) >= SCENE_MAX_TURNS:
+        return "turns"
+    if text and topic_drifted(card, text):
+        return "drift"
+    return None
 
 
 def _closed_snapshot(card: dict[str, Any]) -> dict[str, Any]:
@@ -346,8 +401,10 @@ __all__ = [
     "MODEL_REFRESH_TURNS",
     "PENDING_TTL_SECONDS",
     "SCENE_IDLE_SECONDS",
+    "SCENE_MAX_TURNS",
     "SCENE_TTL_SECONDS",
     "clear_card",
+    "close_reason",
     "detect_mood",
     "is_stale",
     "load_card",
@@ -360,5 +417,7 @@ __all__ = [
     "scene_key",
     "stash_pending",
     "take_pending",
+    "topic_drifted",
+    "turn_count",
     "update_card",
 ]

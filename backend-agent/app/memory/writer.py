@@ -241,13 +241,23 @@ async def _supersede_slot(cur, *, memory_id: int, user_id: int, character_id: in
 
 async def _insert_new(user_id: int, character_id: int, summary: str, memory_type: str,
                       importance: Decimal, source_ids: tuple[int, ...], source_hash: str) -> int:
+    # 画像槽位（姓名/忌口/偏好…）落 `core`：它们是「她是谁、你是谁」的设定，
+    # 用 tau_days=0 表示不衰减，召回里也单独走 core 槽而不是参与排名。
+    # 之前所有记忆都写 layer='fact'，生产上 `layer='core'` 一直是 0 条，
+    # core 槽只能靠用户手动 pin —— 于是"她记得你叫什么"完全取决于用户有没有点过钉住。
+    slot = slot_of(summary)
+    layer = "core" if slot else "fact"
+    tau_days = 0 if slot else 365
     async with transaction() as cur:
         memory_id = await insert_returning_id(
             cur,
             "INSERT INTO memory_meta (character_id, user_id, summary, memory_type, importance, "
+            "layer, strength, tau_days, status, fade_level, "
             "source_msg_ids, source_hash, milvus_vec_id, event_time, last_decay_at, created_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, NULL, NOW(), NOW(), NOW())",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'active', 'active', "
+            "%s, %s, NULL, NOW(), NOW(), NOW())",
             (character_id, user_id, summary, memory_type, str(importance),
+             layer, 1.0, tau_days,
              json.dumps(list(source_ids), ensure_ascii=False), source_hash),
         )
         await insert_returning_id(
@@ -256,7 +266,6 @@ async def _insert_new(user_id: int, character_id: int, summary: str, memory_type
             "VALUES (%s, %s, %s, %s, NOW())",
             (memory_id, "UPSERT", "PENDING", 0),
         )
-        slot = slot_of(summary)
         if slot:
             await _supersede_slot(cur, memory_id=memory_id, user_id=user_id,
                                   character_id=character_id, slot=slot)
@@ -289,12 +298,16 @@ async def _replace_and_enqueue(memory_id: int, summary: str, memory_type: str,
              json.dumps(merged, ensure_ascii=False), source_hash, memory_id),
         )
         if old_vec:
-            await cur.execute(
+            # 走 insert_returning_id 而不是 cur.execute：白名单必须看得见每一句写库，
+            # 否则"记忆域唯一写入口"只是约定，绕过它连测试都不会红。
+            await insert_returning_id(
+                cur,
                 "INSERT INTO memory_outbox (memory_id, op, vec_id, status, attempts, next_attempt_at) "
                 "VALUES (%s, %s, %s, %s, %s, NOW())",
                 (memory_id, "DELETE", old_vec, "PENDING", 0),
             )
-        await cur.execute(
+        await insert_returning_id(
+            cur,
             "INSERT INTO memory_outbox (memory_id, op, status, attempts, next_attempt_at) "
             "VALUES (%s, %s, %s, %s, NOW())",
             (memory_id, "UPSERT", "PENDING", 0),

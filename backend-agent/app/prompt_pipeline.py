@@ -220,7 +220,7 @@ async def _attach_scene_card(
         return memory_context
 
     from app.context.scene_card import (
-        is_stale,
+        close_reason,
         load_card,
         new_card,
         render_card,
@@ -231,11 +231,13 @@ async def _attach_scene_card(
 
     try:
         card = await load_card(conversation_id)
-        if card and is_stale(card):
-            # 上一幕已经聊完：只暂存快照，等 extract-write 带凭据时再抽取。
+        reason = close_reason(card, last_user_message) if card else None
+        if reason:
+            # 上一幕该收场了：只暂存快照，等 extract-write 带凭据时再抽取。
             # 这里不能抽 —— 组装请求没有 base_url/api_key。
+            # 三种理由都会走到这里：闲置 20 分钟 / 聊满 40 轮 / 话题已经换了。
             await stash_pending(card)
-            logger.info("scene closed by idle conv=%s", conversation_id)
+            logger.info("scene closed by %s conv=%s", reason, conversation_id)
             card = None
         card = card or new_card(conversation_id)
         card = update_card(
