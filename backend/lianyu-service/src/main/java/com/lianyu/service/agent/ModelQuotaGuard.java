@@ -64,6 +64,15 @@ public class ModelQuotaGuard {
     private static final int STRIKE_THRESHOLD = 3;
     private static final Duration STRIKE_TTL = Duration.ofMinutes(30);
 
+    /**
+     * 额度失败次数记账 key 的存活时间：**必须活得比熔断键久**。
+     *
+     * <p>踩过的坑：一开始把失败次数写在熔断键的 JSON 里，而熔断键自己带 TTL——到期那一刻整条记录消失，
+     * 下一次失败又从 fails=1 开始算，于是阶梯永远停在 10 分钟（2026-11-07 生产实测：userId=297
+     * 连续两次熔断都是 fails=1 / 600s）。次数单独存一把 7 天的 key，只有一次真实成功才清零。
+     */
+    private static final Duration FAIL_TTL = Duration.ofDays(7);
+
     public static final String STATE_OK = "ok";
     public static final String STATE_BLOCKED = "blocked";
 
@@ -81,6 +90,11 @@ public class ModelQuotaGuard {
 
     static String strikeKey(long userId) {
         return "ai:quota:strike:" + userId;
+    }
+
+    /** 额度失败次数：比熔断键活得久，直到一次真实成功才清零。 */
+    static String failKey(long userId) {
+        return "ai:quota:fail:" + userId;
     }
 
     static boolean isBlockingCode(String code) {
@@ -119,7 +133,7 @@ public class ModelQuotaGuard {
         if (!isBlockingCode(code)) {
             return recordStrike(userId, code);
         }
-        int fails = readFails(userId) + 1;
+        int fails = bumpFailCount(userId);
         long seconds = backoffSeconds(fails);
         Map<String, Object> state = new LinkedHashMap<>();
         state.put("state", STATE_BLOCKED);
@@ -181,7 +195,8 @@ public class ModelQuotaGuard {
      */
     public void recordSuccess(long userId) {
         try {
-            Long removed = redisTemplate.delete(java.util.List.of(key(userId), strikeKey(userId)));
+            Long removed = redisTemplate.delete(
+                    java.util.List.of(key(userId), strikeKey(userId), failKey(userId)));
             if (removed != null && removed > 0) {
                 log.info("model quota recovered: userId={}, clearedKeys={}", userId, removed);
             }
@@ -223,8 +238,20 @@ public class ModelQuotaGuard {
         return out;
     }
 
-    private int readFails(long userId) {
-        return readInt(key(userId));
+    /**
+     * 记一次额度失败并返回累计次数。用单独的 key 累加，熔断键过期不会把计数带走——
+     * 这是「连续几天欠费的账号最终停在 6 小时一探」的唯一保证。
+     */
+    private int bumpFailCount(long userId) {
+        try {
+            Long count = redisTemplate.opsForValue().increment(failKey(userId));
+            redisTemplate.expire(failKey(userId), FAIL_TTL);
+            return count == null ? 1 : Math.max(1, count.intValue());
+        } catch (Exception e) {
+            // 计数写不进去也不能挡住熔断本身：退化成"每次都算第一次"
+            log.warn("model quota counter write failed: userId={}, reason={}", userId, e.toString());
+            return 1;
+        }
     }
 
     private int readInt(String redisKey) {

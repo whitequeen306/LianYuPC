@@ -1369,6 +1369,7 @@ ok ──(额度类错误)──▶ blocked(until = now + backoff) ──(TTL �
 | 要素 | 取值 | 理由 |
 |---|---|---|
 | 熔断键 | `ai:quota:block:{userId}`（Redis string + TTL） | 一个用户一把 key，和 vault 里的 USER 作用域对齐 |
+| 失败计数 | `ai:quota:fail:{userId}`（Redis 计数 + **7 天** TTL） | **必须活得比熔断键久**，见下条「踩过的坑」；只有一次真实成功才清零 |
 | 触发码 | `provider_insufficient_balance` / `provider_invalid_api_key` / `provider_unauthorized` / `provider_model_not_found` | 这四类都会「每轮必然失败」；超时、5xx 属瞬时故障，不熔断 |
 | 连续失败兜底 | 非额度类错误**连错 3 次**也熔断（30 分钟计数窗口，`ai:quota:strike:{userId}`） | 实测 userId=398 每 32 秒重试一次、一天 378 次跳过：单次 400 可能是消息格式问题，但连错三次就是配置性问题 |
 | 退避阶梯 | 10 分钟 → 30 分钟 → 2 小时 → **6 小时（封顶）** | 首次要短（用户可能马上充值），之后要长（避免白烧）；封顶不放 24 小时，见下条 |
@@ -1377,10 +1378,18 @@ ok ──(额度类错误)──▶ blocked(until = now + backoff) ──(TTL �
 | 半开 | TTL 到期后第一轮照常放行 | 用真实调用做探活，比额外发一个健康检查请求便宜 |
 | Redis 不可用 | `allow()` 返回 true | 监控组件故障不能把聊天堵死 |
 
+**踩过的坑：失败计数必须活得比熔断键久。** 第一版把 `fails` 写在熔断键自己的 JSON 里，
+而熔断键带 TTL——到期整条记录消失，下一次失败又从 `fails=1` 开始算，阶梯永远停在 10 分钟。
+2026-11-07 生产实测抓到了它：`ai:quota:block:398` 在 12:22:46 到期，12:24:17 重新熔断时
+`fails` 仍是 3、`ttl=590`；userId=297 两次熔断日志都是 `fails=1, forSeconds=600`。
+所以现在用单独的 `ai:quota:fail:{userId}` 做 `INCR` + 7 天 `EXPIRE`，`recordSuccess` 一次删三把键
+（block / strike / fail）。这也意味着「连续几天都欠费的账号」会真的停到 6 小时一探，
+而不是每 10 分钟醒一次。
+
 **为什么封顶 6 小时而不是 24 小时**：额度恢复有两条路——①半开探测（TTL 到期后第一轮），
 ②用户自己发消息成功（立刻删键）。如果封顶 24 小时，而用户当天只充值不聊天，最坏要等一整天，
 体验是「我充了钱她还是不理我」。6 小时 = 「最多一下午」，同时把白烧 token 压到一天最多四次探活。
-`recordSuccess` 走的是**一次 `DEL k1 k2`**（不是两次 `hasKey + delete`）：它挂在每个成功聊天回合上，
+`recordSuccess` 走的是**一次 `DEL k1 k2 k3`**（不是两次 `hasKey + delete`）：它挂在每个成功聊天回合上，
 每轮多两个 Redis 往返不值得。
 
 ### 接线点
@@ -1409,8 +1418,9 @@ HTTP + 组装成本才知道又失败了。熔断是**跨请求的用户级状�
 
 ### 验收
 
-- 单测 `ModelQuotaGuardTest` 13 例：首次 600s、阶梯 600/1800/7200/21600/21600 且封顶、
-  非额度错误先记 strike、连错 3 次才熔断、额度错误清 strike、成功时一次 `DEL` 删两把键、
+- 单测 `ModelQuotaGuardTest` 14 例：首次 600s、阶梯 600/1800/7200/21600/21600 且封顶、
+  非额度错误先记 strike、连错 3 次才熔断、额度错误清 strike、**失败计数单独存且跨熔断键过期继续升级**
+  （`counterOutlivesTheBlockSoRepeatedOutagesKeepEscalating`）、成功时一次 `DEL` 删三把键、
   快照给前端剩余秒数、Redis 挂掉仍放行。
 - 单测 `AgentStreamBridgeTest` 10 例（新增 2 例）：整条流说完且无 error 帧才触发 `onSuccess`
   （幂等，重复 `finish()` 只算一次）；错误帧 / 空内容 / 上游异常都不触发。

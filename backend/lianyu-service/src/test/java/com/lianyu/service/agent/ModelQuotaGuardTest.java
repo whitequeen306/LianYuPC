@@ -48,6 +48,7 @@ class ModelQuotaGuardTest {
     void blocksAfterInsufficientBalanceAndWritesFirstBackoff() {
         when(redisTemplate.hasKey("ai:quota:block:7")).thenReturn(true);
         when(valueOps.get("ai:quota:block:7")).thenReturn(null);
+        when(valueOps.increment("ai:quota:fail:7")).thenReturn(1L);
 
         long seconds = guard.recordFailure(7L, "provider_insufficient_balance", "model gateway http 402");
 
@@ -73,12 +74,27 @@ class ModelQuotaGuardTest {
 
     @Test
     void secondFailureReadsPreviousCounterAndLengthensBackoff() {
-        when(valueOps.get("ai:quota:block:7")).thenReturn("{\"state\":\"blocked\",\"fails\":2}");
+        when(valueOps.increment("ai:quota:fail:7")).thenReturn(3L);
 
         long seconds = guard.recordFailure(7L, "provider_insufficient_balance", "");
 
-        assertEquals(7200L, seconds);
+        assertEquals(7200L, seconds, "第三次额度失败停 2 小时");
         verify(valueOps).set(eq("ai:quota:block:7"), anyString(), eq(Duration.ofSeconds(7200)));
+    }
+
+    @Test
+    void counterOutlivesTheBlockSoRepeatedOutagesKeepEscalating() {
+        // 熔断键每次到期都会消失，但失败次数在单独的 key 里累加：10 分钟 → 30 分钟 → 2 小时 → 6 小时
+        when(valueOps.increment("ai:quota:fail:7")).thenReturn(1L, 2L, 3L, 4L, 5L);
+
+        assertEquals(600L, guard.recordFailure(7L, "provider_insufficient_balance", ""));
+        assertEquals(1800L, guard.recordFailure(7L, "provider_insufficient_balance", ""));
+        assertEquals(7200L, guard.recordFailure(7L, "provider_insufficient_balance", ""));
+        assertEquals(21600L, guard.recordFailure(7L, "provider_insufficient_balance", ""));
+        assertEquals(21600L, guard.recordFailure(7L, "provider_insufficient_balance", ""));
+
+        // 计数必须每次都续上 7 天，否则"隔一天再欠费"又要从 10 分钟重新爬
+        verify(redisTemplate, times(5)).expire("ai:quota:fail:7", Duration.ofDays(7));
     }
 
     @Test
@@ -104,7 +120,7 @@ class ModelQuotaGuardTest {
 
     @Test
     void blockingCodeClearsStaleStrikes() {
-        when(valueOps.get("ai:quota:block:7")).thenReturn(null);
+        when(valueOps.increment("ai:quota:fail:7")).thenReturn(1L);
         when(valueOps.get("ai:quota:strike:7")).thenReturn("2");
 
         guard.recordFailure(7L, "provider_insufficient_balance", "");
@@ -120,14 +136,16 @@ class ModelQuotaGuardTest {
     }
 
     @Test
-    void successClearsBothKeysInOneRoundTrip() {
-        when(redisTemplate.delete(java.util.List.of("ai:quota:block:7", "ai:quota:strike:7")))
-                .thenReturn(2L);
+    void successClearsAllThreeKeysInOneRoundTrip() {
+        when(redisTemplate.delete(java.util.List.of(
+                "ai:quota:block:7", "ai:quota:strike:7", "ai:quota:fail:7")))
+                .thenReturn(3L);
 
         guard.recordSuccess(7L);
 
         // 这条路径挂在每个成功回合上：只许一次 DEL，不许 hasKey + 多次 delete
-        verify(redisTemplate).delete(java.util.List.of("ai:quota:block:7", "ai:quota:strike:7"));
+        verify(redisTemplate).delete(java.util.List.of(
+                "ai:quota:block:7", "ai:quota:strike:7", "ai:quota:fail:7"));
         verify(redisTemplate, never()).hasKey(anyString());
     }
 
