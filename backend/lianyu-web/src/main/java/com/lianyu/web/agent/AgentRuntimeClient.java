@@ -30,6 +30,8 @@ public class AgentRuntimeClient {
     /** 工具清单唯一来源（Python /agent/capabilities），别再在 Java 里手抄。 */
     private final AgentToolCatalog toolCatalog;
     private final ObjectMapper objectMapper;
+    /** 额度熔断：欠费/失效用户的 key 会被记账，主动关怀据此自动停、恢复后自动开。 */
+    private final com.lianyu.service.agent.ModelQuotaGuard quotaGuard;
     private final RestClient restClient;
     /** 流式出站（对齐红线 §10：流式必须用 reactor-netty + 读间隙超时）。 */
     private final org.springframework.web.reactive.function.client.WebClient webClient;
@@ -41,11 +43,14 @@ public class AgentRuntimeClient {
     private final AgentFailureLogThrottle proactiveErrorThrottle =
             new AgentFailureLogThrottle(10 * 60 * 1000L, 512);
 
+    @org.springframework.beans.factory.annotation.Autowired
     public AgentRuntimeClient(AgentRuntimeProperties properties, ObjectMapper objectMapper,
-                              AgentToolCatalog toolCatalog) {
+                              AgentToolCatalog toolCatalog,
+                              com.lianyu.service.agent.ModelQuotaGuard quotaGuard) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.toolCatalog = toolCatalog;
+        this.quotaGuard = quotaGuard;
         this.restClient = SsrfPinningClientFactory.defaultRestClientBuilder()
                 .baseUrl(properties.baseUrl())
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
@@ -67,6 +72,9 @@ public class AgentRuntimeClient {
     private void logProactiveFailure(long userId, JsonNode root) {
         String code = root.path("errorCode").asText("");
         String detail = root.path("error").asText("");
+        // 先记账再打日志：欠费用户的 key 会被熔断 10 分钟~24 小时（阶梯退避），
+        // 调度器下一轮就不会再打进来——这是"额度为 0 时主动关怀自动关"的执行点。
+        quotaGuard.recordFailure(userId, code, detail);
         if (!proactiveErrorThrottle.allow(userId, code, System.currentTimeMillis())) {
             log.debug("Agent runtime proactiveTurn error (suppressed): userId={}, code={}, detail={}",
                     userId, code, detail);
@@ -137,6 +145,11 @@ public class AgentRuntimeClient {
         if (!properties.agentActive()) {
             return null;
         }
+        if (!quotaGuard.allow(userId)) {
+            // 熔断中的用户：连 HTTP 都不发，省下 Python 侧的 prompt 组装与一次 402 往返
+            log.debug("Agent runtime proactiveTurn skipped: userId={} quota blocked", userId);
+            return null;
+        }
         try {
             Map<String, Object> body = new java.util.LinkedHashMap<>();
             body.put("userId", userId);
@@ -166,7 +179,12 @@ public class AgentRuntimeClient {
                 return null;
             }
             JsonNode raw = root.path("assistantRaw");
-            return raw.isMissingNode() || raw.isNull() ? null : raw.asText();
+            String text = raw.isMissingNode() || raw.isNull() ? null : raw.asText();
+            if (text != null && !text.isBlank()) {
+                // 说出来了 = 额度能用：立刻解除熔断，主动关怀恢复（不需要等退避到期）
+                quotaGuard.recordSuccess(userId);
+            }
+            return text;
         } catch (Exception e) {
             log.warn("Agent runtime proactiveTurn failed (degraded to null): {}", e.toString());
             return null;
@@ -190,6 +208,10 @@ public class AgentRuntimeClient {
                                 String expectedLanguage,
                                 Long characterId) {
         if (!properties.agentActive()) {
+            return null;
+        }
+        if (!quotaGuard.allow(userId)) {
+            log.debug("Agent runtime proactiveTurnResult skipped: userId={} quota blocked", userId);
             return null;
         }
         List<String> tools = toolCatalog.chatTools();
@@ -221,6 +243,9 @@ public class AgentRuntimeClient {
             }
             JsonNode raw = root.path("assistantRaw");
             String content = raw.isMissingNode() || raw.isNull() ? null : raw.asText();
+            if (content != null && !content.isBlank()) {
+                quotaGuard.recordSuccess(userId);
+            }
             JsonNode total = root.path("totalTokens");
             Integer totalTokens = total.isMissingNode() || total.isNull() ? null : total.asInt();
             JsonNode rounds = root.path("toolRounds");

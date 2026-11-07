@@ -18,6 +18,7 @@ import com.lianyu.service.ai.PetMeetVoiceCatalog;
 import com.lianyu.service.ai.PetVoiceRegistry;
 import com.lianyu.service.agent.AgentRuntimePort;
 import com.lianyu.service.agent.AgentTurnResult;
+import com.lianyu.service.agent.ModelQuotaGuard;
 import com.lianyu.service.character.UserAddressingResolver;
 import com.lianyu.service.character.CharacterChatBehavior;
 import com.lianyu.service.character.CharacterChatBehaviorResolver;
@@ -135,6 +136,15 @@ public class ProactiveMessageService {
     /** Strangler 接缝：AGENT 模式下生成段委托 backend-agent；OFF/SHADOW 走原链路。 */
     private final AgentRuntimePort agentRuntime;
 
+    /**
+     * 额度熔断：用户 key 欠费/失效时，主动关怀自动停摆，不必等每轮失败。
+     *
+     * <p>字段注入而不是构造注入：这个类有十几个依赖，且大量单测直接 new，
+     * 加一个构造参数会牵动所有用例；这里允许为 null（单测没给就是"永不熔断"）。
+     */
+    @Autowired(required = false)
+    private ModelQuotaGuard quotaGuard;
+
     /** persistX 小事务经由代理调用才能让 @Transactional 生效（@Lazy 自注入打破环）。 */
     @Lazy
     @Autowired
@@ -150,6 +160,12 @@ public class ProactiveMessageService {
                                     Long characterId) {
         try {
             if (!agentRuntime.agentActive()) {
+                return null;
+            }
+            if (quotaGuard != null && !quotaGuard.allow(userId)) {
+                // 熔断中：省掉人设组装与 Python 侧一次必然失败的 402 往返，
+                // 也让「主动关怀已暂停」这件事只出现在 debug 里，不再刷 INFO。
+                log.debug("Agent proactive turn skipped: userId={} quota blocked", userId);
                 return null;
             }
             List<Map<String, String>> historyMaps = new ArrayList<>();

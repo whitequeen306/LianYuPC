@@ -34,6 +34,14 @@ class AgentRuntimeClientBinaryTest {
         return catalog;
     }
 
+    /** 额度熔断桩：本类只测编解码，永远放行、不记账。 */
+    private static com.lianyu.service.agent.ModelQuotaGuard stubGuard() {
+        com.lianyu.service.agent.ModelQuotaGuard guard =
+                org.mockito.Mockito.mock(com.lianyu.service.agent.ModelQuotaGuard.class);
+        org.mockito.Mockito.when(guard.allow(org.mockito.ArgumentMatchers.anyLong())).thenReturn(true);
+        return guard;
+    }
+
     /** 400KB：明显超过 256KB 默认上限，又远小于我们配的 16MB。 */
     private static final byte[] BIG_AUDIO = buildAudio(400 * 1024);
 
@@ -59,7 +67,7 @@ class AgentRuntimeClientBinaryTest {
                 respond(exchange, 500, "text/plain", "oops".getBytes(StandardCharsets.UTF_8)));
         server.start();
         String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
-        client = new AgentRuntimeClient(new AgentRuntimeProperties(baseUrl), new ObjectMapper(), stubCatalog());
+        client = new AgentRuntimeClient(new AgentRuntimeProperties(baseUrl), new ObjectMapper(), stubCatalog(), stubGuard());
     }
 
     @AfterAll
@@ -112,7 +120,7 @@ class AgentRuntimeClientBinaryTest {
         try (java.net.ServerSocket socket = new java.net.ServerSocket(0)) {
             closedPort = socket.getLocalPort();
         }
-        AgentRuntimeClient deadClient = new AgentRuntimeClient(new AgentRuntimeProperties("http://127.0.0.1:" + closedPort), new ObjectMapper(), stubCatalog());
+        AgentRuntimeClient deadClient = new AgentRuntimeClient(new AgentRuntimeProperties("http://127.0.0.1:" + closedPort), new ObjectMapper(), stubCatalog(), stubGuard());
         assertNull(deadClient.postBytes("/audio", 0L, Map.of()));
     }
 }

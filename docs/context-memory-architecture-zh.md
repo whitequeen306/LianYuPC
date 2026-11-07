@@ -1337,3 +1337,64 @@ id 在不在，只把真存在的标成 `projected`，缺的留给 reconcile 补
 
 真机结果：`scanned 15066 / marked 14096`（其余 970 条是 superseded 与已被取代的旧投影），
 之后 `active/pending` 只剩 1 条（本轮新写入），`superseded/pending` 569 条按设计保留。
+
+---
+
+## 10.12 额度熔断：把「key 欠费」和「主动关怀」解耦（2026-11-07）
+
+### 现象
+
+上线后 24 小时的日志：`provider_insufficient_balance`（402）**255 次**、
+`provider_bad_request`（400）63 次、`provider_model_not_found`（404）60 次，
+因 agent 返回空而被跳过的主动消息 **378 次**。一个用户的两个角色分别被重试 62 / 59 次。
+
+根因不在模型，在调度：`ProactiveChatScheduler` 只在**发送成功**时写 55–65 分钟冷却键
+（`ProactiveChatScheduler.java:163-165`），失败时 `replies` 为空 → 不写冷却 → 30 秒后
+同一条会话被重新选中。于是「key 已经欠费」这个事实，变成了每 30 秒一次的无效重试。
+
+真正的风险不是日志噪音：用户一旦充值成功，这些重试会**立刻开始真实计费**——
+每个角色的主动关怀都带 20 条历史 + 记忆块（2–4k 输入 token），一天能烧掉几万 token。
+
+### 机制：一个按用户记账的熔断器
+
+`backend/lianyu-service/src/main/java/com/lianyu/service/agent/ModelQuotaGuard.java`
+
+```
+ok ──(额度类错误)──▶ blocked(until = now + backoff) ──(TTL 到期)──▶ 半开放行一次
+                          ▲                                    │
+                          └──────────── 再失败: backoff 翻倍 ───┘
+                          任意一次成功 ───────────────────▶ ok（删键）
+```
+
+| 要素 | 取值 | 理由 |
+|---|---|---|
+| 熔断键 | `ai:quota:block:{userId}`（Redis string + TTL） | 一个用户一把 key，和 vault 里的 USER 作用域对齐 |
+| 触发码 | `provider_insufficient_balance` / `provider_invalid_api_key` / `provider_unauthorized` / `provider_model_not_found` | 这四类都会「每轮必然失败」；超时、5xx 属瞬时故障，不熔断 |
+| 退避阶梯 | 10 分钟 → 30 分钟 → 2 小时 → 6 小时 → 24 小时（封顶） | 首次要短（用户可能马上充值），之后要长（避免白烧） |
+| 恢复 | **任意一次成功调用即删键** | 不需要轮询、不需要用户手动开关；充值后她下一条能说话时就恢复 |
+| 半开 | TTL 到期后第一轮照常放行 | 用真实调用做探活，比额外发一个健康检查请求便宜 |
+| Redis 不可用 | `allow()` 返回 true | 监控组件故障不能把聊天堵死 |
+
+### 接线点
+
+- `AgentRuntimeClient.proactiveTurn` / `proactiveTurnResult`：**入口**先 `quotaGuard.allow()`，
+  熔断中连 HTTP 都不发（省掉 Python 侧的 prompt 组装与一次 402 往返）；拿到非空内容即
+  `recordSuccess`；`logProactiveFailure` 里 `recordFailure(code)`。
+- `ProactiveMessageService.tryAgentTurn`：所有主动关怀分支（定时/等待提醒/冷启动/城市变更）
+  共用这个 seam，在这里再拦一次，把日志降到 debug（不再刷 `skipped: agent returned no content`）。
+- `GET /api/model/quota`（`ModelQuotaController`）：返回
+  `{state, code, fails, proactiveEnabled, retryAfterSeconds}`，给客户端做「余额不足，主动消息已暂停」
+  的提示与倒计时。
+
+### 为什么不在 Python 侧做
+
+Python 只在单次调用里知道 402，没有跨轮的「这个用户欠费」记忆；它每次都要重新付一次
+HTTP + 组装成本才知道又失败了。熔断是**跨请求的用户级状态**，归 Java（会话/调度所在的层），
+也符合「Java 管事实、Python 管模型」的边界。
+
+### 验收
+
+- 单测 `ModelQuotaGuardTest` 11 例：首次 600s、阶梯 600/1800/7200/21600/86400 且封顶、
+  非额度错误不记账、成功删键、快照给前端剩余秒数、Redis 挂掉仍放行。
+- 生产观察指标（发布后 24 小时）：`provider_insufficient_balance` 从 255 次降到
+  个位数（只剩首次触发与退避到期的探活）；`agent returned no content` 同日对比。
