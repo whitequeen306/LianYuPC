@@ -619,6 +619,9 @@ export default {
     aiSection: 'AI 接口配置',
     aiDesc: '必须配置自己的接口地址、API Key 与模型后才能聊天；平台内置文本模型已下线',
     addConfig: '添加配置',
+  quotaPausedTitle: '主动消息已暂停',
+  quotaPausedDesc: '模型额度不足或密钥失效，主动关怀已自动暂停，约 {minutes} 分钟后自动再试；充值后无需手动开启',
+  quotaPausedDescNoWait: '模型额度不足或密钥失效，主动关怀已自动暂停；充值后无需手动开启，下次调用成功即自动恢复',
     emptyTitle: '尚未配置文本模型',
     emptyDesc: '尚未配置文本模型。请添加至少一套配置后才能聊天、群聊与 QQ 桥接',
     addFirst: '添加第一套配置'

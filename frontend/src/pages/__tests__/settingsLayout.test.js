@@ -38,4 +38,24 @@ describe('SettingsPage layout', () => {
     expect(wechatIndex).toBeGreaterThan(qqIndex)
     expect(source).toContain('微信 ClawBot')
   })
+
+  test('explains paused proactive messages without offering a switch', () => {
+    const source = readFileSync(settingsPagePath, 'utf8')
+
+    // 横幅只在后端熔断（proactiveEnabled === false）时出现，且不提供任何开关控件
+    expect(source).toContain('class="quota-banner"')
+    expect(source).toContain('quota.proactiveEnabled === false')
+    expect(source).toContain('getModelQuota')
+    expect(source).toContain("settings.quotaPausedTitle")
+    expect(source).toContain("settings.quotaPausedDescNoWait")
+    expect(source).toContain("settings.quotaPausedDesc")
+    expect(source).not.toContain('quota-banner__switch')
+
+    // 拉取失败必须静默：横幅是提示，不是错误弹窗
+    const mountedIndex = source.indexOf('onMounted(async () => {')
+    const callIndex = source.indexOf('getModelQuota()', mountedIndex)
+    expect(mountedIndex).toBeGreaterThan(-1)
+    expect(callIndex).toBeGreaterThan(mountedIndex)
+    expect(source).toContain('.catch(() => { quota.value = null })')
+  })
 })

@@ -618,6 +618,9 @@ export default {
     aiSection: 'AI provider',
     aiDesc: 'You must configure your own API URL, key, and model to chat. Built-in platform text model is disabled.',
     addConfig: 'Add config',
+  quotaPausedTitle: 'Proactive messages paused',
+  quotaPausedDesc: 'Model quota is out or the API key stopped working, so proactive messages are paused. Retrying in about {minutes} min; nothing to toggle after topping up',
+  quotaPausedDescNoWait: 'Model quota is out or the API key stopped working, so proactive messages are paused. Nothing to toggle: they resume on the next successful call after you top up',
     emptyTitle: 'No text model configured',
     emptyDesc: 'No text model configured. Add at least one config to chat, group chat, or use QQ bridge.',
     addFirst: 'Add your first config'

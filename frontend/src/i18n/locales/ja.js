@@ -613,6 +613,9 @@ export default {
     aiSection: 'AI 接続設定',
     aiDesc: '任意：自分の API URL・Key・モデル。未設定時はプラットフォーム既定を使用',
     addConfig: '設定を追加',
+  quotaPausedTitle: 'さきこえメッセージを一時停止中',
+  quotaPausedDesc: 'モデルの残量不足または API キーが無効のため、さきこえを自動で停止しています。約 {minutes} 分後に自動で再試行します。チャージ後の操作は不要です',
+  quotaPausedDescNoWait: 'モデルの残量不足または API キーが無効のため、さきこえを自動で停止しています。チャージ後の操作は不要で、次回の呼び出しが成功すれば自動復帰します',
     emptyTitle: 'カスタム AI 設定なし',
     emptyDesc: '未設定でもチャット可能。自分の Key を使う場合はここで追加',
     addFirst: '最初の設定を追加'

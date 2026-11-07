@@ -31,3 +31,13 @@ export function updateVault(id, data) {
 export function deleteVault(id) {
   return http.delete(`/ai/vault/${id}`)
 }
+
+/**
+ * 当前用户的模型额度熔断状态。
+ *
+ * 后端在额度类错误（402/401/key 失效/model_not_found）时立刻熔断主动关怀，
+ * 任意一次成功即自动恢复；前端只负责把「为什么停」说清楚，不提供开关。
+ */
+export function getModelQuota() {
+  return http.get('/model/quota')
+}

@@ -615,6 +615,9 @@ export default {
     aiSection: 'AI 介面設定',
     aiDesc: '可選：填寫自己的介面位址、API Key 與模型；不設定則使用平台預設 DeepSeek',
     addConfig: '新增設定',
+  quotaPausedTitle: '主動訊息已暫停',
+  quotaPausedDesc: '模型額度不足或金鑰失效，主動關懷已自動暫停，約 {minutes} 分鐘後自動再試；儲值後無須手動開啟',
+  quotaPausedDescNoWait: '模型額度不足或金鑰失效，主動關懷已自動暫停；儲值後無須手動開啟，下次呼叫成功即自動恢復',
     emptyTitle: '尚未設定自訂 AI 介面',
     emptyDesc: '不設定也可以直接聊天，系統會使用平台預設模型；如需使用自己的 Key，請在此新增',
     addFirst: '新增第一套設定'

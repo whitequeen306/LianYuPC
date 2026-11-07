@@ -109,6 +109,17 @@
         </el-button>
       </div>
 
+      <!-- 额度熔断状态：额度为 0 时主动关怀自动暂停，充值后无需手动开关（后端 ai:quota:block:{userId}） -->
+      <div v-if="quota && quota.proactiveEnabled === false" class="quota-banner">
+        <el-icon><WarningFilled /></el-icon>
+        <div class="quota-banner__text">
+          <strong>{{ t('settings.quotaPausedTitle') }}</strong>
+          <span>{{ quota.retryAfterSeconds > 0
+            ? t('settings.quotaPausedDesc', { minutes: Math.ceil(quota.retryAfterSeconds / 60) })
+            : t('settings.quotaPausedDescNoWait') }}</span>
+        </div>
+      </div>
+
       <div v-if="providersStore.loading" class="loading-state">
         <el-icon class="is-loading" :size="24"><Loading /></el-icon>
         <span>{{ t('common.loading') }}</span>
@@ -371,15 +382,18 @@ import { useDesktopStore } from '@/stores/desktop'
 import { useSettingsStore } from '@/stores/settings'
 import { getElectronAPI, isElectronApp } from '@/utils/electron'
 import { getMyUserSettings, updateMyUserSettings } from '@/api/users'
+import { getModelQuota } from '@/api/ai'
 import { PET_CATALOG, getPetPreviewUrl, petHasInteractiveVoice } from '@/constants/petCatalog'
 
 const { t } = useI18n()
-import { Plus, Edit, Delete, RefreshRight, Loading, Connection, Promotion, ArrowLeft, Download, FolderOpened } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, RefreshRight, Loading, Connection, Promotion, ArrowLeft, Download, FolderOpened, WarningFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const providersStore = useProvidersStore()
 const desktopStore = useDesktopStore()
 const settingsStore = useSettingsStore()
+// 额度熔断状态：null = 还没拉到（不显示横幅），后端不可用也保持 null，不打扰用户
+const quota = ref(null)
 const router = useRouter()
 const goQqBridge = () => router.push('/app/qq-bridge')
 const goWechatBridge = () => router.push('/app/wechat-bridge')
@@ -524,6 +538,9 @@ const formRules = computed(() => ({
 
 onMounted(async () => {
   providersStore.fetchVaults()
+  getModelQuota()
+    .then((res) => { quota.value = res || null })
+    .catch(() => { quota.value = null })
   try {
     const settings = await getMyUserSettings()
     visionSourceMode.value = settings?.visionSourceMode || 'platform'
@@ -807,6 +824,37 @@ async function handleFetchDialogModels() {
   color: $color-text-muted;
   font-size: $font-size-sm;
   margin-bottom: $space-6;
+}
+
+/* 额度熔断横幅：只解释「为什么停」，不提供开关——恢复由后端成功后自动完成 */
+.quota-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: $space-3;
+  padding: $space-4 $space-5;
+  margin-bottom: $space-5;
+  border-radius: $radius-md;
+  border: 1px solid rgba($color-warning, 0.28);
+  background: rgba($color-warning, 0.08);
+  color: $color-warning;
+}
+
+.quota-banner__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+
+  strong {
+    font-size: $font-size-sm;
+    font-weight: 600;
+  }
+
+  span {
+    color: $color-text-secondary;
+    font-size: $font-size-xs;
+    line-height: 1.55;
+  }
 }
 
 .desktop-section {
