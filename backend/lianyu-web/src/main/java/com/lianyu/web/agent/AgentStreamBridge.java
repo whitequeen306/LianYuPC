@@ -28,7 +28,19 @@ public class AgentStreamBridge {
 
     /** 增量中继：一次流式对话一个实例（非线程安全，按流独占）。 */
     public Relay newRelay(SseEmitter emitter, com.lianyu.service.agent.AgentStreamCallback callback) {
-        return new Relay(emitter, callback);
+        return new Relay(emitter, callback, null);
+    }
+
+    /**
+     * 带"成功回调"的中继：只有整条流**说完且没有 error 帧**才触发。
+     *
+     * <p>用来把"额度已恢复"这件事接到正常聊天上：用户充值后随手聊一句成功，
+     * 熔断键当场清掉，主动关怀下一轮扫描就恢复——不必等半开探测（最长 6 小时）。
+     */
+    public Relay newRelay(SseEmitter emitter,
+                          com.lianyu.service.agent.AgentStreamCallback callback,
+                          Runnable onSuccess) {
+        return new Relay(emitter, callback, onSuccess);
     }
 
     /** 便捷入口（测试/离线回放用）：一次性喂完整行序列并收尾。 */
@@ -46,14 +58,17 @@ public class AgentStreamBridge {
 
         private final SseEmitter emitter;
         private final com.lianyu.service.agent.AgentStreamCallback callback;
+        /** 整条流成功收尾后的回调（额度恢复用）；可为 null。 */
+        private final Runnable onSuccess;
         private final StringBuilder content = new StringBuilder();
         private String lastReplacement;
         private String errorMessage;
         private boolean closed;
 
-        Relay(SseEmitter emitter, com.lianyu.service.agent.AgentStreamCallback callback) {
+        Relay(SseEmitter emitter, com.lianyu.service.agent.AgentStreamCallback callback, Runnable onSuccess) {
             this.emitter = emitter;
             this.callback = callback;
+            this.onSuccess = onSuccess;
         }
 
         /**
@@ -111,6 +126,19 @@ public class AgentStreamBridge {
                 return;
             }
             sseHelper.finishSseSuccess(emitter, fullContent, callback);
+            notifySuccess();
+        }
+
+        /** 成功回调只跑一次，且任何异常都不能影响已经发完的回复。 */
+        private void notifySuccess() {
+            if (onSuccess == null) {
+                return;
+            }
+            try {
+                onSuccess.run();
+            } catch (Exception e) {
+                log.warn("Agent stream success hook failed: {}", e.toString());
+            }
         }
 
         /** 上游异常（连不上/超时）时的收尾。 */

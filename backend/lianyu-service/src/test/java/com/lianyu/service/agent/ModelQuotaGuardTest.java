@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -60,13 +61,14 @@ class ModelQuotaGuardTest {
     }
 
     @Test
-    void backoffGrowsWithRepeatedFailuresAndCapsAtADay() {
+    void backoffGrowsWithRepeatedFailuresAndCapsAtSixHours() {
         assertEquals(600L, ModelQuotaGuard.backoffSeconds(1));
         assertEquals(1800L, ModelQuotaGuard.backoffSeconds(2));
         assertEquals(7200L, ModelQuotaGuard.backoffSeconds(3));
         assertEquals(21600L, ModelQuotaGuard.backoffSeconds(4));
-        assertEquals(86400L, ModelQuotaGuard.backoffSeconds(5));
-        assertEquals(86400L, ModelQuotaGuard.backoffSeconds(99), "封顶 24 小时，不能无限翻倍");
+        assertEquals(21600L, ModelQuotaGuard.backoffSeconds(5));
+        assertEquals(21600L, ModelQuotaGuard.backoffSeconds(99),
+                "封顶 6 小时：再长会让「充了钱但当天没聊天」的用户等一整天");
     }
 
     @Test
@@ -118,21 +120,24 @@ class ModelQuotaGuardTest {
     }
 
     @Test
-    void successClearsTheBlockSoProactiveResumesImmediately() {
-        when(redisTemplate.hasKey("ai:quota:block:7")).thenReturn(true);
+    void successClearsBothKeysInOneRoundTrip() {
+        when(redisTemplate.delete(java.util.List.of("ai:quota:block:7", "ai:quota:strike:7")))
+                .thenReturn(2L);
 
         guard.recordSuccess(7L);
 
-        verify(redisTemplate).delete("ai:quota:block:7");
+        // 这条路径挂在每个成功回合上：只许一次 DEL，不许 hasKey + 多次 delete
+        verify(redisTemplate).delete(java.util.List.of("ai:quota:block:7", "ai:quota:strike:7"));
+        verify(redisTemplate, never()).hasKey(anyString());
     }
 
     @Test
-    void successOnANonBlockedUserDoesNotTouchRedis() {
-        when(redisTemplate.hasKey("ai:quota:block:7")).thenReturn(false);
+    void successOnANonBlockedUserOnlyCostsOneDel() {
+        when(redisTemplate.delete(any(java.util.List.class))).thenReturn(0L);
 
         guard.recordSuccess(7L);
 
-        verify(redisTemplate, never()).delete(anyString());
+        verify(redisTemplate, times(1)).delete(any(java.util.List.class));
     }
 
     @Test

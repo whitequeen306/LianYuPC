@@ -1371,10 +1371,17 @@ ok ──(额度类错误)──▶ blocked(until = now + backoff) ──(TTL �
 | 熔断键 | `ai:quota:block:{userId}`（Redis string + TTL） | 一个用户一把 key，和 vault 里的 USER 作用域对齐 |
 | 触发码 | `provider_insufficient_balance` / `provider_invalid_api_key` / `provider_unauthorized` / `provider_model_not_found` | 这四类都会「每轮必然失败」；超时、5xx 属瞬时故障，不熔断 |
 | 连续失败兜底 | 非额度类错误**连错 3 次**也熔断（30 分钟计数窗口，`ai:quota:strike:{userId}`） | 实测 userId=398 每 32 秒重试一次、一天 378 次跳过：单次 400 可能是消息格式问题，但连错三次就是配置性问题 |
-| 退避阶梯 | 10 分钟 → 30 分钟 → 2 小时 → 6 小时 → 24 小时（封顶） | 首次要短（用户可能马上充值），之后要长（避免白烧） |
+| 退避阶梯 | 10 分钟 → 30 分钟 → 2 小时 → **6 小时（封顶）** | 首次要短（用户可能马上充值），之后要长（避免白烧）；封顶不放 24 小时，见下条 |
 | 恢复 | **任意一次成功调用即删键** | 不需要轮询、不需要用户手动开关；充值后她下一条能说话时就恢复 |
+| 恢复的第二个触发点 | **用户自己聊天成功**（`AgentStreamBridge` 成功收尾 → `recordSuccess`） | 只靠主动关怀的半开探测时，用户充了钱但只聊天不触发 proactive，就要等到入夜才有探活；聊天成功本身就是"这把 key 能付钱"的最强证据 |
 | 半开 | TTL 到期后第一轮照常放行 | 用真实调用做探活，比额外发一个健康检查请求便宜 |
 | Redis 不可用 | `allow()` 返回 true | 监控组件故障不能把聊天堵死 |
+
+**为什么封顶 6 小时而不是 24 小时**：额度恢复有两条路——①半开探测（TTL 到期后第一轮），
+②用户自己发消息成功（立刻删键）。如果封顶 24 小时，而用户当天只充值不聊天，最坏要等一整天，
+体验是「我充了钱她还是不理我」。6 小时 = 「最多一下午」，同时把白烧 token 压到一天最多四次探活。
+`recordSuccess` 走的是**一次 `DEL k1 k2`**（不是两次 `hasKey + delete`）：它挂在每个成功聊天回合上，
+每轮多两个 Redis 往返不值得。
 
 ### 接线点
 
@@ -1402,14 +1409,17 @@ HTTP + 组装成本才知道又失败了。熔断是**跨请求的用户级状�
 
 ### 验收
 
-- 单测 `ModelQuotaGuardTest` 13 例：首次 600s、阶梯 600/1800/7200/21600/86400 且封顶、
-  非额度错误先记 strike、连错 3 次才熔断、额度错误清 strike、成功删两把键、
+- 单测 `ModelQuotaGuardTest` 13 例：首次 600s、阶梯 600/1800/7200/21600/21600 且封顶、
+  非额度错误先记 strike、连错 3 次才熔断、额度错误清 strike、成功时一次 `DEL` 删两把键、
   快照给前端剩余秒数、Redis 挂掉仍放行。
+- 单测 `AgentStreamBridgeTest` 10 例（新增 2 例）：整条流说完且无 error 帧才触发 `onSuccess`
+  （幂等，重复 `finish()` 只算一次）；错误帧 / 空内容 / 上游异常都不触发。
 - 单测 `AgentRuntimeClientQuotaTest` 3 例（打真端口）：空内容 → `recordFailure(BLANK_CONTENT_CODE)`
   且不 `recordSuccess`；非空内容 → 立刻 `recordSuccess`；熔断中的用户一个 HTTP 请求都不发。
 - 生产观察指标（发布后 24 小时）：`provider_insufficient_balance` 从 255 次降到
   个位数（只剩首次触发与退避到期的探活）；`skipped: agent returned no content` 应随 strike
   熔断收敛（部署后 19:22 与 19:24 各还有一条 INFO，属半开探活，若继续增长说明 strike 没生效）。
+  另外可以看 `model quota recovered: userId=…, clearedKeys=…`——它出现说明有人充值后聊成功了。
 
 发布后第一次实查（2026-11-07 19:38，部署约 5 分钟）：
 

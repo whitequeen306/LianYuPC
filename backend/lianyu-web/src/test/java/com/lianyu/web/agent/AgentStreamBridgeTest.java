@@ -197,4 +197,42 @@ class AgentStreamBridgeTest {
         assertEquals(1, countOf(emitter, "[DONE]"));
         assertNull(callback.completedError);
     }
+
+    @Test
+    void successHookFiresOnceWhenTheStreamReallySpoke() {
+        FakeEmitter emitter = new FakeEmitter();
+        RecordingCallback callback = new RecordingCallback();
+        java.util.concurrent.atomic.AtomicInteger hooked = new java.util.concurrent.atomic.AtomicInteger();
+        AgentStreamBridge.Relay relay = bridge.newRelay(emitter, callback, hooked::incrementAndGet);
+
+        relay.accept(content("在的"));
+        relay.finish();
+        relay.finish();  // 幂等：不能重复触发额度恢复
+
+        assertEquals(1, hooked.get(), "一次成功收尾只算一次：它会让熔断键被删掉");
+    }
+
+    @Test
+    void successHookStaysSilentWhenTheTurnFailed() {
+        java.util.concurrent.atomic.AtomicInteger hooked = new java.util.concurrent.atomic.AtomicInteger();
+
+        FakeEmitter errorEmitter = new FakeEmitter();
+        AgentStreamBridge.Relay errorRelay =
+                bridge.newRelay(errorEmitter, new RecordingCallback(), hooked::incrementAndGet);
+        errorRelay.accept("data: {\"error\": \"provider_insufficient_balance\"}");
+        errorRelay.finish();
+
+        FakeEmitter blankEmitter = new FakeEmitter();
+        AgentStreamBridge.Relay blankRelay =
+                bridge.newRelay(blankEmitter, new RecordingCallback(), hooked::incrementAndGet);
+        blankRelay.accept("data: {\"content\": \"  \"}");
+        blankRelay.finish();
+
+        FakeEmitter failedEmitter = new FakeEmitter();
+        AgentStreamBridge.Relay failedRelay =
+                bridge.newRelay(failedEmitter, new RecordingCallback(), hooked::incrementAndGet);
+        failedRelay.fail("消息发送失败，请稍后再试");
+
+        assertEquals(0, hooked.get(), "错误帧/空内容/上游异常都不该被当成额度恢复");
+    }
 }

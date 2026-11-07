@@ -40,6 +40,13 @@ public class ChatTurnAdapter implements ChatTurnPort {
 
     private final AgentRuntimeClient client;
     private final AgentStreamBridge bridge;
+    /**
+     * 额度熔断（可为 null：单测直接 new 这个适配器时不关心额度）。
+     * 一条聊天流成功收尾 = 用户的 key 能付费，顺手清掉熔断键，主动关怀随即恢复。
+     * 用字段注入而不是构造参数：{@code @RequiredArgsConstructor} 的签名已被多处测试与装配依赖。
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.service.agent.ModelQuotaGuard quotaGuard;
     private final ApiKeyVaultService vaultService;
 
     @Override
@@ -64,7 +71,10 @@ public class ChatTurnAdapter implements ChatTurnPort {
         }
         Map<String, Object> body = toBody(request, credentials, true);
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
-        AgentStreamBridge.Relay relay = bridge.newRelay(emitter, callback);
+        long userId = request.getUserId();
+        // 这条流真说出话来了 = 用户的 key 能付钱：清熔断键，主动关怀立刻恢复
+        AgentStreamBridge.Relay relay = bridge.newRelay(emitter, callback,
+                quotaGuard == null ? null : () -> quotaGuard.recordSuccess(userId));
         log.info("Chat turn stream dispatched: userId={}, scene={}, messages={}, model={}",
                 request.getUserId(), request.getScene(),
                 request.getHistory() == null ? 0 : request.getHistory().size(),

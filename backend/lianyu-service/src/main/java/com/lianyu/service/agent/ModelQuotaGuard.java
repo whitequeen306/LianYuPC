@@ -39,13 +39,19 @@ public class ModelQuotaGuard {
             "provider_unauthorized",
             "provider_model_not_found");
 
-    /** 退避阶梯：首次 10 分钟，之后翻倍并封顶 24 小时。 */
+    /**
+     * 退避阶梯：首次 10 分钟，之后 30 分钟 → 2 小时 → **6 小时封顶**。
+     *
+     * <p>为什么封顶 6 小时而不是 24 小时：额度恢复的第二个触发点是"她下一次能说话"，
+     * 如果用户充了钱但当天没聊天，只能靠半开探测发现——封顶 24 小时意味着最坏要等一整天，
+     * 用户会觉得"我充了钱她还是不理我"。6 小时是"最多一下午"与"一天最多四次白烧 token"的折中；
+     * 用户真正聊天成功时会立刻清键（`recordSuccess`），根本走不到探测这一步。
+     */
     private static final long[] BACKOFF_SECONDS = {
             Duration.ofMinutes(10).toSeconds(),
             Duration.ofMinutes(30).toSeconds(),
             Duration.ofHours(2).toSeconds(),
-            Duration.ofHours(6).toSeconds(),
-            Duration.ofHours(24).toSeconds()
+            Duration.ofHours(6).toSeconds()
     };
 
     /**
@@ -167,20 +173,17 @@ public class ModelQuotaGuard {
         }
     }
 
-    /** 任意一次成功都视为额度已恢复：删键即恢复主动关怀，不需要等冷却。 */
+    /**
+     * 任意一次成功都视为额度已恢复：删键即恢复主动关怀，不需要等冷却。
+     *
+     * <p>用一次 {@code DEL k1 k2} 而不是两次 {@code hasKey + delete}：这条路径挂在每个
+     * 成功的聊天回合上（用户正常聊天就说明 key 能付钱），每轮多两个 Redis 往返不值得。
+     */
     public void recordSuccess(long userId) {
         try {
-            boolean cleared = false;
-            if (Boolean.TRUE.equals(redisTemplate.hasKey(key(userId)))) {
-                redisTemplate.delete(key(userId));
-                cleared = true;
-            }
-            if (Boolean.TRUE.equals(redisTemplate.hasKey(strikeKey(userId)))) {
-                redisTemplate.delete(strikeKey(userId));
-                cleared = true;
-            }
-            if (cleared) {
-                log.info("model quota recovered: userId={}", userId);
+            Long removed = redisTemplate.delete(java.util.List.of(key(userId), strikeKey(userId)));
+            if (removed != null && removed > 0) {
+                log.info("model quota recovered: userId={}, clearedKeys={}", userId, removed);
             }
         } catch (Exception e) {
             log.warn("model quota guard clear failed: userId={}, reason={}", userId, e.toString());
