@@ -272,8 +272,9 @@ async def reconcile(limit: int = 500, deep: bool = False) -> dict[str, int]:
         rows = await fetch_all(
             "SELECT id, summary, milvus_vec_id FROM memory_meta "
             "WHERE summary IS NOT NULL AND summary <> '' "
-            "AND status <> 'dormant' "
-            "AND (embedding_state IS NULL OR embedding_state <> 'projected') "
+            "AND status IN ('active', 'faded', 'archived') "
+            "AND (embedding_state IS NULL "
+            "OR embedding_state NOT IN ('projected', 'dropped')) "
             "ORDER BY id ASC LIMIT %s",
             (limit,),
         )

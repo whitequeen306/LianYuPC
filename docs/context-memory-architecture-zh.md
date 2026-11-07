@@ -1324,8 +1324,16 @@ int8 ONNX 341MB、2 线程单条 15.8ms，ModelScope 有现成 ONNX。
 写入口也要跟着版本走——一个维度变了，另一条写路径不会自己报错，只会静默返回 None。
 `insert` 返回 None 这类"软失败"必须当成失败处理，否则重试机制会把问题藏起来。
 
-**收尾**：回填脚本绕过 relay，那 14,600 行的 `embedding_state` 还是 NULL；`reconcile`
-按这个字段挑候选，会把它们当"没投影过"重跑 embedding。补一个
-`python -m scripts.mark_projected --batch 500`：先问 Milvus 这些 id 在不在，
-只把真存在的标成 `projected`，缺的留给 reconcile 补。真机验证后
-`reconcile(limit=500)` 返回 `candidates: 0`。
+**收尾**：回填脚本绕过 relay 直接写 v3，那一万四千多行的 `embedding_state` 仍是初始值
+`pending`（注意：列的默认值是 `'pending'`，不是 `NULL`——按 `IS NULL` 挑一条也挑不到，第一次
+跑出来 `scanned: 0` 就是这个原因）。`reconcile` 按这个字段挑候选，会把它们当"没投影过"
+重跑一遍 embedding。补一个 `python -m scripts.mark_projected --batch 500`：先问 Milvus 这些
+id 在不在，只把真存在的标成 `projected`，缺的留给 reconcile 补。
+
+**扫描口径要把 superseded 排除**：`superseded` 是被新事实取代的旧值，backfill 从来只扫
+`active / faded / archived` 三档，所以它们永远是 `pending`——不排除的话，对账每次都捞到
+几百条旧事实去重新 embedding（投影进 v3 也会被检索的 `status == "active"` 过滤掉，纯浪费）。
+两处口径统一为 `status IN ('active', 'faded', 'archived')`。
+
+真机结果：`scanned 15066 / marked 14096`（其余 970 条是 superseded 与已被取代的旧投影），
+之后 `active/pending` 只剩 1 条（本轮新写入），`superseded/pending` 569 条按设计保留。

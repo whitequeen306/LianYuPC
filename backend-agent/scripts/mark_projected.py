@@ -27,9 +27,13 @@ BATCH = 500
 async def _ids(after_id: int, batch: int) -> list[int]:
     rows = await fetch_all(
         "SELECT id FROM memory_meta "
-        "WHERE id > %s AND status <> 'dormant' "
+        "WHERE id > %s "
+        # superseded 的旧事实不该再进向量库（backfill 也只扫现存三档）；
+        # dormant 的向量已经删了，重投影等于把它复活。
+        "AND status IN ('active', 'faded', 'archived') "
         "AND summary IS NOT NULL AND summary <> '' "
-        "AND embedding_state IS NULL "
+        # 列默认值是 'pending'（不是 NULL）；'dropped' 是已删向量的沉底记忆，不要动。
+        "AND (embedding_state IS NULL OR embedding_state NOT IN ('projected', 'dropped')) "
         "ORDER BY id ASC LIMIT %s",
         (after_id, batch),
     )
