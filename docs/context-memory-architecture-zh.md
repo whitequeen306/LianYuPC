@@ -1323,3 +1323,9 @@ int8 ONNX 341MB、2 线程单条 15.8ms，ModelScope 有现成 ONNX。
 **教训**：**集合名必须和 embedding 维度绑在一起**（v3 已按维度自动命名），
 写入口也要跟着版本走——一个维度变了，另一条写路径不会自己报错，只会静默返回 None。
 `insert` 返回 None 这类"软失败"必须当成失败处理，否则重试机制会把问题藏起来。
+
+**收尾**：回填脚本绕过 relay，那 14,600 行的 `embedding_state` 还是 NULL；`reconcile`
+按这个字段挑候选，会把它们当"没投影过"重跑 embedding。补一个
+`python -m scripts.mark_projected --batch 500`：先问 Milvus 这些 id 在不在，
+只把真存在的标成 `projected`，缺的留给 reconcile 补。真机验证后
+`reconcile(limit=500)` 返回 `candidates: 0`。

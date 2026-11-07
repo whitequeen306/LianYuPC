@@ -337,4 +337,24 @@ async def requeue_stuck(limit: int = 200, stuck_minutes: int = 10) -> int:
     return count
 
 
-__all__ = ["drain_once", "project_upsert", "requeue_stuck"]
+async def mark_projected(memory_ids: list[int]) -> int:
+    """把"其实已经在 v3 里"的行标成 `embedding_state='projected'`。
+
+    回填脚本（backfill_milvus_v3）绕过 relay 直接写 v3，这些行的 state 仍然是 NULL；
+    再调 `reconcile` 会把它们当"未投影"重跑一遍 embedding（一万多行白烧 CPU）。
+    这里先问 Milvus 本身，只标真正存在的，缺的留给 reconcile 补。
+    """
+    ids = [int(mid) for mid in (memory_ids or []) if int(mid or 0) > 0]
+    if not ids or not getattr(get_settings(), "memory_vectors_v3_enabled", False):
+        return 0
+    missing = milvus_store.missing_v3_ids(ids)
+    marked = 0
+    for mid in ids:
+        if mid in missing:
+            continue
+        await _set_embedding_state(mid, "projected")
+        marked += 1
+    return marked
+
+
+__all__ = ["drain_once", "mark_projected", "project_upsert", "requeue_stuck"]
