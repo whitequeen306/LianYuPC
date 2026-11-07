@@ -188,8 +188,9 @@ lianyu:
     milvus:
       collection: memory_vectors_v2
     consolidate:
-      # 周记：每周一把上周 episode 收成一条 reflection。默认关（会主动发内网 HTTP），线上显式打开
-      enabled: false
+      # 周记：每周一把上周 episode 收成一条 reflection。默认开——它只在有 >=3 条
+      # 原创 episode 的（角色, 用户）上写一条，空库时等于空转，不会产生噪音。
+      enabled: true
       cron: "0 10 4 * * MON"
     retrieval:
       importance-threshold: 0.5

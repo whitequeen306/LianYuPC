@@ -1,7 +1,7 @@
 """场景关闭 → episode 落库的编排层。
 
 数据流：
-  prompt/assemble 发现卡闲置 > 45min
+  prompt/assemble 发现这一幕该收场（闲置 20 分钟 / 聊满 40 轮 / 话题漂移）
     → `scene_card.stash_pending(card)`（只暂存，不抽取：这里没有模型 key）
   extract-write（下一次带凭据的请求）
     → 本模块取出快照、按 [startedAt, updatedAt] 取消息、抽 episode、写库
@@ -9,6 +9,9 @@
 为什么分成两步：组装请求由 Java 发起，只带 prompt 数据与场景名，不带
 base_url/api_key；把抽取硬塞在那里只能写规则版"假现场"。而 extract-write
 本来就要带凭据，顺手把上一幕结算掉，是唯一不需要新契约的接缝。
+
+也可以手动触发（`close_scene_now` + `POST /agent/memory/scene/close`）：
+用户说"今天就聊到这"、或运维想在发版前把攒着的一幕抽掉时用。
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ from app.db import fetch_all
 from app.memory.episode_store import insert_episode
 from app.memory.extract_scene import MIN_SCENE_MESSAGES, extract_scene
 from app.memory.reflection_store import insert_reflection
-from app.context.scene_card import take_pending
+from app.context.scene_card import clear_card, load_card, stash_pending, take_pending
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +208,43 @@ async def close_pending_scene(
     return created
 
 
+async def close_scene_now(
+    conversation_id: int,
+    user_id: int,
+    character_id: int,
+    *,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    model: str | None = None,
+    provider: str | None = None,
+    gateway: Any | None = None,
+) -> dict[str, Any]:
+    """手动结算当前这一幕：先暂存正在进行的卡，再走同一条抽取路径。
+
+    为什么要这个入口：自动触发只有在"用户下一次回来"时才发生，如果人再也不
+    回来，这一幕就永远留在 Redis 里（7 天后过期，什么都不剩）。运维补抽、
+    以及产品上的"今天就聊到这"按钮都需要一个立即结算的动作。
+    """
+    stashed = False
+    card = await load_card(conversation_id)
+    if card:
+        await stash_pending(card)
+        stashed = True
+    created = await close_pending_scene(
+        conversation_id,
+        user_id,
+        character_id,
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+        provider=provider,
+        gateway=gateway,
+    )
+    # 无论抽到没有，这一幕都已结束：留着旧卡会让下一句话续到已经结算过的话题上。
+    await clear_card(conversation_id)
+    return {"stashed": stashed, "created": created}
+
+
 async def _project_episode(*, user_id: int, character_id: int, episode_id: int,
                            summary: str, event_time: datetime) -> None:
     """把原话投影进向量库；失败只记日志，原话已经落库了。"""
@@ -233,4 +273,4 @@ async def _project_episode(*, user_id: int, character_id: int, episode_id: int,
         logger.warning("episode vector projection failed id=%s: %s", episode_id, exc)
 
 
-__all__ = ["MAX_SCENE_MESSAGES", "close_pending_scene", "load_scene_messages"]
+__all__ = ["MAX_SCENE_MESSAGES", "close_pending_scene", "close_scene_now", "load_scene_messages"]

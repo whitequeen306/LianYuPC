@@ -206,3 +206,30 @@ async def test_shallow_reconcile_does_not_query_milvus(fake, monkeypatch):
     monkeypatch.setattr(relay.milvus_store, "missing_v3_ids", boom)
     stats = await relay.reconcile(limit=10)
     assert "missing_in_v3" not in stats
+
+
+@pytest.mark.asyncio
+async def test_requeue_resets_attempts_so_dead_rows_get_a_full_budget(fake):
+    """只把 status 改回 PENDING 的话，行还带着 12 次失败记录，下一次失败立刻又 DEAD。"""
+    fake["rows"] = [{"id": 5}, {"id": 6}]
+
+    count = await relay.requeue_stuck(limit=10)
+
+    assert count == 2
+    sqls = [" ".join(sql.lower().split()) for sql, _ in fake["executed"]]
+    assert all("attempts = 0" in sql for sql in sqls)
+    assert all("next_attempt_at = now()" in sql for sql in sqls)
+    assert [params for _, params in fake["executed"]] == [(5,), (6,)]
+
+
+@pytest.mark.asyncio
+async def test_requeue_statement_is_whitelisted():
+    """运维重投也走 write 白名单：新语句必须先登记，否则线上只会 warning。"""
+    from app.write import WriteNotAllowed, _assert_allowed
+
+    _assert_allowed(
+        "UPDATE memory_outbox SET status = 'PENDING', attempts = 0, "
+        "next_attempt_at = NOW() WHERE id = %s"
+    )
+    with pytest.raises(WriteNotAllowed):
+        _assert_allowed("UPDATE memory_outbox SET status = 'PENDING', last_error = NULL WHERE id = %s")

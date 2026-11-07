@@ -89,6 +89,11 @@ _ALLOWED_UPDATES = (
         r"^update memory_outbox set next_attempt_at = "
         r"(?:now\(\)|date_add\(now\(\), interval %s second\)) where id = %s$"
     ),
+    # 运维重投：把 DEAD / 卡住的 RUNNING 放回队列（attempts 归零，退避重算）
+    re.compile(
+        r"^update memory_outbox set status = 'pending', attempts = 0, "
+        r"next_attempt_at = now\(\) where id = %s$"
+    ),
 )
 
 

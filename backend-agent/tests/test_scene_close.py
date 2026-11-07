@@ -16,7 +16,7 @@ from app.memory.extract_scene import (  # noqa: F401
     parse_episodes,
 )
 from app.context import scene_card
-from app.memory.scene_close import close_pending_scene, load_scene_messages
+from app.memory.scene_close import close_pending_scene, close_scene_now, load_scene_messages
 
 NOW = datetime(2026, 11, 6, 12, 0, tzinfo=timezone.utc)
 
@@ -249,3 +249,52 @@ async def test_close_skips_reflection_without_impression(wired):
 
     assert created == 1
     assert not wired.get("reflections")
+
+
+@pytest.mark.asyncio
+async def test_manual_close_stashes_card_then_clears_it(monkeypatch, wired):
+    """手动结算：先把正在进行的卡暂存，再走同一条抽取路径，最后清卡。"""
+    live_card = _card(updatedAt=NOW.isoformat())
+    stashed: list[dict] = []
+    cleared: list[int] = []
+
+    async def load_card(conversation_id):
+        return live_card
+
+    async def stash(card):
+        stashed.append(card)
+
+    async def clear(conversation_id):
+        cleared.append(conversation_id)
+
+    monkeypatch.setattr(scene_close, "load_card", load_card)
+    monkeypatch.setattr(scene_close, "stash_pending", stash)
+    monkeypatch.setattr(scene_close, "clear_card", clear)
+
+    wired["pending"] = live_card
+    wired["messages"] = _messages()
+    wired["episodes"] = [SceneEpisode(summary="她加班到很晚", quote="消息1")]
+
+    result = await close_scene_now(
+        9, 7, 3, base_url="https://x", api_key="k", model="m", gateway=object(),
+    )
+
+    assert result == {"stashed": True, "created": 1}
+    assert len(stashed) == 1
+    assert cleared == [9]
+
+
+@pytest.mark.asyncio
+async def test_manual_close_without_a_card_still_clears(monkeypatch, wired):
+    async def load_card(conversation_id):
+        return None
+
+    async def clear(conversation_id):
+        return None
+
+    monkeypatch.setattr(scene_close, "load_card", load_card)
+    monkeypatch.setattr(scene_close, "clear_card", clear)
+
+    result = await close_scene_now(9, 7, 3, base_url=None, api_key=None, model=None)
+
+    assert result == {"stashed": False, "created": 0}

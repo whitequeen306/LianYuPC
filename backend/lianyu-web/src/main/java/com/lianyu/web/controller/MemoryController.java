@@ -2,12 +2,15 @@ package com.lianyu.web.controller;
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.lianyu.common.base.Result;
+import com.lianyu.service.memory.MemoryDecayService;
 import com.lianyu.service.memory.MemoryQueryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -18,6 +21,7 @@ import java.util.Map;
 public class MemoryController {
 
     private final MemoryQueryService memoryQueryService;
+    private final MemoryDecayService memoryDecayService;
 
     @Operation(summary = "记忆列表（按角色分组）")
     @GetMapping
@@ -77,5 +81,16 @@ public class MemoryController {
     public Result<Void> delete(@PathVariable Long id) {
         long userId = StpUtil.getLoginIdAsLong();
         return memoryQueryService.delete(userId, id);
+    }
+
+    @Operation(summary = "立即结算一次记忆衰减（运维/验证用）")
+    @PostMapping("/decay/settle")
+    public Result<Map<String, Object>> settleDecay() {
+        // 定时任务凌晨 3:30 才跑，且要求 last_decay_at 早于 7 天前；
+        // 上线后想确认「衰减到底会不会动」只能手动跑一次，否则要等到下周。
+        StpUtil.checkLogin();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("settled", memoryDecayService.settle(LocalDateTime.now()));
+        return Result.ok(body);
     }
 }

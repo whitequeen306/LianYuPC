@@ -417,10 +417,14 @@ system 里配一条硬规则：模糊条目不许说成确定、不许补细节�
 
 ### 7.1 触发条件（满足其一）
 
-- 闲置 ≥45 分钟；
-- 话题转移（连续 3 条用户消息与 `scene.topic` 的 cos <0.35，且新话题持续 3 轮）；
-- 场景轮数 ≥60；
-- 用户手动"换个话题/结束"。
+- 闲置 ≥20 分钟（原设计 45 分钟，2026-11-07 下调——见 §10.10 的实测原因）；
+- 话题漂移（`topic_drifted`：长度 ≥6 且与「话题 + 刚发生」的字符二元组包含度 <0.08）；
+- 场景轮数 ≥40（连聊不歇时的兜底，原设计 60）；
+- 手动结算（`POST /agent/memory/scene/close`，运维补抽 / "今天就聊到这"）。
+
+三个自动条件都在 `app/context/scene_card.py::close_reason` 里判定并返回理由
+（`idle` / `turns` / `drift`），组装路径命中后立刻 `stash_pending` 并起新卡；
+真正的抽取仍在 `extract-write`（那里才拿得到模型凭据）。
 
 ### 7.2 抽取 schema（一次调用，输出 ≤600 token）
 
@@ -1258,3 +1262,39 @@ int8 ONNX 341MB、2 线程单条 15.8ms，ModelScope 有现成 ONNX。
 
 **调参提醒**：换 embedding 或换语料后必须重跑 `local/_rerank_weight.py`；`Settings` 是
 `@lru_cache`，脚本里改完环境变量要 `get_settings.cache_clear()`，否则读到的还是旧值。
+
+### 10.10 上线后的三处补口（2026-11-07）
+
+本地向量与精排都跑通后回头体检生产，发现三个"代码没错、但整条链路等于没生效"的缺口。
+
+**① 场景几乎不结算**（`memory_episode` 3 条、reflection 1 条、Redis 只有 3 张卡）
+
+- 触发条件是「闲置 ≥45 分钟 **且** 该窗口 ≥4 条消息 **且** SINGLE **且** 有凭据」。
+  24 小时里 ≥4 条消息的会话只有 6 个，还没跨过 45 分钟门槛就散了——不是崩溃，是阈值太硬。
+- 改法：`close_reason(card, text)` 统一判三种收场理由，命中即 `stash_pending` 并起新卡：
+  - `idle`：闲置门槛 45 → **20 分钟**；
+  - `turns`：轮次 60 → **40**（连聊不歇时的兜底）；
+  - `drift`：话题漂移时先结算上一幕，**不再**把旧话题只降级成"可以回扣"（原来整晚只有一幕）。
+- 手动入口：`POST /agent/memory/scene/close`（`close_scene_now`：先 stash 再结算再清卡）。
+  自动结算只在"用户下一次回来"时发生；人不再回来这一幕就只剩一张 6 小时过期的 Redis 卡。
+- 为什么仍不在组装路径直接抽：那里没有模型凭据（Java 只在 extract-write 递 key），
+  硬抽只能写规则版假 episode。
+
+**② `layer='core'` 一条都没有**
+
+- 生产 `memory_meta`：fact 15,591 / superseded 1,000 / **core 0**。core 槽的 SQL 是
+  `layer='core' OR pinned=1`，于是"她记得你叫什么"完全取决于用户有没有手动钉住。
+- 改法：`writer._insert_new` 对画像槽位（`【长期记忆/姓名】` 这类，`slot_of()` 命中）
+  直接写 `layer='core'` + `tau_days=0`（不衰减）+ `strength=1.0`；普通事实仍 `layer='fact'`、
+  `tau_days=365`。这样 core 槽有了数据来源，夜间衰减也不会把设定降档。
+
+**③ 运维缺口**
+
+| 缺口 | 现状 | 补法 |
+|---|---|---|
+| outbox 死信 26 条 + 卡住的 RUNNING 1 条 | `relay/requeue` 存在但没人调；且只改 status、不复位 attempts，重投一次就再 DEAD | `requeue_stuck(limit, stuck_minutes)` 改为 `status='PENDING', attempts=0, next_attempt_at=NOW()`（新语句已登记进 `write.py` 白名单），保留 `last_error` 以便判断"是不是真坏了" |
+| 周记 cron | 生产 `lianyu.memory.consolidate.enabled: false` | 默认改 `true`（没有 ≥3 条 episode 的分组时本来就是空转） |
+| 衰减没被真实跑过 | 迁移时 `last_decay_at=NOW()`，首次 settle 要等 7 天 | `POST /api/memory/decay/settle` 手动触发一次，验证 SQL 与档位 |
+
+**这一轮的教训**：这三处都不是逻辑 bug，而是"阈值/默认值/运维入口"配置得过于保守——
+上线后必须用生产数据回看每条链路的**实际触发次数**，否则代码全绿、行为为空。

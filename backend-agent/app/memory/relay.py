@@ -276,23 +276,31 @@ async def reconcile(limit: int = 500, deep: bool = False) -> dict[str, int]:
     return stats
 
 
-async def requeue_stuck() -> int:
-    """把 DEAD / 卡在 RUNNING 超过 10 分钟的行重新排队（运维用）。"""
+async def requeue_stuck(limit: int = 200, stuck_minutes: int = 10) -> int:
+    """把 DEAD / 卡在 RUNNING 的行重新排队（运维用）。
+
+    两处细节是踩过的：
+    1. `attempts` 必须归零。只把 status 改回 PENDING 的话，行还带着 12 次失败记录，
+       下一次失败立刻又 DEAD —— 等于白重投一次。
+    2. 保留 `last_error`：重投之后如果还是同一句 error，说明不是抖动而是真坏了。
+    3. 一次最多重投 `limit` 条：DEAD 攒到几百条时，一次性全放回去会把 relay 打满。
+    """
     rows = await fetch_all(
         "SELECT id FROM memory_outbox WHERE status IN (%s, %s) "
-        "AND updated_at <= DATE_SUB(NOW(), INTERVAL 10 MINUTE)",
-        (STATUS_DEAD, STATUS_RUNNING),
+        "AND updated_at <= DATE_SUB(NOW(), INTERVAL %s MINUTE) ORDER BY id ASC LIMIT %s",
+        (STATUS_DEAD, STATUS_RUNNING, max(0, int(stuck_minutes)), max(1, int(limit))),
     )
     count = 0
     for row in rows:
         async with transaction() as cur:
             await execute_write(
-                cur, "UPDATE memory_outbox SET status = %s WHERE id = %s",
-                (STATUS_PENDING, int(row["id"])))
-            await execute_write(
-                cur, "UPDATE memory_outbox SET next_attempt_at = NOW() WHERE id = %s",
+                cur,
+                "UPDATE memory_outbox SET status = 'PENDING', attempts = 0, "
+                "next_attempt_at = NOW() WHERE id = %s",
                 (int(row["id"]),))
         count += 1
+    if count:
+        logger.info("memory outbox requeued %d rows (dead/stuck)", count)
     return count
 
 

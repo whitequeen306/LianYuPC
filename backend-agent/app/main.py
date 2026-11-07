@@ -986,8 +986,9 @@ async def memory_extract_write(
     from app.memory.scene_close import close_pending_scene
     from app.memory.writer import MemoryInput, write_memories
 
-    # 先把上一幕结算掉（卡闲置 >45 分钟时 prompt/assemble 已暂存快照）。
-    # 失败只记日志：这一幕的 episode 丢了，不能连带这一轮的记忆写入也丢。
+    # 先把上一幕结算掉（该收场时 prompt/assemble 已暂存快照：闲置 20 分钟 /
+    # 聊满 40 轮 / 话题已换）。失败只记日志：这一幕的 episode 丢了，
+    # 不能连带这一轮的记忆写入也丢。
     try:
         await close_pending_scene(
             body.conversation_id,
@@ -1046,10 +1047,10 @@ async def memory_relay_drain() -> dict[str, int]:
 
 
 @app.post("/agent/memory/relay/requeue")
-async def memory_relay_requeue() -> dict[str, int]:
+async def memory_relay_requeue(limit: int = 200) -> dict[str, int]:
     from app.memory.relay import requeue_stuck
 
-    return {"requeued": await requeue_stuck()}
+    return {"requeued": await requeue_stuck(limit=limit)}
 
 
 @app.post("/agent/memory/reconcile")
@@ -1082,6 +1083,44 @@ async def memory_resurface(body: ResurfaceBody) -> dict[str, Any]:
         logger.warning("memory resurface failed: %s", exc)
         return {"suggestion": None}
     return {"suggestion": suggestion}
+
+
+class SceneCloseBody(BaseModel):
+    """手动结算当前这一幕。凭据可缺省（缺了就只能结算、抽不出原话）。"""
+
+    user_id: int = Field(alias="userId")
+    character_id: int = Field(alias="characterId")
+    conversation_id: int = Field(alias="conversationId")
+    text_base_url: str | None = Field(default=None, alias="textBaseUrl")
+    text_api_key: str | None = Field(default=None, alias="textApiKey")
+    text_model: str | None = Field(default=None, alias="textModel")
+    provider: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+@app.post("/agent/memory/scene/close")
+async def memory_scene_close(body: SceneCloseBody) -> dict[str, Any]:
+    """立即结束当前这一幕并抽取 episode。
+
+    自动结算只发生在"用户下一次回来"时；人不再回来这一幕就只剩 Redis 里
+    一张 6 小时后过期的卡。运维补抽、以及"今天就聊到这"按钮走这里。
+    """
+    from app.memory.scene_close import close_scene_now
+
+    try:
+        return await close_scene_now(
+            body.conversation_id,
+            body.user_id,
+            body.character_id,
+            base_url=body.text_base_url,
+            api_key=body.text_api_key,
+            model=body.text_model,
+            provider=body.provider,
+        )
+    except Exception as exc:  # noqa: BLE001 - 手动结算失败不该 500
+        logger.warning("scene close (manual) failed conv=%s: %s", body.conversation_id, exc)
+        return {"stashed": False, "created": 0, "error": "close_failed"}
 
 
 @app.get("/agent/memory/health")
