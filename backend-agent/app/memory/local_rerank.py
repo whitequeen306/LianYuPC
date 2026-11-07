@@ -7,8 +7,9 @@ query 与这一条记忆**放在一起**读起来对不对。
 为什么是本地：服务器到 DashScope 的往返 0.6–1.5s，召回预算只有 0.45s，外网精排等于没有；
 本地 gte-multilingual-reranker-base（int8，341MB）单条约 16ms，8 条一档约 110ms 跑得下。
 
-为什么默认关：在 49 题中文语料上纯精排是负收益（recall@5 43→39），只有「与 cosine 按比例
-混合」才略有提升（MRR 0.799→0.846）。所以它是开关项，默认关，靠真机 A/B 决定要不要开。
+为什么是混合而不是替换：在 49 题中文语料上纯精排是负收益（recall@5 43→39、MRR 0.799→0.726），
+因为 CE 偏爱字面更像的那条；与融合分按比例混合才是净赚（44/49、MRR 0.845）。
+所以默认开但要能一键关（`memory_rerank_local_enabled`），且缺模型/超时/异常一律退回融合顺序。
 """
 
 from __future__ import annotations
@@ -98,6 +99,18 @@ def reset() -> None:
     _session = None
     _tokenizer = None
     _load_failed = False
+
+
+def warm() -> bool:
+    """启动时把会话加载 + 空跑一次。
+
+    342MB 的 ONNX 首次建会话要几百毫秒，超过精排 0.12s 的预算；不预热的话
+    「上线后第一轮真实提问」必然因为没有会话而丢弃精排（或更糟：把这一轮的召回
+    拖过总预算）。放在 lifespan 里预热，代价只是一次启动时间。
+    """
+    if not is_configured():
+        return False
+    return score_sync("预热", ["预热"]) is not None
 
 
 def score_sync(query: str, documents: list[str]) -> list[float] | None:

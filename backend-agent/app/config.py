@@ -82,10 +82,10 @@ class Settings(BaseSettings):
     memory_recall_v3_enabled: bool = True
     # 召回的超时预算：超了就退回旧路径，宁可少几条也不要拖住整轮回复。
     # 向量路本地推理热态 10ms、Milvus 检索 3–5ms（首次检索 600ms，已在启动时预热），
-    # 文本路 SQL 200–300ms，本地精排 6 条约 90ms，0.6s 留了余量。
+    # 文本路 SQL 200–300ms，线上本地精排 6 条约 165ms，0.75s 留了余量。
     # 预算一旦被"收紧"，最先牺牲的是精排（见 recall() 里的剩余预算二次收紧），
     # 而不是整段 v3——退回旧路径比不精排糟得多。
-    memory_recall_timeout_seconds: float = 0.6
+    memory_recall_timeout_seconds: float = 0.75
     # 打点（mark_injected）是旁路写入，超时直接放弃，下一轮再补。
     memory_recall_mark_timeout_seconds: float = 0.3
 
@@ -132,18 +132,21 @@ class Settings(BaseSettings):
     local_embedding_min_similarity: float = 0.50
     # 本地 cross-encoder 精排（结论见 docs §10.9）：49 题中文语料上「纯精排」是负收益
     # （recall@5 43→40），与融合分 5:5 混合才净赚（recall@5 43→44、MRR 0.799→0.845）。
-    # 模型 gte-multilingual-reranker-base（int8 341MB，2 线程 6 条约 85ms），与 embedding
-    # 同族、同样支持 zh/en/ja。默认开：超时/缺模型都会自动退回融合顺序（见 local_rerank）。
+    # 模型 gte-multilingual-reranker-base（int8 341MB），与 embedding 同族、同样支持 zh/en/ja。
+    # 默认开：超时/缺模型都会自动退回融合顺序（见 local_rerank）。
     memory_rerank_local_enabled: bool = True
     local_rerank_model_dir: str = "/app/models/gte-multilingual-reranker-base"
     local_rerank_max_length: int = 256
-    local_rerank_threads: int = 2
+    # 线上实测（E5-2697 v4，6 条候选）：2 线程 228ms、3 线程 164ms —— 老 Xeon 比开发机慢一倍，
+    # 线程数按容器 CPU 上限给，少给就是白等。
+    local_rerank_threads: int = 3
     # 只精排前 N 条：实测 6 条与 12 条质量持平（都是 recall@5 44/49），但便宜一半。
     local_rerank_max_candidates: int = 6
     # 混合权重：0 = 完全用融合分，1 = 完全用精排分。0.5 是 49 题扫描的最优点。
     local_rerank_weight: float = 0.5
-    # 精排自己的时间预算；recall() 还会再按「本轮剩余预算」二次收紧，绝不拖垮整轮召回。
-    local_rerank_timeout_seconds: float = 0.12
+    # 精排自己的时间预算：线上 6 条 164ms，留一倍余量；recall() 还会再按
+    # 「本轮剩余预算」二次收紧，绝不拖垮整轮召回。
+    local_rerank_timeout_seconds: float = 0.35
     rerank_base_url: str = "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
     rerank_api_key: str = ""
     rerank_model: str = "gte-rerank-v2"

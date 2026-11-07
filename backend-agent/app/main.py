@@ -73,6 +73,11 @@ async def _warm_memory() -> None:
             await asyncio.to_thread(milvus_store.search_hits_v3, 0, 0, warm_vector, 1)
         else:
             await asyncio.to_thread(milvus_store.search_hits_v3, 0, 0, [0.0] * active_dim(), 1)
+        from app.memory import local_rerank
+
+        # 精排模型 342MB，首个会话要几百毫秒，超过 0.12s 的精排预算；
+        # 不在这里预热，第一轮真实提问就一定会静默丢掉精排。
+        await asyncio.to_thread(local_rerank.warm)
         logger.info("memory warmup done")
     except Exception as exc:  # noqa: BLE001 - 预热失败不影响启动
         logger.warning("memory warmup failed: %s", exc)
