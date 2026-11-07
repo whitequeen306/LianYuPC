@@ -1370,6 +1370,7 @@ ok ──(额度类错误)──▶ blocked(until = now + backoff) ──(TTL �
 |---|---|---|
 | 熔断键 | `ai:quota:block:{userId}`（Redis string + TTL） | 一个用户一把 key，和 vault 里的 USER 作用域对齐 |
 | 触发码 | `provider_insufficient_balance` / `provider_invalid_api_key` / `provider_unauthorized` / `provider_model_not_found` | 这四类都会「每轮必然失败」；超时、5xx 属瞬时故障，不熔断 |
+| 连续失败兜底 | 非额度类错误**连错 3 次**也熔断（30 分钟计数窗口，`ai:quota:strike:{userId}`） | 实测 userId=398 每 32 秒重试一次、一天 378 次跳过：单次 400 可能是消息格式问题，但连错三次就是配置性问题 |
 | 退避阶梯 | 10 分钟 → 30 分钟 → 2 小时 → 6 小时 → 24 小时（封顶） | 首次要短（用户可能马上充值），之后要长（避免白烧） |
 | 恢复 | **任意一次成功调用即删键** | 不需要轮询、不需要用户手动开关；充值后她下一条能说话时就恢复 |
 | 半开 | TTL 到期后第一轮照常放行 | 用真实调用做探活，比额外发一个健康检查请求便宜 |
@@ -1394,7 +1395,8 @@ HTTP + 组装成本才知道又失败了。熔断是**跨请求的用户级状�
 
 ### 验收
 
-- 单测 `ModelQuotaGuardTest` 11 例：首次 600s、阶梯 600/1800/7200/21600/86400 且封顶、
-  非额度错误不记账、成功删键、快照给前端剩余秒数、Redis 挂掉仍放行。
+- 单测 `ModelQuotaGuardTest` 13 例：首次 600s、阶梯 600/1800/7200/21600/86400 且封顶、
+  非额度错误先记 strike、连错 3 次才熔断、额度错误清 strike、成功删两把键、
+  快照给前端剩余秒数、Redis 挂掉仍放行。
 - 生产观察指标（发布后 24 小时）：`provider_insufficient_balance` 从 255 次降到
   个位数（只剩首次触发与退避到期的探活）；`agent returned no content` 同日对比。

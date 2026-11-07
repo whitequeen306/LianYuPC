@@ -80,10 +80,34 @@ class ModelQuotaGuardTest {
     }
 
     @Test
-    void ignoresNonQuotaErrorsSoTransientFailuresNeverOpenTheCircuit() {
-        assertEquals(0L, guard.recordFailure(7L, "upstream_timeout", ""));
-        assertEquals(0L, guard.recordFailure(7L, "", ""));
-        verify(valueOps, never()).set(anyString(), anyString(), any(Duration.class));
+    void singleTransientFailureOnlyLeavesAStrikeAndKeepsProactiveOn() {
+        when(valueOps.get("ai:quota:strike:7")).thenReturn(null);
+
+        assertEquals(0L, guard.recordFailure(7L, "provider_bad_request", "model gateway http 400"));
+
+        verify(valueOps).set(eq("ai:quota:strike:7"), eq("1"), eq(Duration.ofMinutes(30)));
+        verify(valueOps, never()).set(eq("ai:quota:block:7"), anyString(), any(Duration.class));
+    }
+
+    @Test
+    void threeConsecutiveTransientFailuresFinallyOpenTheCircuit() {
+        when(valueOps.get("ai:quota:strike:7")).thenReturn("2");
+
+        long seconds = guard.recordFailure(7L, "provider_bad_request", "model gateway http 400");
+
+        assertEquals(600L, seconds, "连错三次说明是配置性问题：先熔断 10 分钟");
+        verify(redisTemplate).delete("ai:quota:strike:7");
+        verify(valueOps).set(eq("ai:quota:block:7"), anyString(), eq(Duration.ofSeconds(600)));
+    }
+
+    @Test
+    void blockingCodeClearsStaleStrikes() {
+        when(valueOps.get("ai:quota:block:7")).thenReturn(null);
+        when(valueOps.get("ai:quota:strike:7")).thenReturn("2");
+
+        guard.recordFailure(7L, "provider_insufficient_balance", "");
+
+        verify(redisTemplate).delete("ai:quota:strike:7");
     }
 
     @Test

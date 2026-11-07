@@ -48,6 +48,16 @@ public class ModelQuotaGuard {
             Duration.ofHours(24).toSeconds()
     };
 
+    /**
+     * 非额度类错误的连续失败次数阈值：连错 3 次也熔断。
+     *
+     * <p>为什么需要这一档：`provider_bad_request`（400）同样每轮必失败，但单次 400 也可能只是
+     * 某条消息格式问题，不该立刻停掉主动关怀。实测 userId=398 每 32 秒重试一次，一天 378 次跳过，
+     * 就是"不熔断但也不会成功"的典型——所以给瞬时节流一个 30 分钟的计数窗口。
+     */
+    private static final int STRIKE_THRESHOLD = 3;
+    private static final Duration STRIKE_TTL = Duration.ofMinutes(30);
+
     public static final String STATE_OK = "ok";
     public static final String STATE_BLOCKED = "blocked";
 
@@ -61,6 +71,10 @@ public class ModelQuotaGuard {
 
     static String key(long userId) {
         return "ai:quota:block:" + userId;
+    }
+
+    static String strikeKey(long userId) {
+        return "ai:quota:strike:" + userId;
     }
 
     static boolean isBlockingCode(String code) {
@@ -97,7 +111,7 @@ public class ModelQuotaGuard {
      */
     public long recordFailure(long userId, String code, String detail) {
         if (!isBlockingCode(code)) {
-            return 0;
+            return recordStrike(userId, code);
         }
         int fails = readFails(userId) + 1;
         long seconds = backoffSeconds(fails);
@@ -110,6 +124,8 @@ public class ModelQuotaGuard {
         try {
             redisTemplate.opsForValue()
                     .set(key(userId), objectMapper.writeValueAsString(state), Duration.ofSeconds(seconds));
+            // 额度问题已经记账，非额度计数清零；否则恢复后又被历史 strike 立刻打回
+            redisTemplate.delete(strikeKey(userId));
         } catch (Exception e) {
             log.warn("model quota guard write failed: userId={}, reason={}", userId, e.toString());
             return 0;
@@ -119,11 +135,51 @@ public class ModelQuotaGuard {
         return seconds;
     }
 
+    /**
+     * 非额度类错误的连续失败：连错 {@link #STRIKE_THRESHOLD} 次才熔断。
+     *
+     * <p>为什么不用同一套长阶梯：单次 400 / 超时可能只是这一条消息的问题，
+     * 立刻停掉主动关怀会让用户觉得"她突然不理我了"；连错三次才说明是配置性问题。
+     */
+    private long recordStrike(long userId, String code) {
+        try {
+            int strikes = readInt(strikeKey(userId)) + 1;
+            if (strikes < STRIKE_THRESHOLD) {
+                redisTemplate.opsForValue().set(strikeKey(userId), String.valueOf(strikes), STRIKE_TTL);
+                return 0;
+            }
+            redisTemplate.delete(strikeKey(userId));
+            long seconds = backoffSeconds(strikes - STRIKE_THRESHOLD + 1);
+            Map<String, Object> state = new LinkedHashMap<>();
+            state.put("state", STATE_BLOCKED);
+            state.put("code", code == null || code.isBlank() ? "repeated_failure" : code);
+            state.put("detail", "consecutive failures");
+            state.put("fails", strikes);
+            state.put("blockedUntil", System.currentTimeMillis() + seconds * 1000L);
+            redisTemplate.opsForValue()
+                    .set(key(userId), objectMapper.writeValueAsString(state), Duration.ofSeconds(seconds));
+            log.info("model quota blocked by repeated failures: userId={}, code={}, strikes={}, forSeconds={}",
+                    userId, code, strikes, seconds);
+            return seconds;
+        } catch (Exception e) {
+            log.warn("model quota strike write failed: userId={}, reason={}", userId, e.toString());
+            return 0;
+        }
+    }
+
     /** 任意一次成功都视为额度已恢复：删键即恢复主动关怀，不需要等冷却。 */
     public void recordSuccess(long userId) {
         try {
+            boolean cleared = false;
             if (Boolean.TRUE.equals(redisTemplate.hasKey(key(userId)))) {
                 redisTemplate.delete(key(userId));
+                cleared = true;
+            }
+            if (Boolean.TRUE.equals(redisTemplate.hasKey(strikeKey(userId)))) {
+                redisTemplate.delete(strikeKey(userId));
+                cleared = true;
+            }
+            if (cleared) {
                 log.info("model quota recovered: userId={}", userId);
             }
         } catch (Exception e) {
@@ -165,12 +221,19 @@ public class ModelQuotaGuard {
     }
 
     private int readFails(long userId) {
+        return readInt(key(userId));
+    }
+
+    private int readInt(String redisKey) {
         try {
-            String raw = redisTemplate.opsForValue().get(key(userId));
+            String raw = redisTemplate.opsForValue().get(redisKey);
             if (raw == null || raw.isBlank()) {
                 return 0;
             }
-            return objectMapper.readTree(raw).path("fails").asInt(0);
+            if (raw.startsWith("{")) {
+                return objectMapper.readTree(raw).path("fails").asInt(0);
+            }
+            return Integer.parseInt(raw.trim());
         } catch (Exception e) {
             return 0;
         }
