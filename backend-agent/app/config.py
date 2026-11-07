@@ -82,10 +82,10 @@ class Settings(BaseSettings):
     memory_recall_v3_enabled: bool = True
     # 召回的超时预算：超了就退回旧路径，宁可少几条也不要拖住整轮回复。
     # 向量路本地推理热态 10ms、Milvus 检索 3–5ms（首次检索 600ms，已在启动时预热），
-    # 文本路 SQL 200–300ms，线上本地精排 6 条约 165ms，0.75s 留了余量。
+    # 文本路 SQL 200–300ms，线上本地精排 6 条约 165ms，1.0s 留了余量。
     # 预算一旦被"收紧"，最先牺牲的是精排（见 recall() 里的剩余预算二次收紧），
     # 而不是整段 v3——退回旧路径比不精排糟得多。
-    memory_recall_timeout_seconds: float = 0.75
+    memory_recall_timeout_seconds: float = 1.0
     # 打点（mark_injected）是旁路写入，超时直接放弃，下一轮再补。
     memory_recall_mark_timeout_seconds: float = 0.3
 
@@ -146,7 +146,7 @@ class Settings(BaseSettings):
     local_rerank_weight: float = 0.5
     # 精排自己的时间预算：线上 6 条 164ms，留一倍余量；recall() 还会再按
     # 「本轮剩余预算」二次收紧，绝不拖垮整轮召回。
-    local_rerank_timeout_seconds: float = 0.35
+    local_rerank_timeout_seconds: float = 0.45
     rerank_base_url: str = "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
     rerank_api_key: str = ""
     rerank_model: str = "gte-rerank-v2"
@@ -180,8 +180,8 @@ class Settings(BaseSettings):
     # DEFAULT_MIN_SIMILARITY）：不同模型的余弦尺度不可比，写死一个数换后端就全错。
     memory_vector_min_similarity: float = 0.0
     # 向量路单独限时：超时就只丢向量，别把 ngram/episode 一起拖垮。
-    # 本地推理热态约 10ms，0.18s 只用来兜"模型冷启动/机器被别的项目抢满"的极端情况。
-    memory_vector_timeout_seconds: float = 0.18
+    # 本地推理热态约 10ms，0.25s 只用来兜"模型冷启动/机器被别的项目抢满"的极端情况。
+    memory_vector_timeout_seconds: float = 0.25
 
     # 记忆块（画像 + 关系 + 场景 + 召回）合起来的 token 上限；0 表示不设限
     memory_context_max_tokens: int = 1100

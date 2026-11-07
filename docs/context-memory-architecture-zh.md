@@ -1232,5 +1232,22 @@ int8 ONNX 341MB、2 线程单条 15.8ms，ModelScope 有现成 ONNX。
 --model gte-multilingual-reranker-base --dir /models/gte-multilingual-reranker-base`（341MB），
 重启 agent；日志 `local rerank ready`。模型不在时开关自动失效，不会报错。
 
+**线上实测（2026-11-07，生产 8 vCPU Xeon E5-2697 v4）**，两条把参数调准的教训：
+
+| 场景 | 开发机（i7-14650HX） | 线上 |
+|---|---|---|
+| 6 条候选打分（2 线程） | 85–110ms | **218–228ms** |
+| 6 条候选打分（3 线程） | — | **164ms** |
+| 首次建 ONNX 会话 | 0.9s | **3.5s** |
+
+- 线程数按容器 CPU 上限给（`local_rerank_threads=3`，容器 `cpus=3.0`）；老 Xeon 单核慢，
+  少给线程就是白等。
+- 精排预算 0.12 → **0.35**、召回总预算 0.6 → **0.75**：0.12s 连热态 164ms 都不够，
+  结果是「配好了却一次都没生效」。
+- **必须启动预热**（`local_rerank.warm()` 进 `_warm_memory`）：3.5s 的建会话时间远超精排
+  预算，不预热则上线后前几轮真实提问全部静默丢掉精排——而那正是用户会先开口的那一轮。
+  判断精排到底有没有跑，看召回结果里有没有 `_ce` 字段，不要只看开关和日志。
+
+
 **调参提醒**：换 embedding 或换语料后必须重跑 `local/_rerank_weight.py`；`Settings` 是
 `@lru_cache`，脚本里改完环境变量要 `get_settings.cache_clear()`，否则读到的还是旧值。
