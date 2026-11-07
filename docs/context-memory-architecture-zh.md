@@ -1410,3 +1410,17 @@ HTTP + 组装成本才知道又失败了。熔断是**跨请求的用户级状�
 - 生产观察指标（发布后 24 小时）：`provider_insufficient_balance` 从 255 次降到
   个位数（只剩首次触发与退避到期的探活）；`skipped: agent returned no content` 应随 strike
   熔断收敛（部署后 19:22 与 19:24 各还有一条 INFO，属半开探活，若继续增长说明 strike 没生效）。
+
+发布后第一次实查（2026-11-07 19:38，部署约 5 分钟）：
+
+| 键 | code | fails | TTL 剩余 |
+|---|---|---|---|
+| `ai:quota:block:297` | `provider_insufficient_balance`（402） | 1 | 379s |
+| `ai:quota:block:355` | `provider_insufficient_balance`（402） | 1 | 344s |
+| `ai:quota:block:364` | `provider_insufficient_balance`（402） | 1 | 345s |
+| `ai:quota:block:398` | `provider_bad_request`（连错 3 次） | 3 | 443s |
+
+- 三个 402 用户各自只触发一次就进了 600 秒熔断，`provider_insufficient_balance` 在随后 15 分钟为 0。
+- 398 的 strikes 能凑到 3，其中一部分来自"空内容"路径（部署后 `agent returned no content`
+  仍会出现 1–2 次，但每次都会 `recordFailure`，到 3 次即熔断）；下一次失败按 `fails=4` 提到 6 小时。
+- 熔断期间日志降为 debug（`skipped: quota blocked`），不再每 30 秒刷 INFO。
