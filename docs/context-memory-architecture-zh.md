@@ -1135,3 +1135,50 @@ v3 投影失败重试、冷启动建连不阻塞、dormant 清向量、supersede
   判据是「记忆晚于来源消息」，可重复执行。
 - 向量库被重建后，`vec_id` 这一列不可信：`POST /agent/memory/reconcile?deep=true`
   会问 Milvus 本身并补投影。
+
+### 10.8 本地向量模型落地（2026-11-07）
+
+**为什么换**：上线首日日志每轮都是 `memory recall v3 timed out after 500ms, falling back`。
+容器内实测 DashScope `text-embedding-v3` 往返 0.6–1.5s，而召回总预算只有 0.45s——
+向量路每轮都被丢掉，语义召回等于没上线，实际干活的只有 ngram 与原话两路。
+
+**改成什么**：进程内 ONNX 推理（`app/memory/local_embedding.py`），CLS 池化 + L2 归一。
+模型 `gte-multilingual-base`（768 维，int8 ONNX 340MB），热态单条约 10ms。
+
+**为什么是这个模型**（51 题合并集 = 26 条常规 + 25 条绕词难例，纯余弦 top-5）：
+
+| 模型 | 维 | recall@5 | MRR | 单条(2 线程) | 体积 | 跨语言 top1 |
+|---|---|---|---|---|---|---|
+| bge-small-zh-v1.5 int8 | 512 | 48/49 | 0.885 | 1.5ms | 24MB | 2/4 |
+| bge-base-zh-v1.5 int8 | 768 | 48/49 | 0.896 | 8.0ms | 103MB | 3/4 |
+| bge-large-zh-v1.5 int8 | 1024 | 46/49 | 0.888 | 24.2ms | 327MB | — |
+| **gte-multilingual-base int8** | **768** | **48/49** | **0.898** | **9.3ms** | **340MB** | **4/4** |
+| DashScope text-embedding-v3 | 1024 | 49/49 | 0.939 | 外网 1.5s | — | — |
+
+中文质量四个本地模型打平（差 1 题属噪声），真正拉开差距的是跨语言：
+记忆是中文写的，用户可能用英文或日文问（产品支持 zh/en/ja），
+「what do I drink every morning」对「她只喝冰美式」只有 gte 找得回来（0.529，其余 0.33–0.45）。
+
+**取舍**：340MB / 9ms 换跨语言与中文持平的质量；bge-* 仍留在
+`scripts/fetch_embedding_model.py` 里当轻量备选，换模型必须同时换集合（见下）。
+
+**配套改动**：
+- 集合名按维度自动取（`memory_vectors_d768`），配置留空即自动；维度写死在集合里，
+  换模型写错集合会直接报维度错。
+- 相似度下限按后端解析：本地 0.50（标定集正样本最低 0.566、噪声最高 0.438，
+  `local/_threshold.py` 可复算），DashScope 0.50。
+- 启动预热多做一次检索：首次检索还要 600ms（加载集合 + 建检索上下文），
+  不预热的话上线后第一轮真实提问必然丢向量路——那正是用户会先开口的那一轮。
+
+**真机结果（演练库 24 题，同题集同预算）**：DashScope 21/24、MRR 0.726；
+本地 gte 20/24、MRR 0.705，负例 2/2、跨角色隔离 PASS；召回热态 p50 6ms / p90 15ms。
+差 1 题在噪声范围内，但省掉了 1.5s 的外网依赖和一整个供应商。
+
+**上线步骤**（顺序不能颠倒）：
+1. 部署（agent 镜像已带 `onnxruntime`/`tokenizers`）
+2. `models/gte-multilingual-base` 放到宿主机 `models/`（`scripts/fetch_embedding_model.py`
+   从 ModelScope 拉；HF 与 hf-mirror 从服务器都不通）
+3. `python -m scripts.init_milvus_v3` 建 `memory_vectors_d768`
+4. `python -m scripts.backfill_milvus_v3 --limit 40000 --batch-size 64`（**只能跑一个**：
+   两个进程并行写同一集合会产生重复投影，检索 top_k 里一半是同一条）
+5. 重启 agent，日志出现 `local embedding ready` 与 `memory warmup done`
