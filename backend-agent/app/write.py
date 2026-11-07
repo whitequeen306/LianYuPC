@@ -42,6 +42,8 @@ _UID_LIST = r"\((?:%s, )*%s\)"
 # 这类追加列的句子一路放行——白名单就变成了摆设。
 _ALLOWED_UPDATES = (
     re.compile(r"^update memory_meta set milvus_vec_id = %s where id = %s$"),
+    # 投影状态：v3 之后不再写 vec_id，对账靠这一列判断"投过没有"
+    re.compile(r"^update memory_meta set embedding_state = %s where id = %s$"),
     # 画像槽位换值：旧行标 superseded + 关闭有效期，不物理删（可追溯"她以前叫过什么"）
     re.compile(
         r"^update memory_meta set status = 'superseded', valid_to = now\(\), "

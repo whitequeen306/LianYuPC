@@ -76,6 +76,14 @@ async def _set_vec_id(memory_id: int, vec_id: str) -> None:
             (vec_id, memory_id))
 
 
+async def _set_embedding_state(memory_id: int, state: str) -> None:
+    """投影状态打点。v3 之后不再有 vec_id 可写，对账靠这一列判断。"""
+    async with transaction() as cur:
+        await execute_write(
+            cur, "UPDATE memory_meta SET embedding_state = %s WHERE id = %s",
+            (state, memory_id))
+
+
 async def _load_meta(memory_id: int) -> dict[str, Any] | None:
     rows = await fetch_all(
         "SELECT id, character_id, user_id, summary, memory_type, layer, status, "
@@ -84,7 +92,11 @@ async def _load_meta(memory_id: int) -> dict[str, Any] | None:
 
 
 async def project_upsert(memory_id: int) -> str:
-    """投影一条记忆；返回 'done' / 'skip' / 'retry' / 'defer'。"""
+    """投影一条记忆；返回 'done' / 'skip' / 'retry' / 'defer'。
+
+    v3（按 embedding 维度自动命名的集合）现在是唯一的召回源；v2 是 1024 维的老集合，
+    换成本地 768 维 embedding 之后往里写只会被 Milvus 以维度不符拒绝，所以默认不写。
+    """
     meta = await _load_meta(memory_id)
     if meta is None or not (meta.get("summary") or "").strip():
         return "skip"
@@ -96,6 +108,16 @@ async def project_upsert(memory_id: int) -> str:
     if not vectors:
         return "defer"  # embedding 不可用：不算业务失败
 
+    v3_enabled = bool(getattr(get_settings(), "memory_vectors_v3_enabled", False))
+    if v3_enabled:
+        # v3 投影失败不能当成功：outbox 一旦标 DONE 就没人再来，这条记忆会永远失去向量召回。
+        if not _project_v3(meta, summary, vectors[0]):
+            return "retry"
+        await _set_embedding_state(int(meta["id"]), "projected")
+
+    if not bool(getattr(get_settings(), "memory_vectors_v2_enabled", False)):
+        return "done"
+
     if old_vec:
         milvus_store.delete([str(old_vec)])
     vec_id = milvus_store.insert(
@@ -103,14 +125,9 @@ async def project_upsert(memory_id: int) -> str:
         summary, str(meta.get("memory_type") or "FACT"), vectors[0],
     )
     if vec_id is None:
-        return "retry"
-
-    # v3 投影失败不能当成功：outbox 一旦标 DONE，reconcile 只挑 vec_id IS NULL 的行，
-    # 这条记忆就永远失去向量召回。宁可回滚这次 v2 插入再重试。
-    v3_ok = _project_v3(meta, summary, vectors[0])
-    if get_settings().memory_vectors_v3_enabled and not v3_ok:
-        milvus_store.delete([str(vec_id)])
-        return "retry"
+        # v3 已经写成功了，v2 只是历史遗留：记一笔 warning 就好，不要把整条任务拖成 DEAD。
+        logger.warning("legacy v2 projection failed: memoryId=%s", meta["id"])
+        return "done"
     await _set_vec_id(int(meta["id"]), vec_id)
     return "done"
 
@@ -162,7 +179,12 @@ async def drain_once(batch_size: int | None = None, max_attempts: int | None = N
         try:
             if op == OP_DELETE:
                 vec = row.get("vec_id")
-                ok = milvus_store.delete([str(vec)]) if vec else True
+                ok = True
+                if getattr(get_settings(), "memory_vectors_v3_enabled", False):
+                    # v3 的主键是自增 id，外部只认 memory_id，所以按 memory_id 删。
+                    ok = milvus_store.delete_v3_by_memory_ids([int(row["memory_id"])])
+                if vec and getattr(get_settings(), "memory_vectors_v2_enabled", False):
+                    ok = ok and milvus_store.delete([str(vec)])
                 if ok:
                     await _mark(outbox_id, STATUS_DONE)
                     stats["done"] += 1
@@ -245,14 +267,25 @@ async def reconcile(limit: int = 500, deep: bool = False) -> dict[str, int]:
     deep=True 时额外抽查「vec_id 有值但 v3 集合里没有」的行（向量库被重建的场景），
     代价是多一次 Milvus 查询，所以默认关闭，由运维在重建后手动跑一次。
     """
-    rows = await fetch_all(
-        "SELECT id, summary, milvus_vec_id FROM memory_meta "
-        "WHERE summary IS NOT NULL AND summary <> '' "
-        "AND status <> 'dormant' "
-        "AND (milvus_vec_id IS NULL OR milvus_vec_id = '') "
-        "ORDER BY id ASC LIMIT %s",
-        (limit,),
-    )
+    if getattr(get_settings(), "memory_vectors_v3_enabled", False):
+        # v3 之后不再写 vec_id：再按「vec_id 为空」挑候选，会把全表都算成待修。
+        rows = await fetch_all(
+            "SELECT id, summary, milvus_vec_id FROM memory_meta "
+            "WHERE summary IS NOT NULL AND summary <> '' "
+            "AND status <> 'dormant' "
+            "AND (embedding_state IS NULL OR embedding_state <> 'projected') "
+            "ORDER BY id ASC LIMIT %s",
+            (limit,),
+        )
+    else:
+        rows = await fetch_all(
+            "SELECT id, summary, milvus_vec_id FROM memory_meta "
+            "WHERE summary IS NOT NULL AND summary <> '' "
+            "AND status <> 'dormant' "
+            "AND (milvus_vec_id IS NULL OR milvus_vec_id = '') "
+            "ORDER BY id ASC LIMIT %s",
+            (limit,),
+        )
     stats = {"candidates": len(rows), "repaired": 0, "failed": 0}
     if deep:
         known = {int(row["id"]) for row in rows}

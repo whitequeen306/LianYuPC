@@ -376,6 +376,25 @@ def missing_v3_ids(memory_ids: list[int]) -> set[int]:
     return {mid for mid in wanted if mid not in present}
 
 
+def delete_v3_by_memory_ids(memory_ids: list[int]) -> bool:
+    """按 memory_id 删 v3 投影；返回是否成功（没 id 视为成功）。
+
+    v3 的主键是自增 id，外部拿不到，所以删除只能按业务键 `memory_id` 走过滤器。
+    """
+    ids = [int(mid) for mid in (memory_ids or []) if int(mid or 0) > 0]
+    if not ids:
+        return True
+    client = _connect_v3()
+    if client is None:
+        return False
+    try:
+        client.delete(collection_name=v3_collection_name(), filter=f"memory_id in {ids}")
+        return True
+    except Exception as exc:  # noqa: BLE001 - 删除失败留给 outbox 重试
+        logger.warning("milvus v3 delete failed: %s", exc)
+        return False
+
+
 def search_hits_v3(
     character_id: int,
     user_id: int,
@@ -420,5 +439,6 @@ def reset() -> None:
     _client_v3 = None
 
 
-__all__ = ["EPISODE_ID_OFFSET", "episode_vector_id", "delete", "flush_v3", "insert", "insert_v3",
-    "insert_v3_batch", "reset", "search", "search_hits", "search_hits_v3", "missing_v3_ids"]
+__all__ = ["EPISODE_ID_OFFSET", "episode_vector_id", "delete", "delete_v3_by_memory_ids",
+    "flush_v3", "insert", "insert_v3", "insert_v3_batch", "reset", "search", "search_hits",
+    "search_hits_v3", "missing_v3_ids"]

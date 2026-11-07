@@ -47,6 +47,26 @@ class _FakeClient:
         return [[{"distance": 0.81, "entity": {"memory_id": 7}}]]
 
 
+def test_delete_v3_by_memory_ids_filters_on_business_key(monkeypatch):
+    """v3 主键是自增 id，外部只认 memory_id；删除必须按业务键过滤。"""
+    fake = _FakeClient()
+    monkeypatch.setattr(milvus_store, "_connect_v3", lambda: fake)
+    monkeypatch.setattr(milvus_store, "get_settings", lambda: _settings())
+
+    assert milvus_store.delete_v3_by_memory_ids([11, 12]) is True
+    assert fake.deletes == [
+        {"collection": "memory_vectors_v3", "filter": "memory_id in [11, 12]"},
+    ]
+
+
+def test_delete_v3_by_memory_ids_is_noop_without_ids(monkeypatch):
+    fake = _FakeClient()
+    monkeypatch.setattr(milvus_store, "_connect_v3", lambda: fake)
+
+    assert milvus_store.delete_v3_by_memory_ids([]) is True
+    assert fake.deletes == []
+
+
 def test_insert_v3_drops_previous_projection(monkeypatch):
     """同一条记忆重试/重建时先删旧投影，避免向量库里一条记忆两份（验证组 B11）。"""
     fake = _FakeClient()

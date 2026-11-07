@@ -1298,3 +1298,28 @@ int8 ONNX 341MB、2 线程单条 15.8ms，ModelScope 有现成 ONNX。
 
 **这一轮的教训**：这三处都不是逻辑 bug，而是"阈值/默认值/运维入口"配置得过于保守——
 上线后必须用生产数据回看每条链路的**实际触发次数**，否则代码全绿、行为为空。
+
+### 10.11 换成本地 embedding 后 v2 投影全线失败（2026-11-07）
+
+**现象**：手动重投 27 条 outbox 死信后，日志每轮刷
+`memory outbox retry ... reason=milvus insert returned null`，`attempts` 从 0 涨到 6，
+再过几轮又会全变 DEAD。同一时间 `health` 里 `outbox_dead` 归零、`outbox_pending` 27 挂着不动。
+
+**根因**：`relay.project_upsert` 的投影顺序是「先写 v2（`memory_vectors_v2`，1024 维）拿
+`vec_id`，再写 v3」。本地 embedding 换成 768 维之后，往 1024 维集合写必然失败 →
+`insert` 返回 None → `retry` → **v3 那一步根本没机会执行**。也就是说换模型那一刻起，
+新记忆一条都进不了向量库，召回只剩 ngram 那一路，而表面上"开关全开、模型 ready"。
+
+**修法**：
+- 新增 `memory_vectors_v2_enabled=False`：v2 是 1024 维的历史集合，默认不再写；
+  留着开关只是为了回滚到 DashScope 时的过渡。
+- `project_upsert` 改成**先写 v3**（唯一召回源），成功即 `embedding_state='projected'`；
+  v2 只在开关打开时才写，且 v2 失败**不再**把整条任务拖成 DEAD（`logger.warning` 后算完成）。
+- `milvus_store.delete_v3_by_memory_ids`：v3 主键是自增 id，外部只认 `memory_id`，
+  所以 DELETE 任务改成按 `memory_id in [...]` 过滤删除；否则删记忆时 v3 会留垃圾。
+- `reconcile` 的候选查询按开关切换：v3 开着时挑 `embedding_state <> 'projected'`，
+  否则「vec_id 为空」会把全表都算成待修（新行本来就不再写 vec_id）。
+
+**教训**：**集合名必须和 embedding 维度绑在一起**（v3 已按维度自动命名），
+写入口也要跟着版本走——一个维度变了，另一条写路径不会自己报错，只会静默返回 None。
+`insert` 返回 None 这类"软失败"必须当成失败处理，否则重试机制会把问题藏起来。

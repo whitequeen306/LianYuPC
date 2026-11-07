@@ -156,11 +156,13 @@ class Settings(BaseSettings):
     milvus_port: int = 19530
     milvus_collection: str = "memory_vectors_v2"
     # v3/v4：多带 layer/status/event_time 三个标量，检索时只捞 active 的行。
-    # 双写期间 v2 仍是投影主键的来源（outbox 的 vec_id 记在 v2 上），v3 只做增量。
     # 集合名留空 = 按当前向量维度自动取（memory_vectors_d768）。集合维度建表时定死，
     # 换 embedding 模型必须换集合；自动命名保证不会把 512 维向量写进 1024 维集合。
     memory_vectors_v3_enabled: bool = True
     milvus_v3_collection: str = ""
+    # v2 是 1024 维的老集合；换成本地 768 维 embedding 之后往里写只会被判维度不符。
+    # 召回也只读 v3，所以默认不写 v2（留着开关是为了回滚到 DashScope 时的过渡）。
+    memory_vectors_v2_enabled: bool = False
     milvus_timeout_seconds: float = 10.0
     # outbox relay（Python 侧单写者）
     relay_enabled: bool = True
