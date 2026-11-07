@@ -1381,11 +1381,18 @@ ok ──(额度类错误)──▶ blocked(until = now + backoff) ──(TTL �
 - `AgentRuntimeClient.proactiveTurn` / `proactiveTurnResult`：**入口**先 `quotaGuard.allow()`，
   熔断中连 HTTP 都不发（省掉 Python 侧的 prompt 组装与一次 402 往返）；拿到非空内容即
   `recordSuccess`；`logProactiveFailure` 里 `recordFailure(code)`。
+- **空内容也算一次失败**（`BLANK_CONTENT_CODE = "proactive_blank_content"`，走 strike 档不立刻熔断）：
+  上游把 4xx 吞成 `assistantRaw: ""` 时，客户端只看到「200 + 空文本」，既不解熔断也不记失败，
+  于是同一会话每 30 秒继续烧 2–4k 输入 token（上线当天 userId=398 就是这样刷了一整天，
+  15 分钟 12 条 `skipped: agent returned no content`）。空内容是"这次白烧了"，不是"她今天不想说话"。
 - `ProactiveMessageService.tryAgentTurn`：所有主动关怀分支（定时/等待提醒/冷启动/城市变更）
   共用这个 seam，在这里再拦一次，把日志降到 debug（不再刷 `skipped: agent returned no content`）。
+  更外一层，四个入口方法（`sendProactiveMessage` / `sendColdOpenFirstLine` /
+  `sendColdOpenFollowUpIfStillSilent` / `sendCityChangeFollowUp`）各自先判 `quotaBlocked(userId)`
+  再进业务，避免连人设组装、历史查询都白做。
 - `GET /api/model/quota`（`ModelQuotaController`）：返回
   `{state, code, fails, proactiveEnabled, retryAfterSeconds}`，给客户端做「余额不足，主动消息已暂停」
-  的提示与倒计时。
+  的提示与倒计时（`frontend/src/pages/SettingsPage.vue` 的 `.quota-banner`，只解释原因、不提供开关）。
 
 ### 为什么不在 Python 侧做
 
@@ -1398,5 +1405,8 @@ HTTP + 组装成本才知道又失败了。熔断是**跨请求的用户级状�
 - 单测 `ModelQuotaGuardTest` 13 例：首次 600s、阶梯 600/1800/7200/21600/86400 且封顶、
   非额度错误先记 strike、连错 3 次才熔断、额度错误清 strike、成功删两把键、
   快照给前端剩余秒数、Redis 挂掉仍放行。
+- 单测 `AgentRuntimeClientQuotaTest` 3 例（打真端口）：空内容 → `recordFailure(BLANK_CONTENT_CODE)`
+  且不 `recordSuccess`；非空内容 → 立刻 `recordSuccess`；熔断中的用户一个 HTTP 请求都不发。
 - 生产观察指标（发布后 24 小时）：`provider_insufficient_balance` 从 255 次降到
-  个位数（只剩首次触发与退避到期的探活）；`agent returned no content` 同日对比。
+  个位数（只剩首次触发与退避到期的探活）；`skipped: agent returned no content` 应随 strike
+  熔断收敛（部署后 19:22 与 19:24 各还有一条 INFO，属半开探活，若继续增长说明 strike 没生效）。

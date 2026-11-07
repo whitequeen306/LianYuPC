@@ -26,6 +26,12 @@ import org.springframework.web.client.RestClient;
 @EnableConfigurationProperties(AgentRuntimeProperties.class)
 public class AgentRuntimeClient {
 
+    /**
+     * 主动关怀拿到空内容的错误码：不是额度类（不会立刻熔断），但同样要计入 strike，
+     * 否则上游把 4xx 吞成空串时，调度器会一直每 30 秒白烧一轮。
+     */
+    static final String BLANK_CONTENT_CODE = "proactive_blank_content";
+
     private final AgentRuntimeProperties properties;
     /** 工具清单唯一来源（Python /agent/capabilities），别再在 Java 里手抄。 */
     private final AgentToolCatalog toolCatalog;
@@ -183,6 +189,11 @@ public class AgentRuntimeClient {
             if (text != null && !text.isBlank()) {
                 // 说出来了 = 额度能用：立刻解除熔断，主动关怀恢复（不需要等退避到期）
                 quotaGuard.recordSuccess(userId);
+            } else {
+                // 空内容是"这次白烧了 2–4k 输入 token"，不是正常的"她今天不想说话"。
+                // 记一次非额度类失败：30 分钟内连空三次就熔断，避免上游把错误吞成空串时
+                // 每 30 秒继续烧一轮（线上 userId=398 就是这样刷了一整天）。
+                quotaGuard.recordFailure(userId, BLANK_CONTENT_CODE, "proactive turn returned blank");
             }
             return text;
         } catch (Exception e) {
@@ -245,6 +256,9 @@ public class AgentRuntimeClient {
             String content = raw.isMissingNode() || raw.isNull() ? null : raw.asText();
             if (content != null && !content.isBlank()) {
                 quotaGuard.recordSuccess(userId);
+            } else {
+                // 同 proactiveTurn：空内容按非额度类失败计一次 strike
+                quotaGuard.recordFailure(userId, BLANK_CONTENT_CODE, "proactive turn returned blank");
             }
             JsonNode total = root.path("totalTokens");
             Integer totalTokens = total.isMissingNode() || total.isNull() ? null : total.asInt();
