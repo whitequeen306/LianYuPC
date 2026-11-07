@@ -151,6 +151,16 @@ public class ProactiveMessageService {
     private ProactiveMessageService self;
 
     /**
+     * 额度熔断时直接跳过整条主动关怀链路（连人设组装都不做）。
+     *
+     * <p>放在各入口而不是只放 {@code tryAgentTurn}：后者被跳过时调用方仍会打
+     * `skipped: agent returned no content`——那是"模型说了空话"的信号，不该被熔断污染。
+     */
+    private boolean quotaBlocked(long userId) {
+        return quotaGuard != null && !quotaGuard.allow(userId);
+    }
+
+    /**
      * 阶段 2 接缝：AGENT 模式下把生成段委托 backend-agent（LangGraph ProactiveTurn 图）。
      * 成功返回 ChatResult（content=assistantRaw）；OFF/SHADOW 或 agent 失败返回 null，
      * 调用方继续走 Java 原链路 —— 永远不阻塞、不改变行为面。
@@ -216,6 +226,10 @@ public class ProactiveMessageService {
     // 故意不加 @Transactional：invokeBlocking 会调 AI，长事务占住 Hikari 连接拖死前台。
     // 只在最后一步「防重 + 落库」进事务。
     public List<MessageResponse> sendProactiveMessage(Long userId, Long conversationId, String hint) {
+        if (quotaBlocked(userId)) {
+            log.debug("Proactive message skipped: quota blocked, userId={}, convId={}", userId, conversationId);
+            return List.of();
+        }
         VaultEntryResponse userVault = conversationService.resolveUserTextVaultOrNull(userId);
         if (userVault == null) {
             log.debug("Proactive message skipped: no user text model, userId={}, convId={}",
@@ -282,6 +296,10 @@ public class ProactiveMessageService {
      * 真正需要事务的「防重 + 落库」只在最后一步小范围开启。
      */
     public void sendColdOpenFirstLine(Long userId, Long conversationId) {
+        if (quotaBlocked(userId)) {
+            log.debug("Cold open skipped: quota blocked, userId={}, convId={}", userId, conversationId);
+            return;
+        }
         Conversation conversation = conversationService.findOwned(userId, conversationId);
         if (!"SINGLE".equalsIgnoreCase(conversation.getMode())) {
             return;
@@ -580,6 +598,11 @@ public class ProactiveMessageService {
     // 故意不加 @Transactional：chatBlocking 会调 AI，长事务占住 Hikari 连接拖死前台。
     // 只在最后一步「落库 + 通知」进事务。
     public void sendColdOpenFollowUpIfStillSilent(Long userId, Long conversationId) {
+        if (quotaBlocked(userId)) {
+            log.debug("Cold open follow-up skipped: quota blocked, userId={}, convId={}",
+                    userId, conversationId);
+            return;
+        }
         Conversation conversation = conversationService.findOwned(userId, conversationId);
         if (!"SINGLE".equalsIgnoreCase(conversation.getMode())) {
             return;
@@ -659,6 +682,10 @@ public class ProactiveMessageService {
      * 只在最后一步「落库 + 通知」进事务。
      */
     public void sendCityChangeFollowUp(Long userId, String previousCity, String newCity) {
+        if (quotaBlocked(userId)) {
+            log.debug("City change follow-up skipped: quota blocked, userId={}", userId);
+            return;
+        }
         Optional<Conversation> recentOpt = findMostRecentSingleConversation(userId);
         if (recentOpt.isEmpty()) {
             log.debug("City change follow-up skipped: no single conversation, userId={}", userId);
