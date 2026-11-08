@@ -890,7 +890,8 @@ function render(now) {
     }
     cx /= members.length
     cy /= members.length
-    let rx = 10
+    // 下限 42：只有一两颗光点时圈也要能装下顶部那行扇区名，不然字会压到光点上
+    let rx = 42
     for (const item of members) {
       // 纵向压扁 0.84，用椭圆半径量，四角才不会漏
       rx = Math.max(rx, Math.hypot(item.point.x - cx, (item.point.y - cy) / 0.84))
