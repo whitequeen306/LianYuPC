@@ -392,8 +392,9 @@ function rebuildGraph({ intro = false } = {}) {
     flowSegments.set(flow.id, { a: from.c, b: to.c, fromColor: from.color, toColor: to.color })
   }
 
-  // 中枢连到每颗记忆的光丝，是「神经图谱」那种放射感的来源；相机变换时只做投影
-  const hub = next.regionMap.get('core') || next.regionMap.get('ltm')
+  // 中枢连到每颗记忆的光丝，是「神经图谱」那种放射感的来源；相机变换时只做投影。
+  // 光源取长期记忆库（四瓣的正中心），不取 core：core 偏在右上，射线会变成探照灯。
+  const hub = next.regionMap.get('ltm') || next.regionMap.get('core')
   memoryEdges.value = hub
     ? next.memoryNodes.map((node) => ({
         id: node.id,
@@ -799,55 +800,7 @@ function render(now) {
     }
   }
 
-  /* 中枢 → 记忆的光丝：直线放射，扇区色跟着走，越靠近瓣心越密 */
-  const fanVisible =
-    focusedRegion.value === 'ltm' ||
-    focusedRegion.value === 'core' ||
-    hover.value?.kind === 'memory' ||
-    Boolean(props.selectedMemoryId)
-  if (memoryEdges.value.length && fanVisible) {
-    const dimEdge = focusedRegion.value && focusedRegion.value !== 'ltm' && focusedRegion.value !== 'core'
-    const edgeAlpha = dimEdge ? 0.02 : compact.value ? 0.05 : 0.08
-    const hubPoint = projectPoint(memoryEdges.value[0].from, camera, viewport)
-    const groups = new Map()
-    for (const edge of memoryEdges.value) {
-      if (!groups.has(edge.sector)) groups.set(edge.sector, [])
-      groups.get(edge.sector).push(edge)
-    }
-    if (hubPoint.visible) {
-      for (const [sectorId, edges] of groups) {
-        const meta = MEMORY_SECTORS.find((sector) => sector.id === sectorId)
-        ctx.strokeStyle = rgba(meta?.color || '#9fb8d8', edgeAlpha)
-        ctx.lineWidth = 0.5
-        ctx.beginPath()
-        for (const edge of edges) {
-          const target = projectPoint(edge.to, camera, viewport)
-          if (!target.visible) continue
-          ctx.moveTo(hubPoint.x, hubPoint.y)
-          ctx.lineTo(target.x, target.y)
-        }
-        ctx.stroke()
-      }
-    }
-
-    // 悬停/选中的那颗把光丝点亮，读起来像「中枢正在盯住这条记忆」
-    const focusEdge =
-      memoryEdges.value.find((edge) => String(edge.node.memoryId) === String(props.selectedMemoryId)) ||
-      (hover.value?.kind === 'memory'
-        ? memoryEdges.value.find((edge) => String(edge.node.memoryId) === String(hover.value.id))
-        : null)
-    if (focusEdge && hubPoint.visible) {
-      const target = projectPoint(focusEdge.to, camera, viewport)
-      if (target.visible) {
-        ctx.strokeStyle = rgba(focusEdge.node.color, 0.62)
-        ctx.lineWidth = 1.1
-        ctx.beginPath()
-        ctx.moveTo(hubPoint.x, hubPoint.y)
-        ctx.lineTo(target.x, target.y)
-        ctx.stroke()
-      }
-    }
-  }
+  /* 光丝统一在「扇区光圈画完、光点画上去之前」那一段落笔，见下方 */
 
   for (const spark of sparks) {
     const segment = flowSegments.get(spark.flowId)
@@ -935,6 +888,61 @@ function render(now) {
     if (!point.visible) continue
     const alpha = focusedSector ? 0.06 : anchor.count > 0 ? 0.22 : 0.1
     glow(point.x, point.y, 2, anchor.color, alpha)
+  }
+
+  /* 中枢 → 记忆的光丝：默认常驻，整张图才有「从大脑中枢放射出去」的观感；
+     聚焦某个脑区时加亮，看别的脑区时压到几乎看不见，免得抢光点。
+     画在光圈之后、光点之前：光圈是半透明填充，画在它前面会被盖掉一半。 */
+  if (memoryEdges.value.length) {
+    const dimEdge = focusedRegion.value && focusedRegion.value !== 'ltm' && focusedRegion.value !== 'core'
+    const fanFocus =
+      focusedRegion.value === 'ltm' ||
+      focusedRegion.value === 'core' ||
+      hover.value?.kind === 'memory' ||
+      Boolean(props.selectedMemoryId)
+    const baseAlpha = compact.value ? 0.07 : 0.12
+    const edgeAlpha = dimEdge ? 0.02 : fanFocus ? baseAlpha * 1.6 : baseAlpha
+    const hubPoint = projectPoint(memoryEdges.value[0].from, camera, viewport)
+    const groups = new Map()
+    for (const edge of memoryEdges.value) {
+      if (!groups.has(edge.sector)) groups.set(edge.sector, [])
+      groups.get(edge.sector).push(edge)
+    }
+    if (hubPoint.visible) {
+      // 中枢先垫一圈光：所有射线从这里出发，圆心亮一点才像「源」
+      glow(hubPoint.x, hubPoint.y, Math.max(12, viewport.base * 5), '#ffe9b8', edgeAlpha * 1.6)
+      for (const [sectorId, edges] of groups) {
+        const meta = MEMORY_SECTORS.find((sector) => sector.id === sectorId)
+        ctx.strokeStyle = rgba(meta?.color || '#9fb8d8', edgeAlpha)
+        ctx.lineWidth = 0.55
+        ctx.beginPath()
+        for (const edge of edges) {
+          const target = projectPoint(edge.to, camera, viewport)
+          if (!target.visible) continue
+          ctx.moveTo(hubPoint.x, hubPoint.y)
+          ctx.lineTo(target.x, target.y)
+        }
+        ctx.stroke()
+      }
+    }
+
+    // 悬停/选中的那颗把光丝点亮，读起来像「中枢正在盯住这条记忆」
+    const focusEdge =
+      memoryEdges.value.find((edge) => String(edge.node.memoryId) === String(props.selectedMemoryId)) ||
+      (hover.value?.kind === 'memory'
+        ? memoryEdges.value.find((edge) => String(edge.node.memoryId) === String(hover.value.id))
+        : null)
+    if (focusEdge && hubPoint.visible) {
+      const target = projectPoint(focusEdge.to, camera, viewport)
+      if (target.visible) {
+        ctx.strokeStyle = rgba(focusEdge.node.color, 0.62)
+        ctx.lineWidth = 1.1
+        ctx.beginPath()
+        ctx.moveTo(hubPoint.x, hubPoint.y)
+        ctx.lineTo(target.x, target.y)
+        ctx.stroke()
+      }
+    }
   }
 
   for (const { node, point } of nodes) {

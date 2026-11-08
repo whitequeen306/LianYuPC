@@ -325,7 +325,10 @@ export function buildBrainGraph({
       // 光点铺满自己那一瓣：半径按 √(i/n) 摊匀（面积均匀），角度整圈随机，
       // 这样每个扇区是一团独立的星团，而不是四团挤在圆心互相盖住。
       const rng = mulberry32(hashString(`${memory.id}:${memory.memoryType}`))
-      const spread = SECTOR_SPREAD * Math.sqrt((index + 0.6) / total)
+      // 光点多了就按 √n 把星团摊开一点：否则 200 颗挤在 34 的半径里会糊成一块光斑，
+      // 看不清「很多颗记忆」，也看不出从中心放射出去的光丝。
+      const density = Math.min(1.55, Math.max(1, Math.sqrt(total / 12)))
+      const spread = SECTOR_SPREAD * density * Math.sqrt((index + 0.6) / total)
       const theta = rng() * Math.PI * 2
       const jitter = 0.88 + rng() * 0.24
       memoryNodes.push({
@@ -352,7 +355,8 @@ export function buildBrainGraph({
           lobe[2] + (rng() - 0.5) * 56
         ],
         // 强度不决定"有没有"，只决定"亮不亮"：衰减到 0.15 仍可被搜到
-        size: (1.8 + memory.importance * 3) * (0.62 + 0.38 * memory.strength)
+        // 密集时收小一点，让每一颗仍有边界
+        size: (1.8 + memory.importance * 3) * (0.62 + 0.38 * memory.strength) * (total > 30 ? 0.8 : 1)
       })
     })
   }
