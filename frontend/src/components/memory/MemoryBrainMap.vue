@@ -869,23 +869,72 @@ function render(now) {
     glow(point.x, point.y, 1.4, '#ffffff', alpha * 0.9)
   }
 
-  /* 扇区锚点：先记位置，等光点画完再落字，否则字会被自己的光团吃掉 */
-  const sectorLabels = []
-  for (const anchor of graph.value.anchors) {
-    const point = projectPoint(anchor.pos, camera, viewport)
-    if (!point.visible) continue
-    const dimmed = focusedRegion.value && focusedRegion.value !== 'ltm'
-    const alpha = dimmed ? 0.08 : anchor.count > 0 ? 0.34 : 0.14
-    glow(point.x, point.y, 2.4, anchor.color, alpha)
-    if (compact.value) continue
-    sectorLabels.push({ anchor, point, dimmed })
-  }
-
-  /* 记忆光点：远的先画 */
+  /* 记忆光点先投影：扇区光圈要按这一团光点的实际范围来画。
+     以前光圈按脑区半径画、光点按扇区轨道排，两者圆心都不是同一个，
+     最外圈那几颗一定露在圈外——用户看到的就是「光点跑出了光圈」。 */
   const cutoff = replayIndex.value >= 0 ? (timeline.value[replayIndex.value]?.at ?? 0) + 86400000 : Infinity
   const nodes = graph.value.memoryNodes
     .map((node) => ({ node, point: projectPoint(node.pos, camera, viewport) }))
     .sort((a, b) => b.point.depth - a.point.depth)
+
+  const focusedSector = Boolean(focusedRegion.value && focusedRegion.value !== 'ltm')
+  const sectorHalos = []
+  for (const sector of MEMORY_SECTORS) {
+    const members = nodes.filter((item) => item.node.sector === sector.id && item.point.visible)
+    if (!members.length) continue
+    let cx = 0
+    let cy = 0
+    for (const item of members) {
+      cx += item.point.x
+      cy += item.point.y
+    }
+    cx /= members.length
+    cy /= members.length
+    let rx = 10
+    for (const item of members) {
+      // 纵向压扁 0.84，用椭圆半径量，四角才不会漏
+      rx = Math.max(rx, Math.hypot(item.point.x - cx, (item.point.y - cy) / 0.84))
+    }
+    rx += 16 // 光点自身还有约 2 倍辉光，留一圈余量
+    sectorHalos.push({ sector, cx, cy, rx, dimmed: focusedSector })
+  }
+
+  for (const halo of sectorHalos) {
+    const alpha = halo.dimmed ? 0.03 : 0.1
+    ctx.save()
+    ctx.translate(halo.cx, halo.cy)
+    ctx.scale(1, 0.84)
+    const gradient = ctx.createRadialGradient(0, 0, halo.rx * 0.45, 0, 0, halo.rx)
+    gradient.addColorStop(0, rgba(halo.sector.color, alpha))
+    gradient.addColorStop(1, rgba(halo.sector.color, 0))
+    ctx.fillStyle = gradient
+    ctx.beginPath()
+    ctx.arc(0, 0, halo.rx, 0, TAU)
+    ctx.fill()
+    ctx.restore()
+
+    ctx.beginPath()
+    ctx.ellipse(halo.cx, halo.cy, halo.rx, halo.rx * 0.84, 0, 0, TAU)
+    ctx.strokeStyle = rgba(halo.sector.color, halo.dimmed ? 0.08 : 0.16)
+    ctx.lineWidth = 1
+    ctx.stroke()
+  }
+
+  /* 扇区标签挂在光圈内侧顶部：字在圈里，圈包住光点，一眼能对上 */
+  const sectorLabels = sectorHalos.map((halo) => ({
+    sector: halo.sector,
+    cx: halo.cx,
+    cy: halo.cy - halo.rx * 0.84 * 0.66,
+    dimmed: halo.dimmed
+  }))
+
+  /* 扇区锚点只留一颗小点，标出这一瓣的朝向 */
+  for (const anchor of graph.value.anchors) {
+    const point = projectPoint(anchor.pos, camera, viewport)
+    if (!point.visible) continue
+    const alpha = focusedSector ? 0.06 : anchor.count > 0 ? 0.22 : 0.1
+    glow(point.x, point.y, 2, anchor.color, alpha)
+  }
 
   for (const { node, point } of nodes) {
     if (!point.visible) continue
@@ -951,29 +1000,21 @@ function render(now) {
 
   /* 扇区名落在四瓣的中心：先占位，脑区标签才不会再压上来 */
   labelBoxes.length = 0
-  if (sectorLabels.length) {
-    const ltmRegion = graph.value.regionMap.get('ltm')
-    const ltmPoint = ltmRegion ? projectPoint(ltmRegion.c, camera, viewport) : null
-    for (const { anchor, point, dimmed } of sectorLabels) {
-      const text = t(anchor.nameKey)
-      let lx = point.x
-      let ly = point.y
-      if (ltmPoint) {
-        lx = ltmPoint.x + (point.x - ltmPoint.x) * 0.44
-        ly = ltmPoint.y + (point.y - ltmPoint.y) * 0.44
-      }
-      const box = textBox(text, lx, ly, { size: 10, weight: 600 })
-      const padded = { x1: box.x1 - 7, y1: box.y1 - 4, x2: box.x2 + 7, y2: box.y2 + 4 }
-      if (boxOverlaps(padded, 5)) continue
-      drawLabelText(text, lx, ly, {
-        color: anchor.color,
-        alpha: dimmed ? 0.24 : 0.95,
-        size: 10,
-        weight: 600,
-        plate: !dimmed
-      })
-      reserveBox(padded)
-    }
+  for (const item of sectorLabels) {
+    const text = t(item.sector.nameKey)
+    const lx = clamp(item.cx, 26, viewport.width - 26)
+    const ly = Math.max(14, item.cy)
+    const box = textBox(text, lx, ly, { size: 10, weight: 600 })
+    const padded = { x1: box.x1 - 7, y1: box.y1 - 4, x2: box.x2 + 7, y2: box.y2 + 4 }
+    if (boxOverlaps(padded, 5)) continue
+    drawLabelText(text, lx, ly, {
+      color: item.sector.color,
+      alpha: item.dimmed ? 0.24 : 0.95,
+      size: 10,
+      weight: 600,
+      plate: !item.dimmed
+    })
+    reserveBox(padded)
   }
 
   /* 脑区 */
@@ -994,21 +1035,11 @@ function render(now) {
     glow(point.x, point.y, orb * 1.9 * breathe, region.color, (lit ? 0.34 : 0.12) * base)
     glow(point.x, point.y, orb * 0.62, '#ffffff', (lit ? 0.34 : 0.12) * base)
 
-    ctx.globalCompositeOperation = 'source-over'
-    ctx.strokeStyle = rgba(region.color, (lit ? 0.42 : 0.14) * base)
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.ellipse(point.x, point.y, orb * 1.12, orb * 0.78, 0, 0, TAU)
-    ctx.stroke()
+    // 这里不再给脑区套椭圆环：四个扇区已经有自己的光圈，里面再套一圈小的，
+    // 看上去就像「圈里还有个没被包住的圈」。脑区只保留光核与可点击区域。
 
-    if (lit && focusHalo(region, point, now)) {
-      ctx.beginPath()
-      ctx.ellipse(point.x, point.y, orb * 1.5, orb * 1.05, 0, 0, TAU)
-      ctx.strokeStyle = rgba(region.color, 0.16 * base)
-      ctx.stroke()
-    }
-
-    // 中枢不再套虚线大轨道：环一多，画布上就分不清哪些是脑区、哪些是装饰
+    // 光圈现在由扇区那一层画（按光点实际范围取圆），这里不再套第二个环：
+    // 同一团记忆两层圈叠在一起，看起来就是「光圈和光点各画各的」。
 
     ctx.globalCompositeOperation = 'lighter'
     pickables.push({
@@ -1242,13 +1273,6 @@ function boxOverlaps(box, pad = 3) {
 
 function reserveBox(box) {
   if (box) labelBoxes.push(box)
-}
-
-function focusHalo(region, point, now) {
-  if (focusedRegion.value === region.id) return true
-  if (focusedRegion.value) return false
-  // 有 7 天内新记忆的脑区轻轻呼吸，提示「这里刚写过东西」
-  return region.id === 'ltm' && region.lit && Math.sin(now * 0.0012) > 0.7
 }
 
 /**
