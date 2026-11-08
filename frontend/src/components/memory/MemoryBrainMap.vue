@@ -63,7 +63,8 @@
 
       <div v-if="tooltip" class="brain-tip" :style="tooltipStyle">
         <span class="brain-tip__title">{{ tooltip.title }}</span>
-        <span v-if="tooltip.sub" class="brain-tip__sub">{{ tooltip.sub }}</span>
+        <span v-if="tooltip.meta" class="brain-tip__meta">{{ tooltip.meta }}</span>
+        <span v-if="tooltip.hint" class="brain-tip__hint">{{ tooltip.hint }}</span>
       </div>
 
       <p v-if="!stats.total" class="brain-empty">{{ t('memory.brain.empty') }}</p>
@@ -226,6 +227,7 @@ import {
   SHELL_RINGS,
   applyDrag,
   applyWheel,
+  clamp,
   createCamera,
   depthFade,
   fitBase,
@@ -319,6 +321,7 @@ const canvasRef = ref(null)
 
 const camera = createCamera()
 const viewport = { width: 0, height: 0, base: 1 }
+const stageSize = ref({ width: 0, height: 0 })
 const compact = ref(false)
 const reducedMotion = ref(false)
 const autoRotate = ref(true)
@@ -452,6 +455,7 @@ function resize() {
   viewport.width = rect.width
   viewport.height = rect.height
   viewport.base = fitBase(rect.width, rect.height)
+  stageSize.value = { width: rect.width, height: rect.height }
 
   canvas.width = Math.max(1, Math.round(rect.width * dpr))
   canvas.height = Math.max(1, Math.round(rect.height * dpr))
@@ -462,7 +466,10 @@ function resize() {
   if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   backgroundCache = null
 
-  compact.value = window.innerWidth < 1180
+  // 用元素宽度而不是窗口宽度：侧栏展开/收起时窗口没变，画布却变窄了。
+  // 阈值取「整块卡片」：卡片 < 980 时侧栏改到画布下方，避免两边都挤成一条缝。
+  const rootWidth = rootRef.value?.getBoundingClientRect().width || rect.width
+  compact.value = rootWidth < 980
   frameGraph()
 }
 
@@ -474,6 +481,8 @@ function frameGraph() {
   if (!viewport.width || !viewport.height) return
   const regions = graph.value.regions
   if (!regions.length) return
+  // 取景只围「真正有东西的地方」：脑区、光点、扇区锚点。脑壳是氛围层，
+  // 把 ±214 的球面也算进去会让整团只占画布一半，宽屏上尤其明显。
   const points3d = [
     ...regions.map((region) => region.c),
     ...graph.value.memoryNodes.map((node) => node.pos),
@@ -489,6 +498,7 @@ function frameGraph() {
   let maxX = -Infinity
   let maxY = -Infinity
   for (const point of projected) {
+    if (!point.visible) continue
     minX = Math.min(minX, point.x)
     minY = Math.min(minY, point.y)
     maxX = Math.max(maxX, point.x)
@@ -497,10 +507,25 @@ function frameGraph() {
 
   const spanX = Math.max(140, maxX - minX)
   const spanY = Math.max(140, maxY - minY)
-  const fill = compact.value ? 0.8 : 0.74
+
+  // 宽屏（全屏窗口）时星座横向摊开：一个 4:3 的团塞进 2:1 的画布，只按高度取景
+  // 会白白浪费左右两侧，看起来就是「放大了还是小小一团」。spreadX 只拉宽屏幕分布，
+  // 不改 z，前后遮挡关系保持不变。
+  camera.spreadX = clamp(viewport.width / viewport.height / (spanX / spanY), 1, 1.9)
+  const spreadPoints = points3d.map((point) => projectPoint(point, camera, viewport))
+  let spreadMinX = Infinity
+  let spreadMaxX = -Infinity
+  for (const point of spreadPoints) {
+    if (!point.visible) continue
+    spreadMinX = Math.min(spreadMinX, point.x)
+    spreadMaxX = Math.max(spreadMaxX, point.x)
+  }
+  const spreadSpanX = Math.max(140, spreadMaxX - spreadMinX)
+
+  const fill = compact.value ? 0.82 : 0.8
   const nextZoom = Math.min(
-    1.9,
-    Math.max(0.55, Math.min((viewport.width * fill) / spanX, (viewport.height * fill) / spanY))
+    2.2,
+    Math.max(0.5, Math.min((viewport.width * fill) / spreadSpanX, (viewport.height * fill) / spanY))
   )
   camera.zoom = nextZoom
 
@@ -511,6 +536,7 @@ function frameGraph() {
   let scaledMaxX = -Infinity
   let scaledMaxY = -Infinity
   for (const point of scaled) {
+    if (!point.visible) continue
     scaledMinX = Math.min(scaledMinX, point.x)
     scaledMinY = Math.min(scaledMinY, point.y)
     scaledMaxX = Math.max(scaledMaxX, point.x)
@@ -653,7 +679,8 @@ function tick(now) {
   const delta = lastTime ? Math.min(64, now - lastTime) : 16
   lastTime = now
 
-  if (autoRotate.value && !dragState && !reducedMotion.value) {
+  // 悬停时停自转：卡片跟着光点走，转起来就永远对不准
+  if (autoRotate.value && !dragState && !hover.value && !reducedMotion.value) {
     camera.yaw += delta * 0.000155
   }
 
@@ -695,64 +722,63 @@ function render(now) {
   const labels = []
   const fadeFor = (depth) => depthFade(depth)
 
-  /* 脑壳：点阵 + 三条纬线 */
+  /* 脑壳：稀疏点阵 + 一条赤道线。壳只是「有个容器」的暗示，画满会变成星空噪点 */
   ctx.globalCompositeOperation = 'lighter'
-  for (const dot of SHELL_DOTS) {
-    const point = projectPoint(dot, camera, viewport)
-    const alpha = (0.08 + 0.16 * fadeFor(point.depth)) * (point.depth > 0 ? 0.7 : 1)
-    glow(point.x, point.y, 1.7, '#9fb8d8', alpha)
+  for (let i = 0; i < SHELL_DOTS.length; i += 2) {
+    const point = projectPoint(SHELL_DOTS[i], camera, viewport)
+    const alpha = (0.045 + 0.075 * fadeFor(point.depth)) * (point.depth > 0 ? 0.66 : 1)
+    glow(point.x, point.y, 1.25, '#9fb8d8', alpha)
   }
   ctx.globalCompositeOperation = 'source-over'
   ctx.lineWidth = 1
-  for (const ring of SHELL_RINGS) {
+  const equator = SHELL_RINGS[Math.floor(SHELL_RINGS.length / 2)]
+  if (equator) {
     ctx.beginPath()
-    for (let i = 0; i < ring.length; i += 1) {
-      const point = projectPoint(ring[i], camera, viewport)
+    for (let i = 0; i < equator.length; i += 1) {
+      const point = projectPoint(equator[i], camera, viewport)
       if (i === 0) ctx.moveTo(point.x, point.y)
       else ctx.lineTo(point.x, point.y)
     }
-    ctx.strokeStyle = 'rgba(159, 184, 216, 0.085)'
+    ctx.strokeStyle = 'rgba(159, 184, 216, 0.06)'
     ctx.stroke()
   }
 
-  /* 数据流连线：直线束，两端用自己的脑区色，箭头指向目标 */
+  /* 数据流：默认只留一条主链（输入→写入→记忆→中枢→表达），
+     其余连线只在该脑区被聚焦时出现，否则八条光束会盖过光点本身 */
+  const MAIN_FLOWS = new Set(['input-hippo', 'hippo-ltm', 'ltm-core', 'core-output'])
   for (const flow of graph.value.flows) {
     const segment = flowSegments.get(flow.id)
     if (!segment) continue
     const a = projectPoint(segment.a, camera, viewport)
     const b = projectPoint(segment.b, camera, viewport)
     if (!a.visible || !b.visible) continue
-    const dim = focusedRegion.value && flow.from !== focusedRegion.value && flow.to !== focusedRegion.value
-    const alpha = dim ? 0.06 : 0.46
+    const touched = focusedRegion.value && (flow.from === focusedRegion.value || flow.to === focusedRegion.value)
+    if (!MAIN_FLOWS.has(flow.id) && !touched) continue
+    const dim = focusedRegion.value && !touched
+    const alpha = dim ? 0.05 : touched ? 0.5 : 0.26
 
     drawBeam(a, b, segment.fromColor, segment.toColor, alpha, {
       dashed: flow.dash,
-      arrow: !dim,
+      arrow: !dim && (touched || focusedRegion.value === ''),
       arrowColor: segment.toColor,
-      arrowAlpha: dim ? 0.1 : 0.62
+      arrowAlpha: dim ? 0.08 : 0.5
     })
 
     // 聚焦某个脑区时，只给它相关的连线加文字说明，避免全场都是小字
-    if (
-      focusedRegion.value &&
-      !dim &&
-      !compact.value &&
-      (flow.from === focusedRegion.value || flow.to === focusedRegion.value)
-    ) {
+    if (focusedRegion.value && !dim && !compact.value && touched) {
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
       ctx.globalCompositeOperation = 'source-over'
       drawLabelText(t(flow.labelKey), mid.x, mid.y - 8, {
         color: '#e8edf2',
-        alpha: 0.78,
+        alpha: 0.72,
         size: 9.5
       })
       ctx.globalCompositeOperation = 'lighter'
     }
   }
 
-  /* 扇区内的相邻短链 */
-  if (latticeEdges.value.length && !compact.value) {
-    const dimLattice = focusedRegion.value && focusedRegion.value !== 'ltm'
+  /* 扇区内的相邻短链：只在聚焦长期记忆库时画，平时这些细线只是噪点 */
+  if (focusedRegion.value === 'ltm' && latticeEdges.value.length) {
     const groups = new Map()
     for (const edge of latticeEdges.value) {
       if (!groups.has(edge.sector)) groups.set(edge.sector, [])
@@ -760,7 +786,7 @@ function render(now) {
     }
     for (const [sectorId, edges] of groups) {
       const meta = MEMORY_SECTORS.find((sector) => sector.id === sectorId)
-      ctx.strokeStyle = rgba(meta?.color || '#9fb8d8', dimLattice ? 0.02 : 0.07)
+      ctx.strokeStyle = rgba(meta?.color || '#9fb8d8', 0.08)
       ctx.lineWidth = 0.6
       ctx.beginPath()
       for (const edge of edges) {
@@ -982,15 +1008,7 @@ function render(now) {
       ctx.stroke()
     }
 
-    // 中枢画一圈虚线轨道：它和 FACT 扇区都是暖色，靠这圈轨道才读得出「hub」
-    if (region.id === 'core' && !compact.value) {
-      ctx.setLineDash([3, 5])
-      ctx.beginPath()
-      ctx.ellipse(point.x, point.y, orb * 2.4, orb * 1.68, 0, 0, TAU)
-      ctx.strokeStyle = rgba(region.color, 0.2 * base)
-      ctx.stroke()
-      ctx.setLineDash([])
-    }
+    // 中枢不再套虚线大轨道：环一多，画布上就分不清哪些是脑区、哪些是装饰
 
     ctx.globalCompositeOperation = 'lighter'
     pickables.push({
@@ -1006,9 +1024,14 @@ function render(now) {
     labels.push({ region, point, radius: orb, dimmed })
   }
 
-  /* 脑区标签最后画：后画才会压在记忆光点上面，否则中间那几团光会吃掉文字 */
+  /* 脑区标签最后画：后画才会压在记忆光点上面，否则中间那几团光会吃掉文字。
+     默认只给「长期记忆库」留名字，其余脑区靠左下图例认；聚焦或悬停时再补一个，
+     八个名字常驻是这张图最吵的一层。 */
   ctx.globalCompositeOperation = 'source-over'
+  const hoveredRegionId = hover.value?.kind === 'region' ? hover.value.id : ''
   for (const { region, point, radius, dimmed } of labels.sort((a, b) => b.point.depth - a.point.depth)) {
+    const alwaysShow = region.labelSide === 'center'
+    if (!alwaysShow && focusedRegion.value !== region.id && hoveredRegionId !== region.id) continue
     const labelAlpha = dimmed ? 0.18 : region.lit ? 0.96 : 0.55
     const name = t(region.nameKey)
     const nameSize = compact.value ? 10 : 11
@@ -1393,15 +1416,20 @@ function buildTooltip(hit) {
   if (hit.kind === 'region') {
     return {
       title: t(hit.region.nameKey),
-      sub: `${hit.region.count} ${t(hit.region.unitKey)}`,
+      meta: `${hit.region.count} ${t(hit.region.unitKey)}`,
+      hint: '',
       x: hit.x,
       y: hit.y
     }
   }
   const node = hit.node
+  const sectorName = MEMORY_SECTOR_NAME.get(node.sector) ? t(MEMORY_SECTOR_NAME.get(node.sector)) : node.sector
+  const percent = Math.round(Math.min(1, Math.max(0, Number(node.importance) || 0)) * 100)
+  const meta = [sectorName, node.characterName, formatDate(node.at), `${percent}%`].filter(Boolean).join(' · ')
   return {
     title: node.title || '',
-    sub: [node.characterName, formatDate(node.at)].filter(Boolean).join(' · '),
+    meta,
+    hint: node.pinned ? t('memory.brain.hoverPinned') : t('memory.brain.hoverHint'),
     x: hit.x,
     y: hit.y
   }
@@ -1410,10 +1438,14 @@ function buildTooltip(hit) {
 const tooltipStyle = computed(() => {
   const tip = tooltip.value
   if (!tip) return {}
-  const maxX = Math.max(40, viewport.width - 220)
-  const left = Math.min(Math.max(12, tip.x + 16), maxX)
-  const top = Math.min(Math.max(48, tip.y - 16), Math.max(48, viewport.height - 70))
-  return { left: `${left}px`, top: `${top}px` }
+  const { width, height } = stageSize.value
+  const tipWidth = 264
+  const tipHeight = 108
+  const room = Math.max(12, width - tipWidth - 12)
+  // 靠近右缘就翻到左侧，否则贴边时卡片会盖住半个画布
+  const left = tip.x > width * 0.62 ? Math.max(12, tip.x - tipWidth - 14) : Math.min(tip.x + 14, room)
+  const top = Math.min(Math.max(12, tip.y - tipHeight * 0.4), Math.max(12, height - tipHeight - 84))
+  return { left: `${left}px`, top: `${top}px`, width: `${tipWidth}px` }
 })
 
 function onPointerUp(event) {
@@ -1506,6 +1538,7 @@ function resetView() {
   camera.zoom = 1
   camera.panX = 0
   camera.panY = 0
+  camera.spreadX = 1
   frameGraph()
   focusedRegion.value = ''
   if (!reducedMotion.value) addPulse('ltm', 1000, 0.8)
@@ -1645,7 +1678,7 @@ onBeforeUnmount(() => {
   pulses.length = 0
   sparks.length = 0
   floaters.length = 0
-  flowCurves.clear()
+  flowSegments.clear()
 })
 </script>
 
@@ -1665,7 +1698,8 @@ onBeforeUnmount(() => {
   position: relative;
   grid-column: 1;
   grid-row: 1;
-  height: clamp(420px, 58vh, 620px);
+  // 跟随窗口高度生长：全屏时星图必须跟着变大，固定 620px 会让内容缩在中间
+  height: clamp(540px, calc(100vh - 250px), 1180px);
   overflow: hidden;
   background: $color-bg-deepest;
 }
@@ -1799,22 +1833,24 @@ onBeforeUnmount(() => {
 
 .brain-tip {
   position: absolute;
-  z-index: 2;
-  max-width: 216px;
-  padding: 7px 10px;
+  z-index: 3;
+  max-width: 264px;
+  padding: 8px 11px;
   border-radius: $radius-sm;
-  background: rgba(8, 12, 20, 0.82);
-  border: 1px solid rgba($color-pink-rgb, 0.16);
+  background: rgba(8, 12, 20, 0.9);
+  border: 1px solid rgba($color-pink-rgb, 0.18);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
   backdrop-filter: blur(8px);
   pointer-events: none;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
+  will-change: left, top;
 }
 
 .brain-tip__title {
-  font-size: 11px;
-  line-height: 1.45;
+  font-size: 11.5px;
+  line-height: 1.5;
   color: $color-text-primary;
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -1822,9 +1858,14 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
-.brain-tip__sub {
+.brain-tip__meta {
   font-size: 10px;
-  color: rgba($color-text-muted, 0.9);
+  color: rgba($color-text-secondary, 0.92);
+}
+
+.brain-tip__hint {
+  font-size: 9.5px;
+  color: rgba($color-pink-rgb, 0.85);
 }
 
 .brain-empty {
@@ -2223,29 +2264,28 @@ onBeforeUnmount(() => {
   font-variant-numeric: tabular-nums;
 }
 
-/* 窄屏：画布在上，侧栏在下，时间轴压到最后 */
-@media (max-width: 1180px) {
-  .brain-map {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto auto;
-  }
-
-  .brain-panel {
-    grid-column: 1;
-    grid-row: 2;
-    border-left: none;
-    border-top: 1px solid rgba($color-pink-rgb, 0.08);
-    max-height: 300px;
-  }
-
-  .brain-scrub {
-    grid-row: 3;
-  }
-}
-
+/* 窄屏：画布在上，侧栏在下，时间轴压到最后。
+   阈值由元素宽度（resize() 里的 compact）决定，不再看窗口宽度——
+   侧栏展开时窗口没变、内容区却变窄了，媒体查询会误判。 */
 .brain-map--compact {
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto auto;
+
+  // 窄屏把图例排成两列：8 行竖排会把画布左上角整块吃掉
+  .brain-legend {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 6px;
+    max-width: 240px;
+    padding: 4px 6px;
+    border-radius: $radius-sm;
+    background: rgba(8, 12, 20, 0.5);
+    backdrop-filter: blur(6px);
+  }
+
+  .brain-legend__item {
+    padding: 1px 4px;
+  }
 
   .brain-panel {
     grid-column: 1;

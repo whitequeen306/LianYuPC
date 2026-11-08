@@ -9,12 +9,14 @@ const mapSource = readFileSync(resolve(currentDir, '../../components/memory/Memo
 const modelSource = readFileSync(resolve(currentDir, '../../components/memory/memoryBrainModel.js'), 'utf8')
 
 describe('MemoryPage ↔ 星图集成', () => {
-  it('星图是默认视图，列表视图仍然保留', () => {
+  it('星图是默认视图，列表视图仍然保留，且不再有「共同经历」页', () => {
     expect(pageSource).toContain("ref(readView())")
-    expect(pageSource).toContain("const VIEWS = ['brain', 'list', 'episodes']")
+    expect(pageSource).toContain("const VIEWS = ['brain', 'list']")
     expect(pageSource).toContain('VIEWS.includes(saved)')
     expect(pageSource).toContain('<MemoryBrainMap')
     expect(pageSource).toContain('v-else-if="view === \'brain\'"')
+    expect(pageSource).not.toContain("view === 'episodes'")
+    expect(pageSource).not.toContain('listEpisodes')
   })
 
   it('一次拉齐记忆 / 情绪态 / 日记，星图不会先空后跳', () => {

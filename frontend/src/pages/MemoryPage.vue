@@ -40,15 +40,6 @@
           <el-icon :size="14"><List /></el-icon>
           <span>{{ t('memory.viewList') }}</span>
         </button>
-        <button
-          type="button"
-          class="view-toggle__btn"
-          :class="{ 'is-active': view === 'episodes' }"
-          @click="setView('episodes')"
-        >
-          <el-icon :size="14"><Notebook /></el-icon>
-          <span>{{ t('memory.viewEpisodes') }}</span>
-        </button>
       </div>
 
       <el-button :icon="RefreshRight" :loading="loading" class="refresh-btn" @click="fetchAll">
@@ -153,33 +144,6 @@
       </div>
     </template>
 
-    <!-- 共同经历：场景关闭时抽出的原话，事实层看不到的那一层 -->
-    <template v-else>
-      <div v-if="visibleEpisodes.length === 0" class="empty-state glass stagger-item">
-        <div class="empty-icon">
-          <el-icon :size="40"><Notebook /></el-icon>
-        </div>
-        <h3>{{ t('memory.episodesEmpty') }}</h3>
-        <p>{{ t('memory.episodesEmptyDesc') }}</p>
-      </div>
-
-      <div v-else class="episode-list">
-        <article
-          v-for="ep in visibleEpisodes"
-          :key="ep.id"
-          class="episode-card glass stagger-item"
-        >
-          <header class="episode-head">
-            <span class="episode-time">{{ formatDate(ep.eventTime || ep.createdAt) }}</span>
-            <span class="episode-char">{{ ep.characterName }}</span>
-            <span v-if="ep.openLoop" class="episode-loop">{{ t('memory.episodeOpenLoop') }}</span>
-          </header>
-          <blockquote v-if="ep.quote" class="episode-quote">{{ ep.quote }}</blockquote>
-          <p class="episode-summary">{{ ep.summary }}</p>
-        </article>
-      </div>
-    </template>
-
     <!-- 记忆详情抽屉（星图点击 / 列表详情共用） -->
     <Teleport to="body">
       <Transition name="mem-sheet">
@@ -268,7 +232,6 @@ import { useI18n } from 'vue-i18n'
 import { useCharactersStore } from '@/stores/characters'
 import {
   listMemories,
-  listEpisodes,
   getMemory,
   deleteMemory,
   setMemoryPinned,
@@ -297,7 +260,7 @@ import { formatSmartTime } from '@/utils/feedTime'
 defineOptions({ name: 'MemoryPage' })
 
 const VIEW_STORAGE_KEY = 'lianyu-memory-view'
-const VIEWS = ['brain', 'list', 'episodes']
+const VIEWS = ['brain', 'list']
 
 const { t, locale } = useI18n()
 const charactersStore = useCharactersStore()
@@ -311,7 +274,6 @@ const sourceMessages = ref([])
 
 const states = ref([])
 const diaries = ref([])
-const episodes = ref([])
 
 const view = ref(readView())
 const detailVisible = ref(false)
@@ -356,12 +318,6 @@ const visibleDiaries = computed(() =>
   filterCharId.value == null
     ? diaries.value
     : diaries.value.filter((item) => String(item.characterId) === String(filterCharId.value))
-)
-
-const visibleEpisodes = computed(() =>
-  filterCharId.value == null
-    ? episodes.value
-    : episodes.value.filter((item) => String(item.characterId) === String(filterCharId.value))
 )
 
 const groupedMemories = computed(() => {
@@ -420,16 +376,14 @@ onActivated(() => {
 async function fetchAll() {
   loading.value = true
   try {
-    const [list, stateList, diaryList, episodeList] = await Promise.all([
+    const [list, stateList, diaryList] = await Promise.all([
       listMemories(filterCharId.value || undefined).catch(() => []),
       listCharacterStates({ silent: true }).catch(() => []),
-      listAllDiaries({ page: 1, size: 30 }, { silent: true }).catch(() => []),
-      listEpisodes(filterCharId.value || undefined).catch(() => [])
+      listAllDiaries({ page: 1, size: 30 }, { silent: true }).catch(() => [])
     ])
     memories.value = Array.isArray(list) ? list : []
     states.value = Array.isArray(stateList) ? stateList : []
     diaries.value = Array.isArray(diaryList) ? diaryList : []
-    episodes.value = Array.isArray(episodeList) ? episodeList : []
   } finally {
     loading.value = false
   }
@@ -653,8 +607,9 @@ async function removeMemory(mem) {
 .memory-page {
   max-width: $narrow-page-max;
 
+  // 星图要能吃到整个内容区：全屏时卡片跟着变宽，画布才有空间放大
   &.is-brain {
-    max-width: min(1180px, 100%);
+    max-width: 100%;
   }
 }
 
@@ -1106,60 +1061,6 @@ async function removeMemory(mem) {
 .mem-sheet-enter-from .mem-sheet,
 .mem-sheet-leave-to .mem-sheet {
   transform: translateX(24px);
-}
-
-/* ——— 共同经历 ——— */
-.episode-list {
-  display: flex;
-  flex-direction: column;
-  gap: $space-3;
-}
-
-.episode-card {
-  padding: $space-4;
-  border-radius: $radius-md;
-}
-
-.episode-head {
-  display: flex;
-  align-items: center;
-  gap: $space-2;
-  margin-bottom: $space-2;
-}
-
-.episode-time {
-  font-size: $font-size-xs;
-  color: $color-text-muted;
-}
-
-.episode-char {
-  font-size: $font-size-xs;
-  color: $color-text-secondary;
-}
-
-.episode-loop {
-  margin-left: auto;
-  padding: 1px 8px;
-  border-radius: $radius-pill;
-  background: rgba($color-pink-rgb, 0.14);
-  color: $color-text-secondary;
-  font-size: $font-size-xs;
-}
-
-.episode-quote {
-  margin: 0 0 $space-2;
-  padding-left: $space-3;
-  border-left: 2px solid rgba($color-pink-rgb, 0.5);
-  color: $color-text-primary;
-  font-size: $font-size-sm;
-  line-height: 1.6;
-}
-
-.episode-summary {
-  margin: 0;
-  color: $color-text-secondary;
-  font-size: $font-size-sm;
-  line-height: 1.6;
 }
 
 </style>

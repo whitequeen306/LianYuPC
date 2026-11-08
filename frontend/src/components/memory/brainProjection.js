@@ -23,6 +23,8 @@ export function createCamera(overrides = {}) {
     zoom: 1,
     panX: 0,
     panY: 0,
+    // 宽屏时把整团光点横向摊开（见 frameGraph），球体不变形、只是变成椭圆壳
+    spreadX: 1,
     ...overrides
   }
 }
@@ -47,7 +49,7 @@ export function fitBase(width, height) {
  * 旋转顺序：先绕 Y 轴（yaw），再绕 X 轴（pitch），最后做一次透视除法。
  */
 export function projectPoint(point, camera, viewport) {
-  const { yaw = 0, pitch = 0, zoom = 1, panX = 0, panY = 0 } = camera || {}
+  const { yaw = 0, pitch = 0, zoom = 1, panX = 0, panY = 0, spreadX = 1 } = camera || {}
   const { width = 0, height = 0, base = 1 } = viewport || {}
   const cosYaw = Math.cos(yaw)
   const sinYaw = Math.sin(yaw)
@@ -59,6 +61,8 @@ export function projectPoint(point, camera, viewport) {
   const z1 = -px * sinYaw + pz * cosYaw
   const y1 = py * cosPitch - z1 * sinPitch
   const z2 = py * sinPitch + z1 * cosPitch
+  // 横向摊开放在旋转之后：只拉宽屏幕上的分布，不改深度，也不影响前后遮挡
+  const x2 = x1 * spreadX
 
   // 转到相机背后时 F + z 会趋近 0 甚至变负，scale 一旦为负，画椭圆就会抛
   // IndexSizeError（半径必须非负）。这里直接把背后半空间判为不可见。
@@ -66,7 +70,7 @@ export function projectPoint(point, camera, viewport) {
   const inFront = denom > 90
   const scale = inFront ? (CAMERA_FOV / denom) * base * zoom : 0
   return {
-    x: width / 2 + x1 * scale + panX,
+    x: width / 2 + x2 * scale + panX,
     y: height / 2 - y1 * scale + panY,
     scale,
     depth: z2,
