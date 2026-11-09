@@ -84,10 +84,12 @@ describe('normalizeMemory', () => {
     expect(old.size).toBeGreaterThan(0)
   })
 
-  it('权重越界会被夹到 0..1，来源消息数量从数组长度算出', () => {
+  it('权重越界会被夹到 0..1，来源消息数量从数组长度算出并保留可连线 id', () => {
     expect(normalizeMemory({ id: 1, importance: 3 }).importance).toBe(1)
     expect(normalizeMemory({ id: 2, importance: -1 }).importance).toBe(0)
-    expect(normalizeMemory({ id: 3, sourceMsgIds: [1, 2, 3] }).sourceCount).toBe(3)
+    const normalized = normalizeMemory({ id: 3, sourceMsgIds: [1, 2, 3, null, ' '] })
+    expect(normalized.sourceCount).toBe(3)
+    expect(normalized.sourceMsgIds).toEqual(['1', '2', '3'])
   })
 
   it('无时区的 createdAt 按业务时区 Asia/Shanghai 解释', () => {
@@ -129,6 +131,60 @@ describe('buildBrainGraph', () => {
     const first = buildBrainGraph({ memories, now: NOW }).memoryNodes.map((node) => node.pos)
     const second = buildBrainGraph({ memories, now: NOW }).memoryNodes.map((node) => node.pos)
     expect(second).toEqual(first)
+  })
+
+  it('核心/钉住记忆归到中心，其余按真实类型与角色组成外围簇', () => {
+    const graph = buildBrainGraph({
+      memories: [
+        memory(1, { layer: 'core', memoryType: 'RELATION' }),
+        memory(2, { characterId: 2, characterName: '苏', pinned: true }),
+        memory(3, { memoryType: 'FACT' }),
+        memory(4, { characterId: 2, characterName: '苏', memoryType: 'FACT' }),
+        memory(5, { memoryType: 'EMOTION' })
+      ],
+      characters: [{ id: 1, name: '林晚' }, { id: 2, name: '苏' }],
+      now: NOW
+    })
+    const center = graph.memoryNodes.filter((node) => node.memoryId === 1 || node.memoryId === 2)
+    expect(center.every((node) => node.clusterId === 'cluster-core')).toBe(true)
+    expect(center.find((node) => node.memoryId === 1).sector).toBe('RELATION')
+    expect(graph.clusters.some((cluster) => cluster.sector === 'FACT' && cluster.characterId === '1')).toBe(true)
+    expect(graph.clusters.some((cluster) => cluster.sector === 'FACT' && cluster.characterId === '2')).toBe(true)
+    expect(graph.clusters.filter((cluster) => !cluster.central)).toHaveLength(3)
+    expect(graph.sectorHubs.map((sectorHub) => sectorHub.sector)).toEqual(['FACT', 'EMOTION'])
+    expect(graph.sectorHubs.find((sectorHub) => sectorHub.sector === 'FACT').clusterIds).toHaveLength(2)
+    const factClusters = graph.clusters.filter((cluster) => cluster.sector === 'FACT')
+    expect(Math.hypot(factClusters[0].pos[0] - factClusters[1].pos[0], factClusters[0].pos[1] - factClusters[1].pos[1])).toBeGreaterThan(60)
+  })
+
+  it('没有 core/pinned 时把少量高重要度记忆放进中心云但不改 layer', () => {
+    const graph = buildBrainGraph({
+      memories: [
+        memory(1, { importance: 0.95 }),
+        memory(2, { importance: 0.85 }),
+        memory(3, { importance: 0.75 }),
+        memory(4, { importance: 0.65 }),
+        memory(5, { importance: 0.55 })
+      ],
+      now: NOW
+    })
+    const central = graph.memoryNodes.filter((node) => node.clusterId === 'cluster-core')
+    expect(central).toHaveLength(4)
+    expect(central[0].importance).toBe(0.95)
+    expect(central.every((node) => node.layer === 'fact')).toBe(true)
+  })
+
+  it('只有共享来源消息 id 的记忆才建立关联边', () => {
+    const graph = buildBrainGraph({
+      memories: [
+        memory(1, { sourceMsgIds: ['shared'] }),
+        memory(2, { memoryType: 'EMOTION', sourceMsgIds: ['shared'] }),
+        memory(3, { memoryType: 'RELATION', sourceMsgIds: ['other'] })
+      ],
+      now: NOW
+    })
+    expect(graph.relatedEdges).toHaveLength(1)
+    expect(new Set([graph.relatedEdges[0].fromId, graph.relatedEdges[0].toId])).toEqual(new Set([1, 2]))
   })
 
   it('超过上限只画权重最高的一批，统计仍然是全量', () => {

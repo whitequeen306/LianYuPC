@@ -210,7 +210,9 @@ export function toTimestamp(value) {
 
 export function normalizeMemory(raw = {}) {
   const importanceRaw = typeof raw.importance === 'string' ? Number(raw.importance) : raw.importance
-  const sourceIds = Array.isArray(raw.sourceMsgIds) ? raw.sourceMsgIds : []
+  const sourceIds = Array.isArray(raw.sourceMsgIds)
+    ? [...new Set(raw.sourceMsgIds.filter((id) => id != null && String(id).trim()).map((id) => String(id)))]
+    : []
   const type = SECTOR_BY_ID.has(raw.memoryType) ? raw.memoryType : 'FACT'
   const fadeLevel = ['active', 'faded', 'archived', 'dormant'].includes(raw.fadeLevel)
     ? raw.fadeLevel
@@ -230,6 +232,8 @@ export function normalizeMemory(raw = {}) {
     muted: Boolean(raw.muted),
     layer: raw.layer || 'fact',
     quote: String(raw.quote || '').trim(),
+    // 来源 id 是可验证的关系边：共享同一段原始对话的记忆，才允许彼此连线。
+    sourceMsgIds: sourceIds,
     sourceCount: sourceIds.length,
     createdAt: raw.createdAt,
     at: toTimestamp(raw.createdAt)
@@ -286,61 +290,86 @@ export function buildBrainGraph({
   }
 
   const ltm = REGION_BY_ID.get('ltm')
-  // 长期记忆库不是一个点，是四瓣：每类记忆占一瓣，绕中枢排开。
-  // 之前所有光点都从圆心按同一角度往外长，四团自然叠在一起。
-  const SECTOR_ORBIT = 88
-  const SECTOR_SPREAD = 34
-  const lobeOf = (angleDeg) => {
-    const rad = (angleDeg * Math.PI) / 180
-    return [
-      ltm.c[0] + Math.cos(rad) * SECTOR_ORBIT,
-      ltm.c[1] + Math.sin(rad) * SECTOR_ORBIT * 0.84,
-      ltm.c[2] + 12
-    ]
+  const characterIds = [...new Set(drawnList.map((memory) => String(memory.characterId ?? 'unknown')))]
+  const splitCharacters = characterIds.length > 1 && characterIds.length <= 8
+  const characterOrder = new Map(
+    characterIds
+      .map((id) => ({ id, count: drawnList.filter((memory) => String(memory.characterId ?? 'unknown') === id).length }))
+      .sort((a, b) => b.count - a.count || a.id.localeCompare(b.id))
+      .map((entry, index) => [entry.id, index])
+  )
+  const grouped = new Map()
+  const centralMemories = drawnList.filter((memory) => memory.layer === 'core' || memory.pinned)
+  const centralIds = new Set(centralMemories.map((memory) => String(memory.id)))
+  // 没有 core/pinned 时，用少量高重要度记忆组成视觉中心云；不改写它们真实的 layer。
+  if (!centralMemories.length && drawnList.length) {
+    const centerLimit = Math.min(12, Math.max(4, Math.ceil(Math.sqrt(drawnList.length) * 1.2)))
+    const centralCandidates = [...drawnList].sort(
+      (a, b) => b.importance - a.importance || b.at - a.at || String(a.id).localeCompare(String(b.id))
+    )
+    for (const memory of centralCandidates.slice(0, centerLimit)) {
+      centralMemories.push(memory)
+      centralIds.add(String(memory.id))
+    }
   }
 
-  const anchors = MEMORY_SECTORS.map((sector) => {
-    const rad = (sector.angle * Math.PI) / 180
-    const orbit = SECTOR_ORBIT + SECTOR_SPREAD * 1.04 + 8
-    return {
-      id: `anchor-${sector.id}`,
-      sector: sector.id,
-      color: sector.color,
-      nameKey: sector.nameKey,
-      count: bySector[sector.id],
-      pos: [
-        ltm.c[0] + Math.cos(rad) * orbit,
-        ltm.c[1] + Math.sin(rad) * orbit * 0.84,
-        ltm.c[2] + 16
-      ]
-    }
-  })
+  for (const memory of drawnList) {
+    // core/pinned 与无明确中枢时的少量高权重候选留在中心；其余按真实类型和角色分簇。
+    if (centralIds.has(String(memory.id))) continue
+    const characterId = String(memory.characterId ?? 'unknown')
+    const key = splitCharacters ? `${memory.memoryType}:${characterId}` : memory.memoryType
+    if (!grouped.has(key)) grouped.set(key, [])
+    grouped.get(key).push(memory)
+  }
 
   const memoryNodes = []
-  for (const sector of MEMORY_SECTORS) {
-    const bucket = nodesBySector[sector.id]
-    const lobe = lobeOf(sector.angle)
-    const total = bucket.length || 1
-    bucket.forEach((memory, index) => {
-      // 光点铺满自己那一瓣：半径按 √(i/n) 摊匀（面积均匀），角度整圈随机，
-      // 这样每个扇区是一团独立的星团，而不是四团挤在圆心互相盖住。
-      const rng = mulberry32(hashString(`${memory.id}:${memory.memoryType}`))
-      // 光点多了就按 √n 把星团摊开一点：否则 200 颗挤在 34 的半径里会糊成一块光斑，
-      // 看不清「很多颗记忆」，也看不出从中心放射出去的光丝。
-      const density = Math.min(1.55, Math.max(1, Math.sqrt(total / 12)))
-      const spread = SECTOR_SPREAD * density * Math.sqrt((index + 0.6) / total)
-      const theta = rng() * Math.PI * 2
-      const jitter = 0.88 + rng() * 0.24
-      memoryNodes.push({
+  const clusters = []
+  const anchors = []
+  const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5))
+
+  const appendCluster = ({ id, sector, characterId = null, members, pos, central = false }) => {
+    const sectorMeta = SECTOR_BY_ID.get(sector)
+    const color = central ? BRAIN_PALETTE.core : sectorMeta.color
+    const sortedMembers = [...members].sort(
+      (a, b) => b.importance - a.importance || b.at - a.at || String(a.id).localeCompare(String(b.id))
+    )
+    const count = sortedMembers.length
+    const spread = central ? Math.min(35, 12 + Math.sqrt(count) * 3.8) : Math.min(54, 17 + Math.sqrt(count) * 3.6)
+    const cluster = {
+      id,
+      sector,
+      sectorHubId: central ? null : `sector-hub-${sector}`,
+      characterId,
+      characterName: characterId == null ? '' : nameById.get(String(characterId)) || '',
+      color,
+      nameKey: central ? 'memory.brain.regions.core.name' : sectorMeta.nameKey,
+      count,
+      importance: count ? sortedMembers.reduce((sum, memory) => sum + memory.importance, 0) / count : 0,
+      central,
+      spread,
+      pos,
+      memberIds: []
+    }
+
+    sortedMembers.forEach((memory, index) => {
+      const rng = mulberry32(hashString(`${memory.id}:${memory.memoryType}:${memory.characterId}`))
+      const memorySector = SECTOR_BY_ID.get(memory.memoryType) || MEMORY_SECTORS[0]
+      const theta = index * GOLDEN_ANGLE + (rng() - 0.5) * 0.32
+      const ring = spread * Math.sqrt((index + 0.5) / count)
+      // 重要记忆更靠近所属簇的核心，衰减记忆自然落在星团外缘。
+      const radius = ring * (0.66 + (1 - memory.importance) * 0.34) * (0.9 + rng() * 0.2)
+      const node = {
         id: `mem-${memory.id}`,
         memoryId: memory.id,
-        sector: sector.id,
-        color: sector.color,
+        clusterId: id,
+        sector: memory.memoryType,
+        color: memorySector.color,
         title: memory.summary,
         characterId: memory.characterId,
         characterName: nameById.get(String(memory.characterId)) || memory.characterName,
         importance: memory.importance,
         sourceCount: memory.sourceCount,
+        sourceMsgIds: memory.sourceMsgIds,
         at: memory.at,
         createdAt: memory.createdAt,
         strength: memory.strength,
@@ -348,18 +377,116 @@ export function buildBrainGraph({
         pinned: memory.pinned,
         muted: memory.muted,
         layer: memory.layer,
-        // 半径方向压扁、z 方向拉开：转动时四瓣会前后错开，不再是平面色块
         pos: [
-          lobe[0] + Math.cos(theta) * spread * jitter * 1.06,
-          lobe[1] + Math.sin(theta) * spread * jitter * 0.8,
-          lobe[2] + (rng() - 0.5) * 56
+          pos[0] + Math.cos(theta) * radius,
+          pos[1] + Math.sin(theta) * radius * 0.78,
+          pos[2] + (rng() - 0.5) * (central ? 36 : 56)
         ],
-        // 强度不决定"有没有"，只决定"亮不亮"：衰减到 0.15 仍可被搜到
-        // 密集时收小一点，让每一颗仍有边界
-        size: (1.8 + memory.importance * 3) * (0.62 + 0.38 * memory.strength) * (total > 30 ? 0.8 : 1)
+        // 重要度拉开视觉层次；钉住的记忆是簇里的亮星，衰减仍保留可见。
+        size: (1.2 + memory.importance * 2.8) * (0.62 + 0.38 * memory.strength) * (memory.pinned ? 1.35 : 1)
+      }
+      cluster.memberIds.push(node.id)
+      memoryNodes.push(node)
+    })
+    clusters.push(cluster)
+    anchors.push({
+      id: `anchor-${id}`,
+      clusterId: id,
+      sector,
+      color,
+      nameKey: central ? 'memory.brain.regions.core.name' : sectorMeta.nameKey,
+      count,
+      pos
+    })
+  }
+
+  if (centralMemories.length) {
+    appendCluster({
+      id: 'cluster-core',
+      sector: 'FACT',
+      members: centralMemories,
+      pos: [ltm.c[0], ltm.c[1], ltm.c[2] + 14],
+      central: true
+    })
+  }
+
+  for (const sector of MEMORY_SECTORS) {
+    const sectorGroups = [...grouped.entries()]
+      .filter(([key]) => key.startsWith(`${sector.id}:`) || key === sector.id)
+      .map(([key, members]) => ({ key, members }))
+      .sort((a, b) => {
+        const charA = splitCharacters ? a.key.slice(sector.id.length + 1) : ''
+        const charB = splitCharacters ? b.key.slice(sector.id.length + 1) : ''
+        return (characterOrder.get(charA) ?? 0) - (characterOrder.get(charB) ?? 0)
+      })
+    const total = sectorGroups.length
+    sectorGroups.forEach(({ key, members }, index) => {
+      const characterId = splitCharacters ? key.slice(sector.id.length + 1) : null
+      const lane = total > 1 ? index - (total - 1) / 2 : 0
+      const laneStep = total > 1 ? Math.min(26, 84 / (total - 1)) : 0
+      const angle = (sector.angle + lane * laneStep) * (Math.PI / 180)
+      const radius = 150 + Math.min(22, Math.abs(lane) * 6)
+      const pos = [
+        ltm.c[0] + Math.cos(angle) * radius,
+        ltm.c[1] + Math.sin(angle) * radius * 0.84,
+        ltm.c[2] + 12 + lane * 5
+      ]
+      appendCluster({
+        id: `cluster-${sector.id}-${characterId ?? 'all'}`,
+        sector: sector.id,
+        characterId,
+        members,
+        pos
       })
     })
   }
+
+  // 只有共享原始消息 id 的记忆才增加簇间关系边；最多连最靠前的几条，避免完全图。
+  const sourceOwners = new Map()
+  for (const node of memoryNodes) {
+    for (const sourceId of node.sourceMsgIds) {
+      if (!sourceOwners.has(sourceId)) sourceOwners.set(sourceId, [])
+      sourceOwners.get(sourceId).push(node)
+    }
+  }
+  const relatedEdges = []
+  const relatedPairs = new Set()
+  for (const owners of sourceOwners.values()) {
+    if (owners.length < 2) continue
+    owners.sort((a, b) => b.importance - a.importance || String(a.memoryId).localeCompare(String(b.memoryId)))
+    const root = owners[0]
+    for (const peer of owners.slice(1, 4)) {
+      const pair = [String(root.memoryId), String(peer.memoryId)].sort().join(':')
+      if (relatedPairs.has(pair)) continue
+      relatedPairs.add(pair)
+      relatedEdges.push({ from: root.pos, to: peer.pos, color: root.color, fromId: root.memoryId, toId: peer.memoryId })
+    }
+  }
+
+  // 一层语义枢纽把中心与角色簇分开：中心只连到实际出现的 memoryType，
+  // 每个类型枢纽再承接同类角色簇，避免多角色时从中心扇出一大片射线。
+  const sectorHubs = MEMORY_SECTORS.flatMap((sector) => {
+    const sectorClusters = clusters.filter((cluster) => !cluster.central && cluster.sector === sector.id)
+    if (!sectorClusters.length) return []
+    const total = sectorClusters.reduce((sum, cluster) => sum + cluster.count, 0)
+    const centroid = [0, 1, 2].map((axis) =>
+      sectorClusters.reduce((sum, cluster) => sum + cluster.pos[axis] * cluster.count, 0) / Math.max(1, total)
+    )
+    const pos = [
+      ltm.c[0] + (centroid[0] - ltm.c[0]) * 0.58,
+      ltm.c[1] + (centroid[1] - ltm.c[1]) * 0.58,
+      ltm.c[2] + (centroid[2] - ltm.c[2]) * 0.58
+    ]
+    return [{
+      id: `sector-hub-${sector.id}`,
+      sector: sector.id,
+      color: sector.color,
+      nameKey: sector.nameKey,
+      count: total,
+      clusterIds: sectorClusters.map((cluster) => cluster.id),
+      pos
+    }]
+  })
 
   const weekAdded = list.filter((m) => now - m.at <= WEEK && m.at > 0).length
   const sourceCount = list.reduce((sum, m) => sum + m.sourceCount, 0)
@@ -469,7 +596,10 @@ export function buildBrainGraph({
     regions,
     regionMap: new Map(regions.map((r) => [r.id, r])),
     anchors,
+    sectorHubs,
+    clusters,
     memoryNodes,
+    relatedEdges,
     flows: BRAIN_FLOWS.map((flow) => ({ ...flow })),
     stats: {
       total: list.length,
