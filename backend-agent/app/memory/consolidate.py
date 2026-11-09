@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Sequence
 
 from app.db import fetch_all
+from app.memory.outbox import enqueue_upsert
 from app.write import insert_returning_id, transaction
 
 WEEK_DAYS = 7
@@ -98,7 +99,7 @@ async def write_digest(
     cur, *, user_id: int, character_id: int, summary: str, content_hash: str,
     episode_ids: Sequence[int], start: datetime,
 ) -> int:
-    return await insert_returning_id(
+    memory_id = await insert_returning_id(
         cur,
         "INSERT INTO memory_meta (character_id, user_id, summary, memory_type, importance, "
         "layer, strength, tau_days, status, fade_level, source_msg_ids, content_hash, "
@@ -116,6 +117,10 @@ async def write_digest(
             start,
         ),
     )
+    # 周记同样要进向量库：它是跨天回忆的锚点，漏投影等于"这周发生过什么"检索不到。
+    if memory_id:
+        await enqueue_upsert(cur, memory_id)
+    return memory_id
 
 
 async def consolidate(now: datetime | None = None) -> int:

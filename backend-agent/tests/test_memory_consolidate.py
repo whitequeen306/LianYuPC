@@ -80,11 +80,15 @@ async def test_consolidate_writes_only_full_weeks(monkeypatch):
         return rows
 
     inserted = []
+    enqueued = []
     cursor = _Cursor()
 
     async def insert_returning_id(cur, sql, params):
         inserted.append(params)
         return 5
+
+    async def enqueue_upsert(cur, memory_id):
+        enqueued.append(memory_id)
 
     async def already_written(cur, content_hash):
         return False
@@ -92,12 +96,15 @@ async def test_consolidate_writes_only_full_weeks(monkeypatch):
     monkeypatch.setattr(c, "load_week_episodes", fetch_all)
     monkeypatch.setattr(c, "transaction", lambda: _Tx(cursor))
     monkeypatch.setattr(c, "insert_returning_id", insert_returning_id)
+    monkeypatch.setattr(c, "enqueue_upsert", enqueue_upsert)
     monkeypatch.setattr(c, "_already_written", already_written)
 
     assert await c.consolidate(datetime(2026, 11, 6, 12)) == 1
     assert len(inserted) == 1
     assert inserted[0][0] == 3 and inserted[0][1] == 7
     assert "搬家" in inserted[0][2]
+    # 周记是跨天回忆的锚点：不入队就检索不到"这周发生过什么"。
+    assert enqueued == [5]
 
 
 @pytest.mark.asyncio

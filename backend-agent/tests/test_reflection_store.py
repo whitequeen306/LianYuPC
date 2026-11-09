@@ -32,7 +32,7 @@ async def _boom(*args, **kwargs):
 
 @pytest.mark.asyncio
 async def test_reflection_is_written_into_memory_meta(monkeypatch):
-    captured = {}
+    captured = {"enqueued": []}
 
     async def fetch_all(sql, params):
         captured["dedupe"] = params
@@ -43,8 +43,12 @@ async def test_reflection_is_written_into_memory_meta(monkeypatch):
         captured["params"] = params
         return 88
 
+    async def enqueue_upsert(cur, memory_id):
+        captured["enqueued"].append(memory_id)
+
     monkeypatch.setattr(store, "fetch_all", fetch_all)
     monkeypatch.setattr(store, "insert_returning_id", insert_returning_id)
+    monkeypatch.setattr(store, "enqueue_upsert", enqueue_upsert)
     monkeypatch.setattr(store, "transaction", lambda: _Tx())
 
     new_id = await store.insert_reflection(
@@ -64,6 +68,8 @@ async def test_reflection_is_written_into_memory_meta(monkeypatch):
     assert params[4] == store.REFLECTION_TAU_DAYS
     assert params[5] == "[11, 12]"
     assert params[7] == "她嘴上说没事，其实很累"
+    # 印象不排投影就永远进不了向量库，而 outbox 计数还是 0（生产上真丢过 10 条）。
+    assert captured["enqueued"] == [88]
 
 
 @pytest.mark.asyncio
@@ -91,8 +97,12 @@ async def test_dedupe_failure_does_not_block_writing(monkeypatch):
     async def insert_returning_id(cur, sql, params):
         return 91
 
+    async def enqueue_upsert(cur, memory_id):
+        return None
+
     monkeypatch.setattr(store, "fetch_all", fetch_all)
     monkeypatch.setattr(store, "insert_returning_id", insert_returning_id)
+    monkeypatch.setattr(store, "enqueue_upsert", enqueue_upsert)
     monkeypatch.setattr(store, "transaction", lambda: _Tx())
 
     assert await store.insert_reflection(

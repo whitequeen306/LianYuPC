@@ -22,6 +22,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Iterable
 
 from app.db import fetch_all
+from app.memory.outbox import enqueue_upsert
 from app.write import execute_write, insert_returning_id, transaction
 
 logger = logging.getLogger(__name__)
@@ -260,12 +261,7 @@ async def _insert_new(user_id: int, character_id: int, summary: str, memory_type
              layer, 1.0, tau_days,
              json.dumps(list(source_ids), ensure_ascii=False), source_hash),
         )
-        await insert_returning_id(
-            cur,
-            "INSERT INTO memory_outbox (memory_id, op, status, attempts, next_attempt_at) "
-            "VALUES (%s, %s, %s, %s, NOW())",
-            (memory_id, "UPSERT", "PENDING", 0),
-        )
+        await enqueue_upsert(cur, memory_id)
         if slot:
             await _supersede_slot(cur, memory_id=memory_id, user_id=user_id,
                                   character_id=character_id, slot=slot)
@@ -306,12 +302,7 @@ async def _replace_and_enqueue(memory_id: int, summary: str, memory_type: str,
                 "VALUES (%s, %s, %s, %s, %s, NOW())",
                 (memory_id, "DELETE", old_vec, "PENDING", 0),
             )
-        await insert_returning_id(
-            cur,
-            "INSERT INTO memory_outbox (memory_id, op, status, attempts, next_attempt_at) "
-            "VALUES (%s, %s, %s, %s, NOW())",
-            (memory_id, "UPSERT", "PENDING", 0),
-        )
+        await enqueue_upsert(cur, memory_id)
 
 
 __all__ = [

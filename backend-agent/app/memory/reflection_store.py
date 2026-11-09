@@ -13,6 +13,7 @@ import logging
 from typing import Any, Iterable
 
 from app.db import fetch_all
+from app.memory.outbox import enqueue_upsert
 from app.write import insert_returning_id, transaction
 
 logger = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ async def insert_reflection(
     digest = content_hash(user_id, character_id, summary)
     try:
         async with transaction() as cur:
-            return await insert_returning_id(
+            memory_id = await insert_returning_id(
                 cur,
                 "INSERT INTO memory_meta (character_id, user_id, summary, memory_type, importance, "
                 "layer, strength, tau_days, status, fade_level, source_msg_ids, content_hash, quote, "
@@ -80,6 +81,10 @@ async def insert_reflection(
                     (impression or "").strip()[:600],
                 ),
             )
+            # 印象也要能被向量召回：不入队就永远进不了 v3，且 outbox 计数看着还是 0。
+            if memory_id:
+                await enqueue_upsert(cur, memory_id)
+            return memory_id
     except Exception as exc:  # noqa: BLE001 - 印象写不进去不影响这一轮回复
         logger.warning("reflection insert failed conv=%s: %s", conversation_id, exc)
         return 0
