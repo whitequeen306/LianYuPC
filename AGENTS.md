@@ -200,6 +200,14 @@ Electron 主进程          服务端 Java                  Python backend-agent
 2. `.env` 有 `DEPLOY_SSH_PASSWORD`（部署用）；
 3. `frontend/.env.production.cloud` 的 API/更新地址正确（改了地址必须重打客户端）。
 
+先干跑一遍确认脚本与凭据都就绪（只做 preflight，不 push / 不部署 / 不打包）：
+`.\local\ship-release.ps1 -ElectronOnly -DryRun` → 末行 `DRY_RUN_OK version=<ver> mode=<mode>`。
+
+**发版产物的体积是契约，不是观感**：`frontend/scripts/electron-release.mjs` 在上传后会校验
+Release 上 `YuNian-Setup-<ver>.exe` 不小于 200MB 且与本地字节数一致，不符直接失败、不会去改
+MinIO。事后抽查用 `cd frontend && node scripts/electron-release.mjs --verify-only 0.3.18`
+（`--min-mb` 只用于自测，正常不要传）。
+
 **已知坑（脚本已兜底，别绕过它）**：
 - **`docker compose up -d --build <svc>` 在服务器上会挂死**（构建完成但 compose 不退出）：
   必须 `build` 与 `up -d --no-build` 两步走。
@@ -207,10 +215,19 @@ Electron 主进程          服务端 Java                  Python backend-agent
   早已完成、镜像也在），表现为「日志停住 5 分钟以上且服务器上没有构建进程」。排查口诀：
   `ps -eo etime,cmd | grep 'docker compose'` 为空 = 命令已结束，别等它；
   `_cloud_deploy_pull.py` 里跑 docker 的命令应加 `timeout` 并改用非 PTY（`get_pty=False`），或显式按 exit code 判定。
+- **原生命令的 stderr 不是失败**：Windows PowerShell 5.1 在 `$ErrorActionPreference='Stop'` 下会把
+  `git push` 的 "Everything up-to-date"、`npm warn …` 都变成 `NativeCommandError` 并中断发版
+  （2026-11-09 连撞两次）。`local/ship-release.ps1` 已统一走 `Invoke-Native`，只按退出码判定；
+  改脚本时不要再直接写 `git …` / `npm …`，否则这个坑会复活。
+- **`.ps1` 必须存成 UTF-8 with BOM**：无 BOM 时 PS5.1 按 ANSI 解码，中文注释会让解析器在
+  某行报「意外的标记」，看上去像语法错。用编辑器改完先跑一次 `-DryRun` 就能发现。
 - **不要单独跑 `electron-pack.mjs` 就发布**：那样只有原生 NSIS（约 168MB），
   安装界面会退化成白框；品牌 WPF 壳由 `prepare-branded-release.mjs` 生成（约 231MB）。
 - 本机打包/发版前要**清掉 `ELECTRON_RUN_AS_NODE`**，并给打包冒烟传
   `SMOKE_ELECTRON_ARGS="--no-sandbox --user-data-dir=<临时目录>"`（脚本已自动处理）。
+- **发版中途失败先看 Release 上 exe 多大**：`electron-builder` 会先自己传一份 168MB 原生包，
+  品牌包由后续步骤覆盖；如果 `gh release upload` 撞 502（2026-11-09 v0.3.17 真实事故），
+  留下的就是那份白框包。现在脚本会在发布前拦下，但手工补传时仍要自己确认体积。
 
 ---
 
@@ -220,6 +237,7 @@ Electron 主进程          服务端 Java                  Python backend-agent
 |---|---|
 | 流式回复空/串行 | SSE 帧是否被改；`stream_chat.py` 与 `AgentStreamBridge` 是否同步 |
 | 安装器界面变原生白框 | 是否走了 `prepare-branded-release`；产物大小是否 ~168MB（异常）/ ~231MB（正常） |
+| 怀疑 Release 上是原生包 / 上传被截断 | `cd frontend && node scripts/electron-release.mjs --verify-only <ver>`（不达标会列出实际 MB） |
 | 更新器不提示新版本 | MinIO `updates/latest.yml` 的 version/sha512；`_upload_update_assets.py` 是否成功；客户端证书指纹 |
 | Java 侧棘轮红 | 新代码里是否出现 prompt 文本/模型调用；应搬去 Python。规则 5 报「未登记」就搬走或登记进 `scripts/java_bare_prompt_allowlist.txt`；报「已失效」说明迁完了没删条目 |
 
