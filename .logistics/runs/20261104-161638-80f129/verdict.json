@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 2,
+  "runId": "20261104-161638-80f129",
+  "generatedAt": "2026-11-04T16:26:00+08:00",
+  "coverage": {
+    "expected": ["correctness"],
+    "received": ["correctness"],
+    "missing": [],
+    "complete": true
+  },
+  "findings": [
+    {
+      "id": "COR-B8580",
+      "expert": "correctness",
+      "module": "lianyu-dao",
+      "section": "data-integrity",
+      "severity": "high",
+      "confidence": "high",
+      "title": "V57 的谓词把「信任高 + 亲密低」当刷分证据，但该状态在正常计分下合法可达（信任从不衰减、亲密会衰减到地板 20），会把合法用户永久降到 50",
+      "file": "backend/lianyu-dao/src/main/resources/db/migration/V57__relationship_trust_anomaly_repair.sql",
+      "line": 15,
+      "evidence": "迁移正文（15-18 行）：UPDATE relationship_state SET trust_score = 50 WHERE trust_score >= 90 AND intimacy_score <= 40; 注释 5-6 行给出的理由是「可观察行 100/32、100/35、92/20 在当前计分下不可能出现，因为每个带亲密的动作也会动信任」。主编逐条复核源码：\n1) 信任分只增不减，写入点只有 RelationshipStateService.java:252 state.setTrustScore(snapshot.trustScore()) 与 :440 created.setTrustScore(40)。\n2) 时间衰减只改 anticipation / intimacy / security，完全不碰 trust：RelationshipStateService.java:208-219（setAnticipationScore / setIntimacyScore(Math.max(INTIMACY_FLOOR, ...)) / setSecurityScore），INTIMACY_FLOOR = 20（:40），MAX_DECAY_DAYS = 30（:37），INTIMACY_GRACE_HOURS = 72。\n   触发路径：trust=98 / intimacy=95 的活跃用户 → 连续 90 天无交互（72h 宽限后每天 -1，最低到 20）→ trust 仍为 98、intimacy 落到 20 → 命中 V57 谓词，trust 被改成 50。\n3) 「带亲密的动作一定动信任」也不成立：RelationshipStateService.java:532-534 case USER_WARM_RESPONSE -> { intimacy += 3 * input.weight(); anticipation += 2 * input.weight(); }（+0 信任）；:554-557 SPECIAL_NICKNAME_CREATED / RITUAL_ESTABLISHED 同样只加亲密与期待。\n4) 反向路径同样无上限：:536-539 case ASSISTANT_VULNERABLE_REPLY -> { security += 3; trust += 2; } 是 +2 信任 / +0 亲密；且每条含安抚词的助手消息都会产生一次事件（RelationshipStateService.java:149 if (RelationshipHeuristics.isComfortingReply(content)) → :155 构造事件），无次数上限；从默认 40 起约 25 次安抚回复即可越过 90 而 intimacy 不动。",
+      "impact": "两类完全合法的状态被判成刷分并永久降到 50：一是长期陪伴后离开几个月的用户（信任不衰减、亲密衰减到地板），二是角色多次安抚的用户（+2 信任 / +0 亲密）。降档会立刻反映到前端关系面板与 Python 侧 prompt 信任事实（CharacterStateQueryService.java:184 输出 relationshipTrustScore、backend-agent/app/data_readers.py:36 读 trust_score），而 Flyway 只执行一次、文件内无备份，改错不可逆。规模要公道看待：提交自述「现象：3 行」说明线上命中面是 3 行而非全量用户，但这 3 行的原值（100/100/92）会被永久抹掉，其中可能就包含上述两类合法用户——不是「影响面小可忽略」，而是「必须先把这 3 行按事件账本逐行判一次再决定是否执行」。同一谓词还有漏判面：>= 90 不对应任何常量（代码里的阈值只有 RelationshipPhaseResolver.java:18-21 的 45/55/65/70），被同一旧 bug 污染的 trust 80-89 行、或 intimacy 41-55 行（亲密靠 USER_WARM_RESPONSE 长回来）一行都修不到，而 Flyway 不会重跑，也不会留下可复查的标记。",
+      "kind": "plan",
+      "fix": {
+        "summary": "不要再用「trust 高 + intimacy 低」这种快照比例当刷分证据。判定必须能回答「这分是谁给的」：以 relationship_event 事件账本为准，只回滚能被 REPAIR_ATTEMPT（以及旧版无门控的修复事件）解释的那部分增量，其余行原样保留。",
+        "steps": [
+          "先取证再改数：对当前命中的行（线上 3 行）导出 user_id/character_id、trust_score、intimacy_score、last_interaction_at，并按 relationship_event 统计各类事件次数与累计增量，确认每行 trust 是否能被 REPAIR_ATTEMPT 全额解释。",
+          "把判定从 SQL 移到 Java：在 RelationshipStateService 增加 repairTrustAnomalies(...)（或读侧校正），用 applyEvent 的权重表反推「若没有 REPAIR_ATTEMPT，trust 应为多少」，只对差值可解释的行落库。",
+          "迁移改写为「先落 before-image，再调用/复现该判定」：V57 若尚未在任何环境执行可原地重写；若已执行，则新增 V58，且不要修改已执行文件的校验和。",
+          "对无法解释但确实异常的行，改为只打标记（例如写入 relationship_repair_log）不直接改分，交人工确认。",
+          "补回归测试并跑 cd backend && mvn -o test：长期离线行必须不被命中，真刷分行必须按事件次数回滚。"
+        ],
+        "files": [
+          "backend/lianyu-dao/src/main/resources/db/migration/V57__relationship_trust_anomaly_repair.sql",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+          "backend/lianyu-service/src/test/java/com/lianyu/service/relationship/RelationshipStateServiceTest.java"
+        ],
+        "tests": [
+          "RelationshipStateServiceTest：构造 trust=98 / intimacy=20 且无 REPAIR_ATTEMPT 事件的快照，断言修复逻辑不改分",
+          "RelationshipStateServiceTest：构造 trust=100 / intimacy=32 且有 15 条 REPAIR_ATTEMPT 事件的快照，断言按 4*15 幅度回滚而不是硬编码 50",
+          "手工 SQL（本地 docker compose MySQL）：对上述两类行执行新迁移，校验前者不变、后者按账本回滚"
+        ]
+      }
+    },
+    {
+      "id": "COR-919AD",
+      "expert": "correctness",
+      "module": "lianyu-dao",
+      "section": "data-integrity",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "覆盖式 UPDATE 没有保留 before-image：改错无法恢复，也无法事后按用户定位被改过的行",
+      "file": "backend/lianyu-dao/src/main/resources/db/migration/V57__relationship_trust_anomaly_repair.sql",
+      "line": 16,
+      "evidence": "整个迁移只有一个写语句（15-18 行），没有把待改行落进备份表，也没有留下被改行的 id/user_id 清单：UPDATE relationship_state SET trust_score = 50 WHERE trust_score >= 90 AND intimacy_score <= 40;。Flyway 的 flyway_schema_history 只记录脚本版本、校验和与执行时间，不记录受影响行；提交说明里的验证手段是「部署后复查 trust 分布」，但执行后 trust=50 与自然产生的 50 无法区分，复查看不出改对还是改错。",
+      "impact": "在上一条 finding 已证明谓词会误伤合法用户的前提下，这次改写不可逆：原 trust=100/100/92 被永久抹掉，没有还原依据；客服与运营也无法按用户回答「谁被改过、改前多少」。这直接违背产品「关系会一直记得你」的语义承诺。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把覆盖式 UPDATE 改成「先落 before-image 再改」，让备份表成为事后审计与回滚的唯一依据；即使最终决定不改分，也要留下命中行清单。",
+        "steps": [
+          "新增备份表（如 relationship_trust_repair_backup，列含 run_id/user_id/character_id/old_trust/old_intimacy/changed_at），只由迁移写入，业务代码只读。",
+          "迁移改为先 INSERT INTO ... SELECT ... WHERE <谓词>，再基于备份表按主键 join 做 UPDATE，避免二次匹配漂移。",
+          "加幂等保护（run_id 唯一键或 WHERE NOT EXISTS），保证重复执行不重复插入。",
+          "在发布说明记录 run_id 与命中行数，并提供从备份表还原 trust_score 的回滚脚本。",
+          "若 V57 已在某环境执行，则新增 V58 承载 before-image 逻辑，不要修改已执行的 V57。"
+        ],
+        "files": [
+          "backend/lianyu-dao/src/main/resources/db/migration/V57__relationship_trust_anomaly_repair.sql"
+        ],
+        "tests": [
+          "本地 docker compose MySQL：插入 3 行命中 + 2 行不命中，执行迁移后断言备份表恰好 3 行且值等于改前值",
+          "本地：同一份 SQL 重复执行，断言备份表不二次插入（幂等键生效）",
+          "回滚演练：从备份表还原后行值与迁移前一致"
+        ]
+      }
+    },
+    {
+      "id": "COR-D71AB",
+      "expert": "correctness",
+      "module": "lianyu-dao",
+      "section": "architecture",
+      "severity": "low",
+      "confidence": "medium",
+      "title": "计分口径被硬编码进迁移 SQL，成为第二事实来源（90/40/50 与代码里的 45/65 及事件权重无任何关联）",
+      "file": "backend/lianyu-dao/src/main/resources/db/migration/V57__relationship_trust_anomaly_repair.sql",
+      "line": 18,
+      "evidence": "SQL 里出现三个只在本文件有意义的数字：16 行 SET trust_score = 50、17 行 trust_score >= 90、18 行 intimacy_score <= 40。真实口径分布在别处：RelationshipStateService.java:517-571 的 applyEvent 权重表、:30-43 的常量（PRESENCE_TRUST=1、INTIMACY_FLOOR=20、SECURITY_BASELINE=40）、RelationshipPhaseResolver.java:18-21 的阶段阈值 45/55/65/70。没有任何注释或常量把 SQL 的三个数字与它们对应起来，relationship 包里也找不到 90 这个常量。",
+      "impact": "「什么样的分数算异常、修到多少算正常」的定义被复制进一个执行一次即失效、没人会回来改的迁移文件：下次调整信任权重（例如给安抚回复加封顶）时，这段 SQL 的语义会悄悄失效；后续同类问题只能再拍一个数字、再写一个迁移，规则永远没有 owner。这是本 diff 引入的口径分裂，不是历史包袱。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把「异常判定 + 修正值」收敛成一处有 owner 的规则（复用 RelationshipStateService 的权重与 RelationshipPhaseResolver 的阈值），迁移只负责触发它，不再自带魔数。",
+        "steps": [
+          "在 RelationshipStateService（或新建 RelationshipScoreRepair）里实现唯一的异常判定，引用既有常量而不是字面量 90/40/50。",
+          "把修正值也参数化（例如回到无刷分事件时应有的 trust，或按阶段阈值下限），避免硬编码 50。",
+          "迁移文件退化为一句话触发，或在文件头注释写明规则所在位置与本次 run_id。",
+          "为该判定补单测，覆盖误判与漏判两侧，作为后续改权重的护栏。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipPhaseResolver.java",
+          "backend/lianyu-dao/src/main/resources/db/migration/V57__relationship_trust_anomaly_repair.sql"
+        ],
+        "tests": [
+          "RelationshipStateServiceTest：repairTrustAnomalies 对真刷分行返回 1 条、对离线掉亲密行返回 0 条",
+          "RelationshipPhaseResolver 相关单测：断言异常判定引用的阈值与阶段阈值同源（改常量即被测试捕获）"
+        ]
+      }
+    }
+  ],
+  "deferred": [
+    {
+      "from": "correctness",
+      "expert": "perf",
+      "file": "backend/lianyu-dao/src/main/resources/db/migration/V57__relationship_trust_anomaly_repair.sql",
+      "lines": "15-18",
+      "summary": "V57 的 UPDATE 以 trust_score / intimacy_score 为条件，这两列没有索引，Flyway 启动期会对 relationship_state 全表扫描（提交与 perf 侧记录线上约 936 行，本地未复现耗时）；属性能面，交由 perf 判断是否需要索引或分批。"
+    },
+    {
+      "from": "correctness",
+      "expert": "reliability",
+      "file": "backend/lianyu-dao/src/main/resources/db/migration/V57__relationship_trust_anomaly_repair.sql",
+      "lines": "15-18",
+      "summary": "迁移在应用启动期由 Flyway 执行，任何语法错误或锁等待失败都会让后端启动失败（容器无法对外服务）；脚本本身没有失败后的可观测输出（无命中行数日志、无诊断 SELECT），属启动期可靠性与失败可见性问题。"
+    }
+  ],
+  "dropped": [
+    {
+      "id": "COR-7B96F",
+      "reason": "与原 COR-B8580 同一根因（用快照比例代替事件账本判定），已合并进 COR-B8580 的 impact：阈值 90/40 不对应任何常量、trust 80-89 与 intimacy 41-55 的同类异常会被漏修这一面，作为「同一谓词的漏判方向」并入同一修复方案，不单列以免重复计数。"
+    }
+  ]
+}

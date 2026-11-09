@@ -1,0 +1,388 @@
+{
+  "schemaVersion": 2,
+  "expert": "correctness",
+  "status": "ok",
+  "summary": "正确性审查覆盖 12 个单元、1100 个文件（135978 行），重点核对了回合落库与 SSE 收尾、关系状态机与衰减调度、动态评论编排锁、message.seq 分配、Python 工具循环与提示词装配、前端流式重试与 i18n 四语、dao 迁移与 Mapper、admin/scripts 小模块。共 10 条发现：1 条 high（前端断流重试无幂等键导致同一句用户消息重复落库、重复生成并留下幽灵消息），9 条 medium/low（评论锁无 owner token 可被抢占、关系分数整行覆盖的 lost update、seq 计数器无 DB 播种、衰减批次被未满一天的行占满导致其余行永不衰减、断流时半截回复按正式消息落库、无工具分支丢弃 system prompt、msg_seq 常量四处重复、i18n 缺少 key 且 zh-TW 未注册、输入策略正则误杀正当内容）。SSE 帧契约、ChatTurn 请求/响应字段、分页 seq 游标、迁移版本完整性等已逐一核对，未发现契约冲突。",
+  "sections": {
+    "logic": 1,
+    "state": 1,
+    "concurrency": 2,
+    "data-integrity": 1,
+    "contracts": 1,
+    "architecture": 2,
+    "edge-cases": 2
+  },
+  "units": {
+    "u01": {
+      "status": "reviewed",
+      "filesRead": 9,
+      "notes": "逐行读 ConversationService（发送/流式落库/分页/reserveSeqBlock）、CharacterService 删除链路、SseChatStreamHelper 收尾顺序；模式扫描 GroupChatService、VoiceCallService。分页 seq 游标自洽、无重叠无空洞，已判无问题；seq 分配与落库事务边界出 2 条发现。"
+    },
+    "u02": {
+      "status": "reviewed",
+      "filesRead": 6,
+      "notes": "逐行读 RelationshipStateService（decayAll/applyDecay/applyEvents/recordUserTurn）、MomentsCommentOrchestrator 锁与幂等段；抽查 MomentsService、FileStorageService 调用边界。产出 3 条发现（衰减批次饥饿、整行覆盖 lost update、评论锁无 owner）。"
+    },
+    "u03": {
+      "status": "reviewed",
+      "filesRead": 10,
+      "notes": "读 i18n/index.js、four 语言包键位（用脚本拉平 key 做结构 diff）、constants/language.js、useStreamAbort.js、api/conversation.js。四语缺键与 zh-TW 未注册均已在代码中定位到使用点。"
+    },
+    "u04": {
+      "status": "sampled",
+      "filesRead": 4,
+      "notes": "精读 _upload_update_assets.py（版本保留排序、latest.yml 最后写、签名校验），抽查 e2e/lianyu_e2e.py、_cloud_deploy_pull.py 的失败分支。保留策略用版本元组排序，2.10.0 与 2.9.0 比较正确，未发现问题；其余脚本按文件清单与 grep 抽样。"
+    },
+    "u05": {
+      "status": "reviewed",
+      "filesRead": 9,
+      "notes": "核对全部 57 个迁移的版本序列（无重号/断号）、V1 的 uk_conv_seq、V31/V56/V57 全文、V20/V33/V56 的 NOT NULL ADD COLUMN 是否都带默认值、Message 实体与 logic-delete 配置。迁移本身未发现缺陷；seq 唯一约束是 data-integrity 发现的落点。"
+    },
+    "u06": {
+      "status": "reviewed",
+      "filesRead": 8,
+      "notes": "读 tool_loop.py 全文、chat_turn.py 图与工具名单、stream_chat.py 帧与异常边界、gateway.py 头部状态码分类、main.py 两个 chat 端点的 try/except 包裹、app/tools/ 四个工具实现。异常穿透与 system prompt 丢弃已确认，产出 1 条架构发现。"
+    },
+    "u07": {
+      "status": "reviewed",
+      "filesRead": 7,
+      "notes": "读 ChatPage.vue 发送/重试/同步气泡段、assistantStreamDrain.js 全文、GroupChatPage.vue 的 i18n 与分页使用点。重试幂等缺陷即出在这里；ChatPage 其余流式渲染逻辑未见独立缺陷。"
+    },
+    "u08": {
+      "status": "reviewed",
+      "filesRead": 8,
+      "notes": "读 AgentSseParser（手写 JSON 反转义）、AgentStreamBridge（accept/abort/finish 三条收尾）、ChatTurnAdapter（toBody/字段读取）、AgentToolCatalog、DesktopObserveOrchestrator 工具名单。前后端解析与 Python 契约一致，未发现契约漂移；断流落库策略出 1 条发现。"
+    },
+    "u09": {
+      "status": "sampled",
+      "filesRead": 3,
+      "notes": "读 qqBridge.js 消息处理与重试段、updater.js 版本比较与校验流程；electron/main.js（3078 行）只做 IPC/窗口注册面的结构扫描。未发现必须上报的正确性缺陷，IPC 鉴权与出站白名单属安全专家范围。"
+    },
+    "u10": {
+      "status": "sampled",
+      "filesRead": 6,
+      "notes": "核对 deploy/api-gateway/nginx.conf 与 deploy/agent-lb/nginx.conf 的 SSE 段（buffering off、chunked、read_timeout 与 Java 1800s 的匹配）、docker-compose.yml 的 redis AOF 与依赖顺序、deploy/asr/server.py 的入参与错误分支。未发现缺陷。"
+    },
+    "u11": {
+      "status": "sampled",
+      "filesRead": 5,
+      "notes": "抽查 lianyu-admin 的 TotpUtil（HMAC-SHA1/动态截断/±1 步长）、AdminAuthorizationService（会话校验与权限判定）、若干 controller 与 lianyu-service 测试类清单。未见影响正确性的缺陷；TotpUtil 的字符串 equals 比较属安全面，转交安全专家。"
+    },
+    "u12": {
+      "status": "sampled",
+      "filesRead": 6,
+      "notes": "读 frontend/shared/sseParser.js 全文、lianyu-common 的 UserInputSanitizer 全文与 OutboundUrlValidator 结构、scripts/tests/test_upload_update_assets.py；installer 的 C# 工程（MainWindow/InstallerEngine）只做文件级扫描，未逐行读。输入策略误杀内容出 1 条发现。"
+    }
+  },
+  "findings": [
+    {
+      "section": "logic",
+      "category": "idempotency",
+      "severity": "high",
+      "confidence": "high",
+      "title": "流式中断重试没有幂等键：同一条用户消息落库两次，第一次的半截回复还会变成幽灵消息",
+      "file": "frontend/src/pages/ChatPage.vue",
+      "line": 1440,
+      "evidence": "ChatPage.vue:1437-1443 在 attemptStream() 抛错且 isNetworkError(err) 为真时，`await sleep(800)` 后直接再调一次 attemptStream()；useStreamAbort.js:10 的 `if (err.name === 'TypeError') return true` 把任何 TypeError（包括流读到一半 reader.read() 抛出的）都判成网络错误。api/conversation.js:67 的 POST /conversation/{id}/messages/stream 请求体只有 content/imageUrl，全仓 grep idempotencyKey 只命中 MomentsCommentService，聊天发送无任何幂等键；后端 ConversationService.java:330 在调用模型前无条件 `messageMapper.insert(turn.userMsg())`，并由 reserveSeqBlock 分配新 seq。因此第二次请求会再插一条同样的用户消息并再跑一次模型；第一次请求的 SSE 连接被重置后，AgentStreamBridge.java:138 走 `callback.onComplete(partial, null)`，把当时已生成的部分文本按正式回复落库。",
+      "impact": "弱网或代理抖动（哪怕只是首帧之后连接被重置）时，用户看到自己发的话出现两遍，服务端生成两次、上游计费两次；第一次的半截回复被静默写进历史，刷新后出现客户端从未完整展示过的幽灵消息，并进入下一轮上下文。",
+      "kind": "plan",
+      "fix": {
+        "summary": "给每次发送引入客户端幂等键并在重试时复用，后端按键去重；同时把重试限定在请求尚未产生任何响应字节的阶段。",
+        "steps": [
+          "ChatPage.vue 的发送入口生成 clientMessageId（crypto.randomUUID），放进 streamPayload，attemptStream 的两次调用复用同一个值",
+          "api/conversation.js 的请求体透传 clientMessageId，后端 Controller 透传到准备用户消息的入参",
+          "ConversationService 在 insert 前按 (conversation_id, client_message_id) 查重，命中则复用已有 user 消息、不再二次生成",
+          "新增 Flyway 迁移给 message 加 client_message_id 列与 UNIQUE KEY (conversation_id, client_message_id)（历史行留 NULL）",
+          "收敛重试条件：只有 fetch 本身 reject（未拿到 response）才整请求重试；已进入 drainAssistantStream 阶段的 TypeError 只提示失败，不再重发",
+          "改完补用例：前端 mock drain 抛 TypeError 断言只 POST 一次；Java 用相同 clientMessageId 连打两次断言只有一条 user 消息与一次模型调用"
+        ],
+        "files": [
+          "frontend/src/pages/ChatPage.vue",
+          "frontend/src/composables/useStreamAbort.js",
+          "frontend/src/api/conversation.js",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+          "backend/lianyu-dao/src/main/resources/db/migration/V58__message_client_id_idempotency.sql"
+        ],
+        "tests": [
+          "frontend/src/pages/__tests__ 新增 retryIdempotency 用例：drain 抛 TypeError 时 POST 次数为 1",
+          "backend/lianyu-service 新增 ConversationIdempotencyTest：相同 clientMessageId 两次请求只落一条 user 消息"
+        ]
+      }
+    },
+    {
+      "section": "state",
+      "category": "partial-state",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "客户端断流时把未写完的半句回复按正式消息落库，与错误路径的不落库策略相反",
+      "file": "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamBridge.java",
+      "line": 138,
+      "evidence": "AgentStreamBridge 的 accept() 在 emitter.send 抛 IOException 时于 :74-76、:83-85 调 abort()，abort() 最终执行 `callback.onComplete(partial, null)`（:138）—— error 为 null，ConversationService.onComplete 因此走正常落库分支（saveAssistantReplies）。同一条链路的失败收尾 SseChatStreamHelper.java:67-85 则传 BusinessException，让 onComplete 因 `if (error != null && !isClientStreamDisconnect(error)) return;` 直接返回不落库；而 isClientStreamDisconnect 只判 java.io.IOException。也就是说同一段未完成文本，按错误收尾不落库、按断流收尾落库，两条路径策略相反且都没有给消息打 partial 标记。",
+      "impact": "用户关窗、切网、代理断连时，半句回复被当成完整回复存库；客户端早已丢弃该气泡，刷新后却冒出一段截断文字，并被当作已发生的事实进入下一轮上下文（关系/记忆提取也会读到它）。",
+      "kind": "plan",
+      "fix": {
+        "summary": "统一两条收尾路径对未完成内容的策略：要么都不落库，要么落库但显式标记为已中断并让渲染端可见。",
+        "steps": [
+          "在 AgentStreamBridge.abort() 里改用带中断语义的异常（例如新建 StreamAbortedException）调 onComplete，使 ConversationService 能区分断流与正常完成",
+          "若产品要求保留断流内容，则给 message 增加 status/partial 列（Flyway 迁移），落库时写 PARTIAL，前端渲染灰字「回复已中断」",
+          "ConversationService.onComplete 里补日志：记录断流时的字符数与是否落库，便于统计断流率",
+          "补用例：模拟 emitter.send 抛 IOException，断言落库行为与所选策略一致（不落库或落库且 status=PARTIAL）"
+        ],
+        "files": [
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamBridge.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/ai/SseChatStreamHelper.java"
+        ],
+        "tests": [
+          "backend/lianyu-web 新增 AgentStreamBridgeAbortTest：断流后半成品消息的落库状态断言",
+          "backend/lianyu-service 新增 onComplete 断流分支用例"
+        ]
+      }
+    },
+    {
+      "section": "concurrency",
+      "category": "distributed-lock",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "动态评论锁没有持有者标识，90 秒 TTL 过期后可被抢占，unlock 又会删掉别人的锁",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentOrchestrator.java",
+      "line": 816,
+      "evidence": "tryLock(postId) 在 :816-820 用 `redisTemplate.opsForValue().setIfAbsent(LOCK_PREFIX + postId, \"1\", Duration.ofSeconds(90))`，值恒为 \"1\"，没有 owner token；unlock(postId) 在 :822-824 直接 `redisTemplate.delete(LOCK_PREFIX + postId)`。锁内要做模型调用（executePeerComment :326-400），超过 90 秒锁自动过期，第二个 worker 拿到锁；第一个 worker 在 finally 里无条件 delete，把第二个 worker 的锁删掉，第三个 worker 随即又能进入。existsIdempotency(:810-815) 只能挡住已经 insert 完成的评论，两个 worker 都还在模型调用阶段时都查不到记录。",
+      "impact": "同一条动态下同一角色会发出重复评论（并重复计费），processAuthorReplyJob(:271-296) 也会因锁被误删而重复执行作者回复任务；因为锁值没有 owner，日志里也无法判断到底是谁删的。",
+      "kind": "plan",
+      "fix": {
+        "summary": "锁值改成每次尝试唯一的 owner token，释放时用 Lua 比较后删除，并把 TTL 与外层模型调用超时对齐（或加续期）。",
+        "steps": [
+          "tryLock 生成 UUID 作为锁值（返回 token），调用方持有到 finally",
+          "unlock 改成 Lua 脚本：GET 锁值等于 token 才 DEL，否则不动",
+          "TTL 与模型调用超时对齐（例如 180s），或在锁内周期续期",
+          "锁冲突时把任务重新入队而不是静默丢弃，并记录 metrics",
+          "补用例：两个线程先后持锁、第一个超时后释放，断言第二个的锁未被删除"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentOrchestrator.java"
+        ],
+        "tests": [
+          "backend/lianyu-service 新增 MomentsLockTest：owner token 不匹配时 unlock 不删除他人锁",
+          "并发用例：同 post 两个 worker 只允许一条评论落库"
+        ]
+      }
+    },
+    {
+      "section": "concurrency",
+      "category": "lost-update",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "关系分数全类无事务无版本号，衰减批量与用户回合都用整行 updateById，后写者覆盖先写者",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+      "line": 185,
+      "evidence": "该类只有 @Service/@RequiredArgsConstructor，grep 全文件 Transactional 计数为 0；RelationshipState 实体没有 @Version。decayAll 在 :177-181 一次 select 最多 500 行，随后 :184-185 逐行 applyDecay + `relationshipStateMapper.updateById(state)`（写回全部列）；recordUserTurn/recordAssistantTurn 也走 :132/:165 的 updateById，由 ConversationService.java:265/333/300/390 在模型调用前后调用。衰减侧用的是批次开始时读到的旧分数，会覆盖这段时间内用户回合刚写入的 trust/intimacy/security/anticipation 与 phase。",
+      "impact": "用户刚聊完看到好感上涨，下一次 30 分钟衰减任务把整行写回旧值，增量凭空消失并触发 phase 重算；两个并发的用户回合（连续快发）之间也会互相吞掉分数，表现为「聊了没反应」，且没有任何异常可见。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把分数更新改成数据库侧原子增量（或加乐观锁重试），decay 只更新它自己负责的列，避免整行覆盖。",
+        "steps": [
+          "给 relationship_state 加 version 列（Flyway），实体加 @Version，updateById 走条件更新并在冲突时重试",
+          "或把 applyEvents 的分数变化改成自定义 Mapper 的 `UPDATE ... SET trust_score = LEAST(100, trust_score + #{d})` 形式，只更新变化列",
+          "decayAll 改成逐行读最新值后再计算（或同样走原子增量），避免用批次快照",
+          "给 recordUserTurn/recordAssistantTurn 加 @Transactional（含 relationship_event 插入）",
+          "补并发用例：衰减与用户回合同时执行，断言分数增量不丢"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+          "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/RelationshipStateMapper.java",
+          "backend/lianyu-dao/src/main/resources/db/migration/V58__relationship_state_version.sql"
+        ],
+        "tests": [
+          "backend/lianyu-service 新增 RelationshipConcurrentUpdateTest：两线程分别 recordUserTurn 与 applyDecay，断言最终分数包含两者的增量"
+        ]
+      }
+    },
+    {
+      "section": "data-integrity",
+      "category": "sequence-allocation",
+      "severity": "medium",
+      "confidence": "medium",
+      "title": "message.seq 只靠 Redis INCR，计数器丢失后不会用 DB 最大值回填，复用旧 seq 撞唯一键",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+      "line": 485,
+      "evidence": "reserveSeqBlock(:483-486) 只有 `redisTemplate.opsForValue().increment(SEQ_KEY_PREFIX + conversationId, safeCount)`，取不到值时回落 safeCount；全仓 grep 确认没有任何地方用 `MAX(seq)` 播种该键（只有 CharacterService.java:298 与 delete/clearMessages 会删键）。message 表有 `UNIQUE KEY uk_conv_seq (conversation_id, seq)`（V1__init_schema.sql:54）。Redis 以 AOF 持久化（docker-compose.yml:271-281），但 down -v、AOF 尾部丢失或换实例后计数归零，INCR 会重新给出已用过的 seq。",
+      "impact": "该会话下一次 insert 直接撞 uk_conv_seq 抛 DuplicateKeyException，发送接口 500；由于 seq 从 1 重新开始，同一会话会连续失败，直到计数追上历史最大值，期间没有任何自愈路径，也没有降级提示。",
+      "kind": "plan",
+      "fix": {
+        "summary": "计数器缺失时用数据库最大值播种，并把「播种 + 分配」做成原子操作；冲突时重试一次。",
+        "steps": [
+          "改用 Lua 脚本：键不存在时先 SET 为 SELECT COALESCE(MAX(seq),0) FROM message WHERE conversation_id=?，再 INCRBY",
+          "或在分配后 catch DuplicateKeyException，用 DB 最大值重置键并重试一次",
+          "把 reserveSeqBlock 抽成唯一实现，供文本/语音/群聊三条链路共用（同时修掉 architecture 那条重复定义）",
+          "补用例：清空 Redis 后连续发消息，断言 seq 从历史最大值继续且不冲突"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+          "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/MessageMapper.java"
+        ],
+        "tests": [
+          "backend/lianyu-service 新增 MessageSeqAllocatorTest：Redis 为空且已有历史消息时分配不冲突"
+        ]
+      }
+    },
+    {
+      "section": "contracts",
+      "category": "i18n-completeness",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "四语契约漂移：zh-TW 语言包从未注册成为孤儿文件，en/ja 缺键后回落成中文",
+      "file": "frontend/src/i18n/index.js",
+      "line": 17,
+      "evidence": "i18n/index.js:7-9 只 import zh/ja/en，:17 `messages: { zh, ja, en }`，:16 `fallbackLocale: 'zh'`；locales/zh-TW.js（约 26KB）在全仓没有任何引用（grep -rn zh-TW frontend/src 只命中它自身与 utils/dateLocale.js:4）；constants/language.js:3 `SUPPORTED_LANGUAGES = ['zh', 'ja', 'en']`，normalizeLanguage 永远返回不了 zh-TW。脚本拉平键位后比对：zh 583 / zh-TW 588（缺 7 键、多 12 键）/ en 582（缺 1 键）/ ja 575（缺 8 键）。其中 chat.scrollToBottom 只存在于 zh.js:327，而 ChatPage.vue:173、GroupChatPage.vue:131 都在用它，en/ja 会显示中文「回到底部」；同类还有 header.logoutConfirm（AppHeader.vue:155，en/ja/zh-TW 缺）、home.eyebrow（HomePage.vue:4，ja 缺）、qqBridge.binding.providerRequired（QqBridgePage.vue:733，ja/zh-TW 缺）。",
+      "impact": "英文/日文界面出现中文按钮与确认文案（AGENTS.md §3.2 要求 zh/zh-TW/en/ja 四语齐）；繁体用户只能看简体，繁中文件成为死资产，之后每个新增 key 都会继续漏，且没有测试能拦住。",
+      "kind": "direct",
+      "fix": {
+        "summary": "注册 zh-TW 语言与选择项、补齐缺失键，并加一条键位一致性单测把四语锁住。",
+        "steps": [
+          "i18n/index.js import zh-TW 并加入 messages；constants/language.js 的 SUPPORTED_LANGUAGES 加 zh-TW（含持久化值的兼容处理）",
+          "把 en/ja 缺失的 chat.scrollToBottom、header.logoutConfirm、home.eyebrow、qqBridge.binding.providerRequired 补上对应译文",
+          "核对 zh-TW 多出的 12 个键与缺失的 7 个键，与 zh 对齐后删除多余键",
+          "在语言选择 UI 里暴露 zh-TW（若产品暂不上线，则先删掉孤儿文件，避免误以为已支持）",
+          "新增 i18n 键位一致性测试：以 zh 为基准断言四个语言包键集合完全相同"
+        ],
+        "files": [
+          "frontend/src/i18n/index.js",
+          "frontend/src/i18n/locales/zh-TW.js",
+          "frontend/src/i18n/locales/en.js",
+          "frontend/src/i18n/locales/ja.js",
+          "frontend/src/constants/language.js"
+        ],
+        "tests": [
+          "frontend/src/i18n/__tests__/localeParity.test.js：四语键集合相等、无空值"
+        ]
+      }
+    },
+    {
+      "section": "architecture",
+      "category": "prompt-context",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "工具循环的无工具分支把 system prompt 整段丢掉，触发后角色人设与记忆静默消失",
+      "file": "backend-agent/app/tool_loop.py",
+      "line": 128,
+      "evidence": "run_tool_loop 在 :128 `if not specs:` 时走 `gateway.chat_sync(system=None, user_text=_flatten(messages), ...)`，而 _flatten(:205-214) 的实现是 `for msg in messages: if role == \"system\": continue`——该分支把组装好的 system prompt（人设/记忆/关系/时间）全部丢弃，只剩用户原话。两个调用点 chat_turn.py:265 与 graphs/proactive_turn.py:116 都在 `if tools:` 之后，工具名单是 Python 常量 CHAT_TOOL_NAMES，与 Java 侧 AgentToolCatalog.java:42 的第二份名单完全独立（chat-turn 请求体只传 enableChatTools，不传具体工具名），任何一侧改名或注册表导入失败使 resolve_tools 过滤为空，就会静默走进这条无 system 分支。",
+      "impact": "一旦命中，回复不再是角色口吻、记忆与关系上下文全部丢失，但 HTTP 仍 200、无告警，属于完全静默的降级；因为两份工具名单没有契约校验，这种不一致只能在用户投诉里被发现。",
+      "kind": "direct",
+      "fix": {
+        "summary": "该分支改为把 system 作为 system 消息传下去，并给「工具全部解析失败」加显式日志与降级告警；工具名单收敛为单一来源。",
+        "steps": [
+          "把 _flatten 改成保留 system（拼成 system + user 两段），或在 chat_sync 里传入拼好的 system 文本",
+          "`not specs` 分支前加 logger.warning，带上 requested_names 与已注册名单，便于发现版本错配",
+          "Java 的 chat-turn 请求体增加 toolNames，Python 只做存在性校验（未知名报错而不是静默丢弃），删掉 Java 侧第二份名单",
+          "补用例：把 tool_names 传成空/未知值，断言 system prompt 仍然出现在 chat_sync 的入参里"
+        ],
+        "files": [
+          "backend-agent/app/tool_loop.py",
+          "backend-agent/app/chat_turn.py",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentToolCatalog.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/ChatTurnAdapter.java"
+        ],
+        "tests": [
+          "backend-agent/tests/test_tool_loop.py：unknown_tool_names 时 system 仍在 prompt 中",
+          "backend-agent/tests/test_config_consistency.py：CHAT_TOOL_NAMES 与 Java 名单一致"
+        ]
+      }
+    },
+    {
+      "section": "architecture",
+      "category": "single-source-of-truth",
+      "severity": "low",
+      "confidence": "high",
+      "title": "msg_seq 键名前缀与 seq 分配函数在四个服务里各自定义、各自实现",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+      "line": 72,
+      "evidence": "同一个 Redis 键前缀在四处各自声明：CharacterService.java:60（MESSAGE_SEQ_KEY_PREFIX）、ConversationService.java:72（SEQ_KEY_PREFIX）、GroupChatService.java:104、VoiceCallService.java:62，全部是字面量 \"msg_seq:\"；分配逻辑也是两份实现——ConversationService.java:479-487 与 GroupChatService.java:1314-1322 各自写了一份 getNextSeq/reserveSeqBlock，VoiceCallService.java:722 又单独写了一次 increment。四处写的是同一个会话的同一段编号空间。",
+      "impact": "任何一处改前缀或改增量语义，同一会话就会长出两套编号，只有在撞 uk_conv_seq 时才会暴露；这正是 AGENTS.md「单一事实来源」明令禁止的形态，也让上面那条 seq 播种修复没法一次改全。",
+      "kind": "direct",
+      "fix": {
+        "summary": "抽一个 MessageSequenceAllocator 单点持有键前缀与分配逻辑，四个服务统一注入使用，并加一条交错分配不重复的测试。",
+        "steps": [
+          "新建 lianyu-service/.../conversation/MessageSequenceAllocator.java，内含 SEQ_KEY_PREFIX 与 reserveBlock/getNext/clear 方法",
+          "把 ConversationService、GroupChatService、VoiceCallService、CharacterService 的常量与私有实现改为调用该组件",
+          "CharacterService 删键处改为 allocator.clear(conversationId)",
+          "补用例：四个入口交错分配，断言 seq 严格递增且无重复"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/MessageSequenceAllocator.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/VoiceCallService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterService.java"
+        ],
+        "tests": [
+          "backend/lianyu-service 新增 MessageSequenceAllocatorTest：多入口交错分配唯一性"
+        ]
+      }
+    },
+    {
+      "section": "edge-cases",
+      "category": "batch-selection",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "衰减批次被「不满一天」的行长期占满：这些行不写 last_decay_at，永远排在最前，其余行再也轮不到",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+      "line": 180,
+      "evidence": "decayAll(:177-181) 用 `orderByAsc(lastDecayAt).last(\"LIMIT 500\")` 取批（DECAY_BATCH_LIMIT=500，:43）；applyDecay 在 `days < 1` 时于 :200 `return false`，此时既不写 lastDecayAt 也不 update，于是这些行的 last_decay_at 保持 NULL 或旧值——MySQL 中 NULL 排序最前，每轮都会被优先选中、每轮都被丢弃，稳定占住 500 个名额。:174-179 的注释称「结算过的行会排到队尾，形成轮转」，但那只对通过 days≥1 的行成立，被跳过的活跃行不参与轮转。",
+      "impact": "当活跃行数超过 500（代码注释提到线上已 936 行）时，批次会被最近活跃过的行填满，其余用户的关系衰减彻底停止：亲密不回落、期待不累积，而且没有任何错误或告警，只能通过「分数不再变化」间接发现。",
+      "kind": "direct",
+      "fix": {
+        "summary": "取批条件加上「确实到期待结算」的过滤，让不满足条件的行不再占用批次名额。",
+        "steps": [
+          "把查询改成 `WHERE last_interaction_at IS NOT NULL AND (last_decay_at IS NULL OR last_decay_at < :cutoff) ORDER BY COALESCE(last_decay_at, last_interaction_at) LIMIT 500`，cutoff 取 now-1day",
+          "或在 applyDecay 返回 false 时也推进一个独立的 next_decay_at 列，避免同一行被反复选中",
+          "补一条单测：造 600 行（其中 550 行 last_decay_at 为空但刚互动过），连跑两轮，断言第二轮命中了与第一轮不同的行",
+          "加一个 metrics：每轮 updated / scanned 比例，低于阈值时告警"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipDecayScheduler.java"
+        ],
+        "tests": [
+          "backend/lianyu-service 新增 DecayBatchRotationTest：600 行两轮轮转覆盖断言"
+        ]
+      }
+    },
+    {
+      "section": "edge-cases",
+      "category": "input-policy",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "输入策略正则误杀正当内容：正常聊天里出现 sudo、role: system、「执行以下命令」会被直接拒绝发送",
+      "file": "backend/lianyu-common/src/main/java/com/lianyu/common/util/UserInputSanitizer.java",
+      "line": 60,
+      "evidence": "FORCED_COMMAND_PATTERNS（:59 起）含 `\\bsudo\\s+`（:60）、`(?i)rm\\s+-rf`、`执行(以下|如下)?命令|运行(以下|如下)?命令`；INJECTION_PATTERNS 含 `(?i)role\\s*:\\s*system`、`act\\s+as\\s+(a\\s+)?(system|admin|root)`。assertPolicyAllowed(:105) 命中即抛 BusinessException(CONTENT_POLICY_VIOLATION)，没有任何豁免或分级。调用点在主聊天链路上：ConversationService.java:623（发送消息）、GroupChatService.java:349、VoiceCallService.java:145、VoiceCallDuplexSession.java:406；wrapStoredTextForModel(:141) 还会对已入库文本再判一次。",
+      "impact": "用户分享技术经历（装了软件、跑了命令）、玩角色扮演（「你现在是系统管理员」）、或作为开发者提问时，会被判成提示词注入而发不出去，且提示语是「包含疑似强制系统/终端命令内容」，用户无法理解也无法绕过；这类误杀在陪伴场景里会直接打断对话。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把硬拒绝收敛到真正危险的少数模式，其余降级为「包裹后照常发送」，并区分聊天文本与生成描述两类入口的策略。",
+        "steps": [
+          "把 `\\bsudo\\s+`、`rm -rf`、`执行以下命令` 这类终端痕迹从硬拒绝降级为仅记录（用户消息本来就以 trusted=false 包裹下发给模型）",
+          "INJECTION_PATTERNS 只保留明确的越权指令组合，去掉 role: system 这类常见误命中，或要求同时命中两个特征才拒绝",
+          "为误杀提供可观测：命中时记录 pattern 与截断后的文本摘要，统计误杀率后再调参",
+          "补一组正/负样本单测：技术讨论、角色扮演台词应放行，真正的越权指令仍拒绝"
+        ],
+        "files": [
+          "backend/lianyu-common/src/main/java/com/lianyu/common/util/UserInputSanitizer.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java"
+        ],
+        "tests": [
+          "backend/lianyu-common 新增 UserInputSanitizerTest：正样本放行 / 负样本拒绝的样本表驱动用例"
+        ]
+      }
+    }
+  ],
+  "deferred": [
+    "V57__relationship_trust_anomaly_repair.sql 只改 trust_score 不重算 phase：按 RelationshipPhaseResolver 对 trust=50、intimacy<=40 的推导结果仍是 FAMILIAR，与旧值一致，未构成缺陷，不报。",
+    "Python 侧从不发送 pieces 帧（stream_chat.py 注释明确本层不产出 pieces），Java AgentSseParser 不解析 pieces 与现状一致，不算契约漂移。",
+    "updater.js 用 x.y.z 纯数字比较版本，预发布后缀（-beta）会被解析成 NaN 而不提示更新；属边缘命名约定问题，未达上报门槛，转交 maintainability。",
+    "TotpUtil.verify 用 String.equals 比较验证码（非恒定时间）、AdminAuthorizationService.require 每次请求两次 currentAdminId 查库：前者属安全面，后者是次要性能问题，均转交对应专家。",
+    "frontend/electron/main.js（3078 行）与 installer 的 C# 工程只做结构扫描，IPC 参数校验、安装器回滚等未逐行核对。"
+  ],
+  "notes": "只读审查，未修改任何源码。逐单元覆盖：u01/u02/u03/u05/u06/u07/u08 为 reviewed（读关键文件并做针对性检查），u04/u09/u10/u11/u12 为 sampled（精读代表性文件 + 文件清单与 grep 扫描），无 skipped 单元。已核对未发现问题的面：SSE 帧契约（Python 发出的 content/replace/error/DONE 与 Java AgentStreamBridge、前端 sseParser.js 三方语义一致，[DONE] 由 Java 在 pieces 之后补发；main.py 两个 chat 端点都用 try/except 包住整段 async for，异常时补 error+DONE，不存在无 error 帧断流）；ChatTurn 请求/响应字段 camelCase 两侧一致；message 分页 seq 游标（lt + desc + LIMIT n+1 + reverse + nextBeforeSeq）无重叠无空洞；Flyway 57 个迁移版本连续无重号，NOT NULL ADD COLUMN 均带默认值；nginx 两级 SSE 段均为 buffering off 且 read_timeout 与 Java 1800s 匹配；qqBridge 的 404 自愈与会话隔离、updater 的 sha512 与出站白名单逻辑自洽。测试执行情况：`pytest -q backend-agent` 在本机无法运行——收集阶段即报 26 个 ERROR，根因是 `ModuleNotFoundError: No module named 'aiomysql'`（本机未装 dev 依赖，属环境缺失而非代码缺陷）；`mvn -q -f backend/pom.xml test` 与两个 npm 套件因体量大、admin 无 node_modules 未执行。因此本报告全部结论来自静态证据与调用链推演，不依赖测试结果；若需测试背书，应先 `pip install -r backend-agent/requirements-dev.txt` 后重跑。"
+}

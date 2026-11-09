@@ -52,12 +52,12 @@
       <span>{{ t('common.loading') }}</span>
     </div>
 
-    <!-- 星图：默认视图 -->
+    <!-- 星图：默认视图，按当前选中角色隔离 -->
     <MemoryBrainMap
       v-else-if="view === 'brain'"
       class="stagger-item"
-      :memories="memories"
-      :characters="charactersStore.list"
+      :memories="brainMemories"
+      :characters="brainCharacters"
       :states="visibleStates"
       :diaries="visibleDiaries"
       :selected-memory-id="detailId"
@@ -318,6 +318,36 @@ const visibleDiaries = computed(() =>
   filterCharId.value == null
     ? diaries.value
     : diaries.value.filter((item) => String(item.characterId) === String(filterCharId.value))
+)
+
+// 星图按角色隔离：未选角色时默认用记忆最多的角色；选了就只画这一个角色
+const brainFocusCharId = computed(() => {
+  if (filterCharId.value != null) return String(filterCharId.value)
+  const countByChar = new Map()
+  for (const mem of memories.value) {
+    const key = String(mem.characterId ?? 'unknown')
+    countByChar.set(key, (countByChar.get(key) || 0) + 1)
+  }
+  let best = null
+  let bestCount = -1
+  for (const [key, count] of countByChar) {
+    if (count > bestCount) {
+      best = key
+      bestCount = count
+    }
+  }
+  return best
+})
+
+const brainMemories = computed(() => {
+  if (brainFocusCharId.value == null) return memories.value
+  return memories.value.filter((mem) => String(mem.characterId ?? 'unknown') === brainFocusCharId.value)
+})
+
+const brainCharacters = computed(() =>
+  brainFocusCharId.value == null
+    ? charactersStore.list
+    : charactersStore.list.filter((c) => String(c.id) === brainFocusCharId.value)
 )
 
 const groupedMemories = computed(() => {

@@ -1,0 +1,18 @@
+[
+  {"name": "java_empty_catch", "regex": "catch\\s*\\([^)]*\\)\\s*\\{\\s*(//[^\\n]*\\n\\s*)?\\}", "multiline": true, "exts": [".java"], "limit": 40},
+  {"name": "java_catch_ignored_only", "regex": "catch\\s*\\([^)]*\\s+ignored\\s*\\)", "exts": [".java"], "limit": 40},
+  {"name": "python_bare_except", "regex": "^\\s*except\\s*:", "exts": [".py"], "limit": 40},
+  {"name": "python_except_pass", "regex": "except[^:\\n]*:\\s*(#[^\\n]*)?\\n\\s*(pass|continue|return\\s+(None|\\[\\]|\\{\\}|False|True|\"\"))", "multiline": true, "exts": [".py"], "limit": 60},
+  {"name": "js_empty_catch", "regex": "catch\\s*(\\([^)]*\\))?\\s*\\{\\s*\\}", "multiline": true, "exts": [".js", ".ts", ".mjs", ".cjs", ".vue"], "limit": 60},
+  {"name": "js_catch_arrow_empty", "regex": "\\.catch\\(\\s*\\([^)]*\\)?\\s*=>\\s*\\{\\s*\\}\\s*\\)", "exts": [".js", ".ts", ".mjs", ".cjs", ".vue"], "limit": 40},
+  {"name": "tests_skipped", "regex": "\\b(it|test|describe|context)\\.(skip|only)\\s*\\(|\\b(xit|xdescribe|fit|fdescribe)\\s*\\(|@Disabled|@Ignore|pytest\\.mark\\.(skip|xfail)", "exts": [".py", ".js", ".ts", ".mjs", ".java", ".vue"], "limit": 60},
+  {"name": "tests_no_assert_smell", "regex": "expect\\(\\s*(true|false|1|\"\")\\s*\\)\\.(toBe|toEqual|toBeTruthy)|assert\\s+True\\b|assertTrue\\(true\\)", "exts": [".py", ".js", ".ts", ".mjs", ".java"], "limit": 40},
+  {"name": "py_floating_task", "regex": "create_task\\([^)]*\\)\\s*$", "exts": [".py"], "limit": 40},
+  {"name": "js_promise_all", "regex": "Promise\\.all\\(", "exts": [".js", ".ts", ".mjs", ".vue"], "limit": 30},
+  {"name": "js_fire_and_forget_void", "regex": "^\\s*void\\s+[a-zA-Z_][\\w.]*\\(", "exts": [".js", ".mjs", ".vue", ".ts"], "limit": 30},
+  {"name": "java_httpclient_timeout", "regex": "new\\s+(RestTemplate|WebClient|HttpClient|OkHttpClient)\\s*\\(", "exts": [".java"], "limit": 30},
+  {"name": "py_requests_no_timeout", "regex": "requests\\.(get|post|put|delete|patch)\\((?![^)]*timeout)", "exts": [".py"], "limit": 40},
+  {"name": "py_httpx_no_timeout", "regex": "httpx\\.(get|post|put|delete|patch|Client|AsyncClient)\\((?![^)]*timeout)", "exts": [".py"], "limit": 40},
+  {"name": "python_logger_exception_bare", "regex": "except\\s+Exception\\s+as\\s+\\w+:\\s*\\n\\s*logger\\.(warning|info|debug)\\(", "multiline": true, "exts": [".py"], "limit": 40},
+  {"name": "js_setInterval_no_clear_smell", "regex": "setInterval\\(", "exts": [".js", ".mjs", ".vue"], "limit": 30}
+]

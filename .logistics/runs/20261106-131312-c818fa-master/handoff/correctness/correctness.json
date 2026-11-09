@@ -1,0 +1,990 @@
+{
+  "schemaVersion": 2,
+  "expert": "correctness",
+  "status": "ok",
+  "summary": "对 1108 个文件 / 12 个审查单元做了正确性审查，覆盖 logic、state、concurrency、data-integrity、contracts、architecture、edge-cases 七个面，共 12 条发现（1 high / 9 medium / 2 low）。最严重的一条是 @Transactional 标在 protected 同类直调方法上导致广场角色、语音通话、日记三处多写没有事务；其余集中在记忆写入链路（逐条事务 + Java 兜底重复写、outbox 无自动恢复、Python 写库与只读口径冲突）、消息 seq 只存 Redis、关系状态机（未生效的修复也发里程碑、无锁读改写）与前端会话状态（刷新瞬断即登出）。",
+  "sections": {
+    "logic": 2,
+    "state": 2,
+    "concurrency": 2,
+    "data-integrity": 3,
+    "contracts": 1,
+    "architecture": 1,
+    "edge-cases": 1
+  },
+  "units": {
+    "u01": {
+      "status": "reviewed",
+      "filesRead": 32,
+      "files": [
+        "backend/lianyu-service/pom.xml",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentBlockingPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentChatResult.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentImagePort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentMemoryPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentRuntimePort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentStreamCallback.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentStreamPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentTextPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentTextStreamPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentTurnResult.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/CharacterGenerationPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/ChatTurnOutcome.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/ChatTurnPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/ChatTurnRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/PromptAssemblyPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/PromptAssemblyRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/SceneInstructionPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/SessionSummaryPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/TtsPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/VoiceEnrollmentPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AssistantReplySplitter.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/SseChatStreamHelper.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterDiaryService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ProactiveMessageService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/SessionSummaryService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/VoiceCallService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/CreateMomentPostRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/RegisterRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/SendMessageRequest.java"
+      ],
+      "notes": "逐文件读 agent 端口层与 conversation/ai/relationship 调用方；重点核对 SSE 收尾、seq 分配、事务边界"
+    },
+    "u02": {
+      "status": "reviewed",
+      "filesRead": 30,
+      "files": [
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/SquareCommentResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/SquareLikeToggleResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UnreadCountResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateCharacterRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateGroupTitleRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateProfileRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateUserSettingsRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateVaultRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UserProfile.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UserSettingsResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/VaultEntryResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/VoiceCallEndRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryOutboxService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryWriter.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryCacheService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryConsumer.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryExtractionService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryQueryService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryVectorStore.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentOrchestrator.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsScheduler.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/notification/NotificationService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/notification/NotificationPushConsumer.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipHeuristics.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipInnerSpace.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipMilestones.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipPhaseResolver.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipPresence.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareService.java"
+      ],
+      "notes": "逐个读 12 个 DTO + relationship/memory/moments/notification 服务；重点核对里程碑、状态读改写、outbox 入队"
+    },
+    "u03": {
+      "status": "reviewed",
+      "filesRead": 34,
+      "files": [
+        "frontend/src/api/httpCore.js",
+        "frontend/src/api/auth.js",
+        "frontend/src/api/ai.js",
+        "frontend/src/api/conversation.js",
+        "frontend/src/api/character.js",
+        "frontend/src/api/electronAdapter.js",
+        "frontend/src/api/asr.js",
+        "frontend/src/api/characterState.js",
+        "frontend/src/api/characterSquare.js",
+        "frontend/src/api/index.js",
+        "frontend/src/api/memory.js",
+        "frontend/src/api/moments.js",
+        "frontend/src/api/notification.js",
+        "frontend/src/api/users.js",
+        "frontend/src/api/installMainHttpToasts.js",
+        "frontend/src/api/voiceCall.js",
+        "frontend/src/api/__tests__/httpCoreSkipGlobalError.test.js",
+        "frontend/src/api/__tests__/sessionRefresh.test.js",
+        "frontend/src/constants/ai.js",
+        "frontend/src/constants/authSession.js",
+        "frontend/src/constants/notificationTypes.js",
+        "frontend/src/constants/voiceCallMarkers.js",
+        "frontend/src/components/AppUpdateDialog.vue",
+        "frontend/src/components/AppUpdatePrompt.vue",
+        "frontend/src/components/AssistantMessageContent.vue",
+        "frontend/src/components/InAppMessageToastHost.vue",
+        "frontend/src/components/memory/brainProjection.js",
+        "frontend/src/composables/useAppUpdater.js",
+        "frontend/src/composables/useStreamAbort.js",
+        "frontend/src/composables/useConversationUnread.js",
+        "frontend/src/composables/useNotificationNavigation.js",
+        "frontend/src/composables/useInAppMessageToast.js",
+        "frontend/src/composables/voiceTurnTail.js",
+        "frontend/src/directives/index.js"
+      ],
+      "notes": "api 层 18 个文件全读（含 httpCore 401 刷新与 SSE 流），components/composables 抽样读关键实现"
+    },
+    "u04": {
+      "status": "sampled",
+      "filesRead": 30,
+      "files": [
+        "scripts/_repair_flyway_v31.py",
+        "scripts/_repair_flyway_v34.py",
+        "scripts/ops/_repair_flyway_v30_mark_applied.py",
+        "scripts/ops/_repair_flyway_v34_mark_applied.py",
+        "scripts/_upload_update_assets.py",
+        "scripts/release-bump-version.mjs",
+        "scripts/sign_update_manifest.py",
+        "scripts/check_release_asset_contract.py",
+        "scripts/_verify_electron_release.py",
+        "scripts/_prod_verify.py",
+        "scripts/e2e/lianyu_e2e.py",
+        "scripts/gen_elysia_openai.py",
+        "scripts/gen_elysia_atlas.mjs",
+        "scripts/gen_pet_fixed_voices.py",
+        "scripts/re_enroll_pet_voices.py",
+        "scripts/_audit_installer_unpack.py",
+        "scripts/ops/_write_theme_picker.py",
+        "scripts/_generate_square_thumbs.py",
+        "scripts/extract-java-prompt-fragments.py",
+        "scripts/make-installer-branding.py",
+        "scripts/_cloud_deploy_pull.py",
+        "scripts/_cloud_deploy_layered.py",
+        "scripts/_cloud_verify_deploy.py",
+        "scripts/ops/daily_parity_check.py",
+        "scripts/ops/prod_error_watch.py",
+        "scripts/agent-stream-smoke.py",
+        "scripts/_upload_wechat_channel.py",
+        "scripts/diag/_gen_pet_fixed_voices.py",
+        "scripts/_check_yml.py",
+        "scripts/_backend_logs.py"
+      ],
+      "notes": "按脚本用途分类抽样：发布/更新资产、Flyway 修复、诊断脚本各读代表文件，未逐行读全部一次性脚本"
+    },
+    "u05": {
+      "status": "reviewed",
+      "filesRead": 63,
+      "files": [
+        "backend/lianyu-dao/pom.xml",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/ApiKeyVault.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/Character.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/CharacterDiary.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/CharacterSquareTemplate.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/CharacterState.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/CharacterSticker.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/Conversation.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/GroupMember.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/MemoryMeta.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/MemoryOutbox.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/Message.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/MomentsComment.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/MomentsInteractionState.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/MomentsPost.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/RelationshipEvent.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/RelationshipMilestone.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/RelationshipState.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/SquareComment.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/SquareLike.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/User.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/UserCustomVoice.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/UserNotification.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/WebPushSubscription.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/ApiKeyVaultMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/CharacterMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/CharacterDiaryMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/CharacterSquareTemplateMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/CharacterStateMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/CharacterStickerMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/ConversationMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/GroupMemberMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/MemoryMetaMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/MemoryOutboxMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/MessageMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/MomentsCommentMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/MomentsInteractionStateMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/MomentsPostMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/RelationshipEventMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/RelationshipMilestoneMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/RelationshipStateMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/SquareCommentMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/SquareLikeMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/UserMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/UserCustomVoiceMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/UserNotificationMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/WebPushSubscriptionMapper.java",
+        "backend/lianyu-dao/src/main/resources/db/migration/V1__init_schema.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V10__character_square.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V11__character_square_slug.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V12__character_square_avatars_roster.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V13__character_square_dal.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V14__character_square_linzihan.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V15__character_square_linzihan_avatar_fix.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V16__character_square_tags_simplify.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V17__character_square_white_queen.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V18__character_square_genshin.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V19__character_square_mavuika.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V31__relationship_system.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V46__message_conv_role_seq_index.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V54__memory_outbox.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V56__relationship_presence_and_milestones.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V57__relationship_trust_anomaly_repair.sql"
+      ],
+      "notes": "23 个 entity + 23 个 mapper 字段级通读，V1/V10-V19/V31/V46/V54/V56/V57 迁移逐条读"
+    },
+    "u06": {
+      "status": "sampled",
+      "filesRead": 54,
+      "files": [
+        "frontend/src/i18n/locales/zh.js",
+        "frontend/src/i18n/locales/zh-TW.js",
+        "frontend/src/i18n/locales/ja.js",
+        "frontend/src/layouts/DefaultLayout.vue",
+        "frontend/src/layouts/QuickChatLayout.vue",
+        "frontend/src/main.js",
+        "frontend/src/router/index.js",
+        "frontend/src/router/startupErrorRecovery.js",
+        "frontend/src/router/__tests__/startupErrorRecovery.test.js",
+        "frontend/src/stores/settings.js",
+        "frontend/src/stores/user.js",
+        "frontend/src/stores/qqBridge.js",
+        "frontend/src/stores/notifications.js",
+        "frontend/src/stores/conversations.js",
+        "frontend/src/stores/characters.js",
+        "frontend/src/stores/desktop.js",
+        "frontend/src/utils/assistantStreamDrain.js",
+        "frontend/src/utils/assistantReplySplit.js",
+        "frontend/src/utils/secureToken.js",
+        "frontend/src/utils/outputLanguageHeader.js",
+        "frontend/src/utils/relationship.js",
+        "frontend/src/utils/innerThoughtFilter.js",
+        "frontend/src/utils/errorMessage.js",
+        "frontend/src/utils/audioUpload.js",
+        "frontend/src/pages/ChatPage.vue",
+        "frontend/src/pages/GroupChatPage.vue",
+        "frontend/src/pages/LandingPage.vue",
+        "frontend/src/pages/QqBridgePage.vue",
+        "frontend/src/pages/CharactersPage.vue",
+        "frontend/src/pages/CharacterSquarePage.vue",
+        "frontend/src/pages/SettingsPage.vue",
+        "frontend/src/pages/MemoryPage.vue",
+        "frontend/src/pages/MomentsPage.vue",
+        "frontend/src/pages/CharacterChatDetailPage.vue",
+        "frontend/src/pages/QuickChatPage.vue",
+        "frontend/src/pages/ProfilePage.vue",
+        "frontend/src/pages/HomePage.vue",
+        "frontend/src/pages/DiaryPage.vue",
+        "frontend/src/pages/LauncherPage.vue",
+        "frontend/src/pages/LauncherPickPage.vue",
+        "frontend/src/pages/LoginPage.vue",
+        "frontend/src/pages/RegisterPage.vue",
+        "frontend/src/pages/UserPublicPage.vue",
+        "frontend/src/pages/AboutPage.vue",
+        "frontend/src/pages/WechatBridgePage.vue",
+        "frontend/src/pages/charactersPreview.js",
+        "frontend/src/pages/charactersRealtime.js",
+        "frontend/src/pages/momentsCommentThread.js",
+        "frontend/src/pages/__tests__/charactersPreview.test.js",
+        "frontend/src/pages/__tests__/charactersRealtime.test.js",
+        "frontend/src/pages/__tests__/memoryPageBrain.test.js",
+        "frontend/src/pages/__tests__/momentsCommentThread.test.js",
+        "frontend/src/pages/__tests__/settingsLayout.test.js",
+        "frontend/src/pages/__tests__/wechatBridgePage.test.js"
+      ],
+      "notes": "页面体量大（ChatPage 2266 行等），读入口/路由/状态管理与工具函数，页面按结构抽样并配合 ops_grep 做跨文件模式扫描"
+    },
+    "u07": {
+      "status": "reviewed",
+      "filesRead": 32,
+      "files": [
+        "backend-agent/app/chat_turn.py",
+        "backend-agent/app/tool_loop.py",
+        "backend-agent/app/stream_chat.py",
+        "backend-agent/app/gateway.py",
+        "backend-agent/app/resilience.py",
+        "backend-agent/app/graphs/proactive_turn.py",
+        "backend-agent/app/tools/__init__.py",
+        "backend-agent/app/tool_registry.py",
+        "backend-agent/app/memory/writer.py",
+        "backend-agent/app/memory/relay.py",
+        "backend-agent/app/memory/extract.py",
+        "backend-agent/app/memory/embedding.py",
+        "backend-agent/app/memory/vector_cache.py",
+        "backend-agent/app/memory/profile_context.py",
+        "backend-agent/app/config.py",
+        "backend-agent/app/write.py",
+        "backend-agent/app/db.py",
+        "backend-agent/app/main.py",
+        "backend-agent/app/tts.py",
+        "backend-agent/app/data_readers.py",
+        "backend-agent/app/language_gate.py",
+        "backend-agent/app/prompt_assembly.py",
+        "backend-agent/app/milvus_store.py",
+        "backend-agent/app/tools/time_tool.py",
+        "backend-agent/app/tools/weather_tool.py",
+        "backend-agent/app/tools/memory_search_tool.py",
+        "backend-agent/app/tools/recent_activity_tool.py",
+        "backend-agent/app/tools/registry.py",
+        "backend-agent/Dockerfile",
+        "backend-agent/pyproject.toml",
+        "backend-agent/tests/test_voice_tts.py",
+        "backend-agent/tests/test_memory_embedding.py"
+      ],
+      "notes": "回合编排、工具循环、网关、记忆写入/relay、只读数据访问契约逐文件读"
+    },
+    "u08": {
+      "status": "reviewed",
+      "filesRead": 32,
+      "files": [
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/ConversationController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/MemoryController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/CharacterStateController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/NotificationController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/CharacterController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/PublicFileController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/UserPublicController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AiController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AsrController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AuthController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/GroupChatController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/MomentsController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/LegacyCommunityController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/ObserveController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentSseParser.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamBridge.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentMemoryAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentRuntimeClient.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentTextAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentTextStreamAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentImageAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentPromptAssemblyAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentSessionSummaryAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentTtsAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentVoiceEnrollmentAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentBlockingAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentToolCatalog.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/ChatTurnAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/handler/GlobalExceptionHandler.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/util/ClientIpResolver.java",
+        "backend/lianyu-web/pom.xml"
+      ],
+      "notes": "14 个 controller + 16 个 agent 适配器 + 全局异常/限流组件读完，核对 SSE 帧与适配器降级契约"
+    },
+    "u09": {
+      "status": "reviewed",
+      "filesRead": 34,
+      "files": [
+        "frontend/electron/updater/updater.js",
+        "frontend/electron/updater/manifestSignature.js",
+        "frontend/electron/qqBridge/qqBridgeCoordinator.js",
+        "frontend/electron/qqBridge/qqBridge.js",
+        "frontend/electron/qqBridge/messageExtractor.js",
+        "frontend/electron/qqBridge/napCatClient.js",
+        "frontend/electron/qqBridge/qqBridgeSettings.js",
+        "frontend/electron/main.js",
+        "frontend/electron/preload.js",
+        "frontend/electron/singleInstance.js",
+        "frontend/electron/startupOrchestrator.js",
+        "frontend/electron/apiProxy.js",
+        "frontend/electron/authSessionStore.js",
+        "frontend/electron/napcatRuntime/napcatHost.js",
+        "frontend/electron/napcatRuntime/napcatProcess.js",
+        "frontend/electron/napcatRuntime/napcatConfig.js",
+        "frontend/electron/napcatRuntime/napcatDownloader.js",
+        "frontend/electron/napcatRuntime/napcatRelease.js",
+        "frontend/electron/wechatBridge/wechatBridge.js",
+        "frontend/electron/wechatBridge/wechatBridgeCoordinator.js",
+        "frontend/electron/wechatBridge/wechatChannelDownloader.js",
+        "frontend/electron/logger.js",
+        "frontend/electron/desktopObserver.js",
+        "frontend/electron/desktopSettings.js",
+        "frontend/electron/runtimeSecrets.js",
+        "frontend/electron/rendererTokenScript.js",
+        "frontend/electron/customTts.js",
+        "frontend/electron/greetingAudio.js",
+        "frontend/electron/exportTextFile.js",
+        "frontend/electron/launcherBounds.js",
+        "frontend/electron/updater/__tests__/updater.test.js",
+        "frontend/electron/wechatBridge/lianyu-weixin-host.mjs",
+        "frontend/electron/wechatBridge/__tests__/wechatBridge.test.js",
+        "frontend/electron/napcatRuntime/__tests__/napcatRelease.test.js"
+      ],
+      "notes": "更新器、QQ/微信桥、NapCat 运行时、主进程 IPC 代理逐文件读或结构级读"
+    },
+    "u10": {
+      "status": "sampled",
+      "filesRead": 31,
+      "files": [
+        ".env.example",
+        ".github/workflows/ci.yml",
+        "docker-compose.yml",
+        "admin/package.json",
+        "admin/vite.config.js",
+        "admin/index.html",
+        "admin/electron/main.js",
+        "admin/src/api.js",
+        "admin/src/main.js",
+        "admin/src/App.vue",
+        "admin/src/menu.js",
+        "admin/src/stores/session.js",
+        "admin/src/pages/ManagementPage.vue",
+        "admin/src/components/DataTable.vue",
+        "backend/Dockerfile",
+        "backend/lianyu-ai/pom.xml",
+        "backend/lianyu-security/pom.xml",
+        "backend/lianyu-ai/src/main/java/com/lianyu/ai/SsrfPinningClientFactory.java",
+        "backend/lianyu-ai/src/main/java/com/lianyu/ai/config/AiConfig.java",
+        "backend/lianyu-ai/src/main/java/com/lianyu/ai/graph/StreamTokenConsumer.java",
+        "backend/lianyu-security/src/main/java/com/lianyu/security/util/JasyptUtil.java",
+        "backend/lianyu-security/src/main/java/com/lianyu/security/handler/EncryptedStringTypeHandler.java",
+        "backend/lianyu-security/src/main/java/com/lianyu/security/config/PasswordConfig.java",
+        "backend/lianyu-security/src/main/java/com/lianyu/security/annotation/EncryptedField.java",
+        "backend/lianyu-security/src/main/java/com/lianyu/security/config/SaTokenConfig.java",
+        "backend/lianyu-security/src/main/java/com/lianyu/security/filter/HeaderOnlyTokenFilter.java",
+        "backend/lianyu-storage/src/main/java/com/lianyu/storage/minio/MinioImageProcessor.java",
+        "backend/lianyu-storage/src/main/java/com/lianyu/storage/minio/MinioConfig.java",
+        "backend/lianyu-storage/src/main/java/com/lianyu/storage/milvus/MilvusConfig.java",
+        "deploy/api-gateway/nginx.conf",
+        "deploy/asr/server.py"
+      ],
+      "notes": "admin 前端、security/ai/storage 模块、网关配置与 compose 抽样读；admin 页面为内联单文件实现"
+    },
+    "u11": {
+      "status": "sampled",
+      "filesRead": 31,
+      "files": [
+        "backend/lianyu-service/src/test/java/com/lianyu/service/conversation/VoiceCallServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/dto/RegisterRequestValidationTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/graph/ChatTurnFacadeToolFlagsTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/graph/ImageMessageHistoryTextTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/graph/MessageModelContentTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/memory/MemoryExtractionServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/memory/MemoryWriterDebounceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/memory/MemoryWriterRelationshipTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/moments/MomentsCommentOrchestratorTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/notification/NotificationServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/relationship/RelationshipHeuristicsTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/relationship/RelationshipInnerSpaceAssemblerTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/relationship/RelationshipReworkTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/relationship/RelationshipStateServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/square/CharacterSquareCatalogTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/square/SquareAddCountServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/storage/FileStorageServicePublicKeyTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/support/OutputLanguageServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/tools/ChatToolContextTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/tools/TimeToolTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/tools/ToolManagerTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/user/UserPublicProfileServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/voice/CustomVoiceAudioValidatorTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/voice/DashScopeCloudEndpointValidatorTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/voice/LocalTtsEndpointValidatorTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/voice/PcmFrameAssemblerTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/voice/SentenceSplitterTest.java",
+        "backend/lianyu-admin/pom.xml",
+        "backend/lianyu-admin/src/test/java/com/lianyu/admin/AdminModuleSmokeTest.java",
+        "backend/lianyu-admin/src/test/java/com/lianyu/admin/identity/TotpUtilTest.java",
+        "backend/lianyu-admin/src/test/java/com/lianyu/admin/release/ReleaseValidationServiceTest.java"
+      ],
+      "notes": "逐个读 30 个测试文件，按用例名判断覆盖意图与缺口，未逐行读断言实现"
+    },
+    "u12": {
+      "status": "sampled",
+      "filesRead": 37,
+      "files": [
+        "backend/pom.xml",
+        "backend/lianyu-app/pom.xml",
+        "backend/lianyu-common/pom.xml",
+        "backend/lianyu-app/src/main/java/com/lianyu/app/DotEnvBootstrap.java",
+        "backend/lianyu-app/src/main/java/com/lianyu/app/LianYuApplication.java",
+        "backend/lianyu-app/src/main/resources/application-prod.yml",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/base/ErrorCode.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/base/Result.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/constant/AiConstants.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/exception/BusinessException.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/handler/JacksonListTypeHandler.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/handler/JacksonTypeHandler.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/i18n/OutputLanguage.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/CharacterSettingsUtils.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/ImageUploadValidator.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/OutboundUrlValidator.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/SpringContextHolder.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/TextUtils.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/TraceIdFilter.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/UserInputSanitizer.java",
+        "backend/scripts/_upload_backend_image.py",
+        "backend/scripts/check-v10-state.sql",
+        "backend/scripts/dedupe-java-imports.ps1",
+        "backend/scripts/fix-service-cross-imports.ps1",
+        "backend/scripts/repackage-service.ps1",
+        "backend/scripts/repair-flyway-v10.sql",
+        "backend/scripts/repair-flyway-v14-checksum.sql",
+        "backend/scripts/restore-service-imports.ps1",
+        "backend/scripts/strip-utf8-bom.ps1",
+        "backend/settings-docker.xml",
+        "frontend/Dockerfile",
+        "frontend/shared/sseParser.js",
+        "installer/LianYu.Installer/App.xaml.cs",
+        "installer/LianYu.Installer/MainWindow.xaml.cs",
+        "installer/LianYu.Installer/InstallerEngine.cs",
+        "Pets/skills/hatch-lianyu-pet/scripts/gen_pet_images.py",
+        "scripts/voice_candidates.py"
+      ],
+      "notes": "common 工具类、两处 pom、安装器 C# 工程与 Pet 脚本抽样读"
+    }
+  },
+  "tests": {
+    "commands": [
+      {
+        "command": "npm --prefix admin test",
+        "status": "passed",
+        "note": "exit 0；admin 端（vite + vitest）用例全绿。"
+      },
+      {
+        "command": "mvn -q -f backend/pom.xml test",
+        "status": "passed",
+        "note": "exit 0；按 backend/**/target/surefire-reports 汇总 123 个报告 / 531 用例 / failures=0 / errors=0 / skipped=0。"
+      },
+      {
+        "command": "pytest -q backend-agent",
+        "status": "failed",
+        "note": "collection error：ModuleNotFoundError: No module named 'respx'（48 个测试模块无法收集）。属本次环境缺依赖，不是产品缺陷；按只读约束未安装依赖，故 backend-agent 的行为只能靠代码审读与既有用例文件交叉验证。"
+      },
+      {
+        "command": "npm --prefix frontend test",
+        "status": "passed",
+        "note": "以 CI=1 运行，exit 0；75 个测试文件 / 459 个用例全绿（7.03s）。"
+      }
+    ],
+    "summary": "4 条命令中 3 条通过；backend-agent 因缺少 respx 依赖无法收集用例，登记为 failed 并说明是环境问题。"
+  },
+  "findings": [
+    {
+      "id": "C01",
+      "unit": "u01",
+      "section": "data-integrity",
+      "severity": "high",
+      "confidence": 0.92,
+      "kind": "direct",
+      "category": "事务边界",
+      "title": "@Transactional 标在 protected 同类直调方法上，广场角色/语音通话/日记三处多写没有事务",
+      "brief": "建广场角色、落语音通话记录、写日记这三件事中间任何一步失败，前面已经写进去的数据都不会撤回，会留下角色没有会话、通话只有半段、日记没有提醒这样的半成品。",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareService.java",
+      "line": 235,
+      "evidence": "CharacterSquareService.java:235-236 是 `@Transactional` + `protected CharacterResponse persistSquareCharacter(...)`，调用点在同文件 :231 `return persistSquareCharacter(...)`（同类自调用，不经过 Spring 代理）；方法体内依次 characterMapper.insert(:252) → squareAddCountService.incrementAndInvalidate(:261) → conversationService.create(:268)。同款写法另有两处：VoiceCallService.java:186-187（调用点 :167，方法体 :188/:198 两次 nextSeq 后插两条 message）、CharacterDiaryService.java:446-447（调用点 :378，:458 diaryMapper.insert、:465 notifyDiaryNew）。Spring 代理默认只增强 public 方法，且自调用根本不进入代理，两重原因使注解不生效；ProactiveMessageService.java:53 的类注释已把该机制写明，并在 :238 用 `self.persistProactiveReply(...)` 修复过同类问题。",
+      "impact": "三条多写流程在第二步/第三步失败时留下不一致数据：广场角色已建但会话未建（用户点进去没有对话）、语音通话只存了用户句、日记已落库但没有通知；且因为这些方法标了 @Transactional，排查者会误以为已受事务保护。",
+      "fix": {
+        "summary": "让事务真的生效：把多写方法改成 public 并通过注入的自身代理或独立 bean 调用，或把事务边界上移到无外部调用的一方。",
+        "steps": [
+          "三处 `@Transactional protected` 改为 public，并统一改走代理（注入 ObjectProvider<自身类型> / @Lazy self，或抽出 CharacterSquareTxService 之类的独立 bean）",
+          "对照 ProactiveMessageService.java:53/238 的既有修复方式，保持同一套写法，避免第三种调用风格",
+          "保留方法上的注释，说明「必须经代理调用」的原因，防止后续重构又改回 this.xxx()",
+          "为 CharacterSquareService.persistSquareCharacter 增加失败注入测试：让 conversationService.create 抛异常，断言 character 与计数都回滚",
+          "VoiceCallService/CharacterDiaryService 各补一条同类断言（要么两条 message 都在，要么都不在）"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/VoiceCallService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterDiaryService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ProactiveMessageService.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test",
+          "新增 CharacterSquareTransactionTest（失败注入，断言无孤儿角色）"
+        ]
+      }
+    },
+    {
+      "id": "C02",
+      "unit": "u07",
+      "section": "logic",
+      "severity": "medium",
+      "confidence": 0.9,
+      "kind": "direct",
+      "category": "提示词丢失",
+      "title": "无工具分支丢掉 system prompt：模型只收到折叠后的对话文本",
+      "brief": "当这一轮携带的工具名一个都没注册上时，模型只会收到用户和角色说过的句子，角色设定、记忆、情绪提示全部消失，回复会跳出角色却没有任何报错。",
+      "file": "backend-agent/app/tool_loop.py",
+      "line": 128,
+      "evidence": "tool_loop.py:126-143 `specs = resolve_tools(tool_names)`，`if not specs:` 分支调用 `gateway.chat_sync(system=None, user_text=_flatten(messages))`；`_flatten`(:205-214) 明确跳过 role == 'system'，只把历史拼成「用户：/你：」文本。对照 app/graphs/proactive_turn.py:139-158 的无工具路径：它把 system 单独取出（`system = msg['content']`）再传入 chat_sync。resolve_tools 对未注册的工具名静默忽略；chat_turn.py:53-58 的 CHAT_TOOL_NAMES 目前 4 个名字都能在注册表命中（time_tool.py:87 / weather_tool.py:85 / memory_search_tool.py:175 / recent_activity_tool.py:188），所以现在是潜在缺陷：注册表改名（2026-10-25 删除 desk_* 就是此类漂移）或调用方传入未注册名（app/main.py:238 `tool_names=body.tools or None` 直接透传）都会走进该分支。",
+      "impact": "走到该分支时人设、长期记忆、关系/情绪上下文全部丢失，模型以「无系统提示」的通用助手口吻回复，用户看到角色不像角色；由于没有任何异常或日志，线上表现为偶发「失忆」，很难归因。",
+      "fix": {
+        "summary": "无工具分支也把 system 单独传给 chat_sync，与 proactive_turn 的无工具路径共用同一段取 system 的逻辑，并补一条单测锁定。",
+        "steps": [
+          "在 tool_loop 内抽出 `split_system(messages)`：返回 (system_text, 其余消息)，system 取所有 role=='system' 的 content 拼接",
+          "`if not specs:` 分支改为 `chat_sync(system=system_text, user_text=_flatten(rest))`，不再传 system=None",
+          "让 graphs/proactive_turn.py:139-158 复用同一个 helper，消除两处口径差异",
+          "补 tests/test_tool_loop_system_prompt.py：tool_names=['not_a_tool'] 时断言传给 gateway 的 system 非空且含人设标记"
+        ],
+        "files": [
+          "backend-agent/app/tool_loop.py",
+          "backend-agent/app/graphs/proactive_turn.py"
+        ],
+        "tests": [
+          "pytest -q backend-agent/tests/test_tool_loop_system_prompt.py（新增）",
+          "pytest -q backend-agent（既有用例不得回退）"
+        ]
+      }
+    },
+    {
+      "id": "C03",
+      "unit": "u01",
+      "section": "data-integrity",
+      "severity": "medium",
+      "confidence": 0.85,
+      "kind": "plan",
+      "category": "序列号分配",
+      "title": "消息 seq 只存在 Redis，计数器清零后与 uk_conv_seq 撞唯一键导致发消息 500",
+      "brief": "消息编号靠 Redis 里的一个计数器发号，这个计数器一旦被清空，新消息就从 1 开始编号，和历史消息撞号，用户会发不出消息。",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+      "line": 485,
+      "evidence": "ConversationService.java:483-487 `increment(SEQ_KEY_PREFIX + conversationId, safeCount)`，取不到时回落 `safeCount`；全仓只有 4 处 seq key 操作（:226/:243 删除、:485 increment、GroupChatService:1320、VoiceCallService:722），没有任何从数据库回填的逻辑。数据库侧 V1__init_schema.sql 的 message 表带 `UNIQUE KEY uk_conv_seq (conversation_id, seq)`。docker-compose.yml:271-286 的 redis 虽配了 appendonly 与 volume，但没有 maxmemory-policy，运维 FLUSHALL、重建卷、切换实例都会让计数器归零。",
+      "impact": "计数器丢失后，该会话的每条新消息都会算出一个与历史冲突的 seq，插入抛 DuplicateKeyException：私聊、群聊、语音通话三条发送路径同时 500，用户侧表现为发送失败或「对方没有回复」，直到计数器重新追平历史最大 seq。",
+      "fix": {
+        "summary": "让 seq 的唯一真相回到数据库：用数据库原子分配（conversation 行上的 seq 列或 SELECT MAX(seq) 初始化），Redis 只做缓存加速。",
+        "steps": [
+          "在 conversation 表增加 next_seq，用 `UPDATE conversation SET next_seq = next_seq + n WHERE id = ?` 原子领取号段",
+          "Redis 仅在命中且 DB 值更大时作为快路径，未命中或落后时以 DB 为准回填",
+          "所有取号入口（ConversationService.getNextSeq/reserveSeqBlock、GroupChatService:1320、VoiceCallService:722）收敛到同一个分配器",
+          "增加一条迁移把既有会话的 next_seq 回填为 MAX(message.seq)+1，避免上线即冲突",
+          "补测试：清空 Redis 后连续发两条消息不抛 DuplicateKeyException"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/VoiceCallService.java",
+          "backend/lianyu-dao/src/main/resources/db/migration/"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test",
+          "新增 MessageSeqAllocatorTest（Redis 清空场景）"
+        ]
+      }
+    },
+    {
+      "id": "C04",
+      "unit": "u07",
+      "section": "data-integrity",
+      "severity": "medium",
+      "confidence": 0.85,
+      "kind": "plan",
+      "category": "批量写入原子性",
+      "title": "记忆写入声明整批单事务，实际逐条提交；失败后 Java 再抽一遍造成重复记忆",
+      "brief": "一次对话抽出的几条记忆本该一起成功或一起放弃，实际是逐条写入；中途出错时前半段已经写进库，后端还会用 Java 再写一遍，结果同一段聊天可能变成好几条记忆。",
+      "file": "backend-agent/app/memory/writer.py",
+      "line": 121,
+      "evidence": "writer.py:121-122 docstring「批量写入；整批在同一事务内，任一失败全回滚」，实际 :178(_insert_new)、:196(_update_meta)、:212(_replace_and_enqueue) 每条记忆各自 `async with transaction()`。app/main.py:951-957 捕获异常后返回 500 `detail='memory write failed'`；Java 侧 AgentMemoryAdapter.java:99-105 收到 null 或 error 就 return false，MemoryWriter.java:89-95 于是走自己的抽取 + upsertTypedMemory。source_hash 含 summary（writer.py compute_source_ids_hash），Python 与 Java 的摘要文本不同就视为两条新记忆。",
+      "impact": "一次失败的批量写入会把已提交的前几条留在库里，Java 兜底再写一遍时因为摘要不同而生成新行：用户在记忆页看到同一段对话的重复条目，记忆数与检索结果都失真，还多占向量。",
+      "fix": {
+        "summary": "二选一：要么真正实现整批单事务（写失败整体回滚，Java 兜底只会补写一次），要么改成幂等写入并在 500 时告知 Java 不可重写。",
+        "steps": [
+          "把 write_memories 的循环包进一个 transaction()：所有 insert/update/outbox 用同一个游标，异常整体回滚",
+          "若确实需要逐条容错，则改为「逐条 + 失败条目单独重试」，并在响应里返回 written/failed 计数，让 Java 只补失败项",
+          "Java AgentMemoryAdapter 在收到 500 时不要直接 fallback 全量重写，改为按 source_hash 去重后再写，或直接放弃本轮",
+          "补测试：让第 2 条记忆写入抛异常，断言库里一条都没有（或只有 failed 计数）",
+          "同步 app/main.py 两个写端点的 docstring，别再说「整批单事务」"
+        ],
+        "files": [
+          "backend-agent/app/memory/writer.py",
+          "backend-agent/app/main.py",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentMemoryAdapter.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryWriter.java"
+        ],
+        "tests": [
+          "pytest -q backend-agent",
+          "mvn -q -f backend/pom.xml test"
+        ]
+      }
+    },
+    {
+      "id": "C05",
+      "unit": "u07",
+      "section": "architecture",
+      "severity": "medium",
+      "confidence": 0.9,
+      "kind": "plan",
+      "category": "运行时边界",
+      "title": "Python 侧直接写 MySQL，与「只读账号 / Python 不写库」的既定边界冲突",
+      "brief": "文档和部署脚本都说模型运行时只读数据库，但代码里它直接往记忆表写数据；如果按文档收紧权限，记忆功能会整体写不进去，而现在两边共用的却是同一个全权账号。",
+      "file": "backend-agent/app/write.py",
+      "line": 29,
+      "evidence": "app/write.py:29 `_ALLOWED_INSERTS = frozenset({'memory_meta','memory_outbox'})`，memory/writer.py 与 memory/relay.py 都通过 transaction() 复用 db.py 的连接池写这两张表。而 app/db.py 的注释要求「生产请给 agent 配只读 MySQL 账号（GRANT SELECT）」、pyproject.toml:22 写「只读数据访问（总纲 D7）：MySQL 只读查询 + Redis 缓存读取」、docker-compose.yml:111 同样注释，但 compose 里 agent 与 agent2 用的仍是 `${MYSQL_USER:-lianyu}`（Java 的全权业务账号）；AGENTS.md §2 的红线写的是「Python ❌ 写 MySQL（只读）」。",
+      "impact": "两条路都不可接受：按文档收紧为只读账号，记忆抽取写入与 outbox relay 会全部失败，而且失败被 Java 兜底掩盖成静默降级；维持现状则模型运行时长期持有业务库写权限，「只读」的边界与文档全部失真。",
+      "fix": {
+        "summary": "先定口径再改实现：要么承认 Python 拥有记忆表的受限写权限并按此配置独立账号，要么把写入收回 Java，Python 只返回抽取结果。",
+        "steps": [
+          "定方案 A（收回 Java）：Python 的 /agent/memory/extract-write 改成只抽取并返回 items，Java 侧统一写 memory_meta + memory_outbox",
+          "定方案 B（保留写权限）：为 agent 建独立账号，只授 memory_meta/memory_outbox 的 INSERT/UPDATE 与其余表 SELECT，并在 compose 里拆出 LIANYU_AGENT_MYSQL_USER",
+          "无论哪条路，都同步修改 db.py / pyproject.toml / docker-compose.yml / AGENTS.md 四处口径，消除「只读」假象",
+          "若选 B，把 app/write.py 的白名单接到账号权限上做双保险，并加启动自检（写入被拒时打 error 而不是静默降级）"
+        ],
+        "files": [
+          "backend-agent/app/write.py",
+          "backend-agent/app/db.py",
+          "backend-agent/pyproject.toml",
+          "docker-compose.yml",
+          "AGENTS.md"
+        ],
+        "tests": [
+          "pytest -q backend-agent",
+          "docker compose config（核对账号注入）"
+        ]
+      }
+    },
+    {
+      "id": "C06",
+      "unit": "u07",
+      "section": "concurrency",
+      "severity": "medium",
+      "confidence": 0.88,
+      "kind": "plan",
+      "category": "后台任务恢复",
+      "title": "outbox 的 RUNNING/DEAD 行没有自动回收，崩溃留下的记忆永久不再投影",
+      "brief": "记忆写进库后要靠后台任务转成可检索的向量；任务中途进程挂掉或反复失败后，这条记忆就永远停在那里，用户再也搜不到它，也没有任何提示。",
+      "file": "backend-agent/app/memory/relay.py",
+      "line": 207,
+      "evidence": "relay.py:41-48 `_claim` 用 CAS 把 PENDING 改成 RUNNING；:207-222 `requeue_stuck()` 才会把 DEAD 与卡住 ≥10 分钟的 RUNNING 重置回 PENDING，但全仓只有 app/main.py:967-971 的 POST /agent/memory/relay/requeue 调用它。启动路径 main.py:33-57 的 lifespan 只 `create_task(_relay_loop())`，而 _relay_loop(:54-66) 仅循环调用 drain_once。reconcile()(:178-205，用于补 milvus_vec_id 为空的记忆)同样只出现在 POST /agent/memory/reconcile(main.py:974)。",
+      "impact": "进程被 kill / 重启后，留在 RUNNING 的记忆永远不会被再次领取；embedding 连续失败到达 attempts 上限后转 DEAD，也不再重试。两者都让这条记忆永久不可检索，而界面上看不出任何异常。",
+      "fix": {
+        "summary": "把恢复动作接进后台循环：启动时先 requeue_stuck，并按较低频率周期性执行 requeue_stuck 与 reconcile。",
+        "steps": [
+          "lifespan 启动时先 await requeue_stuck()，再开始 _relay_loop",
+          "在 _relay_loop 里每 N 轮（或每 10 分钟）调用一次 requeue_stuck() 与 reconcile(limit=...)",
+          "为 DEAD 行加可观测性：日志 + 计数指标，超过阈值告警，而不是静默躺在表里",
+          "补测试：伪造一条 RUNNING 且 updated_at 超 10 分钟的行，启动 loop 后应被重置并被处理"
+        ],
+        "files": [
+          "backend-agent/app/main.py",
+          "backend-agent/app/memory/relay.py"
+        ],
+        "tests": [
+          "pytest -q backend-agent",
+          "新增 tests/test_memory_relay_requeue.py（崩溃恢复用例）"
+        ]
+      }
+    },
+    {
+      "id": "C07",
+      "unit": "u02",
+      "section": "state",
+      "severity": "medium",
+      "confidence": 0.9,
+      "kind": "direct",
+      "category": "关系状态机",
+      "title": "修复事件被跳过时仍记录「第一次和好」里程碑",
+      "brief": "用户只是说了一句带道歉词的话、但当时并没有处于受伤状态时，系统仍会记下「第一次和好」这个里程碑，用户会在关系里看到一段没发生过的和好。",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+      "line": 306,
+      "evidence": "RelationshipStateService.java:232-240：`injuryOpen` 在循环外算一次，REPAIR_ATTEMPT/REPAIR_SUCCESS 在 `!injuryOpen` 时 `continue`，既不计分也不 persistEvent；但 :133 仍把原始 `events` 列表交给 recordMilestones，:290-307 的循环对 `case REPAIR_ATTEMPT, REPAIR_SUCCESS -> recordMilestone(..., FIRST_REPAIR, ...)` 没有任何「该事件是否真的生效」的判断。",
+      "impact": "phase 仍在 TESTING、信任分没有变化的用户会收到 FIRST_REPAIR 里程碑，关系进度与真实互动不一致（V57 只修正了 trust_score，没有修里程碑），后续按里程碑解锁的内心情景会提前出现。",
+      "fix": {
+        "summary": "只对真正生效的事件发里程碑：让 applyEvents 返回被采纳的事件列表（或带 applied 标记），recordMilestones 只看这份列表。",
+        "steps": [
+          "applyEvents 收集 `applied` 列表（跳过的事件不入列），作为返回值或在 state 上携带",
+          "recordUserTurn(:133) 改为 `recordMilestones(state, applied, now, firstContactEver)`",
+          "确认 FIRST_CONTACT/FIRST_VULNERABLE 等其它分支同样只吃 applied 列表，避免同类问题",
+          "补测试：无 injury 时提交一条 REPAIR_ATTEMPT，断言里程碑表没有 FIRST_REPAIR 且信任分不变"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+          "backend/lianyu-service/src/test/java/com/lianyu/service/relationship/RelationshipStateServiceTest.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test"
+        ]
+      }
+    },
+    {
+      "id": "C08",
+      "unit": "u03",
+      "section": "state",
+      "severity": "medium",
+      "confidence": 0.9,
+      "kind": "direct",
+      "category": "会话状态",
+      "title": "刷新 token 时网络瞬断即清空登录态并跳回首页",
+      "brief": "登录凭证过期后本该自动续期，但只要续期请求碰上网络抖动或后端 5xx，客户端就清掉登录态把用户踢回首页，正在输入的内容也一起消失。",
+      "file": "frontend/src/api/httpCore.js",
+      "line": 45,
+      "evidence": "httpCore.js:38-53 singleFlightRefresh 中 `catch { return false }`(:45-46) 把任何异常都当作刷新失败，包括 refreshAuthToken 的网络错误与 5xx；:69-72 `const ok = await singleFlightRefresh(); if (!ok) return rejectSessionExpired()`；rejectSessionExpired(:25-33) 会 clearTokenStorage + 清 store + `window.location.hash='#/'`。只有 refresh 返回 401（token 真的失效）才应该走这条路径。",
+      "impact": "弱网或后端抖动时用户被强制登出、未发送的输入丢失；重试刷新本可以恢复的场景变成了重新登录，也是「偶尔掉登录」投诉的最可能来源。",
+      "fix": {
+        "summary": "区分「凭证失效」与「刷新请求失败」：只有 401 才登出，网络错误/5xx 保留会话并把错误抛回原请求。",
+        "steps": [
+          "singleFlightRefresh 改为返回三态：ok / invalid（401/403）/ transient（网络、超时、5xx）",
+          "handle401 只在 invalid 时 rejectSessionExpired；transient 时 reject 一个可重试错误，保留 token 与页面状态",
+          "为 transient 增加一次短退避重试（可选），避免抖动期间整页请求连环失败",
+          "扩充 frontend/src/api/__tests__/sessionRefresh.test.js：mock refresh 抛网络错误，断言 token 未被清除、hash 未跳转"
+        ],
+        "files": [
+          "frontend/src/api/httpCore.js",
+          "frontend/src/api/auth.js",
+          "frontend/src/api/__tests__/sessionRefresh.test.js"
+        ],
+        "tests": [
+          "npm --prefix frontend test"
+        ]
+      }
+    },
+    {
+      "id": "C09",
+      "unit": "u03",
+      "section": "contracts",
+      "severity": "medium",
+      "confidence": 0.82,
+      "kind": "plan",
+      "category": "前后端契约",
+      "title": "记忆页固定只取第一页 50 条，更早的记忆在界面上永久不可见",
+      "brief": "记忆页一次只拿前 50 条且没有翻页，记忆攒多了以后，老记忆在界面上消失，用户会以为它们被删掉了。",
+      "file": "frontend/src/api/memory.js",
+      "line": 3,
+      "evidence": "frontend/src/api/memory.js:3-5 `listMemories(characterId)` 只传 characterId；frontend/src/pages/MemoryPage.vue:305 `listMemories(filterCharId.value || undefined)` 一次性取回、没有分页或「加载更多」；后端 MemoryController.java:29-35 提供 page/size 且默认 size=50，MemoryQueryService.java:39-50 用 `LIMIT ... OFFSET ...` 分页。前端从不传这两个参数，等于永远固定在第 1 页。",
+      "impact": "记忆超过 50 条的用户在记忆页看不到更早的记忆，也无法通过界面删除或查看来源消息，与「记忆管理」的产品承诺不符；同时后端分页能力事实上没有被使用。",
+      "fix": {
+        "summary": "前端接上后端分页：滚动加载或分页器 + 总数展示；若产品不打算做分页，则后端按聚合视图返回全量摘要并明确上限。",
+        "steps": [
+          "listMemories 增加 { page, size } 参数并透传",
+          "MemoryPage.vue 维护 page/hasMore，列表底部加「加载更多」，或改用分页器",
+          "后端返回 total（MemoryQueryService 目前只回 records），用于显示「共 N 条」与判断是否还有下一页",
+          "补前端用例：mock 两页数据，断言第二次加载把新记录追加而不是覆盖"
+        ],
+        "files": [
+          "frontend/src/api/memory.js",
+          "frontend/src/pages/MemoryPage.vue",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/controller/MemoryController.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryQueryService.java"
+        ],
+        "tests": [
+          "npm --prefix frontend test",
+          "mvn -q -f backend/pom.xml test"
+        ]
+      }
+    },
+    {
+      "id": "C10",
+      "unit": "u02",
+      "section": "concurrency",
+      "severity": "medium",
+      "confidence": 0.78,
+      "kind": "plan",
+      "category": "并发覆盖",
+      "title": "关系状态是无锁的读-改-写，并发回合与定时衰减会互相覆盖",
+      "brief": "同一个人同时从两个入口（比如桌面和 QQ 桥）跟同一个角色说话时，两次互动各自算完分数再整行写回，后写的会盖掉先写的，那一次互动的变化就丢了。",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+      "line": 107,
+      "evidence": "recordUserTurn(:107) 没有 @Transactional：loadOrCreateState → fromUserTurn → applyEvents → applyPresence → `relationshipStateMapper.updateById(state)`(:132)，整行覆盖；定时衰减 decayAll 也是 select 后逐行 `updateById`(:185)。同用户的并发入口是真实存在的：主聊天（ConversationService.sendMessageStream）与 QQ/微信桥转发都会落到 recordUserTurn。",
+      "impact": "并发时后写者覆盖前写者，那一轮互动的信任/亲密/安全增量丢失；衰减任务用旧快照回写时，还可能把刚发生的互动（lastInteractionAt、streak）一起抹掉，表现为「聊了但关系没变」。",
+      "fix": {
+        "summary": "把关系更新变成有原子性的过程：加乐观锁（version）或行锁，并让衰减不要在读到旧快照后整行覆盖。",
+        "steps": [
+          "给 RelationshipState 加 version 字段（或复用 updated_at 做 CAS），updateById 时带 where version = ?，冲突则重读重算（有限次）",
+          "recordUserTurn 加 @Transactional，把读-改-写包在同一事务里（配合行锁或 CAS）",
+          "decayAll 改为按 id + last_decay_at 条件更新，只更新确实需要衰减的列，避免覆盖并发写入",
+          "补并发测试：两线程同时 recordUserTurn，断言两次增量都体现在最终分数上"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+          "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/RelationshipState.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test"
+        ]
+      }
+    },
+    {
+      "id": "C11",
+      "unit": "u01",
+      "section": "logic",
+      "severity": "low",
+      "confidence": 0.9,
+      "kind": "direct",
+      "category": "错误分类",
+      "title": "isClientStreamDisconnect 只认 IOException，实际错误恒为 BusinessException 或 null",
+      "brief": "代码里有一个「客户端中途断开就把已生成内容存下来」的判断，但它依赖的错误类型永远不会出现，等于这段判断从没生效过；将来如果把上游超时改成 IOException，会把半句话当成完整回复存进历史。",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+      "line": 427,
+      "evidence": "ConversationService.java:427-429 `return error instanceof java.io.IOException;`；onComplete 的调用点全仓只有三处：SseChatStreamHelper.java:63 传 null（正常完成）、:83 传 `new BusinessException(ErrorCode.AI_PROVIDER_ERROR, ...)`（错误收尾）、AgentStreamBridge.java:138 传 null（转发中断）。因此该判断恒为 false，onComplete 里的「客户端断开」语义从未被识别。",
+      "impact": "分支是死代码，误导维护者以为客户端断开已被单独处理；一旦错误传播改成 IOException（例如把上游读超时包装成 IOException 抛出），半截回复会被当完整回复落库并跳过错误提示。",
+      "fix": {
+        "summary": "用明确的语义标记替代异常类型判断：在 onComplete 的入参里带一个 abortReason（client_disconnect / upstream_error / done）。",
+        "steps": [
+          "把 onComplete(fullContent, error) 扩展为 onComplete(fullContent, error, StreamOutcome outcome)",
+          "SseChatStreamHelper / AgentStreamBridge 的 3 个调用点分别传 DONE / UPSTREAM_ERROR / CLIENT_DISCONNECT",
+          "ConversationService 用 outcome 判断是否落库，删除 isClientStreamDisconnect",
+          "补测试覆盖三种 outcome 的落库行为"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/ai/SseChatStreamHelper.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamBridge.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentStreamCallback.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test"
+        ]
+      }
+    },
+    {
+      "id": "C12",
+      "unit": "u06",
+      "section": "edge-cases",
+      "severity": "low",
+      "confidence": 0.85,
+      "kind": "direct",
+      "category": "流式边界",
+      "title": "流式读取结束时不处理残留缓冲，出错时也不取消底层连接",
+      "brief": "读取回复时如果服务端最后一段没有以换行收尾，这段文字会被丢掉；解析到错误帧后连接也没有被主动关闭，会一直挂着等超时。",
+      "file": "frontend/src/utils/assistantStreamDrain.js",
+      "line": 29,
+      "evidence": "assistantStreamDrain.js:26-35 按 '\\n' 切分后 `buffer = parts.pop() || ''`，循环 `done` 退出时不再 feed 残留 buffer，直接 `return acc.result()`(:40)；:36-38 `finally { reader.releaseLock() }` 没有 `reader.cancel()`，acc.feed 遇到 error 帧抛异常时底层流不会被取消。",
+      "impact": "服务端最后一帧缺换行（截断、代理改写）时丢最后一段回复；错误帧抛异常后连接悬挂到超时，异常频繁时累积未关闭的流。",
+      "fix": {
+        "summary": "循环结束后 flush 残留 buffer；异常路径上 cancel 读取器，保证连接被关闭。",
+        "steps": [
+          "在 `if (done) break` 之后、return 之前补 `if (buffer.trim()) acc.feed(buffer)`",
+          "finally 改为：正常结束时 releaseLock，异常结束时先 `await reader.cancel().catch(() => {})`",
+          "补单测：喂入不带结尾换行的 'data: {...}'，断言最后一段内容仍被计入 fullContent"
+        ],
+        "files": [
+          "frontend/src/utils/assistantStreamDrain.js",
+          "frontend/shared/sseParser.js"
+        ],
+        "tests": [
+          "npm --prefix frontend test"
+        ]
+      }
+    }
+  ],
+  "deferred": [
+    {
+      "from": "correctness",
+      "expert": "",
+      "summary": "backend-agent 运行时行为未能实跑：pytest 因缺 respx 无法收集用例，本轮对 Python 侧的结论全部来自代码审读与调用链追踪，未做运行时复现。"
+    },
+    {
+      "from": "correctness",
+      "expert": "",
+      "summary": "关系里程碑与 V57 的数据修复是否一致：V57 只回写 trust_score，未回写 phase 与 relationship_milestone；线上是否存在「高分里程碑 + 30 分信任」的存量行需要查生产库，本轮只有代码证据。"
+    },
+    {
+      "from": "correctness",
+      "expert": "",
+      "summary": "管理台首页展示的是硬编码数据：admin/src/App.vue 内联了「API 在线 / 运行正常 / 最新客户端 v0.2.363 / 待处理 12」等固定文案，未接 /api/admin/v1/overview；是否属产品已知占位待确认，故未列入正式发现。"
+    }
+  ],
+  "notes": "只读审查，未修改任何源码。审查为 project 模式：u01/u02/u03/u05/u07/u08/u09 单元内关键文件逐文件读过；u04/u06/u10/u11/u12 为抽样（大文件与一次性运维脚本较多），抽样方式与已读文件已在 units.files 列全。backend-agent 的 pytest 未能跑起来（缺 respx），JSON 的 tests 里如实登记为 failed。",
+  "sectionNotes": {
+    "logic": "核对回合编排、工具循环、错误分类与前端流式解析的主干分支；另查过 getMessages 分页语义（nextBeforeSeq 取反序后的首元素，行为正确，未报）。",
+    "state": "核对关系状态机的里程碑/phase 推进、登录态与流式状态迁移；心跳、[DONE]、keep-alive 三处契约实现一致。",
+    "concurrency": "核对事务边界、Redis 计数器、outbox 领取与关系状态读改写；outbox 的 CAS 领取本身正确（rowcount 判定）。",
+    "data-integrity": "核对唯一键与写入路径（有 uk_conv_seq / uk_source_hash / uk_relationship_user_character）、批量写入原子性、迁移一致性。",
+    "contracts": "核对 SSE 帧契约（content/replace/pieces/error/[DONE]/keep-alive）、Java↔Python 字段与常量（OP_*/STATUS_* 一致）、前端↔后端分页与 DTO 字段。",
+    "architecture": "核对 Java/Python/Electron 三条边界的实际实现与文档宣称；发现 Python 写库与「只读」口径冲突。",
+    "edge-cases": "核对空输入、限流上限、分页边界、流式截断与导出边界；limit 夹取（1..200）、导出文件名清洗等实现正确。"
+  }
+}

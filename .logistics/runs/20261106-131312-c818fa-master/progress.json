@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "runId": "20261106-131312-c818fa-master",
+  "status": "completed",
+  "phase": "verdict",
+  "startedAt": "2026-11-06T05:13:18Z",
+  "updatedAt": "2026-11-06T05:45:38Z",
+  "elapsedMs": 1940872,
+  "experts": {
+    "correctness": {
+      "status": "done",
+      "findings": 12,
+      "childId": "88cf70f7-5f8d-492b-8f55-dfd3d237b16b",
+      "startedAt": "2026-11-06T05:13:59Z",
+      "finishedAt": "2026-11-06T05:33:01Z"
+    },
+    "security": {
+      "status": "done",
+      "findings": 12,
+      "childId": "210dc595-39f3-4531-8e91-536e45b14e35",
+      "startedAt": "2026-11-06T05:13:59Z",
+      "finishedAt": "2026-11-06T05:31:49Z"
+    },
+    "reliability": {
+      "status": "done",
+      "findings": 10,
+      "childId": "db573a11-bb25-4111-8c09-5deb5447a63a",
+      "startedAt": "2026-11-06T05:13:59Z",
+      "finishedAt": "2026-11-06T05:24:12Z"
+    },
+    "maintainability": {
+      "status": "done",
+      "findings": 11,
+      "childId": "6ca0271a-119e-40ba-a52f-505f93d65f56",
+      "startedAt": "2026-11-06T05:13:59Z",
+      "finishedAt": "2026-11-06T05:29:52Z"
+    },
+    "perf": {
+      "status": "done",
+      "findings": 8,
+      "childId": "0db10cfb-88ca-4c3e-9914-deb46d7e1a01",
+      "startedAt": "2026-11-06T05:24:22Z",
+      "finishedAt": "2026-11-06T05:36:13Z"
+    }
+  },
+  "waves": {
+    "total": 2,
+    "dispatched": 1,
+    "done": 2
+  },
+  "units": {
+    "total": 12,
+    "covered": 12
+  },
+  "findings": 53,
+  "eta": {
+    "lowMinutes": 0,
+    "highMinutes": 0,
+    "basis": "done"
+  },
+  "cancelRequested": false
+}

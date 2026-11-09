@@ -54,6 +54,23 @@ colors:
   danmaku-gold: "#f5b042"
   danmaku-gold-light: "#ffd866"
   danmaku-ink: "#1a1a24"
+  # ── Memory Brain Map（星图记忆页专用色板，源见 frontend/src/components/memory/memoryBrainModel.js）──
+  brain-space-core: "#1b2740"   # 深空中心
+  brain-space-mid: "#101827"    # 深空中层
+  brain-space-edge: "#080c14"   # 深空边缘
+  brain-region-core: "#fff1c9"  # 中枢·检索（近白暖金）
+  brain-region-input: "#8fb6ff"  # 语言输入
+  brain-region-hippo: "#6fdbc0"  # 海马体·写入
+  brain-region-ltm: "#ffd166"    # 长期记忆库
+  brain-region-relation: "#ff8fab" # 关系中枢
+  brain-region-limbic: "#c8a0ff"   # 情绪·边缘系统
+  brain-region-introspect: "#a0c8e8" # 内省·日记
+  brain-region-output: "#ffb4a0"   # 表达·注入
+  brain-sector-fact: "#ffd166"     # 事实扇区
+  brain-sector-emotion: "#ff8fab"  # 情绪扇区
+  brain-sector-relation: "#6fdbc0" # 关系扇区
+  brain-sector-ritual: "#c8a0ff"   # 仪式扇区
+
   # ── Third-party provider brands (设置页 provider 标识；仅限品牌 badge) ──
   brand-openai: "#10a37f"
   brand-gemini: "#4285f4"

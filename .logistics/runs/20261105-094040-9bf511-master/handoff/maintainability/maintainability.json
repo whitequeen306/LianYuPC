@@ -1,0 +1,449 @@
+{
+  "schemaVersion": 2,
+  "expert": "maintainability",
+  "status": "ok",
+  "summary": "对全部 12 个审查单元（1100 文件 / 135978 行）做了可维护性检查：12 个单元全部覆盖（u08 reviewed，其余按体量 sampled + 全量模式扫描），共 12 条发现，其中 simplify 5 条、cleanup 7 条，无 critical/high（能力上限为 medium）。最集中的三类问题是：(1) 已下线能力留下的“孤儿物”仍在仓库里冒充生效——前端无引用的 antiDebug/截图分享/ASR HTTP 模块连同误导性注释、zh-TW 整份 529 行语言包未接入 i18n、V55 agent_capability_audit 表无读写方、未接线的 EncryptedField/EncryptedStringTypeHandler 加密 seam、backend-agent 里对齐已删 Java 实现的 profile_context 及名为 matches_java 的测试；(2) 复制粘贴型重复——scripts 下 16 份 load_env、49 个自拼 paramiko 的一次性部署脚本（合计 3968 行且部分仍用 get_pty=True）、lianyu-web 8 处凭据解析 + 5 份逐字复制的健康缓存、两个大定时任务各自的候选装载/概率抽样骨架；(3) 层次与体量失控——角色广场把 4 语人设与整段 prompt 硬编码进 2602 行 Java（与“prompt 归 Python”红线冲突）、electron/main.js 3077 行承载 71 个 IPC 通道。测试基线：frontend 417 用例、mvn backend、backend-agent venv 内 pytest 全绿；admin 因未安装依赖无法运行（仅静态审查）。",
+  "sections": {
+    "simplify": 5,
+    "cleanup": 7
+  },
+  "units": {
+    "u01": {
+      "status": "sampled",
+      "filesRead": 9,
+      "notes": "读了 ProactiveChatScheduler/MomentsScheduler/RelationshipDecayScheduler/MomentsCommentReconciliationScheduler 等；对 240 个文件做了长方法、scheduler 家族、@Value 口径扫描，确认两处 tick() 骨架重复（见 finding）。"
+    },
+    "u02": {
+      "status": "sampled",
+      "filesRead": 14,
+      "notes": "读完 square 目录 7 个 Catalog 与 CharacterSquareService，逐角色统计 locale/prompt 方法；其余按包名抽读。"
+    },
+    "u03": {
+      "status": "sampled",
+      "filesRead": 16,
+      "notes": "全量构建了 src 下 298 个 JS/Vue 文件的 import 图（含 @/ 别名），据此判定 api/asr.js 与 locales/zh-TW.js 零引用；i18n/index.js、constants/language.js 逐行读。"
+    },
+    "u04": {
+      "status": "sampled",
+      "filesRead": 12,
+      "notes": "用 git ls-files 与被跟踪文件全文引用扫描统计 55 个 _ 脚本的去留（49 个无人引用、3968 行），另读部署脚本族的 load_env/run/超时口径。"
+    },
+    "u05": {
+      "status": "sampled",
+      "filesRead": 6,
+      "notes": "57 个迁移按表名反查 Java/Python 读写方，V55 的 agent_capability_audit 为唯一无主表；52 个 dao java 做死类扫描。"
+    },
+    "u06": {
+      "status": "sampled",
+      "filesRead": 11,
+      "notes": "扫描 100 个 py 文件的模块间引用与测试引用；profile_context 只被自身测试引用，其 docstring 指向的 MemoryRetriever 在 backend 全库已 0 命中。"
+    },
+    "u07": {
+      "status": "sampled",
+      "filesRead": 15,
+      "notes": "逐文件核对 import 图确认 antiDebug/captureChatShareScreenshot 零引用；对 LoginPage/RegisterPage 做了 difflib 行级相似度（0.74，列入 deferred）。"
+    },
+    "u08": {
+      "status": "reviewed",
+      "filesRead": 9,
+      "notes": "完整读 AgentStreamAdapter/AgentTextStreamAdapter/ChatTurnAdapter/AgentBlockingAdapter，并对照其余 22 个 agent 类的 reachable() 与凭据解析块，逐行确认复制与参数漂移。"
+    },
+    "u09": {
+      "status": "sampled",
+      "filesRead": 5,
+      "notes": "统计 electron/main.js 的 63 个 ipcMain.handle + 8 个 ipcMain.on 与 20 个本地模块 import；preload.js 与 smoke 脚本属入口，未误判为孤儿。"
+    },
+    "u10": {
+      "status": "sampled",
+      "filesRead": 11,
+      "notes": "读 admin/package.json、admin/src/App.vue、EncryptedStringTypeHandler/EncryptedField、.env.example；admin 依赖零 import 由 grep 全量确认，因未装 node_modules 无法执行其测试。"
+    },
+    "u11": {
+      "status": "sampled",
+      "filesRead": 6,
+      "notes": "58 个 java 做类级引用扫描，仅 AdminPermissionCatalog 零引用（列入 deferred，9 行、影响小）；其余工具/配置类均有使用方。"
+    },
+    "u12": {
+      "status": "sampled",
+      "filesRead": 9,
+      "notes": "installer 的 5 个 C# 与 lianyu-common 的 11 个类逐个反查引用，全部有使用方；backend/scripts 的一次性脚本列入 deferred。本单元已查未发现需要上报的问题。"
+    }
+  },
+  "findings": [
+    {
+      "section": "cleanup",
+      "category": "orphan_file",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "前端三个零引用模块仍被注释描述为生效中（antiDebug / 截图分享 / ASR HTTP）",
+      "file": "frontend/src/utils/antiDebug.js",
+      "line": 12,
+      "evidence": "CONFIRMED_DEAD。`grep -rn \"antiDebug\\|initAntiDebug\" frontend/src frontend/electron frontend/shared` 只命中本文件定义 frontend/src/utils/antiDebug.js:12 `export function initAntiDebug() {`（文件 93 行）与两处注释：frontend/src/main.js:38「---- 全局错误捕获（须在 initAntiDebug 之前注册）----」、frontend/src/utils/logger.js:4「生产环境 console.* 被 antiDebug 吞掉，本模块走独立 IPC 通道（desktop:renderer-log）」。同批零引用：frontend/src/utils/captureChatShareScreenshot.js:128 `export async function captureChatShareScreenshot(container, selectedIds) {`（220 行，`grep -rn captureChatShareScreenshot frontend` 仅命中定义行）；frontend/src/api/asr.js:4 `export function transcribeAudio(blob, filename = 'voice.webm') {`（12 行，`grep -rn \"api/asr\\|transcribeAudio\" frontend` 仅命中自身）。实际语音链路走 WebSocket 的 asr.partial/asr.final（frontend/src/pages/ChatPage.vue:1293、:1301，frontend/src/composables/useVoiceDuplex.js:124），后端端点仍在 backend/lianyu-web/src/main/java/com/lianyu/web/controller/AsrController.java:31 `@PostMapping(\"/transcribe\")`。",
+      "impact": "注释把一个不存在的生产防护说成在用：后来者会以为 console 已被兜底、全局错误已被捕获，排查线上无日志时会先怀疑构建流程而不是这段代码根本不存在。317 行（93 + 220 + 12）死代码还让每次前端重构都要顺带确认它们是否还该保留；同时形成「前端无调用方、后端仍暴露 /api/asr/transcribe」的悬空契约。",
+      "kind": "direct",
+      "fix": {
+        "summary": "删除三个零引用模块，改写两处误导性注释，并把后端 ASR HTTP 端点的去留交 correctness 判定（前端实际只用 WS 通道）。",
+        "steps": [
+          "确认 frontend/src/api/index.js 与各 utils 桶文件未再 re-export 这三个模块（当前无）。",
+          "删除 frontend/src/utils/antiDebug.js、frontend/src/utils/captureChatShareScreenshot.js、frontend/src/api/asr.js。",
+          "把 frontend/src/main.js:38 与 frontend/src/utils/logger.js:4 的注释改写为「无全局 console 兜底，渲染端日志只走 desktop:renderer-log」。",
+          "跑前端测试与构建；若 AsrController 确认无人调用，另开一条后端清理任务（本次只记录，不删）。"
+        ],
+        "files": [
+          "frontend/src/utils/antiDebug.js",
+          "frontend/src/utils/captureChatShareScreenshot.js",
+          "frontend/src/api/asr.js",
+          "frontend/src/main.js",
+          "frontend/src/utils/logger.js"
+        ],
+        "tests": [
+          "npm --prefix frontend test",
+          "npm --prefix frontend run build"
+        ]
+      }
+    },
+    {
+      "section": "cleanup",
+      "category": "orphan_file",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "zh-TW 整份 529 行语言包未接入 i18n，与 AGENTS.md 的四语约定互相打脸",
+      "file": "frontend/src/i18n/locales/zh-TW.js",
+      "line": 1,
+      "evidence": "CONFIRMED_DEAD。frontend/src/i18n/index.js:7-9 只 `import zh from './locales/zh'`、`import ja from './locales/ja'`、`import en from './locales/en'`，:17 `messages: { zh, ja, en }`；frontend/src/constants/language.js:1 `/** @typedef {'zh'|'ja'|'en'} AppLanguage */`、:3 `export const SUPPORTED_LANGUAGES = ['zh', 'ja', 'en']`，normalizeLanguage 把 zh-TW 归到 zh。全库 zh-TW 只命中该文件自身（:8 标签 `'zh-TW': '繁體中文'`），无任何 import。key 数：zh 378、ja 373、en 377、zh-TW 381（比 zh 多 3 个 key，说明它被单独维护过）。AGENTS.md §3.2 写「i18n 四语齐（zh / zh-TW / en / ja），新增 key 必须四份一起加」。",
+      "impact": "381 个 key 的繁体文案永远到不了用户，但每次加 key 都要按文档同步维护第四份；文档与代码对「支持哪些语言」给出两个答案，新同学第一周就会踩。若产品确实要繁体，缺的是接线而不是文案。",
+      "kind": "plan",
+      "fix": {
+        "summary": "二选一并一次性收敛：要么把 zh-TW 接进 i18n（补 SUPPORTED_LANGUAGES、语言切换与持久化），要么删除该文件并把 AGENTS.md 改为三语。",
+        "steps": [
+          "产品确认是否要交付繁体中文（这是 decision，不是纯代码改动）。",
+          "若保留：在 frontend/src/constants/language.js 增加 'zh-TW' 到联合类型与 SUPPORTED_LANGUAGES，在 i18n/index.js 注册 messages，检查 normalizeLanguage 与语言切换组件、后端语言枚举是否接受 zh-TW。",
+          "若删除：移除 frontend/src/i18n/locales/zh-TW.js，同步修改 AGENTS.md §3.2 的四语表述与 docs 中的语言清单。",
+          "无论哪条，都补一条测试断言 SUPPORTED_LANGUAGES 与 messages 的 key 集合一致，避免再出现维护了却接不上。"
+        ],
+        "files": [
+          "frontend/src/i18n/locales/zh-TW.js",
+          "frontend/src/i18n/index.js",
+          "frontend/src/constants/language.js",
+          "AGENTS.md"
+        ],
+        "tests": [
+          "npm --prefix frontend test"
+        ]
+      }
+    },
+    {
+      "section": "cleanup",
+      "category": "unused_dependency",
+      "severity": "low",
+      "confidence": "high",
+      "title": "admin 有 4 个声明依赖零 import，页面还用硬编码占位数字冒充真实状态",
+      "file": "admin/package.json",
+      "line": 10,
+      "evidence": "admin/package.json:10 起 dependencies 为 @element-plus/icons-vue ^2.3.1、@tanstack/vue-table ^8.21.3、axios ^1.18.0、echarts ^6.1.0、element-plus ^2.14.5、pinia ^2.2.6、vue ^3.5.13、vue-router ^4.4.5。`grep -rn \"echarts\\|vue-router\\|@tanstack\\|element-plus/icons\" admin/src admin/index.html admin/vite.config.*` 输出为空 → echarts、@tanstack/vue-table、vue-router、@element-plus/icons-vue 四个依赖无任何引用（axios/element-plus/pinia/vue 有用）。另 admin/src/App.vue:14 的单行模板里硬编码「最新客户端 v0.2.363」「待处理事项 12」以及 3 行活动记录（`v-for=\"row in [{e:'客户端版本发布 v0.2.363'...}]\"`）。",
+      "impact": "四个未用依赖持续放大安装体积与供应链面（后台是内网工具，实际成本主要是每次装包/审计时的噪音）。App.vue 的写死版本号与待处理数会随时间失真，让人误判发布状态；这类「假数据占位」比空状态更难被发现。",
+      "kind": "plan",
+      "fix": {
+        "summary": "移除四个未引用依赖；把 App.vue 的版本号/待处理数改成真实数据源，取不到就显式显示占位符。",
+        "steps": [
+          "在 admin 下删除 echarts、@tanstack/vue-table、vue-router、@element-plus/icons-vue 并重装依赖。",
+          "跑 admin 的构建与测试确认无隐式（动态 import 字符串形式）引用；如需，先 grep 'import(' 再删。",
+          "把 admin/src/App.vue:14 的 v0.2.363 与「待处理事项 12」改为来自现有 api（发布/待办接口），拿不到时显示「—」。",
+          "把假活动记录数组替换为接口返回或空态文案。"
+        ],
+        "files": [
+          "admin/package.json",
+          "admin/src/App.vue"
+        ],
+        "tests": [
+          "npm --prefix admin test",
+          "npm --prefix admin run build"
+        ]
+      }
+    },
+    {
+      "section": "cleanup",
+      "category": "orphan_file",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "scripts 下 49 个 _ 前缀一次性脚本无人引用（3968 行），部署入口实际只有 _cloud_deploy_pull.py",
+      "file": "scripts/_cloud_deploy_backend_layer.py",
+      "line": 1,
+      "evidence": "`git ls-files scripts | grep -c '^scripts/_'` = 55；对每个脚本文件名在被跟踪的 md/py/ps1/yml/json/mjs/js/sh 里做全文引用检索，仅 6 个有引用：_cloud_deploy_pull.py（AGENTS.md、Pets/skills/hatch-lianyu-pet/SKILL.md、scripts/README.md）、_upload_update_assets.py、_cloud_deploy_layered.py、_prod_verify.py、_audit_installer_unpack.py、_upload_wechat_channel.py；其余 49 个零引用、合计 3968 行。典型：scripts/_cloud_deploy_backend_layer.py（104 行）、scripts/_cloud_deploy_agent_layer.py（105 行）、scripts/_cloud_deploy_agent_base_url.py（84 行）、scripts/_cloud_deploy_backend_only.py（63 行）、scripts/_cloud_deploy_prep.py（94 行）、scripts/_verify_electron_release.py（253 行）、scripts/_diagnose_moments_deep.py（168 行）。AGENTS.md §3.1 明确「临时物不进仓库：一次性排查脚本一律放 local/ 或带 _ 前缀且不提交」，§6 又把 _cloud_deploy_pull.py 定为唯一部署入口。",
+      "impact": "发布链路的「哪一个是真入口」被 54 个同族脚本淹没：它们都叫 _cloud_deploy_*、都连生产 SSH、口径还各不相同（见下一条 timeout/PTY 漂移），误跑一个就可能对生产执行过期逻辑。同时 scripts 目录的维护成本与审计面被无谓放大。",
+      "kind": "plan",
+      "fix": {
+        "summary": "保留 6 个有引用的脚本，其余 49 个移到 local/ 或直接删除；并在 scripts/README.md 写清唯一入口。",
+        "steps": [
+          "按上面的引用清单复核 6 个保留脚本的调用点（AGENTS.md、SKILL.md、README.md、ship-release.ps1）。",
+          "对 49 个零引用脚本逐个看头部注释确认是否含不可复现的一次性修复（含则先归档到 local/archive/，不入库）。",
+          "删除入库版本；在 scripts/README.md 增加「唯一部署入口是 _cloud_deploy_pull.py，其余为历史脚本」一节。",
+          "在 CI 或 pre-commit 加一条规则：scripts/_*.py 新增必须在 README 中登记，否则评审拒绝。"
+        ],
+        "files": [
+          "scripts/_cloud_deploy_backend_layer.py",
+          "scripts/_cloud_deploy_agent_layer.py",
+          "scripts/_cloud_deploy_agent_base_url.py",
+          "scripts/_cloud_deploy_backend_only.py",
+          "scripts/_cloud_deploy_prep.py",
+          "scripts/_verify_electron_release.py",
+          "scripts/README.md"
+        ],
+        "tests": [
+          "python scripts/check_release_asset_contract.py",
+          "python -c \"import ast,glob;[ast.parse(open(p,encoding='utf-8').read()) for p in glob.glob('scripts/*.py')]\""
+        ]
+      }
+    },
+    {
+      "section": "simplify",
+      "category": "duplication",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "部署脚本 16 份 load_env 与 49 份 paramiko 样板，超时口径漂移且仍有 get_pty=True",
+      "file": "scripts/_cloud_deploy_backend_layer.py",
+      "line": 26,
+      "evidence": "`grep -rn \"def load_env\" scripts` 命中 16 处，其中 14 处逐字相同（每份 9 行，含 scripts/_cloud_chat20.py:13、scripts/_cloud_deploy_agent_base_url.py:13、scripts/_cloud_deploy_agent_layer.py:16、scripts/_cloud_deploy_backend_layer.py:16、scripts/_cloud_deploy_backend_only.py:13、scripts/_cloud_deploy_prep.py:22、scripts/_prod_verify.py:35、scripts/_run_prod_verify.py、scripts/_verify_prod_tts.py 等），另 2 处为变体（scripts/_prod_verify.py:35 与 scripts/ops/prod_error_watch.py）。49 个脚本各自 `import paramiko` 并手拼 exec_command；超时默认值三套：scripts/_cloud_deploy_agent_base_url.py / _cloud_deploy_agent_layer.py 为 2400，scripts/_cloud_deploy_backend_layer.py:26 `def run(c, cmd, timeout=3600, must=True):` 为 3600，其余散落 120/300。scripts/_cloud_deploy_backend_layer.py:28 `c.exec_command(cmd, timeout=timeout, get_pty=True)` 恰好是 AGENTS.md §6 记录的坑：「compose 输出接 PTY 时可能永不返回 EOF，deploy 段会假死」。",
+      "impact": "同一份「读 .env → 连 SSH → 跑命令」的逻辑有 16 份副本，改一处连接参数（端口、密钥、超时、非 PTY）要改 16 处，实际只改了 1 处 —— 这就是 PTY 假死逻辑还活着的直接原因：_cloud_deploy_pull.py 改对了，同族脚本没跟上。超时 2400/3600 的漂移还让「一条命令卡多久算失败」不可预测。",
+      "kind": "plan",
+      "fix": {
+        "summary": "抽出 scripts/_ssh.py（load_env + connect + run(cmd, timeout, must) ，统一 get_pty=False），让保留的部署脚本各自只留业务命令序列。",
+        "steps": [
+          "新建 scripts/_ssh.py：load_env(root)、connect(cfg)、run(client, cmd, timeout=600, must=True) 且 get_pty=False，超时按命令类型显式传入而不是散落默认值。",
+          "先迁移 AGENTS.md 指定入口 scripts/_cloud_deploy_pull.py 与 scripts/_prod_verify.py，跑一次只读健康检查验证行为不变。",
+          "再迁移其余保留脚本，删除各自的 load_env 副本；未迁移的 49 个随上一条 finding 一并清理。",
+          "在 scripts/README.md 写明「新增脚本必须复用 _ssh.py，禁止自带 get_pty=True」。"
+        ],
+        "files": [
+          "scripts/_cloud_deploy_pull.py",
+          "scripts/_prod_verify.py",
+          "scripts/_cloud_deploy_backend_layer.py",
+          "scripts/_cloud_deploy_agent_layer.py",
+          "scripts/_cloud_deploy_agent_base_url.py",
+          "scripts/_cloud_deploy_backend_only.py"
+        ],
+        "tests": [
+          "python -c \"import ast;ast.parse(open('scripts/_ssh.py',encoding='utf-8').read())\"",
+          "python scripts/check_release_asset_contract.py"
+        ]
+      }
+    },
+    {
+      "section": "cleanup",
+      "category": "dead_code",
+      "severity": "low",
+      "confidence": "high",
+      "title": "backend-agent 的 profile_context 只被自己的测试调用，测试名 matches_java 已无对端",
+      "file": "backend-agent/app/memory/profile_context.py",
+      "line": 39,
+      "evidence": "CONFIRMED_DEAD（生产路径）。backend-agent/app/memory/profile_context.py:39 `def build_profile_context(items: Sequence[Iterable]) -> str | None:`（文件 59 行）；`grep -rn \"profile_context\\|build_profile_context\" backend-agent` 只命中自身与 backend-agent/tests/test_profile_context.py:13（import）、:38 `def test_profile_context_matches_java(golden)`（断言 app/prompts/profile_context_golden.json）。app/ 内零调用。:1 的 docstring 写「对齐 `MemoryRetriever.retrieveProfileContext`」，但 `grep -rn \"MemoryRetriever\\|retrieveProfileContext\" backend` 全库 0 命中 —— 被对齐的 Java 实现已不存在。",
+      "impact": "一条保护「Python 与 Java profile 拼装一致」的 golden 测试，实际两个对端只剩一个，却依然全绿。它给 reviewer 一种跨端已对齐的错觉，也把 59 行无人调用的拼装逻辑长期留在记忆模块里，干扰「记忆上下文到底由谁组装」的判断。",
+      "kind": "plan",
+      "fix": {
+        "summary": "二选一：删除 profile_context.py + 其测试 + golden（对端已不存在），或把它真正接进记忆上下文组装并重命名为 Python 侧唯一事实来源。",
+        "steps": [
+          "确认记忆上下文当前由谁组装（backend-agent/app/memory/ 下的 retriever 与 chat_turn 的注入点）。",
+          "若已由别处统一组装：删除 profile_context.py、tests/test_profile_context.py、app/prompts/profile_context_golden.json，并从 __init__ 的导出里移除。",
+          "若仍是待接线能力：改 docstring 去掉已不存在的 MemoryRetriever 引用，重命名测试为 test_profile_context_golden，并在真实调用点接线后补一条集成断言。",
+          "在 docs 里登记该决定，避免下一个人再问同样的问题。"
+        ],
+        "files": [
+          "backend-agent/app/memory/profile_context.py",
+          "backend-agent/tests/test_profile_context.py",
+          "backend-agent/app/prompts/profile_context_golden.json"
+        ],
+        "tests": [
+          "backend-agent/.venv/Scripts/python.exe -m pytest -q backend-agent/tests/test_profile_context.py"
+        ]
+      }
+    },
+    {
+      "section": "cleanup",
+      "category": "dead_code",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "EncryptedField / EncryptedStringTypeHandler 从未接线，注解存在但字段并未加密",
+      "file": "backend/lianyu-security/src/main/java/com/lianyu/security/handler/EncryptedStringTypeHandler.java",
+      "line": 12,
+      "evidence": "CONFIRMED_DEAD。backend/lianyu-security/src/main/java/com/lianyu/security/handler/EncryptedStringTypeHandler.java:12 `public class EncryptedStringTypeHandler extends BaseTypeHandler<String> {`（40 行）+ backend/lianyu-security/src/main/java/com/lianyu/security/annotation/EncryptedField.java:1（9 行 `public @interface EncryptedField`）。`grep -rn \"EncryptedStringTypeHandler\\|@EncryptedField\\|EncryptedField\" --include=*.java backend` 排除这两个文件后零命中：既没有 `@TableField(typeHandler = EncryptedStringTypeHandler.class)`，也没有任何字段标注 @EncryptedField。Handler 内部通过 `SpringContextHolder.getBean(JasyptUtil.class)` 取密钥，说明它依赖运行时上下文，一旦被误用会以难排查的方式失败。",
+      "impact": "这是一条「看起来已经做了字段加密」的假线索：安全评审看到注解会假定敏感字段（vault 密钥、个人资料）已落库加密，而实际是明文。留着比删掉更危险，因为它把「未做」伪装成「已做」。",
+      "kind": "plan",
+      "fix": {
+        "summary": "要么接线（明确列出应加密的列并补迁移/回填方案），要么删除这两个类型，避免伪造安全语义。",
+        "steps": [
+          "与安全负责人确认是否存在必须落库加密的敏感列（vault 密钥、otp 种子等），列出清单。",
+          "若不存在需求：删除 EncryptedField.java 与 EncryptedStringTypeHandler.java，并在 docs/security-coupling-map-zh.md 记录「字段级加密未启用，敏感数据依赖应用层脱敏」。",
+          "若需要：选定试点列，写 Flyway 迁移（新列 + 回填脚本），在实体上用 @TableField(typeHandler = ...) 显式接线，并补一条写入后断言密文、读取后还原明文的集成测试。",
+          "在 JasyptUtil 上的注释里写清「仅被 TypeHandler 使用」，避免密钥工具被当通用工具扩散。"
+        ],
+        "files": [
+          "backend/lianyu-security/src/main/java/com/lianyu/security/handler/EncryptedStringTypeHandler.java",
+          "backend/lianyu-security/src/main/java/com/lianyu/security/annotation/EncryptedField.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test"
+        ]
+      }
+    },
+    {
+      "section": "cleanup",
+      "category": "schema_drift",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "V55 建了 agent_capability_audit 表，写入方 AgentBridgeService 已随能力层删除",
+      "file": "backend/lianyu-dao/src/main/resources/db/migration/V55__agent_capability_audit.sql",
+      "line": 15,
+      "evidence": "CONFIRMED_DEAD。backend/lianyu-dao/src/main/resources/db/migration/V55__agent_capability_audit.sql:15 `CREATE TABLE IF NOT EXISTS \\`agent_capability_audit\\` (`，:11 注释「Ownership: written by Java (AgentBridgeService), never by the Python agent」，表头还写「the product surfaces a 'recent actions' panel」。`grep -rn agent_capability_audit` 只命中该迁移文件与 target/ 构建副本；`grep -rn AgentBridgeService --include=*.java backend` 在 src 下 0 命中（com.lianyu.service.tools.bridge 于提交 a8d9fc0 / 2026-10-25 删除，仅 target/surefire-reports 有残留）。生产库因此有一张永不写入、也无人读取的表。",
+      "impact": "schema 与代码的叙事脱节：迁移注释描述了一个已下线的「最近动作」面板，运维/新同学据此以为存在审计数据可查，实际永远是空表。Flyway 历史不可改，越晚处理越只能靠新增迁移绕开，成本会持续累积。",
+      "kind": "plan",
+      "fix": {
+        "summary": "新增一条迁移 DROP 该表（或明确保留为历史归档并修正注释），并同步清理 target 里的残留报告口径。",
+        "steps": [
+          "在预发库确认 agent_capability_audit 无数据、无外键与视图依赖。",
+          "新增 V56__drop_agent_capability_audit.sql（ASCII-only，含 ORDER 与注释说明「能力层 2026-10-25 下线，表随之下线」）。",
+          "保留 V55 原文件不动（不改历史迁移），在其基础上不追加说明以避免 checksum 风险；改由新迁移注释记录原因。",
+          "跑一次 `mvn -o test` 与预发部署，确认 Flyway 迁移链通过。"
+        ],
+        "files": [
+          "backend/lianyu-dao/src/main/resources/db/migration/V55__agent_capability_audit.sql",
+          "backend/lianyu-dao/src/main/resources/db/migration/V56__drop_agent_capability_audit.sql"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test"
+        ]
+      }
+    },
+    {
+      "section": "simplify",
+      "category": "duplication",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "lianyu-web agent 层：8 处凭据解析 + 5 份逐字复制的健康缓存，参数还各不相同",
+      "file": "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamAdapter.java",
+      "line": 52,
+      "evidence": "「取 vault → 决定用解密 key 还是 apiKey → 空则回落 modelDefault → 判 baseUrl/apiKey 为空」这段在至少 8 处重复：backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamAdapter.java:52、AgentTextStreamAdapter.java:49、ChatTurnAdapter.java:135、AgentBlockingAdapter.java:51、AgentImageAdapter.java:160、AgentMemoryAdapter.java:47、AgentSessionSummaryAdapter.java:48，以及 DesktopObserveOrchestrator.java:55/94/123 同一个类里三份。健康探测（3 秒缓存）在 5 个类逐字复制：AgentStreamAdapter.java:101/103/106、ChatTurnAdapter.java:199/201/204（注释写「与 AgentStreamAdapter 一致」）、AgentBlockingAdapter.java:121/123/126、AgentPromptAssemblyAdapter.java:103/105/108、AgentSessionSummaryAdapter.java:104/106/109，字段皆为 `private volatile boolean healthy; private volatile long healthyCheckedAt;` + `private boolean reachable()`。参数已漂移：AgentStreamAdapter.java:90 传 0.8 + maxTokens，AgentTextStreamAdapter.java:87 传 `0.7, 256`，AgentBlockingAdapter.java:72 默认 0.7，ChatTurnAdapter.java:189 默认 0.8/1024。",
+      "impact": "「同一个 agent 在不同链路上用不同 temperature/maxTokens」不是设计，是复制后各改各的产物：同一句话在流式、阻塞、会话摘要三条链路上行为不同，排查时看不出原因。凭据解析重复 8 份意味着密钥轮换或 vault 字段变更要改 8 处，漏一处就是静默 fallback 到 Java。健康缓存的副本连注释都在解释「我抄的」，是可读性债务的典型信号。",
+      "kind": "plan",
+      "fix": {
+        "summary": "抽出 AgentCredentials（resolve + 判空 + 错误码）与 AgentHealthProbe（3 秒缓存）两个协作对象，注入到各 Adapter；把采样参数收敛到一处默认值表。",
+        "steps": [
+          "新建 AgentCredentials（输入 userId/characterId，输出 baseUrl/apiKey/model 或明确的 error_code），先让 AgentStreamAdapter 与 ChatTurnAdapter 改用它，补单测覆盖「vault 解密失败 → 回落 apiKey」「两者皆空 → 明确错误码」。",
+          "新建 AgentHealthProbe（volatile healthy + checkedAt + 3s TTL），替换 5 份复制实现，保留 reachable() 的语义（探测 /health 或能力端点）。",
+          "把 temperature/maxTokens 的默认值收到 AgentModelDefaults 一处，允许按链路 override，但 override 必须显式传参而非藏在各处默认值里。",
+          "逐个迁移剩余 Adapter，删除重复块后再跑 web 模块测试，确认 fallback 日志语义不变。"
+        ],
+        "files": [
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamAdapter.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentTextStreamAdapter.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/ChatTurnAdapter.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentBlockingAdapter.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentSessionSummaryAdapter.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test",
+          "mvn -q -f backend/pom.xml -pl lianyu-web -Dtest=Agent*Test test"
+        ]
+      }
+    },
+    {
+      "section": "simplify",
+      "category": "duplication",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "主动聊天与朋友圈两个定时任务各自复制同一套候选装载 / 概率抽样骨架",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsScheduler.java",
+      "line": 50,
+      "evidence": "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ProactiveChatScheduler.java:63 `public void tick() {`（114 行）与 backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsScheduler.java:50 `public void tick() {`（114 行）结构逐段重合：characterIds 收集 → `Map<Long, Character> characterMap = new HashMap<>(); if (!characterIds.isEmpty()) { characterMapper.selectByIds(characterIds).forEach(...) }`（两文件 :74-78 逐字相同）→ convIds + `messageMapper.selectLatestUserByConversationIds(convIds)` 的同一段 Collector → `loadUserMessageCounts(convIds, since)`（ProactiveChatScheduler.java:272 与 MomentsScheduler.java:153 各复制一份，逐字相同）→ `weighted.sort(Comparator.comparingDouble(X::effectiveP).reversed())` → quota 循环里 `if (ThreadLocalRandom.current().nextDouble() > item.effectiveP()) continue;` 与只 log.debug 的 try/catch（ProactiveChatScheduler.java:152、MomentsScheduler.java:131）。两个候选 record 同构：ProactiveChatScheduler.java:355 `ScoredCandidate`、MomentsScheduler.java:169 `WeightedCandidate`。配置口径也分裂：ProactiveChatScheduler 为 lianyu.chat.proactive.scan-interval-ms:30000 / max-conversations-per-run:2 / scan-limit:40，MomentsScheduler 为 lianyu.moments.scan-interval-ms:300000 / max-posts-per-run:1 / trigger-probability:0.12。",
+      "impact": "「扫候选会话 → 按角色/亲密度打分 → 概率抽样 → 配额内逐条 try/catch」是同一件事，却有两份实现和两套命名（Scored/Weighted、quota/maxPosts、effectiveProb/effectiveP）。改一处限流口径（比如按用户维度去重）必须记得改两处，否则只修一半；两套 @Value 键名也让运维在配置文件里找不到统一开关。",
+      "kind": "plan",
+      "fix": {
+        "summary": "抽出 CandidateScanner（装载 character/最新消息/消息计数）与 ProbabilityGate（排序 + 配额 + 抽样 + 逐条异常隔离），两个调度器只保留各自的打分与执行动作。",
+        "steps": [
+          "新建 ConversationCandidateLoader：输入 candidates + since，输出 candidateView（character、lastMessage、lastUserMessage、userMsgCount），替换两处重复装载与两份 loadUserMessageCounts。",
+          "新建 ProbabilityGate.run(List<CandidateScore<T>>, quota, Consumer<T>)：负责降序排序、ThreadLocalRandom 抽样、配额控制、按项 try/catch + log.debug，返回成功计数。",
+          "让 ProactiveChatScheduler 与 MomentsScheduler 各自实现「打分」函数与「执行动作」，其余走公共骨架；保留各自原有日志字段。",
+          "统一配置键前缀（如 lianyu.scheduler.<feature>.*）并在 .env.example / 配置说明里同步，跑 service 模块测试确认 tick 行为等价。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ProactiveChatScheduler.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsScheduler.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test",
+          "mvn -q -f backend/pom.xml -pl lianyu-service -Dtest='*Scheduler*Test' test"
+        ]
+      }
+    },
+    {
+      "section": "simplify",
+      "category": "data_in_code",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "角色广场把 4 语人设与整段 prompt 写进 2602 行 Java，形成第二份人设文案来源",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareCatalogGenshin.java",
+      "line": 14,
+      "evidence": "backend/lianyu-service/src/main/java/com/lianyu/service/square/ 下 8 个 Catalog 合计 2602 行：CharacterSquareCatalog.java 462、CharacterSquareCatalogGenshin.java 590、CharacterSquareCatalogDal.java 421、CharacterSquareCatalogBlueArchive.java 369、CharacterSquareCatalogReZero.java 326、CharacterSquareCatalogDanganronpa.java 227、CharacterSquareCatalogHonkai.java 61、CharacterSquareCatalogShizhong.java 61。每个角色都要手写 4 份 locale 条目 + 3 个 `promptZhX()/promptJaX()/promptEnX()` 文本块：CharacterSquareCatalogGenshin.java:14 `static void register(Map<String, Map<String, CharacterSquareCatalog.LocalePack>> map) {` 内注册 13 个角色（nahida/kokomi/furina/shenhe/hu_tao/yae_miko/nilou/klee/raiden/mavuika/noelle/zhongli/ayaka），:148 起是逐角色的 prompt 方法。同一记录存在两种构造方式：CharacterSquareCatalog.java 内直接 `new LocalePack(...)`，子 Catalog 用 `CharacterSquareCatalog.localePack(...)`。这些 prompt 经 backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareService.java:378 `.promptTemplate(pack.prompt())` 交给 Python。",
+      "impact": "AGENTS.md §2 规定 prompt 只允许出现在 backend-agent/app/prompts 与 Python 代码里；广场角色的整段人设却以 Java 字符串形式存在并由 Java 传给 Python，等于第二份 prompt 事实来源——改人设口径要同时改 Java 常量与 Python 模板，且 Java 侧无法参与 prompt golden。另外 2602 行手写数据（每角色 4 语 × ~20 字段 + 3 段 prompt）让代码评审实质上无法发现文案错误（漏一个 ja 字段照样编译通过）。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把广场角色从 Java 常量迁移成后端可读的数据文件（JSON/YAML，按角色一文件），Java 只保留加载与校验，prompt 字段交 Python 侧模板。",
+        "steps": [
+          "定义 character-square schema（id、名称/简介 4 语、greeting 4 语、prompt 键而非 prompt 全文），写成 JSON Schema 或 record 校验。",
+          "把 8 个 Catalog 的既有条目机械导出为 resources/character-square/*.json（一次转换脚本，跑完即删或放 scripts/_），并补一条测试断言导出后逐字段等价。",
+          "Java 侧改为读取这些资源 + 校验（缺 locale × 缺字段直接失败），删除 2602 行常量；prompt 字段改存 prompt key。",
+          "在 backend-agent 的 prompts 目录补对应模板，CharacterSquareService.java:378 传 key 而非全文；跑两端测试与 Java 零 AI 逻辑棘轮。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareCatalog.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareCatalogGenshin.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareCatalogDal.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareCatalogBlueArchive.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareCatalogReZero.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareCatalogDanganronpa.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareService.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test",
+          "scripts/check-java-ai-free.ps1 -Mode strict"
+        ]
+      }
+    },
+    {
+      "section": "simplify",
+      "category": "large_file",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "electron/main.js 3077 行承载 71 个 IPC 通道，主进程已无清晰分区",
+      "file": "frontend/electron/main.js",
+      "line": 1,
+      "evidence": "frontend/electron/main.js 共 3077 行；`grep -c \"ipcMain.handle(\" frontend/electron/main.js` = 63，`grep -c \"ipcMain.on(\"` = 8，合计 71 个通道；文件顶部 import 约 20 个本地模块（logger、exportTextFile、desktopSettings、authSessionStore、customTts、appearanceStore、desktopObserver、greetingAudio、lastChatModelStore、apiProxy、qqBridge、qqBridgeCoordinator 等）。同目录已有 64 个 js 模块，但通道注册仍集中在这一个文件里。",
+      "impact": "新增一个 IPC 就得在 3000 行里找位置，通道的权限边界（preload 白名单 ↔ main 处理器）无法在一个视图内核对；该类文件也是合并冲突与「改 A 弄坏 B」的高发区。AGENTS.md 把 IPC 白名单视为安全边界，边界散落在大文件里会降低审查质量。",
+      "kind": "plan",
+      "fix": {
+        "summary": "按域把 ipcMain 注册拆到 electron/ipc/*.js（窗口与托盘、聊天与导出、TTS/音频、QQ 桥、更新器），main.js 只保留装配顺序。",
+        "steps": [
+          "以现有 import 为线索把 71 个通道分成 5-6 个域，列出「通道名 → 归属文件 → 依赖模块」清单（一次性脚本生成，不提交）。",
+          "新建 electron/ipc/<domain>.js，导出 register<Domain>(deps) 函数，内部只做参数校验与调用既有服务模块，不搬业务逻辑。",
+          "main.js 里改为按顺序调用各 register 函数，保留启动/退出钩子；保证 preload 白名单与通道注册仍能一一对照。",
+          "补一条测试或构建期断言：preload 暴露的通道集合 ⊆ main 注册的通道集合，防止拆分后漏注册。"
+        ],
+        "files": [
+          "frontend/electron/main.js",
+          "frontend/electron/preload.js"
+        ],
+        "tests": [
+          "npm --prefix frontend test",
+          "cd frontend && npx vite build"
+        ]
+      }
+    }
+  ],
+  "deferred": [
+    "frontend/src/pages/LoginPage.vue（205 行）与 frontend/src/pages/RegisterPage.vue（258 行）行级相似度 0.74（difflib，去注释与空行）：表单校验与提交态可抽 composable，但两侧文案与 OTP 分支不同，属需要产品确认的重构，本次不单列。",
+    "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminPermissionCatalog.java 9 行零引用（`grep -rn AdminPermissionCatalog --include=*.java backend` 排除自身为空）：影响极小，建议随下次权限改动顺手删除。",
+    "backend/scripts 下 8 个一次性迁移/修复脚本（dedupe-java-imports.ps1、fix-service-cross-imports.ps1、restore-service-imports.ps1、repackage-service.ps1、strip-utf8-bom.ps1、repair-flyway-v10.sql、repair-flyway-v14-checksum.sql、check-v10-state.sql）仅被 gitignored 的 .specstory 历史文档提到，与 scripts/ 的一次性脚本问题同类，合并处理即可。",
+    "性能类可疑点（如 Agent 健康探测 3 秒缓存、定时任务每轮全量扫描）不在本专家范围，转交 perf。",
+    "AsrController 的 /api/asr/transcribe 端点在前端已无调用方，是否下线涉及对外契约，转交 correctness 判定。"
+  ],
+  "notes": "覆盖口径：scope.json 的 12 个单元全部覆盖，u08 为 reviewed（9 个文件全读 + 22 个 agent 类交叉核对），其余为 sampled 并做了跨文件模式扫描（import 图、类/方法引用、长方法、clone 检测、git ls-files 引用统计），每个单元的 filesRead 与理由见 units。sections：simplify 5 条、cleanup 7 条，合计 12 条，与 findings 逐一对应；两个 section 均做了实质检查，没有用 0 冒充已查。测试基线（本机实跑）：`npm --prefix frontend test` 71 文件 / 417 用例全绿；`mvn -q -f backend/pom.xml test` 退出码 0；`pytest -q backend-agent` 在 backend-agent/.venv/Scripts/python.exe 下全绿（系统 python 因缺依赖在收集阶段报 48 个 error，属环境问题）。`npm --prefix admin test` 无法执行：admin/node_modules 不存在，报 'vitest' 不是内部或外部命令 —— admin 单元（u10 的一部分）因此只有静态结论，已写入 deferred 边界。所有结论均为只读分析，未修改任何源码。"
+}

@@ -1,0 +1,938 @@
+{
+  "schemaVersion": 2,
+  "expert": "maintainability",
+  "status": "ok",
+  "summary": "全项目 12 个单元、1108 个文件逐单元检查（每单元实读 30 个文件并含全部 core，另做跨文件 rg 与自建 import 图扫描）。可维护性整体尚可：Maven 模块无环、生产代码 14 行窗口重复为 0 组、backend-agent 无不可达模块、frontend 运行时依赖全部在用。主要问题集中在四类：①同一事实多处手写（健康探测 5 份、语音白名单 Java/JS 两份、消息时间 3 份）；②两处循环依赖（service.ai ↔ service.character 包互指、前端 notifications store ↔ useNotificationNavigation）；③死代码与过期实现（zh-TW 语言包 617 行未注册、4 个前端模块 791 行无引用、Electron 仍在解密已废弃的 localStorage token）；④仓库卫生（scripts/ 根目录 94 条目且违反自身 README、backend/scripts 残留硬编码个人路径的一次性迁移脚本、admin 4 个未用依赖）。共 12 条发现：simplify 3、coupling 3、cleanup 6，均为 medium 及以下（可维护性封顶 medium）。测试：Maven 与 frontend 通过；admin 与 backend-agent 因环境缺依赖未通过，详见 tests。",
+  "sections": {
+    "simplify": 3,
+    "coupling": 3,
+    "cleanup": 6
+  },
+  "units": {
+    "u01": {
+      "status": "sampled",
+      "filesRead": 30,
+      "files": [
+        "backend/lianyu-service/pom.xml",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentBlockingPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentChatResult.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentImagePort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentMemoryPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentRuntimePort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentStreamCallback.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentStreamPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentTextPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentTextStreamPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentTurnResult.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/CharacterGenerationPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/AsrTranscribeResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/MomentUnreadCountResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/ModelEntryDto.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/PushNotifyTask.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/CreateMomentPostRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/GenerateCharacterRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/SquareCommentRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/AddCharacterFromSquareRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/AnalyzeCharacterImportRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/MomentFeedResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/background/AiBackgroundJobType.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/CreateCharacterRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/CreateConversationRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/CreateMomentCommentRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/GroupMessageResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/MarkNotificationReadRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/MessagePageResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/MomentCommentListResponse.java"
+      ],
+      "notes": "lianyu-service 1/3：pom、agent 包 9 个窄端口与结果类型、dto 抽样；端口 Javadoc 已写明失败语义，DTO 均为 10-15 行数据类，未见重复实现。 本单元 120 个文件，实读 30 个（含全部 core）。"
+    },
+    "u02": {
+      "status": "sampled",
+      "filesRead": 30,
+      "files": [
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/SquareCommentResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/SquareLikeToggleResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UnreadCountResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateCharacterRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateGroupTitleRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateProfileRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateUserSettingsRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateVaultRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UserProfile.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UserSettingsResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/VaultEntryResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/VoiceCallEndRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/ExtractedMemory.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/rules/PromptRuleSlot.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/graph/ChatTurnGroupExtras.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipInnerSpace.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipPhase.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/rules/PromptRuleHook.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/voice/VoiceEventSink.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/CachedMemoryRow.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipSnapshot.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/VoiceCallTurnResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipEventInput.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/ai/AsrStreamClientUrlTest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipEventType.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/conversation/VoiceCallDurationFormatTest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipPresence.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/ai/AsrServiceContentTypeTest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/graph/MessageModelContent.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryConsumer.java"
+      ],
+      "notes": "lianyu-service 2/3：dto/relationship/rules/graph/memory 包与 3 个单测；RelationshipInnerSpace.defaultSpace() 内含中文展示文案，属文案分层问题、未列为发现。 本单元 120 个文件，实读 30 个（含全部 core）。"
+    },
+    "u03": {
+      "status": "sampled",
+      "filesRead": 30,
+      "files": [
+        "frontend/src/api/__tests__/httpCoreSkipGlobalError.test.js",
+        "frontend/src/api/__tests__/sessionRefresh.test.js",
+        "frontend/src/api/ai.js",
+        "frontend/src/api/asr.js",
+        "frontend/src/api/auth.js",
+        "frontend/src/api/character.js",
+        "frontend/src/api/characterSquare.js",
+        "frontend/src/api/characterState.js",
+        "frontend/src/api/conversation.js",
+        "frontend/src/api/electronAdapter.js",
+        "frontend/src/api/httpCore.js",
+        "frontend/src/api/index.js",
+        "frontend/src/constants/authSession.js",
+        "frontend/src/constants/brand.js",
+        "frontend/src/constants/ai.js",
+        "frontend/src/constants/voiceCallMarkers.js",
+        "frontend/src/composables/__tests__/useVoiceDuplexUrl.test.js",
+        "frontend/src/api/memory.js",
+        "frontend/src/api/users.js",
+        "frontend/src/directives/index.js",
+        "frontend/src/api/installMainHttpToasts.js",
+        "frontend/src/constants/__tests__/voiceCallMarkers.test.js",
+        "frontend/src/constants/petSprite.js",
+        "frontend/src/composables/useKeepAlivePages.js",
+        "frontend/src/constants/language.js",
+        "frontend/src/constants/__tests__/ai.test.js",
+        "frontend/src/api/notification.js",
+        "frontend/src/composables/voiceSocket.js",
+        "frontend/src/constants/voiceCallPets.js",
+        "frontend/src/composables/__tests__/voiceSocket.test.js"
+      ],
+      "notes": "frontend/src 1/2：api/ 14 个、constants/ 8 个、composables/ 2 个与 4 个测试；api 层统一 silent→skipGlobalError 约定，无重复实现。 本单元 120 个文件，实读 30 个（含全部 core）。"
+    },
+    "u04": {
+      "status": "sampled",
+      "filesRead": 30,
+      "files": [
+        "scripts/_audit_installer_unpack.py",
+        "scripts/e2e/lianyu_e2e.py",
+        "scripts/gen_elysia_openai.py",
+        "scripts/_upload_update_assets.py",
+        "scripts/gen_pet_fixed_voices.py",
+        "scripts/ops/_write_theme_picker.py",
+        "scripts/diag/_gen_pet_fixed_voices.py",
+        "scripts/_verify_electron_release.py",
+        "scripts/_prod_verify.py",
+        "scripts/re_enroll_pet_voices.py",
+        "scripts/gen_elysia_atlas.mjs",
+        "scripts/_upload_wechat_channel.py",
+        "scripts/_check_yml.py",
+        "scripts/_has_deploy_pw.py",
+        "scripts/release_assets.json",
+        "scripts/diag/_diag_observe_tts_done.py",
+        "scripts/generate-dev-certs.sh",
+        "scripts/diag/_diag_tts_env_quick.py",
+        "scripts/ops/_restart_backend.py",
+        "scripts/diag/_diag_missing_two.py",
+        "scripts/generate-dev-certs.ps1",
+        "scripts/diag/_diag_jar_contents.py",
+        "scripts/ops/_flyway_status.py",
+        "scripts/diag/_diag_minio_list.py",
+        "scripts/ops/_check_after_restart.py",
+        "scripts/_server_health_check.py",
+        "scripts/diag/_diag_sync_skip.py",
+        "scripts/ops/_restart_sync.py",
+        "scripts/_backend_logs.py",
+        "scripts/_flyway_diag.py"
+      ],
+      "notes": "scripts 1/2：30 个脚本 + 全目录统计（81 份自定义 load_dotenv、105 份 paramiko、109 份硬编码生产 IP），目录组织问题见 F9。 本单元 120 个文件，实读 30 个（含全部 core）。"
+    },
+    "u05": {
+      "status": "sampled",
+      "filesRead": 30,
+      "files": [
+        "backend/lianyu-dao/pom.xml",
+        "backend/lianyu-dao/src/main/resources/db/migration/V1__init_schema.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V10__character_square.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V11__character_square_slug.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V12__character_square_avatars_roster.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V13__character_square_dal.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V14__character_square_linzihan.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V15__character_square_linzihan_avatar_fix.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V16__character_square_tags_simplify.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V17__character_square_white_queen.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V18__character_square_genshin.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V19__character_square_mavuika.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V30__version_gap_placeholder.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V5__message_image_url.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V8__message_sticker_url.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V9__moments_post_image_url.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V35__message_audio_url.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V49__drop_default_vault_pool.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V6__moments_user_post.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V44__message_context_content.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V41__community_linked_character.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V52__character_diary_source.sql",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/enums/MemoryType.java",
+        "backend/lianyu-dao/src/main/resources/db/migration/V45__character_square_noelle.sql",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/dto/ConversationUserMessageCountRow.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/ApiKeyVaultMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/CharacterMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/CharacterStickerMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/GroupMemberMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/MemoryMetaMapper.java"
+      ],
+      "notes": "lianyu-dao：pom、20 份 Flyway 迁移、Mapper 抽样；`@Mapper interface X extends BaseMapper<Entity> {}` 是 MyBatis-Plus 约定，不按重复计。 本单元 110 个文件，实读 30 个（含全部 core）。"
+    },
+    "u06": {
+      "status": "sampled",
+      "filesRead": 30,
+      "files": [
+        "frontend/src/main.js",
+        "frontend/src/router/__tests__/startupErrorRecovery.test.js",
+        "frontend/src/router/index.js",
+        "frontend/src/router/startupErrorRecovery.js",
+        "frontend/src/stores/settings.js",
+        "frontend/src/pages/ChatPage.vue",
+        "frontend/src/pages/GroupChatPage.vue",
+        "frontend/src/pages/LandingPage.vue",
+        "frontend/src/pages/QqBridgePage.vue",
+        "frontend/src/pages/CharactersPage.vue",
+        "frontend/src/pages/CharacterSquarePage.vue",
+        "frontend/src/pages/SettingsPage.vue",
+        "frontend/src/utils/dateLocale.js",
+        "frontend/src/utils/text.js",
+        "frontend/src/pages/charactersRealtime.js",
+        "frontend/src/utils/sanitize.js",
+        "frontend/src/utils/groupTitle.js",
+        "frontend/src/pages/LauncherPickPage.vue",
+        "frontend/src/stores/layout.js",
+        "frontend/src/pages/__tests__/wechatBridgePage.test.js",
+        "frontend/src/utils/electron.js",
+        "frontend/src/utils/startupProfiler.js",
+        "frontend/src/pages/__tests__/charactersRealtime.test.js",
+        "frontend/src/utils/__tests__/audioUpload.test.js",
+        "frontend/src/utils/bootSplash.js",
+        "frontend/src/utils/userCity.js",
+        "frontend/src/stores/__tests__/notificationsPurge.test.js",
+        "frontend/src/utils/outputLanguageHeader.js",
+        "frontend/src/utils/__tests__/runtime.devProxy.test.js",
+        "frontend/src/utils/__tests__/secureToken.test.js"
+      ],
+      "notes": "frontend/src 2/2：14 个巨型 SFC（最大 ChatPage.vue 2266 行）、组件与视图抽样；另用自建 import 图扫了 170 个模块。 本单元 103 个文件，实读 30 个（含全部 core）。"
+    },
+    "u07": {
+      "status": "sampled",
+      "filesRead": 30,
+      "files": [
+        "backend-agent/app/config.py",
+        "backend-agent/app/main.py",
+        "backend-agent/Dockerfile",
+        "backend-agent/pyproject.toml",
+        "backend-agent/tests/test_voice_tts.py",
+        "backend-agent/app/gateway.py",
+        "backend-agent/app/chat_turn.py",
+        "backend-agent/app/tts.py",
+        "backend-agent/app/resilience.py",
+        "backend-agent/app/stream_chat.py",
+        "backend-agent/app/data_readers.py",
+        "backend-agent/tests/test_memory_embedding.py",
+        "backend-agent/app/__init__.py",
+        "backend-agent/app/graphs/__init__.py",
+        "backend-agent/app/memory/__init__.py",
+        "backend-agent/app/session_summary_block.py",
+        "backend-agent/tests/test_desktop_greeting_prompt.py",
+        "backend-agent/app/tools/registry.py",
+        "backend-agent/tests/test_session_summary_block.py",
+        "backend-agent/app/tools/__init__.py",
+        "backend-agent/tests/test_gateway_url.py",
+        "backend-agent/tests/test_vision_parser.py",
+        "backend-agent/app/prompts/loader.py",
+        "backend-agent/app/prompt_fragments.py",
+        "backend-agent/app/memory/profile_context.py",
+        "backend-agent/tests/test_recent_activity_and_summary_prompts.py",
+        "backend-agent/tests/test_emotion_block.py",
+        "backend-agent/tests/test_tool_hints.py",
+        "backend-agent/app/character_prompt.py",
+        "backend-agent/tests/test_group_mention_judge_prompt.py"
+      ],
+      "notes": "backend-agent：main.py 全量阅读 + 各域模块抽样；golden 基线与 prompt_fragments 的文件行号锚定是刻意单源化，未按重复计。 本单元 102 个文件，实读 30 个（含全部 core）。"
+    },
+    "u08": {
+      "status": "sampled",
+      "filesRead": 30,
+      "files": [
+        "backend/lianyu-web/pom.xml",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AiController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AsrController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AuthController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/CharacterController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/CharacterStateController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/ConversationController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/GroupChatController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/LegacyCommunityController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/MemoryController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/MomentsController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/NotificationController.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/util/ImageUploadValidatorTest.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/config/Knife4jConfig.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentRuntimeProperties.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/controller/LegacyCommunityControllerTest.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/UserPublicController.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/util/ClientIpResolverTest.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/config/FilterConfig.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/filter/SecurityHeadersFilter.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/controller/ObserveControllerSecurityTest.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/util/ClientIpResolver.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/controller/AuthControllerCaptchaTest.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentFailureLogThrottle.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/filter/OutputLanguageFilter.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/filter/HeaderOnlyTokenFilterTest.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/handler/GlobalExceptionHandlerSseTest.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/agent/AgentToolCatalogTest.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/agent/AgentFailureLogThrottleTest.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/config/CorsConfig.java"
+      ],
+      "notes": "lianyu-web：全部控制器均薄（38-86 行）后抽样 filter/属性/测试；健康探测重复见 F1。 本单元 71 个文件，实读 30 个（含全部 core）。"
+    },
+    "u09": {
+      "status": "sampled",
+      "filesRead": 30,
+      "files": [
+        "frontend/electron/main.js",
+        "frontend/electron/qqBridge/qqBridge.js",
+        "frontend/electron/updater/__tests__/updater.test.js",
+        "frontend/electron/updater/updater.js",
+        "frontend/electron/wechatBridge/lianyu-weixin-host.mjs",
+        "frontend/electron/napcatRuntime/napcatHost.js",
+        "frontend/electron/napcatRuntime/napcatRelease.js",
+        "frontend/electron/qqBridge/napCatClient.js",
+        "frontend/electron/wechatBridge/__tests__/wechatBridge.test.js",
+        "frontend/electron/qqBridge/qqBridgeCoordinator.js",
+        "frontend/electron/napcatRuntime/__tests__/napcatRelease.test.js",
+        "frontend/electron/napcatRuntime/napcatDownloader.js",
+        "frontend/electron/startupProfiler.js",
+        "frontend/electron/__tests__/installerScript.test.js",
+        "frontend/electron/startupOrchestrator.js",
+        "frontend/electron/__tests__/exportTextFile.test.js",
+        "frontend/electron/launcherBounds.js",
+        "frontend/electron/appearanceStore.js",
+        "frontend/electron/exportTextFile.js",
+        "frontend/electron/lastChatModelStore.js",
+        "frontend/electron/__tests__/startupProfiler.test.js",
+        "frontend/electron/rendererTokenScript.js",
+        "frontend/electron/__tests__/releaseToken.test.js",
+        "frontend/electron/singleInstance.js",
+        "frontend/electron/updater/manifestSignature.js",
+        "frontend/electron/__tests__/launcherBounds.test.js",
+        "frontend/electron/__tests__/desktopSettings.test.js",
+        "frontend/electron/qqBridge/messageExtractor.js",
+        "frontend/electron/__tests__/logger.test.js",
+        "frontend/electron/greetingAudio.js"
+      ],
+      "notes": "frontend/electron：main.js 3077 行抽样 + updater/qqBridge/napcat 系；rendererTokenScript 为过期实现见 F11。 本单元 68 个文件，实读 30 个（含全部 core）。"
+    },
+    "u10": {
+      "status": "sampled",
+      "filesRead": 30,
+      "files": [
+        ".env.example",
+        "admin/electron/main.js",
+        "admin/index.html",
+        "admin/package.json",
+        "admin/src/api.js",
+        "admin/src/App.vue",
+        "admin/src/main.js",
+        "admin/src/stores/session.js",
+        "admin/vite.config.js",
+        "backend/Dockerfile",
+        "backend/lianyu-ai/pom.xml",
+        "backend/lianyu-security/pom.xml",
+        "admin/src/styles.css",
+        "admin/src/management.css",
+        "admin/src/components/DataTable.vue",
+        "deploy/asr/requirements.txt",
+        "admin/electron/preload.cjs",
+        "deploy/api-gateway/docker-entrypoint.sh",
+        "admin/src/__tests__/menu.test.js",
+        "admin/src/menu.js",
+        "frontend/scripts/electron-dev.mjs",
+        "backend/lianyu-security/src/main/java/com/lianyu/security/annotation/EncryptedField.java",
+        "backend/lianyu-ai/src/main/java/com/lianyu/ai/graph/StreamTokenConsumer.java",
+        "frontend/scripts/electron-release-token.js",
+        "frontend/vitest.e2e.config.js",
+        "deploy/api-gateway/Dockerfile",
+        "admin/src/pages/ManagementPage.vue",
+        "backend/lianyu-security/src/main/java/com/lianyu/security/config/PasswordConfig.java",
+        "frontend/jsconfig.json",
+        "deploy/api-gateway/generate-cors-map.sh"
+      ],
+      "notes": "其他模块：admin 全部 src（10 文件）、.env.example、deploy/api-gateway、backend/Dockerfile、security 配置；未用依赖见 F12。 本单元 67 个文件，实读 30 个（含全部 core）。"
+    },
+    "u11": {
+      "status": "reviewed",
+      "filesRead": 30,
+      "files": [
+        "backend/lianyu-admin/pom.xml",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/conversation/VoiceCallServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/dto/RegisterRequestValidationTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/graph/ChatTurnFacadeToolFlagsTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/graph/ImageMessageHistoryTextTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/graph/MessageModelContentTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/memory/MemoryExtractionServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/memory/MemoryWriterDebounceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/memory/MemoryWriterRelationshipTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/moments/MomentsCommentOrchestratorTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/notification/NotificationServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/relationship/RelationshipHeuristicsTest.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/AdminModuleMarker.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminPermissionCatalog.java",
+        "backend/lianyu-admin/src/test/java/com/lianyu/admin/release/ReleaseValidationServiceTest.java",
+        "backend/lianyu-admin/src/test/java/com/lianyu/admin/AdminModuleSmokeTest.java",
+        "backend/lianyu-admin/src/test/java/com/lianyu/admin/identity/TotpUtilTest.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminDtos.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminIdentityProperties.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/GitHubReleaseController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/support/SupportGrantController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/ReleaseResolverController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminAuthController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminSecurityConfig.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/support/SupportGrantService.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/audit/AdminAuditController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/ReleaseController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/GitHubReleaseImporter.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/overview/AdminOverviewController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/ReleaseValidationService.java"
+      ],
+      "notes": "lianyu-admin 全部类（8-23 行的权限目录/记录/控制器/服务）+ lianyu-service 11 个单测；极薄分层一致，未见重复或死代码。 本单元 59 个文件，实读 30 个（含全部 core）。"
+    },
+    "u12": {
+      "status": "sampled",
+      "filesRead": 30,
+      "files": [
+        "backend/lianyu-app/pom.xml",
+        "backend/lianyu-common/pom.xml",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/handler/JacksonListTypeHandler.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/handler/JacksonTypeHandler.java",
+        "backend/pom.xml",
+        "frontend/Dockerfile",
+        "installer/LianYu.Installer/App.xaml.cs",
+        "installer/LianYu.Installer/MainWindow.xaml.cs",
+        "Pets/skills/hatch-lianyu-pet/scripts/gen_pet_images.py",
+        "installer/LianYu.Installer/InstallerEngine.cs",
+        "scripts/voice_candidates.py",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/OutboundUrlValidator.java",
+        "backend/scripts/check-v10-state.sql",
+        "backend/scripts/repair-flyway-v14-checksum.sql",
+        "backend/scripts/strip-utf8-bom.ps1",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/constant/AiConstants.java",
+        "installer/LianYu.Installer/InstallOptions.cs",
+        "backend/settings-docker.xml",
+        "backend/lianyu-app/src/main/resources/application-prod.yml",
+        "backend/scripts/dedupe-java-imports.ps1",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/TraceIdFilter.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/exception/BusinessException.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/SpringContextHolder.java",
+        "backend/scripts/repair-flyway-v10.sql",
+        "backend/lianyu-app/src/main/java/com/lianyu/app/LianYuApplication.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/i18n/OutputLanguage.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/base/Result.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/TextUtils.java",
+        "installer/LianYu.Installer/InstallerLog.cs",
+        "Pets/skills/hatch-lianyu-pet/scripts/test_gen_pet_images.py"
+      ],
+      "notes": "lianyu-app/lianyu-common、installer C#、Pets 脚本、backend/scripts；一次性迁移脚本见 F10。 本单元 48 个文件，实读 30 个（含全部 core）。"
+    }
+  },
+  "tests": {
+    "commands": [
+      {
+        "command": "npm --prefix admin test",
+        "status": "failed",
+        "note": "报 `'vitest' 不是内部或外部命令`：admin 未安装 node_modules（无 vitest 可执行文件），不是断言失败；命令经管道后被掩盖为 exit 0。"
+      },
+      {
+        "command": "mvn -q -f backend/pom.xml test",
+        "status": "passed",
+        "note": "重跑 `cd backend && mvn -q test` 得 exit 0，surefire 报告 123 份，覆盖 service/web/ai/admin。"
+      },
+      {
+        "command": "pytest -q backend-agent",
+        "status": "failed",
+        "note": "收集阶段失败：`ModuleNotFoundError: No module named 'respx'`，26 个用例收集错误，属环境缺 dev 依赖，未执行到断言。"
+      },
+      {
+        "command": "npm --prefix frontend test",
+        "status": "passed",
+        "note": "vitest 75 个测试文件 / 459 个用例全绿。"
+      }
+    ],
+    "summary": "4 条命令中 2 通过、2 因本机依赖未安装而失败（admin 缺 node_modules、backend-agent 缺 respx），均非代码断言失败，已如实记录为 failed 而非 passed。"
+  },
+  "findings": [
+    {
+      "section": "simplify",
+      "category": "duplication",
+      "severity": "medium",
+      "confidence": "high",
+      "id": "M01",
+      "unit": "u08",
+      "brief": "后端把“Python 服务是否活着”的检查在五个类里各抄了一遍，每个都带自己的 3 秒缓存；同目录另一个类却用另一套开关判断，所以改一次刷新间隔要改五处，漏一处就会出现“有的功能能连通、有的直接跳过”。",
+      "title": "Agent 健康探测在 5 个适配器里各写一份，门控策略还不一致",
+      "file": "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentBlockingAdapter.java",
+      "line": 126,
+      "evidence": "5 个类各有一份完全相同的实现（grep 'private boolean reachable()'）: AgentBlockingAdapter.java:126, AgentStreamAdapter.java:106, AgentPromptAssemblyAdapter.java:108, AgentSessionSummaryAdapter.java:109, ChatTurnAdapter.java:204，方法体均为 `long now = System.currentTimeMillis(); if (now - healthyCheckedAt < 3_000L) return healthy; healthy = client.isHealthy(); healthyCheckedAt = now; return healthy;`，字段为 `private volatile boolean healthy; private volatile long healthyCheckedAt;`。而同包 AgentTextAdapter.java:33 的门控是 `if (!client.properties().agentActive()) { return null; }`，不看 isHealthy()。",
+      "impact": "健康判定的 TTL 与语义没有单一所有者：调整 3 秒窗口或新增“半开”策略要改 5 处；TextAdapter 与其余 4 个适配器对“服务可用”给出不同答案，排查“文本能回、流式不回”时容易被误导。",
+      "kind": "plan",
+      "fix": {
+        "summary": "抽一个 AgentHealthGate（持有 client 与 TTL），5 个适配器注入同一个实例，并显式对齐或注明 TextAdapter 的门控差异。",
+        "steps": [
+          "在 backend/lianyu-web/src/main/java/com/lianyu/web/agent/ 新增 AgentHealthGate，方法 `boolean reachable()` 保留 3_000L 缓存语义。",
+          "把 5 个适配器的 healthy/healthyCheckedAt 字段与 reachable() 方法体删掉，改为构造注入 AgentHealthGate。",
+          "在 AgentTextAdapter 里改用同一个 gate，或在类注释写清为何只判 agentActive()，避免两套口径无解释地并存。",
+          "补单测：3 秒内复用缓存、过期后重新探测、client.isHealthy() 抛异常时的行为与现状一致。",
+          "cd backend && mvn -q test 确认 123 份 surefire 报告仍全绿。"
+        ],
+        "files": [
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentHealthGate.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentBlockingAdapter.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamAdapter.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/ChatTurnAdapter.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentSessionSummaryAdapter.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentPromptAssemblyAdapter.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentTextAdapter.java"
+        ],
+        "tests": [
+          "cd backend && mvn -q test"
+        ]
+      }
+    },
+    {
+      "section": "simplify",
+      "category": "duplication",
+      "severity": "low",
+      "confidence": "high",
+      "id": "M02",
+      "unit": "u06",
+      "brief": "三个聊天页面各自复制了一段“把消息时间转成毫秒、再渲染成时间分隔条”的小函数，文本完全一样；哪天要改分隔条规则（比如跨天显示日期），必须记得三个文件都改。",
+      "title": "消息时间解析/分隔条格式化在 3 个页面各写一份",
+      "file": "frontend/src/pages/ChatPage.vue",
+      "line": 1556,
+      "evidence": "ChatPage.vue:1556-1565、GroupChatPage.vue:883-892、QuickChatPage.vue:157-166 三处的 `function parseMessageTime(msg) { const ts = msg?.createdAt || msg?._time; if (!ts) return Date.now(); const ms = new Date(ts).getTime(); return Number.isNaN(ms) ? Date.now() : ms }` 与 `function formatTimeDivider(ms) { return formatSmartTime(ms, { t, locale: locale.value }) }` 逐字相同；ChatPage.vue:1567-1569 还多一份同实现的 formatTime。",
+      "impact": "分隔条策略（脏时间回退、跨天格式、locale 透传）被拆成三份，修改时容易只改一处，导致三个页面时间显示不一致；新增页面还会继续复制第四份。",
+      "kind": "direct",
+      "fix": {
+        "summary": "把 parseMessageTime / formatTimeDivider 提到 frontend/src/utils/messageTimeline.js，三个页面改成 import。",
+        "steps": [
+          "新建 frontend/src/utils/messageTimeline.js，导出 parseMessageTime(msg) 与 makeTimeDividerFormatter({ t, locale })（保持 formatSmartTime 调用不变）。",
+          "在 ChatPage.vue、GroupChatPage.vue、QuickChatPage.vue 删除本地副本并改为 import，ChatPage 的 formatTime 一并复用同一实现。",
+          "补一个 utils/__tests__/messageTimeline.test.js：无时间戳回退 Date.now、非法时间回退、正常 ISO 解析。",
+          "npm --prefix frontend test 确认 75 个测试文件仍全绿。"
+        ],
+        "files": [
+          "frontend/src/utils/messageTimeline.js",
+          "frontend/src/pages/ChatPage.vue",
+          "frontend/src/pages/GroupChatPage.vue",
+          "frontend/src/pages/QuickChatPage.vue"
+        ],
+        "tests": [
+          "npm --prefix frontend test"
+        ]
+      }
+    },
+    {
+      "section": "simplify",
+      "category": "god-file",
+      "severity": "medium",
+      "confidence": "high",
+      "id": "M03",
+      "unit": "u07",
+      "brief": "模型运行时的入口文件把聊天、语音、记忆、prompt 组装等二十多个接口全塞在同一个 1200 多行的文件里，一个函数最长一百多行；只想改语音接口的人也得在这个大文件里翻找，改动容易互相踩。",
+      "title": "backend-agent/app/main.py 1278 行、25 个端点没有拆 router",
+      "file": "backend-agent/app/main.py",
+      "line": 1,
+      "evidence": "`wc -l backend-agent/app/main.py` = 1278；文件内 16 个 import、31 个 def、25 个 `@app.post`/`@app.get` 装饰器，0 处 `APIRouter`；最长回调 async def chat_turn_stream 102 行（起始 495），chat_stream 94 行（201），text_chat 92 行（360），proactive_turn 81 行（1060）；同目录第二大模块 gateway.py 仅 504 行。",
+      "impact": "所有端点的装配、鉴权前缀、异常映射都耦合在一个文件里：改任一接口都要重读 1278 行上下文，合并冲突集中在单文件，单测只能整体导入 app，无法按域隔离。",
+      "kind": "plan",
+      "fix": {
+        "summary": "按域把端点拆成 APIRouter（chat / voice / memory / prompt / observe），main.py 只保留 app 装配与 include_router，路径与响应结构不变。",
+        "steps": [
+          "先加一层契约测试：用 FastAPI TestClient 对 25 条路由做 method+path+状态码快照，确保拆分不改外部契约。",
+          "按域新建 app/routers/chat.py、voice.py、memory.py、prompt.py、observe.py，把对应 handler 连同其局部依赖搬过去。",
+          "main.py 保留 create_app/lifespan/中间件与 `app.include_router(...)`，删除已搬走的 handler。",
+          "重跑契约快照 + backend-agent 现有 pytest（当前环境缺 respx，需先装 dev 依赖）。",
+          "确认 SSE 帧契约（content/replace/pieces/error/[DONE]）在拆分后逐字节不变。"
+        ],
+        "files": [
+          "backend-agent/app/main.py",
+          "backend-agent/app/routers/chat.py",
+          "backend-agent/app/routers/voice.py",
+          "backend-agent/app/routers/memory.py",
+          "backend-agent/app/routers/prompt.py"
+        ],
+        "tests": [
+          "pytest -q backend-agent"
+        ]
+      }
+    },
+    {
+      "section": "coupling",
+      "category": "circular-package-dependency",
+      "severity": "medium",
+      "confidence": "high",
+      "id": "M04",
+      "unit": "u02",
+      "brief": "后端服务层里“AI 能力”和“角色”两个包互相引用：AI 包要用角色的导入解析器与日记服务，角色包又要用 AI 包的密钥保管、语音注册和后台任务。结果这两个包只能一起改、一起测，想单独拿走其中一个都做不到。",
+      "title": "com.lianyu.service.ai 与 com.lianyu.service.character 包级互相依赖",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterDiaryService.java",
+      "line": 18,
+      "evidence": "ai→character：AiChatService.java:11 `import com.lianyu.service.character.CharacterImportDraftMapper;`、:12 `CharacterImportSourceParser`；ai/background/AiBackgroundConsumer.java:5 `import com.lianyu.service.character.CharacterDiaryService;`。character→ai：CharacterDiaryService.java:18-20 `ApiKeyVaultService`、`ai.background.AiBackgroundPublisher`、`AiBackgroundTask`；CharacterImportService.java:5-6 `AiChatService`、`ApiKeyVaultService`；CharacterService.java:32 `PetVoiceRegistry`。全 service 包只有这一对互指。",
+      "impact": "两个包（ai 20 类、character 15 类）无法独立抽取或做包级测试；任何一方的构造签名变化都会同时牵动另一边，包边界名存实亡。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把被交叉引用的能力抽成 service/port 下的接口（密钥保管、语音注册、日记后台任务、角色导入解析），两边只依赖接口。",
+        "steps": [
+          "在 com.lianyu.service.port 下定义 ApiKeyVaultPort、PetVoicePort、DiaryBackgroundPort、CharacterImportParsePort 四个窄接口，签名照抄现有调用点。",
+          "让 ai 包的 ApiKeyVaultService / PetVoiceRegistry / AiBackgroundPublisher 实现对应接口，character 包改为注入接口。",
+          "把 CharacterImportDraftMapper / CharacterImportSourceParser 的调用改为在 character 侧暴露一个 CharacterImportFacade，供 AiChatService 单向调用。",
+          "加 ArchUnit 风格断言（或现有棘轮脚本）锁死 ai 与 character 之间只允许单向出现 import。",
+          "cd backend && mvn -q test 全绿后，用一个只含 ai 包的测试任务验证可独立编译。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/port/ApiKeyVaultPort.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AiChatService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterDiaryService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterImportService.java"
+        ],
+        "tests": [
+          "cd backend && mvn -q test"
+        ]
+      }
+    },
+    {
+      "section": "coupling",
+      "category": "circular-dependency",
+      "severity": "medium",
+      "confidence": "high",
+      "id": "M05",
+      "unit": "u06",
+      "brief": "前端通知模块和“点通知跳转”的组件互相 import，形成整个前端唯一一个循环依赖；通知 store 同时管长连接、提示音、弹窗和跳转，改其中任何一块都得把另一半也读一遍。",
+      "title": "notifications store 与 useNotificationNavigation 互相 import（全前端唯一环）",
+      "file": "frontend/src/stores/notifications.js",
+      "line": 14,
+      "evidence": "notifications.js:14 `import { navigateToNotification } from '@/composables/useNotificationNavigation'`；useNotificationNavigation.js:3 `import { useNotificationsStore } from '@/stores/notifications'`。对 frontend/src 219 个模块、476 条 import 边做 Tarjan 强连通检测，仅此一处在环上。该 store 417 行，同时负责 STOMP 连接、AudioContext 提示音、Element 弹窗、顶栏 toast 与未读计数；composable 125 行负责路由跳转与目标解析。",
+      "impact": "环使这两个模块无法单独加载/单测（store 测试必须连 router 与跳转逻辑），也让“通知到达→选哪个页面”的决策散落在 store 与 composable 两侧，新增通知类型要同时改两处。",
+      "kind": "plan",
+      "fix": {
+        "summary": "让 store 只发事件（或回调注入），导航决策留在 composable/router 侧，打断 import 环。",
+        "steps": [
+          "在 notifications.js 里把 navigateToNotification 的直接 import 改为调用一个可注入的 handler（默认 no-op），由 application 启动处注册真实实现。",
+          "或引入 src/events/notificationClick.js 的轻量事件总线，store 只 emit，useNotificationNavigation 订阅后跳转。",
+          "调整 composables/__tests__ 与 stores 相关测试，新增断言“store 不直接依赖 router”。",
+          "用现有的 import 图脚本复跑，确认 0 个强连通分量。",
+          "npm --prefix frontend test 全绿。"
+        ],
+        "files": [
+          "frontend/src/stores/notifications.js",
+          "frontend/src/composables/useNotificationNavigation.js"
+        ],
+        "tests": [
+          "npm --prefix frontend test"
+        ]
+      }
+    },
+    {
+      "section": "coupling",
+      "category": "duplicated-configuration",
+      "severity": "medium",
+      "confidence": "high",
+      "id": "M06",
+      "unit": "u03",
+      "brief": "“哪些角色能打语音电话”这件事被写了两份：Java 里一个常量集合、前端一个常量数组，两边注释都写着“必须和对方保持一致”。新增一个能语音的角色时漏改一边，就会出现前端显示可拨打、后端直接拒绝。",
+      "title": "语音可拨打角色白名单在 Java 与 JS 各手写一份，靠注释人工同步",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/VoiceCallService.java",
+      "line": 69,
+      "evidence": "VoiceCallService.java:67 注释 `Keep in sync with frontend {@code voiceCallPets.js}.`，:69-83 `private static final Set<String> VOICE_CALL_PET_IDS = Set.of(\"klee\",\"ganyu\",\"ayaka\",\"raiden\",\"elysia\",\"erii_uesugi\",\"yae_miko\",\"kokomi\",\"shenhe\",\"nahida\",\"hu_tao\",\"furina\",\"noelle\")`；消费点 :242-243 `VOICE_CALL_PET_IDS.contains(petId)`。前端 frontend/src/constants/voiceCallPets.js:1 注释 `must match VoiceCallService.VOICE_CALL_PET_IDS`，同文件导出同一批 13 个 id。",
+      "impact": "同一事实两处定义且没有任何测试比对：漏改时前端仍显示“语音通话”入口，后端会走 else 分支返回不可拨打，用户看到的是“按钮在但打不通”。",
+      "kind": "plan",
+      "fix": {
+        "summary": "改由后端作为唯一来源（提供可拨打角色列表接口，或在构建期生成前端常量），并加一致性测试兜底。",
+        "steps": [
+          "短期：加一个测试，读 VoiceCallService.java 的 Set.of 文本与 voiceCallPets.js 的数组做集合比对，不一致即红。",
+          "中期：在 lianyu-web 暴露 GET /api/voice/callable-pets（或放进现有角色详情响应），前端启动时拉取并缓存，删除 voiceCallPets.js 的硬编码。",
+          "若前端需要离线可用，则在构建期由脚本从 Java 常量生成 src/constants/voiceCallPets.js 并纳入 CI 差异检查。",
+          "改完后跑 cd backend && mvn -q test 与 npm --prefix frontend test。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/VoiceCallService.java",
+          "frontend/src/constants/voiceCallPets.js"
+        ],
+        "tests": [
+          "cd backend && mvn -q test",
+          "npm --prefix frontend test"
+        ]
+      }
+    },
+    {
+      "section": "cleanup",
+      "category": "dead-code",
+      "severity": "medium",
+      "confidence": "high",
+      "id": "M07",
+      "unit": "u06",
+      "brief": "仓库里有一份 617 行的繁体中文语言包，但程序从来没加载过它——用户选不到繁体，代码里也把它从语言列表里去掉了；只剩一个测试还在检查它的 key 是否齐全，等于逼着后来人继续维护一份没人看得到的译文。",
+      "title": "zh-TW 语言包未被注册（CONFIRMED_DEAD），仅测试在续命",
+      "file": "frontend/src/i18n/index.js",
+      "line": 12,
+      "evidence": "i18n/index.js:9-16 只 `import zh/ja/en`，`messages: { zh, ja, en }`；constants/language.js:3 `export const SUPPORTED_LANGUAGES = /** @type {const} */ (['zh', 'ja', 'en'])`，normalizeLanguage 会把未知值回退到 'zh'；locales/zh-TW.js 617 行完整译文，全仓唯一 import 是 i18n/__tests__/memoryLocale.test.js:5,7（断言四语 memory.* key 完全一致）；utils/dateLocale.js:4 仍判断 'zh-TW' 但该值已不可达。搜索过程：grep -rn \"zh-TW\" frontend/src 仅命中 locales/zh-TW.js、该测试、dateLocale.js 与 language.js 的注释。",
+      "impact": "617 行死译文 + 一个专门保护它的测试：按 AGENTS.md §3.2“四语齐”的要求，后续新增 key 还得往这里补，否则测试红；而真实用户永远看不到繁体界面。",
+      "kind": "plan",
+      "fix": {
+        "summary": "先确认产品是否需要繁体中文：不需要就删除语言包并把“四语齐”改为三语；需要就把它真正接进语言列表和 UI 选项。",
+        "steps": [
+          "与产品确认繁体中文是否在路线图上（当前 UI 语言选择只暴露 zh/ja/en）。",
+          "若不需要：删除 frontend/src/i18n/locales/zh-TW.js，把 i18n/__tests__/memoryLocale.test.js 改为三语断言，删除 utils/dateLocale.js:4 的 'zh-TW' 分支，同步修改 AGENTS.md §3.2 的“四语齐”表述。",
+          "若需要：在 i18n/index.js 注册 zhTW、在 SUPPORTED_LANGUAGES 加 'zh-TW'、补齐语言选择 UI 与 normalizeLanguage 映射。",
+          "npm --prefix frontend test 全绿。"
+        ],
+        "files": [
+          "frontend/src/i18n/locales/zh-TW.js",
+          "frontend/src/i18n/index.js",
+          "frontend/src/constants/language.js",
+          "frontend/src/i18n/__tests__/memoryLocale.test.js",
+          "frontend/src/utils/dateLocale.js"
+        ],
+        "tests": [
+          "npm --prefix frontend test"
+        ]
+      }
+    },
+    {
+      "section": "cleanup",
+      "category": "dead-code",
+      "severity": "medium",
+      "confidence": "high",
+      "id": "M08",
+      "unit": "u06",
+      "brief": "前端有四个模块已经没人用了，合计近 800 行：一个录音 composable（只有它自己的测试在用）、一个聊天截图工具、一个反调试工具，还有一个只被复制走逻辑的语音转写 API。读代码的人会以为这些能力还在生效。",
+      "title": "4 个前端模块无任何生产引用（合计 791 行），其中一个只被自己的测试引用",
+      "file": "frontend/src/composables/useVoiceRecorder.js",
+      "line": 1,
+      "evidence": "对 frontend/src 下 170 个 js/vue 模块（排除 __tests__，入口 main.js/App.vue）建 import 图：useVoiceRecorder.js（466 行）唯一引用为 composables/__tests__/useVoiceRecorder.test.js:2；utils/captureChatShareScreenshot.js（220 行）`export async function captureChatShareScreenshot(container, selectedIds)` 在 :128，全仓 0 调用；utils/antiDebug.js（93 行）仅被 utils/logger.js:4 的注释提到（“生产环境 console.* 被 antiDebug 吞掉”）；api/asr.js（12 行）`transcribeAudio` 0 调用，同一 multipart 逻辑被 api/voiceCall.js:1-13 复制实现。另 entries/quick-main.js、entries/launcher-main.js 是 Vite 多页入口，属正常。",
+      "impact": "四个死模块 + 一个为死代码保绿的测试，让“录音/截图/反调试/ASR”四个能力在代码库里看起来仍然存在；新人改 ASR 时可能改到 asr.js 而线上实际走 voiceCall.js。",
+      "kind": "plan",
+      "fix": {
+        "summary": "删除这 4 个模块与对应测试；若截图或录音功能仍计划上线，先建 issue 再从历史提交取回。",
+        "steps": [
+          "确认 utils/captureChatShareScreenshot.js 与 api/asr.js 无对应产品需求（当前 UI 无入口）。",
+          "删除 useVoiceRecorder.js + composables/__tests__/useVoiceRecorder.test.js、captureChatShareScreenshot.js、antiDebug.js、api/asr.js。",
+          "清理 utils/logger.js:4 提及 antiDebug 的注释，避免留下指向已删文件的说明。",
+          "npm --prefix frontend test 与 npx vite build 确认无残留引用。"
+        ],
+        "files": [
+          "frontend/src/composables/useVoiceRecorder.js",
+          "frontend/src/composables/__tests__/useVoiceRecorder.test.js",
+          "frontend/src/utils/captureChatShareScreenshot.js",
+          "frontend/src/utils/antiDebug.js",
+          "frontend/src/api/asr.js"
+        ],
+        "tests": [
+          "npm --prefix frontend test"
+        ]
+      }
+    },
+    {
+      "section": "cleanup",
+      "category": "repo-hygiene",
+      "severity": "medium",
+      "confidence": "high",
+      "id": "M09",
+      "unit": "u04",
+      "brief": "脚本目录自己写了一条规矩“根目录只放常用脚本，一次性的放 diag/ 或 ops/”，但根目录实际堆了 94 个条目、23 个云部署脚本，还有几对只差一个数字的重复脚本；想知道“部署到底该跑哪个”只能逐个点开看。",
+      "title": "scripts/ 根目录膨胀且违反自身 README 约定，存在成对重复脚本",
+      "file": "scripts/README.md",
+      "line": 18,
+      "evidence": "scripts/README.md:18 `新增一次性排障脚本请放入 diag/ 或 ops/，避免堆在根目录。`；实际 `ls scripts | wc -l` = 94 个条目、132 个跟踪文件，根目录 23 个 `_cloud_*.py` 共 1779 行；成对重复：scripts/diag/_diag_community_feed.py 与 _diag_community_feed2.py、scripts/diag/_fix_gateway_connect.py / _fix_gateway_network.py / _fix_gateway_order.py、scripts/gen_pet_fixed_voices.py 与 scripts/diag/_gen_pet_fixed_voices.py、scripts/_repair_flyway_v34.py 与 scripts/ops/_repair_flyway_v34_mark_applied.py。",
+      "impact": "部署与排障入口不可枚举：94 个根目录条目里混着只用过一次的迁移脚本，`_fix_gateway_*` 三个变体哪个是最终版无从判断；新人容易跑错脚本或重复实现已有的云部署逻辑。",
+      "kind": "plan",
+      "fix": {
+        "summary": "按 README 约定把一次性脚本移入 diag/ops（或直接删除已完成的），合并重复变体，并在 CI 里限制根目录条目数。",
+        "steps": [
+          "清点根目录 94 个条目，标注“长期入口（ship/deploy/release/check）”与“一次性”。",
+          "把 23 个 _cloud_*.py 中仍需要的合并进一个 deploy 入口或移入 ops/cloud/，其余删除。",
+          "合并 4 组成对脚本（_diag_community_feed2、_fix_gateway_* 三件套、两份 gen_pet_fixed_voices、两份 repair_flyway_v34），保留最终版本并写明适用场景。",
+          "在 scripts/README.md 补目录树；加一条 CI 检查（根目录 .py 数量上限或禁止 _ 前缀新增）。",
+          "确认 local/ship-release.ps1 与 docs 里引用的脚本路径仍有效。"
+        ],
+        "files": [
+          "scripts/README.md",
+          "scripts/_cloud_deploy_pull.py",
+          "scripts/diag/_diag_community_feed.py",
+          "scripts/diag/_fix_gateway_order.py",
+          "scripts/gen_pet_fixed_voices.py",
+          "scripts/_repair_flyway_v34.py"
+        ],
+        "tests": [
+          "python scripts/check_release_asset_contract.py"
+        ]
+      }
+    },
+    {
+      "section": "cleanup",
+      "category": "one-off-artifacts",
+      "severity": "medium",
+      "confidence": "high",
+      "id": "M10",
+      "unit": "u12",
+      "brief": "backend/scripts 里留着五个月前的五个 PowerShell 迁移脚本，路径写死在作者本机的 C:\\Users\\hp\\... 上，其中一个的注释直接写“用来回滚另一个脚本”；同目录还有两份写死版本号的 Flyway 修复 SQL 和一个 0 字节的 vault 导出文件。别人跑这些脚本只会改错目录或改到已迁完的代码。",
+      "title": "backend/scripts 残留一次性迁移脚本：硬编码个人绝对路径 + 0 字节占位文件",
+      "file": "backend/scripts/restore-service-imports.ps1",
+      "line": 3,
+      "evidence": "5 个 ps1 硬编码 `c:\\Users\\hp\\Desktop\\LianYu-PC\\...`：dedupe-java-imports.ps1:1、fix-service-cross-imports.ps1:2、repackage-service.ps1:3-4、restore-service-imports.ps1:3、strip-utf8-bom.ps1:1；restore-service-imports.ps1:1 注释 `# Restore java.* / third-party imports stripped by fix-service-cross-imports.ps1`，即这两份互为“执行/回滚”的一次性工具；repair-flyway-v10.sql 与 repair-flyway-v14-checksum.sql 内写死 `WHERE version = '14'` / `checksum = -724640786`；`_vault_export.tsv` 为 0 字节但仍 `git ls-files` 可见。全仓除 .logistics 的 scope 快照外，无任何文档或脚本引用这些文件。",
+      "impact": "目录名 scripts 让人以为可以照跑：实际路径指向作者机器、SQL 绑定已过去的迁移版本、0 字节 tsv 看起来像凭据导出；误跑会改错文件或写入错误的 flyway_schema_history。",
+      "kind": "plan",
+      "fix": {
+        "summary": "删除已执行完的一次性脚本与空占位文件，只保留仍在用的 _upload_backend_image.py；如需留档则移入 docs/refactor-2026-06/ 并注明执行日期与结果。",
+        "steps": [
+          "确认 5 个 ps1 对应的包重构（ai/character 目录整理）已在 2026-06-02 完成、无人再跑。",
+          "删除 dedupe-java-imports.ps1、fix-service-cross-imports.ps1、repackage-service.ps1、restore-service-imports.ps1、strip-utf8-bom.ps1。",
+          "删除 repair-flyway-v10.sql、repair-flyway-v14-checksum.sql、check-v10-state.sql 与 0 字节的 _vault_export.tsv。",
+          "若确需保留排障记录，把 SQL 移入 docs/refactor-2026-06/ 并写明“仅历史参考，勿执行”。",
+          "cd backend && mvn -q test 确认构建不依赖这些脚本。"
+        ],
+        "files": [
+          "backend/scripts/restore-service-imports.ps1",
+          "backend/scripts/fix-service-cross-imports.ps1",
+          "backend/scripts/repackage-service.ps1",
+          "backend/scripts/repair-flyway-v14-checksum.sql",
+          "backend/scripts/_vault_export.tsv"
+        ],
+        "tests": [
+          "cd backend && mvn -q test"
+        ]
+      }
+    },
+    {
+      "section": "cleanup",
+      "category": "dead-code",
+      "severity": "medium",
+      "confidence": "high",
+      "id": "M11",
+      "unit": "u09",
+      "brief": "Electron 主进程还留着一套“从 localStorage 解密登录 token”的注入脚本，但渲染层早已改成只把 token 放内存、不再写那两个键；这段代码现在每次开窗都会执行一遍、必然返回空，注释却还声称“与 secureToken.js 保持一致”，会误导后面的人以为存在 localStorage 回退。",
+      "title": "rendererTokenScript 解密的是已被移除的 localStorage token（恒返回 null）",
+      "file": "frontend/electron/rendererTokenScript.js",
+      "line": 1,
+      "evidence": "rendererTokenScript.js:[REDACTED:secret] 注释 `在渲染进程 executeJavaScript 中解密 secureToken 存储的 _ltt` / `逻辑与 src/utils/secureToken.js 保持一致`，脚本体读 `localStorage.getItem('_ltt')` 与 `_lkt` 做 AES-GCM 解密；而 src/utils/secureToken.js:[REDACTED:secret] 注释 `Token 内存态存储（#14：移除 localStorage 加密剧场）`，:9 `token 仅驻留渲染进程内存（rawToken），不再落 localStorage`；全仓 grep `localStorage.setItem` 于 _ltt/_lkt 为 0 命中。消费点：electron/main.js:82 import，:991-1000 pullRendererAuthToken 内 `executeJavaScript(RENDERER_AUTH_TOKEN_SCRIPT, true)`，:1019 在 ensureAuthSessionFromRenderer 的循环里调用；另 main.js:963 的 RENDERER_DESKTOP_STATE_SCRIPT 也用 `localStorage.getItem('_ltt')` 判定 loggedIn。",
+      "impact": "每次 ensureAuthSessionFromRenderer 都会对每个候选窗口执行一次必然失败的 executeJavaScript，且注释与真实实现相反：维护者会以为删掉 secureToken.js 的 localStorage 分支是 bug，或继续在 token 路径上叠加兼容代码。",
+      "kind": "plan",
+      "fix": {
+        "summary": "删除 rendererTokenScript.js 与 pullRendererAuthToken 分支，认证恢复统一走主进程 safeStorage；loggedIn 判定改用 'lianyu-user-profile'。",
+        "steps": [
+          "确认 ensureAuthSessionFromRenderer 在主进程无 token 时，readAuthSession() 为空即可由渲染层 auth:bootstrap-token 流程兜底。",
+          "删除 frontend/electron/rendererTokenScript.js、main.js:82 的 import、pullRendererAuthToken 定义与 :1019 的调用循环。",
+          "把 main.js:963 附近的 loggedIn 判定从 localStorage '_ltt' 改为 'lianyu-user-profile'（或直接由 auth:session 状态驱动）。",
+          "补/改 Electron 侧测试，覆盖“主进程无 token 时开窗不阻塞、渲染层能引导登录”。",
+          "npm --prefix frontend test 与 electron 冒烟（SMOKE_ELECTRON_ARGS=--no-sandbox）验证开窗正常。"
+        ],
+        "files": [
+          "frontend/electron/rendererTokenScript.js",
+          "frontend/electron/main.js",
+          "frontend/src/utils/secureToken.js"
+        ],
+        "tests": [
+          "npm --prefix frontend test"
+        ]
+      }
+    },
+    {
+      "section": "cleanup",
+      "category": "unused-dependency",
+      "severity": "low",
+      "confidence": "high",
+      "id": "M12",
+      "unit": "u10",
+      "brief": "管理后台的 package.json 里装了表格库、图表库、路由和一套图标，但后台一共只有十个源文件的壳子，这四样东西一次都没被 import 过；每次装依赖都要多下一批包，也给升级维护增加无谓的负担。",
+      "title": "admin 声明了 4 个从未被引用的依赖",
+      "file": "admin/package.json",
+      "line": 10,
+      "evidence": "admin/package.json:10 单行 dependencies 含 `@element-plus/icons-vue`、`@tanstack/vue-table`、`echarts`、`vue-router`（以及实际在用的 axios/element-plus/pinia/vue）；在 admin/src 与 admin/electron 内 grep 这四个包名命中数为 0。admin 前端总共 10 个 src 文件（App.vue 16 行、pages/ManagementPage.vue 16 行、components/DataTable.vue 6 行、menu.js 9 行、api.js 10 行、stores/session.js 3 行等）。",
+      "impact": "多装 4 个未使用的包（含 echarts 这类体积较大的库），安装/审计/升级都要为它们付出成本；也让人误以为后台已有图表与路由能力。",
+      "kind": "plan",
+      "fix": {
+        "summary": "从 admin/package.json 移除这四个依赖并更新 lockfile；若后台确实要做图表/路由，另开任务再接。",
+        "steps": [
+          "确认 admin 后续 3 个月没有 echarts/vue-router/vue-table 的使用计划。",
+          "从 admin/package.json 的 dependencies 删除 @element-plus/icons-vue、@tanstack/vue-table、echarts、vue-router。",
+          "cd admin && npm install 更新 package-lock.json，并确认 npm ls 无 peer 冲突。",
+          "npm --prefix admin test 验证（注意：当前 admin 未安装 node_modules，需先 npm ci）。"
+        ],
+        "files": [
+          "admin/package.json",
+          "admin/package-lock.json"
+        ],
+        "tests": [
+          "npm --prefix admin test"
+        ]
+      }
+    }
+  ],
+  "deferred": [
+    {
+      "from": "maintainability",
+      "expert": "perf",
+      "file": "backend-agent/app/main.py",
+      "lines": [
+        1
+      ],
+      "summary": "单文件 1278 行、25 个路由未拆 router；已作为 M03 上报，若拆分排期靠后可作为独立重构任务跟踪。"
+    },
+    {
+      "from": "maintainability",
+      "expert": "correctness",
+      "file": "frontend/electron/main.js",
+      "lines": [
+        2703
+      ],
+      "summary": "孤儿 IPC handler desktop:notify-window-changed：68 个 ipcMain.handle 与 66 个 preload invoke 全部匹配，仅此通道无暴露/无调用；删除属机械改动，价值低于已上报的 12 条。"
+    },
+    {
+      "from": "maintainability",
+      "expert": "correctness",
+      "file": "AGENTS.md",
+      "lines": [
+        139
+      ],
+      "summary": "文档与配置漂移：AGENTS.md:139 仍写“当前最新 V55”（实际 V57）；docker-compose.yml:110,157 传的 LIANYU_AGENT_SHADOW_MODE 与 :59 的 LIANYU_MEMORY_OUTBOX_ENABLED 在 backend 无任何读取。"
+    },
+    {
+      "from": "maintainability",
+      "expert": "correctness",
+      "file": "admin/src/pages/ManagementPage.vue",
+      "lines": [
+        1
+      ],
+      "summary": "configs.users.columns 先定义后被整段覆盖，前一处为死赋值；admin 后台为壳子状态，等该页真正开发时一并整理。"
+    },
+    {
+      "from": "maintainability",
+      "expert": "perf",
+      "file": "frontend/electron/startupProfiler.js",
+      "lines": [
+        1
+      ],
+      "summary": "electron/startupProfiler.js 11 行与 src/utils/startupProfiler.js 18 行同签名重复（时钟基准不同）；合并需统一时钟语义，暂列观察。"
+    }
+  ],
+  "notes": "证据方法：python 脚本按 scope.json 每单元选 core + 最小文件至 30 个并逐文件读首 14-30 行；另用 rg 做跨文件模式扫描（重复代码 8/14 行窗口、env var 读取点、依赖引用数），用自建脚本对 frontend/src（219 模块）与 backend-agent（app+tests）构建 import 图，并对 service 包做包级引用矩阵。未做运行时验证（未启动服务、未连数据库）；性能相关判断未纳入本轮。仓库根 ship-*.log 等未跟踪垃圾不在 scope，未计入。"
+}

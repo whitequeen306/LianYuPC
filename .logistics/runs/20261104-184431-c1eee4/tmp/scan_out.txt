@@ -1,0 +1,201 @@
+### java_empty_catch  regex=catch\s*\([^)]*\)\s*\{\s*(//[^\n]*\n\s*)?\}
+backend/lianyu-admin/src/main/java/com/lianyu/admin/audit/AdminAuditService.java:30 | try { actor = authorization.currentAdminId(); } catch (RuntimeException ignored) {}
+backend/lianyu-app/src/main/java/com/lianyu/app/DotEnvBootstrap.java:92 | } catch (IOException ignored) { // optional bootstrap }
+backend/lianyu-security/src/main/java/com/lianyu/security/util/JasyptUtil.java:85 | try { return current.decrypt(ciphertext); } catch (Exception ignored) {}
+backend/lianyu-security/src/main/java/com/lianyu/security/util/JasyptUtil.java:89 | try { return entry.getValue().decrypt(ciphertext); } catch (Exception ignored) {}
+backend/lianyu-service/src/main/java/com/lianyu/service/ai/AsrStreamClient.java:169 | } catch (Exception ignored) { // ignore }
+backend/lianyu-service/src/main/java/com/lianyu/service/ai/SseChatStreamHelper.java:79 | } catch (Exception ignored) {}
+backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterChatBehaviorResolver.java:171 | } catch (NumberFormatException ignored) { }
+backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterChatBehaviorResolver.java:185 | } catch (NumberFormatException ignored) { }
+backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java:414 | } catch (Exception ignored) { // handled in generateCharacterReply }
+backend/lianyu-service/src/main/java/com/lianyu/service/square/SquareAddCountService.java:66 | } catch (NumberFormatException ignored) { // skip bad field }
+backend/lianyu-service/src/main/java/com/lianyu/service/square/SquareLikeService.java:86 | } catch (NumberFormatException ignored) { // skip malformed member }
+backend/lianyu-service/src/main/java/com/lianyu/service/square/SquareLikeService.java:115 | } catch (NumberFormatException ignored) { // skip malformed member }
+backend/lianyu-service/src/main/java/com/lianyu/service/voice/CustomVoiceAudioTrimmer.java:77 | } catch (IOException ignored) { // best effort temp cleanup }
+backend/lianyu-service/src/main/java/com/lianyu/service/voice/CustomVoiceAudioTrimmer.java:84 | } catch (IOException ignored) { // best effort temp cleanup }
+backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamBridge.java:133 | } catch (Exception ignored) { // 客户端已断开 }
+backend/lianyu-web/src/main/java/com/lianyu/web/config/WebSocketConfig.java:177 | } catch (Exception ignored) { // ignore invalid user id }
+backend/lianyu-web/src/main/java/com/lianyu/web/controller/CharacterController.java:257 | } catch (NumberFormatException ignored) { // skip invalid token }
+backend/lianyu-web/src/main/java/com/lianyu/web/filter/OutputLanguageFilter.java:37 | } catch (Exception ignored) { // ignore when token missing on public endpoints }
+backend/lianyu-web/src/main/java/com/lianyu/web/voice/VoiceDuplexHandler.java:248 | } catch (IOException ignored) { // ignore }
+--- java_empty_catch: total=19 shown=19
+
+### java_catch_ignored_only  regex=catch\s*\([^)]*\s+ignored\s*\)
+backend/lianyu-admin/src/main/java/com/lianyu/admin/audit/AdminAuditService.java:30 | try { actor = authorization.currentAdminId(); } catch (RuntimeException ignored) {}
+backend/lianyu-app/src/main/java/com/lianyu/app/DotEnvBootstrap.java:92 | } catch (IOException ignored) {
+backend/lianyu-common/src/main/java/com/lianyu/common/util/CharacterSettingsUtils.java:68 | } catch (CharacterCodingException ignored) {
+backend/lianyu-security/src/main/java/com/lianyu/security/util/JasyptUtil.java:85 | try { return current.decrypt(ciphertext); } catch (Exception ignored) {}
+backend/lianyu-security/src/main/java/com/lianyu/security/util/JasyptUtil.java:89 | try { return entry.getValue().decrypt(ciphertext); } catch (Exception ignored) {}
+backend/lianyu-service/src/main/java/com/lianyu/service/ai/AsrStreamClient.java:169 | } catch (Exception ignored) {
+backend/lianyu-service/src/main/java/com/lianyu/service/ai/ModelCatalogService.java:261 | } catch (InterruptedException ignored) {
+backend/lianyu-service/src/main/java/com/lianyu/service/ai/SseChatStreamHelper.java:79 | } catch (Exception ignored) {}
+backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterChatBehaviorResolver.java:171 | } catch (NumberFormatException ignored) {
+backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterChatBehaviorResolver.java:185 | } catch (NumberFormatException ignored) {
+backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterPreferenceResolver.java:93 | } catch (NumberFormatException ignored) {
+backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java:414 | } catch (Exception ignored) {
+backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentOrchestrator.java:674 | } catch (NumberFormatException ignored) {
+backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java:368 | } catch (DuplicateKeyException ignored) {
+backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java:512 | } catch (IllegalArgumentException ignored) {
+backend/lianyu-service/src/main/java/com/lianyu/service/square/SquareAddCountService.java:66 | } catch (NumberFormatException ignored) {
+backend/lianyu-service/src/main/java/com/lianyu/service/square/SquareLikeService.java:86 | } catch (NumberFormatException ignored) {
+backend/lianyu-service/src/main/java/com/lianyu/service/square/SquareLikeService.java:115 | } catch (NumberFormatException ignored) {
+backend/lianyu-service/src/main/java/com/lianyu/service/voice/CustomVoiceAudioTrimmer.java:77 | } catch (IOException ignored) {
+backend/lianyu-service/src/main/java/com/lianyu/service/voice/CustomVoiceAudioTrimmer.java:84 | } catch (IOException ignored) {
+backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamBridge.java:133 | } catch (Exception ignored) {
+backend/lianyu-web/src/main/java/com/lianyu/web/config/WebSocketConfig.java:177 | } catch (Exception ignored) {
+backend/lianyu-web/src/main/java/com/lianyu/web/controller/CharacterController.java:257 | } catch (NumberFormatException ignored) {
+backend/lianyu-web/src/main/java/com/lianyu/web/filter/OutputLanguageFilter.java:37 | } catch (Exception ignored) {
+backend/lianyu-web/src/main/java/com/lianyu/web/voice/VoiceDuplexHandler.java:248 | } catch (IOException ignored) {
+--- java_catch_ignored_only: total=25 shown=25
+
+### python_bare_except  regex=^\s*except\s*:
+--- python_bare_except: total=0 shown=0
+
+### python_except_pass  regex=except[^:\n]*:\s*(#[^\n]*)?\n\s*(pass|continue|return\s+(None|\[\]|\{\}|False|True|""))
+backend-agent/app/dashscope.py:132 | except ValueError: return False
+backend-agent/app/gateway.py:316 | except json.JSONDecodeError: continue
+backend-agent/app/gateway.py:476 | except json.JSONDecodeError: return None
+backend-agent/app/http_client.py:83 | except Exception: # noqa: BLE001 - 收尾失败无所谓 pass
+backend-agent/app/tts.py:351 | except json.JSONDecodeError: return None
+backend-agent/app/tts.py:360 | except (ValueError, TypeError): return None
+backend-agent/app/voice_enrollment.py:90 | except json.JSONDecodeError: return {}
+backend-agent/tests/test_gateway_status_mapping.py:180 | except (ModelGatewayError, GatewayRejectedError): pass
+deploy/asr/server.py:189 | except OSError: pass
+deploy/asr/server.py:338 | except OSError: pass
+deploy/asr/server.py:395 | except json.JSONDecodeError: continue
+deploy/asr/server.py:501 | except Exception: pass
+deploy/asr/server.py:506 | except Exception: pass
+scripts/_audit_installer_unpack.py:221 | except OSError: continue
+scripts/_generate_square_thumbs.py:73 | except Exception: pass
+scripts/_probe_cosyvoice_chain.py:117 | except json.JSONDecodeError: continue
+scripts/_probe_tts_sse.py:61 | except json.JSONDecodeError: continue
+scripts/_prod_verify.py:44 | except FileNotFoundError: pass
+scripts/_prod_verify.py:156 | except json.JSONDecodeError: continue
+scripts/extract-java-prompt-fragments.py:102 | except Exception: # noqa: BLE001 pass
+scripts/make-installer-branding.py:68 | except OSError: continue
+scripts/ops/daily_parity_check.py:146 | except Exception: return None
+scripts/replay_catalog.py:22 | except Exception: continue
+--- python_except_pass: total=23 shown=23
+
+### js_empty_catch  regex=catch\s*(\([^)]*\))?\s*\{\s*\}
+frontend/electron/updater/updater.js:157 | try { if (typeof req.abort === 'function') req.abort() } catch (_) {}
+frontend/electron/updater/updater.js:158 | try { ws.destroy() } catch (_) {}
+frontend/electron/updater/updater.js:217 | try { fs.unlinkSync(probePath) } catch (_) {}
+frontend/electron/updater/updater.js:223 | try { if (typeof req.abort === 'function') req.abort() } catch (_) {}
+frontend/electron/updater/updater.js:301 | try { fs.unlinkSync(part.filePath) } catch (_) {}
+frontend/electron/updater/updater.js:319 | } catch (_) {}
+frontend/electron/updater/updater.js:337 | try { fs.unlinkSync(installerPath) } catch (_) {}
+frontend/src/composables/useRouteTransition.js:27 | try { f() } catch {}
+frontend/src/pages/CharactersPage.vue:404 | } catch {}
+frontend/src/pages/CharactersPage.vue:442 | } catch {} finally {
+frontend/src/pages/CharactersPage.vue:590 | } catch {} finally {
+frontend/src/pages/CharactersPage.vue:628 | } catch {}
+frontend/src/pages/CharactersPage.vue:657 | } catch {}
+frontend/src/pages/GroupChatPage.vue:602 | } catch {} finally {
+frontend/src/pages/GroupChatPage.vue:630 | } catch {}
+frontend/src/pages/MemoryPage.vue:158 | } catch {} finally {
+frontend/src/pages/MemoryPage.vue:194 | } catch {}
+frontend/src/pages/SettingsPage.vue:672 | } catch {}
+frontend/src/stores/notifications.js:352 | } catch {}
+frontend/src/stores/notifications.js:376 | } catch {}
+frontend/src/stores/user.js:243 | try { await logoutApi() } catch {}
+scripts/_probe_dashscope_matrix.mjs:78 | try { ws.close() } catch {}
+scripts/_probe_dashscope_voice.mjs:91 | try { ws.close() } catch {}
+scripts/_probe_rt_latency.mjs:45 | } catch {}
+scripts/_probe_rt_latency.mjs:46 | try { ws.close() } catch {}
+--- js_empty_catch: total=25 shown=25
+
+### js_catch_arrow_empty  regex=\.catch\(\s*\([^)]*\)?\s*=>\s*\{\s*\}\s*\)
+frontend/electron/main.js:483 | checkSystemProxy().catch(() => {})
+frontend/src/App.vue:134 | }).catch(() => {})
+frontend/src/auth/launcherBootstrap.js:40 | void userStore.fetchProfile({ skipGlobalError: true }).catch(() => {})
+frontend/src/auth/launcherBootstrap.js:60 | void userStore.fetchProfile({ skipGlobalError: true }).catch(() => {})
+frontend/src/components/AppUpdatePrompt.vue:105 | await router.push(UPDATE_PAGE_PATH).catch(() => {})
+frontend/src/components/CharacterImportDialog.vue:215 | await providersStore.fetchVaults().catch(() => {})
+frontend/src/components/VoiceCallOverlay.vue:271 | await stopDuplex().catch(() => {})
+frontend/src/composables/pcmPlayback.js:101 | await audioCtx.resume().catch(() => {})
+frontend/src/composables/pcmPlayback.js:119 | void old.close().catch(() => {})
+frontend/src/composables/usePcmCapture.js:135 | void ctx.close().catch(() => {})
+frontend/src/composables/useRouteTransition.js:24 | Promise.allSettled(factories.map((f) => f())).catch(() => {})
+frontend/src/composables/useVoiceRecorder.js:89 | void ctx.close().catch(() => {})
+frontend/src/composables/useVoiceRecorder.js:126 | void audioCtx.resume().catch(() => {})
+frontend/src/composables/useVoiceRecorder.js:275 | .catch(() => {})
+frontend/src/main.js:165 | void useUserStore(pinia).fetchProfile({ skipGlobalError: true }).catch(() => {})
+frontend/src/main.js:172 | }).catch(() => {})
+frontend/src/pages/CharacterSquarePage.vue:423 | }).catch(() => {})
+frontend/src/pages/ChatPage.vue:775 | await userStore.fetchProfile().catch(() => {})
+frontend/src/pages/HomePage.vue:271 | }).catch(() => {})
+frontend/src/pages/ProfilePage.vue:297 | userStore.fetchProfile().catch(() => {})
+frontend/src/pages/QqBridgePage.vue:839 | logRefreshTimer = setInterval(() => { refreshLogs().catch(() => {}) }, 5000)
+frontend/src/pages/QuickChatPage.vue:389 | await providersStore.fetchVaults().catch(() => {})
+frontend/src/stores/notifications.js:365 | void ctx.resume().catch(() => {})
+frontend/src/stores/qqBridge.js:103 | refreshStatus({ guardDowngrade: true }).catch(() => {})
+frontend/src/stores/qqBridge.js:170 | refreshStatus().catch(() => {})
+frontend/src/stores/qqBridge.js:175 | refreshStatus().catch(() => {})
+frontend/src/stores/qqBridge.js:182 | refreshStatus().catch(() => {})
+frontend/src/stores/qqBridge.js:196 | refreshStatus().catch(() => {})
+frontend/src/stores/qqBridge.js:200 | refreshStatus().catch(() => {})
+frontend/src/utils/petVoiceGain.js:53 | void ctx.resume().catch(() => {})
+--- js_catch_arrow_empty: total=30 shown=30
+
+### tests_skipped  regex=\b(it|test|describe|context)\.(skip|only)\s*\(|\b(xit|xdescribe|fit|fdescribe)\s*\(|@Disabled|@Ignore|pytest\.mark\.(skip|xfail)
+--- tests_skipped: total=0 shown=0
+
+### tests_no_assert_smell  regex=expect\(\s*(true|false|1|"")\s*\)\.(toBe|toEqual|toBeTruthy)|assert\s+True\b|assertTrue\(true\)
+--- tests_no_assert_smell: total=0 shown=0
+
+### py_floating_task  regex=create_task\([^)]*\)\s*$
+--- py_floating_task: total=0 shown=0
+
+### js_promise_all  regex=Promise\.all\(
+frontend/electron/updater/updater.js:361 | await Promise.all(parts.map((part) => withRetries(() => {
+frontend/src/components/LauncherPickPanel.vue:110 | const [charList, convList, unreadList] = await Promise.all([
+frontend/src/composables/__tests__/useRouteTransition.test.js:26 | const allSettled = vi.fn((arr) => Promise.all(arr))
+frontend/src/pages/CharactersPage.vue:434 | const [, convList, unreadList] = await Promise.all([
+frontend/src/pages/GroupChatPage.vue:635 | const [convList, unreadList] = await Promise.all([
+frontend/src/pages/GroupChatPage.vue:644 | await Promise.all(
+frontend/src/pages/HomePage.vue:278 | const [momentsRes, diariesRes] = await Promise.all([
+frontend/src/pages/MomentsPage.vue:514 | await Promise.all([
+frontend/src/pages/ProfilePage.vue:283 | await Promise.all([
+frontend/src/stores/notifications.js:119 | void Promise.all([refreshUnreadCount(), refreshLatest()])
+frontend/src/stores/notifications.js:206 | void Promise.all([refreshUnreadCount(), refreshLatest()])
+frontend/src/utils/captureChatShareScreenshot.js:209 | const images = await Promise.all(slices.map((canvas) => new Promise((resolve) => {
+--- js_promise_all: total=12 shown=12
+
+### js_fire_and_forget_void  regex=^\s*void\s+[a-zA-Z_][\w.]*\(
+--- js_fire_and_forget_void: total=0 shown=0
+
+### java_httpclient_timeout  regex=new\s+(RestTemplate|WebClient|HttpClient|OkHttpClient)\s*\(
+--- java_httpclient_timeout: total=0 shown=0
+
+### py_requests_no_timeout  regex=requests\.(get|post|put|delete|patch)\((?![^)]*timeout)
+scripts/_probe_enroll_new.py:47 | resp = requests.post(
+scripts/re_enroll_pet_voices.py:123 | resp = requests.post(
+--- py_requests_no_timeout: total=2 shown=2
+
+### py_httpx_no_timeout  regex=httpx\.(get|post|put|delete|patch|Client|AsyncClient)\((?![^)]*timeout)
+backend-agent/app/http_client.py:40 | return httpx.AsyncClient(**kwargs)
+backend-agent/tests/test_gateway_status_mapping.py:42 | return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+--- py_httpx_no_timeout: total=2 shown=2
+
+### python_logger_exception_bare  regex=except\s+Exception\s+as\s+\w+:\s*\n\s*logger\.(warning|info|debug)\(
+--- python_logger_exception_bare: total=0 shown=0
+
+### js_setInterval_no_clear_smell  regex=setInterval\(
+frontend/electron/desktopObserver.js:84 | idleTimer = setInterval(() => {
+frontend/electron/qqBridge/napCatClient.js:86 | selfIdProbeTimer = setInterval(probeSelfId, 30000)
+frontend/electron/qqBridge/napCatClient.js:94 | selfIdProbeTimer = setInterval(probeSelfId, 5000)
+frontend/electron/qqBridge/napCatClient.js:104 | selfIdProbeTimer = setInterval(probeSelfId, 5000)
+frontend/electron/qqBridge/napCatClient.js:202 | selfIdProbeTimer = setInterval(probeSelfId, 30000)
+frontend/electron/qqBridge/napCatClient.js:264 | selfIdProbeTimer = setInterval(probeSelfId, 5000)
+frontend/electron/smokeNapcat.mjs:59 | const mon = setInterval(() => {
+frontend/electron/wechatBridge/lianyu-weixin-host.mjs:406 | session.interval = setInterval(() => {
+frontend/src/components/VoiceCallOverlay.vue:176 | elapsedTimer = setInterval(() => {
+frontend/src/composables/voiceTurnTail.js:38 | timer = setInterval(() => {
+frontend/src/pages/ChatPage.vue:1160 | fastPollTimer = window.setInterval(() => {
+frontend/src/pages/ChatPage.vue:1184 | conversationPollTimer = window.setInterval(() => {
+frontend/src/pages/MomentsPage.vue:567 | pollTimer = setInterval(() => {
+frontend/src/pages/QqBridgePage.vue:839 | logRefreshTimer = setInterval(() => { refreshLogs().catch(() => {}) }, 5000)
+frontend/src/pages/QuickChatPage.vue:365 | pollTimer = window.setInterval(async () => {
+frontend/src/stores/qqBridge.js:102 | pollTimer = setInterval(() => {
+--- js_setInterval_no_clear_smell: total=16 shown=16

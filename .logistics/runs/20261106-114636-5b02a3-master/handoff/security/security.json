@@ -1,0 +1,848 @@
+{
+  "schemaVersion": 2,
+  "expert": "security",
+  "status": "ok",
+  "summary": "覆盖全部 12 个单元、1108 个文件（139994 行）的安全审查：Spring 鉴权链、Python Agent 运行时、Electron 客户端、部署网关与迁移脚本逐项核对并做了跨文件模式扫描。共 10 条发现：1 条 critical（Agent 接口缺少强鉴权，任意 userId 可跨用户读取记忆）、3 条 high（出站 SSRF、X-Forwarded-For 伪造绕过限流、Jasypt 缺主密钥时明文入库）、4 条 medium、2 条 low；注入、数据暴露两类已查未发现问题。",
+  "sections": {
+    "auth": 2,
+    "authz": 1,
+    "injection": 0,
+    "browser": 1,
+    "uploads": 1,
+    "secrets": 1,
+    "crypto": 1,
+    "exposure": 0,
+    "business-logic": 1,
+    "supply-chain": 2
+  },
+  "units": {
+    "u01": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "backend/lianyu-service/pom.xml",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentBlockingPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentChatResult.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentImagePort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentMemoryPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentRuntimePort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentStreamCallback.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentStreamPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentTextPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentTextStreamPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentTurnResult.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/CharacterGenerationPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/ChatTurnOutcome.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/SceneInstructionPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AiChatService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AssistantContentNormalizer.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/background/AiBackgroundPublisher.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/PetMeetVoiceCatalog.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/auth/AuthService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterChatBehaviorResolver.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterImportSourceParser.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterStateService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/config/WebPushCryptoConfig.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/SessionSummaryProperties.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/AddCharacterFromSquareRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/ChangePasswordRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/ChatResult.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/CreateMomentCommentRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/GroupMessageResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/MessagePageResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/MomentFeedResponse.java"
+      ],
+      "notes": "lianyu-service 业务层：Controller/Service 全部使用 StpUtil 登录态，ApiKeyVaultService 只回掩码 Key，CharacterService 唯一拼接 SQL 的入参为 Long 已确认不可注入；重点核对 agent 端口与 AI 服务调用。"
+    },
+    "u02": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/SquareCommentResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/SquareLikeToggleResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UnreadCountResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateCharacterRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateGroupTitleRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateProfileRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateUserSettingsRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateVaultRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UserProfile.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UserSettingsResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/VaultEntryResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/VoiceCallEndRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/VoiceCallTurnResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/graph/ImageMessageHistoryText.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryConsumer.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryVectorStore.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsScheduler.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/notification/WebPushService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipInnerSpace.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipPresence.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/rules/PromptRuleHook.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareCatalogDal.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareCatalogShizhong.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/square/SquareLikeService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/tools/TimeTool.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/voice/CustomVoiceAudioValidator.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/voice/PcmFrameAssembler.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/voice/VoiceEventSink.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/ai/AssistantContentNormalizerTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/ai/PetMeetVoiceCatalogTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/character/CharacterAddressingTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/character/CharacterImportSourceParserTest.java"
+      ],
+      "notes": "lianyu-service DTO/会话/广场：DTO 不带可越权字段，评论与文件上传取登录态 userId，VaultEntryResponse 仅返回掩码。"
+    },
+    "u03": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "frontend/src/api/__tests__/httpCoreSkipGlobalError.test.js",
+        "frontend/src/api/__tests__/sessionRefresh.test.js",
+        "frontend/src/api/ai.js",
+        "frontend/src/api/asr.js",
+        "frontend/src/api/auth.js",
+        "frontend/src/api/character.js",
+        "frontend/src/api/characterSquare.js",
+        "frontend/src/api/characterState.js",
+        "frontend/src/api/conversation.js",
+        "frontend/src/api/electronAdapter.js",
+        "frontend/src/api/httpCore.js",
+        "frontend/src/api/index.js",
+        "frontend/src/api/installMainHttpToasts.js",
+        "frontend/src/api/voiceCall.js",
+        "frontend/src/auth/bootstrap.js",
+        "frontend/src/components/AppUpdateButton.vue",
+        "frontend/src/components/auth/AuthParticles.vue",
+        "frontend/src/components/EmotionBadge.vue",
+        "frontend/src/components/landing/LandingParticles.vue",
+        "frontend/src/components/memory/brainProjection.js",
+        "frontend/src/components/ProfilePostList.vue",
+        "frontend/src/components/ThemeColorPicker.vue",
+        "frontend/src/composables/__tests__/useChatScroll.test.js",
+        "frontend/src/composables/__tests__/useStreamAbort.test.js",
+        "frontend/src/composables/__tests__/voiceTurnTail.test.js",
+        "frontend/src/composables/useChatScroll.js",
+        "frontend/src/composables/useKeepAlivePages.js",
+        "frontend/src/composables/usePcmCapture.js",
+        "frontend/src/composables/useStreamAbort.js",
+        "frontend/src/composables/voiceTurnTail.js",
+        "frontend/src/constants/ai.js",
+        "frontend/src/constants/petCatalog.js"
+      ],
+      "notes": "frontend/src API 层：token 只存渲染进程内存（secureToken.js），httpCore/auth 通过 Electron IPC bootstrap，未发现 localStorage 写 token。"
+    },
+    "u04": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "scripts/_audit_installer_unpack.py",
+        "scripts/e2e/lianyu_e2e.py",
+        "scripts/gen_elysia_openai.py",
+        "scripts/_upload_update_assets.py",
+        "scripts/gen_pet_fixed_voices.py",
+        "scripts/ops/_write_theme_picker.py",
+        "scripts/diag/_gen_pet_fixed_voices.py",
+        "scripts/_verify_electron_release.py",
+        "scripts/_prod_verify.py",
+        "scripts/re_enroll_pet_voices.py",
+        "scripts/gen_elysia_atlas.mjs",
+        "scripts/_upload_wechat_channel.py",
+        "scripts/_backend_logs.py",
+        "scripts/_cloud_code_check.py",
+        "scripts/_cloud_deploy_layered.py",
+        "scripts/_cloud_env_check.py",
+        "scripts/_cloud_probe_tts.py",
+        "scripts/_diag_prod_404.py",
+        "scripts/_diagnose_moments_push.py",
+        "scripts/_probe_cosyvoice_chain.py",
+        "scripts/_probe_prod_key_models.py",
+        "scripts/_repair_flyway_v31.py",
+        "scripts/_server_health_check.py",
+        "scripts/agent-stream-smoke.py",
+        "scripts/diag/_debug_captcha_ui.py",
+        "scripts/diag/_diag_minio_list.py",
+        "scripts/diag/_diag_square_mismatch.py",
+        "scripts/diag/_grep_gateway_user.py",
+        "scripts/gen_elysia_dashscope.py",
+        "scripts/ops/_check_server_logs.py",
+        "scripts/ops/_repair_flyway_v34_mark_applied.py",
+        "scripts/ops/_upload_missing_two.py"
+      ],
+      "notes": "scripts 运维脚本：SSH 口令来自 DEPLOY_SSH_PASSWORD 环境变量，无硬编码生产口令；TestPass1a/1216qwer 属测试与历史自检脚本。"
+    },
+    "u05": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "backend/lianyu-dao/pom.xml",
+        "backend/lianyu-dao/src/main/resources/db/migration/V1__init_schema.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V10__character_square.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V11__character_square_slug.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V12__character_square_avatars_roster.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V13__character_square_dal.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V14__character_square_linzihan.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V15__character_square_linzihan_avatar_fix.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V16__character_square_tags_simplify.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V17__character_square_white_queen.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V18__character_square_genshin.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V19__character_square_mavuika.sql",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/config/MyBatisPlusConfig.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/dto/MomentsDailyCountRow.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/CharacterSquareTemplate.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/GroupMember.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/MomentsComment.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/RelationshipMilestone.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/User.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/enums/MemoryType.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/CharacterSquareTemplateMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/GroupMemberMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/MomentsCommentMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/RelationshipMilestoneMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/UserCustomVoiceMapper.java",
+        "backend/lianyu-dao/src/main/resources/db/migration/V2__notification_and_push.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V23__character_state.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V27__character_square_rezero.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V30__version_gap_placeholder.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V34__conversation_single_unique.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V38__eriri_dragon_raja_identity.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V41__community_linked_character.sql"
+      ],
+      "notes": "lianyu-dao：逐份核对 V1 schema 与业务迁移，仅 V22 团队 Key 池以密文入库；mapper SQL 全部参数化。"
+    },
+    "u06": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "frontend/src/main.js",
+        "frontend/src/router/__tests__/startupErrorRecovery.test.js",
+        "frontend/src/router/index.js",
+        "frontend/src/router/startupErrorRecovery.js",
+        "frontend/src/stores/settings.js",
+        "frontend/src/pages/ChatPage.vue",
+        "frontend/src/pages/GroupChatPage.vue",
+        "frontend/src/pages/LandingPage.vue",
+        "frontend/src/pages/QqBridgePage.vue",
+        "frontend/src/pages/CharactersPage.vue",
+        "frontend/src/pages/CharacterSquarePage.vue",
+        "frontend/src/pages/SettingsPage.vue",
+        "frontend/src/i18n/locales/ja.js",
+        "frontend/src/layouts/QuickChatLayout.vue",
+        "frontend/src/pages/__tests__/momentsCommentThread.test.js",
+        "frontend/src/pages/CharacterChatDetailPage.vue",
+        "frontend/src/pages/HomePage.vue",
+        "frontend/src/pages/MemoryPage.vue",
+        "frontend/src/pages/QuickChatPage.vue",
+        "frontend/src/stores/__tests__/conversations.test.js",
+        "frontend/src/stores/characterSquare.js",
+        "frontend/src/stores/notifications.js",
+        "frontend/src/stores/wechatBridge.js",
+        "frontend/src/styles/theme.scss",
+        "frontend/src/utils/__tests__/characterAvatar.test.js",
+        "frontend/src/utils/__tests__/petFixedVoice.test.js",
+        "frontend/src/utils/__tests__/sseParser.test.js",
+        "frontend/src/utils/assistantReplySplit.js",
+        "frontend/src/utils/captureChatShareScreenshot.js",
+        "frontend/src/utils/electron.js",
+        "frontend/src/utils/feedTime.js",
+        "frontend/src/utils/media.js"
+      ],
+      "notes": "frontend/src 页面层：v-html 仅用于静态图标与经 DOMPurify 白名单的评论内容，未发现用户内容进入 innerHTML。"
+    },
+    "u07": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "backend-agent/app/config.py",
+        "backend-agent/app/main.py",
+        "backend-agent/Dockerfile",
+        "backend-agent/pyproject.toml",
+        "backend-agent/tests/test_voice_tts.py",
+        "backend-agent/app/gateway.py",
+        "backend-agent/app/chat_turn.py",
+        "backend-agent/app/tts.py",
+        "backend-agent/app/resilience.py",
+        "backend-agent/app/stream_chat.py",
+        "backend-agent/app/data_readers.py",
+        "backend-agent/tests/test_memory_embedding.py",
+        "backend-agent/app/__init__.py",
+        "backend-agent/app/db.py",
+        "backend-agent/app/graphs/proactive_turn.py",
+        "backend-agent/app/memory/__init__.py",
+        "backend-agent/app/memory/relay.py",
+        "backend-agent/app/milvus_store.py",
+        "backend-agent/app/prompt_pipeline.py",
+        "backend-agent/app/rule_templates.py",
+        "backend-agent/app/tool_loop.py",
+        "backend-agent/app/tools/memory_search_tool.py",
+        "backend-agent/app/tools/weather_tool.py",
+        "backend-agent/tests/test_api_contract.py",
+        "backend-agent/tests/test_data_readers.py",
+        "backend-agent/tests/test_end_to_end_prompt.py",
+        "backend-agent/tests/test_group_mention_judge_prompt.py",
+        "backend-agent/tests/test_language_gate.py",
+        "backend-agent/tests/test_memory_writer.py",
+        "backend-agent/tests/test_profile_context.py",
+        "backend-agent/tests/test_prompt_pipeline.py",
+        "backend-agent/tests/test_reply_rules.py"
+      ],
+      "notes": "backend-agent：路由鉴权、工具上下文注入、出站网关、桌面感知与记忆读取逐条核对，三条高危（无鉴权/SSRF/额度消耗）出自本单元。"
+    },
+    "u08": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "backend/lianyu-web/pom.xml",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AiController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AsrController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AuthController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/CharacterController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/CharacterStateController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/ConversationController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/GroupChatController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/LegacyCommunityController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/MemoryController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/MomentsController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/NotificationController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentBlockingAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentFailureLogThrottle.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentMemoryAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentRuntimeClient.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentSceneInstructionAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentSseParser.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamBridge.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentTextStreamAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentTtsAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentWiringHealthCheck.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/DesktopObserveOrchestrator.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/config/FilterConfig.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/config/RabbitMqConfig.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/config/WebSocketConfig.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/PublicFileController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/filter/OutputLanguageFilter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/handler/GlobalExceptionHandler.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/voice/VoiceDuplexHandler.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/agent/AgentFailureLogThrottleTest.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/agent/AgentPromptAssemblyAdapterTest.java"
+      ],
+      "notes": "lianyu-web：12 个 Controller 全量核对鉴权注解与限流，重点复核 ClientIpResolver 的 X-Forwarded-For 取值与观察接口限流。"
+    },
+    "u09": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "frontend/electron/main.js",
+        "frontend/electron/qqBridge/qqBridge.js",
+        "frontend/electron/updater/__tests__/updater.test.js",
+        "frontend/electron/updater/updater.js",
+        "frontend/electron/wechatBridge/lianyu-weixin-host.mjs",
+        "frontend/electron/napcatRuntime/napcatHost.js",
+        "frontend/electron/napcatRuntime/napcatRelease.js",
+        "frontend/electron/qqBridge/napCatClient.js",
+        "frontend/electron/wechatBridge/__tests__/wechatBridge.test.js",
+        "frontend/electron/qqBridge/qqBridgeCoordinator.js",
+        "frontend/electron/napcatRuntime/__tests__/napcatRelease.test.js",
+        "frontend/electron/napcatRuntime/napcatDownloader.js",
+        "frontend/electron/__tests__/apiProxy.test.js",
+        "frontend/electron/__tests__/desktopSettings.test.js",
+        "frontend/electron/__tests__/installerScript.test.js",
+        "frontend/electron/__tests__/logger.test.js",
+        "frontend/electron/__tests__/singleInstance.test.js",
+        "frontend/electron/__tests__/startupProfiler.test.js",
+        "frontend/electron/appearanceStore.js",
+        "frontend/electron/customTts.js",
+        "frontend/electron/desktopSettings.js",
+        "frontend/electron/greetingAudio.js",
+        "frontend/electron/launcherBounds.js",
+        "frontend/electron/napcatRuntime/__e2e__/napcatNetE2E.test.js",
+        "frontend/electron/napcatRuntime/__tests__/napcatDownloader.test.js",
+        "frontend/electron/napcatRuntime/napcatConfig.js",
+        "frontend/electron/preload.js",
+        "frontend/electron/qqBridge/__tests__/qqBridge.proactive.test.js",
+        "frontend/electron/qqBridge/__tests__/qqBridgeSettings.test.js",
+        "frontend/electron/qqBridge/qqBridgeSettings.js",
+        "frontend/electron/runtimeSecrets.js",
+        "frontend/electron/smokeAbort.mjs"
+      ],
+      "notes": "frontend/electron：窗口安全、API 代理白名单与 token 注入、更新器验签、QQ/微信桥出站校验与本地端口绑定。"
+    },
+    "u10": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        ".env.example",
+        "admin/electron/main.js",
+        "admin/index.html",
+        "admin/package.json",
+        "admin/src/api.js",
+        "admin/src/App.vue",
+        "admin/src/main.js",
+        "admin/src/stores/session.js",
+        "admin/vite.config.js",
+        "backend/Dockerfile",
+        "backend/lianyu-ai/pom.xml",
+        "backend/lianyu-security/pom.xml",
+        ".github/workflows/ci.yml",
+        "admin/electron/preload.cjs",
+        "admin/src/components/DataTable.vue",
+        "admin/src/menu.js",
+        "admin/src/styles.css",
+        "backend/lianyu-ai/src/main/java/com/lianyu/ai/graph/ChatTurnScene.java",
+        "backend/lianyu-ai/src/main/java/com/lianyu/ai/SsrfPinningClientFactory.java",
+        "backend/lianyu-security/src/main/java/com/lianyu/security/annotation/EncryptedField.java",
+        "backend/lianyu-security/src/main/java/com/lianyu/security/config/SaTokenConfig.java",
+        "backend/lianyu-security/src/main/java/com/lianyu/security/handler/EncryptedStringTypeHandler.java",
+        "backend/lianyu-security/src/test/java/com/lianyu/security/util/JasyptUtilLooksLikeApiKeyTest.java",
+        "backend/lianyu-storage/src/main/java/com/lianyu/storage/milvus/MilvusConfig.java",
+        "backend/lianyu-storage/src/main/java/com/lianyu/storage/minio/MinioImageProcessor.java",
+        "deploy/api-gateway/docker-entrypoint.sh",
+        "deploy/api-gateway/generate-cors-map.sh",
+        "deploy/asr/Dockerfile",
+        "deploy/asr/server.py",
+        "frontend/index.html",
+        "frontend/launcher.html",
+        "frontend/package.json"
+      ],
+      "notes": "杂项：.env.example、admin SPA、CI 工作流、Dockerfile、网关 nginx、CSP、ASR 服务与部署脚本。"
+    },
+    "u11": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "backend/lianyu-admin/pom.xml",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/conversation/VoiceCallServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/dto/RegisterRequestValidationTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/graph/ChatTurnFacadeToolFlagsTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/graph/ImageMessageHistoryTextTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/graph/MessageModelContentTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/memory/MemoryExtractionServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/memory/MemoryWriterDebounceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/memory/MemoryWriterRelationshipTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/moments/MomentsCommentOrchestratorTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/notification/NotificationServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/relationship/RelationshipHeuristicsTest.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/AdminModuleMarker.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/audit/AdminAuditService.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminAuthorizationService.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminBootstrapService.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminIdentityProperties.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminPermissionCatalog.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminTotpController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/operations/AdminOperationsController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/overview/AdminOverviewController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/GitHubReleaseImporter.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/ReleaseMetadataController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/ReleaseResolverService.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/ReleaseUploadService.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/support/SupportGrantController.java",
+        "backend/lianyu-admin/src/test/java/com/lianyu/admin/AdminModuleSmokeTest.java",
+        "backend/lianyu-admin/src/test/java/com/lianyu/admin/release/ReleaseValidationServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/relationship/RelationshipReworkTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/square/CharacterSquareCatalogTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/storage/FileStorageServicePublicKeyTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/tools/ChatToolContextTest.java"
+      ],
+      "notes": "lianyu-admin 管理端与 service 单测：管理会话 token 哈希校验、审计脱敏、TOTP、权限点与发布导入器。"
+    },
+    "u12": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "backend/lianyu-app/pom.xml",
+        "backend/lianyu-common/pom.xml",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/handler/JacksonListTypeHandler.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/handler/JacksonTypeHandler.java",
+        "backend/pom.xml",
+        "frontend/Dockerfile",
+        "installer/LianYu.Installer/App.xaml.cs",
+        "installer/LianYu.Installer/MainWindow.xaml.cs",
+        "Pets/skills/hatch-lianyu-pet/scripts/gen_pet_images.py",
+        "installer/LianYu.Installer/InstallerEngine.cs",
+        "scripts/voice_candidates.py",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/OutboundUrlValidator.java",
+        "backend/lianyu-app/src/main/java/com/lianyu/app/DotEnvBootstrap.java",
+        "backend/lianyu-app/src/main/java/com/lianyu/app/LianYuApplication.java",
+        "backend/lianyu-app/src/main/resources/application-prod.yml",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/base/ErrorCode.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/base/Result.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/constant/AiConstants.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/exception/BusinessException.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/i18n/OutputLanguage.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/CharacterSettingsUtils.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/ImageUploadValidator.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/SpringContextHolder.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/TextUtils.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/TraceIdFilter.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/UserInputSanitizer.java",
+        "backend/scripts/_upload_backend_image.py",
+        "backend/scripts/check-v10-state.sql",
+        "backend/scripts/dedupe-java-imports.ps1",
+        "backend/scripts/fix-service-cross-imports.ps1",
+        "backend/scripts/repackage-service.ps1",
+        "backend/scripts/repair-flyway-v10.sql"
+      ],
+      "notes": "其余后台模块：公共工具、OutboundUrlValidator、安装器、Pets/脚本的凭据来源。"
+    }
+  },
+  "tests": {
+    "commands": [
+      {
+        "command": "npm --prefix admin test",
+        "status": "not-run",
+        "note": "admin/node_modules 未安装，执行时报 'vitest' 不是内部或外部命令；管理台前端用例本次未运行，不影响后端与 Agent 侧的安全结论。"
+      },
+      {
+        "command": "mvn -q -f backend/pom.xml test",
+        "status": "passed",
+        "note": "在 backend/ 下执行 mvn -q test，退出码 0，surefire 123 份报告无 failure/error。"
+      },
+      {
+        "command": "pytest -q backend-agent",
+        "status": "passed",
+        "note": "仓库根直接执行会因缺 app 包路径与 aiomysql/respx 依赖产生 48 个 collection error；按仓库约定 cd backend-agent 后用 .venv/Scripts/python.exe -m pytest -q 运行，1157 passed。"
+      },
+      {
+        "command": "npm --prefix frontend test",
+        "status": "passed",
+        "note": "75 个测试文件、459 个用例全部通过。"
+      }
+    ],
+    "summary": "4 条命令中 3 条通过；admin 管理台因依赖未安装未能运行，已在 note 说明，不作为安全结论依据。"
+  },
+  "findings": [
+    {
+      "id": "SEC-01",
+      "section": "authz",
+      "category": "missing-authentication / broken-tenant-isolation",
+      "severity": "critical",
+      "confidence": "high",
+      "title": "Agent 运行时缺少 X-User-Id 时直接放行，body.userId 可任意指定导致跨用户读取记忆",
+      "brief": "任何人只要把请求里的用户编号换成别人，就能读到对方的聊天记忆和日记；这些内部接口目前没有登录校验。",
+      "file": "backend-agent/app/main.py",
+      "line": 150,
+      "evidence": "backend-agent/app/main.py:146-151 只做“有头才比对”：user_id_header: str | None = Header(default=None, alias=\"X-User-Id\") → if user_id_header and str(body.user_id) != user_id_header: raise HTTPException(403)。同一写法出现在 :206(chat-stream)、:313(session-summary)、:365(text/chat)、:476、:504，缺头即跳过全部校验。deploy/api-gateway/nginx.conf:252-274 的 location /api/agent/ 没有 auth_request 也没有 internal：set $agent_upstream http://agent:8001; rewrite ^/api(/agent/.*)$ $1 break; proxy_pass $agent_upstream; ⇒ 公网可直达 8001。body.userId 会一路进入工具上下文：app/main.py:228-240 tool_context={\"_user_id\": body.user_id, …}；app/tool_loop.py:98-100 merged.update(tool_context) 覆盖模型参数后 spec.handler(merged)；app/tools/memory_search_tool.py:158 user_id = (arguments or {}).get(\"_user_id\") 再执行 :52/:62 的 WHERE character_id = %s AND user_id = %s。",
+      "impact": "攻击者无需账号即可枚举 userId 读取他人记忆摘要、日记、动态与评论，内容以模型可读的明文形式返回；还能借平台额度生成任意回复。Java 侧 Sa-Token 鉴权被整条绕过，等于把跨租户读取能力挂在公网网关路径上。",
+      "kind": "plan",
+      "fix": {
+        "summary": "在 Agent 侧引入真正的服务间鉴权（共享密钥签名 + 时间窗 + 重放防护），并由网关默认拒绝外部直连 /api/agent/。",
+        "steps": [
+          "在 deploy/api-gateway/nginx.conf 的 location /api/agent/ 增加 internal 或 auth_request 前置校验，外部请求一律 404，仅允许 backend 容器调用。",
+          "实现 config.py 中已声明但未使用的 internal_signature_window_seconds：Java 侧用共享密钥对 (method, path, userId, timestamp, body哈希) 签名放入 X-Internal-Signature，Python 侧校验签名与 30s 时间窗。",
+          "把各路由里 `if user_id_header and …` 改为强制要求签名头，缺失或校验失败直接 401，并对 body 中出现的 userId 与签名内 userId 做一致性校验。",
+          "为 app/main.py 增加覆盖全路由的 FastAPI dependency 或中间件，任何新端点默认受保护，避免逐个路由漏加。",
+          "补测试：无签名、签名过期、签名匹配但 body.userId 不同三种请求都必须被拒绝（tests/test_api_contract.py 扩展）。"
+        ],
+        "files": [
+          "backend-agent/app/main.py",
+          "backend-agent/app/config.py",
+          "deploy/api-gateway/nginx.conf",
+          "backend-agent/tests/test_api_contract.py",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentRuntimeClient.java"
+        ],
+        "tests": [
+          "cd backend-agent && .venv/Scripts/python.exe -m pytest -q",
+          "cd backend && mvn -q test"
+        ]
+      }
+    },
+    {
+      "id": "SEC-02",
+      "section": "uploads",
+      "category": "ssrf",
+      "severity": "high",
+      "confidence": "high",
+      "title": "Agent 接受调用方自填 baseUrl/apiKey，出站请求可打到任意主机并回显响应",
+      "brief": "外部调用者可以指定“模型地址”，服务就会照这个地址发请求，内网服务因此可能被探测，返回内容还会被带出来。",
+      "file": "backend-agent/app/gateway.py",
+      "line": 92,
+      "evidence": "backend-agent/app/main.py:284-285 TextChatBody.base_url/api_key 来自请求体（session-summary :347-348、chat-stream :213 的 text_base_url/text_api_key 同理）；backend-agent/app/gateway.py:92 normalize_openai_base_url 仅做字符串归一（去尾斜杠、去 /v1、固定追加 /v1/chat/completions），随后经 app/http_client.py new_client() 用 httpx 发出请求；main.py:369 附近把模型返回的 content 直接回给调用方。AgentRuntimeClient.java 注释称“仅访问固定地址 agent:8001、无 SSRF 面”，SSRF 面其实在 Python 的这一段。",
+      "impact": "结合 SEC-01 无需登录即可让服务向内网任意 HTTP 服务发起 POST（backend:8080、minio:9000、milvus、运维面板等），把 2xx 响应体带回；也可作为数据外带通道，把请求体里的内容送到攻击者服务器。",
+      "kind": "plan",
+      "fix": {
+        "summary": "Python 出站对 base_url 做与 Java OutboundUrlValidator 等价的白名单校验（禁私网/回环/元数据地址，解析结果钉 IP），并只允许 vault 中登记的域名。",
+        "steps": [
+          "新增 app/outbound_guard.py：复用 lianyu-common OutboundUrlValidator 的规则（禁 127/8、10/8、172.16/12、192.168/16、169.254/16、::1、fc00::/7），解析 DNS 后校验所有 A/AAAA 并返回钉住的 IP。",
+          "在 gateway.py 发起请求前调用该守卫；httpx 使用已校验 IP 建连、Host 头保留原域名，防止 DNS 重绑定。",
+          "对 base_url 增加域名白名单配置（LIANYU_AGENT_ALLOWED_MODEL_HOSTS），未登记域名直接 400。",
+          "base_url/apiKey 只允许由 Java 适配层通过内部签名传递，禁止外部请求自带；超出白名单时记录审计日志（不含 key）。",
+          "补测试：指向 127.0.0.1、169.254.169.254、内网域名分别被拒（tests/test_outbound_guard.py）。"
+        ],
+        "files": [
+          "backend-agent/app/gateway.py",
+          "backend-agent/app/http_client.py",
+          "backend-agent/app/main.py",
+          "backend/lianyu-common/src/main/java/com/lianyu/common/util/OutboundUrlValidator.java"
+        ],
+        "tests": [
+          "cd backend-agent && .venv/Scripts/python.exe -m pytest -q"
+        ]
+      }
+    },
+    {
+      "id": "SEC-03",
+      "section": "auth",
+      "category": "rate-limit-bypass / spoofable-client-identity",
+      "severity": "high",
+      "confidence": "high",
+      "title": "默认信任 X-Forwarded-For 首个值，公网可伪造来源 IP 绕过按 IP 的限流",
+      "brief": "客户端的限流按“来源 IP”算，而这个 IP 可以从请求头里随便写，攻击者每次换一个就能绕过注册和上传的次数限制。",
+      "file": "backend/lianyu-web/src/main/java/com/lianyu/web/util/ClientIpResolver.java",
+      "line": 28,
+      "evidence": "ClientIpResolver.java:16 @Value(\"${lianyu.security.trust-forwarded-for:true}\") 默认为 true；:24-28 if (trustForwardedFor) { String forwarded = request.getHeader(\"X-Forwarded-For\"); … int comma = forwarded.indexOf(','); return (comma > 0 ? forwarded.substring(0, comma) : forwarded).trim(); } —— 取的是客户端可写的第一段。backend/lianyu-app/src/main/resources/application.yml:172 trust-forwarded-for: ${LIANYU_TRUST_FORWARDED_FOR:true}，.env.example 与 docker-compose.yml 均未设置该变量。deploy/api-gateway/nginx.conf:306 `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` 把真实 IP 追加在客户端值之后，因此第一段永远是攻击者可控内容。使用方：AuthController.java:65/:78（登录/注册/验证码，30 次/IP/分钟、3 次/日/IP 注册额度）、ObserveController.java:57（30 次/小时/IP）、头像上传 20 次/日/IP。",
+      "impact": "所有按 IP 的额度（注册 3 次/日、头像 20 次/日、桌面感知 30 次/小时、认证 30 次/分钟）在公网均可被任意绕过，可批量注册、刷模型额度、规避风控；按用户名维度的限额仍生效但无法挡住换号。",
+      "kind": "plan",
+      "fix": {
+        "summary": "改为只信任网关写入的 X-Real-IP（或取 XFF 最后一段），并把 trust-forwarded-for 默认改为 false，部署环境显式打开。",
+        "steps": [
+          "ClientIpResolver 优先读取 X-Real-IP；需要兼容 XFF 时取最后一个非内网段，而不是第一段。",
+          "application.yml 将 lianyu.security.trust-forwarded-for 默认值改为 false，docker-compose 中显式设为 true（仅在网关后部署时）。",
+          "对解析结果做私有网段校验：来自公网的请求若声称内网 IP，直接取 remoteAddr。",
+          "补单测覆盖：单段、多段、伪造内网、无头四种输入（ClientIpResolverTest）。"
+        ],
+        "files": [
+          "backend/lianyu-web/src/main/java/com/lianyu/web/util/ClientIpResolver.java",
+          "backend/lianyu-app/src/main/resources/application.yml",
+          "docker-compose.yml",
+          ".env.example"
+        ],
+        "tests": [
+          "cd backend && mvn -q test"
+        ]
+      }
+    },
+    {
+      "id": "SEC-04",
+      "section": "crypto",
+      "category": "silent-degradation-to-plaintext",
+      "severity": "high",
+      "confidence": "high",
+      "title": "未配置 LIANYU_MASTER_KEY 时 Jasypt 静默降级为明文，用户模型 API Key 直接明文入库",
+      "brief": "少配一个环境变量，用户自己填的模型密钥就会以明文存进数据库，而系统只在启动日志里警告一句。",
+      "file": "backend/lianyu-security/src/main/java/com/lianyu/security/util/JasyptUtil.java",
+      "line": 63,
+      "evidence": "JasyptUtil.java:23 无主密钥时 log.warn(\"LIANYU_MASTER_KEY not set — Jasypt encryption disabled. Set env var before production use.\") 然后不建 encryptor；:61-65 public String encrypt(String plaintext) { … if (currentVersion == null || encryptors.isEmpty()) { log.warn(\"No Jasypt encryptor available, returning plaintext\"); return plaintext; } … }（:69-70 还有第二处同样回退）；:75-78 decrypt 在 encryptors 为空时原样返回。写入方 EncryptedStringTypeHandler 与 ApiKeyVaultService 都直接调用 encrypt，因此 api_key_vault.api_key_encrypted 会存明文。",
+      "impact": "运维漏配一个变量，全部用户自填的模型 Key 会以明文落库；数据库备份、只读账号、误导出或任意 SQL 读取都会造成 Key 泄露，而调用方看不出任何异常（只有启动时一条 warn）。",
+      "kind": "direct",
+      "fix": {
+        "summary": "加密路径失败即关闭（fail closed）：无 encryptor 时抛异常而不是返回明文，并在启动阶段对缺失主密钥做硬校验。",
+        "steps": [
+          "JasyptUtil.encrypt 在 currentVersion 为空或 encryptors 为空时抛 IllegalStateException(\"LIANYU_MASTER_KEY 未配置，拒绝明文入库\")，删除两处 return plaintext。",
+          "decrypt 对空 encryptors 同样抛异常，避免把明文误当密文回读。",
+          "增加启动自检（ApplicationRunner）：master key 缺失且非 dev profile 时直接启动失败或把健康检查标为 DOWN。",
+          "数据修复：对 api_key_vault 中不符合密文格式的行重新加密，并给出一次性迁移脚本。",
+          "补单测：无 master key 时 encrypt 必须抛异常（JasyptUtilTest）。"
+        ],
+        "files": [
+          "backend/lianyu-security/src/main/java/com/lianyu/security/util/JasyptUtil.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/ai/ApiKeyVaultService.java",
+          ".env.example"
+        ],
+        "tests": [
+          "cd backend && mvn -q test"
+        ]
+      }
+    },
+    {
+      "id": "SEC-05",
+      "section": "auth",
+      "category": "missing-lockout-on-second-factor",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "管理员登录 TOTP 错误不累计失败次数，6 位验证码可在线穷举",
+      "brief": "管理员密码一旦泄露，第二步验证码可以无限次尝试，因为只有密码输错才会计数锁定。",
+      "file": "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminAuthService.java",
+      "line": 43,
+      "evidence": "AdminAuthService.java:37-39 仅密码不匹配分支执行 UPDATE admin_user SET failed_attempts=failed_attempts+1, locked_until=CASE WHEN failed_attempts+1>=5 THEN DATE_ADD(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE) …；:42 缺 otp 时返回 otpRequired；:43 if (otpRequired && !TotpUtil.verify(jasypt.decrypt(String.valueOf(row.get(\"totp_secret\"))), request.otp(), System.currentTimeMillis())) throw new IllegalArgumentException(\"用户名或密码错误\") —— 不写 failed_attempts、不锁定；:49 成功后才清零。",
+      "impact": "攻击者拿到管理员密码（复用/撞库/钓鱼）后可对 6 位 TOTP 做在线穷举（成功概率随请求数线性上升），5 次锁定策略形同虚设；管理员后台可读用户列表、发放客服授权、发布客户端版本。",
+      "kind": "direct",
+      "fix": {
+        "summary": "TOTP 校验失败与密码失败同等计数，达到阈值同样锁定并写审计。",
+        "steps": [
+          "抽出一个 recordFailure(adminId) 方法复用 :38 的 UPDATE（failed_attempts+1 + 5 次锁 15 分钟）。",
+          "在 :43 的 OTP 校验失败分支调用 recordFailure，并保持对外错误文案不变。",
+          "缺 otp 的分支（:42）不计数，但记录一条 audit 事件，便于发现“知道密码在探第二步”的行为。",
+          "补单测：连续 5 次错误 OTP 后 locked_until 生效（AdminAuthServiceTest）。"
+        ],
+        "files": [
+          "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminAuthService.java",
+          "backend/lianyu-service/src/test/java/com/lianyu/service/RegisterRequestValidationTest.java"
+        ],
+        "tests": [
+          "cd backend && mvn -q test"
+        ]
+      }
+    },
+    {
+      "id": "SEC-06",
+      "section": "business-logic",
+      "category": "unauthenticated-cost-abuse",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "无鉴权的桌面感知接口会消耗平台自己的多模态 Key，且没有速率限制",
+      "brief": "外部任何人都能反复调用识图接口，用平台自己的模型额度生成内容，花的是运营方的钱。",
+      "file": "backend-agent/app/main.py",
+      "line": 143,
+      "evidence": "backend-agent/app/main.py:143-151 /agent/desktop-observe 无鉴权（同 SEC-01 的头比对逻辑）；app/vision.py:69-70 base_url=settings.multimodal_base_url、api_key=[REDACTED:secret] DashScope Key）；app/desktop_observe.py:86 只有调用方未带 text_base_url/text_api_key 时才回落到平台 Key；main.py:76-79 observe_limiter 是 asyncio.Semaphore（并发上限），不是速率限制。",
+      "impact": "外部可无限次把任意图片与 windowTitle 送进平台模型，按调用量直接消耗运营方额度（成本攻击），并让平台承担内容风险；桌面截图内容也会流向模型供应商。",
+      "kind": "plan",
+      "fix": {
+        "summary": "该端点只允许通过内部签名从 Java 转发，并加用户/IP 双维度配额与单次图片大小上限。",
+        "steps": [
+          "随 SEC-01 的服务间签名一起收口：/agent/desktop-observe 拒绝任何非 backend 签名请求。",
+          "把 asyncio.Semaphore 之外再加滑动窗口限流（Redis 或进程内 token bucket），按 userId 与来源 IP 双维度计数。",
+          "对 imageBase64 长度设上限并在网关侧限制 body 大小，超限 413。",
+          "平台 Key 的调用打点上报（按日聚合），异常峰值触发告警；仍保留用户自带 Key 优先。",
+          "补测试：超过配额返回 429（tests/test_api_contract.py 扩展）。"
+        ],
+        "files": [
+          "backend-agent/app/main.py",
+          "backend-agent/app/vision.py",
+          "backend-agent/app/desktop_observe.py",
+          "backend-agent/app/config.py"
+        ],
+        "tests": [
+          "cd backend-agent && .venv/Scripts/python.exe -m pytest -q"
+        ]
+      }
+    },
+    {
+      "id": "SEC-07",
+      "section": "secrets",
+      "category": "committed-sealed-secrets / shared-master-key",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "团队默认 Key 池的十份密文随迁移入库，解密主密钥在全体开发间共享",
+      "brief": "十个真实的模型密钥以加密形式写进了代码库，而解密用的那把钥匙全组共用，谁拿到代码和钥匙谁就能用这些额度。",
+      "file": "backend/lianyu-dao/src/main/resources/db/migration/V22__team_default_vault_pool_encrypted.sql",
+      "line": 1,
+      "evidence": "V22__team_default_vault_pool_encrypted.sql:1-13 连续 10 条 UPDATE api_key_vault SET api_key_encrypted='<base64 密文>', key_version='v1', base_url='https://clove.dpdns.org', model_default='deepseek-v4-flash' WHERE id=N AND vault_scope='DEFAULT'；文件头注释写明用团队共用 LIANYU_MASTER_KEY 解密（“新同事 clone 后：填好 .env 的 LIANYU_MASTER_KEY”），本机 .env:41 即为该主密钥（.env 被 gitignore，未入库）。JasyptUtil.java:52 使用 PBEWithHMACSHA512AndAES_256 + 1000 次迭代，迭代次数偏低。",
+      "impact": "任何同时拿到仓库与团队主密钥的人（含离职人员、泄露的 .env、CI 缓存）都能解出 10 个真实模型 Key 并直接消耗额度；主密钥一换，所有环境所有密文同时失效，只能全量重新加密与轮换。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把默认 Key 池移出仓库，改为部署时注入；密文与主密钥分离保管，并按环境使用不同主密钥。",
+        "steps": [
+          "删除 V22 中的密文，改为新增迁移把 DEFAULT 池恢复为 V21 的 PENDING_SEED 占位，真实 Key 通过部署脚本/密钥管理服务写入。",
+          "生产与开发使用不同的 LIANYU_MASTER_KEY，禁止把生产主密钥放进开发 .env 或团队共享文档。",
+          "把 Jasypt 迭代次数提升到 ≥100000（或改用 KMS/信封加密），并提供 key_version 轮换路径。",
+          "对已入库的 10 个 Key 在供应商侧轮换/吊销，评估历史额度消耗。",
+          "在 .env.example 与 CI 中加 secret 扫描（gitleaks/osv-scanner 之外）拦下类似提交。"
+        ],
+        "files": [
+          "backend/lianyu-dao/src/main/resources/db/migration/V22__team_default_vault_pool_encrypted.sql",
+          "backend/lianyu-dao/src/main/resources/db/migration/V21__team_default_vault_pool.sql",
+          "backend/lianyu-security/src/main/java/com/lianyu/security/util/JasyptUtil.java",
+          ".env.example"
+        ],
+        "tests": [
+          "cd backend && mvn -q test"
+        ]
+      }
+    },
+    {
+      "id": "SEC-08",
+      "section": "supply-chain",
+      "category": "unsigned-update-fail-open",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "自动更新只校验同源清单里的 sha512，清单签名校验默认关闭",
+      "brief": "客户端安装更新包前只比对一个同样来自更新服务器的校验值，等于自己给自己盖章；一旦更新服务器被控，就会静默装上任意程序。",
+      "file": "frontend/electron/updater/updater.js",
+      "line": 81,
+      "evidence": "frontend/electron/updater/updater.js:81-90 async function verifyManifestOrThrow(ymlText, ymlUrl, apiOrigin) { const publicKeyBase64 = resolveManifestPublicKey(); if (!publicKeyBase64) { logger.warn('updater', 'latest.yml signature check disabled: no updateManifestPublicKey'); return } … } ⇒ 无公钥时直接跳过验签；frontend/.env.production.cloud 中 VITE_LIANYU_UPDATE_PUBKEY 被注释掉（注释：留空 = 客户端暂不强制验签）；:57 的 sha512 取自同一份 latest.yml，:333 verifyInstallerSha512 只比对两者一致性；frontend/package.json:82 signAndEditExecutable: false ⇒ 安装包无 Authenticode 签名。",
+      "impact": "控制更新源（对象存储凭据、4443 端口服务、发布流水线）即可推送任意安装包，客户端下次检查更新即静默下载安装；TLS 证书固定只能防中间人，防不了源端被改或内鬼。",
+      "kind": "plan",
+      "fix": {
+        "summary": "按既定三步走完成强制验签：发布 .sig、填充公钥、把缺公钥从“跳过”改为“拒绝更新”。",
+        "steps": [
+          "在 .env.production.cloud 填入 VITE_LIANYU_UPDATE_PUBKEY 并重新打包，确认 resolveManifestPublicKey() 返回非空。",
+          "把 verifyManifestOrThrow 的缺公钥分支从 return 改为 throw new Error('update manifest public key missing')。",
+          "发布流程强制生成 latest.yml.sig（私钥离线保管），并在 CI 校验 .sig 必须存在。",
+          "为安装包启用代码签名（signAndEditExecutable: true），或至少校验安装器发布者与签名指纹。",
+          "补测试：无公钥、缺 .sig、签名不匹配三种情况均不得继续下载（frontend/electron/updater/__tests__/updater.test.js）。"
+        ],
+        "files": [
+          "frontend/electron/updater/updater.js",
+          "frontend/.env.production.cloud",
+          "frontend/package.json",
+          "frontend/electron/updater/__tests__/updater.test.js"
+        ],
+        "tests": [
+          "npm --prefix frontend test"
+        ]
+      }
+    },
+    {
+      "id": "SEC-09",
+      "section": "supply-chain",
+      "category": "ci-integrity / advisory-only-scan",
+      "severity": "low",
+      "confidence": "high",
+      "title": "CI 以可变 tag 引用第三方 Action，依赖漏洞扫描失败不阻断流水线",
+      "brief": "构建流水线用的第三方组件没有锁定版本，依赖漏洞扫描报错也不会让构建失败，等于没人管。",
+      "file": ".github/workflows/ci.yml",
+      "line": 48,
+      "evidence": ".github/workflows/ci.yml:14/28/45 actions/checkout@v4、:15 actions/setup-java@v4、:29 actions/setup-node@v4、:48 google/osv-scanner-action/osv-scanner-action@v2.0.3 全部按 tag/分支引用；:47 continue-on-error: true 使依赖漏洞扫描失败不影响 job 结论。",
+      "impact": "上游 action 仓库被打新 tag 或劫持时，CI 会执行攻击者代码并接触仓库令牌与发布凭据；osv-scanner 的告警被吞掉，已知漏洞依赖可以长期留在主干。",
+      "kind": "direct",
+      "fix": {
+        "summary": "Actions 固定到 commit SHA，漏洞扫描改为阻断（或至少单独出 job 并告警到人）。",
+        "steps": [
+          "把 4 处 uses 改为完整 commit SHA 并附版本注释（如 actions/checkout@<sha> # v4.1.7）。",
+          "删除 osv-scanner 步骤的 continue-on-error，或改为独立 job 且失败时通知责任人。",
+          "启用 Dependabot 对 github-actions 与 maven/npm 依赖的例行升级 PR。"
+        ],
+        "files": [
+          ".github/workflows/ci.yml"
+        ],
+        "tests": [
+          "不适用（CI 配置变更，需在 GitHub Actions 上验证一次运行）"
+        ]
+      }
+    },
+    {
+      "id": "SEC-10",
+      "section": "browser",
+      "category": "weak-csp",
+      "severity": "low",
+      "confidence": "high",
+      "title": "渲染进程 CSP 允许 unsafe-eval，且 connect-src 放开到任意 https 域名",
+      "brief": "页面一旦被人塞进恶意脚本，这个脚本能用 eval 拼载荷，还能把读到的内容发到任意外部网站。",
+      "file": "frontend/index.html",
+      "line": 7,
+      "evidence": "frontend/index.html:7 <meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'; script-src 'self' 'unsafe-eval'; … connect-src 'self' https: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'\">；frontend/launcher.html:7 同样的 script-src 'unsafe-eval'。渲染进程内存中持有登录 token（frontend/src/utils/secureToken.js），并可通过 preload 暴露的 IPC 调用主进程能力。",
+      "impact": "任何 DOM XSS（社区/评论渲染、第三方依赖、未来新增富文本）都会放大为可 eval 任意代码、可把页面内容与渲染进程内 token 发往任意 https 主机的完整接管。",
+      "kind": "direct",
+      "fix": {
+        "summary": "去掉 unsafe-eval，把 connect-src 收紧到实际使用的 API/更新域名。",
+        "steps": [
+          "确认构建产物不依赖 eval（Vite 生产构建通常不需要），移除 script-src 中的 'unsafe-eval'。",
+          "把 connect-src 从 `'self' https: wss:` 收窄为 API 与更新域名白名单（可用构建期注入的 CSP）。",
+          "同步修改 launcher.html 的 CSP，并在开发模式用单独宽松策略。",
+          "用 Electron 的 webContents.session.webRequest 校验或 CSP 报告端点验证收紧后功能正常。"
+        ],
+        "files": [
+          "frontend/index.html",
+          "frontend/launcher.html",
+          "frontend/electron/main.js"
+        ],
+        "tests": [
+          "npm --prefix frontend test"
+        ]
+      }
+    }
+  ],
+  "deferred": [
+    {
+      "from": "security",
+      "expert": "reliability",
+      "summary": "Agent 侧 /agent/* 无速率限制（observe_limiter 只是并发信号量），额度耗尽与雪崩风险需可靠性视角复核。"
+    },
+    {
+      "from": "security",
+      "expert": "correctness",
+      "summary": "X-Forwarded-For 取首段与网关 $proxy_add_x_forwarded_for 追加语义不一致，属限流口径错误，建议与部署/网关一起修正。"
+    }
+  ],
+  "notes": "每个单元实际精读 32 个文件（含该单元全部 core 路径），并对其余文件按密钥、SQL 拼接、出站请求、v-html/innerHTML、上传路径、限流与鉴权注解等模式做了全量扫描；因此 units 状态统一标为 sampled，不声称逐行通读。testCommands 中 admin 因依赖缺失未运行。临时脚本与中间产物已删除，handoff 目录仅保留 security.json 与 security.md。"
+}

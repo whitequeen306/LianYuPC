@@ -1,0 +1,401 @@
+{
+  "schemaVersion": 2,
+  "expert": "security",
+  "status": "ok",
+  "summary": "全项目安全审查（12 个单元 / 1100 文件）覆盖认证、授权与租户隔离、注入、浏览器安全、上传与 SSRF、密钥、加密、数据暴露、供应链九个面。最严重的问题是网关把 /api/agent/ 整段直连到 Python agent 容器，而 Python 侧只做「请求头存在才校验」的等值比较，导致 22 个 agent 端点（含 memory/write、memory/reconcile、voice/delete、chat-image、desktop-observe）可被未认证调用，可写入/覆盖任意 userId 的记忆并消耗平台自有付费多模态 Key；同一条通道还放任调用方自带的 baseUrl 出站，构成可从公网触发、可探测 mysql/redis/minio 等内网服务的 SSRF。其次是运维链路的缺失：更新清单的 Ed25519 验签公钥在出厂配置里仍是注释（等同于关闭验签）且未做代码签名，NapCat 控制面用硬编码口令 lianyupc 长期固定，主进程 custom-tts 通道会带着用户会话 token 去请求渲染层指定的任意 URL，Jasypt 在缺少 LIANYU_MASTER_KEY 时静默返回明文落库。核心业务面（Sa-Token 拦截、admin 会话二次校验、租户条件 SQL、上传白名单与重编码、公开文件对象键校验、参数化 SQL、DOMPurify、Electron 三项 webPreferences 与 egress 白名单）实测是干净的，未发现 SQL 注入、越权读写、XSS 落地或命令注入。",
+  "sections": {
+    "auth": 2,
+    "authz": 0,
+    "injection": 1,
+    "browser": 1,
+    "uploads": 1,
+    "secrets": 2,
+    "crypto": 1,
+    "exposure": 0,
+    "supply-chain": 2
+  },
+  "units": {
+    "u01": {
+      "status": "reviewed",
+      "filesRead": 9,
+      "notes": "lianyu-service 认证与存储：AuthServiceImpl（登录/注册/改密/登出）、AuthRateLimiter、FileStorageService（SAFE_OBJECT_KEY、上传白名单、公开内容类型黑名单）、CustomVoiceAudioTrimmer（唯一命令执行点）、ApiKeyVaultService（租户归属 + 掩码 + 保存期 URL 校验）、MemoryQueryService、GroupChatService、ImageUploadValidator、NotificationService。"
+    },
+    "u02": {
+      "status": "sampled",
+      "filesRead": 6,
+      "notes": "lianyu-service 余下 120 文件按 rg 扫 authorizaton/userId/Mapper 模式后抽查会话、群聊、记忆写入链路；未发现 userId 来自请求体却直接落库的路径，SQL 全参数化。"
+    },
+    "u03": {
+      "status": "sampled",
+      "filesRead": 5,
+      "notes": "frontend/src 组件与 composables：全量扫 v-html / innerHTML / eval / postMessage / location 赋值，仅 3 处 sink 且已确认安全；secureToken.js 为内存态 token。"
+    },
+    "u04": {
+      "status": "sampled",
+      "filesRead": 7,
+      "notes": "scripts 12803 行：扫硬编码凭据、verify=False/check_hostname、curl -k、shell=True、Invoke-Expression。凭据全部取自环境变量；仅 diag/e2e 自测脚本对本机 IP 关闭 TLS 校验，属运维自测，未计为发现。"
+    },
+    "u05": {
+      "status": "sampled",
+      "filesRead": 4,
+      "notes": "lianyu-dao：57 个 Flyway 迁移抽查 V1/V51 及 token/password 相关表结构，admin_session 存 SHA-256(token)，无明文令牌列；无 mapper XML 且 Java 侧无 ${} 拼接。"
+    },
+    "u06": {
+      "status": "reviewed",
+      "filesRead": 11,
+      "notes": "backend-agent：main.py（25 个端点与 18 处 X-User-Id 判断）、gateway.py、http_client.py、config.py、memory/writer、Dockerfile、pyproject/uv.lock。核心结论是 agent 自身无任何鉴权中间件，依赖调用方头部。"
+    },
+    "u07": {
+      "status": "sampled",
+      "filesRead": 6,
+      "notes": "frontend/src pages/utils/stores/router：扫 XSS sink、localStorage 存 token、路由守卫与外部跳转，未发现把 token 写入持久存储或危险跳转。"
+    },
+    "u08": {
+      "status": "reviewed",
+      "filesRead": 13,
+      "notes": "lianyu-web：AuthController、PublicFileController、MemoryController、CorsConfig、WebSocketConfig（CONNECT 鉴权 + 订阅归属）、SecurityHeadersFilter、HeaderOnlyTokenFilter、GlobalExceptionHandler 等逐文件读。"
+    },
+    "u09": {
+      "status": "reviewed",
+      "filesRead": 12,
+      "notes": "frontend/electron：main.js（webPreferences、CSP、SPKI 钉扎、egress 白名单、IPC 信任守卫）、apiProxy.js、customTts.js、napcatConfig.js、napcatHost.js、napcatDownloader.js、updater.js、manifestSignature.js、secureToken.js。"
+    },
+    "u10": {
+      "status": "sampled",
+      "filesRead": 9,
+      "notes": "根目录与 .github/admin/deploy/security：nginx.conf 全量 location 逐个比对（含 SSRF/agent 分流与更新清单路由）、ci.yml、.env.example、docker-compose.yml 端口暴露、admin（Electron 壳 + 运营台 token 存储）、JasyptUtil/SaTokenConfig。"
+    },
+    "u11": {
+      "status": "reviewed",
+      "filesRead": 8,
+      "notes": "lianyu-admin：AdminSecurityConfig、AdminAuthService、AdminAuthorizationService、SupportGrantController/Service、AdminManagementController 等 12 个控制器的方法级权限覆盖。"
+    },
+    "u12": {
+      "status": "sampled",
+      "filesRead": 6,
+      "notes": "lianyu-common/lianyu-storage/backend 脚本/installer/Pets：OutboundUrlValidator、ImageUploadValidator、UserInputSanitizer、TraceIdFilter、SsrfPinningClientFactory、MinIO 访问策略。"
+    }
+  },
+  "findings": [
+    {
+      "section": "auth",
+      "category": "未认证访问 / 网关分流绕过",
+      "severity": "critical",
+      "confidence": "high",
+      "title": "api-gateway 把 /api/agent/ 整段直连 Python，未认证即可写他人记忆并消耗平台自有模型 Key",
+      "file": "deploy/api-gateway/nginx.conf",
+      "line": 252,
+      "evidence": "nginx 的 `location /api/agent/`（252-274 行）只有限流与 `set $agent_upstream http://agent:8001; rewrite ^/api(/agent/.*)$ $1 break; proxy_pass $agent_upstream;`，整段没有 Sa-Token 校验、没有剥离或校验 X-User-Id；而 Python 侧的校验是「头在才校验」：backend-agent/app/main.py:150 `if user_id_header and str(body.user_id) != user_id_header: raise HTTPException(status_code=403, detail=\"user mismatch\")`，memory_write 内同款判断（main.py:987 附近）后直接 main.py:1003 `write_memories(body.user_id, body.character_id, inputs)`。省略 X-User-Id 头即完全跳过校验；grep middleware/X-Internal/interceptor 在 backend-agent/app 下无任何结果，agent 自身零鉴权。该 location 也不被任何客户端需要：Java 走 docker-compose.yml:60 `LIANYU_AGENT_BASE_URL: ${LIANYU_AGENT_BASE_URL:-http://agent-lb:8001}`，frontend/、admin/、backend/ 中 grep `api/agent` 无命中。可复现：`curl -k -X POST https://<gateway>/api/agent/memory/write -H 'Content-Type: application/json' -d '{\"userId\":1,\"characterId\":1,\"memories\":[{\"summary\":\"x\"}]}'` 不需要任何 token（注意正则 location `~ ^/api/.*stream` 会先吃掉 chat-stream/chat-turn/stream/tts/stream 等带 stream 的路径转给 Java，所以直达的是 desktop-observe、chat-image、text/chat、prompt/*、character/*、memory/*、proactive-turn、voice/*、tts/synthesize 等 22 个端点）。加重：main.py:741 `vision_key = body.vision_api_key or settings.multimodal_api_key`，未认证请求可回落到平台自有付费多模态 Key；observe_limiter 以 body.user_id 为键，改值即可绕过限流。",
+      "impact": "公网任意人可对任意 userId 写入/合并记忆、触发 memory/reconcile 全量对账写库、删除他人克隆音色、生成/导入角色、无限消耗平台付费多模态与文本模型额度；配合下一条可进一步探测内网。这是本项目当前最严重的未认证写入面。",
+      "kind": "plan",
+      "fix": {
+        "summary": "关掉公网到 agent 的直达通道，并把 Python 侧改成 fail-closed 的内部鉴权，不再依赖调用方自觉携带用户头。",
+        "steps": [
+          "在 deploy/api-gateway/nginx.conf 删除 `location /api/agent/`（或改为 `return 404`），确认客户端与 Java 均不依赖该路径（已 grep 全仓库无调用方）。",
+          "Python 侧新增内部鉴权依赖：settings 增加 `internal_shared_secret`，所有 /agent/* 端点在不带匹配的 `X-Internal-Secret` 时直接 401（缺省不配 secret 时启动即失败，而不是放行）。",
+          "Java 适配层（AgentRuntimeClient/AgentTextStreamAdapter 等调用 agent-lb 的地方）统一注入该 schema，并把 X-User-Id 由服务端按登录主体写入，禁止透传客户端值。",
+          "把 18 处 `if user_id_header and ...` 等值判断替换为「必须存在 + 必须等于服务端注入值」，缺失即拒绝。",
+          "在 backend-agent 增加 pytest：无 secret 调用 /agent/memory/write 与 /agent/desktop-observe 必须 401；带 secret 但 userId 与头不一致必须 403。"
+        ],
+        "files": [
+          "deploy/api-gateway/nginx.conf",
+          "backend-agent/app/main.py",
+          "backend-agent/app/config.py",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentTextStreamAdapter.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentRuntimeClient.java"
+        ],
+        "tests": [
+          "backend-agent/tests/test_internal_auth.py：缺/错 secret → 401，userId 不匹配 → 403，正常链路 → 200",
+          "网关回归：对 /api/agent/memory/write 直接请求应返回 404/401 而非进入 agent"
+        ]
+      }
+    },
+    {
+      "section": "uploads",
+      "category": "SSRF / 出站地址未校验",
+      "severity": "high",
+      "confidence": "high",
+      "title": "Python 网关对调用方自带的 baseUrl 无内网黑名单，可探测 docker 内网服务并绕过 Java 的保存期校验",
+      "file": "backend-agent/app/gateway.py",
+      "line": 288,
+      "evidence": "backend-agent/app/gateway.py:288 `url = normalize_openai_base_url(base_url)` 后直接 :302 `async with client.stream(\"POST\", url, json=payload, headers=headers)`；backend-agent/app/http_client.py:27 的 new_client() 只设置 timeout/UA/`local_address=\"0.0.0.0\"`，没有任何 IP 或主机名黑名单（注释声称「对齐 Java 侧 SsrfPinningClientFactory 红线」，实际只对齐了超时）。baseUrl 完全来自请求体：main.py:284 `base_url: str = Field(alias=\"baseUrl\")`、main.py:187 `text_base_url`。Java 侧确实有防护（backend/lianyu-common/src/main/java/com/lianyu/common/util/OutboundUrlValidator.java 阻内网、backend/lianyu-ai/src/main/java/com/lianyu/ai/SsrfPinningClientFactory.java:28 说明用钉 IP 防 DNS 重绑定），但那只发生在 vault 保存时，真正出站在另一个进程重新解析域名，保存期校验既不能覆盖直连 agent 的请求（上一条），也不能防 DNS 重绑定。可复现：`curl -k -X POST https://<gateway>/api/agent/memory/extract-write -d '{\"userId\":1,\"characterId\":1,\"textBaseUrl\":\"http://mysql:3306/v1\",\"textApiKey\":\"x\"}'`（无 token），agent 会向 mysql:3306 发起请求并按连接行为返回不同错误；把主机换成 redis:6379、minio:9000、milvus:19530 同理。",
+      "impact": "从公网触发、以 agent 容器身份访问 docker 内网：内网端口探测、对内网 HTTP 服务发任意请求（含带 body 的 POST）、绕开 Java 的域名/IP 校验与钉 IP 机制；配合上一条的未认证入口危害进一步放大。",
+      "kind": "plan",
+      "fix": {
+        "summary": "在 Python 出站入口做与 Java 等价的地址校验（拒绝私网/环回/链路本地/元数据地址，并在连接时钉住解析结果），并让 Java 与 Python 共用同一套判定用例。",
+        "steps": [
+          "在 backend-agent/app/http_client.py 增加 `validate_outbound_url(url)`：只允许 http/https，解析全部 A/AAAA 记录并拒绝 is_private/is_loopback/is_link_local/is_reserved 与 169.254.169.254，解析失败即拒绝。",
+          "在 gateway.py 的 _stream_once/_post_chat 前调用该校验，并把校验通过的 IP 传给 httpx（自定义 transport 或在请求头 Host 不变的前提下直连 IP），避免解析与连接之间的 DNS 重绑定窗口。",
+          "把内网可达的服务（mysql/redis/rabbitmq/milvus/minio）与 agent 容器放进独立的 docker network，agent 只加入必需的那一个，减少被用作探测跳板的收益。",
+          "为 Python 侧补齐与 backend/lianyu-ai/src/test/java/com/lianyu/ai/SsrfPinningClientFactoryTest.java 等价的黑名单用例（localhost、10/8、172.16/12、192.168/16、169.254、::1、metadata）。",
+          "在 agent 侧对 baseUrl 只接受 https 或既有白名单域（可选收紧项）。"
+        ],
+        "files": [
+          "backend-agent/app/http_client.py",
+          "backend-agent/app/gateway.py",
+          "docker-compose.yml"
+        ],
+        "tests": [
+          "backend-agent/tests/test_outbound_url_guard.py：私网/环回/元数据地址必须抛错且不发起连接",
+          "respx 用例：合法公网地址仍能完成一次 stream 调用"
+        ]
+      }
+    },
+    {
+      "section": "supply-chain",
+      "category": "更新完整性 / 代码签名缺失",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "客户端更新清单的 Ed25519 验签默认关闭（出厂无公钥）且安装包未做代码签名",
+      "file": "frontend/electron/updater/updater.js",
+      "line": 83,
+      "evidence": "frontend/electron/updater/updater.js:82-86 `const publicKeyBase64 = resolveManifestPublicKey(); if (!publicKeyBase64) { ... logger.warn('updater', 'latest.yml signature check disabled: no updateManifestPublicKey'); ... }` —— 无公钥时直接放行，只校验 latest.yml 自带的 sha512（清单与包同源，改清单即可同步改哈希）。而 frontend/.env.production.cloud 第 12 行仍是注释 `# VITE_LIANYU_UPDATE_PUBKEY=`（同文件只配了 API_ORIGIN/UPDATE_ORIGIN/CERT_FINGERPRINT），即出厂构建没有公钥；服务端侧 deploy/api-gateway/nginx.conf:81 已经有 `/api/public/files/updates/latest.yml.sig` 路由，说明签名链路只差客户端开关。前端 frontend/package.json:82 另有 `\"signAndEditExecutable\": false`，安装包没有 Authenticode 签名，Windows 侧无法独立校验发布者。",
+      "impact": "更新通道的完整性依赖 TLS 证书钉扎 + 更新源（MinIO/主机）本身可信；一旦更新源、发布脚本或 CI 凭据被拿下，攻击者可推送任意安装包，客户端会照单全收并执行，属于可升级为全量投毒的高价值供应链面。",
+      "kind": "plan",
+      "fix": {
+        "summary": "按既有的上线顺序把清单验签真正打开（先部署 .sig 路由与带签名清单，再取消公钥注释并重打客户端），并补 Windows 代码签名以形成第二道校验。",
+        "steps": [
+          "用 scripts/sign_update_manifest.py 生成密钥对，公钥写入发布侧私密配置，`--print-public-key` 结果填入 frontend/.env.production.cloud 的 VITE_LIANYU_UPDATE_PUBKEY。",
+          "确认更新源已同时提供 latest.yml 与 latest.yml.sig（nginx.conf:81 路由已就绪），先灰度一版带签名清单，验证旧客户端不受影响。",
+          "把 updater.js 的「无公钥仅告警」改成可配置的 fail-closed：生产构建缺公钥时启动即报错，避免再次静默降级。",
+          "配置 Windows 代码签名（签 signtool/electron-builder 证书），把 package.json 的 signAndEditExecutable 打开并纳入发布脚本。",
+          "补前端单测：篡改 payload 或去掉 .sig 时 verifyManifestOrThrow 必须抛错。"
+        ],
+        "files": [
+          "frontend/electron/updater/updater.js",
+          "frontend/electron/updater/manifestSignature.js",
+          "frontend/.env.production.cloud",
+          "frontend/package.json",
+          "scripts/sign_update_manifest.py"
+        ],
+        "tests": [
+          "frontend/electron/updater/__tests__：无公钥 + 生产模式 → 启动失败；签名不匹配 → 拒绝更新",
+          "发布脚本回归：electron:release 产出的 latest.yml 与 .sig 成对上传"
+        ]
+      }
+    },
+    {
+      "section": "secrets",
+      "category": "会话令牌外发 / 出站目标未限制",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "custom-tts IPC 把用户会话 token 当 Authorization 发给渲染层指定的任意 URL",
+      "file": "frontend/electron/main.js",
+      "line": 2634,
+      "evidence": "frontend/electron/main.js:2634 `const token = session?.token || ''`，:2635 `let refUrl = payload?.refAudioUrl || ''`，仅当以 `/` 开头才拼到 apiOrigin，否则原样使用，:2639 交给 synthesizeSovits；frontend/electron/customTts.js:38-39 `if (token) headers.Authorization = `Bearer ${token}`; const resp = await fetch(url, { headers })`。整条路径不经过 apiProxy.js 的 isAllowedEgressUrl/sanitizeEgressHeaders 白名单（那是 `api:request` 通道专用的），因此渲染层只要能让主进程执行一次 `custom-tts:sovits`，就能把用户 30 天有效期的 lianyu-token 送到任意 https 主机。endpoint 参数本身受 customTts.js:13 isAllowedEndpoint 限制为回环/私网，但 refAudioUrl 无任何限制。",
+      "impact": "渲染进程一旦被 XSS 或恶意第三方内容利用，可静默把用户身份令牌外发到攻击者服务器，绕过 secureToken.js 的「token 只驻留内存」设计；令牌 30 天有效且改密不吊销（见 auth 第二条），外发后长期可用。",
+      "kind": "direct",
+      "fix": {
+        "summary": "把 refAudioUrl 收敛到 API 源站，复用既有 egress 白名单，不再对任意 URL 附带 Authorization 头。",
+        "steps": [
+          "在 main.js 的 custom-tts:sovits 处理器里对 refUrl 调用 apiProxy 暴露的 isAllowedEgressUrl(resolveApiOrigin())，不通过就直接返回 { ok:false, reason:'invalid_ref_url' }。",
+          "在 customTts.js 的 downloadToTemp 里把 token 的发送前提改为「url 与 apiOrigin 同源」，其余情况不附带 Authorization。",
+          "同步收紧 refAudioUrl 的协议与长度（仅 http/https、≤512 字符），保留既有 1KB~20MB 大小校验。",
+          "补单测：外部域名 refAudioUrl 必须被拒绝且不产生 fetch 调用。"
+        ],
+        "files": [
+          "frontend/electron/main.js",
+          "frontend/electron/customTts.js",
+          "frontend/electron/apiProxy.js"
+        ],
+        "tests": [
+          "frontend/electron/__tests__/customTts.test.js：refAudioUrl 为 https://evil.example/x.wav 时不发请求、不带头",
+          "同源相对路径仍能正常下载"
+        ]
+      }
+    },
+    {
+      "section": "secrets",
+      "category": "硬编码凭据 / 本地控制面弱口令",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "NapCat 的 OneBot WS 与 WebUI 长年使用硬编码口令 lianyupc，本机任意进程可冒充用户收发 QQ 消息",
+      "file": "frontend/electron/napcatRuntime/napcatConfig.js",
+      "line": 72,
+      "evidence": "frontend/electron/napcatRuntime/napcatConfig.js:70-75 `export function ensureNapCatConfig({ wsPort = DEFAULT_WS_PORT, wsToken = 'lianyupc', webuiPort = DEFAULT_WEBUI_PORT, webuiToken = 'lianyupc' } = {})`，注释写明「token 定死为 'lianyupc'（用户指定）」；:96-99 每次启动把已存在配置里的 `srv.token` 强制回写成该常量；frontend/electron/napcatRuntime/napcatHost.js:139-140 同样 `const wsToken = 'lianyupc'; const webuiToken = 'lianyupc'`。服务只绑 127.0.0.1（napcatConfig.js 中 host:'127.0.0.1'），但本机任意进程/脚本都能用这个公开口令连 `ws://127.0.0.1:<port>` 冒充已登录的 QQ 账号发送消息、以及登录 WebUI 改配置。",
+      "impact": "QQ 桥接是「以用户身份说话」的能力面，固定口令使本机沙箱边界内（含被投毒的 npm 依赖、其他同用户进程、渲染层通过 IPC 触发的脚本）任何代码都能接管该账号的收发与配置，且口令在源码里公开可见。",
+      "kind": "plan",
+      "fix": {
+        "summary": "改为每个安装生成一次高强度随机口令，用 safeStorage 持久化并在启动时注入，替换所有硬编码常量。",
+        "steps": [
+          "新增 napcatSecret 模块：首次运行用 crypto.randomBytes(24).toString('hex') 生成 wsToken/webuiToken，经 Electron safeStorage 加密后落盘，读取失败即重新生成。",
+          "ensureNapCatConfig / napcatHost 改为接收注入的口令参数，删除 'lianyupc' 默认值与强制回写逻辑。",
+          "启动 NapCat 前把口令写入 onebot11.json 与 webui.json，并保证登录窗 URL 与 bridge 用同一份内存值。",
+          "为已有安装做一次性迁移：检测到旧口令 'lianyupc' 时静默轮换并写回配置。",
+          "补单测：两次启动口令一致、升级路径下旧口令被替换、配置文件中不再出现固定字符串。"
+        ],
+        "files": [
+          "frontend/electron/napcatRuntime/napcatConfig.js",
+          "frontend/electron/napcatRuntime/napcatHost.js"
+        ],
+        "tests": [
+          "frontend/electron/napcatRuntime/__tests__：首次生成的口令非固定值且写入两个 json",
+          "旧配置含 lianyupc 时被轮换"
+        ]
+      }
+    },
+    {
+      "section": "crypto",
+      "category": "加密 fail-open / 密钥缺失静默降级",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "缺少 LIANYU_MASTER_KEY 时 JasyptUtil 直接返回明文，用户 API Key 会以明文落库",
+      "file": "backend/lianyu-security/src/main/java/com/lianyu/security/util/JasyptUtil.java",
+      "line": 65,
+      "evidence": "JasyptUtil 构造器（20-27 行）在 `System.getenv(\"LIANYU_MASTER_KEY\")` 为空时只 `log.warn(\"LIANYU_MASTER_KEY not set — Jasypt encryption disabled. Set env var before production use.\")` 然后 return；:61-70 `public String encrypt(String plaintext) { ... if (currentVersion == null || encryptors.isEmpty()) { log.warn(\"No Jasypt encryptor available, returning plaintext\"); return plaintext; } ... return plaintext; }`；decrypt 同样在 encryptors 为空时原样返回。写入方 backend/lianyu-service/src/main/java/com/lianyu/service/ai/ApiKeyVaultService.java 把 encrypt 结果直接存进 api_key_vault，因此该环境变量一旦漏配（.env.example:40 里它就是空值，脚本 _cloud_env_check.py 只是「检查」而非阻断启动），用户自带的模型 Key 会明文入库且接口仍显示为「已加密」。",
+      "impact": "明文密钥会随数据库备份、慢查询日志、只读账号或 SQL 注入面直接泄露；且这种降级是静默的（只有一条 warn），运维很难发现，属于典型 fail-open。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把「无主密钥」从告警降级改为启动期硬失败，并给存量明文数据一条可验证的加密迁移路径。",
+        "steps": [
+          "JasyptUtil 在 masterKey 缺失或解析后 encryptors 为空时抛 IllegalStateException，让 Spring 启动失败（本地开发用 profile 显式声明允许明文）。",
+          "encrypt/decrypt 的「返回明文」分支改为抛异常，避免调用方误以为已加密。",
+          "增加一次性迁移：启动时扫描 api_key_vault 中不符合密文特征的行，重新 encrypt 并记录审计。",
+          "把 LIANYU_MASTER_KEY 纳入 _cloud_env_check.py 的阻断项（当前仅体检），缺失即拒绝部署。",
+          "补单测：无 key 时 encrypt 抛错、有 key 时加解密可往返且解密失败抛既有 IllegalStateException。"
+        ],
+        "files": [
+          "backend/lianyu-security/src/main/java/com/lianyu/security/util/JasyptUtil.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/ai/ApiKeyVaultService.java",
+          "scripts/_cloud_env_check.py",
+          ".env.example"
+        ],
+        "tests": [
+          "JasyptUtilTest：无主密钥构造可加密对象时抛错；密文与明文形态互不兼容",
+          "ApiKeyVaultServiceTest：加密不可用时保存 Key 必须失败而不是落明文"
+        ]
+      }
+    },
+    {
+      "section": "browser",
+      "category": "会话令牌存储 / 缺少 CSP",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "运营台把管理员 token 存 localStorage，且 admin 页面没有 CSP 与安全响应头",
+      "file": "admin/src/stores/session.js",
+      "line": 2,
+      "evidence": "admin/src/stores/session.js:2 `state: () => ({ token: localStorage.getItem('lianyu-admin-token'), ... })`，login 时 `localStorage.setItem('lianyu-admin-token', token)`；admin/src/api.js:3 每次请求从 localStorage 取 token 塞进 `lianyu-token` 头。管理端 HTML（admin/index.html）只有一行 `<div id=\"app\"></div><script type=\"module\" src=\"/src/main.js\"></script>`，没有 CSP、没有 X-Content-Type-Options/X-Frame-Options（后端 SecurityHeadersFilter 只作用于 /api/** 响应，不覆盖运营台静态页）。对比客户端侧已把 token 改为仅驻留内存（frontend/src/utils/secureToken.js 注释记录旧方案是「加密剧场」）。",
+      "impact": "管理员会话有效期 8 小时且拥有用户管理、发版、TOTP 等权限；一旦运营台出现任何 XSS（含第三方依赖或富文本渲染），令牌可被直接读取并外带，且没有 CSP 降低利用难度，等于把管理员入口的凭证保护降到与普通页面同级。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把管理员令牌移出 localStorage（内存 + 会话级刷新），并给运营台补上与客户端同级的 CSP 与安全响应头。",
+        "steps": [
+          "admin/src/stores/session.js 改为内存态 + 刷新时用后端下发的 HttpOnly 会话 cookie 或一次性 refresh 接口续期，登录成功后不再写 localStorage。",
+          "admin/src/api.js 改为从 store 取 token，不再直接读 localStorage；登出时清理残留键。",
+          "给运营台入口加 CSP：default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'（Vite 构建产物需确认无内联脚本）。",
+          "在反向代理层对 /ops 统一加 X-Content-Type-Options/X-Frame-Options/Referrer-Policy。",
+          "补前端单测：登录后 localStorage 中不存在令牌；刷新后仍能恢复会话。"
+        ],
+        "files": [
+          "admin/src/stores/session.js",
+          "admin/src/api.js",
+          "admin/index.html",
+          "deploy/api-gateway/nginx.conf"
+        ],
+        "tests": [
+          "admin/src/__tests__：login 后 localStorage 无 lianyu-admin-token",
+          "CSP 回归：构建产物在无 unsafe-inline 下可正常挂载"
+        ]
+      }
+    },
+    {
+      "section": "auth",
+      "category": "会话生命周期 / 凭据变更后未失效",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "改密码不吊销其它会话，且 token 30 天有效、无空闲过期",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/auth/impl/AuthServiceImpl.java",
+      "line": 154,
+      "evidence": "AuthServiceImpl.changePassword（154-162 行）只做 `passwordEncoder.matches(old)` → `user.setPasswordHash(passwordEncoder.encode(new))` → `userMapper.updateById(user)` → log，之后没有任何 `StpUtil.logout(userId)`/kickout/令牌版本号自增；全仓库 grep `StpUtil.logout` 只有当前会话登出（AuthServiceImpl:85-86、AdminAuthService:53）与 admin 会话失效兜底。配合 backend/lianyu-app/src/main/resources/application.yml:133-140 的 `timeout: 2592000`（30 天）、`active-timeout: -1`（不因空闲冻结）、`is-concurrent: true`，被盗令牌在用户改密后仍可使用长达 30 天。",
+      "impact": "「改密码」是用户对账号被盗的唯一自救动作，但目前它无法让攻击者下线；结合 custom-tts 令牌外发与运营台令牌落盘两条，令牌一旦泄露就是长期可用凭据。",
+      "kind": "direct",
+      "fix": {
+        "summary": "改密成功后立刻让该用户的其它会话失效，并给令牌加空闲过期作为兜底。",
+        "steps": [
+          "在 AuthServiceImpl.changePassword 更新哈希后调用 `StpUtil.logout(userId)` 或 `StpUtil.kickout(userId)`，随后重新签发当前设备令牌返回给前端。",
+          "在 application.yml 把 `active-timeout` 设为有意义的空闲窗口（如 7 天 = 604800），保留长 timeout 但让闲置会话自动失效。",
+          "（可选）在 user 表或 sa-token session 中维护 token 版本号，改密时自增，鉴权时比对。",
+          "补测试：改密后旧 token 请求 /api/user/profile 必须 401，新令牌可用。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/auth/impl/AuthServiceImpl.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AuthController.java",
+          "backend/lianyu-app/src/main/resources/application.yml"
+        ],
+        "tests": [
+          "AuthServiceTest：changePassword 后 StpUtil.getLoginIdByToken(old) 为 null",
+          "接口级：改密接口返回的新 token 可用、旧 token 401"
+        ]
+      }
+    },
+    {
+      "section": "injection",
+      "category": "日志注入 / 未校验外部输入",
+      "severity": "low",
+      "confidence": "high",
+      "title": "X-Trace-Id 请求头原样写入 MDC，可伪造日志行并放大日志体积",
+      "file": "backend/lianyu-common/src/main/java/com/lianyu/common/util/TraceIdFilter.java",
+      "line": 15,
+      "evidence": "TraceIdFilter:13-17 直接 `String traceId = httpRequest.getHeader(\"X-Trace-Id\");`，非空即 `MDC.put(\"traceId\", traceId)`，无长度上限、无字符集校验、无换行剥离；日志格式 backend/lianyu-app/src/main/resources/application.yml:533 为 `... %clr([%X{traceId:-}]){cyan} ...`，即每条日志都会输出该值。攻击者可发送带 `\\n` 的 X-Trace-Id 伪造后续日志行（例如伪造「登录成功」或审计记录），或发送超长值让每行日志膨胀数十 KB。",
+      "impact": "日志是排障与审计的第一手证据，可被外部请求污染；配合运维台的日志导出功能，也可能把伪造内容带进排查结论。危害限于日志面，故定为低。",
+      "kind": "direct",
+      "fix": {
+        "summary": "把外部传入的 traceId 当作不可信输入：格式不符或超长时丢弃并重新生成。",
+        "steps": [
+          "在 TraceIdFilter 中加白名单正则 `^[A-Za-z0-9_-]{8,64}$`，不匹配即 `traceId = UUID...` 重新生成。",
+          "同时剔除 \\r \\n 与控制字符（可用 Character.isISOControl 判定）。",
+          "补单测：带换行、超长、空白的头必须被替换为新 UUID。"
+        ],
+        "files": [
+          "backend/lianyu-common/src/main/java/com/lianyu/common/util/TraceIdFilter.java"
+        ],
+        "tests": [
+          "TraceIdFilterTest：X-Trace-Id 含 \\n 或长度 200 时 MDC 中的值符合 UUID 形态"
+        ]
+      }
+    },
+    {
+      "section": "supply-chain",
+      "category": "CI 依赖未固定版本",
+      "severity": "low",
+      "confidence": "high",
+      "title": "CI 的第三方 action 只用可变 tag（v4/v2.0.3），未钉 commit SHA",
+      "file": ".github/workflows/ci.yml",
+      "line": 48,
+      "evidence": ".github/workflows/ci.yml 中 `uses: actions/checkout@v4`（14、28、45 行）、`actions/setup-java@v4`（15）、`actions/setup-node@v4`（29）、`google/osv-scanner-action/osv-scanner-action@v2.0.3`（48），全部是可重新指向的 tag。第三方仓库（osv-scanner）的 tag 被改写时，流水线会静默执行新代码，而该 job 拥有仓库读权限与 GITHUB_TOKEN。",
+      "impact": "供应链投毒面：上游 action 仓库被入侵或 tag 被移动即可在 CI 中执行任意代码，进而读取 token、篡改构建产物。危害依赖上游被攻陷，故定为低。",
+      "kind": "direct",
+      "fix": {
+        "summary": "把 action 引用改为完整 commit SHA（保留 tag 作为注释），并显式声明最小 permissions。",
+        "steps": [
+          "用 `gh api repos/<owner>/<repo>/git/ref/tags/<tag>` 取得各 action 当前 commit SHA，替换 uses 为 `owner/repo@<sha> # vX.Y.Z`。",
+          "在 workflow 顶层加 `permissions: contents: read`，需要写权限的 job 单独声明。",
+          "启用 Dependabot 的 github-actions 生态自动升级，避免手工维护 SHA 漂移。"
+        ],
+        "files": [
+          ".github/workflows/ci.yml"
+        ],
+        "tests": [
+          "CI 跑通一次完整流水线，确认替换 SHA 后各 step 行为不变"
+        ]
+      }
+    }
+  ],
+  "deferred": [
+    {
+      "from": "security",
+      "expert": "correctness",
+      "summary": "register 幂等登录的用户名枚举取舍：AuthServiceImpl.registerInTx 在用户名已存在且密码匹配时直接登录（注释「幂等重登」），使注册接口可探测用户名是否存在；这既是逻辑取舍也涉及是否保留该行为，交由 correctness/产品确认后再评估是否算安全缺陷。",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/auth/impl/AuthServiceImpl.java",
+      "lines": "registerInTx"
+    },
+    {
+      "from": "security",
+      "expert": "reliability",
+      "summary": "WS 异常文本回显：WebSocketConfig 把内部异常文本拼进「认证失败：」回给客户端，属信息暴露但影响极小，且修法与异常传播策略相关，交由 reliability/correctness 一并处理。",
+      "file": "backend/lianyu-web/src/main/java/com/lianyu/web/config/WebSocketConfig.java",
+      "lines": "143"
+    }
+  ],
+  "notes": "只读审查，未修改任何源码。所有 critical/high 结论均由源码行与可复现请求构成。injection/authz/exposure 三条计数为 0 是「已检查且未发现」，对应证据见 sections.notes：SQL 全参数化、无 ${} 拼接、唯一命令执行点无 shell；13/14 个控制器以登录主体取 userId、STOMP 订阅有归属校验、admin 权限逐方法 require；错误响应不回栈、actuator 仅 health/info 且不在网关路由、中间件端口全绑 127.0.0.1、API Key 只回掩码。sections 计数与 findings 逐项一致（auth 2、authz 0、injection 1、browser 1、uploads 1、secrets 2、crypto 1、exposure 0、supply-chain 2，共 10 条）。\n\n各 section 覆盖说明（计数见 sections）：\n- auth 2 条：SaTokenConfig 拦截 /api/**（排除登录/注册/图形验证码/公开文件），admin 前缀由 AdminSecurityConfig + admin_session 表二次校验，admin 登录有 bcrypt(12)/TOTP/5 次失败锁 15 分钟。问题一为网关分流绕过 agent 认证，问题二为改密不吊销其它会话且 token 30 天无空闲过期。\n- authz 0 条：14 个 web 控制器中 13 个从 StpUtil.getLoginIdAsLong() 取主体、仅 PublicFileController 公开（设计如此）；Memory/Conversation/ApiKeyVault 全部以 userId 作为查询条件；admin 侧 AdminAuthorizationService.require 覆盖 11 个控制器，SupportGrant 的 issue/redeem 也在服务层做权限校验；STOMP 订阅仅 /topic/group/{id} 需要归属校验且已实现，/queue 走 convertAndSendToUser 按会话主体投递。未发现跨租户读写。\n- injection 1 条：MyBatis XML 无 ${}（41 处 ${} 全在 pom.xml），jdbc 调用全部参数化 ?,MemoryQueryService 的 LIMIT/OFFSET 来自已 clamp 的 int；唯一命令执行点 CustomVoiceAudioTrimmer 用 ProcessBuilder 参数数组且无 shell。命中的是日志注入：X-Trace-Id 请求头原样进 MDC。\n- browser 1 条：客户端 XSS 面已收敛：唯一 v-html 走 DOMPurify（sanitize.js 只允许 strong/em/b/i/u/span/br 与 class），LandingPage 为静态图标，useSquareDanmaku 只置空 innerHTML；Electron 主进程覆盖 CSP、setWindowOpenHandler 全 deny、外链仅白名单。运营台 admin 应用没有 CSP/安全头且把管理员 token 落 localStorage。\n- uploads 1 条：上传侧干净：chat-image 5MB + jpeg/png/webp/gif 白名单、头像统一经 ImageUploadValidator 重编码为 PNG、对象名为 UUID、SAFE_OBJECT_KEY 正则挡住穿越、公开下载禁用 html/svg/js 并强制 nosniff。命中项是 SSRF：Java 保存期用 OutboundUrlValidator/SsrfPinningClientFactory 钉 IP，Python 侧对同一 baseUrl 无任何内网黑名单。\n- secrets 2 条：仓库未提交真实密钥（secrets/ 与 certs/ 只有 README，.env 被忽略，application.yml 全部走 ${ENV:}）；API Key 查询接口只回显 maskApiKey 掩码；Java/Python 日志未打印 token 或 apiKey。命中项为 NapCat 硬编码口令与 custom-tts 通道的 Bearer 令牌外发。\n- crypto 1 条：Jasypt 算法为 PBEWITHHMACSHA512ANDAES_256 + RandomSalt/RandomIv + 多版本轮换，方向正确；缺陷在缺 key 时 fail-open 返回明文。此外未发现 MD5/SHA-1/DES/ECB 或 new Random() 用于安全场景。\n- exposure 0 条：错误响应只回错误码与业务文案，未回栈轨迹；actuator 仅暴露 health/info/agentshadow 且不在网关路由内；prod 关闭 knife4j/springdoc；mysql/redis/rabbitmq/milvus/minio 端口全部绑 127.0.0.1；公开文件桶只按对象键白名单下发且不可枚举（UUID）。agent 未认证导致的数据暴露已计入 auth 条，不重复计数。\n- supply-chain 2 条：NapCat 下载有 out-of-band sha256 锚点强校验，Electron 有 SPKI 证书钉扎，backend-agent 用 uv --frozen + lock 构建，CI 含 osv-scanner。弱项为更新清单验签默认关闭（出厂无公钥）+ 无代码签名，以及 CI 第三方 action 只用 tag 未钉 SHA。"
+}

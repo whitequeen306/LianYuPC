@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 2,
+  "tool": "dsh-logistics",
+  "version": "0.3.5",
+  "runId": "20261104-161638-80f129",
+  "createdAt": "2026-11-04T08:16:39Z",
+  "command": "/logi-correctness",
+  "experts": [
+    "correctness"
+  ],
+  "optionalExperts": [
+    "perf"
+  ],
+  "maxFindings": 12,
+  "models": {},
+  "expertDetails": [
+    {
+      "key": "correctness",
+      "title": "正确性",
+      "skill": "logi-correctness",
+      "sections": [
+        "logic",
+        "state",
+        "concurrency",
+        "data-integrity",
+        "contracts",
+        "architecture",
+        "edge-cases"
+      ]
+    }
+  ],
+  "trigger": "command",
+  "root": "C:/Users/hp/Desktop/LianYu-PC",
+  "cwd": "C:/Users/hp/Desktop/LianYu-PC",
+  "isGit": true,
+  "git": {
+    "available": true,
+    "dirty": false,
+    "sourceDirty": false,
+    "branch": "main",
+    "head": "c652e14",
+    "headSubject": "fix(relationship): 修正被刷高的历史信任分（V57）",
+    "base": "last-commit"
+  },
+  "source": "last-commit",
+  "files": [
+    {
+      "path": "backend/lianyu-dao/src/main/resources/db/migration/V57__relationship_trust_anomaly_repair.sql",
+      "status": "added"
+    }
+  ],
+  "output": {
+    "runDir": "C:/Users/hp/Desktop/LianYu-PC/.logistics/runs/20261104-161638-80f129",
+    "handoffDir": "C:/Users/hp/Desktop/LianYu-PC/.logistics/runs/20261104-161638-80f129/handoff",
+    "reportJson": "C:/Users/hp/Desktop/LianYu-PC/.logistics/runs/20261104-161638-80f129/report.json",
+    "reportMarkdown": "C:/Users/hp/Desktop/LianYu-PC/.logistics/runs/20261104-161638-80f129/report.md",
+    "verdictJson": "C:/Users/hp/Desktop/LianYu-PC/.logistics/runs/20261104-161638-80f129/verdict.json",
+    "packetMarkdown": "C:/Users/hp/Desktop/LianYu-PC/.logistics/runs/20261104-161638-80f129/packet.md",
+    "handoffsJson": "C:/Users/hp/Desktop/LianYu-PC/.logistics/runs/20261104-161638-80f129/handoffs.json",
+    "latestMarkdown": "C:/Users/hp/Desktop/LianYu-PC/docs/logistics/latest.md",
+    "latestJson": "C:/Users/hp/Desktop/LianYu-PC/.logistics/latest.json"
+  },
+  "stats": {
+    "filesChanged": 1,
+    "additions": 18,
+    "deletions": 0,
+    "analyzedFiles": 1,
+    "truncated": false,
+    "omittedFiles": 0
+  },
+  "summary": {
+    "byStatus": {
+      "added": 1
+    },
+    "languages": [
+      {
+        "name": "SQL",
+        "count": 1
+      }
+    ],
+    "sourceFiles": 1,
+    "testFiles": 0,
+    "docsFiles": 0,
+    "sensitiveFiles": 1,
+    "dependencyFiles": 0
+  },
+  "warnings": []
+}

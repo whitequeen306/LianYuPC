@@ -1,0 +1,339 @@
+{
+  "schemaVersion": 2,
+  "expert": "perf",
+  "status": "ok",
+  "summary": "按 12 个审查单元全量过了一遍性能面：Java 侧（service/dao/web）总体健康——主动发言调度已批量化、message 表有 uk_conv_seq/idx_conv_role_seq 等复合索引、Mapper 无 SELECT *、SSE 中继用 StringBuilder 而非 O(n²) 拼接、正则均为 static final 预编译；脚本与 admin/security/common 等小模块属运维/冷路径，未发现运行时热点。真正可落地的问题集中在前端打包与后端每轮链路：dist 全局单 CSS 首行带 Google Fonts 的 @import，会把三个窗口（含透明桌宠、快捷聊）的首屏样式表阻塞在跨境请求上；桌宠窗口要下载/解析约 1.94MB JS+CSS（element-plus 全量进了 launcherBootstrap），还要解码 1536×1872 的 1.6–2.7MB spritesheet，而这些成本在「预热隐藏窗口」阶段就已经付了；桌宠动画的 requestAnimationFrame 以显示器刷新率空转（idle 只需 6fps）。后端主要成本是每轮聊天前 7 次 MySQL + 1 次 Redis 全串行、连接池只有 4；主动问候路径绕过了天气 TTL 缓存且每次新建 AsyncClient；pymilvus 的同步 search/insert/delete 直接跑在事件循环上，Milvus 抖动时按 10s 超时挂住整个 agent。共 8 条发现（2 high / 4 medium / 2 low），全部 kind=plan。本次为只读静态审查，无运行时 profiling 条件，量化按 rung B（实测产物字节/行号）与 rung C（复杂度与超时常量）给出。",
+  "sections": {
+    "frontend": 3,
+    "hot-path": 1,
+    "data-access": 2,
+    "runtime": 1,
+    "memory-startup": 1
+  },
+  "units": {
+    "u01": {
+      "status": "reviewed",
+      "filesRead": 9,
+      "notes": "读 ProactiveChatScheduler/ProactiveUnrepliedThrottle/CharacterChatBehaviorResolver/ConversationService/ChatTurnFacade/SquareLikeService/SquareAddCountService/PetVoiceRegistry；调度已批量化、列表 LIMIT 200、getMessages 单查，均干净；启动期 Redis delete 有 try/catch。"
+    },
+    "u02": {
+      "status": "sampled",
+      "filesRead": 4,
+      "notes": "120 文件/16014 行，按 rg 等价扫描（Pattern.compile/split/replaceAll、@PostConstruct、setInterval 等模式）后抽查热点类；未逐文件通读，未发现热路径上的重复计算或逐条 IO。"
+    },
+    "u03": {
+      "status": "reviewed",
+      "filesRead": 6,
+      "notes": "重点 ChatPage.vue（轮询常量、mergePolledMessages、上翻历史）、usePetSpriteAnimator.js 全文、useConversationUnread.js 全文、petSprite.js 常量、entries 目录；两条前端发现出自此处。"
+    },
+    "u04": {
+      "status": "sampled",
+      "filesRead": 3,
+      "notes": "94 个运维/探针脚本（大量 _ 前缀一次性脚本、部署与发版脚本），不参与运行时；按 read_text/subprocess/for-in 模式扫描并抽查 _audit_installer_unpack.py 等，无运行时性能影响，不做发现。"
+    },
+    "u05": {
+      "status": "reviewed",
+      "filesRead": 6,
+      "notes": "读迁移 V1/V33/V46 的索引定义与 MessageMapper 查询语句、分页与列裁剪；索引覆盖 (conversation_id, seq)、(conversation_id, role, seq)、(character_id, user_id, importance)，无 SELECT *，无 offset 深翻页。"
+    },
+    "u06": {
+      "status": "reviewed",
+      "filesRead": 14,
+      "notes": "读 chat_turn.py、prompt_pipeline.py、data_readers.py、db.py、config.py、http_client.py、milvus_store.py、memory_search_tool.py、memory/relay.py、weather_tool.py、proactive_context.py、main.py(lifespan)、tool_loop.py、gateway 片段；data-access 与 runtime 两条发现出自此处。"
+    },
+    "u07": {
+      "status": "sampled",
+      "filesRead": 6,
+      "notes": "95 文件/24648 行，未通读；精读 LauncherPage.vue（挂载序列、applyPetId、observer 启停）、QuickChatPage.vue 轮询段、MomentsPage.vue 评论轮询段，并用 grep 扫全量 setInterval/requestAnimationFrame/createObjectURL；memory-startup 一条发现出自此处。"
+    },
+    "u08": {
+      "status": "reviewed",
+      "filesRead": 4,
+      "notes": "读 AgentSseParser.java 全文与 AgentStreamBridge.java 全文，并扫描 agent 适配层其他类的字符串拼接；帧解析线性、中继只在收尾 toString，判定干净。"
+    },
+    "u09": {
+      "status": "sampled",
+      "filesRead": 5,
+      "notes": "68 文件/14745 行，精读 desktopObserver.js 全文（15 分钟截图 + 30s 廉价 idle 轮询，判为干净）、main.js 的窗口创建/预热/webPreferences 片段（LAUNCHER_WEB_PREFS backgroundThrottling:false、prewarmLauncherWindow、scheduleAuxWindowPrewarm）；未通读 main.js 全部 3077 行。"
+    },
+    "u10": {
+      "status": "sampled",
+      "filesRead": 2,
+      "notes": "lianyu-security/common 侧按 Pattern.compile、JasyptUtil 分割等模式扫描并抽查；无可报告热点。admin 模块在 u11 覆盖。"
+    },
+    "u11": {
+      "status": "sampled",
+      "filesRead": 2,
+      "notes": "lianyu-admin 为运营后台（ReleaseValidationService 的 SEMVER/SHA512 正则为 static final），service 测试类不参与运行时；无热路径问题。"
+    },
+    "u12": {
+      "status": "sampled",
+      "filesRead": 2,
+      "notes": "lianyu-common 工具类（UserInputSanitizer 等）正则全部预编译、无 IO；lianyu-app/backend scripts/Pets 未见运行时性能问题。"
+    }
+  },
+  "findings": [
+    {
+      "section": "frontend",
+      "category": "render-blocking-third-party",
+      "severity": "high",
+      "confidence": "medium",
+      "title": "全局单 CSS 首行 @import Google Fonts，三个窗口首屏样式表被跨境请求阻塞",
+      "file": "frontend/src/pages/LandingPage.vue",
+      "line": 342,
+      "evidence": "打包产物实测：frontend/dist/assets/style-CMGPS_t0.css 共 616,841 B，文件开头即为 `@charset \"UTF-8\";@import\"https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&family=Syne:wght@500;600;700&display=swap\";`。该 CSS 被 dist/index.html、dist/launcher.html、dist/quick.html 三个入口同时 <link> 引用（frontend/vite.config.js 中 cssCodeSplit: !isElectronPack，打包态只产一份 CSS）。@import 源头是同一行复制在 frontend/src/pages/LandingPage.vue:342、frontend/src/pages/LoginPage.vue:221、frontend/src/pages/RegisterPage.vue:272 的 <style> 里，被 Rollup 提升进全局 CSS 首行。",
+      "impact": "CSS 内的 @import 是渲染阻塞的：浏览器必须先把被 import 的样式表下载并解析完，才继续构建 CSSOM 与首屏绘制。于是主窗口、透明桌宠窗口、快捷聊窗口每次首屏都要先付一次到 fonts.googleapis.com 的跨境往返；该域在境内常被黑洞，Chromium 要等到连接超时/失败才继续，桌宠与快捷聊（用户要求『秒开』的两个窗口）首帧因此被拖到秒级，而它们根本用不到 Landing/Login 的衬线字体。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把字体引入从全局 CSS 的 @import 里摘出去：需要该字体的页面改为自托管字体或页面级异步 <link>，保证三个 HTML 入口的首屏 CSS 不含任何外部请求。",
+        "steps": [
+          "删除 frontend/src/pages/LandingPage.vue:342、LoginPage.vue:221、RegisterPage.vue:272 三处 <style> 内的 @import url('https://fonts.googleapis.com/...')。",
+          "把 Noto Serif SC / Syne 的 woff2 子集下载到 frontend/src/assets/fonts（或 public/fonts），用本地 @font-face + font-display: swap 声明，并在 vite 里保证只打进使用它的页面。",
+          "若要保留远程字体，改为在各页面模板里用 <link rel=preconnect> + <link rel=stylesheet media=print onload> 的异步写法，绝不放 CSS 内。",
+          "构建后在 frontend/dist 内 grep 确认不再出现 fonts.googleapis.com（含 style-*.css 首行）。",
+          "用 DevTools Network 抓一次 launcher.html / quick.html 首屏，确认请求列表只有本地 asset。"
+        ],
+        "files": [
+          "frontend/src/pages/LandingPage.vue",
+          "frontend/src/pages/LoginPage.vue",
+          "frontend/src/pages/RegisterPage.vue",
+          "frontend/vite.config.js"
+        ],
+        "tests": "验收阈值：dist/assets/style-*.css 内 fonts.googleapis.com 命中数为 0；launcher.html 首屏 network 无外部域名请求；桌宠冷启动首帧（did-finish-load → 首次 drawImage）在 dev 机 < 300ms。"
+      }
+    },
+    {
+      "section": "frontend",
+      "category": "bundle-size",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "桌宠/快捷聊入口加载 element-plus 全量与单份 616KB CSS，首屏 JS+CSS 约 1.94MB",
+      "file": "frontend/src/main.js",
+      "line": 3,
+      "evidence": "frontend/dist/launcher.html 只引用 assets/launcher-CRwrn45F.js（645 B）与 assets/style-CMGPS_t0.css（616,841 B）；launcher-CRwrn45F.js 的模块图包含 assets/launcherBootstrap-BOd8J3cO.js（1,129,706 B，文件内出现 element-plus 10 次、ElMessage 5 次）与 assets/vue-vendor-DEeJUbX_.js（193,565 B）。element-plus 的来源是 frontend/src/main.js:3-5 的 `import ElementPlus from 'element-plus'` + `import 'element-plus/dist/index.css'` + `import 'element-plus/theme-chalk/dark/css-vars.css'`，而 frontend/vite.config.js:87-91 的 manualChunks 未把 element-plus 与桌宠入口拆开；cssCodeSplit: !isElectronPack 又让三个入口共用同一份 CSS。",
+      "impact": "桌宠窗口的实际内容是一个 192×208 的 canvas 加几个按钮，却要在首帧前下载并解析约 1.94MB 的 JS+CSS（含整套 element-plus 组件与主题样式），桌面低端机/机械盘冷启动时可观测到明显空窗；快捷聊窗口同样付这份成本，且每个窗口各自一份解析与内存。这是 rung B（实测产物字节）而非推测。",
+      "kind": "plan",
+      "fix": {
+        "summary": "让 launcher / quick 两个轻量入口不再引入整套 element-plus，并把 CSS 按入口拆分，只让主窗口承担重依赖。",
+        "steps": [
+          "为 frontend/src/entries/launcher-main.js 与 quick-main.js 建立独立的应用装配（不复用 main.js 的全局 ElementPlus 注册），必要组件改为局部 import 或手写轻量实现。",
+          "把 frontend/src/main.js:3-5 的全局注册限制在主窗口入口内（index.html 的 entry）。",
+          "vite.config.js 的 manualChunks 增加 element-plus 单独 chunk 并只被主入口引用；electron 打包态评估是否可对 launcher/quick 开启 cssCodeSplit。",
+          "用 rollup-plugin-visualizer（或 npx vite build --mode 后比对 dist/assets 体积）确认 launcher 首屏依赖收敛。",
+          "回归确认桌宠/快捷聊交互（拖拽、选角面板、消息红点）不受组件按需化影响。"
+        ],
+        "files": [
+          "frontend/src/main.js",
+          "frontend/src/entries/launcher-main.js",
+          "frontend/src/entries/quick-main.js",
+          "frontend/vite.config.js"
+        ],
+        "tests": "验收阈值：launcher.html 首屏 JS 合计 < 400KB（gzip 前）、CSS < 150KB；launcherBootstrap chunk 内不再出现 element-plus 标识；打包冒烟（SMOKE_ELECTRON_ARGS）通过。"
+      }
+    },
+    {
+      "section": "frontend",
+      "category": "render-loop",
+      "severity": "low",
+      "confidence": "high",
+      "title": "桌宠动画以显示器刷新率空转 rAF（idle 只需 6fps），常驻可见时不停机",
+      "file": "frontend/src/composables/usePetSpriteAnimator.js",
+      "line": 143,
+      "evidence": "tick() 末尾无条件 `rafId = requestAnimationFrame(tick)`（frontend/src/composables/usePetSpriteAnimator.js:143），只有帧间隔到达时才 renderFrame（:124-141，frameInterval = 1000 / def.fps）；frontend/src/constants/petSprite.js:9 定义 `idle: { row: 0, frames: 6, fps: 6, loop: true }`。playAnim('idle') 在 onMounted（:170-174）就启动且 loop 恒为 true，只有 onUnmounted（:176-180）才 stopRaf；空闲小动作 scheduleIdleVariety 每 6-16s 换一次动作但同样走这条常驻 rAF。",
+      "impact": "以 60Hz 屏为例，idle 状态下每秒 60 次回调里只有 6 次真正重绘，其余约 54 次是空转（120Hz 屏为空转 114 次/秒，约 95%）；桌宠是 alwaysOnTop + transparent 窗口（frontend/electron/main.js:1416-1432），Windows 上透明窗口本身就少 GPU 合成路径，渲染管线被这条常驻 rAF 钉在满帧，使整机无法进入低功耗空闲态，影响续航与风扇噪音。属静态可证的浪费，量级取决于窗口是否长期可见。",
+      "kind": "plan",
+      "fix": {
+        "summary": "动画调度从『跟着显示器刷新率跑』改成『按动画 fps 定时步进』，并在节点不可见/窗口隐藏时停表。",
+        "steps": [
+          "把 tick 的调度改为 setTimeout(1000 / def.fps) 链式步进（帧率与显示器解耦），renderFrame 只在帧号变化时调用。",
+          "保留 rAF 仅用于拖拽位移（flushDragDelta）这类需要与 vsync 对齐的场景。",
+          "监听 document.visibilitychange 与桌宠 launcher-shown/launcher-hidden 事件（frontend/src/pages/LauncherPage.vue 已有这两个订阅），隐藏时 stopRaf、显示时 playAnim 恢复。",
+          "用 DevTools Performance 录制 10s 桌宠 idle，确认 Rendering 帧率降到 ~6fps、无持续 rAF 火焰图。"
+        ],
+        "files": [
+          "frontend/src/composables/usePetSpriteAnimator.js",
+          "frontend/src/pages/LauncherPage.vue",
+          "frontend/src/constants/petSprite.js"
+        ],
+        "tests": "验收阈值：桌宠 idle 10s 内 requestAnimationFrame 回调次数 ≤ 70（60Hz 屏），drawImage 调用约 60 次；桌宠隐藏时回调数为 0；动画视觉与当前一致（人工比对 9 个动作）。"
+      }
+    },
+    {
+      "section": "hot-path",
+      "category": "quadratic-membership",
+      "severity": "low",
+      "confidence": "high",
+      "title": "ChatPage 每次轮询用 some/find 做 O(本地消息×50) 成员判断，随后全量重排",
+      "file": "frontend/src/pages/ChatPage.vue",
+      "line": 1016,
+      "evidence": "frontend/src/pages/ChatPage.vue:1015-1021 对 messages.value 逐条执行 `incomingUsers.some(...)` 与 `incomingAssistants.some(...)`；:978-987 对每条临时用户消息执行 `incomingUsers.find(...)`。触发者是常驻轮询：:1184 `conversationPollTimer = window.setInterval(..., NORMAL_POLL_MS)`（NORMAL_POLL_MS=10000，:589），以及快轮询 :1157-1173（FAST_POLL_MS=2000、FAST_POLL_MAX_MS=90000）；每次轮询固定取最新 50 条（MESSAGE_PAGE_SIZE=50，:484），另有 :1150-1155 的开窗三次 burst。上翻历史（:919，getMessages(convId, {limit, beforeSeq})）会让本地 messages.value 增长到数百条；changed 时还会调用 sortMessagesInTimelineOrder（:1037）。",
+      "impact": "静态上界（rung C，n 取 scope 中常见量）：n=300 条本地消息、m=50 条 incoming 时，单次轮询约 1.5×10⁴ 次字符串比较（isSameRecentUserMessage 比较 content+imageUrl），快轮询窗口内 10s 有 5 次轮询 ≈ 7.5×10⁴ 次；量级在毫秒，但随历史翻页线性放大，且每次 changed 就全量 sort + 触发受影响气泡的重渲染。目前不是用户体验瓶颈，属可清理的常数浪费。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把成员判断从 O(n×m) 降为哈希查表，并让轮询只处理新增消息。",
+        "steps": [
+          "先按 seq 过滤：只保留 incoming 中 seq > lastLocalSeq 的消息与本地未确认的临时消息参与合并，其余直接跳过。",
+          "为 incoming 预建两个 Map（键可用 content+imageUrl+role 或服务端 id），把 :981 的 find、:1016/:1018 的 some 改为 O(1) 查表。",
+          "合并产生的新增消息按 seq 插入有序位置，避免 changed 后再度全量 sortMessagesInTimelineOrder。",
+          "长期方案：轮询请求带上 afterSeq，仅拉增量（后端 getMessages 已支持 beforeSeq，评估 afterSeq 语义）。",
+          "用 Vue DevTools/Performance 对比同一会话（翻到 300 条历史后）单次轮询的脚本耗时与渲染耗时。"
+        ],
+        "files": [
+          "frontend/src/pages/ChatPage.vue"
+        ],
+        "tests": "验收阈值：300 条历史 + 每 10s 轮询下，单次 mergePolledMessages 耗时 < 2ms（Performance 面板），比较次数从 ~1.5×10⁴ 降到 ~5×10²；消息去重/串流气泡替换的既有用例（前端 vitest）全绿。"
+      }
+    },
+    {
+      "section": "data-access",
+      "category": "sequential-await",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "每轮聊天在调模型前串行执行 7 次 MySQL + 1 次 Redis，连接池仅 4",
+      "file": "backend-agent/app/data_readers.py",
+      "line": 209,
+      "evidence": "backend-agent/app/data_readers.py:209-211 `facts = await _load_profile_facts(...)`、`base = await _load_recent_rows(...)`、`boosted = await _load_like_boosted(...)` 三次顺序 await；:242 `await load_profile_block(...)`、:247 `await load_relationship(...)`（内部 :26-66 再顺序查 relationship_state 与 relationship_event）、:260 `await load_session_summary(...)`（Redis）；backend-agent/app/prompt_pipeline.py:225-273 的 _fill_internal_data 里再顺序 `await load_character_owner(...)` → `await load_emotion(...)`。合计每轮 7 次 MySQL + 1 次 Redis，全部串行，彼此之间除 owner→emotion 外无依赖。连接池 backend-agent/app/config.py:65 `mysql_pool_size` 默认 4。",
+      "impact": "每条用户消息在首个 token 之前要先付 8 个串行 DB/Redis 往返：同机房约 0.5-1ms/次（合计 5-8ms），跨可用区 2-3ms/次（合计 15-25ms），全部叠加在用户可感知的首 token 延迟上。更关键的是池只有 4 条连接：每个回合串行 acquire 7 次，4 个并发回合以上就开始排队，高并发时首 token 延迟被排队放大（uq 里也提到 agent 是单副本 Python 进程）。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把相互独立的读取改成并发，并按实测并发量重新评估连接池大小。",
+        "steps": [
+          "在 backend-agent/app/data_readers.py:209-211 用 asyncio.gather 并行取 facts/base/boosted（失败语义按现有 try/except 逐项降级）。",
+          "在 load_memory_context（:242-260）并行取 profile_block、relationship、session_summary；prompt_pipeline.py 的 _fill_internal_data 并行取 memory_context 与 load_character_owner，仅保留 owner→emotion 这一条依赖顺序。",
+          "核对 db.py 的 fetch_all 是否每次 acquire/release，避免 gather 放大瞬时占用；必要时给单回合设定连接占用上限。",
+          "按『并发回合数 × 瞬时占用』压测：把 mysql_pool_size 从 4 提到 8-16 做 A/B，观察 p95 与 DB 侧连接数（配置项来自 backend-agent/app/config.py:65，同时同步 .env.example）。",
+          "加一条探针日志记录每回合内部数据装配耗时，作为回归基线。"
+        ],
+        "files": [
+          "backend-agent/app/data_readers.py",
+          "backend-agent/app/prompt_pipeline.py",
+          "backend-agent/app/db.py",
+          "backend-agent/app/config.py"
+        ],
+        "tests": "验收阈值：单回合内部数据装配的串行往返数 8 → 2；pytest 既有 data_readers/prompt_pipeline 用例全绿；压测 8 并发回合时 p95 首 token < 改动前 -30%。"
+      }
+    },
+    {
+      "section": "data-access",
+      "category": "missing-cache",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "主动问候路径绕过天气 TTL 缓存，每次新建 AsyncClient 打一次 wttr.in，并挂在 prompt 关键路径上",
+      "file": "backend-agent/app/proactive_context.py",
+      "line": 60,
+      "evidence": "backend-agent/app/proactive_context.py:60 `weather_fact = (await fetch_weather(city) or \"\").strip()` 调的是 backend-agent/app/tools/weather_tool.py:38 的 fetch_weather——该函数没有任何缓存；只有同文件下方的 handle_get_weather 才用 `_cache_get(key, settings.weather_cache_minutes * 60)` / `_cache_put`（配置 backend-agent/app/config.py:50 weather_cache_minutes=15.0）。fetch_weather 内部 `async with new_client() as own: return await own.get(url, params=params)`，而 backend-agent/app/http_client.py:25-40 的 new_client 每次新建 httpx.AsyncClient + AsyncHTTPTransport（无 keep-alive 复用）；超时取 backend-agent/app/config.py:29 outbound_timeout=(15.0, 60.0, 30.0, 30.0)，read 即 60s。调用点位于组装 prompt 的关键路径：backend-agent/app/prompt_pipeline.py:217 `prompt += await build_proactive_real_world_block(settings)`（scene_key == PROACTIVE）。",
+      "impact": "每一次主动问候（产品主玩法，按调度批量触发）都要在模型调用之前先等一次未缓存的 wttr.in 往返，且每次都新建 TCP+TLS（无连接复用）；wttr.in 实测常见 1-5s 响应，抖动时按 60s read 超时挂在 assemble_prompt 节点上，用户看到的是『该主动说话时没说话』。同一城市 15 分钟内被多个角色/多个用户重复请求时全部重打外部接口（缓存函数本来就写好了却没人用）。",
+      "kind": "plan",
+      "fix": {
+        "summary": "让主动问候复用既有的天气 TTL 缓存与共享连接池，并把天气降级为有硬上限的可选步骤。",
+        "steps": [
+          "把 proactive_context.py:56-60 的取数改为走带缓存的入口（复用 handle_get_weather 的 key 规则与 weather_cache_minutes），或在 fetch_weather 内部加同样的进程内 TTL 缓存。",
+          "把 `async with new_client()` 换成 backend-agent/app/http_client.py:57 的 shared_client('weather')，消除每次新建 transport 的握手成本。",
+          "给该调用单独设更短的超时（例如 2s）并保留现有 try/except 降级为『仅结合时段问候』。",
+          "多副本部署时把缓存换成 Redis（对齐 Java 侧 15 分钟语义），避免每副本各打一次。",
+          "在日志里记录天气取数耗时与命中/未命中，作为后续调阈值的依据。"
+        ],
+        "files": [
+          "backend-agent/app/proactive_context.py",
+          "backend-agent/app/tools/weather_tool.py",
+          "backend-agent/app/http_client.py",
+          "backend-agent/app/config.py"
+        ],
+        "tests": "验收阈值：同一城市 15 分钟内 10 次主动问候只产生 1 次外部 HTTP（日志计数）；主动问候的 assemble_prompt 阶段 p95 < 50ms；weather_tool 既有 pytest 用例全绿并新增『二次调用命中缓存』用例。"
+      }
+    },
+    {
+      "section": "runtime",
+      "category": "event-loop-blocking",
+      "severity": "high",
+      "confidence": "medium",
+      "title": "pymilvus 同步 search/insert/delete 直接在 async 路径上执行，Milvus 抖动时按 10s 超时阻塞整个事件循环",
+      "file": "backend-agent/app/tools/memory_search_tool.py",
+      "line": 100,
+      "evidence": "backend-agent/app/tools/memory_search_tool.py:100 在 async 函数内同步调用 `hits = milvus_store.search(user_id, character_id, query_vectors[0], top_k=max(limit * 2, 6))`；backend-agent/app/milvus_store.py:121 的 `client.search(...)` 是 pymilvus 同步 RPC，:41 `client.has_collection(...)`、:44 `client.load_collection(...)` 同为同步调用，:70/:102 的 insert/delete 亦同；全流程无 asyncio.to_thread。超时 backend-agent/app/config.py:91 milvus_timeout_seconds=10.0。同类调用还在后台批量路径：backend-agent/app/memory/relay.py:100-101、:133 在 drain_once 的 async 循环里逐条做同步 insert/delete。",
+      "impact": "agent 是单进程单事件循环的 FastAPI（backend-agent/app/main.py），这些同步 RPC 一旦在跑，同一进程内其他会话的流式 token、健康检查、主动问候全部停摆。正常 Milvus（同机房）单次 search 十几到几十毫秒，已足以在并发会话下造成可感的 token 抖动；Milvus 不可达/负载高时按 milvus_timeout_seconds=10.0 阻塞事件循环，等于全站 10s 挂起（每次都触发，不是偶发）。记忆检索是本产品的高频工具（memory_search 在工具循环内可被多轮调用）。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把 pymilvus 的同步调用移出事件循环，并给 Milvus 访问加独立的并发上限与更短超时。",
+        "steps": [
+          "在 backend-agent/app/milvus_store.py 暴露 async 包装：`await asyncio.to_thread(milvus_store.search, ...)`（insert/delete 同理），或改用 pymilvus 的异步客户端。",
+          "把 _connect() 的 has_collection/load_collection 预热移到 app/main.py 的 lifespan 里（一次性、非请求路径），并缓存结果避免每次 has_collection。",
+          "为 Milvus 访问加单独的 semaphore/线程池上限，避免 to_thread 把默认线程池打满；milvus_timeout_seconds 从 10s 降到 2-3s。",
+          "relay.py 的 drain_once 改成批量 insert（或限制批内并发），避免逐条同步往返。",
+          "加一条『Milvus 不可达』的故障演练：确认事件循环上其他请求的 p95 不随 Milvus 超时劣化。"
+        ],
+        "files": [
+          "backend-agent/app/milvus_store.py",
+          "backend-agent/app/tools/memory_search_tool.py",
+          "backend-agent/app/memory/relay.py",
+          "backend-agent/app/main.py",
+          "backend-agent/app/config.py"
+        ],
+        "tests": "验收阈值：Milvus 不可达（iptables drop）时，其他并发请求 p95 < 200ms 且无 10s 级停顿；memory_search/milvus_store 既有 pytest 用例全绿；新增『同步客户端被 to_thread 包装』的用例（断言事件循环未被占用）。"
+      }
+    },
+    {
+      "section": "memory-startup",
+      "category": "eager-asset-decode",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "隐藏预热的桌宠窗口在挂载时就解码 1536×1872 spritesheet（1.6–2.7MB）并加载 1.94MB JS/CSS",
+      "file": "frontend/src/pages/LauncherPage.vue",
+      "line": 165,
+      "evidence": "frontend/electron/main.js:1490-1493 prewarmLauncherWindow() 创建桌宠窗口但 `show: false`（:1428），由 scheduleAuxWindowPrewarm 在主窗 did-finish-load 后 6000ms 触发（:1496-1513，另 12000ms 预热 quick chat）；该窗口 webPreferences 为 LAUNCHER_WEB_PREFS（:150-156），其中 backgroundThrottling: false。LauncherPage.vue 的 onMounted（:449 起）无条件调用 applyPetId(...)，applyPetId 内 :165 `setIdleFrame(getPetIdleUrl(...))` 与 :167-175 `const img = new Image(); img.src = getPetSpriteUrl(pet)` —— 可见性判断（isLauncherVisible）只用于 launcherActive / startObserver，没有拦住主图集加载。资源实测：frontend/dist/pet 下 19 个文件共 35.9MB，单个 *_spritesheet.webp 1.61–2.71MB（如 anya 1,761,046 B、ayaka 2,199,636 B），图集尺寸 1536×1872（PET_FRAME_W=192/PET_FRAME_H=208，8 列 9 行，frontend/src/constants/petSprite.js:2-4）。该窗口同时要先加载 launcher-CRwrn45F.js → launcherBootstrap-BOd8J3cO.js（1,129,706 B）+ vue-vendor（193,565 B）+ style（616,841 B）。",
+      "impact": "应用启动 6 秒后再起一个完整 renderer：约 1.94MB JS+CSS 解析、一张 1536×1872 位图解码后常驻（2.87M 像素 × 4B ≈ 11.5MB RGBA），而它只是在隐藏窗口里画一张 192×208 的帧；backgroundThrottling: false 又让这个不可见窗口的定时器不参与节流。若用户从未最小化主窗（桌宠从不显示），这份 CPU/内存/磁盘成本完全白付，并且它挤在主窗首屏之后不久的时间窗里，低端机上会与首屏后续工作抢 CPU。",
+      "kind": "plan",
+      "fix": {
+        "summary": "隐藏预热只保留骨架，图集解码与重资源加载推迟到桌宠真正第一次显示时。",
+        "steps": [
+          "LauncherPage.vue 的 onMounted 只做透明背景与事件订阅；把 applyPetId 的图集加载拆成 loadPetAssets()，在 isLauncherVisible() 为 true 或收到 launcher-shown 时首次调用（现有 unsubscribeLauncherShown 分支已经具备这个时机）。",
+          "显示前只加载 idle0 单帧 PNG（约 35-48KB，现已存在 dist/pet/*_idle0.png）作为占位，避免白屏。",
+          "把 spritesheet 改为按动作行切分或降采样（1536×1872 → 960×1170 级别），或改为按需加载单行动作图，控制解码后的常驻位图。",
+          "LAUNCHER_WEB_PREFS.backgroundThrottling 恢复默认 true，仅在桌宠真正显示期间临时关闭（若 TTS 自播放确实需要）。",
+          "对 prewarm 时机做 A/B：保留窗口预热但延迟资源加载，比较启动 10s 内的 renderer 内存与主线程占用。"
+        ],
+        "files": [
+          "frontend/src/pages/LauncherPage.vue",
+          "frontend/src/composables/usePetSpriteAnimator.js",
+          "frontend/electron/main.js",
+          "frontend/src/constants/petSprite.js"
+        ],
+        "tests": "验收阈值：主窗启动后 10s 内、桌宠从未显示时，launcher renderer 的 JS heap 不出现 1536×1872 位图（DevTools Memory 快照中 canvas/Image 资源为 idle0 单帧）；桌宠首次显示到首帧 < 200ms；pet 相关既有前端用例全绿。"
+      }
+    }
+  ],
+  "deferred": [
+    "frontend/src/pages/MomentsPage.vue:567 的评论轮询每 6s 对所有展开中的帖子各发一次 loadComments（展开 N 个帖 → N 请求/6s），属请求放大，但目前 N 由用户手动展开且量级小，证据不足以定为性能缺陷，转交后续观察。",
+    "frontend/src/pages/QuickChatPage.vue:365 与 ChatPage.vue:1184 的 10s 轮询在窗口隐藏时是否继续，取决于 Chromium 对隐藏窗口的定时器节流与 Electron backgroundThrottling 默认值；需实测（DevTools 后台网络面板）才能定级，未作为发现。",
+    "backend-agent/app/db.py 的 _pool/_redis 惰性全局单例在首次并发请求下可能重复建池（每个连接池 4 连接），属边界情况，需并发压测确认，未作为发现。",
+    "backend/lianyu-web/src/main/java/com/lianyu/web/agent/DesktopObserveOrchestrator.java 的并发护栏细节未逐行核对（占槽上限/限流维度），若需确认锁竞争与线程池饥饿需单独评审。"
+  ],
+  "notes": "方法与证据等级：本次为只读静态审查，不具备启动应用/压测的条件，因此没有 rung A（profile）数据；前端发现基于 frontend/dist（ELECTRON_BUILD=1，2026-11-01 18:30 产物）的实测文件字节与源码行号（rung B），后端发现基于调用链与配置常量的复杂度/往返上界（rung C，已在 impact 中标注 n 与逐项成本）。环境限制：本机 rg 不在 PATH，跨文件扫描改用 ops_grep/grep 完成；bash 与 python 的 /tmp 不互通，未使用临时中转文件。sections 五个分节全部检查过，计数与 findings 逐项一致（hot-path 1、data-access 2、runtime 1、frontend 3、memory-startup 1，合计 8）。12 个审查单元全部覆盖，无 skipped。未修改任何源码，仅写入本 handoff 文件。 | 主编规范化：sections 原为 {count,status,notes} 对象，已按 findings 实际条数归一为整数计数（hot-path 1 / data-access 2 / runtime 1 / frontend 3 / memory-startup 1），原文明细保留在 sectionsDetail。",
+  "sectionsDetail": {
+    "hot-path": {
+      "count": 1,
+      "status": "reviewed",
+      "notes": "逐项查了：Java 正则是否预编译（backend/lianyu-common/src/main/java/com/lianyu/common/util/UserInputSanitizer.java 等 127 处 Pattern.compile 全为 static final）、SSE 中继拼接（backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamBridge.java:73 用 StringBuilder append，仅在 finish 时 toString）、帧解析（AgentSseParser 线性扫描）、主动发言调度批量化（ProactiveChatScheduler 已用 selectByIds/selectLatestByConversationIds 等批查询）、消息列表合并（ChatPage.vue 有 byId Map 但仍有 some/find 内循环）。仅 ChatPage.vue 的消息合并属可用静态上界说明的复杂度问题，其余判为干净。"
+    },
+    "data-access": {
+      "count": 2,
+      "status": "reviewed",
+      "notes": "查了索引（V1__init_schema.sql、V46__message_conv_role_seq_index.sql、V33__memory_importance.sql）、Mapper 列裁剪、分页 clamp、连接池配置、缓存命中与失效（SquareAddCountService/SquareLikeService 的 Redis Hash + 启动清缓存）、外部依赖缓存。SQL 层整体健康，问题在 Python 侧顺序 await 与缺失的外部缓存。"
+    },
+    "runtime": {
+      "count": 1,
+      "status": "reviewed",
+      "notes": "查了事件循环占用（同步 SDK 调用、文件/CPU 工作）、后台循环（app/memory/relay.py drain_once 分批 + 指数退避，本身设计合理）、进程级并发护栏、启动钩子（app/main.py lifespan 只起 relay 任务并关闭连接池，无 eager 网络调用）。唯一阻塞项是 pymilvus 同步调用。"
+    },
+    "frontend": {
+      "count": 3,
+      "status": "reviewed",
+      "notes": "基于 frontend/dist（ELECTRON_BUILD=1，2026-11-01）实测字节 + 源码行号：三入口共用单 CSS、launcher 首屏 chunk 含 element-plus 全量、CSS 首行远程 @import、桌宠 rAF 空转。列表渲染（消息气泡为纯文本，无 markdown 重解析）、blob URL 均已 revoke（VoiceMessageBubble/ProfilePage 等），未发现问题。"
+    },
+    "memory-startup": {
+      "count": 1,
+      "status": "reviewed",
+      "notes": "查了模块级缓存/无淘汰 Map（useInAppMessageToast 定时器清理正常、useConversationUnread 用替换而非累积）、启动预热（main.js 的 launcher/quick 预热）、大资源加载时机（spritesheet 解码）、Java @PostConstruct（PetVoiceRegistry 只读一次 classpath json；SquareAddCountService 启动删一次 Redis key 且异常吞掉，均可接受）。"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "runId": "20261106-131312-c818fa-master",
+  "createdAt": "2026-11-06T05:45:14Z",
+  "command": "/logi",
+  "version": "0.8.1",
+  "experts": [
+    "correctness",
+    "security",
+    "reliability",
+    "maintainability",
+    "perf"
+  ],
+  "reportPath": "C:/Users/hp/Desktop/LianYu-PC/.logistics/runs/20261106-131312-c818fa-master/report.md",
+  "reportMarkdownPath": "C:/Users/hp/Desktop/LianYu-PC/.logistics/runs/20261106-131312-c818fa-master/report.md",
+  "marker": "final-validated-report",
+  "markdownPath": "C:/Users/hp/Desktop/LianYu-PC/docs/logistics/latest.md",
+  "graphHtml": "C:/Users/hp/Desktop/LianYu-PC/.logistics/runs/20261106-131312-c818fa-master/graph.html",
+  "coverageComplete": true,
+  "publishable": true
+}

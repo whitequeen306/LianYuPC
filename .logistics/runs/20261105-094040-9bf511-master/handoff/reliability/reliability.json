@@ -1,0 +1,406 @@
+{
+  "schemaVersion": 2,
+  "expert": "reliability",
+  "status": "ok",
+  "summary": "本轮以「失败是否可见、是否被正确分类、是否有护栏」为主线审查了 12 个单元：Python 侧重点看 gateway/resilience/stream_chat/tool_loop/memory relay+writer，Java 侧重点看 AI 后台消费、熔断隔舱、SSE 流桥与落库回调，前端重点看聊天流与等待态，另有 CI 与测试脚本核对。共 11 条发现：2 条高危错误处理缺陷（取消/断连被计入共享熔断器；后台任务重试判定依赖异常文案，熔断文案恰好进入无人消费的 DLQ）+ 1 条高危测试缺口（CI 不跑 pytest 与 admin）；3 条中危错误处理（截断回复当成功落库、outbox 卡 RUNNING 不自愈、前端聊天流无空闲超时）；2 条中危测试缺口（vitest 允许 0 测试通过、取消/截断语义零回归）；3 条低危（工具循环异常分类过窄、记忆批量写入事务语义与注释不符、健康探测仅 debug 日志）。整体结论：SSE 帧契约与 Java 侧降级链路设计成熟，主要风险集中在「取消/中断语义」与「重试分类靠文案」两处，均已有可复现路径。",
+  "sections": {
+    "error-handling": 8,
+    "tests": 3
+  },
+  "units": {
+    "u01": {
+      "status": "reviewed",
+      "filesRead": 9,
+      "notes": "读 AiBackgroundConsumer、AiResilience、ChatTurnFacade、SseChatStreamHelper、ConversationService（stream 回调段）、ProactiveMessageService（agent 接缝）、RabbitMqConfig（DLQ 声明）、AgentStreamCallback；配合全模块空 catch 扫描。发现 F2、F3 证据链在此。"
+    },
+    "u02": {
+      "status": "sampled",
+      "filesRead": 5,
+      "notes": "对 lianyu-service 全量 Java 做空 catch / @Transactional 吞异常模式扫描（命中 19 处空 catch，逐条判读后仅 3 处属兜底），再抽查 moments/memory/voice 三个服务的失败分支；未逐文件通读。"
+    },
+    "u03": {
+      "status": "reviewed",
+      "filesRead": 11,
+      "notes": "ChatPage.vue（attemptStream/等待态/输入禁用）、assistantStreamDrain.js、sseParser.js、useStreamAbort.js、httpCore 与 installMainHttpToasts.js、CharactersPage.vue、MemoryPage.vue、App.vue；发现 F6。"
+    },
+    "u04": {
+      "status": "sampled",
+      "filesRead": 6,
+      "notes": "scripts 全量故障模式 grep（subprocess/system.exit/bare except），细读 _cloud_deploy_pull.py 的 run()/健康自检、test_updater_flow.py、_upload_update_assets.py 关键段；确认部署脚本会按远端退出码中止，未发现吞错。"
+    },
+    "u05": {
+      "status": "sampled",
+      "filesRead": 4,
+      "notes": "111 个受控文件全量扫描 catch/异常声明；`git grep -ln \"class .*Test\" -- backend/lianyu-dao` 为 0，模块内无测试类，迁移 V7–V57 无 SQL 层回归（见 deferred）。"
+    },
+    "u06": {
+      "status": "reviewed",
+      "filesRead": 14,
+      "notes": "gateway.py、resilience.py、http_client.py、stream_chat.py、main.py（SSE/记忆/extract-write/relay 端点）、tool_loop.py、memory/writer.py、memory/relay.py、tools/ 三个工具实现；发现 F1、F4、F5、F7。"
+    },
+    "u07": {
+      "status": "sampled",
+      "filesRead": 7,
+      "notes": "对 frontend/src 全量扫描 30 处 `.catch(() => {})` 与 12 处空 catch，逐处定位调用点后判定：qqBridge 轮询与 notifications 的静默是刻意刷新，未报；群聊/通知页面失败提示另有 toast。未逐文件通读。"
+    },
+    "u08": {
+      "status": "reviewed",
+      "filesRead": 7,
+      "notes": "AgentStreamBridge（accept/finish/abort 全文）、AgentStreamAdapter、AgentRuntimeClient（含健康探测与 postJson/postStream 失败分支）、ChatTurnAdapter、AgentMemoryAdapter；发现 F3、F8。"
+    },
+    "u09": {
+      "status": "reviewed",
+      "filesRead": 8,
+      "notes": "electron/logger.js 全局钩子（uncaughtException/unhandledRejection/render-process-gone）、main.js 装配段、updater.js 的 7 处空 catch 逐个判读（均为清理/abort 兜底，不算缺陷）。"
+    },
+    "u10": {
+      "status": "reviewed",
+      "filesRead": 7,
+      "notes": "ci.yml 全文、admin/package.json 与 admin/src（仅 1 个测试文件）、frontend/vitest.config.js、deploy/api-gateway 路由、release_assets 契约脚本入口；发现 F9、F10。"
+    },
+    "u11": {
+      "status": "sampled",
+      "filesRead": 3,
+      "notes": "抽查 lianyu-ai 出站客户端超时与异常转换、lianyu-security 拦截配置、lianyu-storage MinIO 失败分支；未发现吞错或缺失超时。"
+    },
+    "u12": {
+      "status": "sampled",
+      "filesRead": 3,
+      "notes": "抽查 lianyu-app application.yml（调度池/超时）、lianyu-common ErrorCode、installer 与 Pets 脚本；未发现与本轮主题相关的可复现缺陷。"
+    }
+  },
+  "findings": [
+    {
+      "section": "error-handling",
+      "category": "failure-propagation",
+      "severity": "high",
+      "confidence": "high",
+      "title": "模型网关熔断器把客户端取消/断连计为上游失败，5 次中断即可误开共享熔断",
+      "file": "backend-agent/app/gateway.py",
+      "line": 279,
+      "evidence": "stream_text 与 _post_chat 都用 `except BaseException as exc: await breaker.on_error(exc); raise`（gateway.py:279、407）；resilience.py:132 的 `on_error` 只把 `GatewayBusinessError` 记成功，其余一律 `self._results.append(False)`，CLOSED 下窗口 20 / 最小 5 样本 / 50% 即 `_open()`，OPEN 30s，HALF_OPEN 任一失败立即重开。用户关闭窗口或点「停止生成」时，SSE 任务被取消，`CancelledError`/`GeneratorExit` 正好落在 `yield delta` 上，被 `except BaseException` 捕获并计为失败；breaker key 为 provider+base_url，使用同一官方端点的所有用户共享同一个 breaker。",
+      "impact": "正常用户行为（中途关窗、切换会话、点停止）就能在 30s 内把共享熔断器打开，此后所有用户的会话在 try_acquire 处快失败，统一提示「对方模型暂时繁忙，请稍后再试」；HALF_OPEN 期再遇到一次取消即重新打开，故障可自持。上游其实完全健康，监控与日志里也只会看到 breaker OPEN 的 warning，难以定位到“取消”这个真实原因。",
+      "kind": "direct",
+      "fix": {
+        "summary": "把取消/断连与上游失败区分开：取消不参与熔断统计，只记录一次 info 日志。",
+        "steps": [
+          "在 gateway.py:279 与 :407 的 try 之前加 `except asyncio.CancelledError: raise`（注意 CancelledError 继承 BaseException，`except Exception` 捕获不到），并把 `except BaseException` 改为 `except Exception`。",
+          "在 resilience.py:132 的 on_error 开头加 `if isinstance(error, (asyncio.CancelledError, GeneratorExit)): return`，作为第二道防线。",
+          "在 stream_text 的生成器被 aclose 时同样跳过统计，避免 GeneratorExit 走失败分支。",
+          "补一个回归用例：连续 5 次取消不得改变 breaker 状态。"
+        ],
+        "files": [
+          "backend-agent/app/gateway.py",
+          "backend-agent/app/resilience.py",
+          "backend-agent/tests/test_resilience.py"
+        ],
+        "tests": [
+          "新增 test_cancel_does_not_open_breaker：对 UpstreamBreaker 连续调用 on_error(asyncio.CancelledError()) 5 次后断言 state 仍为 CLOSED。",
+          "新增 test_stream_cancel_not_counted：用假 gateway 制造生成器中途 aclose，断言 on_error 未被调用。",
+          "跑 `pytest -q backend-agent` 全绿。"
+        ]
+      }
+    },
+    {
+      "section": "error-handling",
+      "category": "retry",
+      "severity": "high",
+      "confidence": "high",
+      "title": "后台 AI 任务按异常文案判定可重试，恰好漏掉熔断/隔舱的「对方模型暂时繁忙」，任务直接进无人消费的 DLQ",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/ai/background/AiBackgroundConsumer.java",
+      "line": 102,
+      "evidence": "isAgentTransient 沿 cause 链找到 `BusinessException(ErrorCode.AI_PROVIDER_ERROR)` 后按 message 子串判定：`message.contains(\"prompt 组装失败\") || message.contains(\"消息发送失败\") || message.contains(\"服务暂时不可用\")`（AiBackgroundConsumer.java:102-116）。而 AiResilience.java:108 在熔断/隔舱拒绝时抛的文案是「对方模型暂时繁忙，请稍后再试」，三个子串一个都不匹配 → retryable=false → `throw last`；容器工厂设置 `defaultRequeueRejected(false)`（RabbitMqConfig.java:129/148），消息进入 `ai.background.dlq`。全仓 `git grep -n \"dlq\"` 只有队列/绑定声明（RabbitMqConfig.java:23/26/30/33/66/81/96/106），没有任何消费者或重放脚本。",
+      "impact": "上游模型真的繁忙或熔断打开——最应该退避重试的场景——反而被判为不可重试，日记、动态评论、语音通话总结等后台任务被整条丢弃，只在日志留一行 error；DLQ 无消费者也无告警，等于静默丢数据。另外重试靠 `Thread.sleep` 阻塞 RabbitMQ listener 线程（默认 1500ms×n），并发下会占满消费线程。",
+      "kind": "plan",
+      "fix": {
+        "summary": "用错误码 + 明确的 retryable 标记替代文案匹配，并让 DLQ 至少有消费者或告警，而不是黑洞。",
+        "steps": [
+          "在 BusinessException 上增加 retryable 语义（或在 ErrorCode 上标注），AiResilience 熔断/隔舱拒绝时置 retryable=true，consumer 只读该标记，不再匹配中文文案。",
+          "把 `Thread.sleep` 重试改为投递到延迟队列（TTL + DLX）或用 Spring Retry 的 backoff，避免占用 listener 线程。",
+          "为 `ai.background.dlq` 增加消费者：记录 type/postId 到死信表并打 error 指标；或提供可重放脚本。",
+          "补测试：熔断文案必须判为可重试；DLQ 消费者可把消息重新投回主队列。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/ai/background/AiBackgroundConsumer.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AiResilience.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/config/RabbitMqConfig.java"
+        ],
+        "tests": [
+          "AiBackgroundConsumerTest：传入 BusinessException(AI_PROVIDER_ERROR, \"对方模型暂时繁忙，请稍后再试\") 断言 isAgentTransient 为 true。",
+          "AiBackgroundConsumerTest：传入 key 无效一类业务错断言 false 且不重试。",
+          "跑 `mvn -q -f backend/pom.xml test`。"
+        ]
+      }
+    },
+    {
+      "section": "error-handling",
+      "category": "partial-failure",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "流式桥不区分「收到 [DONE]」与「上游半途断开」，截断回复按成功落库并触发通知与记忆摘要",
+      "file": "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamBridge.java",
+      "line": 99,
+      "evidence": "accept() 里 `case DONE, IGNORED -> { }`（AgentStreamBridge.java:93-95）不记录任何「已收到终止帧」状态；finish() 只在内容为空时报错，否则一律 `finishSseSuccess`（:99-113）。上游连接被关掉时 WebClient 走 onComplete → relay::finish，同样按成功处理。abort() 更直接：`callback.onComplete(partial, null)`（:126-139），把截断内容以 null 异常上抛。ConversationService.onComplete 收到 error==null 时执行 saveAssistantReplies + relationshipStateService + memoryWriter.enqueueSummary + 发通知（ConversationService.java:377-407）。",
+      "impact": "backend-agent 重启、OOM、网关中途断开导致没有 [DONE] 时，半截回复被当作完整消息落库、写入关系与记忆摘要并推送通知；用户看到一句话没说完的回答，既没有错误提示也没有重试入口，事后从日志也看不出异常（只有一条正常的 saved 日志）。客户端断连时同理。",
+      "kind": "plan",
+      "fix": {
+        "summary": "引入 sawDone 状态，把「正常终止」与「上游断开」区分开：断开时以错误收尾并显式标记，是否落库作为产品决策显式写出。",
+        "steps": [
+          "在 Relay 中增加 `sawDone`，`case DONE -> sawDone = true`。",
+          "finish() 在 `!sawDone` 时走 `finishSseError(..., \"回复中断，请重试\")`，并以 `new IOException(\"upstream_closed_without_done\")` 回调 onComplete。",
+          "abort() 改为传入显式异常（如 ClientDisconnectedException），不要用 null 冒充成功。",
+          "由产品确认截断内容是否落库：若落库需标记 partial 并禁止用它生成记忆摘要与通知。",
+          "补三条测试：无 DONE 截断、客户端断开、正常 DONE。"
+        ],
+        "files": [
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamBridge.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+          "backend/lianyu-web/src/test/java/com/lianyu/web/agent/AgentStreamBridgeTest.java"
+        ],
+        "tests": [
+          "AgentStreamBridgeTest：只推 content 不推 [DONE] 后调用 finish，断言发出 error 帧且 callback 收到非空异常。",
+          "AgentStreamBridgeTest：abort 后断言 callback 的 error 参数非 null。",
+          "跑 `mvn -q -f backend/pom.xml test`。"
+        ]
+      }
+    },
+    {
+      "section": "error-handling",
+      "category": "partial-failure",
+      "severity": "low",
+      "confidence": "high",
+      "title": "记忆批量写入注释声称「整批同一事务，任一失败全回滚」，实现却是逐条事务提交",
+      "file": "backend-agent/app/memory/writer.py",
+      "line": 123,
+      "evidence": "writer.py:3 与 :123 都写「整批在同一事务内，任一失败全回滚」，main.py:917 的 endpoint docstring 同样写「整批单事务」；但 `_insert_new`(175)、`_update_meta`(196)、`_replace_and_enqueue`(209) 各自 `async with transaction()`，逐条提交。main.py:952-953 在异常时 `raise HTTPException(500, \"memory write failed\")`，此前已提交的条目保留。",
+      "impact": "批次中途失败时部分记忆已落库、部分丢失，调用方只拿到 500，无法判断写入了多少；Java 侧 AgentMemoryAdapter 见 null/error 会回退到启发式重写（AgentMemoryAdapter.java:95-104），是否重复完全依赖两侧 source_hash 口径一致。按注释假设「全回滚」去写恢复逻辑的人会踩坑。",
+      "kind": "direct",
+      "fix": {
+        "summary": "把事务边界上移到 write_memories，让实现与文档一致；helper 改为接收 cursor。",
+        "steps": [
+          "在 write_memories 外层包一个 `async with transaction() as cur`，将 cur 传入 _insert_new/_update_meta/_replace_and_enqueue。",
+          "删除 helper 内部各自的 transaction()。",
+          "返回体补上 `created/updated/failed` 计数，异常时至少让调用方知道写入前的状态。",
+          "补测试：第二条记忆插入失败时断言表中没有第一条。"
+        ],
+        "files": [
+          "backend-agent/app/memory/writer.py",
+          "backend-agent/app/main.py",
+          "backend-agent/tests/test_memory_writer.py"
+        ],
+        "tests": [
+          "新增 test_batch_is_atomic：mock 第二条插入抛错，断言事务回滚后行数为 0。",
+          "跑 `pytest -q backend-agent`。"
+        ]
+      }
+    },
+    {
+      "section": "error-handling",
+      "category": "cleanup",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "记忆 outbox 卡在 RUNNING 的行不会自愈，重排只有手工接口且全仓无调用方",
+      "file": "backend-agent/app/memory/relay.py",
+      "line": 207,
+      "evidence": "drain_once 只认领 `status='PENDING'` 的行（`UPDATE ... WHERE status='PENDING'` 影响行数判定）；进程在认领后崩溃或重启，该行永远停在 RUNNING。relay.py:207 提供了 `requeue_stuck()`（DEAD 与超 10 分钟的 RUNNING），但唯一入口是 main.py:967-971 的 `POST /agent/memory/relay/requeue`；`git grep -n \"relay/requeue\"` 在 backend/scripts/CI 中零命中，说明没有任何定时调用。",
+      "impact": "每次部署/重启/OOM 都可能留下永久 RUNNING 的行：对应记忆不写 Milvus，向量检索永远查不到这条，角色表现成「突然忘了」，而日志里只有一条认领成功的 info。DEAD 行（超过重试上限）同样只能人工重排，且没有告警。",
+      "kind": "direct",
+      "fix": {
+        "summary": "在 _relay_loop 中定期调用 requeue_stuck()，并给 RUNNING 超时与 DEAD 行打指标日志。",
+        "steps": [
+          "main.py 的 _relay_loop 里每 N 轮（如 10 分钟）调用一次 `requeue_stuck()`，异常只 warning 不中断循环。",
+          "requeue_stuck 里对每类重排计数并 log.warning（含 outbox id），便于发现频繁重启。",
+          "给 requeue 接口加返回明细，便于运维核对。",
+          "补测试：造一条卡 RUNNING 超 10 分钟的行，断言下一轮被重排并最终投影成功。"
+        ],
+        "files": [
+          "backend-agent/app/main.py",
+          "backend-agent/app/memory/relay.py",
+          "backend-agent/tests/test_memory_relay.py"
+        ],
+        "tests": [
+          "新增 test_relay_loop_requeues_stuck：mock 时间把 next_attempt_at 拨到过去，断言 drain 后状态不再是 RUNNING。",
+          "跑 `pytest -q backend-agent`。"
+        ]
+      }
+    },
+    {
+      "section": "error-handling",
+      "category": "timeout",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "前端聊天流没有空闲超时，半开连接会让输入框永久停在等待态",
+      "file": "frontend/src/pages/ChatPage.vue",
+      "line": 1430,
+      "evidence": "attemptStream() 在 `drainAssistantStream(response, { signal })` 处进入 `reader.read()` 循环（assistantStreamDrain.js:26-35），除 AbortController 外没有任何计时器；useStreamAbort.js 只负责 abort，没有 watchdog；全前端搜不到 stream 相关的 timeout 常量。waitingReply 直接 disabled 输入框与发送键（ChatPage.vue:215/225/250/1363），只在 finally 里复位（:1476）。",
+      "impact": "代理/NAT 保持 TCP 但不再返回数据，或服务端线程卡死不结束响应时，read() 永不 resolve，waitingReply 永久为 true：用户无法再发消息，界面一直显示正在输入，没有错误提示也不会自动重试；只能离开页面重进。网络层错误只覆盖了 sendMessageStream 立刻抛错的情况。",
+      "kind": "direct",
+      "fix": {
+        "summary": "给流式读取加空闲超时：超过 N 秒没有新 chunk 就 abort 并提示可重试。",
+        "steps": [
+          "在 drainAssistantStream 或 ChatPage 内维护 idleTimer，每到一块 chunk 就 reset。",
+          "超时（建议 45–60s）时调 abortController.abort()，抛出带 code 的超时错误。",
+          "catch 分支区分超时与其他错误，提示「回复超时，可重试」并保留已接收内容。",
+          "补一个 vitest：mock reader 永不返回，推进假时钟后断言进入超时分支且 waitingReply 复位。"
+        ],
+        "files": [
+          "frontend/src/pages/ChatPage.vue",
+          "frontend/src/utils/assistantStreamDrain.js",
+          "frontend/src/utils/useStreamAbort.js"
+        ],
+        "tests": [
+          "新增 src/utils/__tests__/assistantStreamDrain.idle.test.js：reader.read 挂起，fake timers 推过阈值后断言 reject 超时错误。",
+          "跑 `npm --prefix frontend test`。"
+        ]
+      }
+    },
+    {
+      "section": "error-handling",
+      "category": "failure-propagation",
+      "severity": "low",
+      "confidence": "medium",
+      "title": "工具循环只把 httpx/RuntimeError 当作可降级错误，其余异常会让整轮回复失败",
+      "file": "backend-agent/app/tool_loop.py",
+      "line": 101,
+      "evidence": "`except (httpx.HTTPError, RuntimeError) as exc:` 时把异常写进工具结果继续对话（tool_loop.py:101）；ValueError/KeyError/aiomysql 等异常直接冒出 execute_tool_calls，最终由 main.py 外层 `except Exception` 收尾，产出 `sse_error(\"生成失败，请重试\")` 并结束整轮。",
+      "impact": "单个工具的数据异常（例如返回 NULL 触发 KeyError、参数校验 ValueError）会把本可降级的局部失败升级成整条回复失败，已生成的文本作废，用户只看到一句通用错误，排障时也缺少是哪个工具的信息。",
+      "kind": "direct",
+      "fix": {
+        "summary": "把工具执行的所有常规异常都降级为工具错误文本，并记录堆栈。",
+        "steps": [
+          "把 except 子句改为 `except Exception as exc`（CancelledError 继承 BaseException，不会被误吞），保留现有文案。",
+          "加 `logger.exception(\"tool %s failed\", name)`，让错误可定位。",
+          "对同一工具连续失败计数，超过阈值时短路后续轮次，避免反复烧 token。"
+        ],
+        "files": [
+          "backend-agent/app/tool_loop.py"
+        ],
+        "tests": [
+          "新增 test_tool_value_error_is_degraded：工具抛 ValueError，断言对话继续且结果文本含「调用失败」。",
+          "跑 `pytest -q backend-agent`。"
+        ]
+      }
+    },
+    {
+      "section": "error-handling",
+      "category": "observability",
+      "severity": "low",
+      "confidence": "high",
+      "title": "AGENT 链路健康探测失败只写 debug 日志，整链路静默回退 Java 旧链路",
+      "file": "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentRuntimeClient.java",
+      "line": 414,
+      "evidence": "`log.debug(\"Agent health probe failed: {}\", e.toString());` 后 return false；ChatTurnAdapter.stream 与 reachable() 拿到 false 后返回 null，上层静默回退 Java 链路。生产默认日志级别是 INFO，这条记录不会出现。",
+      "impact": "backend-agent 整体不可用、证书/地址配错时，全部流量悄悄回退到旧链路，行为差异（无工具调用、记忆抽取方式不同）对用户和运维都不可见；既没有 WARN 也没有指标，排障只能靠猜「为什么没有工具回复」。",
+      "kind": "direct",
+      "fix": {
+        "summary": "把探测失败提升为带节流的 warn 并暴露降级计数。",
+        "steps": [
+          "改为 `log.warn` 并复用现有 AgentFailureLogThrottle（10 分钟窗口）避免刷屏。",
+          "记录一次降级指标（Micrometer counter，tag=reason），便于告警。",
+          "回退时在响应头或日志中标记 degraded=true，方便前端/排障区分。"
+        ],
+        "files": [
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentRuntimeClient.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamAdapter.java"
+        ],
+        "tests": [
+          "AgentRuntimeClientTest：健康探测抛错时断言降级计数 +1。",
+          "跑 `mvn -q -f backend/pom.xml test`。"
+        ]
+      }
+    },
+    {
+      "section": "tests",
+      "category": "ci-coverage",
+      "severity": "high",
+      "confidence": "high",
+      "title": "CI 不运行 backend-agent 的 pytest 与 admin 测试，前端还违反仓库要求的串行执行",
+      "file": ".github/workflows/ci.yml",
+      "line": 22,
+      "evidence": "ci.yml 只有三个 job：backend（`mvn -B -ntp test`，:22）、frontend（`npx vitest run`，:39）、deps-audit（OSV，continue-on-error）。没有 pytest 步骤、没有 admin 的 npm test。AGENTS.md §4 明确要求前端用 `npx vitest run --no-file-parallelism`（updater 并发用例在满载并行下已知 flake），CI 里是并行跑。",
+      "impact": "backend-agent 全部用例（含本轮 F1/F4/F5/F7 涉及的 gateway/resilience/tool_loop/memory）在合并前不执行，Python 侧错误处理改动零门禁；admin 的 1 个测试也从不运行；前端并行执行会把已知 updater flake 带进 CI，红灯被当噪音忽略，真正失败的用例因此更容易漏掉。",
+      "kind": "direct",
+      "fix": {
+        "summary": "补齐两条 CI job，并把前端测试改成与文档一致的串行调用。",
+        "steps": [
+          "新增 job `backend-agent`：setup-python 3.11，`pip install -r backend-agent/requirements.txt`，`pytest -q backend-agent`。",
+          "新增 job `admin`：node 20，`npm --prefix admin ci`，`npm --prefix admin test`。",
+          "把 frontend job 改为 `npx vitest run --no-file-parallelism`。",
+          "给两个新 job 加 path filter 以免每次全跑（backend-agent/**、admin/**）。"
+        ],
+        "files": [
+          ".github/workflows/ci.yml"
+        ],
+        "tests": [
+          "PR 上确认三个 job 都触发并通过。",
+          "本地等价命令：`pytest -q backend-agent`、`npm --prefix admin test`、`npx --prefix frontend vitest run --no-file-parallelism`。"
+        ]
+      }
+    },
+    {
+      "section": "tests",
+      "category": "test-gap",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "`vitest --passWithNoTests` 让「一个测试都没跑」也返回成功",
+      "file": "frontend/package.json",
+      "line": 18,
+      "evidence": "frontend/package.json:18 `\"test\": \"vitest --passWithNoTests\"`，admin/package.json:9 相同。frontend/vitest.config.js 的 include 是三条 glob（src/shared/electron 下的 __tests__），目录调整或配置漂移导致 0 命中时，命令仍然 exit 0。",
+      "impact": "测试文件被移动、include 写错、依赖缺失导致收集为空时，门禁依旧是绿的，覆盖率静默归零而无人发现；与 AGENTS.md「测试要能非空转验证」的纪律直接冲突。admin 全模块本只有 1 个测试文件，风险更高。",
+      "kind": "direct",
+      "fix": {
+        "summary": "去掉 --passWithNoTests，让「零用例」成为失败；需要空跑的场景用显式环境变量。",
+        "steps": [
+          "删除 frontend/package.json 与 admin/package.json 中的 `--passWithNoTests`。",
+          "在 CI 日志里断言用例数大于阈值（例如 frontend ≥ 400），防止 include 漂移。",
+          "如确实需要空跑（例如只构建），新建 `test:optional` 脚本单独使用该 flag。"
+        ],
+        "files": [
+          "frontend/package.json",
+          "admin/package.json"
+        ],
+        "tests": [
+          "临时改坏 include 后执行 `npm --prefix frontend test`，确认退出码非 0。",
+          "恢复后执行 `npm --prefix frontend test` 与 `npm --prefix admin test`，确认全绿且用例数 > 0。"
+        ]
+      }
+    },
+    {
+      "section": "tests",
+      "category": "regression-gap",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "取消与「无 [DONE] 截断」两条语义零回归测试，正好覆盖本轮两个高危缺陷",
+      "file": "backend/lianyu-web/src/test/java/com/lianyu/web/agent/AgentStreamBridgeTest.java",
+      "line": 84,
+      "evidence": "AgentStreamBridgeTest 的 8 个用例（relaysContentIncrementallyThenFinishesWithDone、replaceOverrides、errorFrameFinishesWithErrorAndPartialContent、emptyContent、ignoresUnknownFrames、clientDisconnectStopsRelaying、failReportsErrorMessage、finishIsIdempotent）输入全部带 `data: [DONE]`，没有任何「流结束但没有 DONE」的断言；`git grep -n \"cancel\\(\\)\\|CancelledError\" backend-agent/tests` 命中 0，熔断器没有取消相关用例。",
+      "impact": "F1（取消被计为上游失败）与 F3（截断当成功落库）都没有护栏：任何人重构 gateway/stream bridge 都可能在无人察觉的情况下恢复旧行为，而这两条恰好影响全体用户的可用性与数据正确性。",
+      "kind": "direct",
+      "fix": {
+        "summary": "为取消与截断各补最小用例，并纳入 CI。",
+        "steps": [
+          "AgentStreamBridgeTest 增 `truncatedStreamWithoutDoneReportsError`：只推 content 后调 finish，断言 error 帧。",
+          "backend-agent 增 `test_cancel_does_not_open_breaker`（见 F1）。",
+          "给 stream_text 加一个 aclose 用例，断言取消不产生 on_error 计数。",
+          "CI 接入 pytest 后这两类用例即可自动守护。"
+        ],
+        "files": [
+          "backend/lianyu-web/src/test/java/com/lianyu/web/agent/AgentStreamBridgeTest.java",
+          "backend-agent/tests/test_resilience.py"
+        ],
+        "tests": [
+          "新用例单独跑绿：`mvn -q -f backend/pom.xml -Dtest=AgentStreamBridgeTest test`。",
+          "`pytest -q backend-agent/tests/test_resilience.py`。"
+        ]
+      }
+    }
+  ],
+  "deferred": [
+    "backend/lianyu-dao（111 文件，V7–V57 迁移，模块内零测试类）：SQL 与迁移正确性无自动化回归，建议由 correctness 专家评估，本轮未展开。",
+    "backend/lianyu-app application.yml:71-80 声明 spring.rabbitmq.listener.simple.retry.enabled=true，但 RabbitMqConfig 手工 new 的 listener factory 未走 Boot configurer，重试拦截可能不生效；与 F2 同源，未单独成条。",
+    "frontend/src 的 30 处 `.catch(() => {})`（qqBridge 轮询、notifications 刷新等）判定为刻意静默，未逐处验证其对用户可见性的真实影响。",
+    "SseEmitter 的 SSE 超时（ChatTurnAdapter 构造参数 SSE_TIMEOUT_MS）与前端等待态之间的交互未实测，仅从代码推断。",
+    "4 条测试命令本轮未实际执行（只读审查，避免产生 target/、.pytest_cache 等构建产物）；F9/F10 的结论来自脚本与 CI 配置本身。"
+  ],
+  "notes": "方法：先读 scope.json，按单元做全量模式扫描（Java 空 catch 19 处、Python bare except、JS 空 catch 12 处、`.catch(()=>{})` 30 处、跳过测试 0 处），再对 AI 链路（gateway/resilience/stream_chat/tool_loop/memory）、SSE 流桥、后台消费者、聊天前端逐文件精读。已排除的假线索：scripts/_cloud_deploy_pull.py run() 缩进正确、无 UnboundLocalError；AgentStreamBridge 的 7 处 updater 空 catch 均为清理兜底；MemoryPage/CharactersPage 的空 catch 有下游空态或 toast 兜底。"
+}

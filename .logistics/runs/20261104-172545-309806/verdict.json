@@ -1,0 +1,293 @@
+{
+  "schemaVersion": 2,
+  "runId": "20261104-172545-309806",
+  "generatedAt": "2026-11-04T09:45:00Z",
+  "coverage": {
+    "expected": ["security"],
+    "received": ["security"],
+    "missing": [],
+    "complete": true
+  },
+  "findings": [
+    {
+      "id": "SEC-B2BD5",
+      "expert": "security",
+      "module": "deploy/api-gateway + backend-agent",
+      "section": "authz",
+      "severity": "critical",
+      "confidence": "high",
+      "title": "api-gateway 在 443 公网 server 无条件反代 /api/agent/**，Python 侧只有「可选 X-User-Id 相等」校验，匿名可跨用户读写记忆",
+      "file": "deploy/api-gateway/nginx.conf",
+      "line": 252,
+      "evidence": "1) nginx.conf 的 `location /api/agent/`（252-285）位于 `server { listen 443 ssl; }`（17-20）内，即公网可达；该 location 只有 limit_req、OPTIONS 预检、`rewrite ^/api(/agent/.*)$ $1 break;` 与 `proxy_pass $agent_upstream;`，没有 Sa-Token 校验，也没有 `proxy_set_header X-User-Id \"\"` 剥离客户端自带值。2) backend-agent/app/main.py 共 25 个 @app.post/get 路由（grep 确认 102-1245），其中 19 个的写法是 `user_id_header: str | None = Header(default=None, alias=\"X-User-Id\")` 后接 `if user_id_header and str(body.user_id) != user_id_header: raise HTTPException(403, \"user mismatch\")`（146-150、203-206、915-918、985-988、1143-1148、1177-1182 等）——不带该头时整段校验被跳过，带了也只是与客户端自己填的 body.user_id 自洽，不构成认证。3) 完全没有任何校验的路由：/agent/prompt/render（614）、/agent/prompt/scene-instruction（639）、/agent/memory/relay/drain（959）、/agent/memory/relay/requeue（967）、/agent/memory/reconcile（974）、/agent/health（102）、/agent/capabilities（107）。4) 写接口 /agent/memory/write（982-1003）与 /agent/memory/extract-write（912-957）直接调用 `write_memories(body.user_id, body.character_id, inputs)`；agent 容器用 `${MYSQL_USER:-lianyu}`（docker-compose.yml:112-116）连库，也就是 Java 侧同一个可写账号，写权限仅靠 app/write.py 的语句/表白名单（_ALLOWED_INSERTS = memory_meta、memory_outbox）约束，不校验 user_id 归属。5) agent 服务未声明 ports，唯一外网入口就是该 nginx location。",
+      "impact": "未登录攻击者可直接 POST https://<域名>/api/agent/memory/write 并自填 userId/characterId，为任意用户写入或覆盖记忆行与 outbox，进而在受害者后续对话里注入伪造记忆（提示注入面）；/agent/chat-turn/stream、/agent/text/chat、/agent/voice/delete（1174）、/agent/voice/enroll（1140）、/agent/tts/synthesize（1208）可冒用任意 userId 消耗他人模型额度、删除他人音色；/agent/memory/relay/drain 与 /reconcile 可被外部驱动执行运维级批量写。属于可复现的跨租户读写与身份冒用，无需任何凭据。注：handoff 原文称 agent 持「只读凭据」，实测 compose 传入的是主账号 lianyu，影响比原文更重，已按实测改写。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把 /api/agent/** 收回为纯内网通道：网关层默认拒绝外部来源，Python 侧强制服务间共享密钥且 X-User-Id 必填，删掉「带不带由客户端决定」的分支。",
+        "steps": [
+          "nginx 的 location /api/agent/ 增加 `allow` 内网网段（如 172.16.0.0/12）+ `deny all;`，并显式 `proxy_set_header X-User-Id \"\";` 剥离客户端自带值，再补 serve 端可信头",
+          "backend-agent 新增 app/security.py，提供 FastAPI 依赖 require_agent_auth：constant-time 比对 X-Agent-Token 与启动注入的共享密钥，缺失/错误一律 401",
+          "把 main.py 所有 X-User-Id 校验改为必填（缺失 401、不一致 403），并给 prompt/render、prompt/scene-instruction、memory/relay/drain、relay/requeue、memory/reconcile 补同一依赖",
+          "Java 侧 AgentRuntimeClient 透传共享密钥头，docker-compose.yml 与 .env.example 同步声明 AGENT_SHARED_TOKEN",
+          "确认 agent 与 agent-lb 继续不发布宿主端口（compose 无 ports、lb 只绑 127.0.0.1），防止绕过网关"
+        ],
+        "files": [
+          "deploy/api-gateway/nginx.conf",
+          "backend-agent/app/main.py",
+          "backend-agent/app/security.py",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentRuntimeClient.java",
+          "docker-compose.yml",
+          ".env.example"
+        ],
+        "tests": [
+          "pytest：无 X-Agent-Token 请求 /agent/memory/write 断言 401；有密钥但缺 X-User-Id 断言 401；X-User-Id 与 body.userId 不一致断言 403",
+          "从公网地址 curl https://<域名>/api/agent/memory/write 断言被 nginx 403 拦截",
+          "回归：Java AgentRuntimeClient 合法链路（带密钥与正确 X-User-Id）仍返回 200"
+        ]
+      }
+    },
+    {
+      "id": "SEC-4D2AD",
+      "expert": "security",
+      "module": "backend-agent",
+      "section": "uploads",
+      "severity": "high",
+      "confidence": "high",
+      "title": "Python agent 的模型网关接受任意 base_url 且无出站 URL 校验，可作内网 SSRF 跳板",
+      "file": "backend-agent/app/gateway.py",
+      "line": 413,
+      "evidence": "gateway.py:92-111 `normalize_openai_base_url` 只做去尾斜杠、去结尾 /v1、拼 `/v1/chat/completions`，无 host 白名单；_do_post（413-432）直接 `await client.post(url, json=payload, headers=headers)`。http_client.py:24-40 `new_client()` 只设 timeout / UA / local_address，无 URL 校验。base_url 来自请求体：main.py:774 `text_base_url: str | None = Field(default=None, alias=\"textBaseUrl\")` → 787-795 传给网关；同样路径见 /agent/desktop-observe（main.py:89/168 → desktop_observe.py:86-101 `gateway.chat(base_url=request.text_base_url, ...)`）、/agent/proactive-turn（main.py:1026/1077 → graphs/proactive_turn.py:118,149）。Java 侧有 OutboundUrlValidator + SsrfPinningClientFactory，Python 侧无等价物。",
+      "impact": "与 SEC-B2BD5 组合即为匿名可达的盲 SSRF：攻击者指定 textBaseUrl=http://mysql:3306、http://redis:6379、http://169.254.169.254/latest/meta-data/iam/security-credentials/ 等，让 agent 容器向内网发起带 `Authorization: Bearer <任意值>` 的 POST。回显有限（transport 异常只带异常文本，状态码走 `model gateway http {status}`），足以按错误差异与耗时探测内网拓扑与服务存活；若内网端点返回可解析的 chat completion JSON，内容会作为模型输出回到调用方。已按实测把「回显响应体」修正为「错误/耗时盲探 + 特定形态回显」。",
+      "kind": "plan",
+      "fix": {
+        "summary": "在 Python 侧补与 Java OutboundUrlValidator 等价的出站校验，并让 base_url 只来自服务端受信配置。",
+        "steps": [
+          "新增 backend-agent/app/url_guard.py：validate_outbound_url(url) 仅允许 http/https，拒绝 IP 字面量与解析后落在 10/8、172.16/12、192.168/16、127/8、169.254/16、::1、fc00::/7 的地址以及 metadata 域名",
+          "gateway.chat / gateway.stream 在 normalize 前调用该函数，非法 URL 抛 400",
+          "desktop_observe、proactive_turn、text/complete、memory/extract-write 等所有透传 base_url 的调用点统一走同一校验",
+          "出站按已解析 IP 直连并固定 Host 头（对齐 Java DNS pinning），防 rebinding",
+          "运营需要的内网自建模型地址走显式环境变量白名单，默认空"
+        ],
+        "files": [
+          "backend-agent/app/gateway.py",
+          "backend-agent/app/url_guard.py",
+          "backend-agent/app/http_client.py",
+          "backend-agent/app/desktop_observe.py",
+          "backend-agent/app/graphs/proactive_turn.py"
+        ],
+        "tests": [
+          "pytest tests/test_url_guard.py：http://127.0.0.1、http://mysql:3306、http://169.254.169.254/latest/meta-data/、ftp:// 全部拒绝",
+          "gateway.chat 单测：非法 base_url 返回 400 且 mock client 未被调用",
+          "公网域名 https://api.example.com 仍可通过"
+        ]
+      }
+    },
+    {
+      "id": "SEC-79B9D",
+      "expert": "security",
+      "module": "backend/lianyu-web + lianyu-service/storage",
+      "section": "exposure",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "匿名 /api/public/files/** 接受私有前缀（chat-voice、custom-voices），用户私有语音可被无鉴权读取并公开缓存",
+      "file": "backend/lianyu-web/src/main/java/com/lianyu/web/controller/PublicFileController.java",
+      "line": 31,
+      "evidence": "PublicFileController `@GetMapping(\"/api/public/files/**\")`（31-32）匿名可访问（SaTokenConfig 白名单 /api/public/**），extractObjectKey 只做 URI 截断（72-79），随后 `fileStorageService.statObject(objectKey)` / `getObject(objectKey)`（39/53）。这两个方法确实调用了 `validateObjectKey`（FileStorageService.java:434-450、558-564），但 SAFE_OBJECT_KEY（FileStorageService.java:50-52）是「形状白名单」而非「公开/私有边界」，它明确包含 `chat-voice/[a-z0-9-]+/<file>` 与 `custom-voices/[0-9]+/<file>` 两个私有前缀；且 toPublicUrl（468-470）把这类 key 同样拼成 /api/public/files/...。响应固定带 `Access-Control-Allow-Origin: *`（62）与 `Cache-Control: public, max-age=86400`（78-88）；nginx 还专门为 `location ^~ /api/public/files/chat-voice/`（168-190）加 ACAO:* 反代。故 handoff 原文「没有套 SAFE_OBJECT_KEY」不准确，但结论成立：形状白名单放行私有对象。",
+      "impact": "私有语音（用户自录音色、聊天 TTS）与头像同桶同端点：任何拿到 URL 的人（日志、截图、分享链接、客服工单、referer）可匿名拉取音频，并被 24 小时 public cache 与任意 Origin 放大传播，且无吊销手段。属于可复现的越权读取私有内容，仅因 URL 含随机 uuid 而不至于批量枚举，故定 medium 而非 high。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把公开端点收敛为显式公开前缀白名单，私有前缀改走需登录+归属校验的读取端点（或 MinIO 短时预签名）。",
+        "steps": [
+          "PublicFileController 增加公开前缀白名单（avatars/、square-avatars/、square-avatars-thumb/、updates/、chat-images/），不匹配直接 404",
+          "chat-voice/、custom-voices/ 迁到新的 /api/media/**：要求 lianyu-token 且校验对象归属当前用户（或其参与会话）",
+          "非公开前缀去掉 ACAO:* 与 public 缓存，改 private, no-store",
+          "nginx 移除 /api/public/files/chat-voice/ 的 ACAO:* 反代，改指向鉴权端点",
+          "旧 URL 迁移期内 302 到鉴权端点，迁移后 404"
+        ],
+        "files": [
+          "backend/lianyu-web/src/main/java/com/lianyu/web/controller/PublicFileController.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/storage/FileStorageService.java",
+          "deploy/api-gateway/nginx.conf"
+        ],
+        "tests": [
+          "MockMvc：未登录 GET /api/public/files/chat-voice/pet/x.wav 断言 404/401",
+          "MockMvc：GET /api/public/files/avatars/a.png 仍 200 且保留 nosniff",
+          "他人登录后访问不属于自己的 custom-voices 对象断言 403"
+        ]
+      }
+    },
+    {
+      "id": "SEC-C62DD",
+      "expert": "security",
+      "module": "backend/lianyu-security",
+      "section": "crypto",
+      "severity": "medium",
+      "confidence": "medium",
+      "title": "Jasypt 缺 LIANYU_MASTER_KEY 时静默降级为明文，模型 Key/TOTP 密钥以明文落库",
+      "file": "backend/lianyu-security/src/main/java/com/lianyu/security/util/JasyptUtil.java",
+      "line": 65,
+      "evidence": "构造函数在 masterKey 为空时只 `log.warn(\"LIANYU_MASTER_KEY not set — Jasypt encryption disabled...\")` 然后 return（21-25），不阻断启动；encrypt() 在 `currentVersion == null || encryptors.isEmpty()` 时 `log.warn(\"No Jasypt encryptor available, returning plaintext\"); return plaintext;`（62-71）；decrypt() 在 encryptors 为空时原样返回（75-80）。EncryptedStringTypeHandler.setNonNullParameter（16-19）调 encrypt()，故缺密钥时写入 DB 的即明文。",
+      "impact": "漏配一个环境变量即静默退化为「无加密」：用户模型 API Key、管理员 totp_secret 以明文进 MySQL，随备份、只读副本、慢查询日志扩散，事后无法从库里区分明文行；仅一条 warn，极易漏看。定 medium/medium：需要部署配置缺失这一前提，但一旦发生是不可逆的数据暴露。",
+      "kind": "plan",
+      "fix": {
+        "summary": "改为 fail-closed：prod 缺主密钥启动失败，encrypt() 不再返回明文，并提供历史明文行自检。",
+        "steps": [
+          "JasyptUtil 构造：spring.profiles.active 含 prod 且 masterKey 为空时抛 IllegalStateException",
+          "encrypt() 无 encryptor 时抛 IllegalStateException(\"Jasypt not configured\")，禁止返回明文；decrypt() 保留兼容读取",
+          "新增启动自检：抽样 user_model_key / admin_user.totp_secret，发现非密文格式则 error 并在 prod 阻断",
+          "docker-compose 用 `${LIANYU_MASTER_KEY:?}` 强制，.env.example 标为必填",
+          "提供一次性重加密脚本（读明文→encrypt→回写），灰发布"
+        ],
+        "files": [
+          "backend/lianyu-security/src/main/java/com/lianyu/security/util/JasyptUtil.java",
+          "backend/lianyu-security/src/main/java/com/lianyu/security/handler/EncryptedStringTypeHandler.java",
+          "docker-compose.yml",
+          ".env.example"
+        ],
+        "tests": [
+          "JUnit：无 LIANYU_MASTER_KEY 时 encrypt 抛异常而非返回明文",
+          "JUnit：prod profile 缺 key 时 ApplicationContext 启动失败",
+          "集成：配置 key 后写入再读，DB 列值不等于明文"
+        ]
+      }
+    },
+    {
+      "id": "SEC-B7C0A",
+      "expert": "security",
+      "module": "backend/lianyu-service + lianyu-app",
+      "section": "auth",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "改密不失效任何现有会话，且 refresh 每次续签 30 天无绝对上限",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/auth/impl/AuthServiceImpl.java",
+      "line": 154,
+      "evidence": "changePassword（154-162）只 `user.setPasswordHash(passwordEncoder.encode(request.getNewPassword())); userMapper.updateById(user);` 后打日志，没有 StpUtil.kickout、没有 token/session 版本号比对；全仓 grep `kickout|session_version|sessionVersion` 在 backend/**/*.java 零命中（仅 admin 模块有 admin_session 表按 admin 维度 revoke）。refresh（90-99）每次 `StpUtil.renewTimeout(SaManager.getConfig().getTimeout())`，配置为 `timeout: 2592000`、`active-timeout: -1`、`is-concurrent: true`、`is-share: false`（lianyu-app/src/main/resources/application.yml:136-139）。",
+      "impact": "凭据泄露后受害者改密码无法止损：已泄露的 token 继续可用全部 /api/**，每次 refresh 再续 30 天，理论上可无限期保活；is-share:false 意味着多设备各自独立 token，也无法单点吊销。",
+      "kind": "plan",
+      "fix": {
+        "summary": "引入会话版本号或改密即踢出全部会话，并给 refresh 加绝对有效期。",
+        "steps": [
+          "Flyway 给 user 表加 session_version BIGINT NOT NULL DEFAULT 0",
+          "登录时把 session_version 写入 Sa-Token session，鉴权处与 DB 比对，不一致 401",
+          "changePassword 成功后 session_version+1 并 StpUtil.kickout(userId)，前端要求重新登录",
+          "refresh 增加绝对过期（首次登录 + 90 天），超期不再续签",
+          "提供「在其它设备登出」入口，复用同一能力"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/auth/impl/AuthServiceImpl.java",
+          "backend/lianyu-security/src/main/java/com/lianyu/security/config/SaTokenConfig.java",
+          "backend/lianyu-dao/src/main/resources/db/migration/"
+        ],
+        "tests": [
+          "AuthServiceImplTest：改密前签发的 token 在改密后请求 /api/users/me 返回 401",
+          "refresh 超过绝对期限返回 401 且不续签",
+          "多设备登录后改密，两个旧 token 均失效"
+        ]
+      }
+    },
+    {
+      "id": "SEC-44999",
+      "expert": "security",
+      "module": "scripts",
+      "section": "secrets",
+      "severity": "low",
+      "confidence": "medium",
+      "title": "部署脚本硬编码生产主机并以 root 口令 SSH，redis 口令以 -a 出现在命令行",
+      "file": "scripts/_cloud_deploy_pull.py",
+      "line": 125,
+      "evidence": "scripts/_cloud_deploy_pull.py:9-10 `HOST = \"156.233.228.18\"`、`USER = \"root\"`，49-56 用 `paramiko` + `password = os.environ.get(\"DEPLOY_SSH_PASSWORD\")` 登录 root；125-126 与 _cloud_deploy_layered.py:97-98 用 `redis-cli -a \\\"${REDIS_PASSWORD}\\\"` 形式把口令放进命令行。同类硬编码主机/root 另见 _cloud_deploy_layered.py:46、_cloud_env_check.py:40。全仓 sk-/AIza/ghp_/PRIVATE KEY 实值扫描 0 命中（未发现硬编码密钥）。",
+      "impact": "redis 口令会出现在服务器进程列表（ps）、容器 exec 日志与 shell history，同机任意用户可读；硬编码生产 IP + root 账号让任何读过脚本的人拿到明确攻击目标与账号（口令本身未入库），泄露即等于拿到生产 root 的攻击面。定 low：口令不在仓库里，需附加本机/服务器访问前提。",
+      "kind": "plan",
+      "fix": {
+        "summary": "改 SSH key + 非 root 部署账号，redis 口令走环境变量，主机/账号外移配置。",
+        "steps": [
+          "redis-cli 改用 `REDISCLI_AUTH` 环境变量，移除 `-a` 参数",
+          "服务器建 deploy 用户并给 docker compose 白名单 sudo，脚本改用 key 登录并禁用 root 口令",
+          "HOST/USER 抽到 .env（DEPLOY_HOST/DEPLOY_USER），脚本只读环境变量",
+          "轮换现有 root 与 redis 口令，清理本地 shell history",
+          "CI 加 gitleaks 类扫描，防再出现 --password/-a 形式"
+        ],
+        "files": [
+          "scripts/_cloud_deploy_pull.py",
+          "scripts/_cloud_deploy_layered.py",
+          "scripts/_cloud_env_check.py",
+          ".env.example"
+        ],
+        "tests": [
+          "dry-run 后 ps 快照断言命令行不含口令",
+          "以 deploy 账号执行只读健康检查成功",
+          "gitleaks 扫描 scripts/ 0 命中"
+        ]
+      }
+    },
+    {
+      "id": "SEC-33910",
+      "expert": "security",
+      "module": ".github/workflows",
+      "section": "supply-chain",
+      "severity": "low",
+      "confidence": "high",
+      "title": "CI 第三方 action 仅按可变 tag 固定，且 OSV 扫描 continue-on-error 不阻断合并",
+      "file": ".github/workflows/ci.yml",
+      "line": 47,
+      "evidence": "ci.yml：`actions/checkout@v4`（14/28/45）、`actions/setup-java@v4`（15）、`actions/setup-node@v4`（29）、`google/osv-scanner-action/osv-scanner-action@v2.0.3`（48）全部是可变 tag；deps-audit job 的 `continue-on-error: true`（47）使 osv 发现漏洞也不会让流水线红。",
+      "impact": "上游 action 仓库被劫持或 tag 被重写时，构建机可执行任意代码并读取仓库 secrets（发布 token）；已知依赖漏洞不阻断合并，供应链风险只能人工发现。定 low：需上游被攻陷这一前提，且当前 workflow 未把 secrets 传给 PR 上下文（未发现 pull_request_target 类高危写法）。",
+      "kind": "direct",
+      "fix": {
+        "summary": "四个外部 action 固定到 40 位 commit SHA，并让 OSV 发现阻断合并。",
+        "steps": [
+          "把 checkout/setup-java/setup-node/osv-scanner-action 替换为对应版本 commit SHA，行尾注释保留语义版本",
+          "删除 deps-audit 的 continue-on-error: true",
+          "确需豁免时改为仓库内 osv 忽略清单，而非整段放行",
+          "启用 dependabot 的 github-actions 生态自动提 SHA 升级 PR"
+        ],
+        "files": [
+          ".github/workflows/ci.yml",
+          ".github/dependabot.yml"
+        ],
+        "tests": [
+          "actionlint 校验 workflow 语法通过",
+          "推测试分支确认四个 job 成功且 osv 步骤为阻断状态"
+        ]
+      }
+    }
+  ],
+  "deferred": [
+    {
+      "from": "security",
+      "expert": "",
+      "file": "admin/electron/main.js",
+      "lines": "7",
+      "summary": "admin 桌面端未开启 sandbox；preload 仅暴露 3 个窗口 IPC、无远程内容，风险很低，未单列 finding，建议随 Electron 加固统一开启"
+    },
+    {
+      "from": "security",
+      "expert": "",
+      "file": "docker-compose.yml",
+      "lines": "294",
+      "summary": "RabbitMQ 仍用 guest/guest 弱默认口令（application.yml:70 同源），容器只绑 127.0.0.1 故未单列 finding，部署加固时一并替换为强口令并限制 vhost 权限"
+    },
+    {
+      "from": "security",
+      "expert": "",
+      "file": "backend-agent/app/main.py",
+      "lines": "102-107",
+      "summary": "/agent/capabilities 与 /agent/health 匿名披露内部能力清单（模型、provider、工具名），网关加固后仍有信息价值，随 SEC-B2BD5 一并收口"
+    },
+    {
+      "from": "security",
+      "expert": "",
+      "file": "backend/lianyu-dao",
+      "lines": "全量",
+      "summary": "SQL 注入面本轮全量扫描无发现（Java 599 文件 0 命中 ${} 拼接、无 mapper XML、Python 走 %s 占位与只读/插入白名单）；建议后续新增 Mapper 时加 ${} 静态检查，防止回归"
+    },
+    {
+      "from": "security",
+      "expert": "",
+      "file": ".env.example",
+      "lines": "全量",
+      "summary": ".env.example 未能读取（被凭据策略拒绝），环境变量清单以 docker-compose.yml 与 application.yml 占位为据；需人工确认其中不含真实值，并补 LIANYU_MASTER_KEY / AGENT_SHARED_TOKEN 说明"
+    }
+  ],
+  "dropped": []
+}

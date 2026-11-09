@@ -1,0 +1,446 @@
+{
+  "schemaVersion": 2,
+  "expert": "maintainability",
+  "status": "ok",
+  "summary": "可维护性审查覆盖全部 12 个单元（1100 文件 / 135978 行）。整体结构分层清晰（Java 只做事实、prompt 归 Python、Electron 只做本机动作），但存在 11 处可维护性债务，集中在三类：一是同一事实有两份实现且无单一事实源（记忆画像块、粒子动画、QQ/微信桥协调器、主题选择器的生成器副本），二是确证死代码未清理（com.lianyu.service.rules 整套 prompt 规则抽象、CharacterSticker 死表与死 Mapper、@Deprecated 的 deleteVectors 仍在被调用），三是仓库卫生与门禁漂移（97 个 `_` 前缀一次性脚本入库其中 83 个零引用、scripts/diag 被 gitignore 却仍被跟踪、CI 只跑了 AGENTS.md 六条门禁里的两条）。全部发现均为行为保持类改动，无 critical；severity 上限 medium。",
+  "sections": {
+    "simplify": 5,
+    "cleanup": 6
+  },
+  "units": {
+    "u01": {
+      "status": "reviewed",
+      "filesRead": 9,
+      "notes": "backend/lianyu-service 前 1/3：读了 rules 包 4 个文件、MemoryWriter、CharacterService、character 偏好相关类，并对 rules 包做包外引用扫描。发现 F6（rules 死抽象）、F9（deleteVectors 双路径）。"
+    },
+    "u02": {
+      "status": "sampled",
+      "filesRead": 5,
+      "notes": "backend/lianyu-service 后 2/3：抽查 moments/relationship/notification 调度器与 config 包；Java 侧类名孤儿扫描噪音大（Spring 注解装配），未整单元通读。代码组织未见第二事实源。"
+    },
+    "u03": {
+      "status": "sampled",
+      "filesRead": 6,
+      "notes": "frontend/src 前 1/2：对全部 .vue 做了同构窗口扫描 + 导出引用扫描，重点读 AuthParticles/LandingParticles 与 Login/Register/Landing 页面。发现 F2。"
+    },
+    "u04": {
+      "status": "reviewed",
+      "filesRead": 12,
+      "notes": "scripts 前 1/2：对全部 97 个 `_` 前缀脚本做全仓（含 local/ 与 docs/）引用扫描，逐个核对 diag/ops/smoke 目录与 .gitignore 规则，读了 gen_pet_fixed_voices、4 份 repair_flyway、_write_theme_picker。发现 F4、F10。"
+    },
+    "u05": {
+      "status": "reviewed",
+      "filesRead": 8,
+      "notes": "backend/lianyu-dao：核对 57 个 Flyway 迁移的编号连续性（无重号，V30 为 'SELECT 1;' 占位），读了 CharacterStickerMapper/CharacterSticker/V7 迁移、MessageMapper、MomentsPostMapper。发现 F7。"
+    },
+    "u06": {
+      "status": "reviewed",
+      "filesRead": 7,
+      "notes": "backend-agent：读 main.py（1278 行/25 路由）、data_readers.py、memory/profile_context.py 及其测试与 golden，确认记忆画像块双实现。发现 F1；main.py 体量记入 F5 的对照证据但未单列。"
+    },
+    "u07": {
+      "status": "sampled",
+      "filesRead": 5,
+      "notes": "frontend/src 后 1/2：抽查 ChatPage.vue(2266 行)/GroupChatPage.vue(1500 行)，两者 21 个同构窗口经核对几乎全为 SCSS 样式块，判定为弱信号未报；导出扫描的 105 个零外部引用项未逐条坐实（见 deferred）。"
+    },
+    "u08": {
+      "status": "sampled",
+      "filesRead": 4,
+      "notes": "backend/lianyu-web：读 AgentRuntimeClient(436 行)、ChatTurnAdapter/AgentImageAdapter 等适配层，确认零文本引用的类多为端口实现（Spring 注入），据此排除了误报。未发现新的可维护性问题。"
+    },
+    "u09": {
+      "status": "reviewed",
+      "filesRead": 8,
+      "notes": "frontend/electron：读 main.js（3077 行/71 个 ipcMain）、qqBridgeCoordinator、wechatBridgeCoordinator 与其测试目录布局。发现 F3、F5。"
+    },
+    "u10": {
+      "status": "reviewed",
+      "filesRead": 6,
+      "notes": "其他模块：(root)/.github/admin——读 ci.yml、admin/package.json、admin/src 全部 5 个文件、.gitignore。发现 F8、F11。"
+    },
+    "u11": {
+      "status": "sampled",
+      "filesRead": 4,
+      "notes": "backend 小模块合集（lianyu-admin 32 + lianyu-service 27）：抽查 admin 的 controller/service 命名与 security 配置，未发现重复实现或死代码；类名孤儿扫描命中项均为注解注册的 controller/scheduler。"
+    },
+    "u12": {
+      "status": "sampled",
+      "filesRead": 4,
+      "notes": "其他模块（lianyu-app / lianyu-common / installer / Pets）：读 lianyu-common 全部 15 个文件清单与 util 类名、installer 16 个文件清单、LianYuApplication/DotEnvBootstrap。未发现未用工具类或重复实现。"
+    }
+  },
+  "findings": [
+    {
+      "id": "MAINT-1",
+      "section": "simplify",
+      "category": "duplication",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "记忆画像块的格式有两份实现，golden 测试锁的是生产未走的那一份",
+      "file": "backend-agent/app/memory/profile_context.py",
+      "line": 18,
+      "evidence": "profile_context.py:18-23 定义 SECTION_LABELS，:39 build_profile_context 渲染 [用户画像]/[近期情绪线索]/[关系事件]/[专属仪式] 四段块；git grep 显示该模块只被 tests/test_profile_context.py 与 app/prompts/profile_context_golden.json 引用。生产路径是 data_readers.py:174-179 的 TYPE_LABELS + :182 _render_profile_block（经 :201 load_profile_block 由 :242 memory_block 消费）。两份 label 元组逐字相同，分组、去重、拼接逻辑逐行同构。",
+      "impact": "记忆块格式的单一事实源不存在：改格式必须同时改两处，而 golden 只保护生产未走的那份，测试全绿也挡不住生产格式漂移；后来者无法判断哪份是权威。",
+      "kind": "plan",
+      "fix": {
+        "summary": "让 data_readers._render_profile_block 复用 memory/profile_context.build_profile_context，删除重复的 TYPE_LABELS 与同构渲染循环，只保留一份 label 表。",
+        "steps": [
+          "在 data_readers.load_profile_block 中改为调用 build_profile_context(merged)，确认 dict 与 (summary, type) 元组两种输入都能被 _type_of/_summary_of 兼容。",
+          "删除 data_readers.py:174-198 的 TYPE_LABELS 与 _render_profile_block。",
+          "跑 pytest 锁定 test_data_readers.py:130 的 [用户画像] 断言与 profile_context_golden.json。",
+          "确认两处 golden（profile_context_golden、end_to_end_golden 的 memoryBlock）都仍能通过，再同步更新文档里对记忆块格式的描述。"
+        ],
+        "files": [
+          "backend-agent/app/data_readers.py",
+          "backend-agent/app/memory/profile_context.py",
+          "backend-agent/tests/test_data_readers.py"
+        ],
+        "tests": [
+          "pytest -q backend-agent",
+          "pytest -q backend-agent/tests/test_profile_context.py backend-agent/tests/test_data_readers.py"
+        ]
+      }
+    },
+    {
+      "id": "MAINT-2",
+      "section": "simplify",
+      "category": "duplication",
+      "severity": "low",
+      "confidence": "high",
+      "title": "登录/注册页与落地页各有一份几乎相同的粒子 canvas 动画组件",
+      "file": "frontend/src/components/auth/AuthParticles.vue",
+      "line": 1,
+      "evidence": "AuthParticles.vue（187 行）与 landing/LandingParticles.vue（196 行）有 21 个相同的 10 行窗口，差异只在调参：Auth 多一个 MIST 色 {r:140,g:180,b:220}，粒子数 40/58/78 对 36/52/72，parallax 22/14 对 18/12。引用点分别为 LoginPage.vue:9/126、RegisterPage.vue:9/146 与 LandingPage.vue:8/225。",
+      "impact": "canvas 尺寸、DPR、resize 监听、清理逻辑都是两份；修一处渲染缺陷要改两个文件，且极易只改一边导致两个页面观感不一致。",
+      "kind": "plan",
+      "fix": {
+        "summary": "抽一个 <ParticleCanvas :preset=\"...\"> 组件，把差异收敛为两份 preset 常量（颜色/数量/parallax），两个页面各传自己的 preset。",
+        "steps": [
+          "以 LandingParticles.vue 为基线抽出 components/common/ParticleCanvas.vue，把可变量提升为 props 与 preset 对象。",
+          "在 auth/ 与 landing/ 各保留一个极薄的 preset 文件，删掉两处组件实现。",
+          "逐项比对视觉参数（MIST 色、粒子数、parallax），确认迁移后像素级一致。",
+          "更新三个引用页面的 import 与测试快照。"
+        ],
+        "files": [
+          "frontend/src/components/auth/AuthParticles.vue",
+          "frontend/src/components/landing/LandingParticles.vue",
+          "frontend/src/pages/LoginPage.vue",
+          "frontend/src/pages/RegisterPage.vue",
+          "frontend/src/pages/LandingPage.vue"
+        ],
+        "tests": [
+          "npm --prefix frontend test",
+          "npx --prefix frontend vite build"
+        ]
+      }
+    },
+    {
+      "id": "MAINT-3",
+      "section": "simplify",
+      "category": "duplication",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "QQ 桥与微信桥各有一套状态协调器，生命周期与告警逻辑重复",
+      "file": "frontend/electron/qqBridge/qqBridgeCoordinator.js",
+      "line": 1,
+      "evidence": "qqBridgeCoordinator.js（334 行）与 wechatBridge/wechatBridgeCoordinator.js（229 行）共享 12 个相同的 10 行窗口，涵盖 broadcast、Notification 封装、状态推送与 unwrap 模式；qq 版额外有 sendQqBridgeAlert(titleMap) 处理 kicked/disconnected/not_logged_in/restart_failed 四种告警。两者都有各自的 __tests__ 目录。",
+      "impact": "桥接状态机有两套并行实现：修 QQ 侧的崩溃重启/断线重连不会自动修到微信侧，回归测试也要写两遍；新增第三种通道时只能再拷一份。",
+      "kind": "plan",
+      "fix": {
+        "summary": "抽 BridgeCoordinatorBase（广播、状态推送、Notification、unwrap 都下沉），各通道只注入自己的告警文案表与协议适配器。",
+        "steps": [
+          "列出两个协调器的公共方法集合与差异点（qq 有标题映射表、微信有渠道下载状态）。",
+          "新建 frontend/electron/bridge/bridgeCoordinatorBase.js，先只下沉纯公共部分（broadcast/状态推送/unwrap）。",
+          "让两个协调器继承基类并各自保留差异方法，逐条比对测试断言。",
+          "确认 qqBridgeCoordinator.test.js 与 wechatBridge.test.js 全绿后再删重复代码。"
+        ],
+        "files": [
+          "frontend/electron/qqBridge/qqBridgeCoordinator.js",
+          "frontend/electron/wechatBridge/wechatBridgeCoordinator.js",
+          "frontend/electron/bridge/bridgeCoordinatorBase.js"
+        ],
+        "tests": [
+          "npm --prefix frontend test"
+        ]
+      }
+    },
+    {
+      "id": "MAINT-4",
+      "section": "simplify",
+      "category": "duplication",
+      "severity": "low",
+      "confidence": "high",
+      "title": "一次性生成脚本把整份 Vue 组件内嵌在字符串里，与已提交产物构成第二事实源",
+      "file": "scripts/ops/_write_theme_picker.py",
+      "line": 3,
+      "evidence": "scripts/ops/_write_theme_picker.py:3 以 CONTENT = r'''<template> …''' 内嵌整份组件，:275 还在做 CONTENT.replace('g ap:', 'gap:') 这种字符串补丁；它与 frontend/src/components/ThemeColorPicker.vue（270 行）有 149 个相同的 10 行窗口。git grep _write_theme_picker 在全仓零引用。",
+      "impact": "组件此后如果继续演进，任何人再跑一次这个脚本都会用旧副本覆盖 ThemeColorPicker.vue；而副本与产物的差异只能靠肉眼比对，分量还依赖脆弱的字符串替换。",
+      "kind": "plan",
+      "fix": {
+        "summary": "删除该一次性脚本（组件已是稳定产物），或改写为只输出模板骨架、不再内嵌整份组件。",
+        "steps": [
+          "确认 ThemeColorPicker.vue 自脚本生成后已有手工改动（diff 内嵌 CONTENT 与当前文件）。",
+          "删除 scripts/ops/_write_theme_picker.py，或在 README 索引里标注为历史脚本并移入 docs 留档。",
+          "跑前端测试与构建，确认无脚本依赖它。"
+        ],
+        "files": [
+          "scripts/ops/_write_theme_picker.py",
+          "frontend/src/components/ThemeColorPicker.vue"
+        ],
+        "tests": [
+          "npm --prefix frontend test"
+        ]
+      }
+    },
+    {
+      "id": "MAINT-5",
+      "section": "simplify",
+      "category": "god-module",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "Electron 主进程入口 3077 行、71 个 IPC 处理器全部挤在 main.js",
+      "file": "frontend/electron/main.js",
+      "line": 1,
+      "evidence": "frontend/electron/main.js 共 3077 行，含 71 处 ipcMain.handle/ipcMain.on；同目录已经按域拆出 updater/、qqBridge/、wechatBridge/、napcatRuntime/、starter/ 等 20+ 模块，但窗口创建、托盘、快捷键、更新检查、桥接启动、日志装配仍全部留在入口文件里。",
+      "impact": "任何一处 IPC 变更都要在三千行文件里定位，改动面与回归面强耦合；单测只能整文件加载 main.js，无法按域验证，也拉长了启动路径的审查成本。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把 main.js 收敛为组合根，按域拆出 bootstrap/windows/tray/shortcuts/ipc/*.js，每个域自行注册自己的 IPC。",
+        "steps": [
+          "按 ipcMain 通道前缀（window/tray/updater/bridge/pet/settings）给 71 个处理器分组。",
+          "新建 electron/ipc/<domain>.js，导出一个 register(ctx) 函数，ctx 只含该域需要的依赖。",
+          "main.js 只保留 app 生命周期、单实例锁与按序调用各 register(ctx)。",
+          "逐域迁移并在迁移期间保持通道名不变（通道名是渲染端契约），每迁一域跑一次前端测试。"
+        ],
+        "files": [
+          "frontend/electron/main.js",
+          "frontend/electron/preload.js"
+        ],
+        "tests": [
+          "npm --prefix frontend test"
+        ]
+      }
+    },
+    {
+      "id": "MAINT-6",
+      "section": "cleanup",
+      "category": "dead-code",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "com.lianyu.service.rules 整套 prompt 规则抽象无任何实现与调用方",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/rules/PromptRuleEngine.java",
+      "line": 1,
+      "evidence": "CONFIRMED_DEAD。目录下只有 PromptRuleContext.java、PromptRuleEngine.java、PromptRuleHook.java、PromptRuleSlot.java 4 个文件，另有空的 hooks/ 子目录（git ls-files 只列出这 4 个文件）；git grep 显示包外零引用、零测试引用。PromptRuleEngine.render(PromptRuleSlot, PromptRuleContext) 依赖注入 List<PromptRuleHook>，但全仓没有任何 PromptRuleHook 实现类。",
+      "impact": "这套抽象正对着 AGENTS.md 的红线：Java 不许拼 prompt、prompt 只能出现在 backend-agent。留下同名 seam 会诱使后来者把规则写回 Java，而 JavaAiLogicRatchetTest 只查 prompt 文本字面量与已知 AI 类，查不到这层抽象，红线形同虚设。",
+      "kind": "plan",
+      "fix": {
+        "summary": "整包删除（含空 hooks 目录），保留 Python 侧 prompt_pipeline 作为唯一规则入口。",
+        "steps": [
+          "再次确认 rules 包在 src/**、test/**、yml/xml 中零引用。",
+          "git rm 四个 java 文件与空的 hooks 目录。",
+          "跑 mvn -o test 与 scripts/check-java-ai-free.ps1 -Mode strict，确认棘轮仍为 0/0/0。",
+          "在提交信息里写明“该抽象无实现、无调用方，prompt 归 Python”，满足 AGENTS.md 对删除文件的说明要求。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/rules/PromptRuleContext.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/rules/PromptRuleEngine.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/rules/PromptRuleHook.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/rules/PromptRuleSlot.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test",
+          "scripts/check-java-ai-free.ps1 -Mode strict"
+        ]
+      }
+    },
+    {
+      "id": "MAINT-7",
+      "section": "cleanup",
+      "category": "dead-code",
+      "severity": "low",
+      "confidence": "high",
+      "title": "CharacterStickerMapper 与 CharacterSticker 实体全仓零引用，V7 建的两张表无读写方",
+      "file": "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/CharacterStickerMapper.java",
+      "line": 8,
+      "evidence": "CONFIRMED_DEAD。CharacterStickerMapper（@Mapper interface … extends BaseMapper<CharacterSticker>）与 entity/CharacterSticker.java 在全仓零引用——git grep CharacterSticker 只命中这两处自身定义与 import；frontend/src 与 frontend/electron 中 grep \"sticker\" 零命中；V7__character_sticker.sql 建的表在 dao 的 SQL/XML 中没有任何 select/insert。MyBatis 会自动注册该 mapper，但没有任何调用方。",
+      "impact": "死表 + 死 Mapper 会让人误判“贴纸功能还在维护中”，也让数据库 schema 与代码能力脱节；每次审计都要重新确认一遍它是否真的死了。",
+      "kind": "plan",
+      "fix": {
+        "summary": "确认产品侧无贴纸计划后删 mapper 与实体，另起迁移 drop 两张表（迁移需 ASCII-only）。",
+        "steps": [
+          "先确认 V7 建的表在近 30 天生产库无写入（只读查询确认）。",
+          "删除 CharacterStickerMapper.java 与 entity/CharacterSticker.java。",
+          "新增 V58__drop_character_sticker.sql 做 drop（保持 ASCII-only），或按留存策略先只删代码。",
+          "跑 backend 全量测试与 Flyway 迁移校验。"
+        ],
+        "files": [
+          "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/CharacterStickerMapper.java",
+          "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/CharacterSticker.java",
+          "backend/lianyu-dao/src/main/resources/db/migration/V7__character_sticker.sql"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test"
+        ]
+      }
+    },
+    {
+      "id": "MAINT-8",
+      "section": "cleanup",
+      "category": "unused-dependency",
+      "severity": "low",
+      "confidence": "high",
+      "title": "admin 声明了四个从未 import 的重依赖（echarts / vue-router / vue-table / element-plus 图标）",
+      "file": "admin/package.json",
+      "line": 10,
+      "evidence": "admin/package.json:10 的 dependencies 含 @element-plus/icons-vue ^2.3.1、@tanstack/vue-table ^8.21.3、echarts ^6.1.0、vue-router ^4.4.5。但 admin/src 一共只有 5 个文件（main.js 8 行、App.vue 与 ManagementPage.vue 各 15 行、api.js 9 行、menu.js 8 行），实际 import 只有 vue/pinia/element-plus/axios；main.js 只注册 ElementPlus 与两个 css，既没有 createRouter，也没有 echarts 与图标注册。",
+      "impact": "四个包白占安装体积与 OSV 审计面（ci.yml 的 deps-audit 会扫 admin），也让接手者误以为后台已具备图表与路由能力，容易照着依赖去写不存在的功能。",
+      "kind": "plan",
+      "fix": {
+        "summary": "从 admin 的 dependencies 移除四个未用包并重锁 package-lock。",
+        "steps": [
+          "再次 grep admin/src 与 admin/electron 确认四个包零 import（含按需引入写法）。",
+          "npm --prefix admin uninstall @element-plus/icons-vue @tanstack/vue-table echarts vue-router。",
+          "npm --prefix admin run build 与测试确认页面仍能起来。",
+          "检查 ci.yml deps-audit 输出确认包数下降。"
+        ],
+        "files": [
+          "admin/package.json",
+          "admin/package-lock.json"
+        ],
+        "tests": [
+          "npm --prefix admin test"
+        ]
+      }
+    },
+    {
+      "id": "MAINT-9",
+      "section": "cleanup",
+      "category": "deprecated-path",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "标注有害并已 @Deprecated 的 deleteVectors 仍是唯一调用方在走的路径",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryWriter.java",
+      "line": 184,
+      "evidence": "MemoryWriter.java:184-187 的 @Deprecated public void deleteVectors(List<String> vectorIds) 注释明确写着绕过 outbox 会留下“行已删、向量仍在”的幽灵记忆，新代码应使用 deleteVectorForMemory(Long, String)；但 CharacterService.java:214 仍在调用 memoryWriter.deleteVectors(...)。",
+      "impact": "两套删除语义并存且没有收口：删角色时记忆向量与元数据可能不一致，后人看到 @Deprecated 也不敢动（因为唯一调用方就在隔壁），弃用形同虚设。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把 CharacterService 的删除流程迁到 deleteVectorForMemory（走 outbox），确认等价后删除 @Deprecated 方法。",
+        "steps": [
+          "读 CharacterService.java:200-230 的删除流程，确认它拿到的是 vectorIds 还是 memoryId。",
+          "改为按 memoryId 逐条调用 deleteVectorForMemory，保证写入 outbox。",
+          "补一条测试：删除角色后 outbox 中存在对应的向量删除事件。",
+          "删除 deleteVectors 与残留 import，跑 backend 全量测试。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryWriter.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterService.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test"
+        ]
+      }
+    },
+    {
+      "id": "MAINT-10",
+      "section": "cleanup",
+      "category": "orphan-file",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "97 个 `_` 前缀一次性脚本入库，83 个全仓零引用；scripts/diag 被 gitignore 却仍被跟踪",
+      "file": "scripts/diag/_diag_square_images.py",
+      "line": 1,
+      "evidence": "git ls-files 命中 97 个 `_` 前缀一次性脚本（scripts/ 根级 60、scripts/diag/ 20、scripts/ops/ 13、scripts/smoke/ 4），其中 83 个在仓库（含 local/ 与 docs/）零引用。AGENTS.md §3.1.4 明写一次性排查脚本应“带 _ 前缀且不提交”。.gitignore:106-107 整目录忽略 scripts/diag/（注释：One-off cloud incident diag/fix scripts），但该目录仍有 21 个文件被跟踪——ignore 对已跟踪文件无效。scripts/gen_pet_fixed_voices.py 的 docstring 自述是 scripts/diag/_gen_pet_fixed_voices.py 的可版本化副本，两份有 231 个相同的 10 行窗口；scripts/_repair_flyway_v31.py、scripts/_repair_flyway_v34.py、scripts/ops/_repair_flyway_v30_mark_applied.py、scripts/ops/_repair_flyway_v34_mark_applied.py 四份近似重复（25 个相同窗口），都硬编码 HOST=\"156.233.228.18\" 并走 paramiko + mysql 直连，同样零引用。",
+      "impact": "生产主机地址与直连运维脚本长期驻留仓库，scripts/ 已无法区分“发布流水线”与“某次事故的临时探针”，新人（和 Agent）无法判断哪些可删、哪些不能删；diag 的 gitignore 规则事实上失效，反而让后来者以为该目录不会被提交。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把 scripts/ 分成三堆：流水线依赖（转正 + 进 README 索引）、事故留档（移 docs 或删除）、重复对（只留一份），并让 gitignore 规则真正生效。",
+        "steps": [
+          "先标出被 local/ship-release.ps1 与发布链引用的脚本（当前只有 _cloud_deploy_pull.py 被引用），列为“转正”。",
+          "把 83 个零引用脚本按事故留档价值分流：有留档价值的移到 docs/refactor-2026-10/incidents/ 或删除，无价值的 git rm。",
+          "合并重复对：gen_pet_fixed_voices 与 diag 副本只留一份；四份 _repair_flyway_* 合成一个参数化脚本或直接删除（对应迁移已到 V57）。",
+          "对 scripts/diag/ 执行 git rm --cached，让 .gitignore 规则真正生效，并在 scripts/README 里写清“新增诊断脚本放 local/”。",
+          "顺带把硬编码的生产 IP 从保留脚本中改为读环境变量。"
+        ],
+        "files": [
+          "scripts/diag/",
+          "scripts/ops/",
+          "scripts/gen_pet_fixed_voices.py",
+          "scripts/_repair_flyway_v31.py",
+          "scripts/_repair_flyway_v34.py",
+          ".gitignore"
+        ],
+        "tests": [
+          "python scripts/check_release_asset_contract.py",
+          "pytest -q backend-agent"
+        ]
+      }
+    },
+    {
+      "id": "MAINT-11",
+      "section": "cleanup",
+      "category": "config-drift",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "CI 只跑了 AGENTS.md 六条门禁里的两条，两个棘轮脚本完全不在流水线里",
+      "file": ".github/workflows/ci.yml",
+      "line": 39,
+      "evidence": ".github/workflows/ci.yml 只有 backend 的 `mvn -B -ntp test`（:22）与 frontend 的 `npx vitest run`（:39）。AGENTS.md §4 声明的门禁里，pytest backend-agent、npm --prefix frontend test 之外的 admin 测试、npx vite build、scripts/check-java-ai-free.ps1、python scripts/check_release_asset_contract.py 全部缺席；且 :39 没有加 --no-file-parallelism，与 AGENTS.md「前端测试串行跑（既有 updater 并发用例在满载并行下会偶发红）」的口径直接冲突。",
+      "impact": "两道棘轮（Java 零 AI 逻辑、发布资产契约）只在本地手工跑，PR 上不生效，红线随时可能被悄悄突破；Python 1222+ 测试与 admin 完全无 CI 保护；CI 的跑法还和文档不一致，已知 flake 会被当成真红并稀释信号。",
+      "kind": "plan",
+      "fix": {
+        "summary": "补齐 Python、admin 与两个棘轮脚本的 CI job，并让前端测试按文档串行跑。",
+        "steps": [
+          "新增 python job：setup-python 3.11 + pip install -r backend-agent/requirements.txt + pytest -q backend-agent。",
+          "新增 admin job：npm --prefix admin ci && npm --prefix admin test。",
+          "新增 ratchet job：跑 scripts/check-java-ai-free.ps1 -Mode strict（pwsh）与 python scripts/check_release_asset_contract.py。",
+          "把 :39 改为 npx vitest run --no-file-parallelism，与 AGENTS.md §4 对齐。",
+          "确认三个新 job 在 main 上首次通过后，把 ci.yml 的 job 列表回写进 AGENTS.md §4 保持单一事实源。"
+        ],
+        "files": [
+          ".github/workflows/ci.yml",
+          "AGENTS.md"
+        ],
+        "tests": [
+          "pytest -q backend-agent",
+          "npm --prefix admin test",
+          "npm --prefix frontend test",
+          "mvn -q -f backend/pom.xml test"
+        ]
+      }
+    }
+  ],
+  "deferred": [
+    {
+      "from": "maintainability",
+      "expert": "",
+      "summary": "frontend/src 的 478 个导出中有 105 个在模块外零引用，但自动扫描噪音过大（动态 import、模板内引用、defineExpose），未逐条坐实，故未作为 findings 上报。"
+    },
+    {
+      "from": "maintainability",
+      "expert": "",
+      "summary": "Java 类名孤儿扫描命中 140 个文件，绝大多数是 @RestController/@Scheduled/@Mapper 等注解装配的组件，按名字判断不可靠，仅保留了 CharacterStickerMapper 这一条有二次证据的。"
+    },
+    {
+      "from": "maintainability",
+      "expert": "",
+      "summary": ".env.example（48 键）与代码实际读取的环境变量存在差异，但扫描器漏掉了 yml 占位符与 Docker Compose 注入，结论不可靠，未上报。"
+    },
+    {
+      "from": "maintainability",
+      "expert": "",
+      "summary": "ChatPage.vue(2266 行) 与 GroupChatPage.vue(1500 行) 有 21 个同构窗口，核对后几乎全是 SCSS 样式块，属弱信号，未上报。"
+    },
+    {
+      "from": "maintainability",
+      "expert": "",
+      "summary": "backend-agent/app/main.py（1278 行、25 个路由）同属上帝模块，但严重度低于 electron/main.js，为避免超出 12 条上限，未单列；建议与 F5 同批处理。"
+    },
+    {
+      "from": "maintainability",
+      "expert": "",
+      "summary": "未执行 mvn/pytest/npm 全量测试：本次为只读审查，测试命令仅作为修复验证入口列在 findings.fix.tests 中。"
+    }
+  ],
+  "notes": "只读审查，未修改任何源码。sections 计数与 findings 逐项一致：simplify 5 条（4 重复实现 + 1 上帝模块）、cleanup 6 条（2 死代码 + 1 未用依赖 + 1 弃用路径 + 1 孤儿脚本 + 1 CI 门禁漂移），合计 11 条，未超 12 条上限。所有 severity 均在 medium 及以下（维护性类问题上限 medium），critical/high 为 0。kind 全部为 plan：死代码删除涉及产品判断与数据库迁移、依赖移除属依赖变更、CI 与拆分类改动需人决定边界，均不适合白名单内机械直修。u02/u03/u07/u08/u11/u12 为 sampled（大单元按模式扫描后抽查关键文件），已在 units.notes 说明抽样依据；无 skipped 单元。"
+}

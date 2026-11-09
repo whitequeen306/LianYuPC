@@ -549,14 +549,15 @@ export default {
         RITUAL: '仪式'
       },
       flows: {
-        wake: '对话唤醒',
-        write: '抽取写入',
-        index: '索引 · 召回',
-        emotion: '情绪加权',
-        relation: '关系权重',
-        diary: '日记沉淀',
-        inject: '注入 prompt',
-        topic: '当前话题'
+        inputHippo: '语言输入 → 海马体',
+        hippoLtm: '写入长期记忆',
+        ltmCore: '检索中枢调取',
+        coreOutput: '生成回复',
+        ltmLimbic: '情绪加权',
+        ltmRelation: '关系权重',
+        limbicOutput: '情绪 → 表达',
+        relationLtm: '关系回流',
+        introspectLtm: '日记沉淀'
       }
     }
   },

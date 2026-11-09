@@ -548,14 +548,15 @@ export default {
         RITUAL: 'Ritual'
       },
       flows: {
-        wake: 'Wake',
-        write: 'Extract & write',
-        index: 'Index · recall',
-        emotion: 'Mood weight',
-        relation: 'Bond weight',
-        diary: 'Diary deposit',
-        inject: 'Inject prompt',
-        topic: 'Current topic'
+        inputHippo: 'Language input → Hippocampus',
+        hippoLtm: 'Write to long-term memory',
+        ltmCore: 'Retrieval hub pulls',
+        coreOutput: 'Generate reply',
+        ltmLimbic: 'Mood weight',
+        ltmRelation: 'Bond weight',
+        limbicOutput: 'Emotion → Expression',
+        relationLtm: 'Bond reflux',
+        introspectLtm: 'Diary deposit'
       }
     }
   },

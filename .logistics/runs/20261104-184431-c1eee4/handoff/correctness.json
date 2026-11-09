@@ -1,0 +1,303 @@
+{
+  "schemaVersion": 2,
+  "expert": "correctness",
+  "status": "ok",
+  "summary": "整仓 12 个单元全部过检（5 个逐文件精读、7 个按模式扫描后抽查关键文件），共 8 条发现：事务边界形同虚设（@Transactional 标在 protected 方法且被同类 this 自调用，共 7 处）、关系状态读改写无并发保护、主动消息调度里恒真的空闲判断让活跃度打分被架空、前端流式重试无幂等键会导致重复消息与双倍计费、发布解析接口对可空列用 Map.of 会 NPE、关系衰减每次丢弃不足一天的余量、消息 seq 只活在 Redis 与唯一键冲突、客户端中途断开时被截断的回复被当作完整回复落库。",
+  "sections": {
+    "logic": 1,
+    "state": 1,
+    "concurrency": 1,
+    "data-integrity": 2,
+    "contracts": 1,
+    "architecture": 1,
+    "edge-cases": 1
+  },
+  "units": {
+    "u01": {
+      "status": "reviewed",
+      "filesRead": 9,
+      "notes": "精读 ConversationService(809 行)、CharacterService、VoiceCallService、ProactiveChatScheduler、SseChatStreamHelper、AssistantReplyService、AuthServiceImpl；发现事务自调用、恒真空闲分支、seq 计数器三处问题。"
+    },
+    "u02": {
+      "status": "reviewed",
+      "filesRead": 9,
+      "notes": "精读 RelationshipStateService(585 行)、RelationshipPhaseResolver、MemoryWriter、MemoryOutboxService、ChatTurnFacade、ProactiveUnrepliedThrottle、EngagementFrequencyScorer；确认关系状态丢更新与衰减余量丢弃，并否掉了 V57 相位不一致的猜测。"
+    },
+    "u03": {
+      "status": "sampled",
+      "filesRead": 7,
+      "notes": "按模式扫 api/components/composables 目录，精读 api/conversation.js、composables/useStreamAbort.js、composables/useChatScroll.js、utils/assistantStreamDrain.js、shared/sseParser.js；SSE 解析实现与契约一致，重试幂等缺口定位到 ChatPage 调用方。"
+    },
+    "u04": {
+      "status": "sampled",
+      "filesRead": 2,
+      "notes": "scripts 体量 12.8k 行，精读 _cloud_deploy_pull.py 全文并核对 compose 分层重建分支；健康检查与超时判定无逻辑缺陷，其余脚本扫了 SystemExit/subprocess 调用点，未发现可证逻辑错误。"
+    },
+    "u05": {
+      "status": "reviewed",
+      "filesRead": 10,
+      "notes": "读 V1 建表（uk_conv_seq）、V51/V54/V56/V57 迁移与 RelationshipState/Message 实体，逐条核对列可空性与代码用法；V57 的相位残留经 RelationshipPhaseResolver 复核后判定不成立。"
+    },
+    "u06": {
+      "status": "sampled",
+      "filesRead": 5,
+      "notes": "精读 stream_chat.py、tool_loop.py、language_gate.py、reply_rules.py；SSE 帧产出与 Java 侧解析逐字段对得上，工具轮次预算与截断分支无越界。"
+    },
+    "u07": {
+      "status": "sampled",
+      "filesRead": 5,
+      "notes": "精读 ChatPage.vue 的发送/重试/收尾段（1370-1485）、utils/relationship.js，并扫了 pages 目录里的 store 调用；发现重试无幂等键这一条。"
+    },
+    "u08": {
+      "status": "reviewed",
+      "filesRead": 4,
+      "notes": "精读 AgentSseParser、AgentStreamBridge、SseChatStreamHelper 与 ConversationService 回调协作；确认 [DONE] 只在 Java 侧发送、replace/pieces 只发一次，同时定位到 abort() 以 null 错误回传导致截断内容被当完整回复落库。"
+    },
+    "u09": {
+      "status": "sampled",
+      "filesRead": 4,
+      "notes": "对 electron 全目录做了 IPC 频道三方比对（main 注册 74 / preload 暴露 93 / broadcast 发送 13），未发现孤儿频道；精读 qqBridge.js 的流式与会话重解析分支。"
+    },
+    "u10": {
+      "status": "sampled",
+      "filesRead": 3,
+      "notes": "读 deploy/api-gateway/nginx.conf 的 location 与缓冲/超时设置（两处 SSE 的 proxy_buffering off 正确）、docker-compose redis 持久化配置；其余 CI/admin 前端扫了版本与路由常量。"
+    },
+    "u11": {
+      "status": "reviewed",
+      "filesRead": 6,
+      "notes": "精读 ReleaseService、ReleaseController、ReleaseResolverService/Controller、SupportGrantService，核对 app_release 建表（sha512/notes 均可空）；定位到 Map.of 空值 NPE。"
+    },
+    "u12": {
+      "status": "sampled",
+      "filesRead": 4,
+      "notes": "精读 lianyu-common 的 ImageUploadValidator、OutboundUrlValidator、TextUtils 与 SendMessageRequest 契约；上传校验/重编码与内网地址拦截逻辑自洽，未发现可证缺陷。"
+    }
+  },
+  "findings": [
+    {
+      "section": "architecture",
+      "category": "transaction-boundary",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "@Transactional 标在 protected 方法上且被同类 this 自调用，7 处声明的事务从不生效",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterService.java",
+      "line": 101,
+      "evidence": "CharacterService.java:88 注释写着「故意不加 @Transactional：…落库走 persistNewCharacter 事务」，但 101 行的 `@Transactional protected CharacterResponse persistNewCharacter(...)` 唯一调用点是同类 97 行的 `return persistNewCharacter(userId, request, settings);`。Spring 事务默认走代理，同类自调用不经代理；仓库内也没有 AspectJ 织入配置（backend 源码与 pom 中搜不到 @EnableTransactionManagement(mode=ASPECTJ) 或 aspectjweaver）。同仓库 ProactiveMessageService.java:141 声明 `private ProactiveMessageService self;`、238/337/617/697 用 `self.persistXxx(...)` 才是能穿过代理的写法。同型问题另有 6 处：AuthServiceImpl.java:40（registerInTx）、AuthServiceImpl.java:122（persistAvatarUrl）、CharacterDiaryService.java:378（persistDiary）、VoiceCallService.java:167（persistVoiceTurn）、CharacterSquareService.java:231（persistSquareCharacter）、CustomVoiceService.java:94（persistUpsert）。",
+      "impact": "VoiceCallService.persistVoiceTurn（186-207 行）在同一个「事务」里连插用户消息和角色消息两条记录：没有事务时第二条插入失败（例如 seq 撞唯一键）会留下一条孤立的用户消息，并且方法已经抛错。CharacterService 的注释更危险——它让后来者相信存在一个实际不存在的事务边界，任何在 persistNewCharacter 里新增的第二条写入都会静默失去原子性。",
+      "kind": "plan",
+      "fix": {
+        "summary": "按 ProactiveMessageService 的既有写法补齐自注入，让这 7 个 persist 方法真正穿过代理；同时改正在说谎的注释，并加一条扫描测试防止再退化。",
+        "steps": [
+          "在 CharacterService、AuthServiceImpl、CharacterDiaryService、VoiceCallService、CharacterSquareService、CustomVoiceService 里各加 `@Lazy @Resource XxxService self`（或把 persist 方法抽到独立的 @Component 事务助手）。",
+          "把 7 处直接调用改成 `self.persistXxx(...)`：CharacterService:97、AuthServiceImpl:40/122、CharacterDiaryService:378、VoiceCallService:167、CharacterSquareService:231、CustomVoiceService:94。",
+          "把 CharacterService.java:88 的注释改成实际语义（写清「落库经 self 代理开启事务」或删掉）。",
+          "加单元测试：mock messageMapper 让第二次 insert 抛异常，断言 VoiceCallService.persistVoiceTurn 后用户消息未落库。",
+          "加静态扫描测试：同一类中出现 @Transactional 方法被 this 直接调用即失败，基线对齐现有 7 处清零。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/auth/impl/AuthServiceImpl.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterDiaryService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/VoiceCallService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/voice/CustomVoiceService.java"
+        ],
+        "tests": "VoiceCallServiceTest 增加「第二次 insert 失败则整轮回滚」用例；新增 SelfInvocationTransactionalTest（源码扫描），断言 0 命中。"
+      }
+    },
+    {
+      "section": "concurrency",
+      "category": "lost-update",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "关系状态是「读-改-写」且无事务/版本/行锁，同一角色的并发回合会静默丢掉一次更新",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+      "line": 132,
+      "evidence": "recordUserTurn 的写回路径是 130-133 行：`applyEvents(state, events, now)` → `applyPresence(state, now)` → `relationshipStateMapper.updateById(state)` → `recordMilestones(...)`；state 来自同一方法开头的 loadOrCreateState 读取，整个类没有任何 @Transactional，实体没有 version 字段，读的是普通 selectById 而不是 SELECT ... FOR UPDATE。recordAssistantTurn（163-165 行）形状相同。updateById 会把所有非空列整体写回。",
+      "impact": "同一个 (user, character) 上两次回合交错时——例如流式回复还没结束时用户又发一条、或 ProactiveMessageService 的主动消息与用户回合撞上——后写者用旧快照覆盖前者的 trust/intimacy/security/anticipation 与 lastInteractionAt/streakDays。先发生的那次事件已经写进 relationship_event，但分数没算进去；相位又由分数派生，于是事件表与状态表长期对不上，且没有任何冲突可观测。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把分数更新做成原子增量（或加乐观锁重试），让并发回合的两次事件都落到分数上。",
+        "steps": [
+          "给 relationship_state 加 `version INT NOT NULL DEFAULT 0`（新 Flyway 迁移），实体加 @Version，使 updateById 自动带版本条件。",
+          "recordUserTurn/recordAssistantTurn 包进 @Transactional，捕获 OptimisticLockingFailureException 后重读重算，重试上限 3 次。",
+          "或更彻底：分数改成 SQL 增量更新（`SET trust_score = LEAST(100, trust_score + ?)`），relationship_event 作为事实源、状态表只是投影。",
+          "补并发测试：两个线程各调一次 recordUserTurn（USER_VULNERABLE_SHARE），断言 trust 增加两次、事件两条、版本前进两次。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+          "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/RelationshipState.java",
+          "backend/lianyu-dao/src/main/resources/db/migration/V59__relationship_state_version.sql"
+        ],
+        "tests": "RelationshipStateServiceConcurrencyTest：CountDownLatch 起两线程同时 recordUserTurn，断言两次事件都体现在分数上、版本号递增为 2。"
+      }
+    },
+    {
+      "section": "data-integrity",
+      "category": "idempotency",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "流式发送的网络重试没有幂等键，一次抖动会写出两条用户消息和两条 AI 回复",
+      "file": "frontend/src/pages/ChatPage.vue",
+      "line": 1439,
+      "evidence": "ChatPage.vue:1420-1431 的 attemptStream 把 `sendMessageStream(...)`（fetch POST）和 `drainAssistantStream(response, {signal})`（读响应体）包在同一个 try 里；1437-1445 的 catch 在 isNetworkError(err) 为真时 `await sleep(800)` 后重新 `attemptStream()`，即重新 POST 同一段文本。useStreamAbort.js:8-15 的 isNetworkError 对任何 `err.name === 'TypeError'` 直接返回 true——浏览器在流读到一半连接被重置时抛的正是 TypeError，于是「服务端已收下并开始生成」的情况也会重发。服务端 ConversationService.java:328-330 在调用模型之前无条件 `messageMapper.insert(turn.userMsg())`，而 SendMessageRequest.java 里没有客户端消息 ID 字段（只有 provider/model/content/imageUrl 等），前端 api/conversation.js:67-83 也不带任何幂等头或字段，服务端无法识别这是同一条消息。",
+      "impact": "家庭网络抖动或 Wi-Fi 切换时，用户会看到自己那句话出现两次、角色回两段，token 计费翻倍，关系分数（recordUserTurn）与记忆摘要也会被算两遍；这类重复在对话历史里无法与用户真的重发区分。",
+      "kind": "plan",
+      "fix": {
+        "summary": "前端为每条草稿生成稳定的 clientMessageId，后端按 (user_id, client_message_id) 去重；同时把重试范围收窄到「还没拿到响应」的阶段。",
+        "steps": [
+          "ChatPage.vue 在 send() 里为本次草稿生成 clientMessageId（crypto.randomUUID()），放进 streamPayload，重试时复用同一个值。",
+          "SendMessageRequest 增加 clientMessageId（@Size(max=64)）；sendMessage/sendMessageStream 落库前先按 (user_id, client_message_id) 查一次，命中则直接返回已有消息、不再调用模型。",
+          "message 表加列与唯一键（Flyway）：client_message_id VARCHAR(64) NULL + UNIQUE KEY uk_user_client_msg (user_id, client_message_id)；插入冲突时降级为读已存在行。",
+          "把 drainAssistantStream 的读取从 attemptStream 里拆出来：只有 fetch 本身失败（尚未拿到 response）才允许重试；已拿到 response 后的读取失败改为提示「回复中断，已收到部分内容」。",
+          "补集成测试：同一 clientMessageId 连发两次，断言 message 表只有一条 USER 记录、模型只被调用一次。"
+        ],
+        "files": [
+          "frontend/src/pages/ChatPage.vue",
+          "frontend/src/api/conversation.js",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/dto/SendMessageRequest.java",
+          "backend/lianyu-dao/src/main/resources/db/migration/V58__message_client_id.sql"
+        ],
+        "tests": "后端 ConversationServiceIdempotencyTest（同一 clientMessageId 重放只落一条）；前端 vitest 模拟第一次 drain 抛 TypeError、断言不会二次 POST。"
+      }
+    },
+    {
+      "section": "logic",
+      "category": "dead-condition",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "主动消息调度里的空闲判断恒为真，EngagementFrequencyScorer 的活跃度/新鲜度打分被架空",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ProactiveChatScheduler.java",
+      "line": 128,
+      "evidence": "112-122 行先用 isEligible(...) 过滤，而 isEligible 的第 314 行是 `return !lastActivityAt.isAfter(LocalDateTime.now().minusMinutes(Math.max(1, effectiveMinIdleMinutes)));`，已经保证空闲时长 >= effectiveMinIdle。随后 127-131 行又算 `long idleMinutes = ChronoUnit.MINUTES.between(lastActivityAt, now); if (idleMinutes >= effectiveMinIdle) { effectiveProb = Math.max(effectiveProb, behavior.triggerProbability() * engagementScorer.personalityMultiplier(state, relationship.phase())); }`，这个 if 在到达时恒为真。",
+      "impact": "保底值恒定生效：125-126 行 EngagementFrequencyScorer.proactiveTriggerProbability 里按用户近期消息量（activityBoost）与时间新鲜度（recencyBoost，72 小时甜点区）算出的连续分只在高于保底时才有意义。半小时前刚聊过的用户和十小时没说话的用户拿到同一个保底触发率，调 activity/recency 权重对线上行为几乎无效，且没有任何日志或配置说明。",
+      "kind": "plan",
+      "fix": {
+        "summary": "让保底只作为可观测的下限参与，或删掉这段恒真分支，恢复活跃度/新鲜度的实际作用。",
+        "steps": [
+          "确认产品意图：若确实需要「久不说话一定更主动」的保底，把条件改成显式的长空闲阈值（例如 idleMinutes >= effectiveMinIdle * 4），而不是复用已保证过的条件。",
+          "若保底保留，让它同样乘 activity/recency（triggerProbability * activityBoost * recencyBoost * personalityMultiplier），避免刚聊完就打满。",
+          "在取保底的分支加一条 debug 日志（convId、effectiveProb、floor、idleMinutes），便于线上判断哪一维在起作用。",
+          "补单元测试：构造「40 分钟前发过 30 条消息」和「5 小时前无任何消息」两个用户，断言 effectiveProb 不同。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ProactiveChatScheduler.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/EngagementFrequencyScorer.java"
+        ],
+        "tests": "ProactiveChatSchedulerTest：注入不同 userMsgCount/lastActivityAt，断言 ScoredCandidate.effectiveProb 随活跃度单调变化。"
+      }
+    },
+    {
+      "section": "contracts",
+      "category": "null-handling",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "更新解析接口对可空列用 Map.of 组装响应，notes/sha512 为 NULL 时直接 NPE 500",
+      "file": "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/ReleaseResolverService.java",
+      "line": 21,
+      "evidence": "ReleaseResolverService.java:21 是 `return Map.of(\"version\", row.get(\"version\"), \"url\", row.get(\"package_url\"), \"sha512\", row.get(\"sha512\"), \"size\", row.get(\"package_size\"), \"mandatory\", row.get(\"mandatory\"), \"notes\", row.get(\"notes\"));`，19 行的查询明确取了 sha512 与 notes。V51__admin_management_schema.sql:85 是 `sha512 CHAR(128) NULL`、:88 是 `notes TEXT NULL`；ReleaseService.java:19 的 create(version, channel, notes, mandatory) 只写这几列，ReleaseController.java:20 在 body 没有 notes 时照原样传 null。java.util.Map.of 只要有任一 value 为 null 就抛 NullPointerException。",
+      "impact": "只要某条 published/rollout 记录的 notes 或 sha512 为空（正常流程是先 create 再上传，上传前这两列就是空的），`GET /api/public/admin-release` 对整条渠道直接 500：不是返回「无更新」，而是所有人都拿不到解析结果。当前仓库内没有客户端调用这个公开端点（全仓搜 admin-release 无命中），所以影响面限于该接口本身与后续接入方，但故障形态是整渠道 500，排查成本高。",
+      "kind": "direct",
+      "fix": {
+        "summary": "用允许 null 的 LinkedHashMap 组装响应，并在缺 package_url/sha512 时跳过该条记录而不是让整条渠道失败。",
+        "steps": [
+          "把 21 行的 Map.of(...) 换成 LinkedHashMap 逐项 put（或 put 前判空）。",
+          "在 20-22 的循环里加守卫：package_url 或 sha512 为 null 时 continue，避免把没有包体的记录下发。",
+          "notes 为 null 时显式 put 空串，保持响应字段稳定。",
+          "补一个 JdbcTemplate mock 测试：notes/sha512 为 null 时 resolve 不抛异常。"
+        ],
+        "files": [
+          "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/ReleaseResolverService.java"
+        ],
+        "tests": "ReleaseResolverServiceTest：mock queryForList 返回 notes=null / sha512=null 的行，断言不抛 NPE 且该行被跳过。"
+      }
+    },
+    {
+      "section": "state",
+      "category": "rounding",
+      "severity": "low",
+      "confidence": "high",
+      "title": "关系衰减按整天计算后把 lastDecayAt 重置为 now，不足一天的余量每次都被丢掉",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+      "line": 221,
+      "evidence": "applyDecay（192-226 行）用 `long days = ChronoUnit.DAYS.between(anchor, now);`（199 行）取整，days < 1 时返回 false 并保留 anchor；但只要 days >= 1，就用 `int elapsed = (int) Math.min(days, MAX_DECAY_DAYS);` 结算，并在 221 行 `state.setLastDecayAt(now);`。25 小时的空档按 1 天结算，剩下 1 小时被抹掉，下一次 anchor 变成 now。",
+      "impact": "anticipation 每天 +3（208-209 行）与 intimacy 的每日衰减（210-214 行）在长期运行中系统性偏浅：一个每 25 小时才被扫描到的用户，100 天只会结算约 96 天，误差随时间累积且无法从数据反推。对「隔天上线」的典型节奏偏差约 4%。",
+      "kind": "plan",
+      "fix": {
+        "summary": "结算后把 anchor 前移整天而不是重置到 now，让余量自然滚入下一轮。",
+        "steps": [
+          "把 221 行改成 `state.setLastDecayAt(anchor.plusDays(elapsed));`。",
+          "若 elapsed 因 MAX_DECAY_DAYS 被截断，改为 `anchor.plusDays(MAX_DECAY_DAYS)`，保证下一次继续结算剩余天数。",
+          "补纯函数测试：anchor = now - 25h，断言 lastDecayAt 前进 24h 且 anticipation 只 +3；再跑一次同函数断言再 +3。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java"
+        ],
+        "tests": "RelationshipStateServiceDecayTest（applyDecay 为 static，可直接单测）：构造 25h/49h 两种 anchor，断言余量保留、分两次调用与一次性调用结果等价。"
+      }
+    },
+    {
+      "section": "edge-cases",
+      "category": "counter-source",
+      "severity": "low",
+      "confidence": "medium",
+      "title": "消息 seq 计数器只存在于 Redis，与 message 表唯一键冲突时会持续发送失败",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+      "line": 483,
+      "evidence": "getNextSeq（479 行）→ reserveSeqBlock（483-487 行）：`Long lastSeq = redisTemplate.opsForValue().increment(SEQ_KEY_PREFIX + conversationId, safeCount); return lastSeq != null ? lastSeq : safeCount;`，前缀 'msg_seq:'（72 行）没有从数据库 MAX(seq) 播种的兜底；而 V1__init_schema.sql:54 有 `UNIQUE KEY uk_conv_seq (conversation_id, seq)`。同一前缀在 CharacterService.java:60、GroupChatService.java:104、VoiceCallService.java:62 各自复制了一份。Redis 侧是 `--appendonly yes` + 命名卷（docker-compose.yml:271-283），所以触发条件是 FLUSHALL、卷丢失或换实例——不是日常路径，但一旦发生计数器会从头开始。",
+      "impact": "计数器归零后新消息的 seq 撞上历史行的唯一键，messageMapper.insert 抛 DuplicateKeyException：用户点发送直接失败，且要等计数器自然爬过历史最大 seq 才恢复（发一条失败一条）。群聊与语音通话用同一套前缀，问题一致。",
+      "kind": "plan",
+      "fix": {
+        "summary": "让 seq 有数据库兜底：Redis 只作为加速层，缺失时用 MAX(seq) 播种。",
+        "steps": [
+          "reserveSeqBlock 里判断 increment 的返回值是否等于 safeCount（说明是新建 key），是则用 `SELECT MAX(seq) FROM message WHERE conversation_id=?` 的结果重新 set 计数器。",
+          "插入消息时捕获 DuplicateKeyException：重读 MAX(seq)、重置 Redis 计数器、重试一次。",
+          "把 'msg_seq:' 前缀收敛到一个常量类（现在 4 处硬编码），避免继续漂移。",
+          "补集成测试：删掉 Redis key 后发消息，断言 seq 从历史最大值继续递增而不是撞键。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/VoiceCallService.java"
+        ],
+        "tests": "ConversationServiceSeqTest：预置 5 条历史消息并清空 redis key，发一条新消息断言 seq=6 且不抛 DuplicateKeyException。"
+      }
+    },
+    {
+      "section": "data-integrity",
+      "category": "truncation",
+      "severity": "low",
+      "confidence": "medium",
+      "title": "客户端中途断开时，被截断的半句话会以「完整回复」落库并触发推送与记忆摘要",
+      "file": "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamBridge.java",
+      "line": 138,
+      "evidence": "AgentStreamBridge.java:73-88 在向客户端 emitter 转发时捕获 IOException 并调用 abort()；abort()（126-140 行）算出 `String partial = lastReplacement != null ? lastReplacement : content.toString();` 然后 `callback.onComplete(partial, null);`——错误位传的是 null。ConversationService.java:377-382 的 onComplete 只在 `error != null && !isClientStreamDisconnect(error)` 时跳过落库，null 让它一路走到 383-405 行：saveAssistantReplies 落库、recordAssistantTurn、memoryWriter.enqueueSummary、notificationService.notifyAssistantMessage。",
+      "impact": "用户在生成中途关掉聊天页或切走窗口时，落库的是尚未结束的半句话，但它与正常回复在库里没有区别：会进入最近 30 条上下文、被写进记忆摘要、还会触发一条「角色给你发来消息」的推送。用户回来会看到一条语义截断的回复，记忆里也多了一句残句。",
+      "kind": "plan",
+      "fix": {
+        "summary": "区分「客户端断开」与「正常完成」：允许保留已生成内容，但要打标记，并跳过推送与记忆摘要。",
+        "steps": [
+          "给 AgentStreamCallback.onComplete 增加明确的完成原因参数（COMPLETED / CLIENT_DISCONNECTED / UPSTREAM_ERROR），不再靠 error 是否为 null 推断。",
+          "abort() 传 CLIENT_DISCONNECTED；ConversationService 收到该原因时只落库，不调用 notificationService 与 memoryWriter.enqueueSummary。",
+          "在 message 上加 truncated 标记（或复用已有状态列），前端对该条显示「回复中断」而不是当完整气泡。",
+          "补测试：模拟 emitter.send 抛 IOException，断言消息落库但 notify/memoryWriter 未被调用。"
+        ],
+        "files": [
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamBridge.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentStreamCallback.java"
+        ],
+        "tests": "AgentStreamBridgeTest：让 sseHelper.sendSseChunk 抛 IOException，断言 onComplete 的完成原因不是 COMPLETED；ConversationServiceTest 断言该场景下 notificationService 未被调用。"
+      }
+    }
+  ],
+  "deferred": [
+    "关系状态加载 waitForExistingState 里的 Thread.sleep 轮询（阻塞请求线程）与 MemoryWriter 抛 RuntimeException 触发 MQ 重试，属可靠性范畴，建议交给 reliability 专家。",
+    "mapExistingByCharacterIds 按 characterId IN 全量拉取（无 user 过滤）以及 ProactiveChatScheduler 每 30 秒的多表加载，属性能范畴，建议交给 perf 专家。",
+    "getNextSeq/clearMessages 中 'msg_seq:' 前缀 4 处硬编码、ProactiveMessageService 与其余 7 处 persist 方法写法不一致，属可维护性范畴，建议交给 maintainability 专家。"
+  ],
+  "notes": "只读审查：未修改任何源码。工具限制：该 shell 内没有 rg，改用 ops_grep；/tmp 不可写，验证均在仓库根内联执行。已核实并主动放弃的两个候选：V57 把 trust 100→50 后的 phase 残留（RelationshipPhaseResolver 在 trust>=45 一律 FAMILIAR，且 V57 只命中 intimacy<=40，相位仍可派生一致）、读取工具显示层把反斜杠翻倍造成的 sseParser 正则误报（用 repr 复核后源码正确）。u04/u06/u09/u10/u12 因体量按模式扫描后抽查，未逐文件通读。"
+}

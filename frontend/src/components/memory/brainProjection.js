@@ -34,13 +34,13 @@ export function clamp(value, min, max) {
 }
 
 /**
- * 3D 内容实际只铺到 x∈[-240,240]、y∈[-180,180]，装进画布需要一个缩放基准。
- * 取宽高两个方向的较小约束：画布宽 1060 时基准约 1.6，脑区直径约 64px，
- * 整团光点占宽 60% 左右 —— 再大就会顶到图例和时间轴。
+ * 3D 内容实际只铺到 x∈[-300,300]、y∈[-260,260]，装进画布需要一个缩放基准。
+ * 取宽高两个方向的较小约束：画布宽 1060 时基准约 1.55，脑区直径约 70px，
+ * 整团光点占宽 55% 左右 —— 再大就会顶到图例和时间轴。
  */
 export function fitBase(width, height) {
   if (!width || !height) return 1
-  const base = Math.min(width / 430, height / 350) * 1.02
+  const base = Math.min(width / 620, height / 540) * 1.02
   return clamp(base, 0.7, 2.2)
 }
 
@@ -127,7 +127,7 @@ export const SHELL_DOTS = (() => {
     const y = 1 - (i / (count - 1)) * 2
     const radius = Math.sqrt(Math.max(0, 1 - y * y))
     const theta = golden * i
-    dots.push([Math.cos(theta) * radius * 214, y * 172, Math.sin(theta) * radius * 168])
+    dots.push([Math.cos(theta) * radius * 300, y * 260, Math.sin(theta) * radius * 240])
   }
   return dots
 })()

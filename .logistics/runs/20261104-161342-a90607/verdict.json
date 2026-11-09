@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 2,
+  "runId": "20261104-161342-a90607",
+  "generatedAt": "2026-11-04T16:20:00+08:00",
+  "coverage": {
+    "expected": ["security"],
+    "received": ["security"],
+    "missing": [],
+    "complete": true
+  },
+  "findings": [],
+  "deferred": [
+    {
+      "from": "security",
+      "expert": "correctness",
+      "file": "backend/lianyu-dao/src/main/resources/db/migration/V57__relationship_trust_anomaly_repair.sql",
+      "lines": "15-18",
+      "summary": "V57 只更新 trust_score，未同步重算 phase。RelationshipStateService.java:485 的 toSnapshot() 直接使用 .phase(parsePhase(state.getPhase())) 读库中 phase，而 phase 只在 RelationshipStateService.java:223 / :256 由 RelationshipPhaseResolver.derive(...) 随事件写入；迁移后可能出现 trust_score=50 但 phase 仍为 STABLE 的不一致快照，影响关系进度与台词口径（correctness 问题，未计入 security findings）。"
+    },
+    {
+      "from": "security",
+      "expert": "reliability",
+      "file": "backend/lianyu-dao/src/main/resources/db/migration/V57__relationship_trust_anomaly_repair.sql",
+      "lines": "15-18",
+      "summary": "V57 是一条无分批的全表 UPDATE（WHERE trust_score >= 90 AND intimacy_score <= 40，无 LIMIT），由 Flyway 在应用启动期执行；relationship_state 行数大时会长时间持锁并拖慢启动，且迁移注释未给执行前备份/回滚说明（reliability 问题，未计入 security findings）。"
+    },
+    {
+      "from": "security",
+      "expert": "security",
+      "file": "backend/scripts/repair-flyway-v10.sql",
+      "lines": "2",
+      "summary": "范围外遗留项（不在本次 diff 内，未计入 findings）：backend/scripts/repair-flyway-v10.sql:2 与 backend/scripts/repair-flyway-v14-checksum.sql:8 的用法注释用 mysql -uroot -p<明文口令> 示例，口令片段随仓库提交（初始提交 97865cd 即存在），违反 AGENTS.md §3.3「密钥只来自 .env/vault、不进仓库」。建议单独开单清理并轮换该口令。"
+    }
+  ],
+  "dropped": []
+}

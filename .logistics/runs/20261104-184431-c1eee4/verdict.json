@@ -1,0 +1,1153 @@
+{
+  "schemaVersion": 2,
+  "runId": "20261104-184431-c1eee4",
+  "generatedAt": "2026-11-04T19:04:00+08:00",
+  "coverage": {
+    "expected": ["correctness", "security", "reliability", "maintainability"],
+    "received": ["correctness", "security", "reliability", "maintainability"],
+    "missing": [],
+    "complete": true
+  },
+  "findings": [
+    {
+      "id": "SEC-FCAD9",
+      "expert": "security",
+      "module": "deploy/api-gateway",
+      "section": "auth",
+      "severity": "critical",
+      "confidence": "high",
+      "title": "api-gateway 把 /api/agent/ 整段直连 Python，未认证即可写他人记忆并消耗平台自有模型 Key",
+      "file": "deploy/api-gateway/nginx.conf",
+      "line": 252,
+      "evidence": "nginx.conf:252 `location /api/agent/ { proxy_pass http://agent:8001/; }`，该 location 与全文件其它 location 都没有 auth_request / 鉴权子请求 / allow-deny；backend-agent/app/main.py:150 以及另外 18 处端点签名写作 `user_id_header: str | None = Header(default=None, alias=\"X-User-Id\")`，函数体是 `if user_id_header and str(body.user_id) != user_id_header: raise 403`——省略请求头即整段跳过校验；app 内 grep `add_middleware`、`@app.middleware`、`Depends` 三个关键字全仓 0 命中，即 Python 运行时不校验 Sa-Token。实测路径：`curl -X POST http://<host>/api/agent/memory/write -d '{\"user_id\": <任意>, ...}'`（main.py:982-1007 直接 write_memories(body.user_id, ...)）；同理 memory/reconcile、voice/delete、desktop-observe、character 生成均可达，文本/多模态调用在 main.py:741 可回落到平台付费 Key。该 location 全仓无调用方（Java 侧走 docker-compose.yml:60 `agent-lb:8001`）。",
+      "impact": "公网任意人可对任意 userId 写入/合并记忆、触发 memory/reconcile 全量对账写库、删除他人克隆音色、生成/导入角色、无限消耗平台付费多模态与文本模型额度；这是当前最严重的未认证写入面，且与 SEC-AA4AD 组成「未认证 + 可指定 baseUrl」的组合拳。",
+      "kind": "plan",
+      "fix": {
+        "summary": "堵住这条旁路：网关不再直连 agent，Python 侧对 user 主体做强制校验而不是可选校验。",
+        "steps": [
+          "先从 nginx.conf 删除或下线 `location /api/agent/`（确认无客户端依赖后整体移除，恢复只经 Java 转发）。",
+          "在 backend-agent 增加统一的调用方身份校验：要么校验 Java 下发的共享密钥/内网来源，要么强制要求 X-User-Id 且缺失即 401（把 `if user_id_header and ...` 改成 `if not user_id_header or str(body.user_id) != user_id_header: raise 401/403`）。",
+          "把 agent 端口从 docker-compose 的宿主映射里移除，只在 compose 内网可达（当前 agent:8001 由 agent-lb 暴露）。",
+          "为 write_memories / voice/delete / desktop-observe 增加调用方鉴权单测与网关级回归用例（无头请求必须 401）。",
+          "上线后 grep 网关访问日志确认 /api/agent/ 无正常流量，再永久删除该 location。"
+        ],
+        "files": [
+          "deploy/api-gateway/nginx.conf",
+          "backend-agent/app/main.py",
+          "docker-compose.yml"
+        ],
+        "tests": [
+          "pytest：无 X-User-Id 调 /agent/memory/write 必须 401",
+          "pytest：X-User-Id 与 body.user_id 不一致必须 403",
+          "网关回归：公网 /api/agent/* 返回 404/403"
+        ]
+      }
+    },
+    {
+      "id": "SEC-AA4AD",
+      "expert": "security",
+      "module": "backend-agent",
+      "section": "uploads",
+      "severity": "high",
+      "confidence": "high",
+      "title": "Python 网关对调用方自带的 baseUrl 无内网黑名单，可探测 docker 内网服务并绕过 Java 的保存期校验",
+      "file": "backend-agent/app/gateway.py",
+      "line": 288,
+      "evidence": "backend-agent/app/gateway.py:288 `url = normalize_openai_base_url(base_url)`，:302 `with client.stream(\"POST\", url, ...)`；normalize 只做字符串归一（补 /v1、去尾斜杠），不做主机校验。backend-agent/app/http_client.py:25-40 `new_client()` 只设 timeout、User-Agent 与 `transport=httpx.HTTPTransport(local_address=\"0.0.0.0\")`，无内网/回环/元数据地址黑名单。Java 侧只在保存 Key 时用 OutboundUrlValidator 钉 IP（保存期校验），Python 侧对同一 baseUrl 跨进程重新解析，存在 DNS 重绑定与直接构造请求两个窗口；配合 SEC-FCAD9 可直接 POST 任意 baseUrl 给 /agent/*。",
+      "impact": "可从对外服务探测并访问 mysql:3306 / redis:6379 / minio:9000 / agent-lb 等内网目标，观察响应差异（端口开放、错误码、耗时）形成内网拓扑；若某内网服务存在无鉴权的 HTTP 接口则可被直接调用。",
+      "kind": "plan",
+      "fix": {
+        "summary": "在 Python 出站层加统一的主机白名单/私网黑名单，并在解析后按实际 IP 校验（防 DNS 重绑定）。",
+        "steps": [
+          "在 app/http_client.py 增加 `assert_public_url(url)`：解析 scheme 仅 http/https，解析后所有 A/AAAA 记录必须是非私网、非回环、非链路本地、非元数据地址。",
+          "gateway.py 在 `client.stream` 之前调用该断言；连接时用解析结果做 IP 直连（或复用 transport 的 resolver 钩子），避免二次解析。",
+          "对用户自带 baseUrl 保留域白名单配置（默认仅常见厂商域名），非白名单需要显式开关并在 UI 提示风险。",
+          "把 local_address 绑定与 SSRF 校验统一到一个 client 工厂，禁止其它模块直接 httpx.AsyncClient。",
+          "补 pytest：baseUrl 指向 127.0.0.1 / 10.x / 169.254.169.254 / 解析到私网 IP 的域名时必须在发请求前抛错。"
+        ],
+        "files": [
+          "backend-agent/app/http_client.py",
+          "backend-agent/app/gateway.py"
+        ],
+        "tests": [
+          "pytest tests/test_http_client_ssrf.py：私网/回环/元数据地址全部拒绝",
+          "pytest：DNS 解析到私网的域名被拒绝"
+        ]
+      }
+    },
+    {
+      "id": "REL-433F0",
+      "expert": "reliability",
+      "module": ".github",
+      "section": "tests",
+      "severity": "high",
+      "confidence": "high",
+      "title": "CI 不跑 backend-agent 的 pytest，模型运行时回归无人拦",
+      "file": ".github/workflows/ci.yml",
+      "line": 9,
+      "evidence": ".github/workflows/ci.yml 全文 55 行，只有 backend（mvn）、frontend（node）、deps-audit 三个 job，全文无 python / pytest / backend-agent 字样；而 backend-agent/tests 下 49 个测试文件、492 个 `def test_`（AGENTS.md §4 要求 `cd backend-agent && pytest` 全绿 1222+ 用例）只能在本地跑。",
+      "impact": "prompt 组装、工具循环、SSE 契约、网关超时/熔断这些最易回归的 Python 逻辑在合入主干时完全没有自动化保护；一次合并破坏 stream_chat 的帧格式，CI 依旧全绿，故障只会出现在用户端。",
+      "kind": "direct",
+      "fix": {
+        "summary": "在 ci.yml 增加 backend-agent 的 pytest job（uv --frozen 安装 + pytest），与 backend/frontend 并列。",
+        "steps": [
+          "新增 job `agent-tests`：actions/setup-python（3.11+）→ `pip install uv` → `cd backend-agent && uv sync --frozen` → `uv run pytest -q`。",
+          "加缓存（uv cache、pytest cache）控制时长，必要时拆分 unit/integration 两组。",
+          "把该 job 设为必需检查（branch protection）。",
+          "补一条最小失败探针：故意让一个 assert 失败确认 CI 会红（验证非空转）。"
+        ],
+        "files": [".github/workflows/ci.yml"],
+        "tests": [
+          "在 PR 上确认 agent-tests job 执行且 1222+ 用例全绿",
+          "临时破坏一个 Python 用例确认 CI 变红"
+        ]
+      }
+    },
+    {
+      "id": "COR-CDAFE",
+      "expert": "correctness",
+      "module": "backend/lianyu-service",
+      "section": "architecture",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "@Transactional 标在 protected 方法上且被同类 this 自调用，7 处声明的事务从不生效",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterService.java",
+      "line": 101,
+      "evidence": "CharacterService.java:101 `@Transactional(rollbackFor = Exception.class) protected void ...`，调用点 :97 是同类内部 `this.xxx(...)` 直调——Spring 代理被绕过，注解不生效。同类问题共 7 处：AuthServiceImpl.java:40/122、CharacterDiaryService.java:378、VoiceCallService.java:167（persistVoiceTurn 连续插两条，失败时只留半条）、CharacterSquareService.java:231、CustomVoiceService.java:94。仓内正确范式在 ProactiveMessageService.java:141 `private ProactiveMessageService self;` + :238 `self.persistProactiveReply(...)`。",
+      "impact": "这 7 个方法里任何一条 SQL 失败都不会回滚前面已写入的行：用户消息与助手消息、语音回合的两次插入、广场发布与计数更新等都可能留下半截数据，且异常被上层当普通错误处理，事后无法通过回滚自愈。",
+      "kind": "plan",
+      "fix": {
+        "summary": "让事务边界真正经过代理：把自调用改为注入 self 调用，或把事务方法移到独立 Bean 并改为 public。",
+        "steps": [
+          "按 ProactiveMessageService 的既有范式，为 7 个类注入自身代理（`@Lazy` self）并把内部调用改为 `self.xxx(...)`。",
+          "同步把方法可见性改为 public，去掉 protected（Spring 代理对 protected 不生效）。",
+          "逐处补一条「第二步插入抛异常时第一步必须回滚」的集成测试（用 @Transactional 测试或独立库断言行数）。",
+          "在 review checklist 里加一条：@Transactional 只允许出现在被外部调用的 public 方法上。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/auth/impl/AuthServiceImpl.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterDiaryService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/voice/VoiceCallService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterSquareService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/voice/CustomVoiceService.java"
+        ],
+        "tests": [
+          "VoiceCallServiceTest：persistVoiceTurn 第二次 insert 抛错后 user_message 行数为 0",
+          "CharacterServiceTest：同事务内两步写，第二步失败后无残留行"
+        ]
+      }
+    },
+    {
+      "id": "COR-316C1",
+      "expert": "correctness",
+      "module": "backend/lianyu-service",
+      "section": "concurrency",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "关系状态是「读-改-写」且无事务/版本/行锁，同一角色的并发回合会静默丢掉一次更新",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+      "line": 130,
+      "evidence": "RelationshipStateService.java:130-133 读出当前状态对象 → 在内存里改分/阶段 → 无条件 `updateById`，既不在事务里，也没有 version 字段或 `SELECT ... FOR UPDATE`。同一角色的两条并发回合（用户连发、群聊多角色并行回复、主动消息与用户消息撞车）都会读到同一份旧值，后写者覆盖先写者。附注（原 COR-7AD38，同文件同路径）：:221 的衰减先按整天结算再 `setLastDecayAt(now)`，不足一天的余量每次被丢掉，长期会低估衰减。",
+      "impact": "信任分/关系阶段是产品核心事实，丢更新会让关系推进在用户看来「卡住」或反复回退；衰减余量丢失会让长期不活跃的关系状态偏离设计预期。两者都不报错，只能靠用户感知。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把关系更新收成一条原子的「带版本/带行锁」写路径，衰减余量改为按毫秒累计。",
+        "steps": [
+          "给 relationship_state 增加 version 列（新 Flyway 迁移，ASCII-only），更新语句带 `WHERE id=? AND version=?`，影响行数为 0 时重读重试（有限次）。",
+          "或改用 `SELECT ... FOR UPDATE` 并包在 @Transactional 的 public 方法里（注意与 COR-CDAFE 的自调用问题一起修）。",
+          "衰减改为记录 lastDecayAt 时只推进「已结算的整天」，余量留在原时间戳上（`lastDecayAt = lastDecayAt.plusDays(days)`）。",
+          "补并发测试：两个线程同时调用更新，最终分数必须是两次增量之和。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+          "backend/lianyu-dao/src/main/resources/db/migration/"
+        ],
+        "tests": [
+          "RelationshipStateServiceConcurrencyTest：并发 2 次 +5，最终 = 原值 +10",
+          "RelationshipDecayTest：跨 2.5 天只结算 2 天，余量保留"
+        ]
+      }
+    },
+    {
+      "id": "COR-770E7",
+      "expert": "correctness",
+      "module": "frontend/src",
+      "section": "data-integrity",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "流式发送的网络重试没有幂等键，一次抖动会写出两条用户消息和两条 AI 回复",
+      "file": "frontend/src/pages/ChatPage.vue",
+      "line": 1439,
+      "evidence": "ChatPage.vue:1420-1431 的 attemptStream 把 `sendMessageStream(...)`（fetch POST）与 `drainAssistantStream(response, { signal })`（读响应体）包在同一个 try 里；:1437-1445 的 catch 在 `isNetworkError(err)` 为真时 `await sleep(800)` 后重新 attemptStream，即重新 POST 同一段文本。frontend/src/composables/useStreamAbort.js:8-15 的 isNetworkError 对任何 `err.name === 'TypeError'` 直接返回 true——流读到一半连接被重置抛的正是 TypeError，于是「服务端已收下并开始生成」也会重发。服务端 ConversationService.java:328-330 在调用模型前无条件 `messageMapper.insert(turn.userMsg())`，SendMessageRequest 中没有客户端消息 ID 字段，前端 api/conversation.js:67-83 也不带幂等头。",
+      "impact": "弱网/切换网络时一次抖动就会产生两条用户消息、两条 AI 回复、双倍 token 计费，并污染记忆摘要与关系分；用户看到的是「我明明只发了一次」。",
+      "kind": "plan",
+      "fix": {
+        "summary": "给每次发送生成 clientMessageId，前端重试复用它，服务端以它做唯一键去重。",
+        "steps": [
+          "前端 attemptStream 外层生成一次 `clientMessageId = crypto.randomUUID()`，重试时复用同一 ID 并放进请求体/头。",
+          "SendMessageRequest 增加 clientMessageId 字段，message 表加唯一键 (conversation_id, client_message_id)（新 Flyway 迁移）。",
+          "服务端在插入前按该键查重：已存在则直接返回既有 turnId/继续订阅该回合，而不是再插一条。",
+          "收紧 isNetworkError：只有「请求未送达」（如 fetch 立刻 reject、无任何响应字节）才允许重试；已收到响应字节后的中断不得重发。",
+          "补测试：模拟连接在第 3 个 chunk 后重置，断言服务端只产生一条用户消息与一条助手消息。"
+        ],
+        "files": [
+          "frontend/src/pages/ChatPage.vue",
+          "frontend/src/composables/useStreamAbort.js",
+          "frontend/src/api/conversation.js",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/dto/SendMessageRequest.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java"
+        ],
+        "tests": [
+          "vitest：流中断后不重发已开始的请求",
+          "后端：同一 clientMessageId 重复 POST 只落一条消息"
+        ]
+      }
+    },
+    {
+      "id": "COR-B0734",
+      "expert": "correctness",
+      "module": "backend/lianyu-service",
+      "section": "logic",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "主动消息调度里的空闲判断恒为真，EngagementFrequencyScorer 的活跃度/新鲜度打分被架空",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/proactive/ProactiveChatScheduler.java",
+      "line": 128,
+      "evidence": "ProactiveChatScheduler.java:128 的 `if (idleMinutes >= minIdleMinutes)` 分支里，minIdleMinutes 在 :314 的 isEligible 中已保证不小于自身，进入调度循环的候选全部满足；该判断因此恒真，导致 EngagementFrequencyScorer 里基于「最近一次用户活跃时间」「距上次主动消息间隔」的打分项永远走同一分支，评分退化成常量 / 只由兜底规则决定。",
+      "impact": "主动问候的频率控制实际上只剩兜底下限，活跃用户会被过度打扰、刚聊完的用户也会被再次搭话；产品调参（改打分权重、改阈值）在线上不产生任何可见变化，属于「配置看着生效、实际无效」。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把恒真判断改为真正区分活跃/空闲的可变量，并让打分项回归决策。",
+        "steps": [
+          "确认 minIdleMinutes 的语义来源（是全局阈值还是每角色阈值），在调度循环里保留原始 idleMinutes 并交给 EngagementFrequencyScorer 打分，删掉二次比较。",
+          "为打分器加一条「刚有用户消息时分数必须显著降低」的规则测试，先造一个会失败的探针再改实现。",
+          "补可观测：每次主动消息决策记录 score 与命中项，便于线上核对调参效果。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/proactive/ProactiveChatScheduler.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/proactive/EngagementFrequencyScorer.java"
+        ],
+        "tests": [
+          "ProactiveChatSchedulerTest：用户 1 分钟前刚发言时本轮不得触发主动消息",
+          "EngagementFrequencyScorerTest：活跃度不同导致 score 单调变化"
+        ]
+      }
+    },
+    {
+      "id": "COR-5B82B",
+      "expert": "correctness",
+      "module": "backend/lianyu-admin",
+      "section": "contracts",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "更新解析接口对可空列用 Map.of 组装响应，notes/sha512 为 NULL 时直接 NPE 500",
+      "file": "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/ReleaseResolverService.java",
+      "line": 21,
+      "evidence": "ReleaseResolverService.java:19 的 SQL 显式取出 `sha512` 与 `notes` 两列，:21 用 `Map.of(...)` 组装响应；而 V51__admin_management_schema.sql:85 的 sha512 允许 NULL、:88 的 notes 允许 NULL。`Map.of` 禁止 null 值，任一列为 NULL 时抛 NullPointerException → 接口 500。这是唯一被两位评审一致确认为可直接修（direct）的后端缺陷。",
+      "impact": "运营台只要存在一条历史发布记录没填 sha512 或备注，整个更新解析接口就 500，发版/资产核对链路被一条脏数据卡死；错误信息是 NPE 而非业务提示，排障成本高。",
+      "kind": "direct",
+      "fix": {
+        "summary": "把 Map.of 换成允许 null 的实现（LinkedHashMap 或显式空串兜底），并对可空列做显式默认值。",
+        "steps": [
+          "把 `Map.of(...)` 改为 `new LinkedHashMap<>()` 逐个 put，或对 sha512/notes 用 `Objects.requireNonNullElse(value, \"\")`。",
+          "在响应 DTO 上标注可空字段（@Nullable 或 Optional），避免调用方再踩空。",
+          "补测试：notes 与 sha512 均为 NULL 的行能正常序列化（返回空串/null 而不抛异常）。"
+        ],
+        "files": [
+          "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/ReleaseResolverService.java"
+        ],
+        "tests": [
+          "ReleaseResolverServiceTest：sha512=NULL、notes=NULL 时返回 200 且字段为默认值"
+        ]
+      }
+    },
+    {
+      "id": "COR-A3CDE",
+      "expert": "correctness",
+      "module": "backend/lianyu-service",
+      "section": "data-integrity",
+      "severity": "low",
+      "confidence": "high",
+      "title": "消息 seq 计数器只存在于 Redis，与 message 表唯一键冲突时会持续发送失败",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+      "line": 483,
+      "evidence": "ConversationService.java:483 的 getNextSeq 直接对 Redis 键 `msg_seq:<convId>` 自增，不读 `SELECT MAX(seq)` 做播种/校正；Redis 被清空、过期或与库不同步（回滚、手工补数据、多环境共库）后，自增重新从 1 开始，与 V1:54 的 `uk_conv_seq (conversation_id, seq)` 唯一键冲突，插入持续失败。键名 `msg_seq:` 在 4 处硬编码。",
+      "impact": "一次 Redis 抖动就可能让某个会话永久发不出消息（每次都在同一条 seq 上撞唯一键），且错误表现为数据库异常而非可读提示，用户只能看到发送失败。",
+      "kind": "plan",
+      "fix": {
+        "summary": "让库成为 seq 的事实来源：首次取号用 MAX(seq) 播种，冲突时自愈而不是直接失败。",
+        "steps": [
+          "getNextSeq 在键不存在时先 `SELECT MAX(seq)` 播种（带 `SETNX` 语义避免并发重复播种）。",
+          "插入捕获唯一键冲突后重取 seq 并有限次重试（例如 3 次），仍失败再抛业务错误。",
+          "把 `msg_seq:` 前缀抽成单一常量，消除 4 处硬编码。",
+          "补测试：清空 Redis 后仍能连续发送；人为插入高 seq 行后取号不冲突。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java"
+        ],
+        "tests": [
+          "ConversationServiceTest：Redis flush 后 getNextSeq 返回 MAX(seq)+1",
+          "唯一键冲突后自动重试成功"
+        ]
+      }
+    },
+    {
+      "id": "COR-DFE20",
+      "expert": "correctness",
+      "module": "backend/lianyu-web",
+      "section": "state",
+      "severity": "low",
+      "confidence": "high",
+      "title": "客户端中途断开时，被截断的半句话会以「完整回复」落库并触发推送与记忆摘要",
+      "file": "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamBridge.java",
+      "line": 138,
+      "evidence": "AgentStreamBridge.java:138 的 abort() 用 `null` 错误调用 onComplete，而不是 onError/独立中断回调；ConversationService.java:383-405 在 onComplete 里把已累积的内容当完整回复落库、推送给客户端并触发记忆摘要与关系更新。",
+      "impact": "网络中断、用户切后台、代理超时都会在数据库里留下半句话的「助手回复」，并进入记忆摘要与关系分计算——脏数据一旦进摘要就会影响后续 prompt，属于会自我放大的错误。",
+      "kind": "plan",
+      "fix": {
+        "summary": "区分「正常完成」与「中断完成」，中断时只保留 partial 状态，不写记忆摘要、不计关系。",
+        "steps": [
+          "为 onComplete 增加 interrupted 标记（或改用独立 onAbort 回调），abort 路径传 interrupted=true。",
+          "ConversationService 在 interrupted 时把消息标记为 partial（新列或状态字段），跳过硬回复摘要与关系更新。",
+          "SSE 侧对 partial 消息补一个明确的结束原因，让前端显示「已中断」而不是当作完整回复。",
+          "补测试：abort 后库里消息状态为 partial，且未生成摘要。"
+        ],
+        "files": [
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamBridge.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java"
+        ],
+        "tests": [
+          "AgentStreamBridgeTest：abort 后 onComplete 收到 interrupted=true",
+          "ConversationServiceTest：partial 回复不触发记忆摘要"
+        ]
+      }
+    },
+    {
+      "id": "SEC-29B63",
+      "expert": "security",
+      "module": "frontend/electron",
+      "section": "supply-chain",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "客户端更新清单的 Ed25519 验签默认关闭（出厂无公钥）且安装包未做代码签名",
+      "file": "frontend/electron/updater/updater.js",
+      "line": 83,
+      "evidence": "frontend/electron/updater/updater.js:83 在未配置公钥时直接跳过 latest.yml 签名校验；frontend/.env.production.cloud:12 的 `VITE_LIANYU_UPDATE_PUBKEY` 仍是被注释掉的占位；frontend/package.json:82 `signAndEditExecutable: false`，安装包无 Authenticode 签名。",
+      "impact": "更新链路只依赖 HTTPS + MinIO/GitHub 的完整性，一旦更新源被替换（凭据泄露、镜像劫持、DNS 劫持后的合法证书场景），客户端会静默安装任意更新包；无代码签名也让 Windows SmartScreen 与用户都无法区分正版与仿冒安装包。",
+      "kind": "plan",
+      "fix": {
+        "summary": "让验签成为发布硬条件：出包必须带公钥，缺公钥的构建直接失败；同时补代码签名。",
+        "steps": [
+          "发布脚本（electron-release.mjs / prepare-branded-release.mjs）在构建前校验 VITE_LIANYU_UPDATE_PUBKEY 非空，缺失即中止。",
+          "updater 在无公钥时不进入「跳过校验」分支，而是拒绝更新并记录错误（fail-closed）。",
+          "为 Windows 安装包接入代码签名证书（或至少对 exe 做哈希公示），signAndEditExecutable 改为 true。",
+          "补测试：无公钥时更新检查返回「不可用」；签名不匹配的 latest.yml 被拒。"
+        ],
+        "files": [
+          "frontend/electron/updater/updater.js",
+          "frontend/.env.production.cloud",
+          "frontend/package.json",
+          "frontend/scripts/electron-release.mjs"
+        ],
+        "tests": [
+          "vitest：公钥缺失 → checkForUpdates 返回 unsupported 而非下载",
+          "签名不匹配的 latest.yml 被拒绝"
+        ]
+      }
+    },
+    {
+      "id": "SEC-5E409",
+      "expert": "security",
+      "module": "frontend/electron",
+      "section": "secrets",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "custom-tts IPC 把用户会话 token 当 Authorization 发给渲染层指定的任意 URL",
+      "file": "frontend/electron/main.js",
+      "line": 2634,
+      "evidence": "frontend/electron/main.js:2634-2639 的 custom-tts 下载路径把用户会话 token 以 `Authorization: Bearer <token>` 形式附加到渲染层传入的 refAudioUrl；frontend/electron/customTts.js:38-39 是同一逻辑的服务层实现。该请求不经 apiProxy 的域名白名单，因此任意 URL（含外部攻击者域）都能收到用户的长期会话 token（配合 SEC-E41BA 有效期 30 天）。",
+      "impact": "渲染层一旦被 XSS 或恶意第三方内容利用（文档/图片预览、富文本、被投毒的依赖），即可通过一次 TTS 调用把用户 token 外带到自己的服务器，进而接管账号；token 又是长期有效且改密不失效的。",
+      "kind": "plan",
+      "fix": {
+        "summary": "下载音频不应带用户凭证：改为服务端代理/签名 URL，主进程只允许白名单域且不转发 Authorization。",
+        "steps": [
+          "custom-tts 的 refAudioUrl 只接受同源相对路径或 apiProxy 白名单域，其它一律拒绝并返回 machine-readable 错误码。",
+          "跨域音频下载改由主进程用一次性签名 URL（无用户 token）或后端代理完成。",
+          "在 preload 层把该 IPC 的参数校验前移（renderer 传入的 url 必须过 URL 解析 + 白名单）。",
+          "补测试：refAudioUrl=https://evil.example/x.wav 时不发请求、不带 Authorization。"
+        ],
+        "files": [
+          "frontend/electron/main.js",
+          "frontend/electron/customTts.js",
+          "frontend/electron/apiProxy.js"
+        ],
+        "tests": [
+          "electron 单测：外部域 refAudioUrl 被拒且无凭证外发",
+          "同源相对路径仍能正常下载"
+        ]
+      }
+    },
+    {
+      "id": "SEC-7A856",
+      "expert": "security",
+      "module": "frontend/electron",
+      "section": "secrets",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "NapCat 的 OneBot WS 与 WebUI 长年使用硬编码口令 lianyupc，本机任意进程可冒充用户收发 QQ 消息",
+      "file": "frontend/electron/napcatRuntime/napcatConfig.js",
+      "line": 72,
+      "evidence": "frontend/electron/napcatRuntime/napcatConfig.js:70-75 `ensureNapCatConfig({ wsPort, wsToken = 'lianyupc', webuiPort, webuiToken = 'lianyupc' } = {})`，注释写明「token 定死为 lianyupc（用户指定）」；:96-99 每次启动把已存在配置里的 srv.token 强制回写成该常量；frontend/electron/napcatRuntime/napcatHost.js:139-140 同样是 `const wsToken = 'lianyupc'`。服务只绑 127.0.0.1，但本机任意进程都能用这个公开口令连 ws://127.0.0.1:<port> 或登录 WebUI。",
+      "impact": "QQ 桥接是「以用户身份说话」的能力面；固定口令使本机沙箱内任何代码（含被投毒的依赖、同用户其它进程）都能接管账号收发与配置，且口令在源码里公开。",
+      "kind": "plan",
+      "fix": {
+        "summary": "每安装生成一次高强度随机口令，用 safeStorage 持久化并在启动时注入，替换所有硬编码常量。",
+        "steps": [
+          "新增 napcatSecret 模块：首次运行用 crypto.randomBytes(24).toString('hex') 生成 wsToken/webuiToken，经 Electron safeStorage 加密落盘，读取失败即重新生成。",
+          "ensureNapCatConfig / napcatHost 改为接收注入口令，删除 lianyupc 默认值与强制回写。",
+          "启动 NapCat 前把口令写入 onebot11.json 与 webui.json，登录窗 URL 与 bridge 共用同一份内存值。",
+          "对已有安装做一次性迁移：检测到旧口令即静默轮换并写回配置。",
+          "补单测：两次启动口令一致、升级路径下旧口令被替换、配置文件中不再出现固定字符串。"
+        ],
+        "files": [
+          "frontend/electron/napcatRuntime/napcatConfig.js",
+          "frontend/electron/napcatRuntime/napcatHost.js"
+        ],
+        "tests": [
+          "首次生成的口令非固定值且写入两个 json",
+          "旧配置含 lianyupc 时被轮换"
+        ]
+      }
+    },
+    {
+      "id": "SEC-DDDB1",
+      "expert": "security",
+      "module": "backend/lianyu-security",
+      "section": "crypto",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "缺少 LIANYU_MASTER_KEY 时 JasyptUtil 直接返回明文，用户 API Key 会以明文落库",
+      "file": "backend/lianyu-security/src/main/java/com/lianyu/security/util/JasyptUtil.java",
+      "line": 65,
+      "evidence": "JasyptUtil 构造器 :20-27 在 `System.getenv(\"LIANYU_MASTER_KEY\")` 为空时只 `log.warn(\"LIANYU_MASTER_KEY not set — Jasypt encryption disabled...\")` 后返回；:61-70 `encrypt(...)` 在 `currentVersion == null || encryptors.isEmpty()` 时 `log.warn(\"No Jasypt encryptor available, returning plaintext\")` 并 `return plaintext`，decrypt 同样原样返回。写入方 backend/lianyu-service/.../ai/ApiKeyVaultService.java 把 encrypt 结果直接存入 api_key_vault；.env.example:40 该变量本身为空，scripts/_cloud_env_check.py 只体检不阻断。",
+      "impact": "用户自带的模型 Key 会以明文随备份、慢查询日志、只读账号或 SQL 注入面泄露，而界面仍显示「已加密」；这种降级只有一条 warn，运维极难发现，属典型 fail-open。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把「无主密钥」从告警降级改为启动期硬失败，并为存量明文提供可验证的加密迁移路径。",
+        "steps": [
+          "JasyptUtil 在 masterKey 缺失或 encryptors 为空时抛 IllegalStateException，让 Spring 启动失败（本地开发用 profile 显式声明允许明文）。",
+          "encrypt/decrypt 的「返回明文」分支改为抛异常，避免调用方误以为已加密。",
+          "增加一次性迁移：启动时扫描 api_key_vault 中不符合密文特征的行，重新 encrypt 并写审计。",
+          "把 LIANYU_MASTER_KEY 纳入 _cloud_env_check.py 的阻断项（当前仅体检），缺失即拒绝部署。",
+          "补单测：无 key 时 encrypt 抛错；有 key 时加解密可往返。"
+        ],
+        "files": [
+          "backend/lianyu-security/src/main/java/com/lianyu/security/util/JasyptUtil.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/ai/ApiKeyVaultService.java",
+          "scripts/_cloud_env_check.py",
+          ".env.example"
+        ],
+        "tests": [
+          "JasyptUtilTest：无主密钥构造可加密对象时抛错",
+          "ApiKeyVaultServiceTest：加密不可用时保存 Key 必须失败而不是落明文"
+        ]
+      }
+    },
+    {
+      "id": "SEC-5AEC2",
+      "expert": "security",
+      "module": "admin",
+      "section": "browser",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "运营台把管理员 token 存 localStorage，且 admin 页面没有 CSP 与安全响应头",
+      "file": "admin/src/stores/session.js",
+      "line": 2,
+      "evidence": "admin/src/stores/session.js:2 `state: () => ({ token: localStorage.getItem('lianyu-admin-token'), ... })`，login 时 `localStorage.setItem('lianyu-admin-token', token)`；admin/src/api.js:3 每次请求从 localStorage 取 token 塞进 `lianyu-token` 头。admin/index.html 只有 `<div id=\"app\"></div>` 与 module script，无 CSP / X-Content-Type-Options / X-Frame-Options；后端 SecurityHeadersFilter 只作用于 /api/** 响应，不覆盖运营台静态页。",
+      "impact": "管理员会话拥有用户管理、发版、TOTP 等权限；任何 XSS（含第三方依赖或富文本）都可直接读取并外带令牌，且无 CSP 降低利用难度。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把管理员令牌移出 localStorage（内存 + 会话级刷新），并给运营台补上与客户端同级的 CSP 与安全响应头。",
+        "steps": [
+          "admin/src/stores/session.js 改为内存态，刷新时用 HttpOnly 会话 cookie 或一次性 refresh 接口续期，登录后不再写 localStorage。",
+          "admin/src/api.js 改为从 store 取 token；登出时清理残留键。",
+          "给运营台入口加 CSP：default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'（确认构建产物无内联脚本）。",
+          "在反向代理层对 /ops 统一加 X-Content-Type-Options / X-Frame-Options / Referrer-Policy。",
+          "补前端单测：登录后 localStorage 中不存在令牌；刷新后仍能恢复会话。"
+        ],
+        "files": [
+          "admin/src/stores/session.js",
+          "admin/src/api.js",
+          "admin/index.html",
+          "deploy/api-gateway/nginx.conf"
+        ],
+        "tests": [
+          "admin 单测：login 后 localStorage 无 lianyu-admin-token",
+          "CSP 回归：构建产物在无 unsafe-inline 下可正常挂载"
+        ]
+      }
+    },
+    {
+      "id": "SEC-E41BA",
+      "expert": "security",
+      "module": "backend/lianyu-service",
+      "section": "auth",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "改密码不吊销其它会话，且 token 30 天有效、无空闲过期",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/auth/impl/AuthServiceImpl.java",
+      "line": 154,
+      "evidence": "AuthServiceImpl.changePassword（154-162 行）只做 `matches(old)` → `setPasswordHash(encode(new))` → `userMapper.updateById(user)` → log，之后没有 `StpUtil.logout(userId)` / kickout / 令牌版本号自增；全仓 grep `StpUtil.logout` 只有当前会话登出（AuthServiceImpl:85-86、AdminAuthService:53）。配合 backend/lianyu-app/src/main/resources/application.yml:133-140 的 `timeout: 2592000`（30 天）、`active-timeout: -1`、`is-concurrent: true`，被盗令牌在改密后仍可用 30 天。",
+      "impact": "「改密码」是用户被盗后唯一的自救动作，但攻击者不会被踢下线；结合 SEC-5E409 的令牌外发与 SEC-5AEC2 的令牌落盘，令牌一旦泄露即成长期可用凭据。",
+      "kind": "direct",
+      "fix": {
+        "summary": "改密成功后立刻让该用户的其它会话失效，并给令牌加空闲过期作为兜底。",
+        "steps": [
+          "AuthServiceImpl.changePassword 更新哈希后调用 `StpUtil.logout(userId)` 或 `StpUtil.kickout(userId)`，随后为当前设备重新签发令牌返回前端。",
+          "application.yml 把 `active-timeout` 设为有意义的空闲窗口（如 604800 = 7 天），保留长 timeout 但让闲置会话自动失效。",
+          "（可选）在 sa-token session 中维护 token 版本号，改密时自增，鉴权时比对。",
+          "补测试：改密后旧 token 请求 /api/user/profile 必须 401，新令牌可用。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/auth/impl/AuthServiceImpl.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AuthController.java",
+          "backend/lianyu-app/src/main/resources/application.yml"
+        ],
+        "tests": [
+          "AuthServiceTest：changePassword 后 StpUtil.getLoginIdByToken(old) 为 null",
+          "接口级：改密返回的新 token 可用、旧 token 401"
+        ]
+      }
+    },
+    {
+      "id": "SEC-1EA4E",
+      "expert": "security",
+      "module": "backend/lianyu-common",
+      "section": "injection",
+      "severity": "low",
+      "confidence": "high",
+      "title": "X-Trace-Id 请求头原样写入 MDC，可伪造日志行并放大日志体积",
+      "file": "backend/lianyu-common/src/main/java/com/lianyu/common/util/TraceIdFilter.java",
+      "line": 15,
+      "evidence": "TraceIdFilter:13-17 直接 `String traceId = httpRequest.getHeader(\"X-Trace-Id\");`，非空即 `MDC.put(\"traceId\", traceId)`，无长度上限、无字符集校验、无换行剥离；backend/lianyu-app/src/main/resources/application.yml:533 的日志格式含 `%X{traceId:-}`，每条日志都会输出该值。",
+      "impact": "攻击者可用带换行的 X-Trace-Id 伪造后续日志行（含审计记录），或用超长值让每行日志膨胀数十 KB 撑爆日志盘/采集配额。危害限于日志面，故定为低。",
+      "kind": "direct",
+      "fix": {
+        "summary": "把外部传入的 traceId 当不可信输入：格式不符或超长时丢弃并重新生成。",
+        "steps": [
+          "TraceIdFilter 增加白名单正则 `^[A-Za-z0-9_-]{8,64}$`，不匹配即重新生成 UUID。",
+          "同时剔除 \\r \\n 与控制字符（Character.isISOControl 判定）。",
+          "补单测：带换行、超长、空白的头必须被替换为新 UUID。"
+        ],
+        "files": [
+          "backend/lianyu-common/src/main/java/com/lianyu/common/util/TraceIdFilter.java"
+        ],
+        "tests": [
+          "TraceIdFilterTest：X-Trace-Id 含换行或长度 200 时 MDC 值为 UUID 形态"
+        ]
+      }
+    },
+    {
+      "id": "SEC-C1FB2",
+      "expert": "security",
+      "module": ".github",
+      "section": "supply-chain",
+      "severity": "low",
+      "confidence": "high",
+      "title": "CI 的第三方 action 只用可变 tag（v4/v2.0.3），未钉 commit SHA",
+      "file": ".github/workflows/ci.yml",
+      "line": 48,
+      "evidence": "ci.yml 中 `uses: actions/checkout@v4`（14、28、45 行）、`actions/setup-java@v4`（15）、`actions/setup-node@v4`（29）、`google/osv-scanner-action/osv-scanner-action@v2.0.3`（48）全部是可重新指向的 tag；workflow 未声明顶层 permissions。",
+      "impact": "上游 action 仓库被入侵或 tag 被移动即可在 CI 中执行任意代码，读取 GITHUB_TOKEN、篡改构建产物。危害依赖上游被攻陷，故定为低。",
+      "kind": "direct",
+      "fix": {
+        "summary": "把 action 引用改为完整 commit SHA（tag 作注释），并显式声明最小 permissions。",
+        "steps": [
+          "用 `gh api repos/<owner>/<repo>/git/ref/tags/<tag>` 取各 action 当前 SHA，替换 uses 为 `owner/repo@<sha> # vX.Y.Z`。",
+          "在 workflow 顶层加 `permissions: contents: read`，需要写权限的 job 单独声明。",
+          "启用 Dependabot 的 github-actions 生态自动升级，避免手工维护 SHA 漂移。"
+        ],
+        "files": [".github/workflows/ci.yml"],
+        "tests": [
+          "CI 完整跑通一次，确认替换 SHA 后各 step 行为不变"
+        ]
+      }
+    },
+    {
+      "id": "REL-B9984",
+      "expert": "reliability",
+      "module": ".github",
+      "section": "tests",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "CI 前端 job 与 AGENTS.md §4 门禁不一致：vitest 未串行、没有 vite build 步骤",
+      "file": ".github/workflows/ci.yml",
+      "line": 39,
+      "evidence": "ci.yml:39 `npx vitest run`（缺 `--no-file-parallelism`），且整条前端 job 里没有 `npx vite build`；AGENTS.md §4 明确要求串行执行（既有 updater 并发用例在满载并行下会偶发红）且构建必须产出 dist/。",
+      "impact": "CI 会周期性出现与代码无关的 updater 用例红（开发者学会重跑而不是排查），而构建失败（打包入口、资源引用、环境变量）只有在发版时才暴露。",
+      "kind": "direct",
+      "fix": {
+        "summary": "把前端 job 改成与本地门禁一致：串行 vitest + vite build 两步。",
+        "steps": [
+          "把 :39 改为 `npx vitest run --no-file-parallelism`。",
+          "追加 `npx vite build` 步骤，并缓存 node_modules。",
+          "把两步都设为必需检查。"
+        ],
+        "files": [".github/workflows/ci.yml"],
+        "tests": [
+          "在 PR 上确认串行 vitest 全绿、vite build 产出 dist/"
+        ]
+      }
+    },
+    {
+      "id": "REL-74C87",
+      "expert": "reliability",
+      "module": "backend/lianyu-service",
+      "section": "error-handling",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "群聊回合的 runAsync 没有兜底，生成链路抛错时 TURN_ERROR/TURN_COMPLETE 都不会下发",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java",
+      "line": 370,
+      "evidence": "GroupChatService.java:370 用 `CompletableFuture.runAsync(() -> {...})` 且丢弃返回值，lambda 内无 try/catch；异常落到默认 ForkJoinPool 只进日志，:442 的 TURN_ERROR 与 :449 的 TURN_COMPLETE 都不会下发。前端 frontend/src/pages/GroupChatPage.vue:534-540 订阅后没有本地超时兜底。",
+      "impact": "群聊一旦生成失败，客户端会永远停留在「正在输入」，只能刷新页面；由于没有错误帧，前端也无法提示重试，属于用户可见的静默挂死。",
+      "kind": "direct",
+      "fix": {
+        "summary": "给异步回合加完整兜底：捕获异常必发 TURN_ERROR，finally 必发 TURN_COMPLETE。",
+        "steps": [
+          "把 runAsync 的 lambda 包进 try/catch/finally，catch 里发送带错误码的 TURN_ERROR，finally 里发送 TURN_COMPLETE（幂等，避免重复）。",
+          "保留返回的 CompletableFuture 并在异常时记录 conversationId/turnId，便于对账。",
+          "前端 GroupChatPage.vue 增加 N 秒无任何帧即本地超时，显示可重试提示。",
+          "补测试：模拟生成抛错，断言前端收到 TURN_ERROR 且不再停留在输入中状态。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java",
+          "frontend/src/pages/GroupChatPage.vue"
+        ],
+        "tests": [
+          "GroupChatServiceTest：生成抛异常时仍有 TURN_ERROR + TURN_COMPLETE",
+          "vitest：无帧超时后 UI 退出输入中状态"
+        ]
+      }
+    },
+    {
+      "id": "REL-E7978",
+      "expert": "reliability",
+      "module": "scripts",
+      "section": "error-handling",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "部署脚本把能力自检降级为 stderr 警告，缺工具仍打印 DEPLOY_DONE 并返回 0",
+      "file": "scripts/_cloud_deploy_pull.py",
+      "line": 149,
+      "evidence": "scripts/_cloud_deploy_pull.py:149-158 的能力自检失败只 `print(..., file=sys.stderr)` 警告，:163 仍打印 DEPLOY_DONE 并以 0 退出；同函数前面的健康自检失败是 `SystemExit(56)`，两种自检的严格度不一致。",
+      "impact": "发布脚本会向操作者报告「部署成功」，而实际缺依赖/能力未接线；一条龙脚本（ship-release.ps1）依赖退出码判断，失败被当成成功，问题延后到用户侧暴露。",
+      "kind": "plan",
+      "fix": {
+        "summary": "让能力自检与健康自检同级：失败即非零退出并给出机器可读错误。",
+        "steps": [
+          "把 :149-158 的告警分支改为收集错误清单，末尾统一判定：非空则打印并 `SystemExit(57)`。",
+          "DEPLOY_DONE 只在所有自检通过后打印，避免误导。",
+          "为 docker 命令统一加 timeout 与非 PTY（AGENTS.md §6 已知坑），避免假死被当作成功。",
+          "补测试：模拟自检失败，脚本退出码必须非 0 且不打印 DEPLOY_DONE。"
+        ],
+        "files": [
+          "scripts/_cloud_deploy_pull.py"
+        ],
+        "tests": [
+          "单测/脚本级：自检失败时退出码 57、无 DEPLOY_DONE"
+        ]
+      }
+    },
+    {
+      "id": "REL-3E00B",
+      "expert": "reliability",
+      "module": "frontend/electron",
+      "section": "error-handling",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "主窗口渲染进程崩溃后只弹一次错误框，不重载也不重建窗口",
+      "file": "frontend/electron/main.js",
+      "line": 652,
+      "evidence": "frontend/electron/main.js:652 的 `render-process-gone` 处理只 `log` + `dialog`，没有 reload() 或销毁重建；对照 quickChat 的 did-fail-load 在 :1753-1760 有 destroy + 重建路径，两处策略不一致。",
+      "impact": "渲染进程崩溃（OOM、GPU 进程异常、第三方脚本）后主窗口停在白屏，用户只能强杀进程；托盘常驻的场景下甚至不会重新拉起，桌宠/消息提醒随之失效。",
+      "kind": "plan",
+      "fix": {
+        "summary": "崩溃后自动重建一次主窗口（带节流与次数上限），失败再降级为提示重启。",
+        "steps": [
+          "在 render-process-gone 里判断 reason（crashed/oom/killed），非正常退出时销毁并重建 BrowserWindow，保留窗口位置与会话状态。",
+          "加重建节流：同一分钟最多 1 次，累计 3 次后停止并提示用户重启（避免崩溃循环）。",
+          "补齐 did-fail-load 与 render-process-gone 的统一恢复入口，消除两套策略。",
+          "补测试：模拟 crashed 事件后窗口被重建且只重建一次。"
+        ],
+        "files": [
+          "frontend/electron/main.js"
+        ],
+        "tests": [
+          "electron 单测：crashed 事件触发一次重建；连续崩溃三次后停止重建"
+        ]
+      }
+    },
+    {
+      "id": "REL-81069",
+      "expert": "reliability",
+      "module": "backend/lianyu-service",
+      "section": "error-handling",
+      "severity": "low",
+      "confidence": "high",
+      "title": "AsrStreamClient 在构造函数里读 @Value 字段，TCP 连接超时永远取 1000ms 兜底值",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AsrStreamClient.java",
+      "line": 52,
+      "evidence": "AsrStreamClient.java:52-57 构造函数里用 `@Value` 标注的字段计算 `Math.max(1000, streamConnectTimeoutMs)`，此时字段尚未注入（=0），结果恒为 1000ms；open() 在 :68 使用注入后的字段值，因此 lianyu.asr.stream-connect-timeout-ms 配置被静默忽略。",
+      "impact": "网络抖动或对端慢握手时，ASR 连接会在 1s 内被判超时并走失败分支；运维调大超时的配置完全不生效，排障时会被这条假配置误导。",
+      "kind": "direct",
+      "fix": {
+        "summary": "把超时计算从构造函数移到注入完成之后（@PostConstruct 或首次使用时惰性计算）。",
+        "steps": [
+          "删除构造函数里的计算，改为 `@PostConstruct void init()` 中赋值，或在使用处 `Math.max(1000, streamConnectTimeoutMs)` 现算。",
+          "为超时字段加默认值 `@Value(\"${lianyu.asr.stream-connect-timeout-ms:1000}\")`，避免 0 值。",
+          "补测试：配置 5000 时实际连接超时为 5000。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AsrStreamClient.java"
+        ],
+        "tests": [
+          "AsrStreamClientTest：注入 5000 后 connectTimeout 为 5000"
+        ]
+      }
+    },
+    {
+      "id": "REL-9DADC",
+      "expert": "reliability",
+      "module": "backend/lianyu-web",
+      "section": "error-handling",
+      "severity": "low",
+      "confidence": "high",
+      "title": "memory.summary.dlq / ai.background.dlq 只有声明没有消费者，被死信的任务无人重放也无人告警",
+      "file": "backend/lianyu-web/src/main/java/com/lianyu/web/config/RabbitMqConfig.java",
+      "line": 54,
+      "evidence": "RabbitMqConfig.java:54-66 声明 memory.summary.dlq、:136 声明 ai.background.dlq，并设置 `defaultRequeueRejected(false)`；全仓没有 `@RabbitListener` 监听 `*.dlq`，也没有积压指标、告警或重放脚本。",
+      "impact": "记忆摘要/后台任务的失败消息进死信队列后彻底静止：用户看不到摘要更新、运维也收不到告警，只有翻 RabbitMQ 控制台才能发现；长期会积累无人处理的积压。",
+      "kind": "plan",
+      "fix": {
+        "summary": "给死信队列加最小可见性与处置路径：消费者/指标/重放脚本三选二起步。",
+        "steps": [
+          "为两个 dlq 增加监控：暴露队列深度指标（micrometer + RabbitAdmin），并设阈值告警。",
+          "增加一个只读的死信巡检任务（定时打印条数与最后错误），或补一个手动重放脚本（按消息头投回原队列）。",
+          "在 docs 里写明死信处置流程（谁看、怎么重放、什么情况下丢弃）。"
+        ],
+        "files": [
+          "backend/lianyu-web/src/main/java/com/lianyu/web/config/RabbitMqConfig.java",
+          "scripts/"
+        ],
+        "tests": [
+          "集成测试：消费者抛错后消息进入 dlq 且指标 +1"
+        ]
+      }
+    },
+    {
+      "id": "MNT-56223",
+      "expert": "maintainability",
+      "module": "frontend/src",
+      "section": "cleanup",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "zh-TW 语言包 529 行从未被 import，四语键已漂移，记忆页显示原始 key",
+      "file": "frontend/src/i18n/locales/zh-TW.js",
+      "line": 1,
+      "evidence": "frontend/src/i18n/index.js:7-9 只 `import zh / ja / en`，:17 `messages: { zh, ja, en }`；frontend/src/constants/language.js:3 `SUPPORTED_LANGUAGES = ['zh','ja','en']`。zh-TW.js 529 行/588 键全仓无 import。按 595 键并集比对，12 个 memory.* 键（deleteConfirmTitle / deleteConfirmMessage / viewSources / collapseSources / count / deleted / roleUser / roleAssistant / roleIndex / allCharacters / emptyDesc）**只存在于 zh-TW.js**，而 frontend/src/pages/MemoryPage.vue:76、:188 正在用它们；header.logoutConfirm / changePassword / apiSettings 只在 zh/en（AppHeader.vue:155 使用）。",
+      "impact": "三种发布语言下记忆页的「查看来源 / 收起来源 / 删除确认」都渲染成 `memory.viewSources` 这类原始 key——这是用户可直接看到的界面缺陷（影响等同 high，但按可维护性模块口径记为 medium）。AGENTS.md §3.2 的「四语齐」在代码里也不成立：只有三语，且没有键集合一致性门禁。",
+      "kind": "plan",
+      "fix": {
+        "summary": "先定 zh-TW 去留，再补齐缺失键，并用一条「四语键集合相等」的单测钉住。",
+        "steps": [
+          "决定 zh-TW 定位：正式支持（i18n/index.js 增加 import 与 messages['zh-TW']，SUPPORTED_LANGUAGES 加入 'zh-TW'，语言选择器补条目）或删除该文件。",
+          "把 memory.* 的 12 个键补进 zh/ja/en（若保留 zh-TW 则四份齐），header.* 三键补进 zh-TW/ja，qqBridge.binding.providerRequired 补 zh-TW/ja。",
+          "新增 frontend/src/i18n/__tests__/localeKeys.test.js：对 flatten 后的键集合做相等断言（允许显式白名单）。",
+          "把该测试接入门禁，避免再次漂移。"
+        ],
+        "files": [
+          "frontend/src/i18n/index.js",
+          "frontend/src/i18n/locales/zh.js",
+          "frontend/src/i18n/locales/zh-TW.js",
+          "frontend/src/i18n/locales/en.js",
+          "frontend/src/i18n/locales/ja.js",
+          "frontend/src/constants/language.js",
+          "frontend/src/pages/MemoryPage.vue"
+        ],
+        "tests": [
+          "localeKeys.test.js：四语键集合相等",
+          "MemoryPage 渲染测试：不出现 memory.* 原始 key"
+        ]
+      }
+    },
+    {
+      "id": "MNT-EF790",
+      "expert": "maintainability",
+      "module": "backend/lianyu-service",
+      "section": "cleanup",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "com.lianyu.service.rules 整套插件框架 89 行：0 个实现、0 个调用",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/rules/PromptRuleEngine.java",
+      "line": 8,
+      "evidence": "该包 4 个文件共 89 行（PromptRuleSlot 8 / PromptRuleHook 11 / PromptRuleEngine 25 / PromptRuleContext 45）。PromptRuleEngine:8 类声明、:16 `render(PromptRuleSlot, PromptRuleContext)` 对注入的 `List<PromptRuleHook>` 做 filter/sort/reduce；`git grep \"implements .*PromptRuleHook\"` 只命中接口自身（0 实现类），`git grep PromptRuleEngine` 只命中本文件 8/12 行。",
+      "impact": "这是 prompt 规则插槽的迁移残留：render 永远返回空串，新人会误以为存在可扩展钩子机制；同时让 Java 零 AI 逻辑棘轮之外多出一层空壳，增加编译面与阅读成本。",
+      "kind": "plan",
+      "fix": {
+        "summary": "确认无反射/字符串引用后整包删除，并在重构台账留删除说明。",
+        "steps": [
+          "复核 `git grep -n \"PromptRule\" -- .` 与 `git grep -n \"service.rules\"`（含测试与 scripts）确认无引用。",
+          "删除 rules 包 4 个文件。",
+          "在 docs/refactor-2026-10/ 补一条删除说明（为什么它已无人使用）。",
+          "跑 `cd backend && mvn -o test` 确认全绿。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/rules/PromptRuleEngine.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/rules/PromptRuleHook.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/rules/PromptRuleSlot.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/rules/PromptRuleContext.java"
+        ],
+        "tests": [
+          "cd backend && mvn -o -pl lianyu-service test",
+          "cd backend && mvn -o test"
+        ]
+      }
+    },
+    {
+      "id": "MNT-6106E",
+      "expert": "maintainability",
+      "module": "backend/lianyu-service",
+      "section": "cleanup",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "AiResilience（144 行）零注入零调用，doc 注释宣称的 bulkhead/熔断实际未接线",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AiResilience.java",
+      "line": 27,
+      "evidence": "类头注释写「AI 出站韧性集中地：前台/后台两条 lane（bulkhead + executor）、timeLimiter、全局与按 upstream 隔离的熔断器」。`git grep \"AiResilience\"` 只命中本文件 :27 类声明与 :46 构造函数，无字段/参数/调用点；它还是 UpstreamCircuitBreakerFactory 的唯一使用者（后者仅出现在 backend/lianyu-web/.../agent/AgentRuntimeClient.java:150 的一句注释里）。",
+      "impact": "144 行的 @Component 会被装配但永不执行：Java 侧 bulkhead/熔断实际不产生行为，而注释与命名让 reviewer 误判出站已有韧性保护，并把 UpstreamCircuitBreakerFactory 一起拖成「看似在用」。",
+      "kind": "plan",
+      "fix": {
+        "summary": "先确认 Java 侧是否还需要这层韧性：需要就接线到真实出站调用点并补测试，不需要就连同 UpstreamCircuitBreakerFactory 删除。",
+        "steps": [
+          "确认出站韧性是否已完全由 Python（app/gateway.py + app/resilience.py）承担（读 docs/refactor-2026-10/）。",
+          "若需要：在 Ai 出站调用点注入 AiResilience 并使用其 lane/熔断器，补超时与熔断测试。",
+          "若不需要：删除 AiResilience 与 UpstreamCircuitBreakerFactory，修正 AgentRuntimeClient:150 注释。",
+          "跑 `cd backend && mvn -o test` 并用 check-java-ai-free 确认无新增 AI 逻辑。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AiResilience.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/ai/UpstreamCircuitBreakerFactory.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentRuntimeClient.java"
+        ],
+        "tests": [
+          "cd backend && mvn -o test"
+        ]
+      }
+    },
+    {
+      "id": "MNT-274CC",
+      "expert": "maintainability",
+      "module": "backend/lianyu-dao",
+      "section": "cleanup",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "「角色贴纸」功能只剩实体 + 映射器 + 两张空表，前后端都无读写方",
+      "file": "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/CharacterSticker.java",
+      "line": 12,
+      "evidence": "CharacterSticker.java:12 `@TableName(value = \"character_sticker\", autoResultMap = true)`；CharacterStickerMapper 是空接口 `extends BaseMapper<CharacterSticker>`，全仓无注入/调用点；建表在 V7__character_sticker.sql（character_sticker_job + character_sticker），V8__message_sticker_url.sql 加的列同样无人读写（`git grep stickerUrl\\|sticker_url -- backend/*.java` 0 命中，frontend/src 中 sticker 0 命中）。",
+      "impact": "一条功能链只在后端留下实体、映射器和两张生产表；改 schema、备份、迁移都要为死表付费，后来者无法判断这是待做功能还是已废弃。",
+      "kind": "plan",
+      "fix": {
+        "summary": "确认产品放弃贴纸后删实体与映射器，表用新 Flyway 迁移显式下线（不改历史迁移）。",
+        "steps": [
+          "复核 `git grep -in sticker -- frontend backend-agent backend` 确认无入口。",
+          "删除 CharacterSticker 与 CharacterStickerMapper。",
+          "新增一条 Flyway 迁移 DROP 两张表（ASCII-only），在说明里写明废弃原因。",
+          "本地 Flyway migrate 演练 + `cd backend && mvn -o test`。"
+        ],
+        "files": [
+          "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/CharacterSticker.java",
+          "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/CharacterStickerMapper.java",
+          "backend/lianyu-dao/src/main/resources/db/migration/V7__character_sticker.sql"
+        ],
+        "tests": [
+          "cd backend && mvn -o test",
+          "本地 Flyway migrate 演练"
+        ]
+      }
+    },
+    {
+      "id": "MNT-3BE51",
+      "expert": "maintainability",
+      "module": "frontend/src",
+      "section": "cleanup",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "antiDebug.js / captureChatShareScreenshot.js 共 313 行零引用，logger.js 注释与加固文档却称其生效",
+      "file": "frontend/src/utils/antiDebug.js",
+      "line": 1,
+      "evidence": "antiDebug.js 93 行、captureChatShareScreenshot.js 220 行，在 frontend/src 与 frontend/electron 的 import 图中均无引用者；`git grep antiDebug` 全仓只有 frontend/src/utils/logger.js:4 的注释「生产环境 console.* 被 antiDebug 吞掉」与 docs/reusable-capabilities/electron-client-hardening-zh.md:195 的表格行；`git grep captureChatShareScreenshot` 只命中自身定义。",
+      "impact": "注释与安全加固文档把「生产 console 已被覆写」当成既有事实，实际没有代码加载它，审计结论因此失真；两个 300+ 行文件留在 utils 里也让读者以为存在未接线功能。",
+      "kind": "plan",
+      "fix": {
+        "summary": "二选一：把 antiDebug 真正接进 renderer 启动流程并验证，或删掉两个文件并修正注释与文档。",
+        "steps": [
+          "确认生产 console 的真实处置方式（vite build 的 esbuild drop / terser compress 配置）。",
+          "若需要：在 renderer 入口引入 antiDebug 并在构建产物中验证 console 被覆写；不需要则删除两个文件。",
+          "修正 logger.js:4 注释与 docs/reusable-capabilities/electron-client-hardening-zh.md:195 的表述。",
+          "跑 `npx vitest run --no-file-parallelism` 与 `npx vite build`。"
+        ],
+        "files": [
+          "frontend/src/utils/antiDebug.js",
+          "frontend/src/utils/captureChatShareScreenshot.js",
+          "frontend/src/utils/logger.js",
+          "docs/reusable-capabilities/electron-client-hardening-zh.md"
+        ],
+        "tests": [
+          "cd frontend && npx vitest run --no-file-parallelism",
+          "cd frontend && npx vite build"
+        ]
+      }
+    },
+    {
+      "id": "MNT-45EA3",
+      "expert": "maintainability",
+      "module": "admin",
+      "section": "cleanup",
+      "severity": "low",
+      "confidence": "high",
+      "title": "admin 装了 4 个零 import 的依赖，另有两个无人调用的 API 函数",
+      "file": "admin/package.json",
+      "line": 10,
+      "evidence": "admin/package.json:10 的 dependencies 含 `@element-plus/icons-vue`、`@tanstack/vue-table`、`echarts`、`vue-router`，在 admin/src 与 admin/electron 中 grep `from '<pkg>'` 与 `import('<pkg>')` 均为 0（对照 axios 2、element-plus 2、pinia 2）；admin/src/components/DataTable.vue 是手写表格，admin/src/App.vue 用 props 切页而非 router。另 admin/src/api.js:6 `getOverview()` 全仓无消费者，admin/src/pages/ManagementPage.vue:4 引入的 createRelease 从未被调用。",
+      "impact": "4 个包白进安装包并进入供应链面（echarts / tanstack 体量不小）；两个死函数让「admin 调了哪些接口」多出噪音，也容易让人误以为版本创建已实现（实际 ManagementPage 的保存路径本身也是坏的，见 deferred）。",
+      "kind": "direct",
+      "fix": {
+        "summary": "删掉 4 个未用依赖与两个死 API 函数，重新生成 lock。",
+        "steps": [
+          "从 admin/package.json 删除 4 个依赖并重新 npm install 生成 lock。",
+          "删除 admin/src/api.js:6 的 getOverview 与 ManagementPage.vue 中未使用的 createRelease 引入。",
+          "跑 `cd admin && npm run build` 确认产物可构建、体积下降。"
+        ],
+        "files": [
+          "admin/package.json",
+          "admin/src/api.js",
+          "admin/src/pages/ManagementPage.vue"
+        ],
+        "tests": [
+          "cd admin && npm run build",
+          "cd admin && npm test"
+        ]
+      }
+    },
+    {
+      "id": "MNT-FBD25",
+      "expert": "maintainability",
+      "module": "scripts",
+      "section": "cleanup",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "scripts/ 132 个文件里约 93 个是一次性诊断脚本，只有 2 个是文档化入口",
+      "file": "scripts/_cloud_deploy_backend_layer.py",
+      "line": 1,
+      "evidence": "`git ls-files scripts | wc -l` = 132：顶层 `_` 前缀 60 个（_cloud_deploy_backend_layer.py、_cloud_deploy_agent_layer.py、_cloud_deploy_layered.py、_cloud_deploy_backend_only.py、_cloud_deploy_prep.py、_cloud_deploy_agent_base_url.py、_repair_flyway_* 4 个、_cloud_500_check.py、_prod_verify.py 等），另有 scripts/diag 20、scripts/ops 15、scripts/smoke 2。AGENTS.md:157-158 正式登记的只有 _cloud_deploy_pull.py 与 _upload_update_assets.py。",
+      "impact": "与 AGENTS.md §3.1「一次性排查脚本一律放 local/ 或带 `_` 前缀且不提交」直接冲突；新人无法区分可用工具与某次排障快照，6 个 _cloud_deploy_* 与 4 个 _repair_flyway_* 的重叠还容易跑错脚本改生产。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把 scripts/ 收敛成「正式工具 + diag 归档」两层：入口脚本留下并被文档引用，其余移出仓库。",
+        "steps": [
+          "按 AGENTS.md 5.5 与文档引用生成「被引用脚本」白名单（check_*.py/ps1、release_assets.json 及其消费者、两个正式部署脚本）。",
+          "其余一次性脚本移到 local/（gitignored）或删除，保留必要的判据注释。",
+          "在 AGENTS.md 补一张 scripts/ 索引表，明确每个保留脚本的用途与调用方式。",
+          "确认门禁脚本路径未变：check-java-ai-free.ps1、check_release_asset_contract.py 仍可运行。"
+        ],
+        "files": ["scripts/", "AGENTS.md", ".github/workflows/ci.yml"],
+        "tests": [
+          "python scripts/check_release_asset_contract.py",
+          "powershell scripts/check-java-ai-free.ps1 -Mode strict"
+        ]
+      }
+    },
+    {
+      "id": "MNT-A1713",
+      "expert": "maintainability",
+      "module": "backend/lianyu-service",
+      "section": "simplify",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "气泡切分规则 Java/JS 各一套逐方法对译实现，词表逐字复制，测试也抄两份",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AssistantReplySplitter.java",
+      "line": 69,
+      "evidence": "AssistantReplySplitter.java:69 注释「须与 frontend/src/utils/assistantReplySplit.js 保持一致」，JS 侧 :2 反向注释「与后端 {@code AssistantReplySplitter} 一致」；括号工具同样两份对译（ParenthesisUtils 125 行 ↔ innerThoughtFilter.js 188 行，五个同名函数）。词表逐字复制：ATTEMPT_MARKERS 与 OUTCOME_MARKERS（Java :20-27 = JS :96-101）；SPEAKING_STYLE_MAX_REPLIES 又与 CharacterChatBehaviorResolver.StyleProfile 构成第三处镜像。测试侧 AssistantReplySplitterTest.java:36-42 与 assistantReplySplit.test.js:43-51 抄同一段中文用例。已出现漂移：JS 侧多了 WORD_JOINER 粘括号与 normalizeAssistantContent。同批重复实现（原 MNT-FFDE9 / MNT-288A4，已并入本条清理批次）：extractJsonObject 逐字 4 份（AiChatService:133 / CharacterDiaryService:502 / CharacterImportDraftMapper:123 / GroupChatService:1132）；agent 健康探测（volatile healthy + 3 秒缓存）在 5 个 Adapter 各一份（AgentBlockingAdapter:126 等）。",
+      "impact": "一条「按括号是否闭合切气泡」的业务规则存在 4 处定义、2 套并行测试，同步只靠注释；任一侧改词表或阈值（SENTENCE_SPLIT_MIN_CHARS=40、maxRepliesPerTurn）都可能让前后端切出不同数量/内容的气泡。JSON 剥壳与健康探测的同理：改一处必漏其余。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把词表与括号规则收敛成一份共享数据或明确单一实现；同批抽出 JSON 提取器与 AgentHealthProbe。",
+        "steps": [
+          "定职责：切分结果是否由 Java 决定（SSE pieces 契约）而 JS 仅做展示裁剪，写进 docs。",
+          "把词表/阈值抽成共享数据（JSON fixture 或代码生成），两侧测试读同一份 golden。",
+          "新增 JsonObjectExtractor 工具，4 处改调用；新增 AgentHealthProbe 组件，5 个 adapter 注入复用。",
+          "补两侧一致性测试：同一输入切出相同气泡序列。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AssistantReplySplitter.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/ai/ParenthesisUtils.java",
+          "frontend/src/utils/assistantReplySplit.js",
+          "frontend/src/utils/innerThoughtFilter.js",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AiChatService.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentBlockingAdapter.java"
+        ],
+        "tests": [
+          "共享 golden fixture：两侧切分结果一致",
+          "JsonObjectExtractorTest / AgentHealthProbeTest"
+        ]
+      }
+    },
+    {
+      "id": "MNT-F72F0",
+      "expert": "maintainability",
+      "module": "backend/lianyu-service",
+      "section": "simplify",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "GroupChatService 1335 行 / 55 方法 / 14 个注入协作者，群 CRUD、@mention 决策、主动消息、广播落库挤在一个类",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java",
+      "line": 60,
+      "evidence": "GroupChatService.java:60 类声明，全文 1335 行、55 个方法，构造注入 14 个协作者（ConversationMapper、GroupMemberMapper、CharacterMapper、MessageMapper、AgentBlockingPort、ApiKeyVaultService、ChatTurnFacade、OutputLanguageService、SimpMessagingTemplate、StringRedisTemplate、FileStorageService、CharacterChatBehaviorResolver、CharacterService、AssistantReplyService）。职责至少五块：群 CRUD、主动消息（sendProactiveGroupMessage 等）、@mention 决策（extractMentionedCharacterIds / decideMentionByRules / decideMentionByJudgeModel）、落库广播（persistAndBroadcastReplies）、未读通知与名字映射；类内还自带 extractJsonObject(:1132)。",
+      "impact": "任何群聊改动都要在 1300 行里横跨 14 个协作者定位；@mention 这类纯规则无法单独单测；findOwned/isBlocked 在 ConversationService、GroupChatService、VoiceCallService 各写一遍且口径开始分叉（这也是 REL-74C87 的 runAsync 藏在其中的原因之一）。",
+      "kind": "plan",
+      "fix": {
+        "summary": "按「mention 决策 / 主动消息 / 落库广播」拆出独立类，GroupChatService 只保留编排。",
+        "steps": [
+          "先抽纯函数：MentionDecision（四个 mention 方法）做成无状态组件并补规则表驱动单测。",
+          "再抽 GroupReplyBroadcaster（persistAndBroadcastReplies / notifyGroupUnread）与 ProactiveGroupMessenger。",
+          "最后抽 GroupMembershipGuard，统一 findOwned/isBlocked 口径并与 ConversationService 共用。",
+          "每步单独提交并保持行为不变（先加测试再搬代码）。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/controller/GroupChatController.java"
+        ],
+        "tests": [
+          "MentionDecisionTest（规则表驱动）",
+          "cd backend && mvn -o -pl lianyu-service test"
+        ]
+      }
+    },
+    {
+      "id": "MNT-D9F1F",
+      "expert": "maintainability",
+      "module": "backend/lianyu-admin",
+      "section": "simplify",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "权限键三处定义互不同步：AdminPermissionCatalog 无人引用且缺 support.conversation.read",
+      "file": "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminPermissionCatalog.java",
+      "line": 5,
+      "evidence": "AdminPermissionCatalog:5-8 声明 `SUPER_ADMIN = \"super_admin\"` 与 `ALL = Set.of(\"admin.manage\",\"user.read\",\"user.moderate\",\"release.manage\",\"announcement.manage\",\"audit.read\",\"system.health\")`，但 `git grep AdminPermissionCatalog -- backend` 只命中它自己。真实调用全是字面量：`require(\"release.manage\")` 6 处、`require(\"admin.manage\")` 6 处、`require(\"announcement.manage\")` 4 处、`require(\"support.conversation.read\")` 2 处（SupportGrantService.java:19-20），后者不在 ALL 里；种子数据在 V51__admin_management_schema.sql:142-157 单独 INSERT；同一键还同时出现在 controller 与 service 两层（ReleaseController.java:19 与 ReleaseService.java:20/32、ReleaseUploadService.java:21）。",
+      "impact": "权限清单实际有三个来源（catalog 常量、散落字面量、Flyway 种子）且彼此不校验：catalog 已是死类却看着像唯一真相源，新增权限要凭记忆改三处，漏改既不会编译失败也不会 CI 红——权限面因此不可审计。",
+      "kind": "plan",
+      "fix": {
+        "summary": "让 AdminPermissionCatalog 成为唯一真相：所有 require 走常量，种子由清单生成并有测试比对，权限校验收敛到一层。",
+        "steps": [
+          "补齐 ALL（加入 support.conversation.read 等实际在用键），为每个键提供公开常量。",
+          "把所有 `require(\"...\")` 字面量替换为常量引用，并把 controller 与 service 的双重校验收敛到一层。",
+          "新增 AdminPermissionCatalogTest：清单键集合 == V51 种子键集合。",
+          "在 AGENTS.md 记录「新增权限只改 catalog + 种子生成器」。"
+        ],
+        "files": [
+          "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminPermissionCatalog.java",
+          "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/ReleaseController.java",
+          "backend/lianyu-admin/src/main/java/com/lianyu/admin/support/SupportGrantService.java",
+          "backend/lianyu-dao/src/main/resources/db/migration/V51__admin_management_schema.sql"
+        ],
+        "tests": [
+          "AdminPermissionCatalogTest：清单 == 迁移种子键集合",
+          "cd backend && mvn -o -pl lianyu-admin test"
+        ]
+      }
+    }
+  ],
+  "deferred": [
+    {
+      "from": "correctness",
+      "expert": "reliability",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+      "lines": "waitForExistingState",
+      "summary": "waitForExistingState 用 Thread.sleep 轮询阻塞请求线程；以及 MemoryWriter 抛 RuntimeException 触发 MQ 重试的策略，属可靠性范畴，需 reliability 视角判断是否引入线程占用与无限重试风险。"
+    },
+    {
+      "from": "correctness",
+      "expert": null,
+      "file": "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/CharacterMapper.java",
+      "lines": "mapExistingByCharacterIds；ProactiveChatScheduler",
+      "summary": "mapExistingByCharacterIds 按 characterId IN 全量拉取（无 user 过滤），ProactiveChatScheduler 每 30 秒多表加载，属性能范畴，需 perf 维度（本次未运行 /logi-perf）。"
+    },
+    {
+      "from": "correctness",
+      "expert": "maintainability",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+      "lines": "getNextSeq / clearMessages",
+      "summary": "`msg_seq:` 前缀 4 处硬编码、ProactiveMessageService 与其余 7 处 persist 方法写法不一致，属可维护性范畴，应抽常量并统一 persist 范式。"
+    },
+    {
+      "from": "security",
+      "expert": "correctness",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/auth/impl/AuthServiceImpl.java",
+      "lines": "registerInTx",
+      "summary": "registerInTx 在用户名已存在且密码匹配时直接登录（注释「幂等重登」），使注册接口可探测用户名是否存在；这既是逻辑取舍也涉及是否保留该行为，需 correctness/产品确认后再评估是否算安全缺陷。"
+    },
+    {
+      "from": "security",
+      "expert": "reliability",
+      "file": "backend/lianyu-web/src/main/java/com/lianyu/web/config/WebSocketConfig.java",
+      "lines": "143",
+      "summary": "WS 握手失败时把内部异常文本拼进「认证失败：」回给客户端，属信息暴露但影响极小，且修法与异常传播策略相关，交由 reliability/correctness 一并处理。"
+    },
+    {
+      "from": "maintainability",
+      "expert": "correctness",
+      "file": "admin/src/pages/ManagementPage.vue",
+      "lines": "15",
+      "summary": "模板 `<form class=\"dialog-panel\" @submit.prevent=\"save\">` 绑定的 `save` 在 `<script setup>` 中不存在（只有 load/handleAction/actions/columns/meta），「新建版本草稿」的保存路径是死路；showCreate/draft 只写不读回。属正确性问题。"
+    },
+    {
+      "from": "maintainability",
+      "expert": "correctness",
+      "file": "admin/src/App.vue",
+      "lines": "1",
+      "summary": "模板里直接使用 `window.adminWindow?.minimize()`，页面脚本没有声明 `window` 变量，窗口按钮在模板上下文中取不到该标识符（运营台最小化/关闭按钮失效）。属正确性问题。"
+    },
+    {
+      "from": "maintainability",
+      "expert": "reliability",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AiResilience.java",
+      "lines": "27",
+      "summary": "该文件已按死代码上报（MNT-6106E），但其韧性语义需要可靠性专家独立判断：Java 侧是否真需要 bulkhead/熔断、现网是否只靠 Python 侧保护，避免删除时误删必要的出站保护。"
+    },
+    {
+      "from": "maintainability",
+      "expert": null,
+      "file": "backend/lianyu-security/src/main/java/com/lianyu/security/annotation/EncryptedField.java",
+      "lines": "1",
+      "summary": "空 marker 注解（无成员、无注解处理器、全仓无 `@EncryptedField` 用法），已确认是死代码；因 12 条上限未列入 findings，修复方式同「删除单文件 + mvn test」，可并入任一轮清理。"
+    }
+  ],
+  "dropped": [
+    {
+      "id": "COR-7AD38",
+      "reason": "与 COR-316C1 同一文件同一状态读写路径（RelationshipStateService）：衰减余量丢失与并发丢更新在同一个 update 路径上，一次修复即可覆盖，故并入 COR-316C1 的证据与修复步骤，不单独计数。"
+    },
+    {
+      "id": "MNT-FFDE9",
+      "reason": "与 MNT-A1713 同属「同一条规则/事实多份实现」的清理批次，修复动作一致（收敛到单一实现）；已在 MNT-A1713 的证据中完整保留（extractJsonObject 逐字 4 份及其文件行号）。"
+    },
+    {
+      "id": "MNT-288A4",
+      "reason": "同上，健康探测 5 份复制属同一「重复实现收敛」批次，已并入 MNT-A1713 证据（AgentBlockingAdapter:126 等 5 个 Adapter）。"
+    }
+  ]
+}

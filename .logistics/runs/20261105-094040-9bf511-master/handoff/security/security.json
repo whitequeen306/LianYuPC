@@ -1,0 +1,438 @@
+{
+  "schemaVersion": 2,
+  "expert": "security",
+  "status": "ok",
+  "summary": "按 logi-security 的 9 个关注面逐单元审查了 12 个审查单元（1100 文件 / 135978 行）。最严重的问题是 Python 运行时（backend-agent）整层没有鉴权：20+ 个 /agent/* 端点都用『有 X-User-Id 头才比对』的写法，缺头即短路，而生产 nginx 的 /api/agent/ location 直接把公网请求反代到 agent:8001 且不校验 token（critical，可跨租户写记忆 + 白用平台视觉凭据）。其次：管理端 TOTP /setup 无 step-up 且 OTP 失败不计数（2FA 可被绕过）、Jasypt 在主密钥缺失时静默回退明文落库（fail-open）、Python 出站 HTTP 完全没有 SSRF 校验（Java 侧有 OutboundUrlValidator，形成旁路）、scripts/_prod_verify.py 把生产账号口令写死在跟踪文件里。Java 侧的用户态接口经抽查未发现 IDOR：Memory/Conversation/ApiKeyVault 都按 userId 过滤，管理端 RBAC 与发布/上传权限校验齐全；注入面干净（mapper XML 中 ${} 为 0，全部 #{}；Python 只拼 %s 占位符且强制 SELECT-only）。",
+  "sections": {
+    "auth": 4,
+    "authz": 1,
+    "injection": 0,
+    "browser": 1,
+    "uploads": 1,
+    "secrets": 1,
+    "crypto": 1,
+    "exposure": 1,
+    "supply-chain": 1
+  },
+  "units": {
+    "u01": {
+      "status": "reviewed",
+      "filesRead": 14,
+      "notes": "认证与存储链路：AuthServiceImpl（登录/改密/限流）、AuthRateLimiter、CaptchaService、FileStorageService（上传/公开读/object key 白名单）、CustomVoiceAudioTrimmer/Validator、ConversationService 片段。改密不吊销会话与上传声明类型两处需人判断。"
+    },
+    "u02": {
+      "status": "sampled",
+      "filesRead": 7,
+      "notes": "120 文件 / 16014 行，按 selectById/eq(userId) 模式扫描后抽查 MemoryQueryService、ConversationService、GroupChatService 的归属过滤；未逐行通读。"
+    },
+    "u03": {
+      "status": "sampled",
+      "filesRead": 4,
+      "notes": "120 文件 / 15840 行。前端不承载信任边界，重点核 token 存储与 XSS sink：secureToken.js（仅内存）、utils/sanitize.js（DOMPurify 白名单）、api/httpCore.js 入口；其余按 v-html/innerHTML/dangerouslyUseHTMLString 模式扫描（源码中 0 命中）。"
+    },
+    "u04": {
+      "status": "sampled",
+      "filesRead": 3,
+      "notes": "120 个运维脚本。按 password/secret/token 赋值模式扫描 120 个文件后抽查 _prod_verify.py（硬编码生产口令）、sign_update_manifest.py、_has_deploy_pw.py；未逐脚本通读，故为 sampled。"
+    },
+    "u05": {
+      "status": "reviewed",
+      "filesRead": 4,
+      "notes": "Flyway 迁移：V1 的 api_key_vault（api_key_encrypted/key_version）、V20/V22/V43/V49/V50 的 schema 演进、V51 admin 管理端建表；确认敏感列全部为加密列，无明文种子口令。"
+    },
+    "u06": {
+      "status": "reviewed",
+      "filesRead": 11,
+      "notes": "backend-agent：main.py（20+ 端点鉴权模式、chat-image 平台凭据回落、memory/write、proactive-turn）、http_client.py、gateway.py、memory/writer.py、db.py、tools/recent_activity_tool.py。发现无鉴权、无 SSRF 校验、日志落对话内容三处。"
+    },
+    "u07": {
+      "status": "sampled",
+      "filesRead": 3,
+      "notes": "95 文件 / 24648 行。抽查 MomentsPage（v-html 走 sanitizeHtml）、LandingPage（静态图标）、composables/useSquareDanmaku；其余靠模式扫描，未逐页通读。"
+    },
+    "u08": {
+      "status": "reviewed",
+      "filesRead": 13,
+      "notes": "lianyu-web：14 个 Controller 逐个核对『handler 数 vs getLoginIdAsLong 数』并抽查 Memory/Conversation/ApiKeyVault 的归属过滤；CorsConfig、SecurityHeadersFilter、ClientIpResolver、PublicFileController、HeaderOnlyTokenFilter。"
+    },
+    "u09": {
+      "status": "reviewed",
+      "filesRead": 8,
+      "notes": "Electron 主进程：webPreferences/contextIsolation/sandbox、setWindowOpenHandler + isAllowedExternalUrl（https + host 白名单）、updater.js + manifestSignature.js（Ed25519 分离签名，缺公钥即跳过）、napcat/wechat 下载器的 sha256 锚点与 extract-zip 使用、authSessionStore 明文降级。"
+    },
+    "u10": {
+      "status": "reviewed",
+      "filesRead": 6,
+      "notes": ".github/workflows/ci.yml（action 仅 tag 固定、OSV 扫描 continue-on-error）、根 index.html 无、frontend/index.html 的 CSP（unsafe-eval）、.env.example、.gitignore 对密钥文件的忽略规则、admin 前端入口。"
+    },
+    "u11": {
+      "status": "reviewed",
+      "filesRead": 10,
+      "notes": "小模块合集里的安全关键件：AdminSecurityConfig、AdminAuthorizationService、AdminAuthService、AdminTotpController、TotpUtil、PasswordConfig、AdminBootstrapService、SaTokenConfig、HeaderOnlyTokenFilter、JasyptUtil。管理端 RBAC/会话校验链完整，2FA 防护有缺口。"
+    },
+    "u12": {
+      "status": "reviewed",
+      "filesRead": 7,
+      "notes": "lianyu-app/common 与 lianyu-ai：application.yml（sa-token/CORS/trust-forwarded-for/日志级别）、application-prod.yml（关闭 swagger/knife4j）、OutboundUrlValidator、ImageUploadValidator、SsrfPinningClientFactory、ModelCatalogService 的 SSRF 用法。Java 出站校验较完整。"
+    }
+  },
+  "findings": [
+    {
+      "section": "auth",
+      "category": "missing-authentication",
+      "severity": "critical",
+      "confidence": "high",
+      "title": "backend-agent 全部端点无鉴权：X-User-Id 头可选即短路，且被公网 nginx 直接暴露",
+      "file": "backend-agent/app/main.py",
+      "line": 988,
+      "evidence": "20+ 个端点统一写成 `if user_id_header and str(body.user_id) != user_id_header: raise HTTPException(403)`（main.py:206 chat-stream、:988 memory/write、:1064 proactive-turn、:146 desktop-observe、:469/:497/:660/:732/:787/:840/:860/:915/:1062/:1143/:1177/:1211/:1245 等），不带 X-User-Id 时整个校验被短路，服务端没有任何会话/令牌校验。`deploy/api-gateway/nginx.conf:252-274` 的 `location /api/agent/` 仅 `rewrite` + `proxy_pass $agent_upstream`（http://agent:8001），既无 auth_request 也未注入/覆盖 X-User-Id，其注释（248-250 行）也承认依赖 app 侧二次校验；api-gateway 在 docker-compose 中暴露 80/443。此外 `/agent/chat-image`（main.py:740-742）在请求未带凭据时回落到 `settings.multimodal_base_url/api_key` 平台级视觉密钥。",
+      "impact": "未认证的公网请求可以直接调用记忆写入（污染任意用户 prompt）、记忆重算/中继（触发全量向量重投影，可当 DoS）、声纹注册/删除、TTS 合成、任意 base_url 的模型调用等 20+ 端点；`/agent/chat-image` 还能白用平台视觉密钥消耗成本。这是本项目最外层的信任边界缺失。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把 agent 运行时变成只接受来自 Java 的可信调用：nginx 侧加 auth_request 或直接不再暴露 /api/agent/，Python 侧加统一的共享密钥/HMAC 中间件并把『缺头即放行』改为『缺凭据即 401』。",
+        "steps": [
+          "在 deploy/api-gateway/nginx.conf 的 /api/agent/ location 上移除直连（或加 auth_request 到 Java 的校验端点），并显式 proxy_set_header 覆盖 X-User-Id 为可信值",
+          "在 backend-agent/app/main.py 加 FastAPI 依赖项（如 Depends(require_internal_auth)）校验 Java 下发的 HMAC 签名 + 时间戳 + nonce，缺失或错误一律 401",
+          "删除所有 `if user_id_header and ...` 的可选分支，把 X-User-Id 从『可选校验』改为『必填且由签名覆盖』",
+          "去掉 /agent/chat-image 的平台凭据回落（settings.multimodal_*），改为必须由调用方显式传入",
+          "补 pytest：无签名请求返回 401、伪造 X-User-Id 无法跨用户写入、缺 vision 凭据返回 no_vision_credentials",
+          "在 docker-compose 里确认 agent/agent2 不映射宿主端口，仅 agent-lb 内网可达"
+        ],
+        "files": [
+          "deploy/api-gateway/nginx.conf",
+          "backend-agent/app/main.py",
+          "backend-agent/app/config.py",
+          "docker-compose.yml"
+        ],
+        "tests": [
+          "pytest -q backend-agent（新增 tests/test_auth_middleware.py）",
+          "curl -s -o /dev/null -w '%{http_code}' https://<gateway>/api/agent/memory/relay/drain -X POST 期望 401",
+          "python scripts/check_release_asset_contract.py"
+        ]
+      }
+    },
+    {
+      "section": "auth",
+      "category": "weak-2fa",
+      "severity": "high",
+      "confidence": "high",
+      "title": "管理端 2FA 可被绕过：/totp/setup 无 step-up 可静默重置，OTP 失败不计数可爆破",
+      "file": "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminTotpController.java",
+      "line": 19,
+      "evidence": "AdminTotpController.java:19-26 的 `@PostMapping(\"/setup\")` 只用 `authorization.currentAdminId()`，不校验密码或当前 OTP，直接 `UPDATE admin_user SET totp_secret=?, totp_enabled=FALSE WHERE id=?`（jasypt.encrypt(secret)）；而同文件 :37-44 的 `/disable` 却要求 password 或当前 OTP，形成明显反差。AdminAuthService.java:30-51 的登录只在密码错误时 `failed_attempts+1`（:38），OTP 校验失败（:43）既不计数也不触发锁定/独立限流；TotpUtil.java:13-18 接受 counter-1..counter+1（±30s，合计 90s 窗口）且无 last-used 重放防护。",
+      "impact": "拿到一个有效 admin 会话（令牌泄露、共享电脑未退出）即可静默把 2FA 换成自己的验证器并保持 totp_enabled=false，实现持久账号接管，同时把合法管理员锁在 2FA 外；已知口令后还能以无限次尝试爆破 6 位 TOTP。管理端拥有发布桌面安装包的权限（ReleaseService/release.manage），因此该缺口可传导为供应链投毒。",
+      "kind": "plan",
+      "fix": {
+        "summary": "为 /totp/setup 增加与 /disable 同级的 step-up（当前口令或当前 OTP），并把 OTP 失败纳入锁定计数、拒绝重放。",
+        "steps": [
+          "在 AdminTotpController./setup 上要求 password 或当前 OTP（复用 /disable 的校验逻辑），未通过返回 403",
+          "把 setup 的语义改为『生成待确认密钥 + 需要一次成功 verify 才 enabled=true』，禁止直接落库覆盖已有 secret",
+          "在 AdminAuthService 中把 OTP 失败也计入 failed_attempts 并按账号/IP 独立限流（如 10 次/5 分钟）",
+          "在 TotpUtil.verify 记录上次成功使用的 counter（Redis，TTL 90s），相同或更小的 counter 一律拒绝",
+          "补单测：无 step-up 的 /setup 被拒、连续错误 OTP 触发锁定、同窗口重放被拒"
+        ],
+        "files": [
+          "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminTotpController.java",
+          "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminAuthService.java",
+          "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/TotpUtil.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test -Dtest=AdminTotp*Test",
+          "mvn -q -f backend/pom.xml test"
+        ]
+      }
+    },
+    {
+      "section": "auth",
+      "category": "rate-limit-bypass",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "客户端 IP 取自 X-Forwarded-For 最左值，可伪造绕过 per-IP 登录限流",
+      "file": "backend/lianyu-web/src/main/java/com/lianyu/web/util/ClientIpResolver.java",
+      "line": 24,
+      "evidence": "ClientIpResolver.java:24-29 取 `X-Forwarded-For` 的第一个（最左）值作为客户端 IP；`backend/lianyu-app/src/main/resources/application.yml:172` 的 `lianyu.security.trust-forwarded-for` 默认 `${LIANYU_TRUST_FORWARDED_FOR:true}`；`deploy/api-gateway/nginx.conf:52` 用 `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for` 追加而非覆盖，最左值仍是客户端自己填的。AuthController.java:78 的登录限流与 AuthRateLimiter.java:26-35（IP 30/min、用户名 10/min）都依赖这个 IP。",
+      "impact": "攻击者对每个请求换一个伪造的 XFF 值即可让 per-IP 30/min 失效，把撞库/密码喷洒速率放大到仅受 per-username 10/min 约束，配合 CaptchaService 的 OCR 可解算式验证码，撞库成本显著降低。",
+      "kind": "direct",
+      "fix": {
+        "summary": "在可信代理边界上取 IP：优先用 nginx 覆盖写入的 X-Real-IP（$remote_addr），XFF 只在 trust-forwarded-for=true 且从左往右跳过可信代理后取第一个不可信地址。",
+        "steps": [
+          "改写 ClientIpResolver.resolveClientIp：优先 X-Real-IP，其次从 XFF 右往左剥离已知代理网段后取第一个不可信地址，最后回落 remoteAddr",
+          "nginx 侧对 /api/ 统一 `proxy_set_header X-Real-IP $remote_addr`（已存在则确认不覆盖成 XFF 派生值）",
+          "把 LIANYU_TRUST_FORWARDED_FOR 的默认值改为 false，仅在确认前置可信代理时显式开启",
+          "补单测覆盖三种情况：伪造 XFF、真实 X-Real-IP、无代理直连"
+        ],
+        "files": [
+          "backend/lianyu-web/src/main/java/com/lianyu/web/util/ClientIpResolver.java",
+          "deploy/api-gateway/nginx.conf",
+          "backend/lianyu-app/src/main/resources/application.yml"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test -Dtest=ClientIpResolver*Test",
+          "mvn -q -f backend/pom.xml test"
+        ]
+      }
+    },
+    {
+      "section": "auth",
+      "category": "session-not-revoked",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "改密不吊销已签发 token，被盗会话在 30 天内继续有效",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/auth/impl/AuthServiceImpl.java",
+      "line": 152,
+      "evidence": "AuthServiceImpl.java:152-162 的 changePassword 只做 `userMapper.updateById(user)`（写新 BCrypt 口令），既不调用 StpUtil.logout 也不失效其它会话；`backend/lianyu-app/src/main/resources/application.yml:133-146` 的 sa-token 配置为 `timeout: 2592000`（30 天）、`active-timeout: -1`、`is-concurrent: true`、`is-share: false`、`is-read-cookie: false`，token 存在 Redis 且与口令无关。",
+      "impact": "账号被盗后『改密码』这个最常用的自救动作对攻击者无效：旧 token 仍可读写该用户的对话、记忆、API Key 配置，最长 30 天；用户会误以为自己已经踢掉了对方。",
+      "kind": "direct",
+      "fix": {
+        "summary": "改密成功后立即踢掉该用户的全部 sa-token 会话，并让当前请求返回需要重新登录的语义。",
+        "steps": [
+          "在 AuthServiceImpl.changePassword 落库成功后调用 StpUtil.logout(userId)（或 StpUtil.kickout(userId)）使全部会话失效",
+          "在返回体中带上 needRelogin=true，前端据此清理内存 token 并跳登录页",
+          "顺带在重置密码/封禁账号路径复用同一套吊销逻辑",
+          "补集成测试：改密后旧 token 访问 /api/conversation 期望 401"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/auth/impl/AuthServiceImpl.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AuthController.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test -Dtest=AuthServiceImplTest",
+          "mvn -q -f backend/pom.xml test"
+        ]
+      }
+    },
+    {
+      "section": "authz",
+      "category": "missing-object-ownership",
+      "severity": "high",
+      "confidence": "high",
+      "title": "记忆写入端点信任请求体里的 userId/characterId，缺对象级归属校验",
+      "file": "backend-agent/app/memory/writer.py",
+      "line": 122,
+      "evidence": "main.py:982-1007 的 `/agent/memory/write` 把 `body.user_id` / `body.character_id` 原样传给 writer.write_memories（:1003）；writer.py:122 的 `write_memories(user_id, character_id, memories)` 直接进入 `_insert_new(...)`（:145-149）落 memory_meta，未校验 character 是否属于该 user、也不校验调用者身份（X-User-Id 由客户端自带，nginx 不覆盖）。/agent/memory/extract-write（main.py:912）同构。Java 正常链路是在进程内直连 agent 并把会话 userId 放进 body，但同一端点又被 nginx 的 /api/agent/ 暴露给公网。",
+      "impact": "任意人可向任意 (userId, characterId) 注入任意条『记忆』（summary/importance 可控），这些内容之后会被拼进受害者的人设 prompt —— 相当于第三方可以给别人的 AI 伴侣植入虚假事实、偏好或指令式记忆，属于跨租户写入与 prompt 污染。",
+      "kind": "plan",
+      "fix": {
+        "summary": "记忆写入必须由服务端身份推导 userId，并校验 characterId 归属；无法证明归属的请求一律拒绝。",
+        "steps": [
+          "让 userId 只来自可信身份源（签名头/Java 会话映射），禁止从请求体读取 userId",
+          "在 write_memories 前校验 character 属于该 user（查 character 表 user_id 或调用 Java 断言接口），不匹配返回 403",
+          "对 source_msg_ids 做归属校验，避免用他人消息 ID 伪造记忆来源",
+          "把该端点在 nginx 上从公网摘除（配合 auth 那条 finding 一起做）",
+          "补 pytest：跨用户 character 写入返回 403、同用户写入成功"
+        ],
+        "files": [
+          "backend-agent/app/main.py",
+          "backend-agent/app/memory/writer.py",
+          "deploy/api-gateway/nginx.conf"
+        ],
+        "tests": [
+          "pytest -q backend-agent（新增 tests/test_memory_ownership.py）",
+          "pytest -q backend-agent"
+        ]
+      }
+    },
+    {
+      "section": "browser",
+      "category": "weak-csp",
+      "severity": "low",
+      "confidence": "high",
+      "title": "渲染端 CSP 允许 unsafe-eval 与任意 https 连接，未设置导航守卫",
+      "file": "frontend/index.html",
+      "line": 7,
+      "evidence": "frontend/index.html:7 的 meta CSP 为 `script-src 'self' 'unsafe-eval'; connect-src 'self' https: wss:; img-src 'self' data: blob: https:`，`'unsafe-eval'` 使字符串到代码的执行路径保持开启，`https:` 允许把任意域当外联出口（数据外带不受限）。frontend/electron/main.js 只在 setWindowOpenHandler（:667-673）里用 isAllowedExternalUrl 拦新窗口，全文没有 `will-navigate` 守卫，窗口内导航不以白名单收口。",
+      "impact": "一旦出现未被 DOMPurify 覆盖的 DOM 注入点（当前 v-html 仅 1 处且已白名单），CSP 基本不提供纵深防御：eval 可用、外联到任意 https 域不受限，能把本地数据送出；若渲染进程被诱导导航，Electron 侧没有第二道拦截。",
+      "kind": "plan",
+      "fix": {
+        "summary": "收敛 CSP 到具体域名并移除 unsafe-eval，同时给 BrowserWindow 加 will-navigate 白名单。",
+        "steps": [
+          "确认 vue-i18n/vite 产物是否真的需要 unsafe-eval（生产构建通常不需要），不需要则移除",
+          "把 connect-src 收窄为 API/WS/更新域名的显式列表，img-src 同理",
+          "在 main.js 增加 webContents.on('will-navigate')，非白名单 URL 一律 preventDefault 并 openExternal 前先过 isAllowedExternalUrl",
+          "补 electron 单测：非法导航被阻止、CSP 头字符串与预期一致"
+        ],
+        "files": [
+          "frontend/index.html",
+          "frontend/electron/main.js"
+        ],
+        "tests": [
+          "npm --prefix frontend test",
+          "npx vite build（frontend）后检查 dist/index.html 的 CSP"
+        ]
+      }
+    },
+    {
+      "section": "uploads",
+      "category": "ssrf",
+      "severity": "high",
+      "confidence": "high",
+      "title": "Python 出站 HTTP 无 SSRF 校验，模型 base_url 可指向内网或云元数据",
+      "file": "backend-agent/app/http_client.py",
+      "line": 25,
+      "evidence": "backend-agent/app/http_client.py:25-40 的 new_client() 只设置超时、UA 与 local_address，没有任何目标地址校验；app/gateway.py:288 直接把 `normalize_openai_base_url(base_url)`（:92-110 仅拼接 /v1/chat/completions）交给该 client POST。base_url 来自请求体（main.py 的 textBaseUrl/visionBaseUrl）或 DB 配置，经上面那条无鉴权端点即可由外部指定。对照 Java 侧：backend/lianyu-common/.../OutboundUrlValidator.java 会拦 BLOCKED_HOSTS、.local/.internal、loopback/link-local/169.254 并固化 DNS 结果，配合 backend/lianyu-ai/.../SsrfPinningClientFactory.java 防重绑定，ModelCatalogService.java:180-183 正确使用 —— Python 侧完全没有等价物。",
+      "impact": "未认证攻击者可让后端容器向内网服务（MySQL/Redis/MinIO/Milvus、docker 网络里的 Java 服务）或云厂商元数据端点 169.254.169.254 发起 POST，读取响应或至少做端口/服务探测（盲 SSRF），并可借错误信息外带内网内容。",
+      "kind": "plan",
+      "fix": {
+        "summary": "在 Python 出站层加与 Java 等价的校验：协议白名单、域名/IP 黑名单、DNS 解析后固化 IP，并禁止跟随跨域重定向。",
+        "steps": [
+          "把 OutboundUrlValidator 的规则移植成 app/outbound_guard.py（http/https only、拒 loopback/link-local/site-local/169.254.169.254/metadata.google.internal、拒 .local/.internal）",
+          "在 new_client 前解析 host 并把 IP 固化到 httpx transport（或在请求时二次校验 addr），防 DNS 重绑定",
+          "关闭 follow_redirects 或对每一跳重做校验",
+          "所有 base_url 入口（chat-stream/text/chat-image/tts）统一走该校验，失败返回机器可读错误码",
+          "补 pytest + respx：指向 127.0.0.1/169.254.169.254/内网域名时被拒，正常域名放行"
+        ],
+        "files": [
+          "backend-agent/app/http_client.py",
+          "backend-agent/app/gateway.py",
+          "backend-agent/app/main.py"
+        ],
+        "tests": [
+          "pytest -q backend-agent（新增 tests/test_outbound_guard.py）",
+          "pytest -q backend-agent"
+        ]
+      }
+    },
+    {
+      "section": "secrets",
+      "category": "hardcoded-credentials",
+      "severity": "high",
+      "confidence": "high",
+      "title": "生产账号口令硬编码在已跟踪的运维脚本里",
+      "file": "scripts/_prod_verify.py",
+      "line": 22,
+      "evidence": "scripts/_prod_verify.py 是 `git ls-files` 跟踪的文件（提交 3399884），第 21-22 行写死 `USERNAME = \"hjkl\"` / `PASSWORD = \"1216qwer\"`，用于对 `http://127.0.0.1:8080` 做登录并跑真实对话验证；同文件第 23 行还会读取服务器 `/opt/lianyu/.env`。也就是说一个真实生产账号的口令进入了仓库历史，任何能读仓库的人（含 fork/CI 日志/历史克隆）都能直接登录生产。",
+      "impact": "仓库读者可直接以该账号登录生产环境，读写其对话与记忆、消耗其模型额度；若该账号被复用为管理员或与其它服务共享口令，影响面进一步扩大。因为已经进了 git 历史，仅删除该行不足以消除暴露。",
+      "kind": "direct",
+      "fix": {
+        "summary": "立即轮换该账号口令，把脚本改成从环境变量读取凭据，并清理仓库历史中的明文口令。",
+        "steps": [
+          "在生产重置 hjkl（以及任何复用同一口令的账号）的密码，并检查其近期登录/会话记录",
+          "把 _prod_verify.py 改为 `os.environ['LIANYU_VERIFY_USER']` / `['LIANYU_VERIFY_PASSWORD']`，缺失时拒绝运行并提示",
+          "用 git filter-repo（或 BFG）从历史中移除该字符串，并通知所有克隆方重新拉取",
+          "在 CI 加一道 secret 扫描（gitleaks/trufflehog）挡住同类提交",
+          "在 AGENTS.md 的凭据纪律里点名『验证脚本不得出现真实账号口令』"
+        ],
+        "files": [
+          "scripts/_prod_verify.py",
+          ".github/workflows/ci.yml",
+          "AGENTS.md"
+        ],
+        "tests": [
+          "grep -rn 'PASSWORD\\s*=' scripts/*.py 期望无字面量",
+          "python -c \"import os; os.environ.pop('LIANYU_VERIFY_PASSWORD', None)\" 后运行脚本期望明确报错退出"
+        ]
+      }
+    },
+    {
+      "section": "crypto",
+      "category": "fail-open-encryption",
+      "severity": "high",
+      "confidence": "high",
+      "title": "Jasypt 主密钥缺失时静默回退明文，API Key 与 TOTP 密钥以明文落库",
+      "file": "backend/lianyu-security/src/main/java/com/lianyu/security/util/JasyptUtil.java",
+      "line": 63,
+      "evidence": "JasyptUtil.java:20-27 在 `LIANYU_MASTER_KEY` 为空时只打一条 warn 后 return（encryptors 保持空）；encrypt() 在 :63-66 与 :68-70 遇到 encryptors 为空或 current 版本缺失时执行 `log.warn(\"No Jasypt encryptor available, returning plaintext\"); return plaintext;`。调用方 ApiKeyVaultService.java:130（update 时 `vault.setApiKeyEncrypted(jasyptUtil.encrypt(...))`）与 AdminTotpController:24 会把这个明文直接写进 `api_key_vault.api_key_encrypted` / `admin_user.totp_secret`。`.env.example:40` 的 `LIANYU_MASTER_KEY=` 是空占位，缺变量时功能照常启动。",
+      "impact": "一次部署疏忽（漏配环境变量）就会让用户自带的模型 API Key 与管理员 2FA 种子以明文形态长期留在数据库与备份里，且没有任何报错；之后即便补上密钥，已写入的明文行也不会被识别（decrypt 会尝试解密失败后返回原值）。属于加密能力的静默降级（fail-open）。",
+      "kind": "direct",
+      "fix": {
+        "summary": "把加密从 fail-open 改为 fail-closed：没有可用主密钥时拒绝写入并要求显式开启降级开关，同时给已存明文做一次迁移。",
+        "steps": [
+          "encrypt() 在无 encryptor 时抛 BusinessException（错误码 crypto_unavailable），不再返回明文",
+          "在启动时（ApplicationReadyEvent）校验主密钥可用性，缺失则生产 profile 直接启动失败并打印可执行提示",
+          "如需本地开发容忍，用显式开关 `LIANYU_CRYPTO_ALLOW_PLAINTEXT=true` 且只允许 dev profile",
+          "写一个一次性迁移：扫描 api_key_vault/admin_user 中未以密文格式开头的行，用当前密钥重新加密并记录 key_version",
+          "补单测：缺密钥时 encrypt 抛异常、配置齐全时仍能加解密"
+        ],
+        "files": [
+          "backend/lianyu-security/src/main/java/com/lianyu/security/util/JasyptUtil.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/ai/ApiKeyVaultService.java",
+          "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminTotpController.java",
+          ".env.example"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test -Dtest=JasyptUtilTest",
+          "mvn -q -f backend/pom.xml test"
+        ]
+      }
+    },
+    {
+      "section": "exposure",
+      "category": "sensitive-logging",
+      "severity": "low",
+      "confidence": "high",
+      "title": "对话内容（SSE 帧原文）以 INFO 级别写入日志",
+      "file": "backend-agent/app/main.py",
+      "line": 247,
+      "evidence": "backend-agent/app/main.py:247-249 在前 3 帧上执行 `logger.info(\"chat-stream frame[%d]=%s\", frames, frame[:160].replace(\"\\n\", \"\\\\n\"))`，frame 是包含模型回复正文的 SSE 数据行；:223-225 也会记录 userId、model 与 system 长度。`backend/lianyu-app/src/main/resources/application.yml` 中 com.lianyu 侧日志级别为 DEBUG 且 prod profile 未收紧。",
+      "impact": "角色回复（含用户输入触发的私密内容）会以明文进入容器日志并被 docker logs/日志采集长期留存，扩大日志读写方的数据可见面；排障时贴日志也容易把用户对话带出去。",
+      "kind": "direct",
+      "fix": {
+        "summary": "把帧内容日志降级为 debug 并默认关闭，或只记录帧类型与长度而不记正文。",
+        "steps": [
+          "把 frame 内容日志改为 `logger.debug`，且只打印帧类型（content/replace/pieces/error）与字节长度",
+          "在 prod 环境把 backend-agent 日志级别设为 INFO 以上，避免 debug 泄漏",
+          "检查其它 `logger.info` 是否带 messages/persona 正文，一并脱敏",
+          "补测试：INFO 级别下日志不含回复正文"
+        ],
+        "files": [
+          "backend-agent/app/main.py",
+          "backend-agent/app/logging_config.py"
+        ],
+        "tests": [
+          "pytest -q backend-agent"
+        ]
+      }
+    },
+    {
+      "section": "supply-chain",
+      "category": "unsigned-update-channel",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "自动更新清单验签已在代码里实现但未启用（公钥留空即跳过），依赖审计也不阻塞合并",
+      "file": "frontend/.env.production.cloud",
+      "line": 12,
+      "evidence": "frontend/electron/updater/updater.js:81-107 的 verifyManifestOrThrow 在 `resolveManifestPublicKey()` 为空时仅 `logger.warn('latest.yml signature check disabled')` 然后 return（fail-open）；公钥来自 runtimeSecrets.updateManifestPublicKey，打包时取 `VITE_LIANYU_UPDATE_PUBKEY`，而仓库内 `frontend/.env.production.cloud:12` 是注释掉的 `# VITE_LIANYU_UPDATE_PUBKEY=`，即当前发布的客户端不带公钥。于是安装包完整性只依赖 latest.yml 里的 sha512（与该清单同源），清单被改即可换包。另外 .github/workflows/ci.yml:46-48 的 OSV 扫描带 `continue-on-error: true`，且 action 只用 tag（@v4/@v2.0.3）而非 commit SHA。",
+      "impact": "更新渠道一旦被写入（MinIO 凭据泄露、nginx/存储被改、发版脚本被投毒），客户端会静默安装攻击者的安装包 —— 桌面端等于远程代码执行；而依赖漏洞扫描失败不会阻断合并，已知漏洞可能长期留在发布物里。",
+      "kind": "plan",
+      "fix": {
+        "summary": "给更新链补上强制验签（发布带 latest.yml.sig + 客户端内置公钥），并把依赖审计改为阻塞项、action 固定到 SHA。",
+        "steps": [
+          "在发布流程里用 scripts/sign_update_manifest.py 生成 latest.yml.sig 并随清单上传到 MinIO/ngnix",
+          "在 frontend/.env.production.cloud 填入 VITE_LIANYU_UPDATE_PUBKEY 并重打客户端，使 updater 走强制验签分支",
+          "把 updater 的『无公钥』分支改成拒绝更新（或至少在正式渠道拒绝），并上报遥测",
+          "ci.yml 去掉 deps-audit 的 continue-on-error（或按 severity 阈值失败），并把 actions 固定到 commit SHA",
+          "补测试：签名缺失/错误时 updater 拒绝安装"
+        ],
+        "files": [
+          "frontend/.env.production.cloud",
+          "frontend/electron/updater/updater.js",
+          "scripts/sign_update_manifest.py",
+          ".github/workflows/ci.yml"
+        ],
+        "tests": [
+          "npm --prefix frontend test（updater/manifestSignature 用例）",
+          "python scripts/sign_update_manifest.py --help",
+          "python scripts/check_release_asset_contract.py"
+        ]
+      }
+    }
+  ],
+  "deferred": [
+    {
+      "title": "本地工作区明文密钥文件（未跟踪）",
+      "reason": "secrets/platform-keys.txt:2、config.json:104/115、certs/server.key 含疑似真实平台密钥，但均被 .gitignore 忽略且未提交（git ls-files --error-unmatch 报 pathspec 不匹配），不属于仓库内容问题；建议单独做一次本地密钥轮换与磁盘清理，不列入本次 12 条。",
+      "suggestedOwner": "security"
+    },
+    {
+      "title": "聊天图片上传未重编码（与头像/背景路径不一致）",
+      "reason": "FileStorageService.uploadChatImage 只校验客户端声明的 Content-Type 与 5MB，不重编码；因响应固定 nosniff 且类型只能是 image/*，当前不构成存储型 XSS，属健壮性问题，留给 code 评审决定是否统一到 ImageUploadValidator。",
+      "suggestedOwner": "correctness"
+    },
+    {
+      "title": "图形验证码为可 OCR 的算式图片",
+      "reason": "CaptchaService 生成 a±b/a×b/a÷b 算式图，answer 存 Redis 2 分钟；属弱机器人门槛而非漏洞，需产品/风控判断是否升级为行为验证或第三方验证码。",
+      "suggestedOwner": "security"
+    }
+  ],
+  "notes": "方法：无 ripgrep 环境，用 grep -rn/python 做跨文件模式扫描（Sink 模式：v-html/innerHTML、Runtime.exec/ProcessBuilder/ObjectInputStream/Spel、eval/exec/pickle/os.system/yaml.load、mapper 中 ${}、actuator/swagger、密钥字面量），再按单元读关键文件。已验证为干净的面：SQL 注入（Java mapper 全 #{}、XML 中 ${} 计数 0；Python db.py 强制 SELECT-only + %s 占位符）、存储型 XSS（唯一 v-html 走 DOMPurify 白名单 ALLOWED_TAGS=strong/em/b/i/u/span/br）、头像/背景上传（magic bytes + ImageIO 解码 + 重编码 PNG + UUID 文件名）、公开文件读取（SAFE_OBJECT_KEY 白名单在 statObject/getObject 均生效，无路径穿越）、管理端 RBAC 与 admin_session 校验链、Java 出站 SSRF 校验（OutboundUrlValidator + 固定 IP）、Electron 渲染隔离（contextIsolation/nodeIntegration=false/sandbox）与外部链接白名单。限制：u02/u03/u04/u07 为抽样（见 units 备注），前端 24648 行与 120 个运维脚本未逐行通读；4 个测试命令均未执行（task 要求仅记录）。"
+}

@@ -1,0 +1,917 @@
+{
+  "schemaVersion": 2,
+  "expert": "maintainability",
+  "status": "ok",
+  "summary": "按 scope.json 的 12 个单元覆盖 1100 个受审文件（135978 行），每单元实际通读 32 个文件并包含该单元全部 12 个 core（共 144 个，缺 0 个），同时用 rg/grep 做跨文件模式扫描。simplify 与 cleanup 两个 section 均已检查：simplify 6 条、cleanup 5 条，共 11 条，严重度上限 medium（无 critical/high）。最主要的三件事：Electron 主进程 3077 行且零测试；同一事实多处定义（语言清单 4 份互不一致、角色 prompt 在 Java 与 DB 双写且 DB 分支不可达、SSE 帧解析三份实现且前端测试测的是文件内副本）；scripts/ 沦为一次性脚本垃圾场（132 个文件中 97 个 _ 前缀、7 个部署变体、109 处硬编码生产主机、7 处作者本机绝对路径、2 个 0 字节文件）。测试实跑：mvn 531 用例全绿、frontend 71 文件 417 用例全绿；admin 因未安装依赖（vitest 不存在）无法启动；pytest 在仓库根因缺少 pythonpath 配置 48 个 collection error 失败（在 backend-agent 目录内可收集 793 个用例，剩余 26 个 error 仅为本地缺 aiomysql/respx 依赖）。",
+  "sections": {
+    "simplify": 6,
+    "cleanup": 5
+  },
+  "units": {
+    "u01": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "backend/lianyu-service/pom.xml",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentBlockingPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentChatResult.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentImagePort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentMemoryPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentRuntimePort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentStreamCallback.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentStreamPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentTextPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentTextStreamPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentTurnResult.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/CharacterGenerationPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/ChatTurnOutcome.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/ChatTurnPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/ChatTurnRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/PromptAssemblyPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/PromptAssemblyRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/SceneInstructionPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/SessionSummaryPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/TtsPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/VoiceEnrollmentPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AiChatQuotaService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AiChatService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AiResilience.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/ApiKeyVaultService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AsrService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AsrStreamClient.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AssistantContentNormalizer.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AssistantReplyService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AssistantReplySplitter.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/background/AiBackgroundConsumer.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/background/AiBackgroundJobType.java"
+      ],
+      "notes": "lianyu-service 1/3：通读 agent/ 下 15 个 Port/record 接口与 ai/ 服务层（ApiKeyVaultService 377 行、AssistantReplySplitter 205 行等）。核实 15 个 *Port 均为 1 个实现 + 3–11 处引用，是 AGENTS.md 记录的 Java↔Python seam，不报过度抽象；本单元未发现新的可维护性问题。"
+    },
+    "u02": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/SquareCommentResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/SquareLikeToggleResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UnreadCountResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateCharacterRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateGroupTitleRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateProfileRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateUserSettingsRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateVaultRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UserProfile.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UserSettingsResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/VaultEntryResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/VoiceCallEndRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/VoiceCallTurnResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/graph/ChatTurnCommand.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/graph/ChatTurnFacade.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/graph/ChatTurnGroupExtras.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/graph/ChatTurnResult.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/graph/ImageMessageHistoryText.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/graph/MessageModelContent.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/CachedMemoryRow.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/ExtractedMemory.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryCacheService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryConsumer.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryExtractionHeuristics.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryExtractionService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryOutboxService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryQueryService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryVectorStore.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryWriter.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentOrchestrator.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentReconciliationScheduler.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentService.java"
+      ],
+      "notes": "lianyu-service 2/3：通读 dto/*、graph/*（ChatTurnFacade 322 行）、memory/*。发现角色广场 prompt 双写（M-03，回退分支不可达）。"
+    },
+    "u03": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "frontend/src/api/__tests__/httpCoreSkipGlobalError.test.js",
+        "frontend/src/api/__tests__/sessionRefresh.test.js",
+        "frontend/src/api/ai.js",
+        "frontend/src/api/asr.js",
+        "frontend/src/api/auth.js",
+        "frontend/src/api/character.js",
+        "frontend/src/api/characterSquare.js",
+        "frontend/src/api/characterState.js",
+        "frontend/src/api/conversation.js",
+        "frontend/src/api/electronAdapter.js",
+        "frontend/src/api/httpCore.js",
+        "frontend/src/api/index.js",
+        "frontend/src/api/installMainHttpToasts.js",
+        "frontend/src/api/memory.js",
+        "frontend/src/api/moments.js",
+        "frontend/src/api/notification.js",
+        "frontend/src/api/users.js",
+        "frontend/src/api/voiceCall.js",
+        "frontend/src/App.vue",
+        "frontend/src/auth/__tests__/bootstrap.test.js",
+        "frontend/src/auth/__tests__/bootstrapRestoreRoute.test.js",
+        "frontend/src/auth/__tests__/launcherBootstrap.test.js",
+        "frontend/src/auth/bootstrap.js",
+        "frontend/src/auth/launcherBootstrap.js",
+        "frontend/src/components/AppDock.vue",
+        "frontend/src/components/AppHeader.vue",
+        "frontend/src/components/AppShellAtmosphere.vue",
+        "frontend/src/components/AppUpdateButton.vue",
+        "frontend/src/components/AppUpdateDialog.vue",
+        "frontend/src/components/AppUpdatePrompt.vue",
+        "frontend/src/components/AssistantMessageContent.vue",
+        "frontend/src/components/AtmospherePanel.vue"
+      ],
+      "notes": "frontend/src 1/2：通读 api/*（httpCore 148 行、electronAdapter 117 行）、auth/*、App.vue、AppDock.vue 697、AppHeader.vue 443。发现语言清单漂移（M-02）、未用 devDeps（M-09）；另读 frontend/package.json、src/i18n/index.js、src/constants/language.js、shared/sseParser.js 佐证。"
+    },
+    "u04": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "scripts/_audit_installer_unpack.py",
+        "scripts/e2e/lianyu_e2e.py",
+        "scripts/gen_elysia_openai.py",
+        "scripts/_upload_update_assets.py",
+        "scripts/gen_pet_fixed_voices.py",
+        "scripts/ops/_write_theme_picker.py",
+        "scripts/diag/_gen_pet_fixed_voices.py",
+        "scripts/_verify_electron_release.py",
+        "scripts/_prod_verify.py",
+        "scripts/re_enroll_pet_voices.py",
+        "scripts/gen_elysia_atlas.mjs",
+        "scripts/_upload_wechat_channel.py",
+        "scripts/_backend_logs.py",
+        "scripts/_check_yml.py",
+        "scripts/_cloud_500_check.py",
+        "scripts/_cloud_500_ts.py",
+        "scripts/_cloud_chat20.py",
+        "scripts/_cloud_code_check.py",
+        "scripts/_cloud_deploy_agent_base_url.py",
+        "scripts/_cloud_deploy_agent_layer.py",
+        "scripts/_cloud_deploy_backend_layer.py",
+        "scripts/_cloud_deploy_backend_only.py",
+        "scripts/_cloud_deploy_layered.py",
+        "scripts/_cloud_deploy_prep.py",
+        "scripts/_cloud_deploy_pull.py",
+        "scripts/_cloud_diag_proactive.py",
+        "scripts/_cloud_dryrun.py",
+        "scripts/_cloud_env_check.py",
+        "scripts/_cloud_hotfix_proactive.py",
+        "scripts/_cloud_observe_postdeploy.py",
+        "scripts/_cloud_observe.py",
+        "scripts/_cloud_probe_agent.py"
+      ],
+      "notes": "scripts 1/2：通读 12 个 core 与 20 个 _cloud_* 脚本，并用 rg/grep 统计全目录（132 个文件/97 个 _ 前缀/109 处硬编码主机/81 份 load_dotenv）。脚本垃圾场见 M-07。"
+    },
+    "u05": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "backend/lianyu-dao/pom.xml",
+        "backend/lianyu-dao/src/main/resources/db/migration/V1__init_schema.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V10__character_square.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V11__character_square_slug.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V12__character_square_avatars_roster.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V13__character_square_dal.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V14__character_square_linzihan.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V15__character_square_linzihan_avatar_fix.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V16__character_square_tags_simplify.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V17__character_square_white_queen.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V18__character_square_genshin.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V19__character_square_mavuika.sql",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/config/MyBatisPlusConfig.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/dto/CharacterDiaryLastDateRow.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/dto/ConversationActivityRow.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/dto/ConversationUserMessageCountRow.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/dto/MomentsDailyCountRow.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/ApiKeyVault.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/Character.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/CharacterDiary.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/CharacterSquareTemplate.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/CharacterState.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/CharacterSticker.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/Conversation.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/GroupMember.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/MemoryMeta.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/MemoryOutbox.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/Message.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/MomentsComment.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/MomentsInteractionState.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/MomentsPost.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/RelationshipEvent.java"
+      ],
+      "notes": "lianyu-dao：通读 pom、V1–V19 迁移、MyBatisPlusConfig、dto/*Row 与 entity/*。发现 33/57 迁移含非 ASCII（M-10）、18 个迁移写入 prompt_template（M-03 证据）。"
+    },
+    "u06": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "backend-agent/app/config.py",
+        "backend-agent/app/main.py",
+        "backend-agent/Dockerfile",
+        "backend-agent/pyproject.toml",
+        "backend-agent/tests/test_voice_tts.py",
+        "backend-agent/app/gateway.py",
+        "backend-agent/app/chat_turn.py",
+        "backend-agent/app/tts.py",
+        "backend-agent/app/resilience.py",
+        "backend-agent/app/stream_chat.py",
+        "backend-agent/app/data_readers.py",
+        "backend-agent/tests/test_memory_embedding.py",
+        "backend-agent/app/__init__.py",
+        "backend-agent/app/character_generation.py",
+        "backend-agent/app/character_prompt.py",
+        "backend-agent/app/dashscope.py",
+        "backend-agent/app/db.py",
+        "backend-agent/app/desktop_observe.py",
+        "backend-agent/app/emotion_block.py",
+        "backend-agent/app/graphs/__init__.py",
+        "backend-agent/app/graphs/proactive_turn.py",
+        "backend-agent/app/http_client.py",
+        "backend-agent/app/image_chat.py",
+        "backend-agent/app/language_gate.py",
+        "backend-agent/app/memory/__init__.py",
+        "backend-agent/app/memory/embedding.py",
+        "backend-agent/app/memory/extract.py",
+        "backend-agent/app/memory/profile_context.py",
+        "backend-agent/app/memory/relay.py",
+        "backend-agent/app/memory/vector_cache.py",
+        "backend-agent/app/memory/writer.py",
+        "backend-agent/app/message_assembly.py"
+      ],
+      "notes": "backend-agent：通读 config/main（1279 行）/gateway（504）/chat_turn（395）/tts（372）/resilience（362）/stream_chat（295）/data_readers（290）与两个大测试。language_gate.SUPPORTED 与前端清单不一致（M-02 证据）；stream_chat 的帧契约（M-04 证据）。"
+    },
+    "u07": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "frontend/src/router/__tests__/startupErrorRecovery.test.js",
+        "frontend/src/router/index.js",
+        "frontend/src/router/startupErrorRecovery.js",
+        "frontend/src/stores/settings.js",
+        "frontend/src/pages/ChatPage.vue",
+        "frontend/src/pages/GroupChatPage.vue",
+        "frontend/src/pages/LandingPage.vue",
+        "frontend/src/pages/QqBridgePage.vue",
+        "frontend/src/pages/CharactersPage.vue",
+        "frontend/src/pages/CharacterSquarePage.vue",
+        "frontend/src/pages/SettingsPage.vue",
+        "frontend/src/styles/app-shell.scss",
+        "frontend/src/pages/__tests__/charactersRealtime.test.js",
+        "frontend/src/pages/__tests__/momentsCommentThread.test.js",
+        "frontend/src/pages/__tests__/settingsLayout.test.js",
+        "frontend/src/pages/__tests__/wechatBridgePage.test.js",
+        "frontend/src/pages/AboutPage.vue",
+        "frontend/src/pages/CharacterChatDetailPage.vue",
+        "frontend/src/pages/charactersPreview.js",
+        "frontend/src/pages/charactersRealtime.js",
+        "frontend/src/pages/DiaryPage.vue",
+        "frontend/src/pages/HomePage.vue",
+        "frontend/src/pages/LauncherPage.vue",
+        "frontend/src/pages/LauncherPickPage.vue",
+        "frontend/src/pages/LoginPage.vue",
+        "frontend/src/pages/MemoryPage.vue",
+        "frontend/src/pages/momentsCommentThread.js",
+        "frontend/src/pages/MomentsPage.vue",
+        "frontend/src/pages/ProfilePage.vue",
+        "frontend/src/pages/QuickChatPage.vue",
+        "frontend/src/pages/RegisterPage.vue",
+        "frontend/src/pages/UserPublicPage.vue"
+      ],
+      "notes": "frontend/src 2/2：通读 router/*、stores/settings.js、9 个大页面（ChatPage 2266、GroupChatPage 1500、LandingPage 1366…）与 pages/__tests__。发现 3 个测试用 readFileSync 断言 .vue 源码（M-06）、i18n 缺 key 的使用点（M-02）。"
+    },
+    "u08": {
+      "status": "reviewed",
+      "filesRead": 32,
+      "files": [
+        "backend/lianyu-web/pom.xml",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AiController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AsrController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AuthController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/CharacterController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/CharacterStateController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/ConversationController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/GroupChatController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/LegacyCommunityController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/MemoryController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/MomentsController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/NotificationController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentBlockingAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentCharacterAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentFailureLogThrottle.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentImageAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentMemoryAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentPromptAssemblyAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentRuntimeClient.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentRuntimeProperties.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentSceneInstructionAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentSessionSummaryAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentSseParser.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamBridge.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentTextAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentTextStreamAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentToolCatalog.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentTtsAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentVoiceEnrollmentAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentWiringHealthCheck.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/ChatTurnAdapter.java"
+      ],
+      "notes": "lianyu-web（71 文件中读 32，约 45%）：全量覆盖 11 个 controller 与 agent/ 适配层 13 个类。发现 SSE 解析第三份实现 AgentSseParser（M-04）；LegacyCommunityController 有文档化删除条件，按 Chesterton's fence 不报。"
+    },
+    "u09": {
+      "status": "reviewed",
+      "filesRead": 32,
+      "files": [
+        "frontend/electron/main.js",
+        "frontend/electron/qqBridge/qqBridge.js",
+        "frontend/electron/updater/__tests__/updater.test.js",
+        "frontend/electron/updater/updater.js",
+        "frontend/electron/wechatBridge/lianyu-weixin-host.mjs",
+        "frontend/electron/napcatRuntime/napcatHost.js",
+        "frontend/electron/napcatRuntime/napcatRelease.js",
+        "frontend/electron/qqBridge/napCatClient.js",
+        "frontend/electron/wechatBridge/__tests__/wechatBridge.test.js",
+        "frontend/electron/qqBridge/qqBridgeCoordinator.js",
+        "frontend/electron/napcatRuntime/__tests__/napcatRelease.test.js",
+        "frontend/electron/napcatRuntime/napcatDownloader.js",
+        "frontend/electron/__tests__/apiProxy.test.js",
+        "frontend/electron/__tests__/desktopObserver.test.js",
+        "frontend/electron/__tests__/desktopSettings.test.js",
+        "frontend/electron/__tests__/exportTextFile.test.js",
+        "frontend/electron/__tests__/installerScript.test.js",
+        "frontend/electron/__tests__/launcherBounds.test.js",
+        "frontend/electron/__tests__/logger.test.js",
+        "frontend/electron/__tests__/releaseToken.test.js",
+        "frontend/electron/__tests__/singleInstance.test.js",
+        "frontend/electron/__tests__/startupOrchestrator.test.js",
+        "frontend/electron/__tests__/startupProfiler.test.js",
+        "frontend/electron/apiProxy.js",
+        "frontend/electron/appearanceStore.js",
+        "frontend/electron/authSessionStore.js",
+        "frontend/electron/customTts.js",
+        "frontend/electron/desktopObserver.js",
+        "frontend/electron/desktopSettings.js",
+        "frontend/electron/exportTextFile.js",
+        "frontend/electron/greetingAudio.js",
+        "frontend/electron/lastChatModelStore.js"
+      ],
+      "notes": "frontend/electron（68 文件中读 32，约 47%）：main.js 3077 行（M-01）、qqBridge/updater/wechatBridge/napcatRuntime 与 11 个测试。startupProfiler 双实现（M-05）。"
+    },
+    "u10": {
+      "status": "reviewed",
+      "filesRead": 32,
+      "files": [
+        ".env.example",
+        "admin/electron/main.js",
+        "admin/index.html",
+        "admin/package.json",
+        "admin/src/api.js",
+        "admin/src/App.vue",
+        "admin/src/main.js",
+        "admin/src/stores/session.js",
+        "admin/vite.config.js",
+        "backend/Dockerfile",
+        "backend/lianyu-ai/pom.xml",
+        "backend/lianyu-security/pom.xml",
+        ".github/workflows/ci.yml",
+        "admin/electron-builder.yml",
+        "admin/electron/preload.cjs",
+        "admin/src/__tests__/menu.test.js",
+        "admin/src/components/DataTable.vue",
+        "admin/src/management.css",
+        "admin/src/menu.js",
+        "admin/src/pages/ManagementPage.vue",
+        "admin/src/styles.css",
+        "backend/lianyu-ai/src/main/java/com/lianyu/ai/config/AiConfig.java",
+        "backend/lianyu-ai/src/main/java/com/lianyu/ai/graph/ChatTurnScene.java",
+        "backend/lianyu-ai/src/main/java/com/lianyu/ai/graph/StreamTokenConsumer.java",
+        "backend/lianyu-ai/src/main/java/com/lianyu/ai/SsrfPinningClientFactory.java",
+        "backend/lianyu-ai/src/test/java/com/lianyu/ai/SsrfPinningClientFactoryTest.java",
+        "backend/lianyu-security/src/main/java/com/lianyu/security/annotation/EncryptedField.java",
+        "backend/lianyu-security/src/main/java/com/lianyu/security/config/PasswordConfig.java",
+        "backend/lianyu-security/src/main/java/com/lianyu/security/config/SaTokenConfig.java",
+        "backend/lianyu-security/src/main/java/com/lianyu/security/filter/HeaderOnlyTokenFilter.java",
+        "backend/lianyu-security/src/main/java/com/lianyu/security/handler/EncryptedStringTypeHandler.java",
+        "backend/lianyu-security/src/main/java/com/lianyu/security/util/JasyptUtil.java"
+      ],
+      "notes": "其他模块（67 文件中读 32，约 48%）：.env.example、admin 全量（含被压成单行的 6 个文件，M-11）、lianyu-ai/lianyu-security 小模块、.github/workflows/ci.yml（M-08）。"
+    },
+    "u11": {
+      "status": "reviewed",
+      "filesRead": 32,
+      "files": [
+        "backend/lianyu-admin/pom.xml",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/conversation/VoiceCallServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/dto/RegisterRequestValidationTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/graph/ChatTurnFacadeToolFlagsTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/graph/ImageMessageHistoryTextTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/graph/MessageModelContentTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/memory/MemoryExtractionServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/memory/MemoryWriterDebounceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/memory/MemoryWriterRelationshipTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/moments/MomentsCommentOrchestratorTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/notification/NotificationServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/relationship/RelationshipHeuristicsTest.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/AdminModuleMarker.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/audit/AdminAuditController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/audit/AdminAuditService.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminAuthController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminAuthorizationService.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminAuthService.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminBootstrapService.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminDtos.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminIdentityProperties.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminManagementController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminPermissionCatalog.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminSecurityConfig.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminTotpController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/TotpUtil.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/operations/AdminOperationsController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/operations/AnnouncementController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/overview/AdminOverviewController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/GitHubReleaseController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/GitHubReleaseImporter.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/ReleaseController.java"
+      ],
+      "notes": "backend 小模块合集（59 文件中读 32，约 54%）：lianyu-admin 全部源码与 11 个 lianyu-service 测试类。测试命名与断言意图清晰，未发现可维护性问题。"
+    },
+    "u12": {
+      "status": "reviewed",
+      "filesRead": 32,
+      "files": [
+        "backend/lianyu-app/pom.xml",
+        "backend/lianyu-common/pom.xml",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/handler/JacksonListTypeHandler.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/handler/JacksonTypeHandler.java",
+        "backend/pom.xml",
+        "frontend/Dockerfile",
+        "installer/LianYu.Installer/App.xaml.cs",
+        "installer/LianYu.Installer/MainWindow.xaml.cs",
+        "Pets/skills/hatch-lianyu-pet/scripts/gen_pet_images.py",
+        "installer/LianYu.Installer/InstallerEngine.cs",
+        "scripts/voice_candidates.py",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/OutboundUrlValidator.java",
+        "backend/lianyu-app/src/main/java/com/lianyu/app/DotEnvBootstrap.java",
+        "backend/lianyu-app/src/main/java/com/lianyu/app/LianYuApplication.java",
+        "backend/lianyu-app/src/main/resources/application-prod.yml",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/base/ErrorCode.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/base/Result.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/constant/AiConstants.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/exception/BusinessException.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/i18n/OutputLanguage.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/CharacterSettingsUtils.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/ImageUploadValidator.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/SpringContextHolder.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/TextUtils.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/TraceIdFilter.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/UserInputSanitizer.java",
+        "backend/scripts/_upload_backend_image.py",
+        "backend/scripts/check-v10-state.sql",
+        "backend/scripts/dedupe-java-imports.ps1",
+        "backend/scripts/fix-service-cross-imports.ps1",
+        "backend/scripts/repackage-service.ps1",
+        "backend/scripts/repair-flyway-v10.sql"
+      ],
+      "notes": "其他模块（48 文件中读 32，约 67%）：lianyu-app/lianyu-common/pom、installer 三个 C# 文件、backend/scripts 6 个一次性脚本（M-07 证据）、common 工具类与 OutputLanguage（M-02 证据）。"
+    }
+  },
+  "tests": {
+    "commands": [
+      {
+        "command": "npm --prefix admin test",
+        "status": "failed",
+        "note": "真实退出码 1：admin 未安装依赖，执行时报 'vitest' 不是内部或外部命令，测试套件未能启动（非断言失败）。需要先 npm --prefix admin install 再重跑。"
+      },
+      {
+        "command": "mvn -q -f backend/pom.xml test",
+        "status": "passed",
+        "note": "退出码 0，surefire 汇总 tests=531 failures=0 errors=0 skipped=0（lianyu-service/web/ai/admin 全绿）。"
+      },
+      {
+        "command": "pytest -q backend-agent",
+        "status": "failed",
+        "note": "退出码 2：在仓库根执行时 48 个 collection error，全部为 ModuleNotFoundError: No module named 'app'（pyproject 未配置 pythonpath、无 conftest.py）。在 backend-agent 目录内可收集 793 个用例，仍有 26 个 error，均为本地缺依赖（aiomysql 15 个、respx 11 个），非代码缺陷。"
+      },
+      {
+        "command": "npm --prefix frontend test",
+        "status": "passed",
+        "note": "退出码 0：Test Files 71 passed (71)，Tests 417 passed (417)，4.32s。"
+      }
+    ],
+    "summary": "4 条命令全部实际执行并记录了真实退出码（首轮因管道 tail 掩盖退出码，已重跑修正）。2 条通过（maven 531 用例、frontend 417 用例），2 条因环境未就绪失败：admin 未装依赖，pytest 在仓库根缺可导入路径。失败原因均已定位到环境配置，未发现断言级失败。"
+  },
+  "findings": [
+    {
+      "id": "M-01",
+      "section": "simplify",
+      "category": "god-module",
+      "severity": "medium",
+      "confidence": "high",
+      "unit": "u09",
+      "units": [
+        "u09"
+      ],
+      "title": "Electron 主进程 main.js 是 3077 行的上帝模块，71 个 IPC 注册点且没有任何测试",
+      "brief": "桌面端的启动文件把所有窗口、托盘、更新、桥接逻辑塞在一个 3000 多行的文件里，谁改动都要在整份文件里找位置，而且现有测试完全碰不到它，改错了只能靠手工点界面发现。",
+      "file": "frontend/electron/main.js",
+      "line": 1,
+      "evidence": "frontend/electron/main.js 共 3077 行、111 个函数、71 处 ipcMain.handle/ipcMain.on 注册；顶部一次性 import electron 的 app/BrowserWindow/Tray/Menu/globalShortcut/Notification/powerMonitor/dialog/session/screen/net 等 20+ 能力。frontend/electron/__tests__ 下 11 个测试文件只覆盖 launcherBounds/startupOrchestrator/startupProfiler/updater 等被抽出的叶子模块，没有一处 require('./main') 或 import main.js。",
+      "impact": "窗口、托盘、快捷聊天、更新器、QQ/微信桥接的生命周期互相耦合在同一个文件里：任何一处 IPC 改动都可能影响其它入口，且缺少可回归的自动化证据；新人上手成本最高。",
+      "kind": "plan",
+      "fix": {
+        "summary": "按能力把 main.js 拆成若干 registerXxx(ctx) 模块，main.js 只保留 app 生命周期与装配顺序，并给每个注册函数补 fake ipcMain 的注册断言。",
+        "steps": [
+          "先建 frontend/electron/ipc/ 目录与统一 ctx（{ app, BrowserWindow, logger, paths }），把纯注册逻辑从 main.js 移出，main.js 只调用 registerAll(ctx)。",
+          "按现有边界分四批迁移：窗口与快捷键、托盘与菜单、更新器、QQ/微信桥接；每批只搬代码不改行为。",
+          "为每个 registerXxx 写单测：传入 fake ipcMain（记录 channel 名），断言通道名集合与旧版一致，防止迁移时丢通道。",
+          "迁移完成后把 main.js 的 channel 清单与 preload.js 白名单做一次交叉断言测试，保证渲染端可达的通道都被注册。",
+          "每批 PR 跑 npm --prefix frontend test，并手工冒烟托盘常驻、快捷聊天、更新提示三个路径。"
+        ],
+        "files": [
+          "frontend/electron/main.js",
+          "frontend/electron/__tests__"
+        ],
+        "tests": [
+          "npm --prefix frontend test"
+        ]
+      }
+    },
+    {
+      "id": "M-02",
+      "section": "simplify",
+      "category": "duplicate-source-of-truth",
+      "severity": "medium",
+      "confidence": "high",
+      "unit": "u03",
+      "units": [
+        "u03",
+        "u07",
+        "u06",
+        "u12"
+      ],
+      "title": "语言清单存在 4 份互相不一致的定义，zh-TW 语言包 529 行无人引用，中英日三语缺 6 个仍在使用的 key",
+      "brief": "同一个“支持哪些语言”的事实被 Java、Python、前端常量、前端 i18n 各写了一遍，结果四份都不一样：繁体中文包已经写好却从来没被加载，英文和日文界面有 6 处会直接显示 key 名而不是人话。",
+      "file": "frontend/src/constants/language.js",
+      "line": 3,
+      "evidence": "四份定义：backend/lianyu-common/src/main/java/com/lianyu/common/i18n/OutputLanguage.java:6-9 枚举 ZH/ZH_TW/JA/EN；backend-agent/app/language_gate.py:22 SUPPORTED = (\"zh\", \"zh-TW\", \"ja\", \"en\")；frontend/src/constants/language.js:3 SUPPORTED_LANGUAGES = ['zh','ja','en']；frontend/src/i18n/index.js:16-17 fallbackLocale: 'zh' + messages: { zh, ja, en }。frontend/src/i18n/locales/zh-TW.js 共 529 行、588 个扁平 key，全仓无任何 import（仅 frontend/src/utils/dateLocale.js:4 出现过 'zh-TW' 字面量）。key 数量：zh 583 / zh-TW 588 / en 582 / ja 575；en 与 ja 都缺 chat.scrollToBottom（ChatPage.vue:173、GroupChatPage.vue:131 在用）、qqBridge.binding.providerPlaceholder（QqBridgePage.vue:157）、header.apiSettings、header.changePassword、header.logoutConfirm、home.emotionHint；memory.* 共 11 个 key 只存在于 zh-TW（MemoryPage.vue:11,76 在用）；characterSquare.addDialogTitle 在 zh-TW 缺失（CharacterSquarePage.vue:223 在用）。frontend 内不存在 i18n key 一致性测试。",
+      "impact": "切到英文或日文的用户会看到裸 key（例如 chat.scrollToBottom、qqBridge.binding.providerPlaceholder），记忆页整块文案在 zh/ja/en 下都缺；新增文案没有任何机制保证四语齐全，AGENTS.md 的“四语齐”约定事实上已经失守。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把语言清单收敛成一份可跨端读取的事实，并为 i18n 补一致性测试；先决定 zh-TW 是上线还是删除，再补齐缺失 key。",
+        "steps": [
+          "决策 zh-TW：若上线，则在 constants/language.js 的 SUPPORTED_LANGUAGES 与 i18n/index.js 的 messages 中注册，并补齐 characterSquare.addDialogTitle 等缺口；若不上线，删除 locales/zh-TW.js 并同步收敛 Java OutputLanguage 与 Python language_gate 的支持列表。",
+          "以 zh 为基准补齐 en/ja 缺失的 6 个 key（chat.scrollToBottom、qqBridge.binding.providerPlaceholder、header.apiSettings、header.changePassword、header.logoutConfirm、home.emotionHint）。",
+          "新增测试 frontend/src/i18n/__tests__/localeKeys.test.js：断言各 locale 的扁平 key 集合与 zh 完全相等（允许显式 allowlist 并在注释里写原因）。",
+          "再加一条测试扫描 src/**/*.vue 里的 t('...') 字面量，断言 key 在 zh 中存在，防止再出现裸 key。",
+          "把 SUPPORTED_LANGUAGES 作为唯一清单，Java/Python 侧通过既有请求头 X-LianYu-Output-Language 的白名单处引用同一份枚举值，并在注释里指向单一事实源。"
+        ],
+        "files": [
+          "frontend/src/constants/language.js",
+          "frontend/src/i18n/index.js",
+          "frontend/src/i18n/locales/zh-TW.js",
+          "backend/lianyu-common/src/main/java/com/lianyu/common/i18n/OutputLanguage.java",
+          "backend-agent/app/language_gate.py"
+        ],
+        "tests": [
+          "npm --prefix frontend test",
+          "pytest -q backend-agent"
+        ]
+      }
+    },
+    {
+      "id": "M-03",
+      "section": "simplify",
+      "category": "duplicate-source-of-truth",
+      "severity": "medium",
+      "confidence": "high",
+      "unit": "u02",
+      "units": [
+        "u02",
+        "u05"
+      ],
+      "title": "角色广场的 prompt 文案在 Java 与数据库里各存一份，数据库那份永远不会被读取",
+      "brief": "角色广场每个角色的设定文案同时写在 Java 代码和数据库插入脚本里，程序只会用 Java 那份，所以有人改数据库里那份会以为生效、其实完全没用，等于给自己埋了个假开关。",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareCatalog.java",
+      "line": 219,
+      "evidence": "CharacterSquareCatalog.java 内 String resolvedPrompt = promptPack != null ? promptPack.prompt() : template.getPromptTemplate();（约 219-222 行）。展示入口在 CharacterSquareService.java:145 先做 if (slug == null || !CharacterSquareCatalog.isKnownSlug(slug)) 过滤，因此走到回退分支的 template 必然有对应 promptPack，pack == null 分支不可达。数据库侧：backend/lianyu-dao/src/main/resources/db/migration 下 18 个迁移文件写入 prompt_template，共 55 条 INSERT INTO character_square_template（例如 V18__character_square_genshin.sql、V13__character_square_dal.sql）。同时 CharacterSquareCatalog 系列类里保存了大量 zh/ja/en 角色设定文案，与 AGENTS.md §3.2「prompt 只允许出现在 backend-agent/app/prompts/ 与 Python 代码里」冲突。",
+      "impact": "改一句角色设定要改两处，且只有一处生效；维护者按数据库改文案会白改，也没有任何测试能发现这种“改了没效果”。长期看角色文案会在 Java、DB、Python 三处继续分叉。",
+      "kind": "plan",
+      "fix": {
+        "summary": "确认 CharacterSquareCatalog 的 prompt pack 为唯一真值源，删除数据库回退路径并让 schema 不再承载 prompt 副本。",
+        "steps": [
+          "先在 CharacterSquareService 里把 template.getPromptTemplate() 回退改成抛错或返回空并记日志，跑一遍现有用例确认没有真实流量依赖该分支。",
+          "删除 CharacterSquareCatalog 里的回退三目表达式，改为直接取 promptPack.prompt(); 对 pack == null 的情况显式报错，让问题在启动/展示时暴露。",
+          "新增一条 Flyway 迁移把 character_square_template.prompt_template 置 NULL 并加注释说明历史副本已废弃（不修改已应用的历史迁移文件）。",
+          "按 AGENTS.md §3.2 评估把 CharacterSquareCatalog 里的角色设定文案迁到 backend-agent/app/prompts/，Java 只保留 slug 与展示元数据。",
+          "补单测：未知 slug 的展示行为、已知 slug 的 prompt 来源，防止回退路径被重新引入。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareCatalog.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareService.java",
+          "backend/lianyu-dao/src/main/resources/db/migration"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test"
+        ]
+      }
+    },
+    {
+      "id": "M-04",
+      "section": "simplify",
+      "category": "duplicate-implementation",
+      "severity": "medium",
+      "confidence": "high",
+      "unit": "u08",
+      "units": [
+        "u08",
+        "u03",
+        "u09",
+        "u06"
+      ],
+      "title": "SSE 帧解析有三份实现，前端单元测试测的是文件内自造的副本而不是生产代码",
+      "brief": "流式回复的解析规则被写了三遍（前端共享模块、Java 转发层、Python 运行时），而且有个前端测试自己在测试文件里抄了一份解析函数来测，生产代码改坏了它也照样绿。",
+      "file": "frontend/src/utils/__tests__/sseParser.test.js",
+      "line": 4,
+      "evidence": "frontend/src/utils/__tests__/sseParser.test.js:4 在测试文件内定义 function parseSseDataLine(line) 并只测这份副本；真正的共享实现在 frontend/shared/sseParser.js（107 行，导出 parseSseDataPayload:31、parseSseStream:57、createSseAccumulator:81），被 frontend/src/utils/assistantStreamDrain.js:1、frontend/electron/qqBridge/qqBridge.js:17、frontend/electron/wechatBridge/wechatBridge.js:5 引用，且已有 frontend/shared/__tests__/sseParser.test.js。服务端还有第三份：backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentSseParser.java（160 行）；帧的生产方是 backend-agent/app/stream_chat.py（DONE_FRAME/HEARTBEAT 常量）。",
+      "impact": "AGENTS.md §3.4 要求 SSE 帧契约变更必须三端同步，但当前没有一条测试能从帧样本出发校验两端解析一致；前端那份副本测试给出的是虚假的安全感。",
+      "kind": "plan",
+      "fix": {
+        "summary": "删掉测试文件里的解析副本，改为直接测 frontend/shared/sseParser.js，并用同一组 golden 帧样本约束 Java 与 Python 两侧。",
+        "steps": [
+          "删除 frontend/src/utils/__tests__/sseParser.test.js 中的内联 parseSseDataLine，改为 import { parseSseDataPayload } from '../../../../shared/sseParser.js' 后断言同样用例；若与 frontend/shared/__tests__/sseParser.test.js 完全重复则直接删文件。",
+          "新增 frontend/shared/__tests__/sseFrames.golden.json，收录 content/replace/pieces/error/[DONE]/: keep-alive 六类帧样本。",
+          "让 frontend/shared/sseParser.js 与 AgentSseParser.java 各自读取同一组 golden 帧做断言，Python 侧再加一条测试保证 stream_chat.py 产出的帧与 golden 一致。",
+          "在 AGENTS.md §3.4 附近补一行指向这些 golden 文件，明确“改帧先改 golden”。"
+        ],
+        "files": [
+          "frontend/src/utils/__tests__/sseParser.test.js",
+          "frontend/shared/sseParser.js",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentSseParser.java",
+          "backend-agent/app/stream_chat.py"
+        ],
+        "tests": [
+          "npm --prefix frontend test",
+          "mvn -q -f backend/pom.xml test",
+          "pytest -q backend-agent"
+        ]
+      }
+    },
+    {
+      "id": "M-05",
+      "section": "simplify",
+      "category": "duplicate-implementation",
+      "severity": "low",
+      "confidence": "high",
+      "unit": "u09",
+      "units": [
+        "u09",
+        "u03"
+      ],
+      "title": "startupProfiler 在 electron 与 src 下各有一份实现，时间基准不同",
+      "brief": "启动耗时统计被抄成了两份，一份用系统时钟、一份用高精度时钟，两边数字不可比，排查启动慢的时候容易被误导。",
+      "file": "frontend/electron/startupProfiler.js",
+      "line": 1,
+      "evidence": "frontend/electron/startupProfiler.js:1 export function createStartupProfiler({ prefix, log, now = () => Date.now() })；frontend/src/utils/startupProfiler.js:2-8 默认 now 走 performance.now() 并在缺失时回退 Date.now()，且对结果做 Math.round。两份各带测试：frontend/electron/__tests__/startupProfiler.test.js 与 frontend/src/utils/__tests__/startupProfiler.test.js。",
+      "impact": "主进程与渲染进程的启动耗时用不同基准，日志里同名指标不可横向比较；同一处修复要改两遍。",
+      "kind": "plan",
+      "fix": {
+        "summary": "抽一份共享实现（前端 side-effect free），两端注入各自的时钟并统一取整规则。",
+        "steps": [
+          "把实现移到 frontend/shared/startupProfiler.js，导出 createStartupProfiler({ prefix, log, now }) 且不内置时钟。",
+          "electron 侧传 now: () => Date.now()，渲染侧传 now: () => performance.now()，并在日志字段名上区分 base=wall|perf。",
+          "删掉两份旧实现与它们的测试，改为对共享模块的单一测试；两侧各保留一个“注入时钟”的冒烟断言。"
+        ],
+        "files": [
+          "frontend/electron/startupProfiler.js",
+          "frontend/src/utils/startupProfiler.js"
+        ],
+        "tests": [
+          "npm --prefix frontend test"
+        ]
+      }
+    },
+    {
+      "id": "M-06",
+      "section": "simplify",
+      "category": "brittle-test",
+      "severity": "low",
+      "confidence": "high",
+      "unit": "u07",
+      "units": [
+        "u07"
+      ],
+      "title": "三个前端测试用 readFileSync 读 .vue 源码做字符串断言，测的是排版不是行为",
+      "brief": "有几个前端测试不是验证功能，而是把页面源码当文本读进来找字符串，谁调一下顺序或改个缩进就会莫名其妙变红，和用户实际体验无关。",
+      "file": "frontend/src/pages/__tests__/settingsLayout.test.js",
+      "line": 1,
+      "evidence": "frontend/src/pages/__tests__/settingsLayout.test.js、wechatBridgePage.test.js、momentsCommentThread.test.js 都用 readFileSync(resolve(currentDir, '../XxxPage.vue')) 后对源码做断言（例如 settingsLayout.test.js 断言 SettingsPage.vue 中区块出现顺序）。同一目录下的 charactersRealtime.test.js 只测导出的纯函数，是更可持续的写法。",
+      "impact": "这类测试对行为零保护，却会在无害重构时变红，长期降低大家对红灯的信任；也让人不敢重排模板结构。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把源码文本断言换成对导出纯函数或渲染结果的断言，保留真正有价值的契约检查。",
+        "steps": [
+          "逐个确认这三个测试想守住什么契约（设置页分组顺序、微信桥文案、朋友圈评论线程）。",
+          "把可判定的部分抽成 .js 纯函数（参照 pages/momentsCommentThread.js、charactersRealtime.js 的既有做法）并对纯函数断言。",
+          "确实只能靠模板结构保证的（如区块顺序），改为导出 SECTION_ORDER 常量由页面消费，测试断言该常量。",
+          "删除 readFileSync 相关代码与 fs/path/url 导入，跑 npm --prefix frontend test 确认全绿。"
+        ],
+        "files": [
+          "frontend/src/pages/__tests__/settingsLayout.test.js",
+          "frontend/src/pages/__tests__/wechatBridgePage.test.js",
+          "frontend/src/pages/__tests__/momentsCommentThread.test.js"
+        ],
+        "tests": [
+          "npm --prefix frontend test"
+        ]
+      }
+    },
+    {
+      "id": "M-07",
+      "section": "cleanup",
+      "category": "script-sprawl",
+      "severity": "medium",
+      "confidence": "high",
+      "unit": "u04",
+      "units": [
+        "u04",
+        "u12"
+      ],
+      "title": "scripts/ 里 97 个下划线开头的一次性脚本、7 个部署变体、4 组重复脚本和 2 个 0 字节文件长期留在版本库里",
+      "brief": "仓库里堆着上百个一次性运维脚本，其中同一个部署动作有七个版本、同一段逻辑被复制了多份，还有硬编码的生产服务器地址和作者本机路径，别人 clone 下来根本跑不通，也不知道哪个才是“正统”。",
+      "file": "scripts/_cloud_deploy_pull.py",
+      "line": 1,
+      "evidence": "git ls-files scripts 共 132 个文件，其中 97 个以 _ 开头（73%），而 AGENTS.md §3.1 规定一次性脚本应放 local/ 或不提交；backend/scripts 10 个、frontend/scripts 13 个同类文件。同一部署流程有 7 个变体：_cloud_deploy_agent_base_url.py、_cloud_deploy_agent_layer.py、_cloud_deploy_backend_layer.py、_cloud_deploy_backend_only.py、_cloud_deploy_layered.py、_cloud_deploy_prep.py、_cloud_deploy_pull.py。scripts/ 内 81 个文件重复定义 def load_dotenv、16 个重复定义 def load_env、105 个直接用 paramiko SSHClient、109 个硬编码主机 156.233.228.18。重复脚本组：scripts/gen_elysia_openai.py(331 行) 与 Pets/skills/hatch-lianyu-pet/scripts/gen_pet_images.py(355 行) 14 个同名函数；scripts/gen_pet_fixed_voices.py(296) 与 scripts/diag/_gen_pet_fixed_voices.py(271) 7 个；scripts/_repair_flyway_v34.py(118) 与 scripts/ops/_repair_flyway_v34_mark_applied.py(96) 4 个；scripts/enroll_pet_voices.py 与 Pets/skills/hatch-lianyu-pet/scripts/enroll_pet_voices.py md5 完全相同。本机绝对路径硬编码 7 处：scripts/gen_elysia_dashscope.py:111、scripts/gen_elysia_openai.py:255、scripts/replay_catalog.py:13、scripts/_check_yml.py:6、backend/scripts/dedupe-java-imports.ps1:1、backend/scripts/fix-service-cross-imports.ps1:2、backend/scripts/repackage-service.ps1:3（均为 c:\\Users\\hp\\Desktop\\LianYu-PC\\...）。0 字节但已跟踪：frontend/scripts/_run-release.ps1、backend/scripts/_vault_export.tsv。",
+      "impact": "新人无法判断该跑哪个脚本，改一个部署行为要同步改 7 份；硬编码主机与作者本机路径让脚本在别人机器上必然失败，也让仓库变成“只有作者能用的工具堆”。",
+      "kind": "plan",
+      "fix": {
+        "summary": "收敛成一套带参数的运维脚本（deploy/upload/diag 三条），一次性脚本移出仓库或放进 local/，并清掉重复与空文件。",
+        "steps": [
+          "先列清单：给 97 个 _ 前缀脚本逐个标注“仍在用 / 已废弃 / 一次性排查”，只保留仍在用的少数几个。",
+          "把 7 个 _cloud_deploy_* 合并为一个 scripts/ops/cloud_deploy.py，用 --layer agent|backend|all 与 --prep/--pull 参数覆盖原分支，主机与口令从 .env 读取。",
+          "抽出共用的 scripts/ops/_ssh.py（load_env/run/sftp_put/wait_healthy）替换 81 份 load_dotenv 与 105 处 SSHClient 样板。",
+          "删除字节相同的重复文件（scripts/enroll_pet_voices.py 与 Pets 下副本留一处）、diag/ops 下的历史副本，以及 frontend/scripts/_run-release.ps1、backend/scripts/_vault_export.tsv 两个 0 字节文件。",
+          "把 7 处 c:\\Users\\hp\\... 绝对路径改成基于 Path(__file__).resolve().parents[N] 或环境变量，并在脚本里对缺失环境变量给出明确报错。",
+          "在 .gitignore 增加对 local/ 与 _* 临时脚本的忽略规则，README/AGENTS.md §5.5 的脚本索引同步为最终清单。"
+        ],
+        "files": [
+          "scripts",
+          "backend/scripts",
+          "frontend/scripts",
+          "Pets/skills/hatch-lianyu-pet/scripts"
+        ],
+        "tests": [
+          "python scripts/check_release_asset_contract.py"
+        ]
+      }
+    },
+    {
+      "id": "M-08",
+      "section": "cleanup",
+      "category": "config-drift",
+      "severity": "medium",
+      "confidence": "high",
+      "unit": "u10",
+      "units": [
+        "u10"
+      ],
+      "title": "CI 只跑 backend 与 frontend，没有 pytest 与 admin job，前端还用了与 AGENTS.md 冲突的并行跑法",
+      "brief": "本地门禁要求四套测试全绿，但 CI 里只跑了两套：Python 运行时和 admin 后台的测试从来没在流水线里跑过，而且前端测试的跑法和文档要求的串行方式不一致，已知的偶发红灯在 CI 里会被当成真失败。",
+      "file": ".github/workflows/ci.yml",
+      "line": 39,
+      "evidence": ".github/workflows/ci.yml 共 55 行，只有 backend（mvn test）、frontend（第 39 行 run: npx vitest run）与 deps-audit(OSV) 三个 job；没有 backend-agent 的 pytest job，也没有 admin 的 npm test job。AGENTS.md §4 要求 `cd backend-agent && pytest` 全绿、前端必须 `npx vitest run --no-file-parallelism`（文档明确写了 updater 并发用例在满载并行下会偶发红）。",
+      "impact": "Python 侧 700+ 用例与 admin 后台完全没有自动化回归保护；前端并行跑法会让已知 flake 在 CI 上随机变红，团队逐渐忽略红灯。",
+      "kind": "direct",
+      "fix": {
+        "summary": "在 ci.yml 补齐 pytest 与 admin 两个 job，并把前端测试改成 AGENTS.md 要求的串行参数。",
+        "steps": [
+          "在 frontend job 里把 run: npx vitest run 改为 run: npx vitest run --no-file-parallelism。",
+          "新增 backend-agent job：setup-python 3.12、pip install -e 'backend-agent[dev]' 或 uv sync，工作目录 backend-agent 内执行 pytest -q。",
+          "新增 admin job：npm --prefix admin ci（或 install）后执行 npm --prefix admin test。",
+          "在 job 里显式设置 working-directory 与 Python 环境变量，保证 backend-agent 的 app 包可导入（避免当前本地 ModuleNotFoundError 那类问题在 CI 复现）。"
+        ],
+        "files": [
+          ".github/workflows/ci.yml"
+        ],
+        "tests": [
+          "npm --prefix frontend test",
+          "pytest -q backend-agent",
+          "npm --prefix admin test"
+        ]
+      }
+    },
+    {
+      "id": "M-09",
+      "section": "cleanup",
+      "category": "unused-dependency",
+      "severity": "low",
+      "confidence": "high",
+      "unit": "u03",
+      "units": [
+        "u03"
+      ],
+      "title": "frontend 的 devDependencies 里挂着两个全仓零引用的包",
+      "brief": "桌面端项目的开发依赖里装了两个从来没被用到的包，每次安装都要多下载一份，也让人误以为项目里有对应的能力。",
+      "file": "frontend/package.json",
+      "line": 37,
+      "evidence": "frontend/package.json:37 \"@vue/test-utils\": \"^2.4.6\"、:44 \"vite-plugin-electron-renderer\": \"^1.0.0\"；在 frontend/src、frontend/electron、frontend/shared、frontend/scripts 与各 vite 配置中均无引用（测试全部是 vitest 直接测纯函数/模块，不做组件挂载）。对比：@vue/test-utils 在仓库其它包（如 admin）也无使用记录。",
+      "impact": "依赖体积与安装时间无谓增加，且给后来者留下“有组件测试设施”的错误印象；安全审计面也多两个包。",
+      "kind": "direct",
+      "fix": {
+        "summary": "从 devDependencies 删除这两个包并同步 lockfile。",
+        "steps": [
+          "从 frontend/package.json 的 devDependencies 删除 @vue/test-utils 与 vite-plugin-electron-renderer。",
+          "在 frontend 目录执行 npm install 更新 package-lock.json（只保留 lock 变化）。",
+          "跑 npm --prefix frontend test 与 npx --prefix frontend vite build 确认无隐式依赖。"
+        ],
+        "files": [
+          "frontend/package.json",
+          "frontend/package-lock.json"
+        ],
+        "tests": [
+          "npm --prefix frontend test"
+        ]
+      }
+    },
+    {
+      "id": "M-10",
+      "section": "cleanup",
+      "category": "rule-drift",
+      "severity": "low",
+      "confidence": "high",
+      "unit": "u05",
+      "units": [
+        "u05"
+      ],
+      "title": "57 个 Flyway 迁移里有 33 个含非 ASCII 字符，与 AGENTS.md 的 ASCII-only 约定相反",
+      "brief": "文档要求数据库迁移脚本只能是纯英文，但仓库里超过一半的迁移文件写了中文注释和中文数据，换一台编码不一致的机器或客户端就可能读成乱码。",
+      "file": "backend/lianyu-dao/src/main/resources/db/migration",
+      "line": 1,
+      "evidence": "backend/lianyu-dao/src/main/resources/db/migration 下 57 个 .sql，grep -lP '[^\\x00-\\x7F]' 命中 33 个（V1、V10–V29 中的大部分，如 V10__character_square.sql、V13__character_square_dal.sql 的中文注释与中文 INSERT 值）；AGENTS.md §3.3 明确要求「迁移文件保持 ASCII-only」。",
+      "impact": "在 charset 不一致的客户端/容器里执行迁移可能写入乱码或校验失败；历史迁移已被 Flyway 记录校验和，事后修改会直接导致 validate 失败，因此这个约定只能靠新文件守住。",
+      "kind": "plan",
+      "fix": {
+        "summary": "不改历史迁移（会破坏 Flyway checksum），改为新增一个门禁脚本 + 模板注释，确保从此往后新迁移都是 ASCII-only。",
+        "steps": [
+          "写 scripts/check_migration_ascii.py：扫描 backend/lianyu-dao/src/main/resources/db/migration 下新增的 V*.sql，命中非 ASCII 字节即失败，输出文件与行号。",
+          "为已存在的 33 个文件生成一个基线清单（路径 + sha256），脚本只对不在基线内的新文件报错，避免一次性红屏。",
+          "把该脚本接进 .github/workflows/ci.yml 的 backend job 与 AGENTS.md §4 门禁表。",
+          "更新 V 文件模板/注释说明：中文说明写在 PR 描述或 docs/ 里，迁移脚本内只用英文与 slug。",
+          "后续需要写中文数据（如角色文案）时，改由应用侧或 Python 侧提供，不再通过迁移硬编码。"
+        ],
+        "files": [
+          "backend/lianyu-dao/src/main/resources/db/migration",
+          "scripts"
+        ],
+        "tests": [
+          "python scripts/check_release_asset_contract.py"
+        ]
+      }
+    },
+    {
+      "id": "M-11",
+      "section": "cleanup",
+      "category": "readability",
+      "severity": "low",
+      "confidence": "high",
+      "unit": "u10",
+      "units": [
+        "u10"
+      ],
+      "title": "admin 后台的 6 个源文件被压成单行/少行，编辑器与 code review 都无法阅读",
+      "brief": "后台管理页面的样式和组件被压缩成了一行几千个字符，任何改动都会显示成“整行全改”，评审时看不出改了什么，也没法用编辑器正常定位。",
+      "file": "admin/src/styles.css",
+      "line": 1,
+      "evidence": "admin/src/styles.css 全文 1 行、最长行 5759 字符；admin/src/management.css 2 行（最长 1057）；admin/src/App.vue 15 行但单行最长 2178 字符；admin/src/pages/ManagementPage.vue 15 行、最长 1058；admin/src/stores/session.js 2 行（635）；admin/src/components/DataTable.vue 5 行（667）。",
+      "impact": "这些文件的 diff 永远是整行替换，无法评审也无法 blame 到具体改动；出问题时不能用编辑器跳转定位。",
+      "kind": "direct",
+      "fix": {
+        "summary": "用格式化工具把 admin/src 下的压缩源文件按常规风格展开，仅格式变更。",
+        "steps": [
+          "在 admin 目录跑 npx prettier --write \"src/**/*.{vue,css,js}\"（若无 prettier 则先 npx prettier@3 临时执行）。",
+          "确认 git diff 仅包含空白/换行变化（git diff -w 为空），单独成一个“纯格式化”提交。",
+          "在 admin/package.json 增加 format 脚本，避免以后再被压回单行。",
+          "跑 npm --prefix admin test 与后台页面手工冒烟（菜单、表格、会话）。"
+        ],
+        "files": [
+          "admin/src/styles.css",
+          "admin/src/management.css",
+          "admin/src/App.vue",
+          "admin/src/pages/ManagementPage.vue",
+          "admin/src/stores/session.js",
+          "admin/src/components/DataTable.vue"
+        ],
+        "tests": [
+          "npm --prefix admin test"
+        ]
+      }
+    }
+  ],
+  "deferred": [
+    "backend-agent 在仓库根无法收集用例的根因（pyproject 无 pythonpath / 无 conftest.py）只做了定位，未提出改动建议，留给 CI 相关专家或项目维护者决定（已并入 M-08 的 job 步骤中规避）。",
+    "scripts/ 中仍有约 40 个 _cloud_*/_diag_* 脚本未逐个确认最后一次使用时间，M-07 的删除清单需维护者确认后再执行。",
+    "frontend/electron/main.js 的拆分方案只给了分批边界，未做依赖图级别的模块划分设计。"
+  ],
+  "notes": "只读审查：未修改任何源码、未提交、未删除文件；仅写入本 handoff 目录。已忽略 .logistics/ 与 docs/logistics/ 下由本工具产生的文件。受审范围以 scope.json 的 project.units 为准（1100 个审查文件），每单元 files 数组为该单元内实际读过的路径（32 个，含全部 core）；跨单元阅读的佐证文件（frontend/package.json、frontend/src/i18n/index.js、frontend/src/constants/language.js、frontend/shared/sseParser.js、backend-agent/app/language_gate.py 等）在相应 notes 中说明。"
+}

@@ -543,14 +543,15 @@ export default {
         RITUAL: '儀式'
       },
       flows: {
-        wake: '会話で呼び起こす',
-        write: '抽出して書き込む',
-        index: '索引 · 想起',
-        emotion: '感情の重み',
-        relation: '関係の重み',
-        diary: '日記の堆積',
-        inject: 'prompt へ注入',
-        topic: '今の話題'
+        inputHippo: '言語入力 → 海馬体',
+        hippoLtm: '長期記憶に書き込む',
+        ltmCore: '検索中枢が呼び出す',
+        coreOutput: '返信を生成',
+        ltmLimbic: '感情の重み',
+        ltmRelation: '関係の重み',
+        limbicOutput: '感情 → 表現',
+        relationLtm: '関係の還流',
+        introspectLtm: '日記の堆積'
       }
     }
   },

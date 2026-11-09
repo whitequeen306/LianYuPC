@@ -1,0 +1,298 @@
+{
+  "schemaVersion": 2,
+  "runId": "20261104-181253-2a86a7",
+  "generatedAt": "2026-11-04T18:25:00+08:00",
+  "coverage": {
+    "expected": ["reliability"],
+    "received": ["reliability"],
+    "missing": [],
+    "complete": true
+  },
+  "findings": [
+    {
+      "id": "REL-32349",
+      "expert": "reliability",
+      "module": "backend-agent",
+      "section": "error-handling",
+      "severity": "high",
+      "confidence": "high",
+      "title": "客户端中途离开产生的取消被记成上游失败，可把模型熔断器打穿",
+      "file": "backend-agent/app/gateway.py",
+      "line": 279,
+      "evidence": "stream_text 的整条流被 `except BaseException as exc: await breaker.on_error(exc); raise` 包住（gateway.py:259-281），非流式 `_post_chat` 在 gateway.py:402-410 同构（:407）。CircuitBreaker.on_error（resilience.py:132-152）只把 GatewayBusinessError 记成成功（:134-144），其余异常在 CLOSED 态直接 `self._results.append(False)`（:151），在 HALF_OPEN 态任何错误都立刻 `self._open()`（:146-149）。_maybe_open 的门槛是 `minimum_number_of_calls=5` / `failure_rate_threshold=50.0`（resilience.py:72-73、156-166）——窗口内 5 条样本中 3 次失败即 OPEN。GeneratorExit 与 asyncio.CancelledError 都是 BaseException 子类，恰好落在这条记账路径上。触发路径是产品常态：frontend/src/composables/useStreamAbort.js:17-34 的 `abortOnUnmount` 默认为 true，组件卸载即 `controller.abort()`；SSE 断开后 Java 侧 AgentStreamBridge 关闭到 agent 的连接，Python 侧生成器被关闭或请求任务被取消。",
+      "impact": "用户正常的中途离开（切页/关聊天窗/快速重发）被累计成「上游故障」：任意 5 次对话里 3 次中断就能让该 provider 的 breaker OPEN 30 秒，期间所有用户的流式请求直接拿 GatewayRejectedError（前端表现为「模型繁忙/生成失败」），而真实上游完全健康；HALF_OPEN 下再来一次取消会立刻重新 OPEN，等于无法自愈。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把取消/提前关闭从熔断记账里摘出去，按业务错同等处理（中性、不计数），并保留真实上游错误仍计数",
+        "steps": [
+          "在 gateway.py:279 与 :407 的 `except BaseException` 里先判断 `isinstance(exc, (asyncio.CancelledError, GeneratorExit))`，这两类只 `raise`、不调用 breaker.on_error",
+          "把判断收进 resilience.py 的 on_error：新增「中性异常」分支，状态不动、不追加样本、HALF_OPEN 下按成功释放 inflight（否则半开名额会被取消永久占用）",
+          "确认 stream_chat.py 的取消路径不会把中性异常改写成 GatewayError，避免修复后仍落在失败分支",
+          "在 tests/test_resilience.py 同时锁定正反两面：取消中性 + ReadTimeout 仍计数"
+        ],
+        "files": [
+          "backend-agent/app/gateway.py",
+          "backend-agent/app/resilience.py",
+          "backend-agent/tests/test_resilience.py"
+        ],
+        "tests": [
+          "backend-agent/tests/test_resilience.py::test_cancelled_stream_does_not_count_as_upstream_failure",
+          "backend-agent/tests/test_resilience.py::test_generator_close_is_neutral_for_breaker",
+          "backend-agent/tests/test_resilience.py::test_read_timeout_still_counts"
+        ]
+      }
+    },
+    {
+      "id": "REL-58FC8",
+      "expert": "reliability",
+      "module": "backend-agent",
+      "section": "error-handling",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "工具执行只兜底 httpx.HTTPError/RuntimeError，其余异常会打断整轮回复",
+      "file": "backend-agent/app/tool_loop.py",
+      "line": 101,
+      "evidence": "execute_tool_calls 的 docstring（tool_loop.py:77-81）承诺「单个工具失败只影响它自己那条结果」，实现是 `except (httpx.HTTPError, RuntimeError) as exc: output = f\"工具 {name} 调用失败：{exc}\"`（tool_loop.py:99-103）。其余异常直接穿透：weather_tool.py:59 `data = response.json()` 在返回 200 但非 JSON（限流页/维护页）时抛 json.JSONDecodeError；memory_search_tool.py / recent_activity_tool.py 走 app/db.py 的 fetch_all，而 db.py 对数据库异常不做任何包装（db.py 内只有 ReadOnlyViolation 一处主动 raise，其余 except 仅用于缓存降级），aiomysql 的 OperationalError/InterfaceError 原样抛出。上层 stream_chat.py 只捕获 GatewayRejectedError/GatewayError，最终落到 main.py:252 的 `except Exception` → 只吐一帧 sse_error(\"生成失败，请重试\")。",
+      "impact": "一次工具级故障（天气接口返回非 JSON、记忆检索时数据库瞬断）就让整轮对话失败：用户已经看到的流式内容被丢弃重来，而按设计本应只是那一条工具结果变成「工具调用失败」，正文照常返回。",
+      "kind": "direct",
+      "fix": {
+        "summary": "把工具级兜底放宽到 Exception 并保留堆栈日志（asyncio.CancelledError 在 3.8+ 属 BaseException，不会被吞掉）",
+        "steps": [
+          "把 tool_loop.py:101 的 `except (httpx.HTTPError, RuntimeError)` 改成 `except Exception as exc`",
+          "日志改为 `logger.warning(\"tool %s failed\", name, exc_info=True)`，避免 TypeError/KeyError 这类编程错误被无栈吞掉",
+          "保留 `output = f\"工具 {name} 调用失败：{exc}\"` 的对外文案，确保契约不变"
+        ],
+        "files": ["backend-agent/app/tool_loop.py"],
+        "tests": [
+          "backend-agent/tests/test_tools.py::test_execute_tool_calls_isolates_json_error",
+          "backend-agent/tests/test_tools.py::test_execute_tool_calls_isolates_key_error",
+          "backend-agent/tests/test_tools.py::test_execute_tool_calls_propagates_cancellation"
+        ]
+      }
+    },
+    {
+      "id": "REL-2669A",
+      "expert": "reliability",
+      "module": "backend/lianyu-service",
+      "section": "error-handling",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "Web Push 发送异常全部吞成 WARN，消费者恒成功且该队列没有死信兜底",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/notification/WebPushService.java",
+      "line": 112,
+      "evidence": "sendOne 对每条订阅 `catch (Exception e)`：瞬断（isTransientNetworkError）走 `log.warn(...); return;`（WebPushService.java:111-119），非瞬断也只在 :120 `log.warn`；非 2xx 状态码仅 :108-110 记 WARN（404/410 才停用订阅）。外层 sendToUser 在 :81-83 再兜一层 `log.warn(\"web push client error: {}\")`。因此 NotificationPushConsumer.onPushTask（NotificationPushConsumer.java:20-25）永远正常返回、MQ 永远 ack。配套的 eventBroadcastQueue（backend/lianyu-web/.../config/RabbitMqConfig.java:84-87）没有 x-dead-letter-* 参数，容器工厂 `setDefaultRequeueRejected(false)`（同文件 :130）。",
+      "impact": "推送服务瞬断或返回 5xx 时通知对用户永久丢失，现场只留一条 WARN：没有重试、没有死信、没有可观测计数，「用户没收到通知」既无法事后归因也无法补发。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把「全部订阅都因瞬断失败」升级为消费者失败让 MQ 重试生效，并给广播队列补死信出口",
+        "steps": [
+          "WebPushService.sendToUser 返回投递结果（成功数/瞬断数/永久失败数），不再返回 void",
+          "NotificationPushConsumer 在「订阅非空且全部瞬断失败」时抛异常，交由 spring retry + DLQ 处理；永久失败（410/404）仍只停用订阅",
+          "eventBroadcastQueue 补 x-dead-letter-exchange/routing-key 并声明 event.broadcast.dlq",
+          "为推送结果加计数器与日志字段（userId 脱敏），让「没发」与「丢了」可区分"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/notification/WebPushService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/notification/NotificationPushConsumer.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/config/RabbitMqConfig.java"
+        ],
+        "tests": [
+          "backend/lianyu-service/src/test/java/com/lianyu/service/notification/WebPushServiceTest.java::transientFailureRethrowsForRetry",
+          "backend/lianyu-web/src/test/java/com/lianyu/web/config/RabbitMqConfigTest.java::eventBroadcastQueueHasDeadLetter"
+        ]
+      }
+    },
+    {
+      "id": "REL-784C6",
+      "expert": "reliability",
+      "module": "backend/lianyu-web",
+      "section": "error-handling",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "两个死信队列声明了却没有任何消费者，记忆摘要失败三次后消息静默滞留",
+      "file": "backend/lianyu-web/src/main/java/com/lianyu/web/config/RabbitMqConfig.java",
+      "line": 23,
+      "evidence": "RabbitMqConfig.java:23/26 声明 `memory.summary.dlq`、`ai.background.dlq`，:56-61/:71-76 给主队列挂 x-dead-letter-*，:65-67/:80-82 建 DLQ，:95-97/:105-107 绑定到同一 topic exchange。但全仓 `@RabbitListener` 只有 3 处，且都指向主队列：AiBackgroundConsumer.java:45 `ai.background.queue`、MemoryConsumer.java:15 `memory.summary.queue`、NotificationPushConsumer.java:16 `event.broadcast.queue`——没有任何消费者监听两个 DLQ。失败链路是实的：MemoryWriter.processSummary 捕获异常后 `throw new RuntimeException(\"memory summary process failed, convId=\" + task.conversationId(), e)`（MemoryWriter.java:133-135），配合 backend/lianyu-app/src/main/resources/application.yml:71-79 的 listener retry（max-attempts 3）+ `setDefaultRequeueRejected(false)`，第 3 次失败即进 DLQ。",
+      "impact": "记忆摘要与 AI 后台任务失败后消息永久停在 DLQ：没有消费者、没有指标、没有告警、没有重放入口。用户侧表现为「记忆不再更新 / 主动问候消失」，运维侧只能人肉进管理台翻队列才会发现——这正是 critical 级静默数据丢失的前置形态。",
+      "kind": "plan",
+      "fix": {
+        "summary": "给两个 DLQ 补可观测终态（计数 + 落库 + 告警）与受控重放入口",
+        "steps": [
+          "新增 DlqMonitor：@RabbitListener 监听两个 dlq，把消息落一张 dead_letter 表（队列、routingKey、payload、首次失败时间）并递增 Micrometer 计数器",
+          "计数 > 0 时按阈值打 ERROR 并暴露 health indicator，让部署自检与监控能看到",
+          "提供受控重放：管理端按 id 重新投递到主队列（带 replay 标记，避免无限循环）",
+          "确认 MemoryWriter 的 maybeReschedule 与 DLQ 重放不会产生重复摘要（source_hash 幂等已具备，需补一条用例）"
+        ],
+        "files": [
+          "backend/lianyu-web/src/main/java/com/lianyu/web/config/RabbitMqConfig.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryWriter.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/ai/background/AiBackgroundConsumer.java"
+        ],
+        "tests": [
+          "backend/lianyu-service/src/test/java/com/lianyu/service/mq/DlqMonitorTest.java::recordsDeadLetterAndIncrementsCounter",
+          "backend/lianyu-service/src/test/java/com/lianyu/service/mq/DlqReplayTest.java::replayIsIdempotent"
+        ]
+      }
+    },
+    {
+      "id": "REL-380F5",
+      "expert": "reliability",
+      "module": "backend-agent",
+      "section": "error-handling",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "/agent/health 恒返回 UP，却被容器健康检查、发版自检和 Java 降级判据三处当作真实可用性",
+      "file": "backend-agent/app/main.py",
+      "line": 102,
+      "evidence": "main.py:102-104 原文是 `@app.get(\"/agent/health\")` + `async def health() -> dict[str, str]: return {\"status\": \"UP\"}`，不探测 MySQL/Redis/Milvus 或模型凭据。三处当真：docker-compose.yml:136、:181 的 agent/agent2 healthcheck 直接 urlopen 该端点；scripts/_cloud_deploy_pull.py:130-143 把 `agent=200` 当作部署成功判据（12 次 ×15s，否则 `raise SystemExit(56)`）；backend/lianyu-web/.../agent/AgentRuntimeClient.java:406-414 的 isHealthy() 也打它，被 AgentBlockingAdapter.java:131、AgentPromptAssemblyAdapter.java:113、AgentSessionSummaryAdapter.java:114、AgentStreamAdapter.java:111、ChatTurnAdapter.java:209 用作降级判据。",
+      "impact": "依赖挂掉（数据库只读、Milvus 不可达、embedding 凭据失效）时 agent 依旧 healthy：compose 不重建、发版自检照样打印 DEPLOY_DONE、Java 认为 agent 可用而不回退，故障最终只体现为用户侧「生成失败，请重试」，且没有任何线索指向 agent 依赖。",
+      "kind": "plan",
+      "fix": {
+        "summary": "拆开 liveness 与 readiness：/agent/health 只证进程活着，新增 /agent/ready 真探依赖，并让发版自检与 Java 判据改用它",
+        "steps": [
+          "新增 /agent/ready：并发探 MySQL（SELECT 1）、Redis、Milvus（轻量 describe/health），带 2s 超时，任一失败返回 503 + 失败依赖清单",
+          "docker-compose healthcheck 保留 /agent/health（避免依赖抖动反复重启容器），另加一条 readiness 探针给网关/负载均衡",
+          "scripts/_cloud_deploy_pull.py:130-143 改用 agent/ready=200 作为部署成功判据，并在失败时打印依赖清单",
+          "AgentRuntimeClient.isHealthy() 改打 /agent/ready，降级日志带上失败依赖"
+        ],
+        "files": [
+          "backend-agent/app/main.py",
+          "docker-compose.yml",
+          "scripts/_cloud_deploy_pull.py",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentRuntimeClient.java"
+        ],
+        "tests": [
+          "backend-agent/tests/test_api_contract.py::ready_reports_degraded_when_dependency_down",
+          "backend-agent/tests/test_api_contract.py::health_stays_up_regardless"
+        ]
+      }
+    },
+    {
+      "id": "REL-6DAB0",
+      "expert": "reliability",
+      "module": "backend-agent",
+      "section": "error-handling",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "记忆批量写入的 docstring 承诺整批事务，实现是逐条事务，中途失败会留下半批已提交数据",
+      "file": "backend-agent/app/memory/writer.py",
+      "line": 123,
+      "evidence": "writer.py:123 的 docstring 写「批量写入；整批在同一事务内，任一失败全回滚」，但 write_memories 是 `for memory in memories:` 逐条处理（:128-166），每条各自开事务：_insert_new 用 `async with transaction() as cur`（:175-190）、_update_meta（:196-202）、_replace_and_enqueue（:209-214）。第 N 条抛错时，前面 N-1 条已经提交，函数直接向上抛，WriteOutcome 里的计数也随异常一起丢失。",
+      "impact": "调用方按「整批失败」处理（整批重试或整批丢弃），数据库里却留下半批记忆：既不全有也不全无，且没有 partial 标记，事后无法判断这次记忆抽取到底成没成；重试时又依赖 source_hash 去重才能避免重复。",
+      "kind": "plan",
+      "fix": {
+        "summary": "二选一：把整批放进一个事务（评估锁持有时间），或在 docstring 与返回值里如实暴露「部分写入」",
+        "steps": [
+          "先量化单批内存条目数与单条耗时，确认整批事务的持锁时间可接受（当前是秒级以下的小批）",
+          "若可接受：write_memories 外层开一个 transaction()，把 _insert_new/_update_meta/_replace_and_enqueue 改为接收 cur 参数、不再各自开事务；失败整体回滚",
+          "若不可接受：改写 docstring 为「逐条提交」，并在 WriteOutcome 增加 failed_at/partial 字段、把已提交条数返回给调用方",
+          "补充异常路径用例：第 2 条失败时断言要么 0 条落库，要么 outcome.partial=true 且计数准确"
+        ],
+        "files": ["backend-agent/app/memory/writer.py", "backend-agent/tests/test_memory_writer.py"],
+        "tests": [
+          "backend-agent/tests/test_memory_writer.py::batch_write_rolls_back_all_on_failure",
+          "backend-agent/tests/test_memory_writer.py::partial_failure_is_reported_in_outcome"
+        ]
+      }
+    },
+    {
+      "id": "REL-1BDFC",
+      "expert": "reliability",
+      "module": "backend-agent",
+      "section": "tests",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "熔断记账没有「取消不算失败」的回归用例，该缺陷因此无人发现",
+      "file": "backend-agent/tests/test_resilience.py",
+      "line": 1,
+      "evidence": "Gap: gateway.py:279 对取消/生成器关闭的熔断记账行为没有任何用例锁定。Current: tests/test_resilience.py 的 17 个用例全部用显式异常驱动（httpx.ConnectError / ReadTimeout / GatewayBusinessError）；在 backend-agent/tests 下检索 `CancelledError|GeneratorExit` 为 0 命中；tests/test_gateway.py 只覆盖 HTTP 错误与 4xx/5xx 映射。Proposed: 在 test_resilience.py 增加 (a) test_cancelled_stream_does_not_count_as_upstream_failure——构造流式生成器后 aclose()，断言 breaker 仍 CLOSED 且失败样本数为 0；(b) 对包装流式调用的任务 task.cancel()，断言同样中性；并补反例 test_read_timeout_still_counts（ReadTimeout 累计到阈值后打开）。Why: 取消是产品里最常见的中断（useStreamAbort 默认 abortOnUnmount），没有用例等于没有护栏；而修复时若把 on_error 一并删掉，熔断会彻底失效也无测试报警，所以必须成对锁定正反两面。",
+      "impact": "REL-32349 的取消记账缺陷没有任何回归网；将来若把 except 收窄过度（例如直接删掉 on_error 调用），熔断彻底失效同样无人察觉——两端都是静默失效。",
+      "kind": "plan",
+      "fix": {
+        "summary": "补「取消中性 + 真实错误仍计数」的成对用例，并把取消路径纳入 gateway 测试矩阵",
+        "steps": [
+          "在 test_resilience.py 加 aclose 触发 GeneratorExit 的用例，断言 _results 长度不变或全为 True、state 仍 CLOSED",
+          "加 task.cancel() 用例，断言 CancelledError 透传且不计失败",
+          "加 ReadTimeout 反例，断言 5 次中 3 次失败后 OPEN",
+          "在 test_gateway.py 加一条端到端：流式消费被关闭后再次正常请求仍成功（证明熔断未被误触）"
+        ],
+        "files": ["backend-agent/tests/test_resilience.py", "backend-agent/tests/test_gateway.py"],
+        "tests": [
+          "backend-agent/tests/test_resilience.py::test_cancelled_stream_does_not_count_as_upstream_failure",
+          "backend-agent/tests/test_resilience.py::test_generator_close_is_neutral_for_breaker",
+          "backend-agent/tests/test_resilience.py::test_read_timeout_still_counts"
+        ]
+      }
+    },
+    {
+      "id": "REL-44D37",
+      "expert": "reliability",
+      "module": "backend-agent",
+      "section": "tests",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "execute_tool_calls 的单工具失败隔离没有任何测试，docstring 的承诺无人验证",
+      "file": "backend-agent/tests/test_tools.py",
+      "line": 1,
+      "evidence": "Gap: tool_loop.execute_tool_calls 承诺「单个工具失败只影响它自己那条结果」（tool_loop.py:80），这条隔离语义没有用例。Current: 在 backend-agent 内检索 `execute_tool_calls` 只命中 app/（stream_chat.py、tool_loop.py 的 :72/:194），tests/ 为 0 引用；tests/test_tools.py 的 14 个用例只覆盖 handler 直调（handle_get_weather、read_current_time_fact）、schema 清单与 run_tool_loop 的轮次上限，且注入的异常恰好是 httpx.HTTPError / RuntimeError（:101 已捕获的两类），正好绕开窄 except 的破口。Proposed: 新增 test_execute_tool_calls_isolates_json_error 与 …_isolates_key_error：用抛 json.JSONDecodeError / KeyError 的假 handler 与正常 handler 同批调用，断言正常结果仍在、失败工具返回「工具 X 调用失败：…」而非向上抛；再用抛 asyncio.CancelledError 的 handler 断言取消仍透传。Why: 没有这条用例，把 except 收窄成任何白名单都不会被门禁发现；第三点防止修复时把取消一起吞掉，制造新的静默失败。",
+      "impact": "工具异常隔离的实际边界与文档不一致且不可验证：任何新增工具只要抛非白名单异常就会打断整轮回复，而 pytest 全绿不会提示。",
+      "kind": "plan",
+      "fix": {
+        "summary": "为工具隔离语义补三类用例：非白名单异常、取消透传、正常工具不受影响",
+        "steps": [
+          "构造两个 fake ToolSpec：一个抛 json.JSONDecodeError、一个正常返回，同批调用 execute_tool_calls",
+          "断言返回列表长度不变、正常工具的 output 未受影响、失败工具 output 以「工具 X 调用失败」开头",
+          "另加抛 asyncio.CancelledError 的 handler，断言异常向上传播而不是被转成文案",
+          "在 test_tools.py 顶部补最小 spec 构造函数，避免每个用例重复拼 ToolSpec"
+        ],
+        "files": ["backend-agent/tests/test_tools.py"],
+        "tests": [
+          "backend-agent/tests/test_tools.py::test_execute_tool_calls_isolates_json_error",
+          "backend-agent/tests/test_tools.py::test_execute_tool_calls_isolates_key_error",
+          "backend-agent/tests/test_tools.py::test_execute_tool_calls_propagates_cancellation"
+        ]
+      }
+    },
+    {
+      "id": "REL-2D7B1",
+      "expert": "reliability",
+      "module": "backend-agent",
+      "section": "error-handling",
+      "severity": "low",
+      "confidence": "medium",
+      "title": "shared_client 在事件循环变化时直接丢弃旧 client，不关闭连接池",
+      "file": "backend-agent/app/http_client.py",
+      "line": 73,
+      "evidence": "http_client.py:67-75：命中缓存要求 `cached_loop is loop and not client.is_closed`，否则直接 `client = new_client(limits=_SHARED_LIMITS); _SHARED[name] = (loop, client)`（:73-74），旧 client 既不 aclose 也不再被引用；模块级清理只有 aclose_shared()（:78-85），进程不退出就不会调用。",
+      "impact": "同一进程内重建事件循环（多 loop 的测试、将来加 worker 复用、热重载）时，每换一个 loop 泄漏一个连接池与若干套接字，长期运行累积 fd；当前生产是单 loop 形态，故记 low。",
+      "kind": "plan",
+      "fix": {
+        "summary": "换 loop 时显式关闭旧 client（在旧 loop 上调度 aclose），或把缓存改成按 loop 分组 + 弱引用清理",
+        "steps": [
+          "在 :73 覆盖缓存前，对旧 client 调 `cached_loop.call_soon_threadsafe(lambda: asyncio.ensure_future(old.aclose()))`（旧 loop 已关闭则跳过）",
+          "缓存值改为 (loop, client) 之外再加一个 weakref，loop 回收时自动清理",
+          "补用例：两个 loop 交替调用 shared_client，断言第一个 client.is_closed 为 True"
+        ],
+        "files": ["backend-agent/app/http_client.py", "backend-agent/tests/test_http_client.py"],
+        "tests": ["backend-agent/tests/test_http_client.py::shared_client_closes_previous_loop_client"]
+      }
+    }
+  ],
+  "deferred": [
+    {
+      "from": "reliability",
+      "expert": "",
+      "file": "frontend/src/composables/useStreamAbort.js",
+      "lines": "17-34",
+      "summary": "流式失败（sse error 帧或连接中断）后前端是否自动重试属产品策略，reliability 只把它当作触发源记录、未纳入 error-handling 计数；若要判断「重试是否放大熔断」，需要产品/前端给出预期行为"
+    },
+    {
+      "from": "reliability",
+      "expert": "",
+      "file": "backend/lianyu-dao",
+      "lines": "",
+      "summary": "backend/lianyu-dao 110 个文件只有 mapper 与 DAL（0 处 @Transactional、0 处 catch），没有错误处理面可审，本次未逐文件深读；若关心 SQL 层异常语义，应交给 correctness/data-integrity 维度"
+    }
+  ],
+  "dropped": []
+}

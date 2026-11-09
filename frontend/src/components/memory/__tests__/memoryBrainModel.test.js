@@ -133,7 +133,7 @@ describe('buildBrainGraph', () => {
     expect(second).toEqual(first)
   })
 
-  it('核心/钉住记忆归到中心，其余按真实类型与角色组成外围簇', () => {
+  it('核心/钉住记忆归到中心，其余按真实类型组成外围簇（角色隔离后不再按角色拆）', () => {
     const graph = buildBrainGraph({
       memories: [
         memory(1, { layer: 'core', memoryType: 'RELATION' }),
@@ -148,13 +148,15 @@ describe('buildBrainGraph', () => {
     const center = graph.memoryNodes.filter((node) => node.memoryId === 1 || node.memoryId === 2)
     expect(center.every((node) => node.clusterId === 'cluster-core')).toBe(true)
     expect(center.find((node) => node.memoryId === 1).sector).toBe('RELATION')
-    expect(graph.clusters.some((cluster) => cluster.sector === 'FACT' && cluster.characterId === '1')).toBe(true)
-    expect(graph.clusters.some((cluster) => cluster.sector === 'FACT' && cluster.characterId === '2')).toBe(true)
-    expect(graph.clusters.filter((cluster) => !cluster.central)).toHaveLength(3)
+    // 角色隔离后：外围簇只按类型拆，不再按角色拆
+    expect(graph.clusters.filter((cluster) => !cluster.central)).toHaveLength(2)
+    expect(graph.clusters.some((cluster) => cluster.sector === 'FACT' && !cluster.central)).toBe(true)
+    expect(graph.clusters.some((cluster) => cluster.sector === 'EMOTION' && !cluster.central)).toBe(true)
+    // RELATION 的 core 记忆进了中枢，不再单独占簇
+    expect(graph.clusters.some((cluster) => cluster.sector === 'RELATION' && !cluster.central)).toBe(false)
+    // 类型枢纽：FACT 与 EMOTION 各一个，RELATION 因为只进了中枢，不占枢纽
     expect(graph.sectorHubs.map((sectorHub) => sectorHub.sector)).toEqual(['FACT', 'EMOTION'])
-    expect(graph.sectorHubs.find((sectorHub) => sectorHub.sector === 'FACT').clusterIds).toHaveLength(2)
-    const factClusters = graph.clusters.filter((cluster) => cluster.sector === 'FACT')
-    expect(Math.hypot(factClusters[0].pos[0] - factClusters[1].pos[0], factClusters[0].pos[1] - factClusters[1].pos[1])).toBeGreaterThan(60)
+    expect(graph.sectorHubs.find((sectorHub) => sectorHub.sector === 'FACT').clusterIds).toHaveLength(1)
   })
 
   it('没有 core/pinned 时把少量高重要度记忆放进中心云但不改 layer', () => {

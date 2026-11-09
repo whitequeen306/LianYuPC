@@ -1,0 +1,913 @@
+{
+  "schemaVersion": 2,
+  "expert": "reliability",
+  "status": "ok",
+  "summary": "审查 12 个单元 1108 个文件（每单元实读 30-41 个文件，核心文件全覆盖）。健壮性层面最要紧的两处：Python 网关把客户端中断记成上游失败，5 次用户关窗就能打开熔断把该 provider 的所有用户打成“模型繁忙”（已用脚本复现）；Java 的 SSE 收尾只接 IOException，收尾阶段任何其它异常都会让流最长挂 30 分钟、且这一轮回复不落库。另有后台任务重试预算短于熔断窗口导致整批进死信、推送队列没有死信配置、主动消息失败只记 DEBUG、流式兜底日志没有 traceback，以及两条测试门禁失效（pytest 缺 pythonpath、admin 依赖未装且 --passWithNoTests）。共 11 条发现：high 2 / medium 4 / low 5。",
+  "sections": {
+    "error-handling": 2,
+    "resilience": 3,
+    "observability": 3,
+    "tests": 3
+  },
+  "units": {
+    "u01": {
+      "status": "reviewed",
+      "filesRead": 41,
+      "files": [
+        "backend/lianyu-service/pom.xml",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentBlockingPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentChatResult.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentImagePort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentMemoryPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentRuntimePort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentStreamCallback.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentStreamPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentTextPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentTextStreamPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentTurnResult.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/CharacterGenerationPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/AsrTranscribeResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/MomentUnreadCountResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/ModelEntryDto.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/PushNotifyTask.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/CreateMomentPostRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/GenerateCharacterRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/SquareCommentRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/AddCharacterFromSquareRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/AnalyzeCharacterImportRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/MomentFeedResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/background/AiBackgroundJobType.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/CreateCharacterRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/CreateConversationRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/CreateMomentCommentRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/GroupMessageResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/MarkNotificationReadRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/MessagePageResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/MomentCommentListResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/SseChatStreamHelper.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AiResilience.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AiChatService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AssistantReplyService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/UpstreamCircuitBreakerFactory.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/background/AiBackgroundConsumer.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/config/AiStreamExecutorConfig.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ProactiveChatScheduler.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/character/EmotionDecayScheduler.java"
+      ],
+      "notes": "逐文件读了 SSE 收尾、回合编排、主动消息调度、群聊生成、记忆写入与后台消费者；三个 @Scheduled 与 @RabbitListener 的失败路径逐个核对"
+    },
+    "u02": {
+      "status": "sampled",
+      "filesRead": 38,
+      "files": [
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/SquareCommentResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/SquareLikeToggleResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UnreadCountResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateCharacterRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateGroupTitleRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateProfileRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateUserSettingsRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateVaultRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UserProfile.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UserSettingsResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/VaultEntryResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/VoiceCallEndRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/ExtractedMemory.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/rules/PromptRuleSlot.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/graph/ChatTurnGroupExtras.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipInnerSpace.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipPhase.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/rules/PromptRuleHook.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/voice/VoiceEventSink.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/CachedMemoryRow.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipSnapshot.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/VoiceCallTurnResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipEventInput.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/ai/AsrStreamClientUrlTest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipEventType.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/conversation/VoiceCallDurationFormatTest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipPresence.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/ai/AsrServiceContentTypeTest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/graph/MessageModelContent.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryConsumer.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryWriter.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryOutboxService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentReconciliationScheduler.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/notification/NotificationPushConsumer.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/notification/WebPushService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipDecayScheduler.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/graph/ChatTurnFacade.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/ai/background/AiBackgroundConsumerTest.java"
+      ],
+      "notes": "core 12 个 DTO 全读（均为纯数据类，无可靠性面）；另按 rg 扫了通知/关系/广场服务的失败分支，WebPushService 与 NotificationPushConsumer 深读"
+    },
+    "u03": {
+      "status": "reviewed",
+      "filesRead": 34,
+      "files": [
+        "frontend/src/api/__tests__/httpCoreSkipGlobalError.test.js",
+        "frontend/src/api/__tests__/sessionRefresh.test.js",
+        "frontend/src/api/ai.js",
+        "frontend/src/api/asr.js",
+        "frontend/src/api/auth.js",
+        "frontend/src/api/character.js",
+        "frontend/src/api/characterSquare.js",
+        "frontend/src/api/characterState.js",
+        "frontend/src/api/conversation.js",
+        "frontend/src/api/electronAdapter.js",
+        "frontend/src/api/httpCore.js",
+        "frontend/src/api/index.js",
+        "frontend/src/constants/authSession.js",
+        "frontend/src/constants/brand.js",
+        "frontend/src/constants/ai.js",
+        "frontend/src/constants/voiceCallMarkers.js",
+        "frontend/src/composables/__tests__/useVoiceDuplexUrl.test.js",
+        "frontend/src/api/memory.js",
+        "frontend/src/api/users.js",
+        "frontend/src/directives/index.js",
+        "frontend/src/api/installMainHttpToasts.js",
+        "frontend/src/constants/__tests__/voiceCallMarkers.test.js",
+        "frontend/src/constants/petSprite.js",
+        "frontend/src/composables/useKeepAlivePages.js",
+        "frontend/src/constants/language.js",
+        "frontend/src/constants/__tests__/ai.test.js",
+        "frontend/src/api/notification.js",
+        "frontend/src/composables/voiceSocket.js",
+        "frontend/src/constants/voiceCallPets.js",
+        "frontend/src/composables/__tests__/voiceSocket.test.js",
+        "frontend/src/composables/useStreamAbort.js",
+        "frontend/src/composables/useVoiceRecorder.js",
+        "frontend/src/composables/pcmPlayback.js",
+        "frontend/src/composables/useVoiceDuplex.js"
+      ],
+      "notes": "前端 API 层全读：httpCore 超时与 401 单飞、错误文案映射、SSE 解析与 drain、语音/录音 composable 的 catch 分支逐个核对"
+    },
+    "u04": {
+      "status": "sampled",
+      "filesRead": 31,
+      "files": [
+        "scripts/_audit_installer_unpack.py",
+        "scripts/_prod_verify.py",
+        "scripts/_upload_update_assets.py",
+        "scripts/_upload_wechat_channel.py",
+        "scripts/_verify_electron_release.py",
+        "scripts/diag/_gen_pet_fixed_voices.py",
+        "scripts/e2e/lianyu_e2e.py",
+        "scripts/gen_elysia_atlas.mjs",
+        "scripts/gen_elysia_openai.py",
+        "scripts/gen_pet_fixed_voices.py",
+        "scripts/ops/_write_theme_picker.py",
+        "scripts/re_enroll_pet_voices.py",
+        "scripts/_check_yml.py",
+        "scripts/_has_deploy_pw.py",
+        "scripts/release_assets.json",
+        "scripts/diag/_diag_observe_tts_done.py",
+        "scripts/generate-dev-certs.sh",
+        "scripts/diag/_diag_tts_env_quick.py",
+        "scripts/ops/_restart_backend.py",
+        "scripts/diag/_diag_missing_two.py",
+        "scripts/generate-dev-certs.ps1",
+        "scripts/diag/_diag_jar_contents.py",
+        "scripts/ops/_flyway_status.py",
+        "scripts/diag/_diag_minio_list.py",
+        "scripts/ops/_check_after_restart.py",
+        "scripts/_server_health_check.py",
+        "scripts/diag/_diag_sync_skip.py",
+        "scripts/ops/_restart_sync.py",
+        "scripts/_backend_logs.py",
+        "scripts/_flyway_diag.py",
+        "scripts/_cloud_deploy_pull.py"
+      ],
+      "notes": "12 个 core 脚本读头与关键函数；确认 _cloud_deploy_pull.py 已有 timeout/非 PTY（AGENTS.md 提到的挂死已修）、上传脚本遵循 manifest-last"
+    },
+    "u05": {
+      "status": "sampled",
+      "filesRead": 30,
+      "files": [
+        "backend/lianyu-dao/pom.xml",
+        "backend/lianyu-dao/src/main/resources/db/migration/V1__init_schema.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V10__character_square.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V11__character_square_slug.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V12__character_square_avatars_roster.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V13__character_square_dal.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V14__character_square_linzihan.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V15__character_square_linzihan_avatar_fix.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V16__character_square_tags_simplify.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V17__character_square_white_queen.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V18__character_square_genshin.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V19__character_square_mavuika.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V30__version_gap_placeholder.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V5__message_image_url.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V8__message_sticker_url.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V9__moments_post_image_url.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V35__message_audio_url.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V49__drop_default_vault_pool.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V6__moments_user_post.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V44__message_context_content.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V41__community_linked_character.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V52__character_diary_source.sql",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/enums/MemoryType.java",
+        "backend/lianyu-dao/src/main/resources/db/migration/V45__character_square_noelle.sql",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/dto/ConversationUserMessageCountRow.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/ApiKeyVaultMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/CharacterMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/CharacterStickerMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/GroupMemberMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/MemoryMetaMapper.java"
+      ],
+      "notes": "Flyway 迁移按版本抽样 20 个 + 5 个 mapper 接口；DDL 幂等（IF NOT EXISTS / NOT EXISTS / DELETE），无运行时代码，可靠性面为空"
+    },
+    "u06": {
+      "status": "sampled",
+      "filesRead": 35,
+      "files": [
+        "frontend/src/main.js",
+        "frontend/src/pages/CharactersPage.vue",
+        "frontend/src/pages/CharacterSquarePage.vue",
+        "frontend/src/pages/ChatPage.vue",
+        "frontend/src/pages/GroupChatPage.vue",
+        "frontend/src/pages/LandingPage.vue",
+        "frontend/src/pages/QqBridgePage.vue",
+        "frontend/src/pages/SettingsPage.vue",
+        "frontend/src/router/__tests__/startupErrorRecovery.test.js",
+        "frontend/src/router/index.js",
+        "frontend/src/router/startupErrorRecovery.js",
+        "frontend/src/stores/settings.js",
+        "frontend/src/utils/dateLocale.js",
+        "frontend/src/utils/text.js",
+        "frontend/src/pages/charactersRealtime.js",
+        "frontend/src/utils/sanitize.js",
+        "frontend/src/utils/groupTitle.js",
+        "frontend/src/pages/LauncherPickPage.vue",
+        "frontend/src/stores/layout.js",
+        "frontend/src/pages/__tests__/wechatBridgePage.test.js",
+        "frontend/src/utils/electron.js",
+        "frontend/src/utils/startupProfiler.js",
+        "frontend/src/pages/__tests__/charactersRealtime.test.js",
+        "frontend/src/utils/__tests__/audioUpload.test.js",
+        "frontend/src/utils/bootSplash.js",
+        "frontend/src/utils/userCity.js",
+        "frontend/src/stores/__tests__/notificationsPurge.test.js",
+        "frontend/src/utils/outputLanguageHeader.js",
+        "frontend/src/utils/__tests__/runtime.devProxy.test.js",
+        "frontend/src/utils/__tests__/secureToken.test.js",
+        "frontend/src/utils/errorMessage.js",
+        "frontend/src/utils/assistantStreamDrain.js",
+        "frontend/src/stores/user.js",
+        "frontend/src/stores/qqBridge.js",
+        "frontend/src/stores/notifications.js"
+      ],
+      "notes": "ChatPage 流式收发与 4 个 store 的错误分支深读；其余页面按 rg 扫 catch/Promise.allSettled"
+    },
+    "u07": {
+      "status": "reviewed",
+      "filesRead": 36,
+      "files": [
+        "backend-agent/app/chat_turn.py",
+        "backend-agent/app/config.py",
+        "backend-agent/app/data_readers.py",
+        "backend-agent/app/gateway.py",
+        "backend-agent/app/main.py",
+        "backend-agent/app/resilience.py",
+        "backend-agent/app/stream_chat.py",
+        "backend-agent/app/tts.py",
+        "backend-agent/Dockerfile",
+        "backend-agent/pyproject.toml",
+        "backend-agent/tests/test_memory_embedding.py",
+        "backend-agent/tests/test_voice_tts.py",
+        "backend-agent/app/__init__.py",
+        "backend-agent/app/graphs/__init__.py",
+        "backend-agent/app/memory/__init__.py",
+        "backend-agent/app/session_summary_block.py",
+        "backend-agent/tests/test_desktop_greeting_prompt.py",
+        "backend-agent/app/tools/registry.py",
+        "backend-agent/tests/test_session_summary_block.py",
+        "backend-agent/app/tools/__init__.py",
+        "backend-agent/tests/test_gateway_url.py",
+        "backend-agent/tests/test_vision_parser.py",
+        "backend-agent/app/prompts/loader.py",
+        "backend-agent/app/prompt_fragments.py",
+        "backend-agent/tests/test_recent_activity_and_summary_prompts.py",
+        "backend-agent/app/memory/profile_context.py",
+        "backend-agent/tests/test_emotion_block.py",
+        "backend-agent/tests/test_tool_hints.py",
+        "backend-agent/app/character_prompt.py",
+        "backend-agent/tests/test_group_mention_judge_prompt.py",
+        "backend-agent/app/write.py",
+        "backend-agent/app/memory/relay.py",
+        "backend-agent/tests/test_gateway.py",
+        "backend-agent/tests/test_resilience.py",
+        "backend-agent/tests/test_stream_chat.py",
+        "backend-agent/tests/test_memory_relay.py"
+      ],
+      "notes": "网关/韧性/流式/入口/配置/写出/记忆 relay 全读，并实跑熔断器复现脚本；49 个测试文件的覆盖点逐个对照"
+    },
+    "u08": {
+      "status": "reviewed",
+      "filesRead": 36,
+      "files": [
+        "backend/lianyu-web/pom.xml",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AiController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AsrController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AuthController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/CharacterController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/CharacterStateController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/ConversationController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/GroupChatController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/LegacyCommunityController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/MemoryController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/MomentsController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/NotificationController.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/util/ImageUploadValidatorTest.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/config/Knife4jConfig.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentRuntimeProperties.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/controller/LegacyCommunityControllerTest.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/UserPublicController.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/util/ClientIpResolverTest.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/config/FilterConfig.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/filter/SecurityHeadersFilter.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/controller/ObserveControllerSecurityTest.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/util/ClientIpResolver.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/controller/AuthControllerCaptchaTest.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentFailureLogThrottle.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/filter/OutputLanguageFilter.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/filter/HeaderOnlyTokenFilterTest.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/handler/GlobalExceptionHandlerSseTest.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/agent/AgentToolCatalogTest.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/agent/AgentFailureLogThrottleTest.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/config/CorsConfig.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentRuntimeClient.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/ChatTurnAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentImageAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamBridge.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/config/RabbitMqConfig.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/agent/AgentStreamBridgeTest.java"
+      ],
+      "notes": "AgentRuntimeClient、ChatTurnAdapter、AgentStreamBridge、AgentImageAdapter、RabbitMqConfig 全读，Controller 层按 rg 扫异常传播"
+    },
+    "u09": {
+      "status": "sampled",
+      "filesRead": 31,
+      "files": [
+        "frontend/electron/main.js",
+        "frontend/electron/napcatRuntime/__tests__/napcatRelease.test.js",
+        "frontend/electron/napcatRuntime/napcatDownloader.js",
+        "frontend/electron/napcatRuntime/napcatHost.js",
+        "frontend/electron/napcatRuntime/napcatRelease.js",
+        "frontend/electron/qqBridge/napCatClient.js",
+        "frontend/electron/qqBridge/qqBridge.js",
+        "frontend/electron/qqBridge/qqBridgeCoordinator.js",
+        "frontend/electron/updater/__tests__/updater.test.js",
+        "frontend/electron/updater/updater.js",
+        "frontend/electron/wechatBridge/__tests__/wechatBridge.test.js",
+        "frontend/electron/wechatBridge/lianyu-weixin-host.mjs",
+        "frontend/electron/startupProfiler.js",
+        "frontend/electron/__tests__/installerScript.test.js",
+        "frontend/electron/startupOrchestrator.js",
+        "frontend/electron/__tests__/exportTextFile.test.js",
+        "frontend/electron/launcherBounds.js",
+        "frontend/electron/appearanceStore.js",
+        "frontend/electron/exportTextFile.js",
+        "frontend/electron/lastChatModelStore.js",
+        "frontend/electron/__tests__/startupProfiler.test.js",
+        "frontend/electron/rendererTokenScript.js",
+        "frontend/electron/__tests__/releaseToken.test.js",
+        "frontend/electron/singleInstance.js",
+        "frontend/electron/updater/manifestSignature.js",
+        "frontend/electron/__tests__/launcherBounds.test.js",
+        "frontend/electron/__tests__/desktopSettings.test.js",
+        "frontend/electron/qqBridge/messageExtractor.js",
+        "frontend/electron/__tests__/logger.test.js",
+        "frontend/electron/greetingAudio.js",
+        "frontend/electron/logger.js"
+      ],
+      "notes": "updater/qqBridge/napcat/wechat 的主文件读头与关键失败分支；Electron 侧错误处理整体较完整（重试、状态机、uncaughtException 兜底）"
+    },
+    "u10": {
+      "status": "sampled",
+      "filesRead": 30,
+      "files": [
+        ".env.example",
+        "admin/electron/main.js",
+        "admin/index.html",
+        "admin/package.json",
+        "admin/src/api.js",
+        "admin/src/App.vue",
+        "admin/src/main.js",
+        "admin/src/stores/session.js",
+        "admin/vite.config.js",
+        "backend/Dockerfile",
+        "backend/lianyu-ai/pom.xml",
+        "backend/lianyu-security/pom.xml",
+        "admin/src/styles.css",
+        "admin/src/management.css",
+        "admin/src/components/DataTable.vue",
+        "deploy/asr/requirements.txt",
+        "admin/electron/preload.cjs",
+        "deploy/api-gateway/docker-entrypoint.sh",
+        "admin/src/__tests__/menu.test.js",
+        "admin/src/menu.js",
+        "frontend/scripts/electron-dev.mjs",
+        "backend/lianyu-security/src/main/java/com/lianyu/security/annotation/EncryptedField.java",
+        "backend/lianyu-ai/src/main/java/com/lianyu/ai/graph/StreamTokenConsumer.java",
+        "frontend/scripts/electron-release-token.js",
+        "frontend/vitest.e2e.config.js",
+        "deploy/api-gateway/Dockerfile",
+        "admin/src/pages/ManagementPage.vue",
+        "backend/lianyu-security/src/main/java/com/lianyu/security/config/PasswordConfig.java",
+        "frontend/jsconfig.json",
+        "deploy/api-gateway/generate-cors-map.sh"
+      ],
+      "notes": "admin 控制台全部源码（13 个文件）逐个读，另读 .env.example/Dockerfile/pom/网关脚本等部署件"
+    },
+    "u11": {
+      "status": "sampled",
+      "filesRead": 30,
+      "files": [
+        "backend/lianyu-admin/pom.xml",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/conversation/VoiceCallServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/dto/RegisterRequestValidationTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/graph/ChatTurnFacadeToolFlagsTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/graph/ImageMessageHistoryTextTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/graph/MessageModelContentTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/memory/MemoryExtractionServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/memory/MemoryWriterDebounceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/memory/MemoryWriterRelationshipTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/moments/MomentsCommentOrchestratorTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/notification/NotificationServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/relationship/RelationshipHeuristicsTest.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/AdminModuleMarker.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminPermissionCatalog.java",
+        "backend/lianyu-admin/src/test/java/com/lianyu/admin/release/ReleaseValidationServiceTest.java",
+        "backend/lianyu-admin/src/test/java/com/lianyu/admin/AdminModuleSmokeTest.java",
+        "backend/lianyu-admin/src/test/java/com/lianyu/admin/identity/TotpUtilTest.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminDtos.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminIdentityProperties.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/GitHubReleaseController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/support/SupportGrantController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/ReleaseResolverController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminAuthController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminSecurityConfig.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/support/SupportGrantService.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/audit/AdminAuditController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/ReleaseController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/GitHubReleaseImporter.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/overview/AdminOverviewController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/ReleaseValidationService.java"
+      ],
+      "notes": "12 个 core 测试类全读，另抽 lianyu-admin 模块；测试多为薄壳，MemoryWriterDebounceTest 有真实 5.2s sleep"
+    },
+    "u12": {
+      "status": "sampled",
+      "filesRead": 31,
+      "files": [
+        "backend/lianyu-app/pom.xml",
+        "backend/lianyu-common/pom.xml",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/handler/JacksonListTypeHandler.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/handler/JacksonTypeHandler.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/OutboundUrlValidator.java",
+        "backend/pom.xml",
+        "frontend/Dockerfile",
+        "installer/LianYu.Installer/App.xaml.cs",
+        "installer/LianYu.Installer/InstallerEngine.cs",
+        "installer/LianYu.Installer/MainWindow.xaml.cs",
+        "Pets/skills/hatch-lianyu-pet/scripts/gen_pet_images.py",
+        "scripts/voice_candidates.py",
+        "backend/scripts/check-v10-state.sql",
+        "backend/scripts/repair-flyway-v14-checksum.sql",
+        "backend/scripts/strip-utf8-bom.ps1",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/constant/AiConstants.java",
+        "installer/LianYu.Installer/InstallOptions.cs",
+        "backend/settings-docker.xml",
+        "backend/lianyu-app/src/main/resources/application-prod.yml",
+        "backend/scripts/dedupe-java-imports.ps1",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/TraceIdFilter.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/exception/BusinessException.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/SpringContextHolder.java",
+        "backend/scripts/repair-flyway-v10.sql",
+        "backend/lianyu-app/src/main/java/com/lianyu/app/LianYuApplication.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/i18n/OutputLanguage.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/base/Result.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/TextUtils.java",
+        "installer/LianYu.Installer/InstallerLog.cs",
+        "Pets/skills/hatch-lianyu-pet/scripts/test_gen_pet_images.py",
+        "frontend/shared/sseParser.js"
+      ],
+      "notes": "common 工具类、安装器 C# 工程、Pets/scripts 工具逐个读头与关键分支；OutboundUrlValidator 的 DNS 重试与安装器失败处理是重点"
+    }
+  },
+  "tests": {
+    "commands": [
+      {
+        "command": "npm --prefix admin test",
+        "status": "failed",
+        "note": "`'vitest' 不是内部或外部命令`：admin 未安装依赖（无 node_modules），命令直接失败；源码里只有 admin/src/__tests__/menu.test.js 一个 8 行用例"
+      },
+      {
+        "command": "mvn -q -f backend/pom.xml test",
+        "status": "passed",
+        "note": "exit 0 / BUILD SUCCESS；覆盖 AiBackgroundConsumer 重试与 DLQ、ConversationService 落库、AgentRuntimeClient 5xx/连接失败、AgentStreamBridge 帧中继"
+      },
+      {
+        "command": "pytest -q backend-agent",
+        "status": "failed",
+        "note": "48 个 collection error，全部 `ModuleNotFoundError: No module named 'app'`（仓库根与 backend-agent 目录下都一样）；改用 `backend-agent/.venv/Scripts/python.exe -m pytest -q` 后 1157 passed —— 说明失败原因是导入路径/解释器，不是用例本身"
+      },
+      {
+        "command": "npm --prefix frontend test",
+        "status": "passed",
+        "note": "75 个测试文件 / 459 个用例全绿（7.5s）；含 updater、qqBridge、napcat、sseParser、httpCore 等用例"
+      }
+    ],
+    "summary": "4 条 scope 命令里 2 条通过、2 条失败：Java 与前端绿；admin 因依赖未安装无法执行，Python 因缺 pythonpath 只有 .venv 能跑（见 REL-09/REL-10）。"
+  },
+  "findings": [
+    {
+      "id": "REL-01",
+      "section": "resilience",
+      "category": "circuit-breaker",
+      "severity": "high",
+      "confidence": "high",
+      "brief": "用户中途关掉聊天窗口，系统会把它当成模型服务故障记一笔；攒够几次，所有用户都会被提示“模型繁忙”，哪怕模型本身好好的。",
+      "title": "客户端中断被记成上游失败，5 次用户放弃就能打开熔断器",
+      "file": "backend-agent/app/gateway.py",
+      "line": 279,
+      "evidence": "stream_text 里 `try:`（L259）包住了 `async for delta in self._stream_once(...): yielded; yield delta`（L264-268），于是消费方关闭连接产生的 GeneratorExit 与任务取消会落到 `except BaseException as exc: await breaker.on_error(exc); raise`（L279-281）。resilience.py 的 on_error（L132-149）对非 GatewayBusinessError 一律 `self._results.append(False)` + `_maybe_open()`；BreakerConfig 为 sliding_window_size=20、minimum_number_of_calls=5、failure_rate_threshold=50.0、wait_duration_seconds=30.0（L67-76）。已实跑复现（venv + PYTHONPATH=.）：连续 5 次 `try: raise GeneratorExit() except BaseException as exc: await breaker.on_error(exc)` 后 `attempt 4 permit True -> state CircuitState.OPEN`，日志 `breaker provider=platform|base=https://api.example.com OPEN (failure_rate=100%, samples=5)`，随后 `try_acquire()` 返回 False。",
+      "impact": "一次 5 个用户手滑关窗（或前端 abort、网关超时、进程收到取消）就能把该 provider+baseUrl 的熔断器打开 30 秒；期间所有用户的所有请求都不再打上游、统一返回“对方模型暂时繁忙，请稍后再试”，日志还把原因写成上游故障，误导排查方向。",
+      "kind": "direct",
+      "fix": {
+        "summary": "把“消费方主动放弃”从熔断样本里剔除，只对真实上游错误记失败。",
+        "steps": [
+          "在 stream_text 里把 `except BaseException` 拆开：`except (asyncio.CancelledError, GeneratorExit): raise` 直接透传，不调用 breaker.on_error",
+          "其余异常（GatewayError / ModelGatewayError / 非取消类）才 `await breaker.on_error(exc)`，并保持 `raise` 语义",
+          "消费方提前 `break` 时不要落入 on_error：把 `yield delta` 移出 try，或用 `emitted_any`/`consumer_closed` 标志在 finally 里区分",
+          "补 pytest：模拟 N 次客户端中断后断言 `breaker.state is CircuitState.CLOSED` 且下一个请求仍能 `try_acquire()`",
+          "给取消路径加一行 debug 日志，避免以后把它和上游故障混在一起看"
+        ],
+        "files": [
+          "backend-agent/app/gateway.py",
+          "backend-agent/app/resilience.py",
+          "backend-agent/tests/test_gateway.py",
+          "backend-agent/tests/test_resilience.py"
+        ],
+        "tests": [
+          "pytest -q backend-agent/tests/test_gateway.py",
+          "pytest -q backend-agent/tests/test_resilience.py",
+          "新增用例：test_stream_client_abort_does_not_open_breaker"
+        ]
+      }
+    },
+    {
+      "id": "REL-02",
+      "section": "error-handling",
+      "category": "sse-completion",
+      "severity": "high",
+      "confidence": "high",
+      "brief": "回复已经生成完、准备收尾时只要冒出一点非网络异常，这条流就不会发结束标记、回复也不会存进数据库，用户界面会一直转圈。",
+      "title": "finishSseSuccess 只接 IOException：收尾异常会让流不结束、回复不落库",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/ai/SseChatStreamHelper.java",
+      "line": 51,
+      "evidence": "L51-65：`try { if (callback != null) callback.beforeStreamComplete(emitter, fullContent); emitter.send(SseEmitter.event().data(\"[DONE]\")); emitter.complete(); } catch (IOException e) { log.warn(\"SSE complete failed\", e); emitter.complete(); }`，`callback.onComplete(fullContent, null)` 写在 try 之外（L62-64）。调用点 `AgentStreamBridge.finish()`（AgentStreamBridge.java:113）挂在 reactor 的完成回调 `subscribe(..., relay::finish)`（ChatTurnAdapter.java:72-79）：回调里抛出的 RuntimeException 会被 Reactor 记为 dropped error，emitter 不会被 complete，`onComplete` 也不会执行。SseEmitter 超时是 `SSE_TIMEOUT_MS = 1_800_000L`（ChatTurnAdapter.java:37）；而落库、记录回合、记忆入队、通知全部只在 ConversationService.onComplete（L377-407）里发生。`emitter.send` 在已完成/已超时状态下抛的是 IllegalStateException 而不是 IOException。AgentStreamBridgeTest 的 RecordingCallback 的 beforeStreamComplete 永不抛异常，这条路径没有测试。",
+      "impact": "收尾阶段一旦抛非 IOException（emitter 已完成/客户端刚断、回调里 DB 写入失败、序列化失败），用户拿到的是截断的回复且连接最长挂 30 分钟不收尾；刷新后这条回复消失（没落库、没触发记忆摘要与通知），服务端只留一条 Reactor onErrorDropped，几乎无法定位。",
+      "kind": "direct",
+      "fix": {
+        "summary": "收尾与 [DONE] 发送、落库回调三段各自兜底，保证 emitter 一定被 complete、onComplete 一定被调用一次。",
+        "steps": [
+          "把 `emitter.send([DONE])`/`emitter.complete()` 与 `callback.onComplete(...)` 拆成两个 try 块，catch 改成 `Exception`（IOException 单独降级为 debug）",
+          "在 finally 里 `try { emitter.complete(); } catch (Exception ignored) {}`，确保任何路径都收尾",
+          "`callback.onComplete` 外层 try/catch + log.error，落库失败不能吞掉 emit 收尾",
+          "AgentStreamBridgeTest 增加用例：beforeStreamComplete 抛 RuntimeException，断言 emitter 已 complete、onComplete 仍被调用一次、客户端收到 [DONE]",
+          "对 `emitter.send` 的 IllegalStateException（已超时/已完成）降级为 debug 并直接走 onComplete，避免刷 ERROR"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/ai/SseChatStreamHelper.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamBridge.java",
+          "backend/lianyu-web/src/test/java/com/lianyu/web/agent/AgentStreamBridgeTest.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test -Dtest=AgentStreamBridgeTest",
+          "新增用例：finishSseSuccess_whenBeforeCompleteThrows_stillCompletesAndPersists"
+        ]
+      }
+    },
+    {
+      "id": "REL-03",
+      "section": "resilience",
+      "category": "retry-budget",
+      "severity": "medium",
+      "confidence": "high",
+      "brief": "后台生成（朋友圈评论、角色日记、主动问候）总共只重试约 4.5 秒，而上游熔断要 30 秒才恢复，所以一次短暂抖动就把这批任务全丢进死信队列，不会自动补做。",
+      "title": "后台任务重试预算（3 次 / 约 4.5s）短于熔断窗口（30s），熔断一开就全进死信",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/ai/background/AiBackgroundConsumer.java",
+      "line": 71,
+      "evidence": "AiBackgroundConsumer：`MAX_ATTEMPTS = 3`（L32）、`retryDelayMs = 1500L`（L43）、`long delay = Math.max(1L, retryDelayMs) * attempt`（L71）→ 重试两次、共等 1.5s+3s；只有 `isAgentTransient(e)`（L102-116）为真才重试，判定方式是字符串匹配“prompt 组装失败/消息发送失败/服务暂时不可用”。上游 Python 熔断参数 wait_duration_seconds=30.0（resilience.py L67-76），application.yml L523 同样是 `wait-duration-in-open-state: 30s`。熔断打开时 Python 走 `sse_error(\"对方模型暂时繁忙，请稍后再试\")`，Java 侧 ChatTurnFacade L103/L112 统一映射为 AI_PROVIDER_ERROR“消息发送失败，请稍后再试”，因此三次重试全部落在同一个打开窗口内，最终 `throw last` → `defaultRequeueRejected(false)`（RabbitMqConfig L119-132）→ 死信。",
+      "impact": "上游抖动 30 秒，就会永久丢掉这段时间排队的所有 MOMENTS_*/CHARACTER_DIARY/主动问候任务：用户侧表现为角色忽然不再发朋友圈、不再主动说话，既没有补偿也没有告警，只能靠人工重放死信。",
+      "kind": "plan",
+      "fix": {
+        "summary": "让重试窗口覆盖熔断恢复时间，并给死信一条可自动补做的路。",
+        "steps": [
+          "把重试预算拉到 ≥ 熔断等待时间（例如 attempts 5 + 指数退避封顶 40s），或对“上游繁忙”类错误改成 requeue 而不是进死信",
+          "isAgentTransient 改为按错误码/结构化字段判定（AI_PROVIDER_ERROR + transient 标记），不再依赖中文文案匹配",
+          "为 ai.background DLQ 增加监控计数与定时/手工重放脚本（现在只有队列声明，没有重放入口）",
+          "在 AiBackgroundConsumerTest 覆盖“熔断打开期间重试 → 打开窗口结束后成功”的时序（可用可注入的时钟/睡眠替身）",
+          "把“重试预算与熔断窗口”的关系写进注释，避免以后单独调参又踩回去"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/ai/background/AiBackgroundConsumer.java",
+          "backend/lianyu-web/src/main/java/com/lianyu/web/config/RabbitMqConfig.java",
+          "backend-agent/app/resilience.py",
+          "backend/lianyu-service/src/test/java/com/lianyu/service/ai/background/AiBackgroundConsumerTest.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test -Dtest=AiBackgroundConsumerTest",
+          "新增用例：retrySurvivesBreakerOpenWindow"
+        ]
+      }
+    },
+    {
+      "id": "REL-04",
+      "section": "resilience",
+      "category": "message-loss",
+      "severity": "medium",
+      "confidence": "high",
+      "brief": "推送通知的队列没有配置死信队列，消费者也没有兜底捕获，一旦推送出错这条通知就彻底丢了，既不能重投也查不到。",
+      "title": "event.broadcast.queue 没有死信配置，消费者无 try/catch：抛错即丢通知",
+      "file": "backend/lianyu-web/src/main/java/com/lianyu/web/config/RabbitMqConfig.java",
+      "line": 84,
+      "evidence": "RabbitMqConfig：`eventBroadcastQueue()`（L84-87）是 `QueueBuilder.durable(QUEUE_EVENT_BROADCAST).build()`，没有 `x-dead-letter-exchange`/`x-dead-letter-routing-key`；同文件 `memorySummaryQueue()`（L54-62）与 `aiBackgroundQueue()`（L69-77）都设了 DLX。`rabbitListenerContainerFactory`（L119-132）设置 `factory.setDefaultRequeueRejected(false)` 并注释“失败后不回队列，交给 DLQ”，而 NotificationPushConsumer 用的是默认工厂（注解只指定 queues 与 concurrency）。NotificationPushConsumer.onPushTask（L20-25）直接调用 `webPushService.sendToUser(task)`，没有任何 try/catch；`task == null || task.userId() == null` 时静默 return（消息被 ack）。",
+      "impact": "推送消费一旦抛异常（订阅查询/DB/编码），这条通知既不在队列里、也没有死信可查，用户永远收不到，运维无法重放；空 payload 的推送则被静默吞掉，连日志都没有。",
+      "kind": "direct",
+      "fix": {
+        "summary": "把推送队列接上死信通道，并让消费者把异常显式抛出去。",
+        "steps": [
+          "给 eventBroadcastQueue 加 DLX/RK 参数，并声明对应的死信交换机与队列（与 memory/ai 两个队列保持同一套命名）",
+          "NotificationPushConsumer 外层加 try/catch(Exception)，log.error 带 userId/推送 id 后重新抛出，让消息进死信而不是被 ack 丢弃",
+          "空 task 改成 `log.warn(\"push task missing userId, dropped\")` 再 return",
+          "补测试：监听器抛异常时消息进入死信（可用 Testcontainers 或 MockRabbit 断言队列声明参数）"
+        ],
+        "files": [
+          "backend/lianyu-web/src/main/java/com/lianyu/web/config/RabbitMqConfig.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/notification/NotificationPushConsumer.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test -Dtest=NotificationServiceTest",
+          "新增用例：pushListenerFailure_routesToDeadLetter"
+        ]
+      }
+    },
+    {
+      "id": "REL-05",
+      "section": "error-handling",
+      "category": "swallowed-exception",
+      "severity": "low",
+      "confidence": "high",
+      "brief": "群聊里某个角色生成失败时，用户只看到它不说话，前端没有任何提示，日志里也只有一行不带调用栈的原因。",
+      "title": "群聊单角色生成失败被吞：静默缺席 + 日志无堆栈",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java",
+      "line": 414,
+      "evidence": "L401-419 的完成循环：`try { reply = f.join(); } catch (Exception ignored) { // handled in generateCharacterReply }`，随后 `if (reply == null || reply.content() == null || reply.content().isBlank()) continue;`；被调用的 generateCharacterReply L525-527 `catch (Exception e) { log.error(\"Group chat error for character {}: {}\", member.getCharacterId(), e.getMessage()); return null; }` —— 只记 message、没有堆栈。",
+      "impact": "某个角色这一轮生成失败时，它在群聊里静默缺席，前端没有任何“暂时无法回复”的提示，用户只会觉得角色不理人；排查时日志只有一行 message，定位不到是上游还是本地异常。",
+      "kind": "direct",
+      "fix": {
+        "summary": "失败要留堆栈、要能被前端看见。",
+        "steps": [
+          "generateCharacterReply 的 catch 改成 `log.error(..., e)` 保留堆栈",
+          "f.join 的 catch 加 warn（带 characterId），避免 future 异常被完全忽略",
+          "失败时向群聊推送一条结构化事件（如 GROUP_MEMBER_FAILED，带 characterId），前端据此提示“XX 暂时无法回复”",
+          "补测试：mock 生成抛异常，断言日志与下发事件"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test -Dtest=GroupChatServiceTest"
+        ]
+      }
+    },
+    {
+      "id": "REL-06",
+      "section": "observability",
+      "category": "silent-degradation",
+      "severity": "low",
+      "confidence": "high",
+      "brief": "主动问候和定时语音发送失败时只写一行 DEBUG 日志，运维按 WARN 告警的话完全看不到“角色不再主动说话”这件事。",
+      "title": "主动消息失败只记 DEBUG：整条链路停摆时无 WARN、无指标",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ProactiveChatScheduler.java",
+      "line": 174,
+      "evidence": "发送循环 L148-176：`catch (Exception e) { log.debug(\"Proactive chat skipped for convId={}, reason={}\", item.conv().getId(), e.getMessage()); }`；`trySendWaitNudgeVoices` L215-217 与定时语音 L265 同族，都是 log.debug + e.getMessage()。tick()（L62-63）本身没有外层 try/catch，批次查询（L68-95）也不在 per-candidate 隔离内。application.yml L531 默认 `com.lianyu: DEBUG` 让这些行可见，但一旦生产日志按 INFO 收敛或按 WARN/ERROR 告警，失败就完全不可见，也没有任何计数器。",
+      "impact": "主动问候整体失效（例如定时语音全部被策略跳过、或每轮都抛异常）时，日志里既没有 WARN 也没有指标，只能等用户反馈“角色怎么不理我了”。",
+      "kind": "direct",
+      "fix": {
+        "summary": "把失败从 debug 提升到可见级别，并加最小计数。",
+        "steps": [
+          "单次失败改为 log.warn，带上 convId/characterId/失败类型",
+          "每分钟聚合一次“跳过 N 次 / 失败 M 次”，避免逐条刷屏",
+          "暴露计数器（成功、跳过、失败），供监控看曲线",
+          "tick() 外层加 try/catch + error 日志，防止一次查询异常静默吞掉整轮（Spring 默认只记一条 error）"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ProactiveChatScheduler.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test -Dtest=ProactiveChatSchedulerTest"
+        ]
+      }
+    },
+    {
+      "id": "REL-07",
+      "section": "observability",
+      "category": "log-detail",
+      "severity": "medium",
+      "confidence": "high",
+      "brief": "聊天流中途崩掉时，服务端只打印一行错误摘要、没有调用栈，出了代码级毛病根本定位不到哪里炸的。",
+      "title": "流式端点顶层异常只打印 repr，没有 traceback",
+      "file": "backend-agent/app/main.py",
+      "line": 253,
+      "evidence": "L252-256：`except Exception as exc:  # noqa: BLE001 - 生成器异常必须可见，否则上游只看到空回复` → `logger.warning(\"chat-stream failed: user=%s frames=%d err=%r\", body.user_id, frames, exc)`，没有 `exc_info=True`；`/agent/chat-turn/stream` 的 L520-522 是同一写法（`logger.warning(\"chat-turn stream failed: ... err=%r\", ...)`）。这两处是主聊天链路唯一的兜底 catch（stream_chat.stream_chat_events 只处理 GatewayRejectedError/GatewayError，其余异常会一路冒到这里）。",
+      "impact": "遇到代码级异常（AttributeError/KeyError/TypeError/NoneType 调用）时，日志只有一行 repr，没有文件与行号；而这正是兜底 catch 存在的唯一理由，等于把最容易出 bug 的路径变成了最难定位的路径。",
+      "kind": "direct",
+      "fix": {
+        "summary": "兜底日志带堆栈，并区分“预期失败”和“未知异常”。",
+        "steps": [
+          "在两个 handler 的 logger.warning 上加 `exc_info=True`",
+          "预期失败（GatewayError/GatewayRejectedError）用 info/warning，未知异常用 logger.exception（ERROR 级）",
+          "给未知异常加一个轻量计数器/指标，便于告警而不是靠翻日志",
+          "补测试：让生成器内部抛 ValueError，用 caplog 断言日志里含 traceback 与异常类型"
+        ],
+        "files": [
+          "backend-agent/app/main.py",
+          "backend-agent/app/stream_chat.py"
+        ],
+        "tests": [
+          "pytest -q backend-agent/tests/test_stream_chat.py",
+          "新增用例：test_chat_stream_unexpected_error_logs_traceback"
+        ]
+      }
+    },
+    {
+      "id": "REL-08",
+      "section": "observability",
+      "category": "log-detail",
+      "severity": "low",
+      "confidence": "high",
+      "brief": "关系衰减、情绪衰减、朋友圈评论补偿这三个定时任务失败时只留一行文字原因，没有调用栈也没有连续失败计数。",
+      "title": "三个定时任务失败只记 e.getMessage()：无堆栈、无连续失败告警",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/character/EmotionDecayScheduler.java",
+      "line": 34,
+      "evidence": "EmotionDecayScheduler L33-35 `catch (Exception e) { log.warn(\"Emotion decay tick failed: {}\", e.getMessage()); }`；RelationshipDecayScheduler L33-35 `catch (Exception e) { log.warn(\"Relationship decay tick failed: {}\", e.getMessage()); }`；MomentsCommentReconciliationScheduler L59-61 `catch (Exception e) { log.warn(\"Moments comment reconcile failed: postId={}, reason={}\", postId, e.getMessage()); }`。三处都没有堆栈、没有计数、没有指标。",
+      "impact": "定时任务连续失败（连接池耗尽、SQL 报错、迁移缺列）时，日志里只有一堆同类文本，看不出根因，也没有“连续失败 N 次”的告警触发点；衰减/补偿长期失效只能靠用户察觉数值不变化。",
+      "kind": "direct",
+      "fix": {
+        "summary": "定时任务失败要带堆栈，并能在连续失败时升级报警。",
+        "steps": [
+          "三处 catch 改成 `log.warn(..., e)` 保留堆栈",
+          "加连续失败计数，连续 ≥3 次升级为 log.error 并打一条汇总",
+          "暴露 tick 成功/失败计数指标",
+          "补测试：mock service 抛异常，断言日志级别与计数递增"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/character/EmotionDecayScheduler.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipDecayScheduler.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentReconciliationScheduler.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test -Dtest=RelationshipHeuristicsTest"
+        ]
+      }
+    },
+    {
+      "id": "REL-09",
+      "section": "tests",
+      "category": "test-gate",
+      "severity": "medium",
+      "confidence": "high",
+      "brief": "按项目文档跑 Python 测试会直接报错跑不起来，只有先手工装好虚拟环境才行，所以这道门禁在新机器和 CI 上是失效的。",
+      "title": "`pytest -q backend-agent` 在干净环境 100% 失败：缺 pythonpath，只有 .venv 能跑",
+      "file": "backend-agent/pyproject.toml",
+      "line": 30,
+      "evidence": "Gap：AGENTS.md §4 要求 `cd backend-agent && pytest` 全绿。Current：在仓库根跑 `pytest -q backend-agent` → 48 个 collection error，全部是 `ModuleNotFoundError: No module named 'app'`（`from app.main import app`）；`cd backend-agent && pytest -q` 同样失败（全局解释器 Python 3.11）。pyproject.toml L30-32 只有 `asyncio_mode = \"auto\"` 与 `testpaths = [\"tests\"]`，没有 `pythonpath`；backend-agent 下也没有 conftest.py。只有 `backend-agent/.venv/Scripts/python.exe -m pytest -q` 能跑通（1157 passed），因为 `.venv/Lib/site-packages/_editable_impl_lianyu_agent.pth` 里写着 backend-agent 的绝对路径（即曾做过 `pip install -e .`）。Proposed：让门禁不依赖机器上残留的 .venv。Why：现在任何人都无法从干净检出复现测试结果，CI 要么红要么跳过，回归保护实际不存在。",
+      "impact": "换机器或 CI 按文档跑测试会 100% 失败，容易被当成“代码坏了”；反过来也可能被忽略成“环境问题”，导致 Python 侧 1157 个用例长期不在门禁里跑。",
+      "kind": "direct",
+      "fix": {
+        "summary": "让 pytest 从仓库根就能导入 app 包，并固定解释器版本。",
+        "steps": [
+          "在 pyproject.toml 的 `[tool.pytest.ini_options]` 里加 `pythonpath = [\".\"]`（或提交 requirements 并在文档写清 `pip install -e .`）",
+          "CI/文档固定 Python >=3.12（pyproject 已声明 requires-python），避免全局 3.11 误判",
+          "把 AGENTS.md 的命令改成实际可复现的形式，并加一条冒烟：`python -c \"import app.main\"`",
+          "在 CI 增加 job：从干净 checkout 安装依赖后跑 pytest，验证不再依赖 .venv"
+        ],
+        "files": [
+          "backend-agent/pyproject.toml",
+          "backend-agent/Dockerfile",
+          "AGENTS.md"
+        ],
+        "tests": [
+          "pytest -q backend-agent",
+          "新增冒烟：python -c \"import app.main\""
+        ]
+      }
+    },
+    {
+      "id": "REL-10",
+      "section": "tests",
+      "category": "coverage-gap",
+      "severity": "low",
+      "confidence": "high",
+      "brief": "管理后台只有一个 8 行的菜单测试，而且脚本允许“一个测试都没有也算通过”，所以后台登录态和接口出错不会被任何门禁拦住。",
+      "title": "admin 控制台仅 1 个菜单测试，且 `--passWithNoTests` 让空套件也变绿",
+      "file": "admin/package.json",
+      "line": 9,
+      "evidence": "`\"test\": \"vitest --passWithNoTests\"`；`admin/src/__tests__/menu.test.js` 只有 8 行、仅断言菜单 id；`admin/src/api.js`（token 存 localStorage、adminLogin/adminLogout/getOverview）、`admin/src/stores/session.js`（单行 pinia 持久化 token）没有任何测试。实跑 `npm --prefix admin test` 直接失败：`'vitest' 不是内部或外部命令`（admin 未安装依赖），说明该命令在本地/CI 都没有真正执行过。",
+      "impact": "`--passWithNoTests` 让“没有测试”也返回成功，管理后台的登录态过期、权限接口 401/403、列表加载失败等改动静默通过门禁；一旦线上后台登录异常，没有任何用例能先一步发现。",
+      "kind": "plan",
+      "fix": {
+        "summary": "去掉“空套件也算过”的退路，并给后台登录/接口补最小用例。",
+        "steps": [
+          "删掉 `--passWithNoTests`，让空套件直接失败",
+          "为 session/api 补用例：无 token、token 过期(401)、登录失败、列表加载失败的错误分支",
+          "在 CI 里安装 admin 依赖并执行该命令（当前依赖未安装、命令直接失败）",
+          "文档化 admin 测试前置条件，避免再出现“命令跑不起来但没人发现”"
+        ],
+        "files": [
+          "admin/package.json",
+          "admin/src/__tests__/menu.test.js",
+          "admin/src/api.js",
+          "admin/src/stores/session.js"
+        ],
+        "tests": [
+          "npm --prefix admin test",
+          "新增用例：session 401 清理与 api 错误分支"
+        ]
+      }
+    },
+    {
+      "id": "REL-11",
+      "section": "tests",
+      "category": "flaky-test",
+      "severity": "low",
+      "confidence": "high",
+      "brief": "记忆防抖那条用例里写死了真实等待 5.2 秒，跑得慢还容易在机器繁忙时偶发失败。",
+      "title": "MemoryWriterDebounceTest 硬等 5.2 秒验证补发，慢且时序脆弱",
+      "file": "backend/lianyu-service/src/test/java/com/lianyu/service/memory/MemoryWriterDebounceTest.java",
+      "line": 72,
+      "evidence": "`maybeReschedule_pendingFlagSendsFollowUpTask` 通过 `ReflectionTestUtils.invokeMethod(writer, \"maybeReschedule\", task)` 触发后 `Thread.sleep(5200);` 再断言补发只发生一次；被验证的常量是 `RESCHEDULE_DELAY_SECONDS = 5`（MemoryWriter 的重排调度器）。",
+      "impact": "单条用例固定占用 5.2 秒，是全套件里最慢的一条；机器繁忙或 CI 抖动时 5.2s 可能不够 → 偶发红，被视为“已知 flake”后真实回归也会被忽略。",
+      "kind": "direct",
+      "fix": {
+        "summary": "把重排延迟做成可注入值，测试用毫秒级延迟 + 轮询断言。",
+        "steps": [
+          "把 RESCHEDULE_DELAY_SECONDS 改成可注入的配置（@Value 或构造参数），默认仍为 5",
+          "测试里传 10-50ms，用 Awaitility（或轮询 + 超时）断言补发恰好一次",
+          "把“直接反射调私有方法”改成通过 enqueueSummary 触发，覆盖真实入口",
+          "如需保留真实延迟的用例，单独打 @Tag(\"slow\") 并从默认套件排除"
+        ],
+        "files": [
+          "backend/lianyu-service/src/test/java/com/lianyu/service/memory/MemoryWriterDebounceTest.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryWriter.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test -Dtest=MemoryWriterDebounceTest"
+        ]
+      }
+    }
+  ],
+  "deferred": [
+    {
+      "from": "reliability",
+      "expert": "correctness",
+      "file": "backend-agent/app/memory/relay.py",
+      "lines": [
+        41
+      ],
+      "summary": "memory_outbox 认领后卡在 RUNNING、requeue_stuck 无定时调用。本轮已作为 C-006 报告故不重复计数；其“失败不可见”的一面已在 REL-03/REL-06 的监控建议中覆盖。"
+    },
+    {
+      "from": "reliability",
+      "expert": "maintainability",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AiResilience.java",
+      "lines": [
+        1
+      ],
+      "summary": "AiResilience / UpstreamCircuitBreakerFactory 与 application.yml 的 resilience4j 配置没有任何注入点，属死代码 + 失效配置；Python 侧已有等价熔断，不构成本轮可证的可靠性损失，建议交 maintainability 处理。"
+    },
+    {
+      "from": "reliability",
+      "expert": "maintainability",
+      "file": "frontend/src/composables/useVoiceRecorder.js",
+      "lines": [
+        1
+      ],
+      "summary": "onChunk 失败被 `.catch(() => {})` 吞掉；全仓只有它自己的单测引用该 composable，生产代码未使用，证据不足以证明可达。"
+    },
+    {
+      "from": "reliability",
+      "expert": "reliability",
+      "file": "frontend/electron",
+      "lines": [],
+      "summary": "updater/qqBridge/napcat 空 catch 扫描命中 31 处，逐处核对均为单条音频/代理探测/状态同步的可降级分支，上层有状态机与日志兜底，不构成失败不可见。"
+    }
+  ],
+  "notes": "跨专家转交：1) maintainability——AiResilience/UpstreamCircuitBreakerFactory 与 resilience4j yml 全为死配置，建议删除或真正接线；2) security——/agent/memory/reconcile 与 /agent/memory/relay/requeue 两个运维接口只做内部签名校验，建议确认暴露面与鉴权；3) correctness——gateway.py 在 [DONE] 处 return 会丢弃 tool_calls（已由 correctness 报告），修 REL-01 时不要顺手改动该分支语义。未覆盖：未做压测/故障注入，并发相关结论均来自代码路径与已执行的熔断复现脚本。"
+}

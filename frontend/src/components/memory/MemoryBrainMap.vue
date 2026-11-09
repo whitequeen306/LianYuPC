@@ -393,8 +393,8 @@ function rebuildGraph({ intro = false } = {}) {
     flowSegments.set(flow.id, { a: from.c, b: to.c, fromColor: from.color, toColor: to.color })
   }
 
-  // 中枢只连出现的记忆类型枢纽；类型枢纽再分到角色簇，成员线留在各自簇内。
-  const hub = next.regionMap.get('ltm') || next.regionMap.get('core')
+  // 中枢只连出现的记忆类型枢纽；类型枢纽再分到扇区簇，成员线留在各自簇内。
+  const hub = next.regionMap.get('core') || next.regionMap.get('ltm')
   sectorSpines.value = hub
     ? next.sectorHubs.map((sectorHub) => ({ id: sectorHub.id, sectorHub, from: hub.c, to: sectorHub.pos }))
     : []
@@ -581,9 +581,10 @@ function spriteFor(hex) {
   const { r, g, b } = parseColor(hex)
   const gradient = context.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
   gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 1)`)
-  gradient.addColorStop(0.13, `rgba(${r}, ${g}, ${b}, 0.92)`)
-  gradient.addColorStop(0.3, `rgba(${r}, ${g}, ${b}, 0.34)`)
-  gradient.addColorStop(0.62, `rgba(${r}, ${g}, ${b}, 0.07)`)
+  gradient.addColorStop(0.08, `rgba(${r}, ${g}, ${b}, 0.95)`)
+  gradient.addColorStop(0.2, `rgba(${r}, ${g}, ${b}, 0.52)`)
+  gradient.addColorStop(0.45, `rgba(${r}, ${g}, ${b}, 0.16)`)
+  gradient.addColorStop(0.72, `rgba(${r}, ${g}, ${b}, 0.04)`)
   gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`)
   context.fillStyle = gradient
   context.fillRect(0, 0, size, size)
@@ -594,7 +595,7 @@ function spriteFor(hex) {
 function glow(x, y, radius, hex, alpha) {
   if (!ctx || radius <= 0.15 || alpha <= 0.004) return
   const sprite = spriteFor(hex)
-  const size = radius * 5.2
+  const size = radius * 7.2
   // 用完立刻还原：后面的描边、文字都是 source-over 直接画，
   // 残留的 globalAlpha 会把它们一起调暗（标签发灰就是这个原因）
   const prevAlpha = ctx.globalAlpha
@@ -613,14 +614,14 @@ function drawBackground() {
   if (!backgroundCache || backgroundCache.width !== width || backgroundCache.height !== height) {
     const gradient = ctx.createRadialGradient(
       width * 0.5,
-      height * 0.42,
+      height * 0.38,
       0,
       width * 0.5,
-      height * 0.42,
-      Math.max(width, height) * 0.78
+      height * 0.38,
+      Math.max(width, height) * 0.82
     )
     gradient.addColorStop(0, SPACE.core)
-    gradient.addColorStop(0.55, SPACE.mid)
+    gradient.addColorStop(0.42, SPACE.mid)
     gradient.addColorStop(1, SPACE.edge)
     backgroundCache = gradient
   }
@@ -628,6 +629,15 @@ function drawBackground() {
   ctx.globalAlpha = 1
   ctx.fillStyle = backgroundCache
   ctx.fillRect(0, 0, width, height)
+
+  // 底部扇形微光：参考例图里长期记忆库下方有一圈向外散开的点阵
+  const fanY = height * 0.86
+  const fanGradient = ctx.createRadialGradient(width * 0.5, fanY, 0, width * 0.5, fanY, width * 0.34)
+  fanGradient.addColorStop(0, 'rgba(244, 166, 181, 0.05)')
+  fanGradient.addColorStop(0.5, 'rgba(244, 166, 181, 0.018)')
+  fanGradient.addColorStop(1, 'rgba(244, 166, 181, 0)')
+  ctx.fillStyle = fanGradient
+  ctx.fillRect(0, fanY - height * 0.2, width, height * 0.2)
 }
 
 /* ---------------- 效果 ---------------- */
@@ -731,12 +741,35 @@ function render(now) {
   const labels = []
   const fadeFor = (depth) => depthFade(depth)
 
+  /* 底部扇形点阵：参考例图里长期记忆库下方向外散开的微光点。 */
+  const ltmRegion = graph.value.regionMap.get('ltm')
+  const ltmPoint = ltmRegion ? projectPoint(ltmRegion.c, camera, viewport) : null
+  if (ltmPoint && ltmPoint.visible) {
+    ctx.globalCompositeOperation = 'lighter'
+    const fanCenterX = ltmPoint.x
+    const fanCenterY = ltmPoint.y + ltmPoint.scale * 40
+    for (const sector of MEMORY_SECTORS) {
+      const count = Math.min(22, Math.max(6, Math.ceil((stats.value.bySector[sector.id] || 0) * 1.6)))
+      const baseAngle = ((sector.angle - 90) * Math.PI) / 180
+      for (let i = 0; i < count; i += 1) {
+        const spread = (i - (count - 1) / 2) * 0.09
+        const dist = (34 + i * 5.4) * ltmPoint.scale
+        const x = fanCenterX + Math.cos(baseAngle + spread) * dist
+        const y = fanCenterY + Math.sin(baseAngle + spread) * dist * 0.42 + i * 1.1
+        const r = (1.1 + (i % 3) * 0.3) * ltmPoint.scale
+        const alpha = (0.05 + (i % 4) * 0.014) * (focusedRegion.value === 'ltm' ? 1.5 : 1)
+        glow(x, y, r, sector.color, alpha)
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over'
+  }
+
   /* 脑壳只留微弱星点。整圈赤道会像一条横穿画布的行星轨道，抢过记忆关系层级。 */
   ctx.globalCompositeOperation = 'lighter'
   for (let i = 0; i < SHELL_DOTS.length; i += 2) {
     const point = projectPoint(SHELL_DOTS[i], camera, viewport)
-    const alpha = (0.035 + 0.055 * fadeFor(point.depth)) * (point.depth > 0 ? 0.66 : 1)
-    glow(point.x, point.y, 1.05, '#9fb8d8', alpha)
+    const alpha = (0.03 + 0.05 * fadeFor(point.depth)) * (point.depth > 0 ? 0.5 : 0.8)
+    glow(point.x, point.y, 0.85, '#9fb8d8', alpha)
   }
   ctx.globalCompositeOperation = 'source-over'
 
@@ -751,11 +784,11 @@ function render(now) {
     const touched = flow.from === focusedRegion.value || flow.to === focusedRegion.value
     if (!touched) continue
 
-    drawBeam(a, b, segment.fromColor, segment.toColor, 0.34, {
+    drawBeam(a, b, segment.fromColor, segment.toColor, 0.42, {
       dashed: flow.dash,
       arrow: true,
       arrowColor: segment.toColor,
-      arrowAlpha: 0.32
+      arrowAlpha: 0.38
     })
 
     if (!compact.value) {
@@ -819,28 +852,24 @@ function render(now) {
     point: projectPoint(sectorHub.pos, camera, viewport)
   }))
 
+  /* 簇光圈：四瓣各自一圈，像参考例图里「长期记忆库」周围的光晕，不再用大椭圆环 */
   for (const view of clusterViews) {
     if (!view.members.length) continue
     const focused = focusedClusterId === view.cluster.id
     const dimmed = Boolean(focusedClusterId && !focused)
-    const alpha = dimmed ? 0.008 : focused ? 0.075 : 0.028
+    const alpha = dimmed ? 0.006 : focused ? 0.11 : 0.042
     ctx.save()
     ctx.translate(view.cx, view.cy)
     ctx.scale(1, 0.82)
-    const gradient = ctx.createRadialGradient(0, 0, view.rx * 0.38, 0, 0, view.rx)
-    gradient.addColorStop(0, rgba(view.cluster.color, alpha))
+    const gradient = ctx.createRadialGradient(0, 0, view.rx * 0.2, 0, 0, view.rx)
+    gradient.addColorStop(0, rgba(view.cluster.color, alpha * 0.7))
+    gradient.addColorStop(0.72, rgba(view.cluster.color, alpha))
     gradient.addColorStop(1, rgba(view.cluster.color, 0))
     ctx.fillStyle = gradient
     ctx.beginPath()
     ctx.arc(0, 0, view.rx, 0, TAU)
     ctx.fill()
     ctx.restore()
-
-    ctx.beginPath()
-    ctx.ellipse(view.cx, view.cy, view.rx, view.rx * 0.82, 0, 0, TAU)
-    ctx.strokeStyle = rgba(view.cluster.color, dimmed ? 0.018 : focused ? 0.17 : 0.048)
-    ctx.lineWidth = focused ? 1.1 : 0.65
-    ctx.stroke()
   }
 
   const clusterLabels = clusterViews.filter((view) => !view.cluster.central && view.hub.visible)
@@ -862,14 +891,14 @@ function render(now) {
     ctx.fill()
   }
 
-  /* 第一层：中心只连出现的类型枢纽；第二层：类型枢纽以细线连角色簇。 */
+  /* 第一层：中枢（检索，在顶部）→ 类型枢纽，是金字塔的主光束，要粗要亮。 */
   for (const edge of sectorSpines.value) {
     const from = projectPoint(edge.from, camera, viewport)
     const to = projectPoint(edge.to, camera, viewport)
     if (!from.visible || !to.visible) continue
     const focused = activeNode?.sector === edge.sectorHub.sector
-    const alpha = focusedClusterId ? (focused ? 0.36 : 0.008) : 0.2
-    drawBeam(from, to, '#ffe9b8', edge.sectorHub.color, alpha, { arrow: false })
+    const alpha = focusedClusterId ? (focused ? 0.52 : 0.01) : 0.32
+    drawBeam(from, to, '#fff1c9', edge.sectorHub.color, alpha, { arrow: false })
   }
 
   for (const edge of clusterSpines.value) {
@@ -877,10 +906,10 @@ function render(now) {
     const to = projectPoint(edge.to, camera, viewport)
     if (!from.visible || !to.visible) continue
     const focused = focusedClusterId === edge.cluster.id
-    const alpha = focusedClusterId ? (focused ? 0.34 : 0.01) : 0.14
+    const alpha = focusedClusterId ? (focused ? 0.5 : 0.015) : 0.24
     ctx.globalCompositeOperation = 'source-over'
     ctx.strokeStyle = rgba(edge.cluster.color, alpha)
-    ctx.lineWidth = focused ? 1 : 0.8
+    ctx.lineWidth = focused ? 1.35 : 0.95
     ctx.beginPath()
     ctx.moveTo(from.x, from.y)
     ctx.lineTo(to.x, to.y)
@@ -892,15 +921,15 @@ function render(now) {
     if (!point.visible) continue
     const focused = activeNode?.sector === sectorHub.sector
     const radius = Math.min(5.5, 3.1 + Math.sqrt(sectorHub.count) * 0.27)
-    glow(point.x, point.y, radius * 1.15, sectorHub.color, focused ? 0.32 : 0.18)
+    glow(point.x, point.y, radius * 1.35, sectorHub.color, focused ? 0.44 : 0.3)
     ctx.beginPath()
     ctx.arc(point.x, point.y, radius + 2.2, 0, TAU)
-    ctx.strokeStyle = rgba(sectorHub.color, focused ? 0.48 : 0.3)
-    ctx.lineWidth = 0.8
+    ctx.strokeStyle = rgba(sectorHub.color, focused ? 0.58 : 0.4)
+    ctx.lineWidth = 0.9
     ctx.stroke()
     ctx.beginPath()
     ctx.arc(point.x, point.y, radius, 0, TAU)
-    ctx.fillStyle = rgba(sectorHub.color, 0.88)
+    ctx.fillStyle = rgba(sectorHub.color, 0.9)
     ctx.fill()
     ctx.beginPath()
     ctx.arc(point.x, point.y, Math.max(1, radius * 0.34), 0, TAU)
@@ -982,34 +1011,34 @@ function render(now) {
     )
     const radius = Math.max(1.25, node.size * point.scale * (node.muted ? 0.78 : 1))
 
-    glow(point.x, point.y, radius * (isSelected || isHovered ? 2.6 : 0.95), node.color, alpha)
-    // 芯用扇区色画实心、再点一颗小白点：颜色负责「是哪一类」，白点负责「这里有一颗」
+    // 大光圈：参考例图里每颗记忆都是一颗带 halo 的星
+    glow(point.x, point.y, radius * (isSelected || isHovered ? 3.2 : 2.2), node.color, alpha * 0.92)
     ctx.globalCompositeOperation = 'source-over'
     ctx.beginPath()
-    ctx.arc(point.x, point.y, Math.max(0.9, radius * 0.74), 0, TAU)
+    ctx.arc(point.x, point.y, Math.max(0.95, radius * 0.74), 0, TAU)
     ctx.fillStyle = rgba(node.color, dimmed ? 0.22 : 0.55 + 0.4 * strength)
     ctx.fill()
     ctx.beginPath()
     ctx.arc(point.x, point.y, Math.max(0.42, radius * 0.3), 0, TAU)
-    ctx.fillStyle = rgba('#ffffff', dimmed ? 0.28 : 0.88)
+    ctx.fillStyle = rgba('#ffffff', dimmed ? 0.28 : 0.9)
     ctx.fill()
 
     // 钉住的记忆加一圈暖金细环：它不衰减，图上也不该显得"快没了"。
     if (node.pinned) {
       ctx.beginPath()
-      ctx.arc(point.x, point.y, radius + 2.6, 0, TAU)
-      ctx.strokeStyle = rgba('#fff1c9', dimmed ? 0.18 : 0.5)
-      ctx.lineWidth = 0.9
+      ctx.arc(point.x, point.y, radius + 2.8, 0, TAU)
+      ctx.strokeStyle = rgba('#fff1c9', dimmed ? 0.18 : 0.56)
+      ctx.lineWidth = 1
       ctx.stroke()
     }
     ctx.globalCompositeOperation = 'lighter'
 
     if (isSelected || isHovered || isHighlighted) {
       ctx.globalCompositeOperation = 'source-over'
-      ctx.strokeStyle = rgba(node.color, isSelected ? 0.85 : 0.5)
+      ctx.strokeStyle = rgba(node.color, isSelected ? 0.9 : 0.56)
       ctx.lineWidth = 1
       ctx.beginPath()
-      ctx.arc(point.x, point.y, radius * 2.6 + Math.sin(now * 0.005) * 1.2, 0, TAU)
+      ctx.arc(point.x, point.y, radius * 2.8 + Math.sin(now * 0.005) * 1.2, 0, TAU)
       ctx.stroke()
       ctx.globalCompositeOperation = 'lighter'
     }
@@ -1053,7 +1082,7 @@ function render(now) {
     reserveBox(padded)
   }
 
-  /* 脑区 */
+  /* 脑区：一颗大光核 + 一圈光环 + 发光大字标签。参考例图里脑区是带光晕的锚点。 */
   const sortedRegions = graph.value.regions
     .map((region) => ({ region, point: projectPoint(region.c, camera, viewport) }))
     .sort((a, b) => b.point.depth - a.point.depth)
@@ -1064,18 +1093,20 @@ function render(now) {
     const base = depthFade(point.depth)
     const lit = region.lit && !dimmed
     const radius = Math.max(4, (region.r[0] + region.r[1]) * 0.5 * point.scale)
-    // 脑区画成一枚实心光核，不再套大椭圆：大环看着像空轨道，会把四团记忆挤成配角
-    const orb = Math.max(3.2, radius * 0.22)
-    const breathe = reducedMotion.value || !region.lit ? 1 : 1 + Math.sin(now * 0.0016 + region.c[0]) * 0.03
+    const orb = Math.max(4.5, radius * 0.28)
+    const breathe = reducedMotion.value || !region.lit ? 1 : 1 + Math.sin(now * 0.0016 + region.c[0]) * 0.04
 
-    glow(point.x, point.y, orb * 1.25 * breathe, region.color, (lit ? 0.16 : 0.055) * base)
-    glow(point.x, point.y, orb * 0.52, '#ffffff', (lit ? 0.18 : 0.06) * base)
-
-    // 这里不再给脑区套椭圆环：四个扇区已经有自己的光圈，里面再套一圈小的，
-    // 看上去就像「圈里还有个没被包住的圈」。脑区只保留光核与可点击区域。
-
-    // 光圈现在由扇区那一层画（按光点实际范围取圆），这里不再套第二个环：
-    // 同一团记忆两层圈叠在一起，看起来就是「光圈和光点各画各的」。
+    // 大光晕
+    glow(point.x, point.y, orb * 3.2 * breathe, region.color, (lit ? 0.28 : 0.08) * base)
+    glow(point.x, point.y, orb * 1.3, '#ffffff', (lit ? 0.24 : 0.08) * base)
+    // 外圈光环
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.beginPath()
+    ctx.arc(point.x, point.y, orb * 1.15, 0, TAU)
+    ctx.strokeStyle = rgba(region.color, (lit ? 0.42 : 0.12) * base)
+    ctx.lineWidth = 1
+    ctx.stroke()
+    ctx.globalCompositeOperation = 'lighter'
 
     ctx.globalCompositeOperation = 'lighter'
     pickables.push({
@@ -1084,37 +1115,34 @@ function render(now) {
       region,
       x: point.x,
       y: point.y,
-      hitRadius: Math.max(14, orb * 1.2),
+      hitRadius: Math.max(16, orb * 1.4),
       weight: 1
     })
 
     labels.push({ region, point, radius: orb, dimmed })
   }
 
-  /* 脑区标签最后画：后画才会压在记忆光点上面，否则中间那几团光会吃掉文字。
-     默认只给「长期记忆库」留名字，其余脑区靠左下图例认；聚焦或悬停时再补一个，
-     八个名字常驻是这张图最吵的一层。 */
+  /* 脑区标签：参考例图里是发光大字，默认全画，按 labelSide 左右/上下放置。 */
   ctx.globalCompositeOperation = 'source-over'
   const hoveredRegionId = hover.value?.kind === 'region' ? hover.value.id : ''
   for (const { region, point, radius, dimmed } of labels.sort((a, b) => b.point.depth - a.point.depth)) {
-    const alwaysShow = region.labelSide === 'center'
-    if (!alwaysShow && focusedRegion.value !== region.id && hoveredRegionId !== region.id) continue
-    const labelAlpha = dimmed ? 0.18 : region.lit ? 0.96 : 0.55
+    const labelAlpha = dimmed ? 0.16 : region.lit ? 0.95 : 0.5
     const name = t(region.nameKey)
-    const nameSize = compact.value ? 10 : 11
-    const countSize = compact.value ? 8.5 : 9
-    ctx.strokeStyle = rgba(region.color, labelAlpha * 0.26)
+    const nameSize = compact.value ? 11 : 13
+    const countSize = compact.value ? 8.5 : 9.5
+    ctx.strokeStyle = rgba(region.color, labelAlpha * 0.32)
     ctx.lineWidth = 1
 
     // 长期记忆库是四瓣的整体，名字挂正中间，光点绕着它铺开
     if (region.labelSide === 'center') {
-      const labelY = point.y - 8
-      const nameBox = textBox(name, point.x, labelY, { size: nameSize })
+      const labelY = point.y - 10
+      const nameBox = textBox(name, point.x, labelY, { size: nameSize, weight: 700 })
       if (boxOverlaps(nameBox)) continue
       drawLabelText(name, point.x, labelY, {
-        color: '#e8edf2',
+        color: '#f2f6ff',
         alpha: labelAlpha,
         size: nameSize,
+        weight: 700,
         plate: true
       })
       reserveBox(nameBox)
@@ -1133,17 +1161,18 @@ function render(now) {
 
     // 中枢压在长期记忆库的扇区中间，标签上下都会盖住光点，只能挂到右侧
     if (region.labelSide === 'right') {
-      const labelX = point.x + radius * 0.86 + 10
+      const labelX = point.x + radius * 0.9 + 12
       ctx.beginPath()
-      ctx.moveTo(point.x + radius * 0.62, point.y)
+      ctx.moveTo(point.x + radius * 0.7, point.y)
       ctx.lineTo(labelX - 5, point.y)
       ctx.stroke()
-      const nameBox = textBox(name, labelX, point.y, { size: nameSize, align: 'left' })
+      const nameBox = textBox(name, labelX, point.y, { size: nameSize, weight: 700, align: 'left' })
       if (boxOverlaps(nameBox)) continue
       const placed = drawLabelText(name, labelX, point.y, {
-        color: '#e8edf2',
+        color: '#f2f6ff',
         alpha: labelAlpha,
         size: nameSize,
+        weight: 700,
         align: 'left'
       })
       reserveBox(nameBox)
@@ -1163,8 +1192,38 @@ function render(now) {
       continue
     }
 
-    // 上下左右各试几个落点：宁可绕开，也不要少一个脑区名
-    const gap = compact.value ? 9 : 12
+    // 左侧脑区（input / relation / introspect）标签挂到光核左边
+    if (region.labelSide === 'left') {
+      const labelX = point.x - radius * 0.9 - 12
+      ctx.beginPath()
+      ctx.moveTo(point.x - radius * 0.7, point.y)
+      ctx.lineTo(labelX + 5, point.y)
+      ctx.stroke()
+      const nameBox = textBox(name, labelX, point.y, { size: nameSize, weight: 700, align: 'right' })
+      if (boxOverlaps(nameBox)) continue
+      const placed = drawLabelText(name, labelX, point.y, {
+        color: '#f2f6ff',
+        alpha: labelAlpha,
+        size: nameSize,
+        weight: 700,
+        align: 'right'
+      })
+      reserveBox(nameBox)
+      const countBox = textBox(String(region.count), labelX - placed - 5, point.y, {
+        size: countSize,
+        align: 'right'
+      })
+      if (!boxOverlaps(countBox)) {
+        drawLabelText(String(region.count), labelX - placed - 5, point.y, {
+          color: region.color,
+          alpha: labelAlpha * 0.85,
+          size: countSize,
+          align: 'right'
+        })
+        reserveBox(countBox)
+      }
+      continue
+    }
     const baseOffset = radius * (compact.value ? 0.72 : 0.82) + gap
     const slots = []
     for (const dir of [-1, 1]) {

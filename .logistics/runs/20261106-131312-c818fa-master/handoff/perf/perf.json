@@ -1,0 +1,794 @@
+{
+  "schemaVersion": 2,
+  "expert": "perf",
+  "status": "ok",
+  "summary": "按 12 个单元全量覆盖（每单元读 32 个文件、核心文件全覆盖），审查 1108 文件 / 140294 行。共 8 条发现：hot-path 2 条（模型网关与 embedding/TTS 逐次新建 httpx 客户端，实测 3 次调用 3 条 TCP；仓库自述握手 150-300ms）、data-access 2 条（主动聊天每 30s 全表扫 conversation 且按相关子查询排序；动态评论数用拉全行在内存计数）、runtime 1 条（群聊气泡用 Thread.sleep 占住 core=8 的线程池）、frontend 2 条（全量 Element Plus：408KB 阻塞 CSS + 1.14MB 公共 chunk；ChatPage 消息无限累积且整表重建）、memory-startup 1 条（桌宠/快捷聊窗口为 706B/1.2KB 入口加载整份应用壳）。最值得先修的是模型网关连接复用：改动小、每次对话都能省下一次握手。前端与群聊两条属于结构性改造，需排期。已实测核对的干净项：message 表索引齐全、会话列表 last-message 批量 JOIN、Java 侧 WebClient 单例复用、流式收包不逐 token 触发响应式更新。",
+  "sections": {
+    "hot-path": 2,
+    "data-access": 2,
+    "runtime": 1,
+    "frontend": 2,
+    "memory-startup": 1
+  },
+  "units": {
+    "u01": {
+      "status": "reviewed",
+      "filesRead": 32,
+      "files": [
+        "backend/lianyu-service/pom.xml",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentBlockingPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentChatResult.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentImagePort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentMemoryPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentRuntimePort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentStreamCallback.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentStreamPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentTextPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentTextStreamPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/AgentTurnResult.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/agent/CharacterGenerationPort.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/VoiceCallService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ProactiveMessageService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterDiaryService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/ApiKeyVaultService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ProactiveChatScheduler.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/ModelCatalogService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterChatBehaviorResolver.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterStateService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AsrStreamClient.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterRecentActivityService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterStateQueryService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AssistantReplySplitter.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/auth/impl/AuthServiceImpl.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/EngagementFrequencyScorer.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/SessionSummaryService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AiChatService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AsrService.java"
+      ],
+      "notes": "lianyu-service 1/3：精读 GroupChatService / ConversationService / ProactiveChatScheduler / ProactiveMessageService / CharacterDiaryService，其余按体积取前 32 个做结构扫描；产出 runtime F5。"
+    },
+    "u02": {
+      "status": "reviewed",
+      "filesRead": 32,
+      "files": [
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/SquareCommentResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/SquareLikeToggleResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UnreadCountResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateCharacterRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateGroupTitleRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateProfileRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateUserSettingsRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UpdateVaultRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UserProfile.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/UserSettingsResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/VaultEntryResponse.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/dto/VoiceCallEndRequest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentOrchestrator.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/voice/VoiceCallDuplexSession.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/storage/FileStorageService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareCatalogGenshin.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/voice/SentenceSplitter.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareCatalog.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/notification/NotificationService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareCatalogDal.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareCatalogBlueArchive.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/character/CharacterDiaryServiceTest.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/square/CharacterSquareCatalogReZero.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/memory/MemoryWriter.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/graph/ChatTurnFacade.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/voice/CustomVoiceService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentService.java",
+        "backend/lianyu-service/src/main/java/com/lianyu/service/square/SquareLikeService.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/conversation/ConversationServiceStreamErrorTest.java"
+      ],
+      "notes": "lianyu-service 2/3：精读 MomentsCommentService / MomentsService / VoiceCallDuplexSession / SentenceSplitter / ChatTurnFacade；产出 data-access F4。"
+    },
+    "u03": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "frontend/src/api/__tests__/httpCoreSkipGlobalError.test.js",
+        "frontend/src/api/__tests__/sessionRefresh.test.js",
+        "frontend/src/api/ai.js",
+        "frontend/src/api/asr.js",
+        "frontend/src/api/auth.js",
+        "frontend/src/api/character.js",
+        "frontend/src/api/characterSquare.js",
+        "frontend/src/api/characterState.js",
+        "frontend/src/api/conversation.js",
+        "frontend/src/api/electronAdapter.js",
+        "frontend/src/api/httpCore.js",
+        "frontend/src/api/index.js",
+        "frontend/src/components/memory/MemoryBrainMap.vue",
+        "frontend/src/components/AppDock.vue",
+        "frontend/src/i18n/locales/en.js",
+        "frontend/src/components/VoiceCallOverlay.vue",
+        "frontend/src/components/memory/memoryBrainModel.js",
+        "frontend/src/composables/useVoiceRecorder.js",
+        "frontend/src/components/AppHeader.vue",
+        "frontend/src/components/VoiceMessageBubble.vue",
+        "frontend/src/components/landing/LandingCastShowcase.vue",
+        "frontend/src/components/LauncherPickPanel.vue",
+        "frontend/src/components/landing/LandingHeroOrbit.vue",
+        "frontend/src/composables/useHeroOrbitIntro.js",
+        "frontend/src/components/CharacterImportDialog.vue",
+        "frontend/src/composables/useVoiceDuplex.js",
+        "frontend/src/constants/petCatalog.js",
+        "frontend/src/components/RelationshipCard.vue",
+        "frontend/src/components/ThemeColorPicker.vue",
+        "frontend/src/directives/bubbleBtn.js",
+        "frontend/src/components/OnboardingHintBubble.vue",
+        "frontend/src/components/landing/LandingParticles.vue"
+      ],
+      "notes": "frontend/src 1/2：120 文件里按体积 + 核心取 32 个做结构扫描，精读 MemoryBrainMap.vue / AppDock.vue / useVoiceRecorder.js / memoryBrainModel.js；rAF 主循环在 hidden/onDeactivated 时停、粒子有上限，未发现单独可报的热点。"
+    },
+    "u04": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "scripts/_audit_installer_unpack.py",
+        "scripts/e2e/lianyu_e2e.py",
+        "scripts/gen_elysia_openai.py",
+        "scripts/_upload_update_assets.py",
+        "scripts/gen_pet_fixed_voices.py",
+        "scripts/ops/_write_theme_picker.py",
+        "scripts/diag/_gen_pet_fixed_voices.py",
+        "scripts/_verify_electron_release.py",
+        "scripts/_prod_verify.py",
+        "scripts/re_enroll_pet_voices.py",
+        "scripts/gen_elysia_atlas.mjs",
+        "scripts/_upload_wechat_channel.py",
+        "scripts/check-java-ai-free.ps1",
+        "scripts/playwright_verify_moments_thread.py",
+        "scripts/diag/_test_chat_turn_time.py",
+        "scripts/pick_voice_clip.py",
+        "scripts/gen_elysia_dashscope.py",
+        "scripts/_probe_dashscope_voice.mjs",
+        "scripts/ops/daily_parity_check.py",
+        "scripts/_diagnose_moments_deep.py",
+        "scripts/_cloud_deploy_pull.py",
+        "scripts/smoke/_smoke_dashscope_curl.py",
+        "scripts/pick_from_video.py",
+        "scripts/_probe_dashscope_matrix.mjs",
+        "scripts/agent-stream-smoke.py",
+        "scripts/_probe_enroll_new.py",
+        "scripts/_probe_cosyvoice_chain.py",
+        "scripts/_verify_prod_tts.py",
+        "scripts/_probe_prod_key_voice.py",
+        "scripts/prune_voices.py",
+        "scripts/extract-java-prompt-fragments.py",
+        "scripts/diag/_diag_square_images.py"
+      ],
+      "notes": "scripts 1/2：脚本与生成器，不在运行时热路径；32 个按体积取样的文件做结构扫描（http/sleep/loop 标记人工复核），无驻留循环。"
+    },
+    "u05": {
+      "status": "reviewed",
+      "filesRead": 32,
+      "files": [
+        "backend/lianyu-dao/pom.xml",
+        "backend/lianyu-dao/src/main/resources/db/migration/V1__init_schema.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V10__character_square.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V11__character_square_slug.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V12__character_square_avatars_roster.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V13__character_square_dal.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V14__character_square_linzihan.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V15__character_square_linzihan_avatar_fix.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V16__character_square_tags_simplify.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V17__character_square_white_queen.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V18__character_square_genshin.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V19__character_square_mavuika.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V51__admin_management_schema.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V20__api_key_vault_scope_and_default_pool.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V56__relationship_presence_and_milestones.sql",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/MessageMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/MomentsPostMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/MemoryOutbox.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/ConversationMapper.java",
+        "backend/lianyu-dao/src/main/resources/db/migration/V27__character_square_rezero.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V29__character_square_batch3.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V40__community.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V31__relationship_system.sql",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/UserCustomVoice.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/SquareCommentMapper.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/CharacterSquareTemplate.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/RelationshipState.java",
+        "backend/lianyu-dao/src/main/resources/db/migration/V7__character_sticker.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V54__memory_outbox.sql",
+        "backend/lianyu-dao/src/main/resources/db/migration/V55__agent_capability_audit.sql",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/config/MyBatisPlusConfig.java",
+        "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/CharacterSticker.java"
+      ],
+      "notes": "lianyu-dao：12 个 core 迁移 + 全部 mapper 精读，逐条核对索引与 SQL 形状；产出 data-access F3。未读部分主要是实体类与其余迁移。"
+    },
+    "u06": {
+      "status": "reviewed",
+      "filesRead": 32,
+      "files": [
+        "frontend/src/main.js",
+        "frontend/src/router/__tests__/startupErrorRecovery.test.js",
+        "frontend/src/router/index.js",
+        "frontend/src/router/startupErrorRecovery.js",
+        "frontend/src/stores/settings.js",
+        "frontend/src/pages/ChatPage.vue",
+        "frontend/src/pages/GroupChatPage.vue",
+        "frontend/src/pages/LandingPage.vue",
+        "frontend/src/pages/QqBridgePage.vue",
+        "frontend/src/pages/CharactersPage.vue",
+        "frontend/src/pages/CharacterSquarePage.vue",
+        "frontend/src/pages/SettingsPage.vue",
+        "frontend/src/styles/app-shell.scss",
+        "frontend/src/pages/CharacterChatDetailPage.vue",
+        "frontend/src/pages/MomentsPage.vue",
+        "frontend/src/styles/global.scss",
+        "frontend/src/pages/MemoryPage.vue",
+        "frontend/src/styles/auth-page.scss",
+        "frontend/src/pages/LauncherPage.vue",
+        "frontend/src/pages/ProfilePage.vue",
+        "frontend/src/pages/QuickChatPage.vue",
+        "frontend/src/i18n/locales/zh.js",
+        "frontend/src/i18n/locales/zh-TW.js",
+        "frontend/src/i18n/locales/ja.js",
+        "frontend/src/stores/notifications.js",
+        "frontend/src/pages/HomePage.vue",
+        "frontend/src/pages/WechatBridgePage.vue",
+        "frontend/src/utils/themeColor.js",
+        "frontend/src/pages/AboutPage.vue",
+        "frontend/src/pages/RegisterPage.vue",
+        "frontend/src/stores/user.js",
+        "frontend/src/stores/qqBridge.js"
+      ],
+      "notes": "frontend/src 2/2：精读 ChatPage.vue / main.js / settings.js / LauncherPage.vue / QuickChatPage.vue，配合 dist 产物实测；产出 frontend F6/F7 与 memory-startup F8。"
+    },
+    "u07": {
+      "status": "reviewed",
+      "filesRead": 32,
+      "files": [
+        "backend-agent/app/config.py",
+        "backend-agent/app/main.py",
+        "backend-agent/Dockerfile",
+        "backend-agent/pyproject.toml",
+        "backend-agent/tests/test_voice_tts.py",
+        "backend-agent/app/gateway.py",
+        "backend-agent/app/chat_turn.py",
+        "backend-agent/app/tts.py",
+        "backend-agent/app/resilience.py",
+        "backend-agent/app/stream_chat.py",
+        "backend-agent/app/data_readers.py",
+        "backend-agent/tests/test_memory_embedding.py",
+        "backend-agent/tests/test_tools.py",
+        "backend-agent/app/prompt_pipeline.py",
+        "backend-agent/app/memory/extract.py",
+        "backend-agent/tests/test_stream_tool_fallback.py",
+        "backend-agent/tests/test_data_tools.py",
+        "backend-agent/tests/test_resilience.py",
+        "backend-agent/app/memory/writer.py",
+        "backend-agent/tests/test_prompt_pipeline.py",
+        "backend-agent/app/voice_enrollment.py",
+        "backend-agent/app/graphs/proactive_turn.py",
+        "backend-agent/app/memory/relay.py",
+        "backend-agent/tests/test_memory_extract.py",
+        "backend-agent/app/tool_loop.py",
+        "backend-agent/tests/test_memory_writer.py",
+        "backend-agent/tests/test_api_contract.py",
+        "backend-agent/app/system_prompt.py",
+        "backend-agent/app/tools/recent_activity_tool.py",
+        "backend-agent/app/tools/memory_search_tool.py",
+        "backend-agent/app/vision.py",
+        "backend-agent/app/dashscope.py"
+      ],
+      "notes": "backend-agent：精读 gateway.py / chat_turn.py / tts.py / stream_chat.py / data_readers.py / http_client.py，并做连接计数实测（3 次调用 3 条 TCP）；产出 hot-path F1/F2。"
+    },
+    "u08": {
+      "status": "reviewed",
+      "filesRead": 32,
+      "files": [
+        "backend/lianyu-web/pom.xml",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AiController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AsrController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/AuthController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/CharacterController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/CharacterStateController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/ConversationController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/GroupChatController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/LegacyCommunityController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/MemoryController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/MomentsController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/controller/NotificationController.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentRuntimeClient.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/agent/JavaAiLogicRatchetTest.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/voice/VoiceDuplexHandler.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/agent/AgentVoiceAdaptersTest.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/ChatTurnAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentImageAdapter.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/agent/AgentStreamBridgeTest.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/config/WebSocketConfig.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/handler/GlobalExceptionHandler.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentSseParser.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/config/RabbitMqConfig.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/DesktopObserveOrchestrator.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamBridge.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentToolCatalog.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/agent/AgentBlockingAdapterTest.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentBlockingAdapter.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentTextStreamAdapter.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/agent/AgentPromptAssemblyAdapterTest.java",
+        "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentSessionSummaryAdapter.java",
+        "backend/lianyu-web/src/test/java/com/lianyu/web/agent/AgentRuntimeClientBinaryTest.java"
+      ],
+      "notes": "lianyu-web：精读 AgentRuntimeClient（单例 WebClient + SsrfPinningClientFactory + 显式超时）、ChatTurnAdapter、AgentSseParser、VoiceDuplexHandler、AgentStreamBridge；出站客户端复用与超时配置正常。"
+    },
+    "u09": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "frontend/electron/main.js",
+        "frontend/electron/qqBridge/qqBridge.js",
+        "frontend/electron/updater/__tests__/updater.test.js",
+        "frontend/electron/updater/updater.js",
+        "frontend/electron/wechatBridge/lianyu-weixin-host.mjs",
+        "frontend/electron/napcatRuntime/napcatHost.js",
+        "frontend/electron/napcatRuntime/napcatRelease.js",
+        "frontend/electron/qqBridge/napCatClient.js",
+        "frontend/electron/wechatBridge/__tests__/wechatBridge.test.js",
+        "frontend/electron/qqBridge/qqBridgeCoordinator.js",
+        "frontend/electron/napcatRuntime/__tests__/napcatRelease.test.js",
+        "frontend/electron/napcatRuntime/napcatDownloader.js",
+        "frontend/electron/qqBridge/__tests__/qqBridge.proactive.test.js",
+        "frontend/electron/qqBridge/__tests__/qqBridgeCoordinator.test.js",
+        "frontend/electron/wechatBridge/wechatBridge.js",
+        "frontend/electron/logger.js",
+        "frontend/electron/napcatRuntime/napcatConfig.js",
+        "frontend/electron/napcatRuntime/napcatProcess.js",
+        "frontend/electron/desktopObserver.js",
+        "frontend/electron/wechatBridge/wechatBridgeCoordinator.js",
+        "frontend/electron/qqBridge/__tests__/qqBridgeSettings.test.js",
+        "frontend/electron/wechatBridge/wechatChannelDownloader.js",
+        "frontend/electron/napcatRuntime/__tests__/napcatConfig.test.js",
+        "frontend/electron/qqBridge/qqBridgeSettings.js",
+        "frontend/electron/preload.js",
+        "frontend/electron/napcatRuntime/__tests__/napcatDownloader.test.js",
+        "frontend/electron/wechatBridge/wechatChannelRelease.js",
+        "frontend/electron/wechatBridge/wechatHost.js",
+        "frontend/electron/napcatRuntime/__tests__/napcatHost.test.js",
+        "frontend/electron/apiProxy.js",
+        "frontend/electron/wechatBridge/__tests__/wechatChannelRelease.test.js",
+        "frontend/electron/smokeNapcat.mjs"
+      ],
+      "notes": "electron：32 个文件结构扫描 + 精读 desktopObserver.js / qqBridgeCoordinator.js / updater.js 片段；主进程 18 处 setTimeout 均为一次性退避，未见累积型 listener。"
+    },
+    "u10": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        ".env.example",
+        "admin/electron/main.js",
+        "admin/index.html",
+        "admin/package.json",
+        "admin/src/api.js",
+        "admin/src/App.vue",
+        "admin/src/main.js",
+        "admin/src/stores/session.js",
+        "admin/vite.config.js",
+        "backend/Dockerfile",
+        "backend/lianyu-ai/pom.xml",
+        "backend/lianyu-security/pom.xml",
+        "deploy/asr/server.py",
+        "deploy/api-gateway/nginx.conf",
+        "docker-compose.yml",
+        "frontend/scripts/electron-pack.mjs",
+        "frontend/vite.config.js",
+        "backend/lianyu-ai/src/main/java/com/lianyu/ai/SsrfPinningClientFactory.java",
+        "backend/lianyu-storage/src/main/java/com/lianyu/storage/milvus/MilvusConfig.java",
+        "backend/lianyu-ai/src/test/java/com/lianyu/ai/SsrfPinningClientFactoryTest.java",
+        "frontend/nginx.conf",
+        "frontend/scripts/regenerate-icon.py",
+        "backend/lianyu-security/src/main/java/com/lianyu/security/util/JasyptUtil.java",
+        "frontend/scripts/smoke-main-startup.mjs",
+        "frontend/package.json",
+        "frontend/scripts/smoke-launcher.mjs",
+        "backend/lianyu-storage/src/main/java/com/lianyu/storage/minio/MinioImageProcessor.java",
+        "frontend/scripts/electron-pack-main-only.mjs",
+        "frontend/scripts/electron-release.mjs",
+        "frontend/scripts/pack-runtime-secrets.mjs",
+        "deploy/asr/Dockerfile",
+        "frontend/index.html"
+      ],
+      "notes": "根目录与构建/部署：结构扫描 32 个（vite.config.js、electron-pack.mjs、nginx.conf、docker-compose.yml、根 pom/pom），未逐行读 nginx 全量。"
+    },
+    "u11": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "backend/lianyu-admin/pom.xml",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/conversation/VoiceCallServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/dto/RegisterRequestValidationTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/graph/ChatTurnFacadeToolFlagsTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/graph/ImageMessageHistoryTextTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/graph/MessageModelContentTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/memory/MemoryExtractionServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/memory/MemoryWriterDebounceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/memory/MemoryWriterRelationshipTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/moments/MomentsCommentOrchestratorTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/notification/NotificationServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/relationship/RelationshipHeuristicsTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/voice/SentenceSplitterTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/relationship/RelationshipStateServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/relationship/RelationshipReworkTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/voice/PcmFrameAssemblerTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/relationship/RelationshipInnerSpaceAssemblerTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/support/OutputLanguageServiceTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/square/CharacterSquareCatalogTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/tools/ToolManagerTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/voice/CustomVoiceAudioValidatorTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/user/UserPublicProfileServiceTest.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminAuthService.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/ReleaseService.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminTotpController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/operations/AdminOperationsController.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/tools/ChatToolContextTest.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/tools/TimeToolTest.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminManagementController.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminAuthorizationService.java",
+        "backend/lianyu-admin/src/main/java/com/lianyu/admin/audit/AdminAuditService.java",
+        "backend/lianyu-service/src/test/java/com/lianyu/service/voice/DashScopeCloudEndpointValidatorTest.java"
+      ],
+      "notes": "小模块合集（多数为测试）：结构扫描 32 个；测试代码不构成生产性能面。"
+    },
+    "u12": {
+      "status": "sampled",
+      "filesRead": 32,
+      "files": [
+        "backend/lianyu-app/pom.xml",
+        "backend/lianyu-common/pom.xml",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/handler/JacksonListTypeHandler.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/handler/JacksonTypeHandler.java",
+        "backend/pom.xml",
+        "frontend/Dockerfile",
+        "installer/LianYu.Installer/App.xaml.cs",
+        "installer/LianYu.Installer/MainWindow.xaml.cs",
+        "Pets/skills/hatch-lianyu-pet/scripts/gen_pet_images.py",
+        "installer/LianYu.Installer/InstallerEngine.cs",
+        "scripts/voice_candidates.py",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/OutboundUrlValidator.java",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/UserInputSanitizer.java",
+        "backend/scripts/restore-service-imports.ps1",
+        "scripts/verify_pet_voices_prod.py",
+        "scripts/tests/test_upload_update_assets.py",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/CharacterSettingsUtils.java",
+        "installer/build-offline-installer.ps1",
+        "frontend/shared/sseParser.js",
+        "frontend/shared/__tests__/sseParser.test.js",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/util/ImageUploadValidator.java",
+        "backend/scripts/repackage-service.ps1",
+        "backend/lianyu-app/src/main/java/com/lianyu/app/DotEnvBootstrap.java",
+        "scripts/smoke/_smoke_vision_cloud.py",
+        "Pets/skills/hatch-lianyu-pet/scripts/enroll_pet_voices.py",
+        "backend/scripts/fix-service-cross-imports.ps1",
+        "backend/scripts/_upload_backend_image.py",
+        "scripts/write_pet_voices_registry.py",
+        "backend/lianyu-common/src/main/java/com/lianyu/common/base/ErrorCode.java",
+        "scripts/smoke/_smoke_pet_tts.py",
+        "Pets/skills/hatch-lianyu-pet/scripts/test_gen_pet_images.py",
+        "installer/LianYu.Installer/InstallerLog.cs"
+      ],
+      "notes": "安装器 + common 工具类：结构扫描 32 个（WPF cs、PowerShell、Jackson handler、OutboundUrlValidator 等），无热路径。"
+    }
+  },
+  "tests": {
+    "commands": [
+      {
+        "command": "npm --prefix admin test",
+        "status": "not-run",
+        "note": "admin/ 下没有 node_modules（仅有 package.json 的 vitest 脚本），只读审查不执行 npm install，故未跑。"
+      },
+      {
+        "command": "mvn -q -f backend/pom.xml test",
+        "status": "passed",
+        "note": "5 个模块 surefire 报告聚合 531 个用例，0 failure / 0 error / 0 skipped（lianyu-admin、lianyu-ai、lianyu-security、lianyu-service、lianyu-web）。"
+      },
+      {
+        "command": "pytest -q backend-agent",
+        "status": "passed",
+        "note": "backend-agent/.venv 下 1157 passed in 9.54s。"
+      },
+      {
+        "command": "npm --prefix frontend test",
+        "status": "passed",
+        "note": "以 `npm --prefix frontend test -- --run` 执行（避免 watch 模式）：75 个测试文件 / 459 个用例全绿，5.88s。"
+      }
+    ],
+    "summary": "4 条命令中 3 条通过（Java 531、Python 1157、前端 459 用例全绿），admin 因未安装依赖未执行；测试基线不构成性能阻塞。"
+  },
+  "findings": [
+    {
+      "section": "hot-path",
+      "category": "connection-reuse",
+      "severity": "high",
+      "confidence": "high",
+      "brief": "每次和模型服务商对话都要重新建立一条加密连接，握手期间用户只能干等，首字延迟被固定拉长一两百毫秒。",
+      "title": "模型网关每次调用都新建 httpx 客户端，每个回合多付一次 TCP/TLS 握手",
+      "file": "backend-agent/app/gateway.py",
+      "line": 296,
+      "evidence": "gateway.py:296-299 `if self._client is not None: client_cm = _null_context(self._client) else: client_cm = new_client()`；流式分支 gateway.py:427 也是 `async with new_client() as client:`；而 get_gateway()（gateway.py:489-490）永远 `return ModelGateway()`，构造参数 client 从未被注入，因此所有调用都走新连接。实测（本地 ThreadingHTTPServer 统计 accept）：连续 3 次 `get_gateway().chat_messages(...)` 新增 3 条 TCP 连接；同样 3 次调用改用 `ModelGateway(client=shared_client(\"perf-repro\"))` 只新增 1 条。仓库自述成本见 http_client.py:47-54：「境内到阿里云 300-400ms…实测冷首包 2690ms vs 热 314ms」「每句一次 POST，重新握手 150-300ms」。调用点：chat_turn.py:261/346、main.py:162/227/329/368/747/794/848/868/926。",
+      "impact": "每个对话回合（含工具循环多轮、会话标题、主动消息、桌面感知）在首 token 前固定多付 1 次 TCP+TLS 握手，境内 150-300ms、跨云更差；高峰期大量短连接还会在服务端堆 TIME_WAIT，并放大连接数与 TLS CPU。用户体感是「点了没反应」的那一下。",
+      "kind": "plan",
+      "fix": {
+        "summary": "让网关默认复用进程级 httpx.AsyncClient（仓库已有 shared_client），只在需要独立生命周期时才新建。",
+        "steps": [
+          "gateway.py 构造器把 self._client 默认设为 shared_client(\"model-gateway\")，保留参数注入以便测试",
+          "gateway.py:427 的 `async with new_client() as client:` 改为复用 self._client，new_client() 仅留作降级兜底",
+          "核对 http_client.py:57-75 的事件循环绑定：多 worker 场景在 FastAPI lifespan 里预热，避免跨 loop 复用",
+          "补单测：连续两次 chat_messages 复用同一个 AsyncClient 实例 / 同一 mock transport 连接",
+          "用连接计数探针复测：3 次调用应从 3 条新连接降到 1 条，冷首包 p95 目标 < 500ms"
+        ],
+        "files": [
+          "backend-agent/app/gateway.py",
+          "backend-agent/app/http_client.py",
+          "backend-agent/app/chat_turn.py"
+        ],
+        "tests": [
+          "连接计数探针：3 次 chat_messages 只新增 1 条 TCP（当前 3 条）",
+          "pytest -q backend-agent/tests/test_resilience.py backend-agent/tests/test_stream_tool_fallback.py"
+        ]
+      }
+    },
+    {
+      "section": "hot-path",
+      "category": "connection-reuse",
+      "severity": "medium",
+      "confidence": "high",
+      "brief": "记忆搜索和语音合成也要每次重新连线：一次「回忆」最多连三四次，一句话的语音要连两次，所以回得慢、出声也慢。",
+      "title": "记忆检索与 TTS 合成同样逐次 new_client()：一次记忆工具调用最多 3 次握手，一句语音 2 次",
+      "file": "backend-agent/app/memory/vector_cache.py",
+      "line": 95,
+      "evidence": "vector_cache.py:95 `query_vector = await embed([query])` → embedding.py:47-49 在 client 为 None 时 `async with new_client() as own: response = await own.post(...)`；memory_search_tool.py:98 又 `await embed([query.strip()])`，:139 `rank_by_vector(...)` 内部再次 embed（vector_cache.py:95），一次记忆检索最多 3 条新连接。语音侧 tts.py:183（合成请求）与 tts.py:211（音频下载）各 `async with new_client() as client:`，一句非流式语音 2 条新连接；对照 tts.py:298 的流式合成已改用 `shared_client(\"dashscope-tts\")`，说明修复范式已在仓库内。",
+      "impact": "每次记忆检索多付 2-3 次握手（约 300-900ms），每次非流式语音多付 2 次（约 300-600ms）；语音通话逐句合成时延迟逐句叠加，表现为「说完要顿一下才出声」。",
+      "kind": "plan",
+      "fix": {
+        "summary": "embedding / rerank / TTS 统一改用 shared_client，把 new_client() 收敛为一次性工具函数的兜底。",
+        "steps": [
+          "embedding.py 在 client 为 None 时取 shared_client(\"embedding\")，不再 new_client()",
+          "tts.py:183 与 tts.py:211 改用 shared_client(\"dashscope-tts\")，与 tts.py:298 的流式路径一致",
+          "memory_search_tool.py:98 与 vector_cache.py:95 合并为同一次查询向量计算，避免重复 embed 同一个 query",
+          "补测试：monkeypatch new_client 计数，一次记忆检索应为 0 次新建、一次 synthesize 应为 0 次",
+          "复测：单次记忆检索与单句合成耗时 p95 各下降 ≥ 200ms"
+        ],
+        "files": [
+          "backend-agent/app/memory/embedding.py",
+          "backend-agent/app/memory/vector_cache.py",
+          "backend-agent/app/tools/memory_search_tool.py",
+          "backend-agent/app/tts.py",
+          "backend-agent/app/http_client.py"
+        ],
+        "tests": [
+          "pytest -q backend-agent/tests/test_memory_embedding.py backend-agent/tests/test_voice_tts.py",
+          "new_client 调用计数：记忆检索 0 次、单句 TTS 0 次（当前分别最多 3 次 / 2 次）"
+        ]
+      }
+    },
+    {
+      "section": "data-access",
+      "category": "query-shape",
+      "severity": "medium",
+      "confidence": "high",
+      "brief": "后台程序每半分钟把全站所有单聊会话翻一遍，还要给每个会话单独查一次最后一条消息来排序；用户越多这一步越慢，会拖慢数据库的整体读写。",
+      "title": "主动聊天扫描每 30s 全表扫 conversation，并用相关子查询表达式排序（无法走索引）",
+      "file": "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/ConversationMapper.java",
+      "line": 25,
+      "evidence": "ConversationMapper.java:20-31：`WHERE c.mode = 'SINGLE' AND c.character_id IS NOT NULL ORDER BY COALESCE((SELECT MAX(m.created_at) FROM message m WHERE m.conversation_id = c.id), c.created_at) DESC LIMIT #{limit}` —— 没有 user_id 过滤；排序键是相关子查询表达式，MySQL 无法用索引完成排序，LIMIT 不能下推。调用者 ProactiveChatScheduler.java:68 在 `@Scheduled(fixedDelayString=\"${lianyu.chat.proactive.scan-interval-ms:30000}\")`（:62-64）里执行，scan-limit 默认 40（:59-60）。静态成本上界：C 行 conversation 全扫 × 每行 1 次 message 索引探测 + C log C 的 filesort，C = 全站 SINGLE 会话数（与本次 tick 的活跃用户无关）。",
+      "impact": "每 30 秒一次 O(C log C) 查询，C 随注册用户数线性增长；十万级会话时单次扫描达数百毫秒并长期占用一个 DB 连接，期间 message 表的读写被挤，影响所有在线用户的发消息延迟。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把「最后消息时间」物化成 conversation.last_message_at 并加复合索引，让扫描按索引顺序取前 N 行，同时按活跃用户收窄范围。",
+        "steps": [
+          "新增 Flyway 迁移：conversation 加 last_message_at 列 + 索引 (mode, character_id, last_message_at)",
+          "发消息/建会话的写路径同步维护该列（现有 conversation 更新点统一收口）",
+          "存量数据分批回填（按 id 区间 UPDATE，避免长事务）",
+          "Mapper 改为 `ORDER BY c.last_message_at DESC LIMIT #{limit}`，并加入活跃用户/最近活跃过滤",
+          "用 EXPLAIN 确认 type=index/range、无 Using filesort，并记录扫描前后耗时"
+        ],
+        "files": [
+          "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/ConversationMapper.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ProactiveChatScheduler.java",
+          "backend/lianyu-dao/src/main/resources/db/migration/"
+        ],
+        "tests": [
+          "EXPLAIN 对比：改造后无 filesort、扫描行数从 C 降到 limit 量级",
+          "mvn -q -f backend/pom.xml test -Dtest=ProactiveChatSchedulerRelationshipTest"
+        ]
+      }
+    },
+    {
+      "section": "data-access",
+      "category": "over-fetch",
+      "severity": "low",
+      "confidence": "high",
+      "brief": "为了显示每条动态有几个评论，后端把评论正文整行都读出来再自己数；评论多的动态会让这个列表接口白白搬运大量文字。",
+      "title": "动态评论数用 selectList 拉全部评论行在内存里计数",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentService.java",
+      "line": 190,
+      "evidence": "MomentsCommentService.java:186-197：`List<MomentsComment> rows = momentsCommentMapper.selectList(Wrappers.<MomentsComment>lambdaQuery().in(MomentsComment::getPostId, postIds))`，随后 `rows.forEach(r -> map.merge(r.getPostId(), 1, Integer::sum))` —— 只为得到一个计数，却把 content 等全部列取回并反序列化。",
+      "impact": "一页 N 条动态、评论合计 M 行时，传输与反序列化是 O(M) 而非 O(N)；M 可为数百行文本，直接抬高动态列表接口的延迟与堆分配。",
+      "kind": "plan",
+      "fix": {
+        "summary": "改成数据库侧 GROUP BY 计数，只回传 post_id 与 count。",
+        "steps": [
+          "MomentsCommentMapper 增加 countByPostIds（@Select 或 XML：`SELECT post_id, COUNT(*) FROM moments_comment WHERE post_id IN (...) AND is_deleted = 0 GROUP BY post_id`）",
+          "MomentsCommentService.countByPostIds 改为读该结果并补 0 值",
+          "补单测：空入参、缺键、含已删除评论三种情况",
+          "对比 EXPLAIN 与接口 p95，确认返回行数从 M 降到 N"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentService.java",
+          "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/MomentsCommentMapper.java"
+        ],
+        "tests": [
+          "单测：计数结果与旧实现逐条一致（含 0 值补齐）",
+          "接口返回行数 M → N，动态列表 p95 目标不高于改造前"
+        ]
+      }
+    },
+    {
+      "section": "runtime",
+      "category": "thread-blocking",
+      "severity": "medium",
+      "confidence": "high",
+      "brief": "群聊里角色一条条冒泡之间的停顿，是靠把后台线程挂起来实现的；群里人一多，线程被白占着，别人的消息就得排队。",
+      "title": "群聊气泡节奏用 Thread.sleep 占住 group-chat 线程池线程",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java",
+      "line": 588,
+      "evidence": "GroupChatService.java:586-593 与 :721-731 在群聊执行器线程里 `Thread.sleep(bubbleGapMs)`；默认值 `lianyu.group.bubble-gap-ms:500`（:92-96）。执行器 GroupChatExecutorConfig.java:12-24：core 8 / max 20 / queue 300；一轮群聊对每个成员起一个 CompletableFuture（GroupChatService.java:395-399），maxGroupMembers=4（:90-91）。阻塞量估算：一轮 4 成员 × 每成员 b 条气泡 ≈ 4×(b-1)×500ms 的纯等待线程时间，分散在 4 个线程上。",
+      "impact": "并发 K 个群聊时瞬时占用约 4K 个线程做纯等待，超过 core=8 即开始排队、超过 max=20 且队列 300 满后按拒绝策略丢弃，表现为「群里半天不冒泡、消息丢失」；同时 DB 插入与 WebSocket 广播被串在 sleep 之间，单轮群聊尾延迟随气泡数线性增长。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把「节奏」从阻塞线程改为定时投递或前端按时间戳排期，服务端一次落库并带上展示时间。",
+        "steps": [
+          "persistAndBroadcastReplies 改为先批量落库，再为每条气泡带上 revealAt 时间戳广播",
+          "前端 GroupChatPage.vue 按 revealAt 排期显示，替代服务端 sleep",
+          "若必须服务端控速，改用 ScheduledExecutorService.schedule(delay) 提交下一条，不占工作线程",
+          "线程池拒绝策略改为可观测（计数 + WARN），避免静默丢气泡",
+          "压测：100 并发群聊下 group-chat 活跃线程数 ≤ core，单轮群聊 p95 不高于改造前"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/config/GroupChatExecutorConfig.java",
+          "frontend/src/pages/GroupChatPage.vue"
+        ],
+        "tests": [
+          "压测脚本：100 并发群聊，统计 group-chat 线程活跃数与拒绝次数",
+          "mvn -q -f backend/pom.xml test -Dtest=GroupChat*"
+        ]
+      }
+    },
+    {
+      "section": "frontend",
+      "category": "bundle-size",
+      "severity": "medium",
+      "confidence": "high",
+      "brief": "每个窗口打开时都要先加载一整套 UI 组件库和 400KB 样式，而实际只用到其中一半；窗口越开越多、启动越慢，老机器上能感到明显迟滞。",
+      "title": "全量引入 Element Plus：首屏 408KB 阻塞 CSS + 1.14MB 公共 chunk，实际仅用 49 种组件",
+      "file": "frontend/src/main.js",
+      "line": 3,
+      "evidence": "main.js:3-5 全量 `import ElementPlus from 'element-plus'` + `import 'element-plus/dist/index.css'` + dark css-vars，并在 createApp 后 `app.use(ElementPlus, ...)` 全量注册；vite.config.js:91-96 manualChunks 只拆 vue/pinia/vue-router/vue-i18n（注释明确「勿把 axios 与 element-plus 拆成跨 chunk 引用」）；vite.config.js:71 `cssCodeSplit: !isElectronPack`，打包构建下合并为单一 CSS。dist 实测：main-DTgPoq__.css = 408,299 B（`.el-` 选择器 5777 处、`.el-button` 281 处），index.html 以 `<link rel=\"stylesheet\">` 同步加载；最大公共块 launcherBootstrap-CEXfa8Qx.js = 1,144,809 B，45 个 chunk 引用它，入口 main-DEJM46Qu.js 仅 32,779 B；assets JS 合计 ≈2.0MB、CSS 677KB。src 实际使用 49 种 el-* 组件（el-button 209 次、el-icon 166、el-form-item 121、el-input 45），图标已按需 import。",
+      "impact": "每个窗口首帧前都要解析 408KB CSS 并求值 1.14MB 公共 chunk（Electron 本地 file:// 加载，成本主要是解析/求值而非网络）；三个常驻窗口各付一次，启动更慢、常驻内存更高，低配机上表现为打开聊天窗明显卡顿。",
+      "kind": "plan",
+      "fix": {
+        "summary": "按需引入 Element Plus（unplugin-vue-components + ElementPlusResolver），并把组件库拆成独立 async chunk 供主窗按需加载。",
+        "steps": [
+          "引入 unplugin-vue-components + ElementPlusResolver，移除 main.js 的全量 import 与整包 index.css",
+          "dark css-vars 改成按需引入（或仅在暗色主题生效时加载）",
+          "若短期不便改造，先把 element-plus 拆成独立 chunk 并在首屏后 idle 预取，避免阻塞首帧",
+          "用 vite build --report 对比改造前后 chunk 大小与首屏 CSS 字节（目标：首屏 CSS < 150KB）",
+          "用 electron 启动冒烟记录首帧时间（改造前基线 vs 改造后）"
+        ],
+        "files": [
+          "frontend/src/main.js",
+          "frontend/vite.config.js",
+          "frontend/package.json"
+        ],
+        "tests": [
+          "npm --prefix frontend run build 后对比 main-*.css 与最大 chunk 字节数（目标各降 ≥ 50%）",
+          "node frontend/scripts/smoke-main-startup.mjs 记录首帧耗时"
+        ]
+      }
+    },
+    {
+      "section": "frontend",
+      "category": "render-cost",
+      "severity": "low",
+      "confidence": "high",
+      "brief": "聊天窗里的消息只增不减，每来一条新消息（或每 10 秒一次轮询）都要把整张消息表重新拼一遍；聊得越久、往上翻得越多，界面越卡。",
+      "title": "ChatPage 消息无限累积 + 每次变化整表 spread 重建，且列表无虚拟滚动",
+      "file": "frontend/src/pages/ChatPage.vue",
+      "line": 650,
+      "evidence": "ChatPage.vue:650-708 messageTimeline computed 对每条消息 `{ ...msg }` 重建数组并二次遍历分组；:908-949 loadOlderMessages 每次前插 50 条且无上限；:1524-1545 syncStreamingAssistantBubbles 用 filter + spread 重建整表；:1182-1231 每 NORMAL_POLL_MS=10000（:589）拉 MESSAGE_PAGE_SIZE=50（:484）后 mergePolledMessages；模板 :73 `v-for=\"item in messageTimeline\"` 无虚拟滚动。单次成本 O(n) 对象分配 + 全列表 patch，n = 已加载消息数（可无限增长）。",
+      "impact": "长会话（n 上千）时任意一次轮询或流式气泡更新都触发 O(n) 分配与整表 diff，出现输入卡顿与滚动掉帧；内存随会话时长单调增长，长时间挂着的窗口会越来越吃内存。",
+      "kind": "plan",
+      "fix": {
+        "summary": "timeline 改为按 id 增量维护、限制内存消息窗口、列表虚拟化，并在窗口隐藏/流式中跳过轮询。",
+        "steps": [
+          "messageTimeline 改为稳定数组，新消息 push / 历史 unshift 单条，去掉整体 spread 重建",
+          "loadOlderMessages 设上限（如 500 条），超出时释放头部消息",
+          "列表接入虚拟滚动（vue-virtual-scroller 或手动窗口化），只渲染可视区",
+          "轮询在 document.hidden 或 SSE 流活跃时跳过，样式切换后立刻恢复",
+          "用 Performance 面板录制 1000 条消息下的轮询与流式更新帧耗时"
+        ],
+        "files": [
+          "frontend/src/pages/ChatPage.vue"
+        ],
+        "tests": [
+          "Performance 录制 1000 条消息下轮询帧耗时（目标单次 < 16ms）",
+          "npm --prefix frontend test -- --run"
+        ]
+      }
+    },
+    {
+      "section": "memory-startup",
+      "category": "startup-cost",
+      "severity": "low",
+      "confidence": "high",
+      "brief": "桌宠和快捷聊天这两个常驻小窗口，自身代码只有一两千字节，却把整个应用连同 UI 组件库都加载进内存，三个窗口各存一份。",
+      "title": "桌宠 / 快捷聊窗口入口仅 706B / 1.2KB，却各自加载 1.14MB 公共应用壳",
+      "file": "frontend/electron/main.js",
+      "line": 618,
+      "evidence": "electron/main.js:610-637 loadRoute 对 /launcher 载 launcher.html、/quick/* 载 quick.html；实测 dist/launcher.html 的入口 launcher-BE_O1lcz.js 仅 706 B、quick.html 的 quick-DUTbY0TJ.js 仅 1,224 B，但两者都 import 同一个 launcherBootstrap-CEXfa8Qx.js（1,144,809 B）与 vue-vendor-Ba5glg1p.js（194,735 B）；该公共块内含 element-plus / ElMessage 等符号，说明小窗也为整库付了加载成本。",
+      "impact": "常驻的桌宠窗口与快捷聊窗口各持有一份完整应用壳（≈1.3MB 压缩源码，解析后堆占用更高），启动每个小窗都要走一遍 V8 解析/求值；桌宠长期开着，这部分内存常驻不释放，低配机更明显。",
+      "kind": "plan",
+      "fix": {
+        "summary": "让 launcher / quick 入口不依赖主应用壳：只共享最小 runtime，把 Element Plus 从公共 chunk 中移出。",
+        "steps": [
+          "为 launcher.html / quick.html 建独立入口，不引入 src/main.js 的全局插件与 router",
+          "把 Element Plus 从 launcherBootstrap 拆出，仅主窗口按需加载",
+          "核对小窗实际用到的 el-* 组件（若有）单独引入",
+          "用 app.getAppMetrics() 对比三个窗口改造前后的私有内存与首帧时间",
+          "回归桌宠拖拽/换装与快捷聊发送链路（smoke-launcher.mjs + 手动清单）"
+        ],
+        "files": [
+          "frontend/electron/main.js",
+          "frontend/src/main.js",
+          "frontend/launcher.html",
+          "frontend/quick.html",
+          "frontend/vite.config.js"
+        ],
+        "tests": [
+          "node frontend/scripts/smoke-launcher.mjs 通过",
+          "app.getAppMetrics() 记录桌宠窗口私有内存与首帧时间（改造前 vs 改造后）"
+        ]
+      }
+    }
+  ],
+  "deferred": [
+    {
+      "from": "perf",
+      "expert": "",
+      "summary": "SquareLikeService 每 30s 在 synchronized 内全量拉 Redis ZSET 重算点赞数：单次数据量小（模板数级），影响被锁粒度限制；未测量到可复现的排队。"
+    },
+    {
+      "from": "perf",
+      "expert": "",
+      "summary": "WebPushService 每次推送 new CloseableHttpClient：推送频率低且为一次性对象，属冷路径抖动，未达 low 门槛。"
+    },
+    {
+      "from": "perf",
+      "expert": "",
+      "summary": "desktopObserver 每 30s 截图后去重（先截图再判重）：默认关闭/可配置，且有空闲暂停；缺少真实开启时的 CPU 占用数据，留待 reliability/perf 后续测量。"
+    },
+    {
+      "from": "perf",
+      "expert": "",
+      "summary": "VoiceCallDuplexSession 每个 SSE delta 做 llmEmitBuf.toString() 拼接：常量小、单次通话上限有限，未达到 low。"
+    },
+    {
+      "from": "perf",
+      "expert": "",
+      "summary": "服务端 resources 内 32MB pet-voice-samples 音频随 jar 打包：影响镜像体积与部署时长，非运行时内存；属构建/部署优化，转交 maintainability。"
+    }
+  ],
+  "notes": "方法：仓库无 rg，用 python 做跨文件模式扫描（http 客户端新建、Thread.sleep/setInterval、mapper 调用、缓存写入、循环内 IO），再对每单元按体积 + core 取 32 个文件做结构摘要，关键文件逐行精读（gateway.py、tts.py、memory_search_tool.py、ConversationMapper.java、ProactiveChatScheduler.java、MomentsCommentService.java、GroupChatService.java、GroupChatExecutorConfig.java、ChatPage.vue、main.js、vite.config.js、electron/main.js、AgentRuntimeClient.java）。证据分级：F1/F2 为 A（本地连接计数实测）、F3/F4/F5/F7 为 C（给出 C 行全扫、M 行评论、4K 线程、O(n) 重排的公式与规模）、F6/F8 为 B（dist 产物与 chunk 引用图实测）。抽样说明：u03/u04/u09/u10/u11/u12 为 sampled，只做了结构扫描与少量精读，结论不能视为全量已读。未做真机性能剖析（Electron 首帧、DB 慢查询日志），相关阈值以目标形式写在 fix.tests 中。"
+}

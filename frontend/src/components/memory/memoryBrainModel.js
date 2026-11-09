@@ -36,7 +36,6 @@ export const BRAIN_PALETTE = {
   input: '#7fb4f0',
   hippo: '#a98bff',
   ltm: '#f4a6b5',
-  // 中枢用近白的暖金：和 FACT 扇区的琥珀金拉开距离，否则「中枢」会被误读成一片事实记忆
   core: '#fff1c9',
   relation: '#6fdbc0',
   limbic: '#ff8fab',
@@ -46,8 +45,9 @@ export const BRAIN_PALETTE = {
 
 /**
  * 脑区几何：c 是 3D 中心，r 是三个方向的可视半径，z 越大越靠近观察者。
- * 排布按「前—后」语义摆放：对话从前方左下进入，写入在海马体（底中），
- * 记忆库居中，检索中枢在前方正中，表达在顶部，日记沉淀在后方右下。
+ * 按参考例图的「金字塔式发散」重排：检索中枢在顶部（y 最小），
+ * 语言输入/海马体分列两翼，长期记忆库居中最大，情绪/关系在下方两侧，
+ * 内省在深处，表达输出在底部前方。
  */
 export const MEMORY_REGIONS = [
   {
@@ -56,8 +56,8 @@ export const MEMORY_REGIONS = [
     descKey: 'memory.brain.regions.input.desc',
     unitKey: 'memory.brain.units.messages',
     color: BRAIN_PALETTE.input,
-    c: [-148, -26, 112],
-    r: [46, 38, 36]
+    c: [-170, -120, 60],
+    r: [52, 40, 36]
   },
   {
     id: 'hippo',
@@ -65,8 +65,8 @@ export const MEMORY_REGIONS = [
     descKey: 'memory.brain.regions.hippo.desc',
     unitKey: 'memory.brain.units.written',
     color: BRAIN_PALETTE.hippo,
-    c: [-18, -96, 8],
-    r: [44, 34, 32]
+    c: [170, -120, 60],
+    r: [50, 38, 34]
   },
   {
     id: 'ltm',
@@ -74,8 +74,9 @@ export const MEMORY_REGIONS = [
     descKey: 'memory.brain.regions.ltm.desc',
     unitKey: 'memory.brain.units.memories',
     color: BRAIN_PALETTE.ltm,
-    c: [0, 8, -58],
-    r: [76, 62, 54]
+    // 长期记忆库是整张图的锚：放在正中央、最大
+    c: [0, 20, -20],
+    r: [120, 88, 72]
   },
   {
     id: 'core',
@@ -83,9 +84,9 @@ export const MEMORY_REGIONS = [
     descKey: 'memory.brain.regions.core.desc',
     unitKey: 'memory.brain.units.sectors',
     color: BRAIN_PALETTE.core,
-    // 中枢本该在正中央，但那里被长期记忆库的光点占满了，往右上前方挪一点才认得出
-    c: [78, 138, 104],
-    r: [40, 34, 32]
+    // 检索中枢在顶部，是所有光束汇聚的顶点
+    c: [0, -220, 100],
+    r: [56, 44, 38]
   },
   {
     id: 'relation',
@@ -93,8 +94,8 @@ export const MEMORY_REGIONS = [
     descKey: 'memory.brain.regions.relation.desc',
     unitKey: 'memory.brain.units.relationMemories',
     color: BRAIN_PALETTE.relation,
-    c: [-126, 58, -44],
-    r: [42, 34, 32]
+    c: [-150, 160, -30],
+    r: [46, 36, 32]
   },
   {
     id: 'limbic',
@@ -102,8 +103,8 @@ export const MEMORY_REGIONS = [
     descKey: 'memory.brain.regions.limbic.desc',
     unitKey: 'memory.brain.units.characters',
     color: BRAIN_PALETTE.limbic,
-    c: [136, 46, 58],
-    r: [40, 32, 30]
+    c: [150, 160, -30],
+    r: [46, 36, 32]
   },
   {
     id: 'introspect',
@@ -111,134 +112,142 @@ export const MEMORY_REGIONS = [
     descKey: 'memory.brain.regions.introspect.desc',
     unitKey: 'memory.brain.units.diaries',
     color: BRAIN_PALETTE.introspect,
-    c: [96, -86, -114],
-    r: [40, 32, 30]
+    c: [-60, 260, -90],
+    r: [44, 34, 30]
   },
   {
     id: 'output',
     nameKey: 'memory.brain.regions.output.name',
     descKey: 'memory.brain.regions.output.desc',
-    unitKey: 'memory.brain.units.charactersExpressing',
+    unitKey: 'memory.brain.units.characters',
     color: BRAIN_PALETTE.output,
-    c: [-8, 122, 20],
-    r: [42, 34, 32]
+    c: [60, 320, 40],
+    r: [48, 36, 32]
   }
 ]
 
 const REGION_BY_ID = new Map(MEMORY_REGIONS.map((r) => [r.id, r]))
 
 /**
- * 标签放在节点上方（-1）还是下方（1）。
- * 靠下的脑区把标签放到下面，避免中间那几个脑区的字叠在一起。
+ * 脑区之间的真实数据流；虚线=异步/回流。
+ * 只画存在链路的，不为了对称补线。
  */
-const LABEL_PLACEMENT = {
-  input: 1,
-  hippo: 1,
-  introspect: 1,
-  core: 1,
-  ltm: -1,
-  relation: -1,
-  limbic: -1,
-  output: -1
-}
-
-/**
- * 标签挂在节点右侧（目前只有中枢）：它落在长期记忆库的扇区中间，
- * 上下都会压住光点，只能横向让开。
- */
-const LABEL_SIDE = { ltm: 'center' }
-
-/** 脑区之间的数据流；dash 表示「旁路/参考」而不是主链路 */
 export const BRAIN_FLOWS = [
-  { id: 'input-hippo', from: 'input', to: 'hippo', labelKey: 'memory.brain.flows.wake', dash: false },
-  { id: 'hippo-ltm', from: 'hippo', to: 'ltm', labelKey: 'memory.brain.flows.write', dash: false },
-  { id: 'ltm-core', from: 'ltm', to: 'core', labelKey: 'memory.brain.flows.index', dash: false },
-  { id: 'limbic-core', from: 'limbic', to: 'core', labelKey: 'memory.brain.flows.emotion', dash: false },
-  { id: 'relation-core', from: 'relation', to: 'core', labelKey: 'memory.brain.flows.relation', dash: false },
-  { id: 'introspect-ltm', from: 'introspect', to: 'ltm', labelKey: 'memory.brain.flows.diary', dash: false },
-  { id: 'core-output', from: 'core', to: 'output', labelKey: 'memory.brain.flows.inject', dash: false },
-  { id: 'input-core', from: 'input', to: 'core', labelKey: 'memory.brain.flows.topic', dash: true }
+  { id: 'input-hippo', from: 'input', to: 'hippo', labelKey: 'memory.brain.flows.inputHippo' },
+  { id: 'hippo-ltm', from: 'hippo', to: 'ltm', labelKey: 'memory.brain.flows.hippoLtm' },
+  { id: 'ltm-core', from: 'ltm', to: 'core', labelKey: 'memory.brain.flows.ltmCore' },
+  { id: 'core-output', from: 'core', to: 'output', labelKey: 'memory.brain.flows.coreOutput' },
+  { id: 'ltm-limbic', from: 'ltm', to: 'limbic', labelKey: 'memory.brain.flows.ltmLimbic', dash: true },
+  { id: 'ltm-relation', from: 'ltm', to: 'relation', labelKey: 'memory.brain.flows.ltmRelation', dash: true },
+  { id: 'limbic-output', from: 'limbic', to: 'output', labelKey: 'memory.brain.flows.limbicOutput', dash: true },
+  { id: 'relation-ltm', from: 'relation', to: 'ltm', labelKey: 'memory.brain.flows.relationLtm', dash: true },
+  { id: 'introspect-ltm', from: 'introspect', to: 'ltm', labelKey: 'memory.brain.flows.introspectLtm', dash: true }
 ]
 
-/** 单次最多画多少颗记忆光点：再多也会糊成一团，还拖慢帧率 */
+export const LABEL_PLACEMENT = {
+  input: 'left',
+  hippo: 'right',
+  ltm: 'center',
+  core: 'center',
+  relation: 'left',
+  limbic: 'right',
+  introspect: 'left',
+  output: 'right'
+}
+
+const LABEL_SIDE = Object.fromEntries(
+  MEMORY_REGIONS.map((r) => [r.id, LABEL_PLACEMENT[r.id] || 'center'])
+)
+
 export const MAX_MEMORY_NODES = 240
 
-const DAY = 86400000
-const WEEK = 7 * DAY
+const WEEK = 7 * 24 * 60 * 60 * 1000
 
-/** 确定性伪随机：同一个记忆 id 永远得到同一组抖动，避免每次刷新星图乱跳 */
+/* ---------------- 确定性随机 ---------------- */
+
+export function hashString(input) {
+  let h = 2166136261
+  for (let i = 0; i < String(input).length; i++) {
+    h ^= String(input).charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return h >>> 0
+}
+
 export function mulberry32(seed) {
   let a = seed >>> 0
-  return function next() {
-    a = (a + 0x6d2b79f5) >>> 0
-    let t = a
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+  return function rand() {
+    a |= 0
+    a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
   }
 }
 
-function hashString(input) {
-  let hash = 2166136261
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i)
-    hash = Math.imul(hash, 16777619)
-  }
-  return hash >>> 0
-}
+/* ---------------- 时间 ---------------- */
 
-function clamp01(value) {
-  if (!Number.isFinite(value)) return 0
-  return Math.min(1, Math.max(0, value))
-}
-
-/**
- * 时间戳解析统一走 utils/feedTime.parseFeedDateTime：
- * 后端 LocalDateTime 不带时区，业务时区是 Asia/Shanghai（+08:00）。
- * 这里不自己再定一套时区规则，否则星图上的先后顺序会和列表页错开。
- */
 export function toTimestamp(value) {
-  if (value == null || value === '') return 0
-  if (typeof value === 'number') return value < 1e12 ? value * 1000 : value
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? 0 : value.getTime()
-  const text = String(value).trim()
-  if (!text) return 0
-  if (/^\d+$/.test(text)) return toTimestamp(Number(text))
-  const parsed = parseFeedDateTime(text)
+  if (value == null) return 0
+  if (value instanceof Date) return value.getTime()
+  const parsed = parseFeedDateTime(value)
   return parsed ? parsed.getTime() : 0
 }
 
-export function normalizeMemory(raw = {}) {
-  const importanceRaw = typeof raw.importance === 'string' ? Number(raw.importance) : raw.importance
-  const sourceIds = Array.isArray(raw.sourceMsgIds)
-    ? [...new Set(raw.sourceMsgIds.filter((id) => id != null && String(id).trim()).map((id) => String(id)))]
-    : []
-  const type = SECTOR_BY_ID.has(raw.memoryType) ? raw.memoryType : 'FACT'
-  const fadeLevel = ['active', 'faded', 'archived', 'dormant'].includes(raw.fadeLevel)
-    ? raw.fadeLevel
+/* ---------------- 归一化 ---------------- */
+
+const TYPE_ALIAS = {
+  fact: 'FACT',
+  emotion: 'EMOTION',
+  relation: 'RELATION',
+  ritual: 'RITUAL',
+  episodic: 'FACT',
+  episode: 'FACT',
+  reflection: 'FACT'
+}
+
+export function normalizeMemory(raw) {
+  const typeRaw = String(raw.memoryType || raw.memory_type || 'FACT').toLowerCase()
+  const memoryType = TYPE_ALIAS[typeRaw] || 'FACT'
+  const importance = clamp01(Number(raw.importance ?? 0.5))
+  const strength = clamp01(Number(raw.strength ?? 1))
+  const fadeLevel = ['active', 'faded', 'archived', 'dormant'].includes(String(raw.fadeLevel || raw.fade_level || 'active'))
+    ? String(raw.fadeLevel || raw.fade_level || 'active')
     : 'active'
-  const strengthRaw = typeof raw.strength === 'string' ? Number(raw.strength) : raw.strength
+  const layer = String(raw.layer || raw.memory_layer || 'fact').toLowerCase()
+  const pinned = Boolean(raw.pinned || raw.isPinned)
+  const muted = Boolean(raw.muted || raw.isMuted)
+  const sourceMsgIds = Array.isArray(raw.sourceMsgIds || raw.source_msg_ids)
+    ? (raw.sourceMsgIds || raw.source_msg_ids).map((v) => String(v)).filter((v) => v && v.trim() && v !== 'null' && v !== 'undefined')
+    : []
+  const at = toTimestamp(raw.createdAt || raw.created_at || raw.at)
+  const characterId = raw.characterId ?? raw.character_id ?? null
   return {
     id: raw.id,
-    characterId: raw.characterId,
-    characterName: raw.characterName || '',
-    summary: String(raw.summary || '').trim(),
-    memoryType: type,
-    importance: clamp01(Number(importanceRaw)),
-    // 夜间衰减只改 strength/fadeLevel，不删行；星图据此把"想不起来"画暗，而不是画没
-    strength: Number.isFinite(Number(strengthRaw)) ? clamp01(Number(strengthRaw)) : 1,
+    characterId,
+    characterName: raw.characterName || raw.character_name || '',
+    summary: String(raw.summary || raw.content || '').trim().slice(0, 120),
+    memoryType,
+    importance,
+    strength,
     fadeLevel,
-    pinned: Boolean(raw.pinned),
-    muted: Boolean(raw.muted),
-    layer: raw.layer || 'fact',
-    quote: String(raw.quote || '').trim(),
-    // 来源 id 是可验证的关系边：共享同一段原始对话的记忆，才允许彼此连线。
-    sourceMsgIds: sourceIds,
-    sourceCount: sourceIds.length,
-    createdAt: raw.createdAt,
-    at: toTimestamp(raw.createdAt)
+    layer,
+    pinned,
+    muted,
+    sourceMsgIds,
+    sourceCount: sourceMsgIds.length,
+    at,
+    createdAt: raw.createdAt || raw.created_at || null,
+    raw
   }
 }
+
+function clamp01(v) {
+  if (!Number.isFinite(v)) return 0
+  return Math.min(1, Math.max(0, v))
+}
+
+/* ---------------- 图构建 ---------------- */
 
 /**
  * 把记忆 / 角色 / 情绪态 / 日记装配成星图数据。
@@ -284,24 +293,13 @@ export function buildBrainGraph({
     list.length > MAX_MEMORY_NODES
       ? [...list].sort((a, b) => b.importance - a.importance || b.at - a.at).slice(0, MAX_MEMORY_NODES)
       : list
-  const nodesBySector = { FACT: [], EMOTION: [], RELATION: [], RITUAL: [] }
-  for (const memory of drawnList) {
-    nodesBySector[memory.memoryType].push(memory)
-  }
 
   const ltm = REGION_BY_ID.get('ltm')
-  const characterIds = [...new Set(drawnList.map((memory) => String(memory.characterId ?? 'unknown')))]
-  const splitCharacters = characterIds.length > 1 && characterIds.length <= 8
-  const characterOrder = new Map(
-    characterIds
-      .map((id) => ({ id, count: drawnList.filter((memory) => String(memory.characterId ?? 'unknown') === id).length }))
-      .sort((a, b) => b.count - a.count || a.id.localeCompare(b.id))
-      .map((entry, index) => [entry.id, index])
-  )
-  const grouped = new Map()
+  const core = REGION_BY_ID.get('core')
+
+  // ---- 中枢簇：core/pinned/高重要度 ----
   const centralMemories = drawnList.filter((memory) => memory.layer === 'core' || memory.pinned)
   const centralIds = new Set(centralMemories.map((memory) => String(memory.id)))
-  // 没有 core/pinned 时，用少量高重要度记忆组成视觉中心云；不改写它们真实的 layer。
   if (!centralMemories.length && drawnList.length) {
     const centerLimit = Math.min(12, Math.max(4, Math.ceil(Math.sqrt(drawnList.length) * 1.2)))
     const centralCandidates = [...drawnList].sort(
@@ -313,13 +311,12 @@ export function buildBrainGraph({
     }
   }
 
+  // ---- 四扇区簇：按类型，单角色下不再拆角色 ----
+  const grouped = new Map()
   for (const memory of drawnList) {
-    // core/pinned 与无明确中枢时的少量高权重候选留在中心；其余按真实类型和角色分簇。
     if (centralIds.has(String(memory.id))) continue
-    const characterId = String(memory.characterId ?? 'unknown')
-    const key = splitCharacters ? `${memory.memoryType}:${characterId}` : memory.memoryType
-    if (!grouped.has(key)) grouped.set(key, [])
-    grouped.get(key).push(memory)
+    if (!grouped.has(memory.memoryType)) grouped.set(memory.memoryType, [])
+    grouped.get(memory.memoryType).push(memory)
   }
 
   const memoryNodes = []
@@ -327,20 +324,19 @@ export function buildBrainGraph({
   const anchors = []
   const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5))
 
-  const appendCluster = ({ id, sector, characterId = null, members, pos, central = false }) => {
+  const appendCluster = ({ id, sector, members, pos, central = false }) => {
     const sectorMeta = SECTOR_BY_ID.get(sector)
     const color = central ? BRAIN_PALETTE.core : sectorMeta.color
     const sortedMembers = [...members].sort(
       (a, b) => b.importance - a.importance || b.at - a.at || String(a.id).localeCompare(String(b.id))
     )
     const count = sortedMembers.length
-    const spread = central ? Math.min(35, 12 + Math.sqrt(count) * 3.8) : Math.min(54, 17 + Math.sqrt(count) * 3.6)
+    const spread = central ? Math.min(44, 14 + Math.sqrt(count) * 4.2) : Math.min(76, 20 + Math.sqrt(count) * 4.6)
     const cluster = {
       id,
       sector,
-      sectorHubId: central ? null : `sector-hub-${sector}`,
-      characterId,
-      characterName: characterId == null ? '' : nameById.get(String(characterId)) || '',
+      characterId: null,
+      characterName: '',
       color,
       nameKey: central ? 'memory.brain.regions.core.name' : sectorMeta.nameKey,
       count,
@@ -356,7 +352,6 @@ export function buildBrainGraph({
       const memorySector = SECTOR_BY_ID.get(memory.memoryType) || MEMORY_SECTORS[0]
       const theta = index * GOLDEN_ANGLE + (rng() - 0.5) * 0.32
       const ring = spread * Math.sqrt((index + 0.5) / count)
-      // 重要记忆更靠近所属簇的核心，衰减记忆自然落在星团外缘。
       const radius = ring * (0.66 + (1 - memory.importance) * 0.34) * (0.9 + rng() * 0.2)
       const node = {
         id: `mem-${memory.id}`,
@@ -379,10 +374,9 @@ export function buildBrainGraph({
         layer: memory.layer,
         pos: [
           pos[0] + Math.cos(theta) * radius,
-          pos[1] + Math.sin(theta) * radius * 0.78,
-          pos[2] + (rng() - 0.5) * (central ? 36 : 56)
+          pos[1] + Math.sin(theta) * radius * 0.82,
+          pos[2] + (rng() - 0.5) * (central ? 40 : 64)
         ],
-        // 重要度拉开视觉层次；钉住的记忆是簇里的亮星，衰减仍保留可见。
         size: (1.2 + memory.importance * 2.8) * (0.62 + 0.38 * memory.strength) * (memory.pinned ? 1.35 : 1)
       }
       cluster.memberIds.push(node.id)
@@ -400,44 +394,33 @@ export function buildBrainGraph({
     })
   }
 
+  // 中枢簇：放在检索中枢正下方一点，光束从这里汇聚到 core
   if (centralMemories.length) {
     appendCluster({
       id: 'cluster-core',
       sector: 'FACT',
       members: centralMemories,
-      pos: [ltm.c[0], ltm.c[1], ltm.c[2] + 14],
+      pos: [core.c[0], core.c[1] + 72, core.c[2] - 10],
       central: true
     })
   }
 
+  // 四扇区簇：围绕 ltm 呈金字塔展开，角度沿用扇区定义
   for (const sector of MEMORY_SECTORS) {
-    const sectorGroups = [...grouped.entries()]
-      .filter(([key]) => key.startsWith(`${sector.id}:`) || key === sector.id)
-      .map(([key, members]) => ({ key, members }))
-      .sort((a, b) => {
-        const charA = splitCharacters ? a.key.slice(sector.id.length + 1) : ''
-        const charB = splitCharacters ? b.key.slice(sector.id.length + 1) : ''
-        return (characterOrder.get(charA) ?? 0) - (characterOrder.get(charB) ?? 0)
-      })
-    const total = sectorGroups.length
-    sectorGroups.forEach(({ key, members }, index) => {
-      const characterId = splitCharacters ? key.slice(sector.id.length + 1) : null
-      const lane = total > 1 ? index - (total - 1) / 2 : 0
-      const laneStep = total > 1 ? Math.min(26, 84 / (total - 1)) : 0
-      const angle = (sector.angle + lane * laneStep) * (Math.PI / 180)
-      const radius = 150 + Math.min(22, Math.abs(lane) * 6)
-      const pos = [
-        ltm.c[0] + Math.cos(angle) * radius,
-        ltm.c[1] + Math.sin(angle) * radius * 0.84,
-        ltm.c[2] + 12 + lane * 5
-      ]
-      appendCluster({
-        id: `cluster-${sector.id}-${characterId ?? 'all'}`,
-        sector: sector.id,
-        characterId,
-        members,
-        pos
-      })
+    const members = grouped.get(sector.id) || []
+    if (!members.length) continue
+    const angle = (sector.angle * Math.PI) / 180
+    const radius = 168
+    const pos = [
+      ltm.c[0] + Math.cos(angle) * radius,
+      ltm.c[1] + Math.sin(angle) * radius * 0.86,
+      ltm.c[2] + 18
+    ]
+    appendCluster({
+      id: `cluster-${sector.id}`,
+      sector: sector.id,
+      members,
+      pos
     })
   }
 
@@ -463,8 +446,7 @@ export function buildBrainGraph({
     }
   }
 
-  // 一层语义枢纽把中心与角色簇分开：中心只连到实际出现的 memoryType，
-  // 每个类型枢纽再承接同类角色簇，避免多角色时从中心扇出一大片射线。
+  // 类型枢纽：四扇区簇质心向 core 拉 0.55，形成金字塔的第二层
   const sectorHubs = MEMORY_SECTORS.flatMap((sector) => {
     const sectorClusters = clusters.filter((cluster) => !cluster.central && cluster.sector === sector.id)
     if (!sectorClusters.length) return []
@@ -473,9 +455,9 @@ export function buildBrainGraph({
       sectorClusters.reduce((sum, cluster) => sum + cluster.pos[axis] * cluster.count, 0) / Math.max(1, total)
     )
     const pos = [
-      ltm.c[0] + (centroid[0] - ltm.c[0]) * 0.58,
-      ltm.c[1] + (centroid[1] - ltm.c[1]) * 0.58,
-      ltm.c[2] + (centroid[2] - ltm.c[2]) * 0.58
+      core.c[0] + (centroid[0] - core.c[0]) * 0.55,
+      core.c[1] + (centroid[1] - core.c[1]) * 0.55,
+      core.c[2] + (centroid[2] - core.c[2]) * 0.55
     ]
     return [{
       id: `sector-hub-${sector.id}`,
@@ -510,7 +492,7 @@ export function buildBrainGraph({
   }
 
   const topByImportance = [...list].sort((a, b) => b.importance - a.importance || b.at - a.at)
-  const relationTop = [...nodesBySector.RELATION].sort((a, b) => b.importance - a.importance)
+  const relationTop = [...(grouped.get('RELATION') || [])].sort((a, b) => b.importance - a.importance)
 
   const itemsByRegion = {
     input: topByImportance
@@ -584,119 +566,117 @@ export function buildBrainGraph({
 
   const regions = MEMORY_REGIONS.map((region) => ({
     ...region,
-    labelDir: LABEL_PLACEMENT[region.id] || -1,
-    labelSide: LABEL_SIDE[region.id] || null,
+    labelSide: LABEL_SIDE[region.id] || 'center',
     count: counts[region.id] || 0,
-    // 有数据才点亮；否则画成暗星云，视觉上「这里还没通电」
-    lit: (counts[region.id] || 0) > 0,
+    lit: Boolean(counts[region.id]),
     items: itemsByRegion[region.id] || []
   }))
+  const regionMap = new Map(regions.map((region) => [region.id, region]))
 
   return {
     regions,
-    regionMap: new Map(regions.map((r) => [r.id, r])),
+    regionMap,
     anchors,
-    sectorHubs,
-    clusters,
     memoryNodes,
+    clusters,
+    sectorHubs,
     relatedEdges,
-    flows: BRAIN_FLOWS.map((flow) => ({ ...flow })),
+    flows: BRAIN_FLOWS,
     stats: {
       total: list.length,
-      characters: charactersWithMemory,
-      weekAdded,
-      sourceCount,
-      sectorsPresent,
-      avgImportance,
-      latestAt: list.length ? list[list.length - 1].at : 0,
+      drawn: memoryNodes.length,
       bySector,
-      diaries: diaryList.length,
-      states: stateList.length,
+      weekAdded,
+      avgImportance,
       truncated: list.length > MAX_MEMORY_NODES
     }
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* 召回演示：关键词打分（本地演示，不冒充 Milvus 语义检索）              */
-/* ------------------------------------------------------------------ */
-
-function tokenize(query) {
-  const normalized = String(query || '').toLowerCase().trim()
-  if (!normalized) return []
-  const tokens = new Set()
-  for (const word of normalized.match(/[a-z0-9]{2,}/g) || []) tokens.add(word)
-  const cjk = normalized.replace(/[^\u4e00-\u9fff]/g, '')
-  for (let i = 0; i < cjk.length - 1; i += 1) tokens.add(cjk.slice(i, i + 2))
-  if (!tokens.size) tokens.add(normalized)
-  return [...tokens]
-}
+/* ---------------- 召回打分 ---------------- */
 
 /**
- * 关键词召回打分。
+ * 本地演示用的关键词召回：只用于星图里「搜索记忆」的高亮，
+ * 不替代后端语义检索（backend-agent/app/memory/retrieve.py）。
  *
- * 线上真正的召回是 Milvus 向量检索 + importance 加权（backend-agent 侧），
- * 前端拿不到向量、也不该假装拿得到。所以这里只做「关键词命中 × 权重 × 新鲜度」
- * 的本地演示，面板上必须标明这是演示，别让人误以为改这里会影响真实召回。
+ * 支持两种调用：
+ *   scoreRecall(query, memory)          → 单条打分，返回 0..1
+ *   scoreRecall(memories, query, opts)  → 返回 [{memory, score}] 按分数降序
  */
-export function scoreRecall(memories = [], query = '', { now = Date.now(), limit = 12 } = {}) {
-  const tokens = tokenize(query)
-  if (!tokens.length) return []
-  const rows = []
-  for (const raw of Array.isArray(memories) ? memories : []) {
-    const memory = normalizeMemory(raw)
-    if (!memory.summary) continue
-    const haystack = memory.summary.toLowerCase()
-    const hits = tokens.filter((token) => haystack.includes(token)).length
-    if (!hits) continue
-    const keyword = hits / tokens.length
-    const importance = memory.importance
-    const age = memory.at ? now - memory.at : 365 * DAY
-    const recency = 1 - clamp01(age / (90 * DAY))
-    const score = clamp01(keyword * 0.62 + importance * 0.26 + recency * 0.12)
-    rows.push({ memory, hits, total: tokens.length, keyword, importance, recency, score })
+export function scoreRecall(a, b, opts = {}) {
+  // 兼容旧的两参调用（query, memory）
+  if (typeof a === 'string') {
+    const query = a
+    const memory = b || {}
+    const q = query.trim().toLowerCase()
+    if (!q) return 0
+    const text = String(memory.summary || memory.content || '').toLowerCase()
+    if (!text) return 0
+    const keyword = text.includes(q) ? 0.62 : 0
+    const weight = clamp01(Number(memory.importance ?? 0.5)) * 0.26
+    const at = toTimestamp(memory.createdAt || memory.created_at || memory.at)
+    const ageDays = at ? Math.max(0, ((opts.now ?? Date.now()) - at) / 86400000) : 365
+    const freshness = Math.exp(-ageDays / 30) * 0.12
+    return Math.min(1, keyword + weight + freshness)
   }
-  rows.sort((a, b) => b.score - a.score || b.memory.at - a.memory.at)
+
+  // 三参调用（memories, query, opts）
+  const memories = Array.isArray(a) ? a : []
+  const query = String(b || '').trim().toLowerCase()
+  if (!query) return []
+  const now = opts.now ?? Date.now()
+  const limit = Number.isFinite(opts.limit) ? opts.limit : 20
+
+  const rows = []
+  for (const memory of memories) {
+    const text = String(memory.summary || memory.content || '').toLowerCase()
+    if (!text) continue
+    // 中文按双字切词：'十一月十九' → ['十一','一月','月十','十九']
+    const chars = [...query]
+    let matched = false
+    for (let i = 0; i < chars.length - 1; i++) {
+      const pair = chars[i] + chars[i + 1]
+      if (text.includes(pair)) {
+        matched = true
+        break
+      }
+    }
+    if (!matched) continue
+    const keyword = text.includes(query) ? 0.62 : 0.5
+    const weight = clamp01(Number(memory.importance ?? 0.5)) * 0.26
+    const at = toTimestamp(memory.createdAt || memory.created_at || memory.at)
+    const ageDays = at ? Math.max(0, (now - at) / 86400000) : 365
+    const freshness = Math.exp(-ageDays / 30) * 0.12
+    const score = Math.min(1, keyword + weight + freshness)
+    rows.push({ memory, score })
+  }
+  rows.sort((a, b) => b.score - a.score || (b.memory.importance ?? 0) - (a.memory.importance ?? 0))
   return rows.slice(0, limit)
 }
 
-/* ------------------------------------------------------------------ */
-/* 时间轴：最近 N 天的写入节奏                                          */
-/* ------------------------------------------------------------------ */
+/* ---------------- 时间轴 ---------------- */
 
-function dayKeyOf(timestamp) {
-  const date = new Date(timestamp)
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${date.getFullYear()}-${month}-${day}`
-}
-
-export function buildTimeline(memories = [], { days = 14, now = Date.now() } = {}) {
-  const span = Math.max(1, days)
-  const today = new Date(now)
-  today.setHours(0, 0, 0, 0)
-  const buckets = new Map()
-  for (let i = span - 1; i >= 0; i -= 1) {
-    const stamp = today.getTime() - i * DAY
-    buckets.set(dayKeyOf(stamp), { key: dayKeyOf(stamp), at: stamp, count: 0, ids: [] })
+export function buildTimeline(memories, { days = 14, now = Date.now() } = {}) {
+  const list = (Array.isArray(memories) ? memories : []).map(normalizeMemory)
+  const start = now - (days - 1) * 86400000
+  const buckets = Array.from({ length: days }, (_, i) => ({
+    at: start + i * 86400000,
+    count: 0,
+    cumulative: 0
+  }))
+  for (const memory of list) {
+    if (!memory.at) continue
+    const idx = Math.floor((memory.at - start) / 86400000)
+    if (idx >= 0 && idx < days) buckets[idx].count += 1
   }
-  for (const raw of Array.isArray(memories) ? memories : []) {
-    const memory = normalizeMemory(raw)
-    const bucket = buckets.get(dayKeyOf(memory.at || now))
-    if (!bucket) continue
-    bucket.count += 1
-    bucket.ids.push(memory.id)
-  }
-  const list = [...buckets.values()]
   let running = 0
-  for (const bucket of list) {
+  for (const bucket of buckets) {
     running += bucket.count
     bucket.cumulative = running
   }
-  return list
+  return buckets
 }
 
-/* 供组件做「扇区 → 中文名」兜底（i18n 缺失时至少不显示裸 key） */
 export function sectorMeta(id) {
   return SECTOR_BY_ID.get(id) || MEMORY_SECTORS[0]
 }

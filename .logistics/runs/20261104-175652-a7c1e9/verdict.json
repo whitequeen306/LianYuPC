@@ -1,0 +1,478 @@
+{
+  "schemaVersion": 2,
+  "runId": "20261104-175652-a7c1e9",
+  "generatedAt": "2026-11-04T10:10:47.602Z",
+  "coverage": {
+    "expected": [
+      "maintainability"
+    ],
+    "received": [
+      "maintainability"
+    ],
+    "missing": [],
+    "complete": true
+  },
+  "findings": [
+    {
+      "id": "MNT-3894E",
+      "expert": "maintainability",
+      "module": "backend/lianyu-service + frontend/src",
+      "section": "simplify",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "回复气泡切分规则在 Java 与前端各写一遍，标记词表与阈值逐字重复且无共享用例",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AssistantReplySplitter.java",
+      "line": 20,
+      "evidence": "AssistantReplySplitter.java:15 定义 SENTENCE_SPLIT_MIN_CHARS = 40，:20 的 ATTEMPT_MARKERS（现在就试/这就试/我去试/我试试/稍等/盯着/马上帮你/这就去）与 :23 的 OUTCOME_MARKERS（13 个词）在 frontend/src/utils/assistantReplySplit.js:12、:96、:97 逐字重复；groupComputerTaskAttemptAndOutcome 的算法同样是两语言各写一遍，两侧注释互相要求「须与 frontend/src/utils/assistantReplySplit.js 保持一致」（Java 侧该方法注释）与「须与后端 AssistantReplySplitter.groupComputerTaskAttemptAndOutcome 一致」（JS 侧 :99）。另 JS 侧 assistantReplySplit.js:155 的 SPEAKING_STYLE_MAX_REPLIES（活泼 3/元气 3/温柔 2/傲娇 2/毒舌 2/冷静 1/成熟 1/慵懒 1）注释称「与后端 CharacterChatBehaviorResolver.StyleProfile 默认条数一致」，但该映射表只存在于 JS，Java 侧是 profileForStyle + 关键词调整，JS 兜底 return 2（:187）。仓内没有任何两侧共享的 golden 用例。",
+      "impact": "改一处漏一处的风险已经由两侧注释自己写出来了：新增同义标记或调整 40 字阈值必须人工同步两种语言与两套测试，漏改会让同一句话在落库（Java 切分后逐条落库）与实时流（前端兜底切分）两处切成不同条数，表现为刷新前后气泡数变化。新增说话风格只在 JS 表里加常量不会影响 Java 决策，反之亦然，任一侧漏改都静默退化为兜底条数。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把切分阈值、两组标记词表与说话风格默认条数收敛成一份可被两侧读取的契约文件，并用同一组 golden 用例锁住两侧行为",
+        "steps": [
+          "抽出契约文件（如 scripts/contracts/reply_split.json 或 backend-agent/app/prompts 旁的 JSON），承载 SENTENCE_SPLIT_MIN_CHARS、ATTEMPT/OUTCOME 标记词表与风格→条数映射，并从 AGENTS.md 单一事实来源清单登记它",
+          "Java 侧改为启动时读该契约（或由构建期小脚本生成常量类），删除 AssistantReplySplitter 内的字面量；前端改为构建期生成或运行期 import 该 JSON",
+          "为两侧补同一组 golden 输入（含「我去试 → 失败了」、冷静人设单气泡、括号未闭合、超长无标点）并断言相同的条数与内容",
+          "在 CI 增加一步比对：任一侧常量与契约文件不一致即失败（可复用 scripts/check_release_asset_contract.py 的写法）",
+          "若短期无法共享数据源，退一步在两侧测试中读同一个 fixture 文件并断言与本地常量相等，先把漂移暴露出来"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/ai/AssistantReplySplitter.java",
+          "frontend/src/utils/assistantReplySplit.js",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterChatBehaviorResolver.java",
+          "scripts/check_release_asset_contract.py",
+          "AGENTS.md"
+        ],
+        "tests": [
+          "backend/lianyu-service/src/test/java/com/lianyu/service/ai/AssistantReplySplitterTest.java 增加 golden 对照用例",
+          "frontend/src/utils/__tests__/assistantReplySplit.test.js 读同一 fixture 并断言条数与内容",
+          "新增契约一致性检查脚本的用例（常量与 JSON 不一致时非零退出）"
+        ]
+      }
+    },
+    {
+      "id": "MNT-EA332",
+      "expert": "maintainability",
+      "module": "frontend/electron",
+      "section": "simplify",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "QQ 与微信桥接协调器各自复制同一套广播与 API 解包样板",
+      "file": "frontend/electron/qqBridge/qqBridgeCoordinator.js",
+      "line": 16,
+      "evidence": "qqBridgeCoordinator.js:16-26 的 broadcast(channel, payload)（遍历 deps.getWindows()、win.isDestroyed() 判断、try/catch 空忽略）与 wechatBridgeCoordinator.js:17-27 完全逐字相同；qqBridgeCoordinator.js:55-73 的 unwrap(res, path) + apiGet + apiPost 与 wechatBridgeCoordinator.js:50-68 同样逐字相同，包括 `${apiOrigin}${path}` 拼接、timeoutMs: 15000 / 30000 两个魔数、错误串 `api:${path} HTTP ${res?.status}` 与 `api:${path} code ${body.code}`，以及 body.code 缺省时直接返回 body 的分支。两个文件还各自维护一份 ensureBridgeBinding / ensureBinding。",
+      "impact": "桥接的三条隐性契约（请求超时、错误码格式、向所有窗口广播的方式）在两个文件里各改一次；任一侧漏改会让 QQ 与微信两条链路的失败语义与超时行为分叉，而错误串格式正是前端解析与用户文案的依据。",
+      "kind": "plan",
+      "fix": {
+        "summary": "抽出 frontend/electron/shared/bridgeTransport.js 承载 broadcastToWindows、unwrap、createApiClient(apiOrigin, authToken)，两个协调器改为注入使用",
+        "steps": [
+          "新建 frontend/electron/shared/bridgeTransport.js，把 broadcast、unwrap、apiGet、apiPost 与 ensureBridgeBinding 中的公共部分搬进去，超时值改为具名常量（API_GET_TIMEOUT_MS / API_POST_TIMEOUT_MS）",
+          "qqBridgeCoordinator 与 wechatBridgeCoordinator 改为 const { broadcastToWindows, apiGet, apiPost } = createBridgeTransport(deps)，删除各自副本",
+          "保留两侧差异（QQ 的通知与 titleMap、微信的 host status 推送）在原文件，不合并业务语义",
+          "把两侧桥接测试里对错误串与超时的断言改为引用共享常量，确保行为不变",
+          "确认 preload 暴露的 IPC 通道名未变化后再删旧实现"
+        ],
+        "files": [
+          "frontend/electron/qqBridge/qqBridgeCoordinator.js",
+          "frontend/electron/wechatBridge/wechatBridgeCoordinator.js",
+          "frontend/electron/shared/bridgeTransport.js"
+        ],
+        "tests": [
+          "frontend/electron/qqBridge/__tests__/qqBridgeCoordinator.test.js",
+          "frontend/electron/wechatBridge/__tests__/wechatBridge.test.js",
+          "新增 frontend/electron/__tests__/bridgeTransport.test.js 覆盖 HTTP 非 2xx 与 code!==200 两条失败分支"
+        ]
+      }
+    },
+    {
+      "id": "MNT-8DDBC",
+      "expert": "maintainability",
+      "module": "frontend/src",
+      "section": "simplify",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "登录页与注册页的验证码逻辑逐字重复约 45 行，未按项目既有惯例抽 composable",
+      "file": "frontend/src/pages/RegisterPage.vue",
+      "line": 157,
+      "evidence": "RegisterPage.vue:157-233 的 captchaId/captchaImageSrc/captchaHint 三个 ref + applyCaptchaResponse + onCaptchaImgError + refreshCaptcha，与 LoginPage.vue:137-183 的同一段代码逐字相同：同样处理 `data:image/png;base64,` 前缀、同样的失败文案『获取失败，点击刷新』与『验证码加载失败，点击刷新』、同样的 ElMessage.error('无法连接服务器，请确认网络正常且后端已启动')。项目已有 src/composables/useAuthPageGsap.js、src/composables/useVoiceRecorder.js 等 26 个 composable，说明抽取是本仓既有惯例。",
+      "impact": "验证码的加载失败文案、base64 兜底、刷新时机这些易变细节要改两处；新增一种验证码形态（拼图/滑块）时两个页面都要重写一遍，且极易只改一处导致登录与注册体验不一致。",
+      "kind": "plan",
+      "fix": {
+        "summary": "抽 frontend/src/composables/useCaptcha.js 统一验证码状态与刷新，两个页面只保留表单差异",
+        "steps": [
+          "新建 src/composables/useCaptcha.js，导出 { captchaId, captchaImageSrc, captchaHint, applyCaptchaResponse, onCaptchaImgError, refreshCaptcha }，失败文案与 el-message 提示集中在此",
+          "LoginPage.vue 删除 137-183 段并改为 const { captchaId, captchaImageSrc, captchaHint, onCaptchaImgError, refreshCaptcha } = useCaptcha()",
+          "RegisterPage.vue 做同样替换，保留自己的 validatePassword/validateConfirm 校验逻辑",
+          "为 useCaptcha 补单测覆盖：成功返回 base64、返回空、请求抛错三条分支",
+          "跑 npx vitest run --no-file-parallelism 与 npx vite build 验证两页可用"
+        ],
+        "files": [
+          "frontend/src/pages/LoginPage.vue",
+          "frontend/src/pages/RegisterPage.vue",
+          "frontend/src/composables/useCaptcha.js"
+        ],
+        "tests": [
+          "新增 frontend/src/composables/__tests__/useCaptcha.test.js",
+          "frontend/src/pages/__tests__ 下已有的登录/注册相关用例回归"
+        ]
+      }
+    },
+    {
+      "id": "MNT-A8B9D",
+      "expert": "maintainability",
+      "module": "backend/lianyu-admin",
+      "section": "simplify",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "admin 权限目录类无人使用，实际鉴权全部裸写权限字符串",
+      "file": "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminPermissionCatalog.java",
+      "line": 7,
+      "evidence": "AdminPermissionCatalog 只有两个成员：SUPER_ADMIN = super_admin（:6）与 ALL = Set.of(admin.manage, user.read, user.moderate, release.manage, announcement.manage, audit.read, system.health)（:7），全仓 grep 仅命中自身定义行，没有任何消费方。真实鉴权点全部写裸字符串：AdminAuditController.java:19 require(audit.read)；AdminManagementController.java:22、:23、:34、:35、:36 require(admin.manage)；AdminOperationsController.java:28、:31 require(user.moderate)，:35 与 AnnouncementController.java:20、:28、:29 require(announcement.manage)；AdminOverviewController.java:21 require(system.health)。",
+      "impact": "这个类看起来是权限清单，实际是死常量：给它加一个权限不会生效，改一个字符串也不会与控制器同步，后续开发很容易照它以为已经登记。权限串拼错（例如 user.modrate）编译期不报错，只会静默变成『无人拥有该权限』的 403，排障时看不出是拼写问题。",
+      "kind": "plan",
+      "fix": {
+        "summary": "让 AdminPermissionCatalog 成为唯一权限来源，控制器全部引用其常量，并删除或接入 ALL",
+        "steps": [
+          "为 7 个权限各加一个 public static final String 常量（如 ADMIN_MANAGE、USER_MODERATE），ALL 由这些常量组成，删除裸字符串字面量",
+          "把 AdminAuthorizationService/AdminAuditController/AdminManagementController/AdminOperationsController/AnnouncementController/AdminOverviewController 里的 require(\"...\") 全部改为引用常量",
+          "若 ALL 仍无人使用，就在 AdminBootstrapService 里用它校验库里 admin_permission 行与代码目录一致（或直接删掉 ALL 并写注释说明目录只作常量表）",
+          "补一个测试：遍历 ALL 断言每个常量非空且以 admin./user./release./announcement./audit./system. 前缀之一开头",
+          "跑 cd backend && mvn -o test 验证 admin 模块全绿"
+        ],
+        "files": [
+          "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminPermissionCatalog.java",
+          "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminManagementController.java",
+          "backend/lianyu-admin/src/main/java/com/lianyu/admin/identity/AdminAuthorizationService.java",
+          "backend/lianyu-admin/src/main/java/com/lianyu/admin/operations/AdminOperationsController.java",
+          "backend/lianyu-admin/src/main/java/com/lianyu/admin/operations/AnnouncementController.java",
+          "backend/lianyu-admin/src/main/java/com/lianyu/admin/audit/AdminAuditController.java",
+          "backend/lianyu-admin/src/main/java/com/lianyu/admin/overview/AdminOverviewController.java"
+        ],
+        "tests": [
+          "backend/lianyu-admin/src/test/java 下新增 AdminPermissionCatalogTest 断言 ALL 覆盖全部常量",
+          "既有 admin 鉴权相关测试回归（mvn -o test）"
+        ]
+      }
+    },
+    {
+      "id": "MNT-E3F97",
+      "expert": "maintainability",
+      "module": "backend/lianyu-ai + backend/lianyu-service",
+      "section": "simplify",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "lianyu.ai.context-window 在 4 处注解重复默认值，AiConfig 还留着无人读取的同名字段",
+      "file": "backend/lianyu-ai/src/main/java/com/lianyu/ai/config/AiConfig.java",
+      "line": 21,
+      "evidence": "backend/lianyu-app/src/main/resources/application.yml:204 定义 context-window: 32，但代码里 4 个类各写一遍 @Value(\"${lianyu.ai.context-window:20}\")：ConversationService.java:98、GroupChatService.java:89、ProactiveMessageService.java:197、MomentsService.java:96；AiConfig.java:21 作为 @ConfigurationProperties(prefix = lianyu.ai) 又声明 private int contextWindow = 20，全仓无人读取（真实取值都来自四个 @Value 字段）。副作用是这些字段只能靠反射改：ConversationRelationshipFlowTest.java:91-93 用 getDeclaredField(contextWindow) + setAccessible 注入，ConversationServiceGetSummaryTest.java:83 与 ConversationServiceStreamErrorTest.java:103 用 ReflectionTestUtils.setField(service, contextWindow, 20)。",
+      "impact": "同一属性有 5 处声明、2 个不同的默认值来源（yml 32 / 注解 20），AiConfig 那个字段既不生效又给出错误暗示；调默认值要改 4 处注解，漏改任何一处都不会报错，只会让某个场景（朋友圈取 12 条上限、主动消息、群聊）用上不同窗口。测试与实现的私有字段名耦合，重命名字段会静默破坏反射赋值。",
+      "kind": "plan",
+      "fix": {
+        "summary": "收敛成 @ConfigurationProperties 的 ChatProperties 并构造注入，删除 AiConfig.contextWindow 与四处重复注解",
+        "steps": [
+          "在 lianyu-service 或 lianyu-ai 新建 ChatProperties（@ConfigurationProperties(prefix = lianyu.ai)，字段 contextWindow，默认值只写一次：20），并在 application.yml 里保持 32 为显式配置",
+          "把 ConversationService、GroupChatService、ProactiveMessageService、MomentsService 的 @Value 字段改为构造注入 ChatProperties，调用处改为 chatProperties.getContextWindow()",
+          "删除 AiConfig.java:21 的 contextWindow 字段（保留 scheduledExecutorService bean，它被三个调度器与 AiResilience 注入）",
+          "把三处反射测试改为构造时传入 ChatProperties 实例，去掉 setAccessible/setField",
+          "跑 cd backend && mvn -o test 确认四个类的相关用例全绿"
+        ],
+        "files": [
+          "backend/lianyu-ai/src/main/java/com/lianyu/ai/config/AiConfig.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ProactiveMessageService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsService.java",
+          "backend/lianyu-app/src/main/resources/application.yml"
+        ],
+        "tests": [
+          "backend/lianyu-service/src/test/java/com/lianyu/service/conversation/ConversationRelationshipFlowTest.java",
+          "backend/lianyu-service/src/test/java/com/lianyu/service/conversation/ConversationServiceGetSummaryTest.java",
+          "backend/lianyu-service/src/test/java/com/lianyu/service/conversation/ConversationServiceStreamErrorTest.java"
+        ]
+      }
+    },
+    {
+      "id": "MNT-76EE8",
+      "expert": "maintainability",
+      "module": "frontend/src/utils",
+      "section": "cleanup",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "前端 313 行无引用文件：截图分享工具与 antiDebug 均无任何导入方",
+      "file": "frontend/src/utils/captureChatShareScreenshot.js",
+      "line": 128,
+      "evidence": "captureChatShareScreenshot.js 共 220 行，唯一导出 export async function captureChatShareScreenshot(container, selectedIds)（:128），在 frontend/src 与 frontend/electron 全量 grep（.js/.vue，含测试）只命中自身定义；它依赖的配套文件 src/utils/renderChatShareSnapshot.js、src/utils/communityShareDraft.js 与 src/components/community/ChatShareSnapshot.vue 在仓内都已不存在，说明截图分享功能整体删除后该工具被遗留。另一处 src/utils/antiDebug.js 共 93 行，无任何 import（含 HTML、vite 配置），仅在 src/utils/logger.js:4 的注释里被提到『生产环境 console.* 被 antiDebug 吞掉』。二者均满足 CONFIRMED_DEAD（定义存在、零引用、无动态注册）。",
+      "impact": "313 行无调用代码留在树里，且读起来像是正在生效的保护：logger.js 的注释让人以为生产环境 console 已被屏蔽，实际该模块从未被加载，据此做的排障或安全判断都会错。",
+      "kind": "plan",
+      "fix": {
+        "summary": "删除两个零引用文件，并修正 logger.js:4 的注释",
+        "steps": [
+          "再次确认 captureChatShareScreenshot.js 与 antiDebug.js 无动态 import、无 vite define 注入、无 HTML script 引用（grep 文件名与导出名两路）",
+          "删除 frontend/src/utils/captureChatShareScreenshot.js 与 frontend/src/utils/antiDebug.js",
+          "修正 frontend/src/utils/logger.js:4 的注释，说明 console.* 未被拦截，或改为由 electron 主进程侧的日志通道统管",
+          "跑 npx vitest run --no-file-parallelism 与 npx vite build，确认无缺失模块与产物差异",
+          "在提交信息里写明『截图分享功能已移除、antiDebug 从未接线』，按 AGENTS.md §3.5 说明删除原因"
+        ],
+        "files": [
+          "frontend/src/utils/captureChatShareScreenshot.js",
+          "frontend/src/utils/antiDebug.js",
+          "frontend/src/utils/logger.js"
+        ],
+        "tests": [
+          "cd frontend && npx vitest run --no-file-parallelism",
+          "cd frontend && npx vite build",
+          "全量 grep 确认无残留 import 报错"
+        ]
+      }
+    },
+    {
+      "id": "MNT-A2683",
+      "expert": "maintainability",
+      "module": "backend/lianyu-security",
+      "section": "cleanup",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "security 模块的字段加密设施从未接线：EncryptedField 与 EncryptedStringTypeHandler 零引用",
+      "file": "backend/lianyu-security/src/main/java/com/lianyu/security/annotation/EncryptedField.java",
+      "line": 8,
+      "evidence": "EncryptedField（9 行，仅 @Target(FIELD)/@Retention(RUNTIME)/@Documented）全仓 grep 只命中自身定义；对 363 个 main Java 类做零引用检测后，它是唯一『零引用且非 Spring 组件』的注解。配套 EncryptedStringTypeHandler.java（40 行，基于 JasyptUtil 做 setNonNullParameter 加密与 getNullableResult 解密）同样零引用：仓内没有任何 MyBatis type-handlers-package/typeHandlers 配置（yml 中只有 JacksonTypeHandler 走 @TableField(typeHandler = ...) 显式引用，见 lianyu-dao/.../entity/Character.java:19），也没有实体用 @MappedTypes 或 @TableField 挂它。属 CONFIRMED_DEAD。",
+      "impact": "安全模块里摆着一套从不生效的字段加密设施，读者会以为某些敏感列已加密；实际读写路径根本不会触发加解密，基于这个假设做数据分级或迁移会得出错误结论。同时它会让 check-java-ai-free 之类的静态审查误以为该模块仍有实质内容。",
+      "kind": "plan",
+      "fix": {
+        "summary": "二选一并留档：要么把 handler 接到真正需要加密的列上，要么整组删除并写明原因",
+        "steps": [
+          "先与安全负责人确认是否有计划中的字段加密需求（Vault/API Key 等列）——若有，则给目标实体字段加 @TableField(typeHandler = EncryptedStringTypeHandler.class) 并补迁移与回归测试",
+          "若无计划，则删除 EncryptedField.java 与 EncryptedStringTypeHandler.java，并检查 JasyptUtil 是否还有其他调用方（若仅服务于此 handler，一并评估）",
+          "在 docs/security-coupling-map-zh.md 或 security 模块 README 里记录这次判定，避免下次又长回来",
+          "跑 cd backend && mvn -o test 与 scripts/check-java-ai-free.ps1 -Mode strict 确认无引用断裂与基线不变",
+          "提交信息按 AGENTS.md §3.5 写明『该设施从未接线』"
+        ],
+        "files": [
+          "backend/lianyu-security/src/main/java/com/lianyu/security/annotation/EncryptedField.java",
+          "backend/lianyu-security/src/main/java/com/lianyu/security/handler/EncryptedStringTypeHandler.java",
+          "backend/lianyu-security/src/main/java/com/lianyu/security/util/JasyptUtil.java",
+          "docs/security-coupling-map-zh.md"
+        ],
+        "tests": [
+          "cd backend && mvn -o test",
+          "scripts/check-java-ai-free.ps1 -Mode strict（基线 0/0/0 不变）"
+        ]
+      }
+    },
+    {
+      "id": "MNT-20376",
+      "expert": "maintainability",
+      "module": "scripts",
+      "section": "cleanup",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "scripts/ 根目录 55 个 _ 前缀一次性排查脚本入库，84 个脚本硬编码生产 IP",
+      "file": "scripts/_cloud_verify.py",
+      "line": 1,
+      "evidence": "git ls-files 显示 scripts 下共 114 个 tracked .py，其中 scripts/ 根目录 55 个以 _ 开头的一次性脚本（_cloud_verify.py 46 行、_cloud_verify_post.py 69 行、_cloud_verify_deploy.py 83 行、_cloud_verify_logs.py 89 行、_check_yml.py、_cloud_500_check.py、_cloud_deploy_backend_only.py、_cloud_deploy_layered.py、_repair_flyway_v31.py、_repair_flyway_v34.py 等），彼此差异只在 host 与远端命令常量；scripts/diag 下另有 21 个 tracked 文件属同类。另有 84 个 tracked 脚本硬编码生产 IP 156.233.228.18。AGENTS.md §3.1 明确要求『一次性排查脚本一律放 local/ 或带 _ 前缀且不提交』，现状违反该纪律。",
+      "impact": "真正的发版入口是 local/ship-release.ps1（local/ 已被 gitignore，不在仓库），仓库里 55 份一次性副本让『哪份部署/校验脚本是权威』无法判断，新人极可能挑一份过期的去跑；生产 IP 与 SSH 用法散落 84 个文件，换机或换主机时要改 84 处，且这些脚本无测试、无引用关系，改错了也不会暴露。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把仍在用的一次性脚本合并成少量带参数的运维命令，其余移出仓库或删除",
+        "steps": [
+          "按功能归并：部署（_cloud_deploy_*.py 系列）、健康自检（_cloud_verify*.py / _prod_verify.py）、Flyway 修数（_repair_flyway_*.py）各留一个带 --host/--step 参数的脚本，其余删除",
+          "把生产主机、端口、账号从脚本里抽到 .env / 参数，默认从环境变量读，脚本内不再出现 156.233.228.18",
+          "确认 local/ship-release.ps1 调用的脚本清单，保证归并后调用链仍可用（local/ 不在仓库，需向维护者确认）",
+          "在 AGENTS.md §5.5 更新运维脚本索引，并在 .gitignore 增加一条提示性注释说明一次性脚本不入库",
+          "提交时按 AGENTS.md §3.5 逐个说明被删脚本为何已无人使用"
+        ],
+        "files": [
+          "scripts/_cloud_verify.py",
+          "scripts/_cloud_verify_post.py",
+          "scripts/_cloud_deploy_layered.py",
+          "scripts/_cloud_deploy_backend_only.py",
+          "scripts/_repair_flyway_v31.py",
+          "scripts/_repair_flyway_v34.py",
+          "scripts/_prod_verify.py",
+          "scripts/diag/",
+          "AGENTS.md",
+          ".gitignore"
+        ],
+        "tests": [
+          "cd backend-agent && pytest（保证未误删被测试引用的脚本）",
+          "python scripts/check_release_asset_contract.py",
+          "合并后的运维脚本各跑一次 --dry-run（或 --help）确认参数化后仍可用"
+        ]
+      }
+    },
+    {
+      "id": "MNT-DB86B",
+      "expert": "maintainability",
+      "module": "scripts/ops",
+      "section": "cleanup",
+      "severity": "low",
+      "confidence": "high",
+      "title": "scripts/ops/_write_theme_picker.py 用 270 行内嵌副本覆盖活跃组件，副本只靠一条字符串 replace 维持正确",
+      "file": "scripts/ops/_write_theme_picker.py",
+      "line": 277,
+      "evidence": "主编复核更正：子代理称「内嵌副本与组件有 5 行坏 CSS 差异、重跑会把坏样式写回」，实际 _write_theme_picker.py:275 有 `CONTENT = CONTENT.replace('g ap:', 'gap:')`，脚本在写入前自行把 6 处 `g ap:`（:167/:175/:196/:219/:245 及 replace 本身）修成 `gap:`。实测把内嵌 CONTENT 按该 replace 规范化后与 frontend/src/components/ThemeColorPicker.vue 逐行比对，270 行 vs 270 行完全一致（identical=true，diff=0）。因此「重跑写出坏 CSS」不成立，原报告该条证据描述有误。仍然成立的部分：:3 起用 CONTENT = r'''...''' 内嵌 270 行组件正文，:277-278 直接 dest.write_text(CONTENT) 覆盖 frontend/src/components/ThemeColorPicker.vue（该组件被 frontend/src/components/AppHeader.vue:27 使用），脚本无任何差异检查；副本本身的正确性依赖那条字符串 replace 兜底，说明它已是漂移过的产物。",
+      "impact": "真实风险从「写入坏样式」降级为「静默回退人工改动」：组件是唯一生效版本，但任何人为了重新生成而跑一次脚本，就会用 270 行字面量覆盖当前文件，丢弃组件发布后的手工修改且不报错、不留 diff 提示；那条 `replace('g ap:','gap:')` 是唯一防线，一旦副本再漂移（改名、加行）脚本会照写不误。属低危维护债，不构成当前缺陷。",
+      "kind": "plan",
+      "fix": {
+        "summary": "删除该生成脚本，或以组件为唯一来源、脚本只做「副本与组件一致性检查」并在不一致时非零退出",
+        "steps": [
+          "确认 frontend/src/components/ThemeColorPicker.vue 为唯一来源，删除 scripts/ops/_write_theme_picker.py",
+          "若仍需模板化生成，改为读取独立 .vue 模板文件并先 diff、不一致就退出，禁止直接 write_text 覆盖活跃组件",
+          "在 scripts/check_release_asset_contract.py 或 CI 中加一条：仓库内不得出现与 frontend/src 下组件同名的内嵌副本",
+          "删除后跑 cd frontend && npx vite build 确认组件仍被正确打包"
+        ],
+        "files": [
+          "scripts/ops/_write_theme_picker.py",
+          "frontend/src/components/ThemeColorPicker.vue",
+          "frontend/src/components/AppHeader.vue",
+          "scripts/check_release_asset_contract.py"
+        ],
+        "tests": [
+          "cd frontend && npx vitest run --no-file-parallelism",
+          "cd frontend && npx vite build",
+          "python scripts/check_release_asset_contract.py"
+        ]
+      }
+    },
+    {
+      "id": "MNT-3BE34",
+      "expert": "maintainability",
+      "module": "scripts + Pets/skills",
+      "section": "cleanup",
+      "severity": "low",
+      "confidence": "high",
+      "title": "宠物音色与图像脚本各有多份副本，其中一份逐字节相同",
+      "file": "scripts/enroll_pet_voices.py",
+      "line": 1,
+      "evidence": "scripts/enroll_pet_voices.py 与 Pets/skills/hatch-lianyu-pet/scripts/enroll_pet_voices.py 字节相同（md5 均 b11be11664cb0a5ae832483e5ffbac0b，各 89 行，均被 git 跟踪）；scripts/gen_pet_fixed_voices.py（296 行）与 scripts/diag/_gen_pet_fixed_voices.py（271 行）是同族新旧副本；Pets/skills/hatch-lianyu-pet/scripts/gen_pet_images.py（355 行）与 scripts/gen_elysia_openai.py（331 行）开头约 40 行几乎逐字相同，只差 apikey 前缀解析（Pets-url/Pets-key 对 url/key），另 scripts/gen_elysia_dashscope.py（182 行）是同族变体。",
+      "impact": "同一音色固定/图像生成流程存在两个可执行入口，跑哪一份决定产物是否一致；修 bug 只修一份就分叉，而这两条流程都直接写生产素材（音色文件、立绘），产物不一致很难回溯。",
+      "kind": "plan",
+      "fix": {
+        "summary": "保留 Pets/skills/hatch-lianyu-pet/scripts 为唯一实现，scripts/ 下的副本改为调用或删除",
+        "steps": [
+          "确认 Pets/skills/hatch-lianyu-pet/SKILL.md 描述的外部仓库流程，把 scripts/ 下的 enroll_pet_voices.py、gen_pet_fixed_voices.py 判定为副本",
+          "删除与 skill 内字节相同的 scripts/enroll_pet_voices.py；gen_pet_fixed_voices.py 与 scripts/diag/_gen_pet_fixed_voices.py 二选一，删除旧副本",
+          "把图像生成里的 apikey 前缀解析（Pets-url/Pets-key 与 url/key）收敛成参数，避免为前缀再复制一份脚本",
+          "在 Pets/skills/hatch-lianyu-pet/SKILL.md 写明唯一入口与用法，scripts/README 指向该处",
+          "提交时说明每个被删副本的替代品路径"
+        ],
+        "files": [
+          "scripts/enroll_pet_voices.py",
+          "Pets/skills/hatch-lianyu-pet/scripts/enroll_pet_voices.py",
+          "scripts/gen_pet_fixed_voices.py",
+          "scripts/diag/_gen_pet_fixed_voices.py",
+          "scripts/gen_elysia_openai.py",
+          "Pets/skills/hatch-lianyu-pet/SKILL.md"
+        ],
+        "tests": [
+          "python -m pytest Pets/skills/hatch-lianyu-pet/scripts/test_gen_pet_images.py",
+          "删除后各脚本 --help 或 dry-run 一次确认入口仍可用"
+        ]
+      }
+    },
+    {
+      "id": "MNT-72E73",
+      "expert": "maintainability",
+      "module": "frontend + admin",
+      "section": "cleanup",
+      "severity": "low",
+      "confidence": "high",
+      "title": "frontend 与 admin 共 6 个依赖在源码中零引用",
+      "file": "frontend/package.json",
+      "line": 37,
+      "evidence": "frontend/package.json:37 的 @vue/test-utils 与 :44 的 vite-plugin-electron-renderer，除 package-lock.json 外，在 frontend/src 与 frontend/electron 全量 grep 均 0 引用（488+ 个测试文件都不导入 @vue/test-utils；vite.config.js 只用 vite-plugin-electron/simple）。admin/package.json:10 的 @tanstack/vue-table、echarts、vue-router、@element-plus/icons-vue 在 admin/src（10 个 3-16 行的小壳文件）与 admin/electron 中同样 0 引用；concurrently/wait-on 只出现在 electron:dev 脚本串里，按已用处理，element-plus/axios/pinia 有引用。",
+      "impact": "安装体积与 lockfile 噪声增加，审计面变大；admin 装上了 echarts 与 @tanstack/vue-table 却没有任何页面使用，后续开发容易误以为已有现成表格/图表能力而上错方向。",
+      "kind": "plan",
+      "fix": {
+        "summary": "移除 6 个零引用依赖并重算 lockfile，保留 sass（styles 目录仍在用）",
+        "steps": [
+          "再跑一次确认：grep -rn 'test-utils|vite-plugin-electron-renderer' frontend/src frontend/electron；grep -rn 'echarts|vue-table|element-plus/icons-vue|vue-router' admin/src admin/electron",
+          "在 frontend 与 admin 分别 npm uninstall @vue/test-utils vite-plugin-electron-renderer 以及 @tanstack/vue-table echarts vue-router @element-plus/icons-vue（或手工删除后 npm install 重算 lock）",
+          "若 admin 将来要用路由/图表，改为在需要时再加，并在 admin/README 注明当前为壳工程",
+          "跑 frontend 的 vitest 与 vite build、admin 的构建脚本，确认无模块解析失败",
+          "检查 CI（.github/workflows/ci.yml）是否 install 依赖后立即构建，确认移除不影响流水线"
+        ],
+        "files": [
+          "frontend/package.json",
+          "frontend/package-lock.json",
+          "admin/package.json",
+          "admin/package-lock.json",
+          ".github/workflows/ci.yml"
+        ],
+        "tests": [
+          "cd frontend && npx vitest run --no-file-parallelism && npx vite build",
+          "cd admin && npm run build（或 admin 现有构建脚本）确认可打包"
+        ]
+      }
+    },
+    {
+      "id": "MNT-C52D4",
+      "expert": "maintainability",
+      "module": "backend-agent",
+      "section": "cleanup",
+      "severity": "low",
+      "confidence": "high",
+      "title": "backend-agent Settings 有 4 个键只定义、无人读取（含已退役的 shadow_mode）",
+      "file": "backend-agent/app/config.py",
+      "line": 108,
+      "evidence": "Settings 共 59 个字段，其中 multimodal_max_tokens(:24)、internal_signature_window_seconds(:57)、memory_recent_ttl_minutes(:76)、shadow_mode(:108) 在 backend-agent/app 全部模块、tests、docker-compose、.env 示例与 docs 中，除定义行外 0 命中（用脚本提取字段名后逐字段检索 settings.<name> 与裸名双路验证）。shadow_mode:108 上方注释仍写着『影子对比模式：true 时记录请求/响应到日志供新旧链路 diff』，而 OFF/SHADOW 已按 docs/refactor-2026-10/off-retirement-plan.md 退役。",
+      "impact": "三个可配项写进了 Settings 却没有任何消费者：运维以为调 internal_signature_window_seconds 能改内部签名时间窗、调 multimodal_max_tokens 能改识图预算、调 memory_recent_ttl_minutes 能改近期记忆缓存，实际全部无效，排障时会朝错误方向查；shadow_mode 则让人以为影子链路仍存在。",
+      "kind": "plan",
+      "fix": {
+        "summary": "删除 4 个无消费者的配置键，或在真正接线后补读取点与测试",
+        "steps": [
+          "对每个键确认是否『本应接线但漏了』：internal_signature_window_seconds 若对应内部签名校验，需确认校验逻辑是否用硬编码常量（grep 签名校验实现）；multimodal_max_tokens/memory_recent_ttl_minutes 确认是否存在硬编码的等价常量",
+          "对确认无用的键直接删除，并把对应注释一起删；shadow_mode 与已退役的 SHADOW 一并清除",
+          "若某键确有用途但漏接线，改为从 get_settings() 读取并补一条断言该字段生效的测试",
+          "更新 backend-agent/README.md 或 .env.example 中涉及这些键的说明（若有）",
+          "跑 cd backend-agent && pytest 确认无 KeyError/属性访问失败"
+        ],
+        "files": [
+          "backend-agent/app/config.py",
+          "backend-agent/README.md"
+        ],
+        "tests": [
+          "cd backend-agent && pytest",
+          "新增或调整 tests 中对 Settings 字段集合的断言（若已有）"
+        ]
+      }
+    }
+  ],
+  "deferred": [
+    {
+      "from": "maintainability",
+      "expert": "",
+      "file": "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/CharacterStickerMapper.java",
+      "lines": "",
+      "summary": "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/CharacterStickerMapper.java：实体与 Mapper 为 23:23 一一对应，但未确认 character_sticker 表是否仍被业务读取，不足以判死代码，留待后续核对调用链。"
+    },
+    {
+      "from": "maintainability",
+      "expert": "",
+      "file": "frontend/src/pages/LoginPage.vue 与 RegisterPage.vue 的表单校验规则（validatePassword/validateConfirm）相似度为 0.263，但未逐行确认是否可直接复用，故只报告了逐字相同的验证码块。",
+      "lines": "",
+      "summary": "frontend/src/pages/LoginPage.vue 与 RegisterPage.vue 的表单校验规则（validatePassword/validateConfirm）相似度为 0.263，但未逐行确认是否可直接复用，故只报告了逐字相同的验证码块。"
+    },
+    {
+      "from": "maintainability",
+      "expert": "",
+      "file": "AGENTS.md §5.3 写『当前最新 V55』，实际迁移已到 V57（V1–V57 无缺号、无重号）",
+      "lines": "",
+      "summary": "AGENTS.md §5.3 写『当前最新 V55』，实际迁移已到 V57（V1–V57 无缺号、无重号）：属文档漂移，未达报告阈值，仅在此登记。"
+    },
+    {
+      "from": "maintainability",
+      "expert": "",
+      "file": "scripts/ 下一次性脚本中哪几份仍被 local/ship-release.ps1 调用无法从仓库确认（local/ 被 gitignore），删除前需向维护者核对。",
+      "lines": "",
+      "summary": "scripts/ 下一次性脚本中哪几份仍被 local/ship-release.ps1 调用无法从仓库确认（local/ 被 gitignore），删除前需向维护者核对。"
+    },
+    {
+      "from": "maintainability",
+      "expert": "",
+      "file": "backend-agent 的 internal_signature_window_seconds 是否对应一处硬编码的签名时间窗（潜在正确性问题）未深查，本轮只按『死配置』记录。",
+      "lines": "",
+      "summary": "backend-agent 的 internal_signature_window_seconds 是否对应一处硬编码的签名时间窗（潜在正确性问题）未深查，本轮只按『死配置』记录。"
+    }
+  ],
+  "dropped": []
+}

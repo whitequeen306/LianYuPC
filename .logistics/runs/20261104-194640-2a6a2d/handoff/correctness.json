@@ -1,0 +1,264 @@
+{
+  "schemaVersion": 2,
+  "expert": "correctness",
+  "status": "ok",
+  "summary": "全项目 12 个审查单元已逐单元检查（u01/u05/u06/u08 读关键文件做针对性核对，其余单元按模式扫描 + 抽样精读），共 5 条发现：1 条高（前端内心独白过滤在嵌套括号下重复渲染并吞掉台词，已用 node 实跑复现）、3 条中/低并发正确性（朋友圈锁无 owner token、会话摘要读改写无锁、关系状态整行覆盖无事务/版本）、1 条低数据完整性（消息 seq 计数器无 MAX(seq) 回种）。跨端契约（SSE 帧、关系 DTO 字段、分段规则、更新器签名、发布资产命名）逐项对齐检查未发现漂移；frontend/mvn 门禁在本机全绿，pytest 因缺 dev 依赖 respx 无法采集，非代码缺陷。",
+  "sections": {
+    "logic": 1,
+    "state": 0,
+    "concurrency": 3,
+    "data-integrity": 1,
+    "contracts": 0,
+    "architecture": 0,
+    "edge-cases": 0
+  },
+  "units": {
+    "u01": {
+      "status": "reviewed",
+      "filesRead": 9,
+      "notes": "ConversationService、SessionSummaryService、RelationshipStateService、RelationshipPhaseResolver、RelationshipHeuristics、AssistantReplySplitter、AiChatQuotaService、ProactiveChatScheduler、CharacterStateQueryService"
+    },
+    "u02": {
+      "status": "sampled",
+      "filesRead": 4,
+      "notes": "按 rg/grep 扫 moments/notification/square/voice 目录后精读 MomentsCommentOrchestrator 全文 891 行关键段落"
+    },
+    "u03": {
+      "status": "sampled",
+      "filesRead": 3,
+      "notes": "精读 api/httpCore.js、sessionRefresh.test.js；其余 api 目录按 grep 扫 401/重试/错误码路径"
+    },
+    "u04": {
+      "status": "sampled",
+      "filesRead": 3,
+      "notes": "精读 release-bump-version.mjs（正则对真实文件实跑）、check_release_asset_contract.py、sign_update_manifest.py；一次性排查脚本按目录抽样"
+    },
+    "u05": {
+      "status": "reviewed",
+      "filesRead": 4,
+      "notes": "V1 建表、V56、V57 迁移逐行读，并按 sql grep 核对唯一键/索引与回填语句"
+    },
+    "u06": {
+      "status": "reviewed",
+      "filesRead": 3,
+      "notes": "stream_chat.py、tool_loop.py 全文读；tests 因缺 respx 无法执行"
+    },
+    "u07": {
+      "status": "sampled",
+      "filesRead": 7,
+      "notes": "精读 utils/innerThoughtFilter.js（实跑复现）、assistantReplySplit.js、relationship.js、AssistantMessageContent.vue，并在 ChatPage/GroupChatPage/QuickChatPage/exportChatTranscript 中 grep 调用点"
+    },
+    "u08": {
+      "status": "reviewed",
+      "filesRead": 4,
+      "notes": "AgentSseParser、AgentStreamBridge 全文；controller/filter 目录按 grep 扫鉴权与转发路径"
+    },
+    "u09": {
+      "status": "sampled",
+      "filesRead": 5,
+      "notes": "updater.js（compareVersions/verifyManifestOrThrow）、manifestSignature.js、qqBridge/qqBridge.js、qqBridge/messageExtractor.js、shared/sseParser.js"
+    },
+    "u10": {
+      "status": "sampled",
+      "filesRead": 2,
+      "notes": "nginx.conf/docker-compose 按 grep 核对 location 与 redis/agent 配置；admin 模块通过 npm test 全绿验证"
+    },
+    "u11": {
+      "status": "sampled",
+      "filesRead": 3,
+      "notes": "lianyu-admin 与 service 测试通过 mvn test（exit 0）整体验证；测试目录按 grep 扫断言密度，未逐文件精读"
+    },
+    "u12": {
+      "status": "sampled",
+      "filesRead": 4,
+      "notes": "lianyu-common util 三个类精读（TextUtils/JacksonListTypeHandler/ImageUploadValidator）；installer/Pets 未逐行读"
+    }
+  },
+  "findings": [
+    {
+      "id": "COR-1",
+      "section": "logic",
+      "category": "区间计算错误",
+      "severity": "high",
+      "confidence": "high",
+      "title": "嵌套括号时内心独白分段重复渲染并吞掉台词（stripInnerThoughts 会删空整条回复）",
+      "file": "frontend/src/utils/innerThoughtFilter.js",
+      "line": 146,
+      "evidence": "findParenthesisRanges（:108-126）用栈配对后直接返回按 start 升序的重叠区间：`（心想（笑）才不是呢）好呀` 得到 [{start:0,end:12},{start:3,end:6}]。parseInnerThoughtSegments（:146-155）只用单指针 lastIndex 前进：外层先 push inner 并把 lastIndex 置 13，内层 start=3 不大 13 但仍 push 一条 inner，随后第 154 行 `lastIndex = range.unclosed ? text.length : end + 1` 把 lastIndex 回退成 5，循环末尾 :156-158 再 push `text.slice(5)`。本会话用 node 动态 import 实跑：parseInnerThoughtSegments('（心想（笑）才不是呢）好呀') 返回 [{inner:'（心想（笑）才不是呢）'},{inner:'（笑）'},{speech:'才不是呢）好呀'}]（同一段文字出现两次，且「才不是呢）」被当成台词输出）；stripInnerThoughts 对同一输入按 start 降序删除（:171-175）返回空串「」，另一例 '嗯（我（偷偷）看了你一眼）' 在隐藏模式下返回 '嗯'（丢掉真实台词）。",
+      "impact": "用户开启「内心独白」时，带嵌套括号的回复会在气泡里重复显示同一段内心独白，并把括号内的动作文字泄漏成台词；隐藏模式下整条回复可能变成空白，聊天记录与导出的转录文件同样受损。现有 frontend/src/utils/__tests__/innerThoughtFilter.test.js 只覆盖单层与未闭括号，故 417 条前端用例全绿仍未拦住。",
+      "kind": "plan",
+      "fix": {
+        "summary": "在 findParenthesisRanges 之后先做区间归一化（外层吞并内层），再让分段与删除都基于互不重叠的区间；删除改为一次性重建而不是按索引累积 slice。",
+        "steps": [
+          "在 findParenthesisRanges 返回前按 start 升序合并重叠/被包含区间：若后一个 start <= 当前 end，则 end = max(end, next.end)，只保留最外层。",
+          "确认 unclosed 区间参与合并时不吞掉其后的正常闭合区间，保持「未闭合到文本末尾」的既有语义。",
+          "parseInnerThoughtSegments 保持单指针遍历，但增加断言 start >= lastIndex（合并后必然成立），避免再次出现索引回退。",
+          "stripInnerThoughts 改为按归一化区间从左到右拼接保留片段（pieces.push(text.slice(cursor, start)); cursor = end + 1），最后 push 尾段。",
+          "在 innerThoughtFilter.test.js 补嵌套用例：'（心想（笑）才不是呢）好呀' 期望 [{inner:'（心想（笑）才不是呢）'},{speech:'好呀'}]，隐藏模式期望 '好呀'；再补 '嗯（我（偷偷）看了你一眼）' 隐藏模式期望 '嗯 '。"
+        ],
+        "files": [
+          "frontend/src/utils/innerThoughtFilter.js",
+          "frontend/src/utils/__tests__/innerThoughtFilter.test.js"
+        ],
+        "tests": [
+          "npm --prefix frontend test -- innerThoughtFilter",
+          "npx vitest run --no-file-parallelism src/utils/__tests__/innerThoughtFilter.test.js src/utils/__tests__/exportChatTranscript.test.js"
+        ]
+      }
+    },
+    {
+      "id": "COR-2",
+      "section": "concurrency",
+      "category": "分布式锁缺少持有者校验",
+      "severity": "medium",
+      "confidence": "medium",
+      "title": "朋友圈评论锁 unlock 直接 DEL，TTL 过期后会删掉新持有者的锁",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentOrchestrator.java",
+      "line": 822,
+      "evidence": "tryLock（:816-820）`redisTemplate.opsForValue().setIfAbsent(LOCK_PREFIX + postId, \"1\", Duration.ofSeconds(90))`；unlock（:822-824）`redisTemplate.delete(LOCK_PREFIX + postId)`，锁值恒为 \"1\"，没有 owner token。锁内包含模型调用：processAuthorReplyJob（:271-296）在 tryLock 成功后读 post/trigger 并调用 runAuthorReply，executePeerComment（:326 起）在锁内做角色查询、prompt 渲染与模型调用，单次模型调用耗时可达数十秒，与 90s TTL 同量级。",
+      "impact": "当一次持锁超过 90s（模型慢、下游超时重试）时锁自动过期，另一个 worker 拿到锁开始同一 post 的处理；随后第一个 worker 的 finally unlock 会把新持有者的锁键删掉，第三个 worker 因此可以同时进入，互斥彻底失效。后果是同一帖子重复生成/重复写入角色评论（幂等键只覆盖 peer 维度，不覆盖轮次），并重复消耗模型配额。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把锁改成带持有者标识的可安全释放锁：值为随机 token，解锁用 Lua 比对后删除；同时让 TTL 大于模型调用的超时上限，或在长耗时前续期。",
+        "steps": [
+          "tryLock 生成 UUID token，`setIfAbsent(key, token, ttl)` 成功后把 token 返回（或放入 ThreadLocal/Try 包装类）。",
+          "unlock 改为 Lua 脚本：`if redis.call('get',KEYS[1])==ARGV[1] then return redis.call('del',KEYS[1]) else return 0 end`。",
+          "所有 finally 调用点改为传入 token 的 unlock，保证只释放自己持有的锁。",
+          "评估 TTL：把 90s 提到大于 gateway 侧模型超时 + 余量（例如 180s），或对 executePeerComment 分段续期。",
+          "补一个单测/集成测试：持锁后手动删除 key 再让旧 worker 释放，断言不删除新持有者的值。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/moments/MomentsCommentOrchestrator.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test -Dtest=MomentsCommentOrchestrator*Test",
+          "mvn -q -f backend/pom.xml test"
+        ]
+      }
+    },
+    {
+      "id": "COR-3",
+      "section": "concurrency",
+      "category": "读改写竞态",
+      "severity": "medium",
+      "confidence": "medium",
+      "title": "会话摘要 Redis 状态是「读 → 调模型 → 写」，并发 merge 会让 lastSummarizedSeq 回退并重复摘要",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/SessionSummaryService.java",
+      "line": 83,
+      "evidence": "@Async maybeMergeAsync（:49-52）转调 maybeMerge（:54-98）：`SessionSummaryState state = loadState(conversationId)`（:73，:107-118 读 Redis `session:summary:<convId>`）→ 取 pending 窗口 → `merger.merge(...)`（:83，模型调用，秒级）→ `saveState(conversationId, newState)`（:95，:160 写回）。全程没有锁、没有 CAS、没有版本号，写回的 lastSummarizedSeq 取的是本批 pending 的最大 seq（:88-94）。另 state==null 分支（:74-76）为死代码：loadState 只在 Redis 命中时返回对象，否则新建，从不返回 null。",
+      "impact": "同一会话连续两条用户消息（或重连补发）会各自触发一次异步摘要：后启动者可能先完成并写入较大的 lastSummarizedSeq，随后先启动者用较小的值覆盖回去，导致下一轮把已摘要过的消息再摘要一次（重复摘要 + 重复模型调用），并把上下文窗口向前多推一段；反向交错时则会跳过一段未摘要的消息，摘要文本与 lastSummarizedSeq 不一致。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把摘要更新改成带版本/序列比对的条件写：写入前用 Redis WATCH/MULTI 或 Lua 比较 lastSummarizedSeq，只允许单调前进；并对同一会话合并并发触发。",
+        "steps": [
+          "在 saveState 写入路径上加入「仅当新 lastSummarizedSeq 大于当前值」的 Lua 比较写，或用乐观重试循环（读-算-条件写）。",
+          "maybeMerge 开头用 setIfAbsent 的短 TTL 会话级锁（带 token）挡住同一会话的并发 merge，抢不到锁直接返回。",
+          "合并 model 调用的输入窗口时以「读到的 lastSummarizedSeq」为准回算，写入时再次校验，避免长时间模型调用期间的窗口漂移。",
+          "删除 state==null 的死分支或让 loadState 明确返回 Optional，避免后续维护者误判。",
+          "补一个并发用例：两次 maybeMerge 交错完成后断言 lastSummarizedSeq 单调不减且摘要文本拼接无重复段落。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/SessionSummaryService.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test -Dtest=SessionSummaryService*Test",
+          "mvn -q -f backend/pom.xml test"
+        ]
+      }
+    },
+    {
+      "id": "COR-4",
+      "section": "concurrency",
+      "category": "丢失更新",
+      "severity": "low",
+      "confidence": "medium",
+      "title": "关系状态整行覆盖写且无事务/版本号，回合更新与定时衰减会互相覆盖",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+      "line": 132,
+      "evidence": "recordUserTurn（:107-134）流程为 loadOrCreateState → applyEvents → applyPresence → `relationshipStateMapper.updateById(state)`（:132）→ recordMilestones；recordAssistantTurn（:136-166）同样在 :165 整行 updateById，decayAll（:172-190）在 :185 整行 updateById。类上没有 @Transactional，实体无 version 字段，updateById 按主键覆盖所有列（含 intimacy/trust/security/anticipation/streak/lastInteractionAt/phase）。applyEvents 末尾 :256-257 会用 RelationshipPhaseResolver.derive(...) 重算并写 phase，applyPresence（:260-277）维护 streak/lastInteractionAt。",
+      "impact": "用户消息线程写入回合增量与 @Scheduled decayAll 的衰减写并发时，后提交者用自己读到的旧快照覆盖全行：刚加的 intimacy/trust 被衰减值回滚，或衰减被增量覆盖（衰减被吞），streak 也可能回退。单用户消息串行时不会触发，故定为 low；但生产上多端同时发消息、或衰减任务与服务共用同一实例时会出现可观察的分数跳变。",
+      "kind": "plan",
+      "fix": {
+        "summary": "给关系状态加乐观锁（version 列）或改用「只更新变化列 + 条件 WHERE」的写法，并让一次回合的多次写在一个事务内完成。",
+        "steps": [
+          "在 relationship_state 增加 version 列（Flyway 新迁移），实体加 @Version，MyBatis-Plus 乐观锁插件生效后 updateById 带 version 条件。",
+          "或最小改动：把 decayAll 改成只更新衰减相关列的 UPDATE 语句，recordUserTurn/recordAssistantTurn 只更新本次变化的列，避免整行覆盖。",
+          "在 recordUserTurn/recordAssistantTurn 上补 @Transactional，保证状态写与 recordMilestones 原子。",
+          "捕获并发更新失败（影响行数 0）时重读重算一次，避免静默丢更新。",
+          "补一个并发测试：两个线程分别做回合增量与衰减，断言最终分数等于两次变更的叠加而不是其中一次的快照。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+          "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/RelationshipState.java",
+          "backend/lianyu-dao/src/main/resources/db/migration/V58__relationship_state_version.sql"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test -Dtest=RelationshipStateService*Test",
+          "mvn -q -f backend/pom.xml test"
+        ]
+      }
+    },
+    {
+      "id": "COR-5",
+      "section": "data-integrity",
+      "category": "唯一键冲突",
+      "severity": "low",
+      "confidence": "medium",
+      "title": "消息 seq 只靠 Redis INCR 单调分发，计数器丢失后从 1 重发，会与既有 seq 撞 uk_conv_seq",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+      "line": 483,
+      "evidence": "reserveSeqBlock（:483-487）：`Long lastSeq = redisTemplate.opsForValue().increment(SEQ_KEY_PREFIX + conversationId, safeCount); return lastSeq != null ? lastSeq : safeCount;`，key 为 `msg_seq:<conversationId>`（:72），无 TTL、无回种逻辑；saveAssistantRepliesLimited（:712-716）用 `firstSeq = lastSeq - cleanedPieces.size() + 1` 逐条 setSeq。而 backend/lianyu-dao/src/main/resources/db/migration/V1__init_schema.sql:45-54 的 message 表含 `UNIQUE KEY uk_conv_seq (conversation_id, seq)`。MessageMapper 里已有基于 `MAX(seq)` 的 @Select（selectLatestByConversationIds 等），但从未用于回种计数器；`msg_seq:` 前缀还在 GroupChatService.java:104、VoiceCallService.java:62、CharacterService.java:60 重复定义。",
+      "impact": "Redis 数据一旦丢失（FLUSHALL、卷被重建、AOF 未落盘即崩溃、迁移到新实例），计数器从 1 重新递增，与该会话已有的 seq 冲突，随后每次发消息落库都抛 DuplicateKeyException，该会话持续 500，直到手动删 key 或写脚本修复。当前 docker-compose 用 `--appendonly yes` + 命名卷，正常运维下不易触发，故定为 low；但没有任何自愈路径，故障后不可恢复。",
+      "kind": "plan",
+      "fix": {
+        "summary": "INCR 前用数据库 MAX(seq) 兜底回种，或 INCR 结果小于库内最大值时重置计数器；同时把 msg_seq 前缀收敛到单一常量。",
+        "steps": [
+          "抽取 SEQ_KEY_PREFIX 为单一常量类（如 MessageSeqKeys），替换 ConversationService/GroupChatService/VoiceCallService/CharacterService 四处字面量。",
+          "reserveSeqBlock 增加回种：INCR 后若返回值 <= 该会话 max(seq)（复用 MessageMapper 的 MAX 查询），则用 max(seq)+count 重新 SET（Lua 保证比较与设置原子），返回新值。",
+          "落库 DuplicateKeyException 时做一次「回种 + 重试一次」，避免继续向上抛 500。",
+          "为计数器加一个兜底 TTL（如 30 天）以便长期不活跃会话自然回收，但不作为正确性依赖。",
+          "补一个集成测试：写入若干消息后删除 msg_seq key，再发一条消息，断言 seq 继续递增且不抛唯一键冲突。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/VoiceCallService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/character/CharacterService.java",
+          "backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/MessageMapper.java"
+        ],
+        "tests": [
+          "mvn -q -f backend/pom.xml test -Dtest=ConversationService*Test",
+          "mvn -q -f backend/pom.xml test"
+        ]
+      }
+    }
+  ],
+  "deferred": [
+    {
+      "from": "correctness",
+      "expert": "reliability",
+      "summary": "backend-agent 测试无法采集：48 errors，ModuleNotFoundError: No module named 'respx'。本机缺 dev 依赖，非代码缺陷；CI 已装依赖时可正常跑，建议核对 requirements-dev 是否声明 respx"
+    },
+    {
+      "from": "correctness",
+      "expert": "maintainability",
+      "summary": "tool_loop.run_tool_loop 的 nudged 恒为 False（死标志，注释称空口承诺防护）。backend-agent/app/tool_loop.py:153"
+    },
+    {
+      "from": "correctness",
+      "expert": "reliability",
+      "summary": "ProactiveChatScheduler.tick 内异常仅 log.debug 吞掉。backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ProactiveChatScheduler.java"
+    },
+    {
+      "from": "correctness",
+      "expert": "",
+      "summary": "AiChatQuotaService 超限请求也计入当日配额（count > limit 后才抛 AI_RATE_LIMITED）。属设计取舍，未作为缺陷报告"
+    },
+    {
+      "from": "correctness",
+      "expert": "maintainability",
+      "summary": "msg_seq:/session:summary: 等 Redis key 命名散落在多个服务类。与 data-integrity 第 5 条一并处理"
+    }
+  ],
+  "notes": "测试：npm --prefix frontend test 全绿（71 files / 417 tests）；npm --prefix admin test 退出码 0；mvn -q -f backend/pom.xml test 退出码 0；pytest -q backend-agent 在采集阶段即失败（缺 respx），故 Python 侧只有代码级结论、无测试佐证。抽样说明：u02/u03/u04/u07/u09/u10/u11/u12 为模式扫描 + 抽样精读（filesRead 见 units），u10 的 .github/ci.yml、installer/*.cs、Pets/ 与 u12 的 installer 未逐行读，不能视作全量已读。已查未发现问题：SSE 双端帧解析（AgentSseParser/AgentStreamBridge/frontend/shared/sseParser.js）、关系 DTO 字段与前端 utils/relationship.js、Java AssistantReplySplitter 与前端 assistantReplySplit.js、更新器 compareVersions 与 manifest 签名链、release-bump-version.mjs 三条正则（对真实文件实跑命中）、check_release_asset_contract.py、lianyu-common 的 TextUtils/JacksonListTypeHandler/ImageUploadValidator、qqBridge 消息提取与 pieces 回退、V56/V57 迁移回填与 phase 一致性。另核对 RelationshipHeuristics（:57-103）后确认「同一批次先受伤后道歉」的 REPAIR 跳过分支当前不可达（DISMISSIVE 要求 safe.length()<=2，REPAIR 最短词 3 字），故未作为缺陷报告。 各 section 判定说明：logic: 重点核对内心独白分段/删除、关系阶段推导、SSE 累积器、分段规则双端一致性；state: 关系 phase 重算、streak/lastInteractionAt、摘要 lastSummarizedSeq 状态迁移已读，状态机本身不产生错误终态（并发窗口另计 concurrency）；concurrency: Redis 锁语义、摘要读改写、关系行覆盖写、限流计数与服务端调度器；data-integrity: seq 唯一键、V56/V57 迁移回填、图片校验与重编码、导出转录；contracts: SSE content/replace/pieces/error/[DONE] 双端解析、关系 DTO 字段、Java/JS 分段规则、更新器 manifest 签名、发布资产命名；architecture: Java 侧未见新增 prompt 文案或模型调用点；msg_seq 前缀四处重复属既有债，已在 data-integrity 条目中一并说明；edge-cases: 空输入/未闭合括号/半角全角混排/嵌套括号/超长分段/版本号缺段等边界均实跑或读代码核对，边界相关缺陷统一归入 logic 条目"
+}

@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>项目关系图 · 20261106-114636-5b02a3-master</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; background: #f7f8fa; color: #1d2939; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  header { padding: 28px 36px 6px; }
+  h1 { margin: 0 0 8px; font-size: 22px; }
+  p { margin: 0; color: #667085; font-size: 13px; line-height: 1.7; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; font-size: 12px; color: #475467; }
+  .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+  .legend-item i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .canvas { margin: 8px 20px 32px; background: #fff; border: 1px solid #eaecf0; border-radius: 12px; overflow: auto; }
+  svg { display: block; min-width: 2136px; width: 100%; height: auto; }
+  .module-panel { fill: #fbfcfe; stroke: #d0d5dd; }
+  .module-header { fill: #eef2f6; }
+  .module-title { font-size: 13px; font-weight: 650; fill: #344054; }
+  .module-meta { font-size: 11px; fill: #667085; }
+  .finding-box { fill: #fff; stroke: #d0d5dd; }
+  .finding-id { font-size: 11.5px; font-weight: 650; fill: #475467; }
+  .finding-title { font-size: 12px; font-weight: 550; fill: #1d2939; }
+  .finding-meta { font-size: 10px; fill: #667085; }
+  .node { cursor: help; }
+  .node:hover .module-panel, .node:hover .finding-box { stroke: #7f56d9; stroke-width: 2; }
+</style>
+</head>
+<body>
+<header>
+  <h1>项目关系图 · 20261106-114636-5b02a3-master</h1>
+  <p>按模块分栏：每一栏是一个模块，栏内是它的问题，问题按严重度排列。模块归属由分栏直接表达，不再画定位线，也不画问题间连线；鼠标悬停任意问题卡片，会显示简述、详细问题、证据、影响和修复摘要。</p>
+  <div class="legend"><span class="legend-item"><i style="background:#b42318"></i>严重 1</span><span class="legend-item"><i style="background:#d92d20"></i>高 10</span><span class="legend-item"><i style="background:#dc6803"></i>中 27</span><span class="legend-item"><i style="background:#475467"></i>低 12</span></div>
+</header>
+<div class="canvas">
+<svg viewBox="0 0 2136 2240" role="img" aria-label="项目审查关系图">
+<text x="36" y="34" class="module-title">模块分栏（6）</text>
+<text x="36" y="56" class="module-meta">每栏内问题按严重度排序，共 50 条；悬停卡片查看完整描述</text>
+<g class="node module" data-id="module:backend-agent" data-module="backend-agent">
+  <title>backend-agent：9 条 finding</title>
+  <rect x="36" y="142" width="324" height="824" rx="12" class="module-panel"/>
+  <rect x="36" y="142" width="324" height="64" rx="12" class="module-header"/>
+  <rect x="36" y="160" width="4" height="28" rx="2" fill="#b42318"/>
+  <text x="52" y="169" class="module-title">backend-agent</text>
+  <text x="52" y="189" class="module-meta">9 个问题 · 最高 严重</text>
+</g>
+<g class="node module" data-id="module:backend" data-module="backend">
+  <title>backend：24 条 finding</title>
+  <rect x="384" y="142" width="324" height="2054" rx="12" class="module-panel"/>
+  <rect x="384" y="142" width="324" height="64" rx="12" class="module-header"/>
+  <rect x="384" y="160" width="4" height="28" rx="2" fill="#d92d20"/>
+  <text x="400" y="169" class="module-title">backend</text>
+  <text x="400" y="189" class="module-meta">24 个问题 · 最高 高</text>
+</g>
+<g class="node module" data-id="module:frontend" data-module="frontend">
+  <title>frontend：12 条 finding</title>
+  <rect x="732" y="142" width="324" height="1070" rx="12" class="module-panel"/>
+  <rect x="732" y="142" width="324" height="64" rx="12" class="module-header"/>
+  <rect x="732" y="160" width="4" height="28" rx="2" fill="#d92d20"/>
+  <text x="748" y="169" class="module-title">frontend</text>
+  <text x="748" y="189" class="module-meta">12 个问题 · 最高 高</text>
+</g>
+<g class="node module" data-id="module:dependencies" data-module="dependencies">
+  <title>dependencies：3 条 finding</title>
+  <rect x="1080" y="142" width="324" height="332" rx="12" class="module-panel"/>
+  <rect x="1080" y="142" width="324" height="64" rx="12" class="module-header"/>
+  <rect x="1080" y="160" width="4" height="28" rx="2" fill="#dc6803"/>
+  <text x="1096" y="169" class="module-title">dependencies</text>
+  <text x="1096" y="189" class="module-meta">3 个问题 · 最高 中</text>
+</g>
+<g class="node module" data-id="module:scripts" data-module="scripts">
+  <title>scripts：1 条 finding</title>
+  <rect x="1428" y="142" width="324" height="168" rx="12" class="module-panel"/>
+  <rect x="1428" y="142" width="324" height="64" rx="12" class="module-header"/>
+  <rect x="1428" y="160" width="4" height="28" rx="2" fill="#dc6803"/>
+  <text x="1444" y="169" class="module-title">scripts</text>
+  <text x="1444" y="189" class="module-meta">1 个问题 · 最高 中</text>
+</g>
+<g class="node module" data-id="module:.github" data-module=".github">
+  <title>.github：1 条 finding</title>
+  <rect x="1776" y="142" width="324" height="168" rx="12" class="module-panel"/>
+  <rect x="1776" y="142" width="324" height="64" rx="12" class="module-header"/>
+  <rect x="1776" y="160" width="4" height="28" rx="2" fill="#475467"/>
+  <text x="1792" y="169" class="module-title">.github</text>
+  <text x="1792" y="189" class="module-meta">1 个问题 · 最高 低</text>
+</g>
+<g class="node finding" data-id="SEC-EA2CB" data-module="backend-agent" data-severity="critical">
+  <title>SEC-EA2CB · [critical] [u07]
+简述：任何人只要把请求里的用户编号换成别人，就能读到对方的聊天记忆和日记；这些内部接口目前没有登录校验。
+详细问题：Agent 运行时缺少 X-User-Id 时直接放行，body.userId 可任意指定导致跨用户读取记忆
+证据：backend-agent/app/main.py:146-151 只做“有头才比对”：user_id_header: str | None = Header(default=None, alias=&quot;X-User-Id&quot;) → if user_id_header and str(body.user_id) != user_id_header: raise HTTPException(403)。同一写法出现在 :206(chat-stream)、:313(session-summary)、:365(text/chat)、:476、:504，缺头即跳过全部校验。deploy/api-gateway/nginx.conf:252-274 的 location /api/agent/ 没有 auth_request 也没有 internal：set $agent_upstream http://agent:8001; rewrite ^/api(/agent/.*)$ $1 break; proxy_pass $agent_upstream; ⇒ 公网可直达 8001。body.userId 会一路进入工具上下文：app/main.py:228-240 tool_context={&quot;_user_id&quot;: body.user_id, …}；app/tool_loop.py:98-100 merged.update(tool_context) 覆盖模型参数后 spec.handler(merged)；app/tools/memory_search_tool.py:158 user_id = (arguments or {}).get(&quot;_user_id&quot;) 再执行 :52/:62 的 WHERE character_id = %s AND user_id = %s。
+影响：攻击者无需账号即可枚举 userId 读取他人记忆摘要、日记、动态与评论，内容以模型可读的明文形式返回；还能借平台额度生成任意回复。Java 侧 Sa-Token 鉴权被整条绕过，等于把跨租户读取能力挂在公网网关路径上。
+修复：在 Agent 侧引入真正的服务间鉴权（共享密钥签名 + 时间窗 + 重放防护），并由网关默认拒绝外部直连 /api/agent/。</title>
+  <rect x="48" y="220" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="48" y="220" width="5" height="74" rx="2" fill="#b42318"/>
+  <text x="62" y="239" class="finding-id">SEC-EA2CB · [u07]</text>
+  <text x="62" y="259" class="finding-title">任何人只要把请求里的用户编号换成别人，就能…</text>
+  <text x="62" y="278" class="finding-meta">backend-agent/app/main.py:150 · 需方案</text>
+</g>
+<g class="node finding" data-id="COR-559B1" data-module="backend-agent" data-severity="high">
+  <title>COR-559B1 · [high] [u07]
+简述：模型在流式回复里要求调用工具（查时间、天气、记忆等）时，这条请求会被丢掉，用户只看到角色「说要做」却没有动作。
+详细问题：流式回合收到 [DONE] 时提前 return，聚合好的 tool_calls 被丢弃，工具永不执行
+证据：`_stream_once` 在 `data == &quot;[DONE]&quot;` 时直接 `return`（gateway.py:312-313），而把聚合好的 `pending` 写进 `tool_sink` 的收尾代码在 `async with` 之后（gateway.py:348-352），return 会整体跳过。用 httpx.MockTransport 复现：上游流以 `data: [DONE]` 结尾时 `tool_sink == []`；同一个流去掉 `[DONE]` 后 `tool_sink == [{&quot;id&quot;:&quot;call_1&quot;,&quot;type&quot;:&quot;function&quot;,&quot;function&quot;:{&quot;name&quot;:&quot;get_time&quot;,&quot;arguments&quot;:&quot;{}&quot;}}]`。`stream_chat.py:109` 因此拿到空列表、不执行工具；若该轮模型同时吐了文本，`stream_chat.py:145` 的兜底（content 为空才补）也不会触发，工具调用被彻底吞掉。现有 `backend-agent/tests/test_stream_tool_fallback.py:187-197` 是直接往 tool_sink 里塞假数据，覆盖不到真实 [DONE] 路径。
+影响：所有走流式通道的回合，只要模型选择调用工具就不会执行：查时间/天气/记忆检索等工具形同失效，回复退化成「我这就帮你查」之类的空话，而且没有任何错误提示与日志（pending 非空但从未上报）。
+修复：把收尾的 return 改成 break，让循环退出后仍然执行 tool_sink 落盘。</title>
+  <rect x="48" y="302" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="48" y="302" width="5" height="74" rx="2" fill="#d92d20"/>
+  <text x="62" y="321" class="finding-id">COR-559B1 · [u07]</text>
+  <text x="62" y="341" class="finding-title">模型在流式回复里要求调用工具（查时间、天气…</text>
+  <text x="62" y="360" class="finding-meta">backend-agent/app/gateway.py:313 · 可直接修</text>
+</g>
+<g class="node finding" data-id="REL-34EFB" data-module="backend-agent" data-severity="high">
+  <title>REL-34EFB · [high] [u07]
+简述：用户中途关掉聊天窗口，系统会把它当成模型服务故障记一笔；攒够几次，所有用户都会被提示“模型繁忙”，哪怕模型本身好好的。
+详细问题：客户端中断被记成上游失败，5 次用户放弃就能打开熔断器
+证据：stream_text 里 `try:`（L259）包住了 `async for delta in self._stream_once(...): yielded; yield delta`（L264-268），于是消费方关闭连接产生的 GeneratorExit 与任务取消会落到 `except BaseException as exc: await breaker.on_error(exc); raise`（L279-281）。resilience.py 的 on_error（L132-149）对非 GatewayBusinessError 一律 `self._results.append(False)` + `_maybe_open()`；BreakerConfig 为 sliding_window_size=20、minimum_number_of_calls=5、failure_rate_threshold=50.0、wait_duration_seconds=30.0（L67-76）。已实跑复现（venv + PYTHONPATH=.）：连续 5 次 `try: raise GeneratorExit() except BaseException as exc: await breaker.on_error(exc)` 后 `attempt 4 permit True -&gt; state CircuitState.OPEN`，日志 `breaker provider=platform|base=https://api.example.com OPEN (failure_rate=100%, samples=5)`，随后 `try_acquire()` 返回 False。
+影响：一次 5 个用户手滑关窗（或前端 abort、网关超时、进程收到取消）就能把该 provider+baseUrl 的熔断器打开 30 秒；期间所有用户的所有请求都不再打上游、统一返回“对方模型暂时繁忙，请稍后再试”，日志还把原因写成上游故障，误导排查方向。
+修复：把“消费方主动放弃”从熔断样本里剔除，只对真实上游错误记失败。</title>
+  <rect x="48" y="384" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="48" y="384" width="5" height="74" rx="2" fill="#d92d20"/>
+  <text x="62" y="403" class="finding-id">REL-34EFB · [u07]</text>
+  <text x="62" y="423" class="finding-title">用户中途关掉聊天窗口，系统会把它当成模型服…</text>
+  <text x="62" y="442" class="finding-meta">backend-agent/app/gateway.py:279 · 可直接修</text>
+</g>
+<g class="node finding" data-id="SEC-E06CB" data-module="backend-agent" data-severity="high">
+  <title>SEC-E06CB · [high] [u07]
+简述：外部调用者可以指定“模型地址”，服务就会照这个地址发请求，内网服务因此可能被探测，返回内容还会被带出来。
+详细问题：Agent 接受调用方自填 baseUrl/apiKey，出站请求可打到任意主机并回显响应
+证据：backend-agent/app/main.py:284-285 TextChatBody.base_url/api_key 来自请求体（session-summary :347-348、chat-stream :213 的 text_base_url/text_api_key 同理）；backend-agent/app/gateway.py:92 normalize_openai_base_url 仅做字符串归一（去尾斜杠、去 /v1、固定追加 /v1/chat/completions），随后经 app/http_client.py new_client() 用 httpx 发出请求；main.py:369 附近把模型返回的 content 直接回给调用方。AgentRuntimeClient.java 注释称“仅访问固定地址 agent:8001、无 SSRF 面”，SSRF 面其实在 Python 的这一段。
+影响：结合 SEC-01 无需登录即可让服务向内网任意 HTTP 服务发起 POST（backend:8080、minio:9000、milvus、运维面板等），把 2xx 响应体带回；也可作为数据外带通道，把请求体里的内容送到攻击者服务器。
+修复：Python 出站对 base_url 做与 Java OutboundUrlValidator 等价的白名单校验（禁私网/回环/元数据地址，解析结果钉 IP），并只允许 vault 中登记的域名。</title>
+  <rect x="48" y="466" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="48" y="466" width="5" height="74" rx="2" fill="#d92d20"/>
+  <text x="62" y="485" class="finding-id">SEC-E06CB · [u07]</text>
+  <text x="62" y="505" class="finding-title">外部调用者可以指定“模型地址”，服务就会照…</text>
+  <text x="62" y="524" class="finding-meta">backend-agent/app/gateway.py:92 · 需方案</text>
+</g>
+<g class="node finding" data-id="COR-50DF0" data-module="backend-agent" data-severity="medium">
+  <title>COR-50DF0 · [medium] [u07]
+简述：记忆向量同步任务如果做到一半进程被重启，这条任务会一直卡在「执行中」，之后再也不会重试，那条记忆就永远搜不到或永远删不掉。
+详细问题：memory_outbox 认领后进程崩溃会永久停在 RUNNING，无人回收
+证据：relay 用 `UPDATE memory_outbox SET status = &apos;RUNNING&apos; WHERE id = %s AND status = &apos;PENDING&apos;` 认领（relay.py:41-48），失败走 `_retry_or_dead` 指数退避（:161-176），`drain_once` 只捞 `status=&apos;PENDING&apos; AND next_attempt_at &lt;= NOW()`（:111-119）。`requeue_stuck()`（:207-225）的 docstring 写明「运维用」，唯一调用点是 `backend-agent/app/main.py:966-972` 的手工接口 `/agent/memory/relay/requeue`；常驻循环 `_relay_loop`（main.py:52-65）只调 `drain_once`，`reconcile`（relay.py:178-205）也只由运维接口触发。
+影响：进程在认领后被杀（部署滚动重启、OOM、容器驱逐）时该行永久 RUNNING：UPSERT 场景记忆没有向量、检索不到；DELETE 场景向量残留在 Milvus，用户删掉的记忆仍会被角色说出来。没有任何告警，只能靠人工调运维接口。
+修复：给认领加租约并在常驻循环里定期回收超时的 RUNNING 行，而不是依赖人工调用运维接口。</title>
+  <rect x="48" y="548" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="48" y="548" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="62" y="567" class="finding-id">COR-50DF0 · [u07]</text>
+  <text x="62" y="587" class="finding-title">记忆向量同步任务如果做到一半进程被重启，这…</text>
+  <text x="62" y="606" class="finding-meta">backend-agent/app/memory/relay.…:41 · 需方案</text>
+</g>
+<g class="node finding" data-id="MNT-258C6" data-module="backend-agent" data-severity="medium">
+  <title>MNT-258C6 · [medium] [u07]
+简述：模型运行时的入口文件把聊天、语音、记忆、prompt 组装等二十多个接口全塞在同一个 1200 多行的文件里，一个函数最长一百多行；只想改语音接口的人也得在这个大文件里翻找，改动容易互相踩。
+详细问题：backend-agent/app/main.py 1278 行、25 个端点没有拆 router
+证据：`wc -l backend-agent/app/main.py` = 1278；文件内 16 个 import、31 个 def、25 个 `@app.post`/`@app.get` 装饰器，0 处 `APIRouter`；最长回调 async def chat_turn_stream 102 行（起始 495），chat_stream 94 行（201），text_chat 92 行（360），proactive_turn 81 行（1060）；同目录第二大模块 gateway.py 仅 504 行。
+影响：所有端点的装配、鉴权前缀、异常映射都耦合在一个文件里：改任一接口都要重读 1278 行上下文，合并冲突集中在单文件，单测只能整体导入 app，无法按域隔离。
+修复：按域把端点拆成 APIRouter（chat / voice / memory / prompt / observe），main.py 只保留 app 装配与 include_router，路径与响应结构不变。</title>
+  <rect x="48" y="630" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="48" y="630" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="62" y="649" class="finding-id">MNT-258C6 · [u07]</text>
+  <text x="62" y="669" class="finding-title">模型运行时的入口文件把聊天、语音、记忆、p…</text>
+  <text x="62" y="688" class="finding-meta">backend-agent/app/main.py:1 · 需方案</text>
+</g>
+<g class="node finding" data-id="REL-38C23" data-module="backend-agent" data-severity="medium">
+  <title>REL-38C23 · [medium] [u07]
+简述：聊天流中途崩掉时，服务端只打印一行错误摘要、没有调用栈，出了代码级毛病根本定位不到哪里炸的。
+详细问题：流式端点顶层异常只打印 repr，没有 traceback
+证据：L252-256：`except Exception as exc:  # noqa: BLE001 - 生成器异常必须可见，否则上游只看到空回复` → `logger.warning(&quot;chat-stream failed: user=%s frames=%d err=%r&quot;, body.user_id, frames, exc)`，没有 `exc_info=True`；`/agent/chat-turn/stream` 的 L520-522 是同一写法（`logger.warning(&quot;chat-turn stream failed: ... err=%r&quot;, ...)`）。这两处是主聊天链路唯一的兜底 catch（stream_chat.stream_chat_events 只处理 GatewayRejectedError/GatewayError，其余异常会一路冒到这里）。
+影响：遇到代码级异常（AttributeError/KeyError/TypeError/NoneType 调用）时，日志只有一行 repr，没有文件与行号；而这正是兜底 catch 存在的唯一理由，等于把最容易出 bug 的路径变成了最难定位的路径。
+修复：兜底日志带堆栈，并区分“预期失败”和“未知异常”。</title>
+  <rect x="48" y="712" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="48" y="712" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="62" y="731" class="finding-id">REL-38C23 · [u07]</text>
+  <text x="62" y="751" class="finding-title">聊天流中途崩掉时，服务端只打印一行错误摘要…</text>
+  <text x="62" y="770" class="finding-meta">backend-agent/app/main.py:253 · 可直接修</text>
+</g>
+<g class="node finding" data-id="SEC-D6178" data-module="backend-agent" data-severity="medium">
+  <title>SEC-D6178 · [medium] [u07]
+简述：外部任何人都能反复调用识图接口，用平台自己的模型额度生成内容，花的是运营方的钱。
+详细问题：无鉴权的桌面感知接口会消耗平台自己的多模态 Key，且没有速率限制
+证据：backend-agent/app/main.py:143-151 /agent/desktop-observe 无鉴权（同 SEC-01 的头比对逻辑）；app/vision.py:69-70 base_url=settings.multimodal_base_url、api_key=[REDACTED:secret] DashScope Key）；app/desktop_observe.py:86 只有调用方未带 text_base_url/text_api_key 时才回落到平台 Key；main.py:76-79 observe_limiter 是 asyncio.Semaphore（并发上限），不是速率限制。
+影响：外部可无限次把任意图片与 windowTitle 送进平台模型，按调用量直接消耗运营方额度（成本攻击），并让平台承担内容风险；桌面截图内容也会流向模型供应商。
+修复：该端点只允许通过内部签名从 Java 转发，并加用户/IP 双维度配额与单次图片大小上限。</title>
+  <rect x="48" y="794" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="48" y="794" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="62" y="813" class="finding-id">SEC-D6178 · [u07]</text>
+  <text x="62" y="833" class="finding-title">外部任何人都能反复调用识图接口，用平台自己…</text>
+  <text x="62" y="852" class="finding-meta">backend-agent/app/main.py:143 · 需方案</text>
+</g>
+<g class="node finding" data-id="PRF-585C8" data-module="backend-agent" data-severity="low">
+  <title>PRF-585C8 · [low] [u07]
+简述：记忆检索时一条一条地向 Redis 取向量，50 条候选就是 50 次往返，时间全花在等待上。
+详细问题：vector_cache 逐条串行 Redis GET/SET，N 次往返叠加在对话回合内
+证据：第 59-73 行 `_vectors_for(texts)`：`for i, text in enumerate(texts): vector = await cache_get_json(_text_key(text))`，每条一次 Redis GET；缺失项再 `for slot, idx in enumerate(missing_idx): await cache_put_json(...)` 逐条 SET。rank_by_vector（:77-109）先 `embed([query])` 再 `_vectors_for(texts)`，cosine（:31-44）为纯 Python 点积 O(dim=1024)×N。N 上限来自 backend-agent/app/config.py 的 `memory_vector_max_candidates=50`；backend-agent/app/db.py 只提供单键 cache_get_json/cache_put_json，没有 MGET/pipeline 封装。调用链：app/tools/memory_search_tool.py 的 search_semantic。
+影响：每次语义记忆检索在对话回合内串行叠加最多 50 次 RTT（跨可用区 1-2ms 时约 50-100ms），缓存未命中时再叠 50 次 SET；这段延迟直接落在用户等待回复的首字时间上，而 CPU 侧几乎没有开销。
+修复：用 MGET/pipeline 把逐条读写改成一次往返，并把 cosine 计算向量化。</title>
+  <rect x="48" y="876" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="48" y="876" width="5" height="74" rx="2" fill="#475467"/>
+  <text x="62" y="895" class="finding-id">PRF-585C8 · [u07]</text>
+  <text x="62" y="915" class="finding-title">记忆检索时一条一条地向 Redis 取向量…</text>
+  <text x="62" y="934" class="finding-meta">backend-agent/app/memory/vector…:59 · 需方案</text>
+</g>
+<g class="node finding" data-id="COR-CA186" data-module="backend" data-severity="high">
+  <title>COR-CA186 · [high] [u02]
+简述：用户一句话里说出的多件事（例如「以后叫我小林，我今天很崩溃」），只有最后一件会被记住，前面几件被同一条记录悄悄覆盖。
+详细问题：同一条用户消息命中的多条记忆共用 sourceHash，后写的覆盖先写的
+证据：`resolveSourceHash`（MemoryWriter.java:199）→ `computeSourceIdsHash`（:266-281）只用排序后的 source_msg_ids 求 sha256，而 `processSummary` 每次传 `List.of(memory.sourceMsgId())`（:105-108）。另一侧 `MemoryExtractionHeuristics.extractAll`（:20-30）会把 profile/relationship/keyword 三组结果拼在一起，`extractRelationshipMemories` 对同一条消息可同时产出「专属称呼锚点」(:101)、「脆弱情绪」(:105)、「仪式感」(:108)、「昵称」(:111) 多条，`extractProfileFacts`(:57-77) 也按 msg id 归档 → 这些记忆的 sourceHash 完全相同。第二条进入 `upsertTypedMemory` 时 `findExistingMemory`(:200) 命中第一条，summary 不同 → 走 UPDATED 分支（:238-252）覆盖 summary/type、`existing.setMilvusVecId(null)` 并 `enqueueDelete`+`enqueueUpsert`。`memory_meta` 上的 `UNIQUE KEY uk_source_hash`（V1__init.sql:67）还会让并发插入的一方进入 SKIPPED。
+影响：记忆能力静默丢数据：一句话里的多个事实只留下最后一个，用户会反复发现「我刚说过它又忘了」；每次覆盖还清空 vec_id 并触发一次向量删除+重建，检索存在短暂空洞，嵌入成本翻倍。
+修复：让哈希标识「一条记忆」而不是「一条消息」：把记忆类型与归一化摘要一起纳入 sourceHash，并为存量行做一次回填。</title>
+  <rect x="396" y="220" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="220" width="5" height="74" rx="2" fill="#d92d20"/>
+  <text x="410" y="239" class="finding-id">COR-CA186 · [u02]</text>
+  <text x="410" y="259" class="finding-title">用户一句话里说出的多件事（例如「以后叫我小…</text>
+  <text x="410" y="278" class="finding-meta">backend/lianyu-service/src/main…:199 · 需方案</text>
+</g>
+<g class="node finding" data-id="PRF-71D14" data-module="backend" data-severity="high">
+  <title>PRF-71D14 · [high] [u01]
+简述：群聊里同时有 8 个会话在回复时，所有回复会永久停住，用户只能重启应用或等服务重启。
+详细问题：群聊编排任务与内层生成共用同一个 8 线程池，外层 join 阻塞导致自饥饿死锁
+证据：第 370 行 `CompletableFuture.runAsync(() -&gt; {` 把整轮编排提交到 groupChatExecutor；第 394-399 行对每个成员 `CompletableFuture.supplyAsync(() -&gt; generateCharacterReply(...), taskExecutor)` 又提交到同一个池；第 401-407 行 `while (!pending.isEmpty()) { CompletableFuture.anyOf(pending.toArray(EMPTY_CF_ARRAY)).join();` 在池线程里阻塞等待。池配置见 backend/lianyu-service/src/main/java/com/lianyu/service/config/GroupChatExecutorConfig.java:12-23：`@Value(&quot;${lianyu.group.executor.core-pool-size:8}&quot;)`、`max-pool-size:20`、`queue-capacity:300`，未设置拒绝策略。ThreadPoolExecutor 只有线程数 &lt; core 或队列已满时才新建线程；队列 300 远未填满，因此 8 个并发群聊回合就能把 8 个 core 线程全部占在外层 join 上，内层生成任务永远排在队列里。
+影响：群聊功能在 8 个并发回合后整体挂死：外层不返回、内层不执行，没有超时兜底，只能重启进程恢复；4-7 个并发时内层生成被压到剩余线程上串行执行，回复延迟成倍上升且多角色顺序错乱；被卡住的线程还占着未收尾的 SSE 请求。
+修复：把「回合编排」和「单角色生成」拆成两个线程池（或改为非阻塞聚合），禁止池线程阻塞等待同池任务。</title>
+  <rect x="396" y="302" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="302" width="5" height="74" rx="2" fill="#d92d20"/>
+  <text x="410" y="321" class="finding-id">PRF-71D14 · [u01]</text>
+  <text x="410" y="341" class="finding-title">群聊里同时有 8 个会话在回复时，所有回复…</text>
+  <text x="410" y="360" class="finding-meta">backend/lianyu-service/src/main…:370 · 需方案</text>
+</g>
+<g class="node finding" data-id="REL-42BC8" data-module="backend" data-severity="high">
+  <title>REL-42BC8 · [high] [u01]
+简述：回复已经生成完、准备收尾时只要冒出一点非网络异常，这条流就不会发结束标记、回复也不会存进数据库，用户界面会一直转圈。
+详细问题：finishSseSuccess 只接 IOException：收尾异常会让流不结束、回复不落库
+证据：L51-65：`try { if (callback != null) callback.beforeStreamComplete(emitter, fullContent); emitter.send(SseEmitter.event().data(&quot;[DONE]&quot;)); emitter.complete(); } catch (IOException e) { log.warn(&quot;SSE complete failed&quot;, e); emitter.complete(); }`，`callback.onComplete(fullContent, null)` 写在 try 之外（L62-64）。调用点 `AgentStreamBridge.finish()`（AgentStreamBridge.java:113）挂在 reactor 的完成回调 `subscribe(..., relay::finish)`（ChatTurnAdapter.java:72-79）：回调里抛出的 RuntimeException 会被 Reactor 记为 dropped error，emitter 不会被 complete，`onComplete` 也不会执行。SseEmitter 超时是 `SSE_TIMEOUT_MS = 1_800_000L`（ChatTurnAdapter.java:37）；而落库、记录回合、记忆入队、通知全部只在 ConversationService.onComplete（L377-407）里发生。`emitter.send` 在已完成/已超时状态下抛的是 IllegalStateException 而不是 IOException。AgentStreamBridgeTest 的 RecordingCallback 的 beforeStreamComplete 永不抛异常，这条路径没有测试。
+影响：收尾阶段一旦抛非 IOException（emitter 已完成/客户端刚断、回调里 DB 写入失败、序列化失败），用户拿到的是截断的回复且连接最长挂 30 分钟不收尾；刷新后这条回复消失（没落库、没触发记忆摘要与通知），服务端只留一条 Reactor onErrorDropped，几乎无法定位。
+修复：收尾与 [DONE] 发送、落库回调三段各自兜底，保证 emitter 一定被 complete、onComplete 一定被调用一次。</title>
+  <rect x="396" y="384" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="384" width="5" height="74" rx="2" fill="#d92d20"/>
+  <text x="410" y="403" class="finding-id">REL-42BC8 · [u01]</text>
+  <text x="410" y="423" class="finding-title">回复已经生成完、准备收尾时只要冒出一点非网…</text>
+  <text x="410" y="442" class="finding-meta">backend/lianyu-service/src/main…:51 · 可直接修</text>
+</g>
+<g class="node finding" data-id="SEC-701CA" data-module="backend" data-severity="high">
+  <title>SEC-701CA · [high] [u10]
+简述：少配一个环境变量，用户自己填的模型密钥就会以明文存进数据库，而系统只在启动日志里警告一句。
+详细问题：未配置 LIANYU_MASTER_KEY 时 Jasypt 静默降级为明文，用户模型 API Key 直接明文入库
+证据：JasyptUtil.java:23 无主密钥时 log.warn(&quot;LIANYU_MASTER_KEY not set — Jasypt encryption disabled. Set env var before production use.&quot;) 然后不建 encryptor；:61-65 public String encrypt(String plaintext) { … if (currentVersion == null || encryptors.isEmpty()) { log.warn(&quot;No Jasypt encryptor available, returning plaintext&quot;); return plaintext; } … }（:69-70 还有第二处同样回退）；:75-78 decrypt 在 encryptors 为空时原样返回。写入方 EncryptedStringTypeHandler 与 ApiKeyVaultService 都直接调用 encrypt，因此 api_key_vault.api_key_encrypted 会存明文。
+影响：运维漏配一个变量，全部用户自填的模型 Key 会以明文落库；数据库备份、只读账号、误导出或任意 SQL 读取都会造成 Key 泄露，而调用方看不出任何异常（只有启动时一条 warn）。
+修复：加密路径失败即关闭（fail closed）：无 encryptor 时抛异常而不是返回明文，并在启动阶段对缺失主密钥做硬校验。</title>
+  <rect x="396" y="466" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="466" width="5" height="74" rx="2" fill="#d92d20"/>
+  <text x="410" y="485" class="finding-id">SEC-701CA · [u10]</text>
+  <text x="410" y="505" class="finding-title">少配一个环境变量，用户自己填的模型密钥就会…</text>
+  <text x="410" y="524" class="finding-meta">backend/lianyu-security/src/mai…:63 · 可直接修</text>
+</g>
+<g class="node finding" data-id="SEC-A3F36" data-module="backend" data-severity="high">
+  <title>SEC-A3F36 · [high] [u08]
+简述：客户端的限流按“来源 IP”算，而这个 IP 可以从请求头里随便写，攻击者每次换一个就能绕过注册和上传的次数限制。
+详细问题：默认信任 X-Forwarded-For 首个值，公网可伪造来源 IP 绕过按 IP 的限流
+证据：ClientIpResolver.java:16 @Value(&quot;${lianyu.security.trust-forwarded-for:true}&quot;) 默认为 true；:24-28 if (trustForwardedFor) { String forwarded = request.getHeader(&quot;X-Forwarded-For&quot;); … int comma = forwarded.indexOf(&apos;,&apos;); return (comma &gt; 0 ? forwarded.substring(0, comma) : forwarded).trim(); } —— 取的是客户端可写的第一段。backend/lianyu-app/src/main/resources/application.yml:172 trust-forwarded-for: ${LIANYU_TRUST_FORWARDED_FOR:true}，.env.example 与 docker-compose.yml 均未设置该变量。deploy/api-gateway/nginx.conf:306 `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` 把真实 IP 追加在客户端值之后，因此第一段永远是攻击者可控内容。使用方：AuthController.java:65/:78（登录/注册/验证码，30 次/IP/分钟、3 次/日/IP 注册额度）、ObserveController.java:57（30 次/小时/IP）、头像上传 20 次/日/IP。
+影响：所有按 IP 的额度（注册 3 次/日、头像 20 次/日、桌面感知 30 次/小时、认证 30 次/分钟）在公网均可被任意绕过，可批量注册、刷模型额度、规避风控；按用户名维度的限额仍生效但无法挡住换号。
+修复：改为只信任网关写入的 X-Real-IP（或取 XFF 最后一段），并把 trust-forwarded-for 默认改为 false，部署环境显式打开。</title>
+  <rect x="396" y="548" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="548" width="5" height="74" rx="2" fill="#d92d20"/>
+  <text x="410" y="567" class="finding-id">SEC-A3F36 · [u08]</text>
+  <text x="410" y="587" class="finding-title">客户端的限流按“来源 IP”算，而这个 I…</text>
+  <text x="410" y="606" class="finding-meta">backend/lianyu-web/src/main/jav…:28 · 需方案</text>
+</g>
+<g class="node finding" data-id="COR-05886" data-module="backend" data-severity="medium">
+  <title>COR-05886 · [medium] [u02]
+简述：后台每半小时的关系衰减和用户聊天会同时改同一份关系数据，用户的信任/亲密度增长经常被旧快照覆盖，表现为「聊很久关系也不涨」。
+详细问题：关系状态整行读改写且无版本控制，衰减任务会覆盖互动增量
+证据：`recordUserTurn`（RelationshipStateService.java:116-133）流程是 `loadOrCreateState` → 内存里累加事件/在场分 → `relationshipStateMapper.updateById(state)` 写回整行；`recordAssistantTurn`(:163-165) 与 `decayAll`(:183-187) 同一模式。`RelationshipState`（backend/lianyu-dao/.../entity/RelationshipState.java）是普通 `@TableName(&quot;relationship_state&quot;)`，没有 `@Version`，表结构也没有版本列（V1/V56 均无）。`RelationshipDecayScheduler`(:25-37) 每 30 分钟触发一次 `decayAll()`，与 Tomcat 请求线程天然并发。
+影响：trust/intimacy 增量被静默吞掉（用户感知是关系不推进）；`lastInteractionAt` 被写回旧值后 `isNewPresenceDay` 会重复判定「新的一天」，DAILY_PRESENCE 连续天数被重复累加，里程碑判定随之偏移。
+修复：把关系状态改成带版本的条件更新，或让衰减只更新衰减相关列，避免整行回写覆盖并发增量。</title>
+  <rect x="396" y="630" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="630" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="410" y="649" class="finding-id">COR-05886 · [u02]</text>
+  <text x="410" y="669" class="finding-title">后台每半小时的关系衰减和用户聊天会同时改同…</text>
+  <text x="410" y="688" class="finding-meta">backend/lianyu-service/src/main…:132 · 需方案</text>
+</g>
+<g class="node finding" data-id="COR-F6ADD" data-module="backend" data-severity="medium">
+  <title>COR-F6ADD · [medium] [u05]
+简述：修「重复会话」的那次数据库迁移直接把多余会话删了，里面的聊天记录从界面上消失，却永远留在库里。
+详细问题：V34 去重删掉重复会话，但会话下的消息既不迁移也不清理
+证据：V34 开头 `DELETE c1 FROM conversation c1 INNER JOIN conversation c2 ... AND c1.id &gt; c2.id` 只删 conversation 行（第 1-8 行），之后才建唯一键 `uk_conversation_user_character_mode`。`message` 表（V1__init.sql:45-56）只有普通列 conversation_id 和 `UNIQUE KEY uk_conv_seq (conversation_id, seq)`，没有外键约束，所以被删会话下的消息不会被级联删除，也没有被改挂到保留会话；V35–V57 没有任何迁移触碰 message（按 `FROM message` / `UPDATE message` / `DELETE FROM message` 全量 grep 无命中）。
+影响：受影响的用户打开角色会话只剩被保留的那条，历史消息在 UI 上永久消失（数据其实还在，只是永远读不到）；同时 message 表留下永久孤儿行，按会话统计/清理/备份都会失真。
+修复：补一条数据修复迁移：先把重复会话的消息改挂到保留会话并重排 seq，无法改挂的先归档再删除，最后校验孤儿行为 0。</title>
+  <rect x="396" y="712" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="712" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="410" y="731" class="finding-id">COR-F6ADD · [u05]</text>
+  <text x="410" y="751" class="finding-title">修「重复会话」的那次数据库迁移直接把多余会…</text>
+  <text x="410" y="770" class="finding-meta">backend/lianyu-dao/src/main/res…:2 · 需方案</text>
+</g>
+<g class="node finding" data-id="MNT-0CAA3" data-module="backend" data-severity="medium">
+  <title>MNT-0CAA3 · [medium] [u12]
+简述：backend/scripts 里留着五个月前的五个 PowerShell 迁移脚本，路径写死在作者本机的 C:\Users\hp\... 上，其中一个的注释直接写“用来回滚另一个脚本”；同目录还有两份写死版本号的 Flyway 修复 SQL 和一个 0 字节的 vault 导出文件。别人跑这些脚本只会改错目录或改到已迁完的代码。
+详细问题：backend/scripts 残留一次性迁移脚本：硬编码个人绝对路径 + 0 字节占位文件
+证据：5 个 ps1 硬编码 `c:\Users\hp\Desktop\LianYu-PC\...`：dedupe-java-imports.ps1:1、fix-service-cross-imports.ps1:2、repackage-service.ps1:3-4、restore-service-imports.ps1:3、strip-utf8-bom.ps1:1；restore-service-imports.ps1:1 注释 `# Restore java.* / third-party imports stripped by fix-service-cross-imports.ps1`，即这两份互为“执行/回滚”的一次性工具；repair-flyway-v10.sql 与 repair-flyway-v14-checksum.sql 内写死 `WHERE version = &apos;14&apos;` / `checksum = -724640786`；`_vault_export.tsv` 为 0 字节但仍 `git ls-files` 可见。全仓除 .logistics 的 scope 快照外，无任何文档或脚本引用这些文件。
+影响：目录名 scripts 让人以为可以照跑：实际路径指向作者机器、SQL 绑定已过去的迁移版本、0 字节 tsv 看起来像凭据导出；误跑会改错文件或写入错误的 flyway_schema_history。
+修复：删除已执行完的一次性脚本与空占位文件，只保留仍在用的 _upload_backend_image.py；如需留档则移入 docs/refactor-2026-06/ 并注明执行日期与结果。</title>
+  <rect x="396" y="794" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="794" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="410" y="813" class="finding-id">MNT-0CAA3 · [u12]</text>
+  <text x="410" y="833" class="finding-title">backend/scripts 里留着五个…</text>
+  <text x="410" y="852" class="finding-meta">backend/scripts/restore-service…:3 · 需方案</text>
+</g>
+<g class="node finding" data-id="MNT-0DED5" data-module="backend" data-severity="medium">
+  <title>MNT-0DED5 · [medium] [u01]
+简述：后端服务层里“AI 能力”和“角色”两个包互相引用：AI 包要用角色的导入解析器与日记服务，角色包又要用 AI 包的密钥保管、语音注册和后台任务。结果这两个包只能一起改、一起测，想单独拿走其中一个都做不到。
+详细问题：com.lianyu.service.ai 与 com.lianyu.service.character 包级互相依赖
+证据：ai→character：AiChatService.java:11 `import com.lianyu.service.character.CharacterImportDraftMapper;`、:12 `CharacterImportSourceParser`；ai/background/AiBackgroundConsumer.java:5 `import com.lianyu.service.character.CharacterDiaryService;`。character→ai：CharacterDiaryService.java:18-20 `ApiKeyVaultService`、`ai.background.AiBackgroundPublisher`、`AiBackgroundTask`；CharacterImportService.java:5-6 `AiChatService`、`ApiKeyVaultService`；CharacterService.java:32 `PetVoiceRegistry`。全 service 包只有这一对互指。
+影响：两个包（ai 20 类、character 15 类）无法独立抽取或做包级测试；任何一方的构造签名变化都会同时牵动另一边，包边界名存实亡。
+修复：把被交叉引用的能力抽成 service/port 下的接口（密钥保管、语音注册、日记后台任务、角色导入解析），两边只依赖接口。</title>
+  <rect x="396" y="876" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="876" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="410" y="895" class="finding-id">MNT-0DED5 · [u01]</text>
+  <text x="410" y="915" class="finding-title">后端服务层里“AI 能力”和“角色”两个包…</text>
+  <text x="410" y="934" class="finding-meta">backend/lianyu-service/src/main…:18 · 需方案</text>
+</g>
+<g class="node finding" data-id="MNT-9D4F4" data-module="backend" data-severity="medium">
+  <title>MNT-9D4F4 · [medium] [u08]
+简述：后端把“Python 服务是否活着”的检查在五个类里各抄了一遍，每个都带自己的 3 秒缓存；同目录另一个类却用另一套开关判断，所以改一次刷新间隔要改五处，漏一处就会出现“有的功能能连通、有的直接跳过”。
+详细问题：Agent 健康探测在 5 个适配器里各写一份，门控策略还不一致
+证据：5 个类各有一份完全相同的实现（grep &apos;private boolean reachable()&apos;）: AgentBlockingAdapter.java:126, AgentStreamAdapter.java:106, AgentPromptAssemblyAdapter.java:108, AgentSessionSummaryAdapter.java:109, ChatTurnAdapter.java:204，方法体均为 `long now = System.currentTimeMillis(); if (now - healthyCheckedAt &lt; 3_000L) return healthy; healthy = client.isHealthy(); healthyCheckedAt = now; return healthy;`，字段为 `private volatile boolean healthy; private volatile long healthyCheckedAt;`。而同包 AgentTextAdapter.java:33 的门控是 `if (!client.properties().agentActive()) { return null; }`，不看 isHealthy()。
+影响：健康判定的 TTL 与语义没有单一所有者：调整 3 秒窗口或新增“半开”策略要改 5 处；TextAdapter 与其余 4 个适配器对“服务可用”给出不同答案，排查“文本能回、流式不回”时容易被误导。
+修复：抽一个 AgentHealthGate（持有 client 与 TTL），5 个适配器注入同一个实例，并显式对齐或注明 TextAdapter 的门控差异。</title>
+  <rect x="396" y="958" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="958" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="410" y="977" class="finding-id">MNT-9D4F4 · [u08]</text>
+  <text x="410" y="997" class="finding-title">后端把“Python 服务是否活着”的检查…</text>
+  <text x="410" y="1016" class="finding-meta">backend/lianyu-web/src/main/jav…:126 · 需方案</text>
+</g>
+<g class="node finding" data-id="MNT-A43FA" data-module="backend" data-severity="medium">
+  <title>MNT-A43FA · [medium] [u01]
+简述：“哪些角色能打语音电话”这件事被写了两份：Java 里一个常量集合、前端一个常量数组，两边注释都写着“必须和对方保持一致”。新增一个能语音的角色时漏改一边，就会出现前端显示可拨打、后端直接拒绝。
+详细问题：语音可拨打角色白名单在 Java 与 JS 各手写一份，靠注释人工同步
+证据：VoiceCallService.java:67 注释 `Keep in sync with frontend {@code voiceCallPets.js}.`，:69-83 `private static final Set&lt;String&gt; VOICE_CALL_PET_IDS = Set.of(&quot;klee&quot;,&quot;ganyu&quot;,&quot;ayaka&quot;,&quot;raiden&quot;,&quot;elysia&quot;,&quot;erii_uesugi&quot;,&quot;yae_miko&quot;,&quot;kokomi&quot;,&quot;shenhe&quot;,&quot;nahida&quot;,&quot;hu_tao&quot;,&quot;furina&quot;,&quot;noelle&quot;)`；消费点 :242-243 `VOICE_CALL_PET_IDS.contains(petId)`。前端 frontend/src/constants/voiceCallPets.js:1 注释 `must match VoiceCallService.VOICE_CALL_PET_IDS`，同文件导出同一批 13 个 id。
+影响：同一事实两处定义且没有任何测试比对：漏改时前端仍显示“语音通话”入口，后端会走 else 分支返回不可拨打，用户看到的是“按钮在但打不通”。
+修复：改由后端作为唯一来源（提供可拨打角色列表接口，或在构建期生成前端常量），并加一致性测试兜底。</title>
+  <rect x="396" y="1040" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="1040" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="410" y="1059" class="finding-id">MNT-A43FA · [u01]</text>
+  <text x="410" y="1079" class="finding-title">“哪些角色能打语音电话”这件事被写了两份：…</text>
+  <text x="410" y="1098" class="finding-meta">backend/lianyu-service/src/main…:69 · 需方案</text>
+</g>
+<g class="node finding" data-id="PRF-454DD" data-module="backend" data-severity="medium">
+  <title>PRF-454DD · [medium] [u01]
+简述：情绪衰减定时任务每次把全表角色状态读进内存再逐行回写，角色多时一次要跑很久，期间数据库连接和写锁都被长期占着。
+详细问题：decayAllEmotions 无 LIMIT 全表扫描并在同一事务内逐行 updateById
+证据：第 179-221 行 `public int decayAllEmotions()` 带 @Transactional：第 182-188 行 `stateMapper.selectList(...isNotNull(currentEmotion).ne(currentEmotion,&quot;平静&quot;).and(w -&gt; w.isNull(emotionUpdatedAt).or().le(emotionUpdatedAt, threshold)))` 没有 LIMIT；第 190-220 行 `for (CharacterState state : candidates) { ... stateMapper.updateById(state); }` 每行一次整行 UPDATE，全部在同一个事务、同一条 Hikari 连接内，循环结束才提交。调度见 EmotionDecayScheduler.java:20-29（fixedDelay 900000ms，15 分钟）。表 V23__character_state.sql:2-15 只有 `UNIQUE KEY uk_char_user (character_id,user_id)` 与 `INDEX idx_user (user_id)`，current_emotion / emotion_updated_at 均无索引，`!= &apos;平静&apos;` 加范围条件只能全表扫。同仓已有分页范式：RelationshipStateService.java:43 `DECAY_BATCH_LIMIT = 500` 与 :172-190 `.last(&quot;LIMIT &quot; + DECAY_BATCH_LIMIT)`。
+影响：单次任务耗时随 character_state 行数线性增长，超过 15 分钟间隔后任务开始堆叠；长事务占住 20 个 Hikari 连接中的 1 个并持有行锁，在线聊天写 character_state 时被阻塞；N 次单行 UPDATE 还把 binlog 与 redo 放大 N 倍。
+修复：按主键分页取一批、只更新真正变化的行，并用批量 UPDATE 替换逐行 updateById。</title>
+  <rect x="396" y="1122" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="1122" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="410" y="1141" class="finding-id">PRF-454DD · [u01]</text>
+  <text x="410" y="1161" class="finding-title">情绪衰减定时任务每次把全表角色状态读进内存…</text>
+  <text x="410" y="1180" class="finding-meta">backend/lianyu-service/src/main…:179 · 需方案</text>
+</g>
+<g class="node finding" data-id="PRF-5C4A1" data-module="backend" data-severity="medium">
+  <title>PRF-5C4A1 · [medium] [u05]
+简述：每天两次为「日记」统计当天聊天量，需要扫描整张消息表，聊天记录越多越慢。
+详细问题：message 表无 created_at 单独索引，日记候选查询退化为全表扫描
+证据：SQL（第 37-51 行）：`SELECT c.id AS conversationId, ... SUM(m.role=&apos;USER&apos;) AS userMsgCount, MAX(m.created_at) AS lastActivityAt FROM conversation c JOIN message m ON m.conversation_id = c.id WHERE c.mode=&apos;SINGLE&apos; AND c.character_id IS NOT NULL AND m.created_at &gt;= #{since} GROUP BY c.id, ... HAVING userMsgCount &gt; 0 ORDER BY userMsgCount DESC, lastActivityAt DESC LIMIT #{limit}`。调用方 CharacterDiaryService.java:164-168（`selectSingleConversationsActiveSince(startOfDay, scanLimit)`），调度为 :135 `@Scheduled(cron = &quot;0 0 22 * * *&quot;)` 与 :141 `@Scheduled(cron = &quot;0 30 23 * * *&quot;)`。message 现有索引只有 V1 的 `uk_conv_seq (conversation_id, seq)`、`idx_conv_created (conversation_id, created_at)` 与 V46 的 `idx_msg_conv_role_seq (conversation_id, role, seq)`，均以 conversation_id 为前导列，全库 migration 中不存在 created_at 单列索引。
+影响：`m.created_at &gt;= since` 无法单独走索引，只能按 conversation 驱动逐条下探或直接全表扫 message（项目里最大的表，content 为 MEDIUMTEXT）；每天 2 次把冷数据扫进 buffer pool，冲掉热聊天的缓存页，随后一段时间在线聊天 IO 命中率下降。
+修复：给 message.created_at 补一个可用的索引（或改由 conversation.last_message_at 过滤），让按时间窗口的统计不再全表扫。</title>
+  <rect x="396" y="1204" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="1204" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="410" y="1223" class="finding-id">PRF-5C4A1 · [u05]</text>
+  <text x="410" y="1243" class="finding-title">每天两次为「日记」统计当天聊天量，需要扫描…</text>
+  <text x="410" y="1262" class="finding-meta">backend/lianyu-dao/src/main/jav…:37 · 需方案</text>
+</g>
+<g class="node finding" data-id="PRF-9FA45" data-module="backend" data-severity="medium">
+  <title>PRF-9FA45 · [medium] [u05]
+简述：服务端每 30 秒为所有单聊会话各算一次「最后一条消息时间」，会话越多越慢，最终拖慢聊天接口和数据库。
+详细问题：主动搭话扫描每 30 秒执行一次带相关子查询的 ORDER BY，代价随会话总数线性增长
+证据：SQL 为 `SELECT c.id, c.user_id, c.character_id, c.mode, c.title, c.created_at FROM conversation c WHERE c.mode=&apos;SINGLE&apos; AND c.character_id IS NOT NULL ORDER BY COALESCE((SELECT MAX(m.created_at) FROM message m WHERE m.conversation_id = c.id), c.created_at) DESC LIMIT #{limit}`（第 20-31 行）。调用方 backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ProactiveChatScheduler.java:62-68：`@Scheduled(fixedDelayString = &quot;${lianyu.chat.proactive.scan-interval-ms:30000}&quot;)`，`scan-limit:40`。ORDER BY 表达式依赖外表 c.id 的相关子查询，优化器无法用索引消除排序，必须先为每条单聊会话求一次 MAX(created_at) 并整体 filesort，最后才截断到 40 行。
+影响：每次扫描的工作量 ≈ 单聊会话数 次索引下探 + 同等行数排序，且每天固定执行 2880 次；会话数到 5 万量级时单次已是 5 万次子查询 + 5 万行文件排序，持续占用 CPU 与 buffer pool，用户侧表现为聊天/列表接口的周期性抖动。
+修复：把「最后消息时间」变成可索引的冗余列，或改成派生表聚合后再排序，避免 ORDER BY 内出现相关子查询。</title>
+  <rect x="396" y="1286" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="1286" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="410" y="1305" class="finding-id">PRF-9FA45 · [u05]</text>
+  <text x="410" y="1325" class="finding-title">服务端每 30 秒为所有单聊会话各算一次「…</text>
+  <text x="410" y="1344" class="finding-meta">backend/lianyu-dao/src/main/jav…:20 · 需方案</text>
+</g>
+<g class="node finding" data-id="PRF-E4A17" data-module="backend" data-severity="medium">
+  <title>PRF-E4A17 · [medium] [u01]
+简述：打开会话列表时，服务端把每个会话最后一条消息的完整正文都取回来，只为显示 120 字预览，白传了大量文本。
+详细问题：会话列表批量取 MEDIUMTEXT 全文，仅用于截断到 120 字符的预览
+证据：list() 第 166-169 行取最多 200 个会话；第 489-517 行 buildLastMessageSnippetMap / buildLastCharacterMessageSnippetMap 批量调 MessageMapper.selectLatestByConversationIds 与 selectLatestAssistantByConversationIds；backend/lianyu-dao/src/main/java/com/lianyu/dao/mapper/MessageMapper.java:16-67 两条 SQL 都 `SELECT ... m.content ...`（MEDIUMTEXT 整列）；ConversationService.java:522-544 `formatConversationPreviewSnippet` 最终只保留 120 字符。
+影响：一次列表请求最多取回 200 条完整正文，长回复/长文导入场景下单次可达数 MB 文本，MySQL 还需读 MEDIUMTEXT 溢出页、JDBC 逐行反序列化；用户侧表现为侧边栏会话列表打开变慢、内存抖动。
+修复：在 SQL 侧只取预览所需的长度，不要整列取回 MEDIUMTEXT。</title>
+  <rect x="396" y="1368" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="1368" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="410" y="1387" class="finding-id">PRF-E4A17 · [u01]</text>
+  <text x="410" y="1407" class="finding-title">打开会话列表时，服务端把每个会话最后一条消…</text>
+  <text x="410" y="1426" class="finding-meta">backend/lianyu-service/src/main…:489 · 需方案</text>
+</g>
+<g class="node finding" data-id="REL-388F4" data-module="backend" data-severity="medium">
+  <title>REL-388F4 · [medium] [u01]
+简述：后台生成（朋友圈评论、角色日记、主动问候）总共只重试约 4.5 秒，而上游熔断要 30 秒才恢复，所以一次短暂抖动就把这批任务全丢进死信队列，不会自动补做。
+详细问题：后台任务重试预算（3 次 / 约 4.5s）短于熔断窗口（30s），熔断一开就全进死信
+证据：AiBackgroundConsumer：`MAX_ATTEMPTS = 3`（L32）、`retryDelayMs = 1500L`（L43）、`long delay = Math.max(1L, retryDelayMs) * attempt`（L71）→ 重试两次、共等 1.5s+3s；只有 `isAgentTransient(e)`（L102-116）为真才重试，判定方式是字符串匹配“prompt 组装失败/消息发送失败/服务暂时不可用”。上游 Python 熔断参数 wait_duration_seconds=30.0（resilience.py L67-76），application.yml L523 同样是 `wait-duration-in-open-state: 30s`。熔断打开时 Python 走 `sse_error(&quot;对方模型暂时繁忙，请稍后再试&quot;)`，Java 侧 ChatTurnFacade L103/L112 统一映射为 AI_PROVIDER_ERROR“消息发送失败，请稍后再试”，因此三次重试全部落在同一个打开窗口内，最终 `throw last` → `defaultRequeueRejected(false)`（RabbitMqConfig L119-132）→ 死信。
+影响：上游抖动 30 秒，就会永久丢掉这段时间排队的所有 MOMENTS_*/CHARACTER_DIARY/主动问候任务：用户侧表现为角色忽然不再发朋友圈、不再主动说话，既没有补偿也没有告警，只能靠人工重放死信。
+修复：让重试窗口覆盖熔断恢复时间，并给死信一条可自动补做的路。</title>
+  <rect x="396" y="1450" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="1450" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="410" y="1469" class="finding-id">REL-388F4 · [u01]</text>
+  <text x="410" y="1489" class="finding-title">后台生成（朋友圈评论、角色日记、主动问候）…</text>
+  <text x="410" y="1508" class="finding-meta">backend/lianyu-service/src/main…:71 · 需方案</text>
+</g>
+<g class="node finding" data-id="REL-49628" data-module="backend" data-severity="medium">
+  <title>REL-49628 · [medium] [u08]
+简述：推送通知的队列没有配置死信队列，消费者也没有兜底捕获，一旦推送出错这条通知就彻底丢了，既不能重投也查不到。
+详细问题：event.broadcast.queue 没有死信配置，消费者无 try/catch：抛错即丢通知
+证据：RabbitMqConfig：`eventBroadcastQueue()`（L84-87）是 `QueueBuilder.durable(QUEUE_EVENT_BROADCAST).build()`，没有 `x-dead-letter-exchange`/`x-dead-letter-routing-key`；同文件 `memorySummaryQueue()`（L54-62）与 `aiBackgroundQueue()`（L69-77）都设了 DLX。`rabbitListenerContainerFactory`（L119-132）设置 `factory.setDefaultRequeueRejected(false)` 并注释“失败后不回队列，交给 DLQ”，而 NotificationPushConsumer 用的是默认工厂（注解只指定 queues 与 concurrency）。NotificationPushConsumer.onPushTask（L20-25）直接调用 `webPushService.sendToUser(task)`，没有任何 try/catch；`task == null || task.userId() == null` 时静默 return（消息被 ack）。
+影响：推送消费一旦抛异常（订阅查询/DB/编码），这条通知既不在队列里、也没有死信可查，用户永远收不到，运维无法重放；空 payload 的推送则被静默吞掉，连日志都没有。
+修复：把推送队列接上死信通道，并让消费者把异常显式抛出去。</title>
+  <rect x="396" y="1532" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="1532" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="410" y="1551" class="finding-id">REL-49628 · [u08]</text>
+  <text x="410" y="1571" class="finding-title">推送通知的队列没有配置死信队列，消费者也没…</text>
+  <text x="410" y="1590" class="finding-meta">backend/lianyu-web/src/main/jav…:84 · 可直接修</text>
+</g>
+<g class="node finding" data-id="SEC-1101A" data-module="backend" data-severity="medium">
+  <title>SEC-1101A · [medium] [u11]
+简述：管理员密码一旦泄露，第二步验证码可以无限次尝试，因为只有密码输错才会计数锁定。
+详细问题：管理员登录 TOTP 错误不累计失败次数，6 位验证码可在线穷举
+证据：AdminAuthService.java:37-39 仅密码不匹配分支执行 UPDATE admin_user SET failed_attempts=failed_attempts+1, locked_until=CASE WHEN failed_attempts+1&gt;=5 THEN DATE_ADD(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE) …；:42 缺 otp 时返回 otpRequired；:43 if (otpRequired &amp;&amp; !TotpUtil.verify(jasypt.decrypt(String.valueOf(row.get(&quot;totp_secret&quot;))), request.otp(), System.currentTimeMillis())) throw new IllegalArgumentException(&quot;用户名或密码错误&quot;) —— 不写 failed_attempts、不锁定；:49 成功后才清零。
+影响：攻击者拿到管理员密码（复用/撞库/钓鱼）后可对 6 位 TOTP 做在线穷举（成功概率随请求数线性上升），5 次锁定策略形同虚设；管理员后台可读用户列表、发放客服授权、发布客户端版本。
+修复：TOTP 校验失败与密码失败同等计数，达到阈值同样锁定并写审计。</title>
+  <rect x="396" y="1614" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="1614" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="410" y="1633" class="finding-id">SEC-1101A · [u11]</text>
+  <text x="410" y="1653" class="finding-title">管理员密码一旦泄露，第二步验证码可以无限次…</text>
+  <text x="410" y="1672" class="finding-meta">backend/lianyu-admin/src/main/j…:43 · 可直接修</text>
+</g>
+<g class="node finding" data-id="SEC-1AD35" data-module="backend" data-severity="medium">
+  <title>SEC-1AD35 · [medium] [u05]
+简述：十个真实的模型密钥以加密形式写进了代码库，而解密用的那把钥匙全组共用，谁拿到代码和钥匙谁就能用这些额度。
+详细问题：团队默认 Key 池的十份密文随迁移入库，解密主密钥在全体开发间共享
+证据：V22__team_default_vault_pool_encrypted.sql:1-13 连续 10 条 UPDATE api_key_vault SET api_key_encrypted 列写 &lt;base64 密文&gt;, key_version=&apos;v1&apos;, base_url=&apos;https://clove.dpdns.org&apos;, model_default=&apos;deepseek-v4-flash&apos; WHERE id=N AND vault_scope=&apos;DEFAULT&apos;；文件头注释写明用团队共用 LIANYU_MASTER_KEY 解密（“新同事 clone 后：填好 .env 的 LIANYU_MASTER_KEY”），本机 .env:41 即为该主密钥（.env 被 gitignore，未入库）。JasyptUtil.java:52 使用 PBEWithHMACSHA512AndAES_256 + 1000 次迭代，迭代次数偏低。
+影响：任何同时拿到仓库与团队主密钥的人（含离职人员、泄露的 .env、CI 缓存）都能解出 10 个真实模型 Key 并直接消耗额度；主密钥一换，所有环境所有密文同时失效，只能全量重新加密与轮换。
+修复：把默认 Key 池移出仓库，改为部署时注入；密文与主密钥分离保管，并按环境使用不同主密钥。</title>
+  <rect x="396" y="1696" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="1696" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="410" y="1715" class="finding-id">SEC-1AD35 · [u05]</text>
+  <text x="410" y="1735" class="finding-title">十个真实的模型密钥以加密形式写进了代码库，…</text>
+  <text x="410" y="1754" class="finding-meta">backend/lianyu-dao/src/main/res…:1 · 需方案</text>
+</g>
+<g class="node finding" data-id="COR-B3226" data-module="backend" data-severity="low">
+  <title>COR-B3226 · [low] [u02]
+简述：每写一条新记忆都会排队两次，第二次会把刚建好的向量删掉再插一遍，这期间这条记忆搜不到。
+详细问题：新建记忆被重复写入 outbox，每条记忆触发两次向量重建
+证据：`upsertTypedMemory` 在 CREATED 分支已经 `memoryOutboxService.enqueueUpsert(meta.getId())`（MemoryWriter.java:223）；回到 `processSummary` 又对 `saved.getMilvusVecId()` 为空的行再入队一次（MemoryWriter.java:117-126），而刚创建的行 vec_id 必然为空 → 同一个 memory_id 产生两条 UPSERT。relay 的 `project_upsert`（backend-agent/app/memory/relay.py:86-110）是先 DELETE 旧向量再 insert，因此第二条会重复嵌入并把向量删除重建。
+影响：嵌入调用与 Milvus 写入翻倍（成本与延迟），两次 UPSERT 之间存在向量缺失窗口，刚说完的话可能检索不到；第二条执行失败时 memory_meta.vec_id 已指向被删掉的向量。
+修复：去掉 processSummary 里重复的入队，只在 outbox 中确实没有该记忆的待处理行时才补一次。</title>
+  <rect x="396" y="1778" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="1778" width="5" height="74" rx="2" fill="#475467"/>
+  <text x="410" y="1797" class="finding-id">COR-B3226 · [u02]</text>
+  <text x="410" y="1817" class="finding-title">每写一条新记忆都会排队两次，第二次会把刚建…</text>
+  <text x="410" y="1836" class="finding-meta">backend/lianyu-service/src/main…:120 · 可直接修</text>
+</g>
+<g class="node finding" data-id="REL-416DA" data-module="backend" data-severity="low">
+  <title>REL-416DA · [low] [u11]
+简述：记忆防抖那条用例里写死了真实等待 5.2 秒，跑得慢还容易在机器繁忙时偶发失败。
+详细问题：MemoryWriterDebounceTest 硬等 5.2 秒验证补发，慢且时序脆弱
+证据：`maybeReschedule_pendingFlagSendsFollowUpTask` 通过 `ReflectionTestUtils.invokeMethod(writer, &quot;maybeReschedule&quot;, task)` 触发后 `Thread.sleep(5200);` 再断言补发只发生一次；被验证的常量是 `RESCHEDULE_DELAY_SECONDS = 5`（MemoryWriter 的重排调度器）。
+影响：单条用例固定占用 5.2 秒，是全套件里最慢的一条；机器繁忙或 CI 抖动时 5.2s 可能不够 → 偶发红，被视为“已知 flake”后真实回归也会被忽略。
+修复：把重排延迟做成可注入值，测试用毫秒级延迟 + 轮询断言。</title>
+  <rect x="396" y="1860" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="1860" width="5" height="74" rx="2" fill="#475467"/>
+  <text x="410" y="1879" class="finding-id">REL-416DA · [u11]</text>
+  <text x="410" y="1899" class="finding-title">记忆防抖那条用例里写死了真实等待 5.2 …</text>
+  <text x="410" y="1918" class="finding-meta">backend/lianyu-service/src/test…:72 · 可直接修</text>
+</g>
+<g class="node finding" data-id="REL-7C13B" data-module="backend" data-severity="low">
+  <title>REL-7C13B · [low] [u01]
+简述：关系衰减、情绪衰减、朋友圈评论补偿这三个定时任务失败时只留一行文字原因，没有调用栈也没有连续失败计数。
+详细问题：三个定时任务失败只记 e.getMessage()：无堆栈、无连续失败告警
+证据：EmotionDecayScheduler L33-35 `catch (Exception e) { log.warn(&quot;Emotion decay tick failed: {}&quot;, e.getMessage()); }`；RelationshipDecayScheduler L33-35 `catch (Exception e) { log.warn(&quot;Relationship decay tick failed: {}&quot;, e.getMessage()); }`；MomentsCommentReconciliationScheduler L59-61 `catch (Exception e) { log.warn(&quot;Moments comment reconcile failed: postId={}, reason={}&quot;, postId, e.getMessage()); }`。三处都没有堆栈、没有计数、没有指标。
+影响：定时任务连续失败（连接池耗尽、SQL 报错、迁移缺列）时，日志里只有一堆同类文本，看不出根因，也没有“连续失败 N 次”的告警触发点；衰减/补偿长期失效只能靠用户察觉数值不变化。
+修复：定时任务失败要带堆栈，并能在连续失败时升级报警。</title>
+  <rect x="396" y="1942" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="1942" width="5" height="74" rx="2" fill="#475467"/>
+  <text x="410" y="1961" class="finding-id">REL-7C13B · [u01]</text>
+  <text x="410" y="1981" class="finding-title">关系衰减、情绪衰减、朋友圈评论补偿这三个定…</text>
+  <text x="410" y="2000" class="finding-meta">backend/lianyu-service/src/main…:34 · 可直接修</text>
+</g>
+<g class="node finding" data-id="REL-97AFD" data-module="backend" data-severity="low">
+  <title>REL-97AFD · [low] [u01]
+简述：群聊里某个角色生成失败时，用户只看到它不说话，前端没有任何提示，日志里也只有一行不带调用栈的原因。
+详细问题：群聊单角色生成失败被吞：静默缺席 + 日志无堆栈
+证据：L401-419 的完成循环：`try { reply = f.join(); } catch (Exception ignored) { // handled in generateCharacterReply }`，随后 `if (reply == null || reply.content() == null || reply.content().isBlank()) continue;`；被调用的 generateCharacterReply L525-527 `catch (Exception e) { log.error(&quot;Group chat error for character {}: {}&quot;, member.getCharacterId(), e.getMessage()); return null; }` —— 只记 message、没有堆栈。
+影响：某个角色这一轮生成失败时，它在群聊里静默缺席，前端没有任何“暂时无法回复”的提示，用户只会觉得角色不理人；排查时日志只有一行 message，定位不到是上游还是本地异常。
+修复：失败要留堆栈、要能被前端看见。</title>
+  <rect x="396" y="2024" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="2024" width="5" height="74" rx="2" fill="#475467"/>
+  <text x="410" y="2043" class="finding-id">REL-97AFD · [u01]</text>
+  <text x="410" y="2063" class="finding-title">群聊里某个角色生成失败时，用户只看到它不说…</text>
+  <text x="410" y="2082" class="finding-meta">backend/lianyu-service/src/main…:414 · 可直接修</text>
+</g>
+<g class="node finding" data-id="REL-E2A96" data-module="backend" data-severity="low">
+  <title>REL-E2A96 · [low] [u01]
+简述：主动问候和定时语音发送失败时只写一行 DEBUG 日志，运维按 WARN 告警的话完全看不到“角色不再主动说话”这件事。
+详细问题：主动消息失败只记 DEBUG：整条链路停摆时无 WARN、无指标
+证据：发送循环 L148-176：`catch (Exception e) { log.debug(&quot;Proactive chat skipped for convId={}, reason={}&quot;, item.conv().getId(), e.getMessage()); }`；`trySendWaitNudgeVoices` L215-217 与定时语音 L265 同族，都是 log.debug + e.getMessage()。tick()（L62-63）本身没有外层 try/catch，批次查询（L68-95）也不在 per-candidate 隔离内。application.yml L531 默认 `com.lianyu: DEBUG` 让这些行可见，但一旦生产日志按 INFO 收敛或按 WARN/ERROR 告警，失败就完全不可见，也没有任何计数器。
+影响：主动问候整体失效（例如定时语音全部被策略跳过、或每轮都抛异常）时，日志里既没有 WARN 也没有指标，只能等用户反馈“角色怎么不理我了”。
+修复：把失败从 debug 提升到可见级别，并加最小计数。</title>
+  <rect x="396" y="2106" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="396" y="2106" width="5" height="74" rx="2" fill="#475467"/>
+  <text x="410" y="2125" class="finding-id">REL-E2A96 · [u01]</text>
+  <text x="410" y="2145" class="finding-title">主动问候和定时语音发送失败时只写一行 DE…</text>
+  <text x="410" y="2164" class="finding-meta">backend/lianyu-service/src/main…:174 · 可直接修</text>
+</g>
+<g class="node finding" data-id="COR-54E29" data-module="frontend" data-severity="high">
+  <title>COR-54E29 · [high] [u06]
+简述：发送消息遇到网络抖动时客户端会自动重发，但服务端每次都当成新消息，于是同一句话被记两遍、角色也回两遍。
+详细问题：网络失败后原样重发同一回合，用户消息与角色回复各落两份
+证据：ChatPage.vue:1433-1441：`catch (err) { if (isNetworkError(err)) { await sleep(800); if (signal.aborted) return; streamResult = await attemptStream() } }`，而 `attemptStream` 就是再 POST 一次 `/conversation/{id}/messages/stream`（:1420-1421）。`isNetworkError`（frontend/src/composables/useStreamAbort.js:8-15）把任何 `TypeError`、`failed to fetch`、`load failed` 都算网络错误——包含请求已到达服务端、响应阶段连接被重置的情况。请求体 `streamPayload`（ChatPage.vue:1405-1410）只有 provider/model/content/imageUrl，没有客户端消息 ID；服务端 `ConversationService.sendMessageStream` 每次调用都会新插一条用户消息并重新生成回复，无幂等键。QuickChatPage.vue:304 复用同一发送/重试模式。
+影响：一次网络抖动就会让同一条消息在历史里出现两次、角色回复两遍，模型调用与 token 双倍计费；群聊/连续会话的 seq 与气泡顺序也会错乱，用户看到「自己说了两遍」。
+修复：给发送加客户端幂等键并在服务端去重，或把自动重试限制在「请求确定未送达」的场景。</title>
+  <rect x="744" y="220" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="744" y="220" width="5" height="74" rx="2" fill="#d92d20"/>
+  <text x="758" y="239" class="finding-id">COR-54E29 · [u06]</text>
+  <text x="758" y="259" class="finding-title">发送消息遇到网络抖动时客户端会自动重发，但…</text>
+  <text x="758" y="278" class="finding-meta">frontend/src/pages/ChatPage.vue:1439 · 需方案</text>
+</g>
+<g class="node finding" data-id="PRF-9225F" data-module="frontend" data-severity="high">
+  <title>PRF-9225F · [high] [u06]
+简述：桌宠和快捷聊天窗口为了几个按钮，启动时要解析 1.1MB 的脚本（压缩后 361KB），窗口打开明显变慢、内存占用变高。
+详细问题：element-plus 全量注册把 1118 KB 的 launcherBootstrap chunk 拖进桌宠/快捷聊入口
+证据：实测 frontend/dist（与源码同批构建）：`launcherBootstrap-CEXfa8Qx.js` 1118.0 KB raw / 360.9 KB gzip，文件内含 element-plus 标识 10 次、ElMessage 5、ElScrollbar 4、el-button 3、el-dialog 1；`main-DTgPoq__.css` 398.7 KB raw / 54.3 KB gzip 为 element-plus 全量样式；dist/launcher.html 引用的 `launcher-BE_O1lcz.js` 自身仅 706 字节，但第 1 行即 `import{m,p as u,q as l,g as d,t as s}from&quot;./launcherBootstrap-CEXfa8Qx.js&quot;`；dist/quick.html 的 `quick-DUTbY0TJ.js`（1224 字节）同样 import launcherBootstrap 等 8 个模块。根因在 frontend/src/main.js:3-4 `import ElementPlus from &apos;element-plus&apos;` + `import &apos;element-plus/dist/index.css&apos;` 与 :69 `app.use(ElementPlus, { size: &apos;default&apos; })` 全量注册；frontend/vite.config.js:67-101 未做按需拆分（`modulePreload:false`、manualChunks 只分 vue-vendor，第 92 行注释明确说不能把 element-plus 拆成跨 chunk 引用）。
+影响：桌宠窗口与快捷聊天窗口每次冷启动都要解析/编译 1.1MB JS 与 398KB CSS（gzip 后 415KB 需解压），而它们只用到几个 el-* 组件；Electron 在启动后 4s/10s/12s 预热这两个窗口（frontend/electron/main.js:1496-1513），三个窗口同时解压同一份大 chunk，低配机首屏可感知卡顿、常驻桌宠多吃几十 MB 渲染内存。
+修复：element-plus 改按需引入，并让 launcher/quick 入口不再依赖含全量 UI 库的共享 chunk。</title>
+  <rect x="744" y="302" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="744" y="302" width="5" height="74" rx="2" fill="#d92d20"/>
+  <text x="758" y="321" class="finding-id">PRF-9225F · [u06]</text>
+  <text x="758" y="341" class="finding-title">桌宠和快捷聊天窗口为了几个按钮，启动时要解…</text>
+  <text x="758" y="360" class="finding-meta">frontend/src/main.js:3 · 需方案</text>
+</g>
+<g class="node finding" data-id="MNT-2AC9C" data-module="frontend" data-severity="medium">
+  <title>MNT-2AC9C · [medium] [u09]
+简述：Electron 主进程还留着一套“从 localStorage 解密登录 token”的注入脚本，但渲染层早已改成只把 token 放内存、不再写那两个键；这段代码现在每次开窗都会执行一遍、必然返回空，注释却还声称“与 secureToken.js 保持一致”，会误导后面的人以为存在 localStorage 回退。
+详细问题：rendererTokenScript 解密的是已被移除的 localStorage token（恒返回 null）
+证据：rendererTokenScript.js 第 1 行 注释 `在渲染进程 executeJavaScript 中解密 secureToken 存储的 _ltt` / `逻辑与 src/utils/secureToken.js 保持一致`，脚本体读 `localStorage.getItem(&apos;_ltt&apos;)` 与 `_lkt` 做 AES-GCM 解密；而 src/utils/secureToken.js 的注释 注释 `Token 内存态存储（#14：移除 localStorage 加密剧场）`，:9 `token 仅驻留渲染进程内存（rawToken），不再落 localStorage`；全仓 grep `localStorage.setItem` 于 _ltt/_lkt 为 0 命中。消费点：electron/main.js:82 import，:991-1000 pullRendererAuthToken 内 `executeJavaScript(RENDERER_AUTH_TOKEN_SCRIPT, true)`，:1019 在 ensureAuthSessionFromRenderer 的循环里调用；另 main.js:963 的 RENDERER_DESKTOP_STATE_SCRIPT 也用 `localStorage.getItem(&apos;_ltt&apos;)` 判定 loggedIn。
+影响：每次 ensureAuthSessionFromRenderer 都会对每个候选窗口执行一次必然失败的 executeJavaScript，且注释与真实实现相反：维护者会以为删掉 secureToken.js 的 localStorage 分支是 bug，或继续在 token 路径上叠加兼容代码。
+修复：删除 rendererTokenScript.js 与 pullRendererAuthToken 分支，认证恢复统一走主进程 safeStorage；loggedIn 判定改用 &apos;lianyu-user-profile&apos;。</title>
+  <rect x="744" y="384" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="744" y="384" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="758" y="403" class="finding-id">MNT-2AC9C · [u09]</text>
+  <text x="758" y="423" class="finding-title">Electron 主进程还留着一套“从 l…</text>
+  <text x="758" y="442" class="finding-meta">frontend/electron/rendererToken…:1 · 需方案</text>
+</g>
+<g class="node finding" data-id="MNT-745BE" data-module="frontend" data-severity="medium">
+  <title>MNT-745BE · [medium] [u03]
+简述：仓库里有一份 617 行的繁体中文语言包，但程序从来没加载过它——用户选不到繁体，代码里也把它从语言列表里去掉了；只剩一个测试还在检查它的 key 是否齐全，等于逼着后来人继续维护一份没人看得到的译文。
+详细问题：zh-TW 语言包未被注册（CONFIRMED_DEAD），仅测试在续命
+证据：i18n/index.js:9-16 只 `import zh/ja/en`，`messages: { zh, ja, en }`；constants/language.js:3 `export const SUPPORTED_LANGUAGES = /** @type {const} */ ([&apos;zh&apos;, &apos;ja&apos;, &apos;en&apos;])`，normalizeLanguage 会把未知值回退到 &apos;zh&apos;；locales/zh-TW.js 617 行完整译文，全仓唯一 import 是 i18n/__tests__/memoryLocale.test.js:5,7（断言四语 memory.* key 完全一致）；utils/dateLocale.js:4 仍判断 &apos;zh-TW&apos; 但该值已不可达。搜索过程：grep -rn &quot;zh-TW&quot; frontend/src 仅命中 locales/zh-TW.js、该测试、dateLocale.js 与 language.js 的注释。
+影响：617 行死译文 + 一个专门保护它的测试：按 AGENTS.md §3.2“四语齐”的要求，后续新增 key 还得往这里补，否则测试红；而真实用户永远看不到繁体界面。
+修复：先确认产品是否需要繁体中文：不需要就删除语言包并把“四语齐”改为三语；需要就把它真正接进语言列表和 UI 选项。</title>
+  <rect x="744" y="466" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="744" y="466" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="758" y="485" class="finding-id">MNT-745BE · [u03]</text>
+  <text x="758" y="505" class="finding-title">仓库里有一份 617 行的繁体中文语言包，…</text>
+  <text x="758" y="524" class="finding-meta">frontend/src/i18n/index.js:12 · 需方案</text>
+</g>
+<g class="node finding" data-id="MNT-938BA" data-module="frontend" data-severity="medium">
+  <title>MNT-938BA · [medium] [u06]
+简述：前端通知模块和“点通知跳转”的组件互相 import，形成整个前端唯一一个循环依赖；通知 store 同时管长连接、提示音、弹窗和跳转，改其中任何一块都得把另一半也读一遍。
+详细问题：notifications store 与 useNotificationNavigation 互相 import（全前端唯一环）
+证据：notifications.js:14 `import { navigateToNotification } from &apos;@/composables/useNotificationNavigation&apos;`；useNotificationNavigation.js:3 `import { useNotificationsStore } from &apos;@/stores/notifications&apos;`。对 frontend/src 219 个模块、476 条 import 边做 Tarjan 强连通检测，仅此一处在环上。该 store 417 行，同时负责 STOMP 连接、AudioContext 提示音、Element 弹窗、顶栏 toast 与未读计数；composable 125 行负责路由跳转与目标解析。
+影响：环使这两个模块无法单独加载/单测（store 测试必须连 router 与跳转逻辑），也让“通知到达→选哪个页面”的决策散落在 store 与 composable 两侧，新增通知类型要同时改两处。
+修复：让 store 只发事件（或回调注入），导航决策留在 composable/router 侧，打断 import 环。</title>
+  <rect x="744" y="548" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="744" y="548" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="758" y="567" class="finding-id">MNT-938BA · [u06]</text>
+  <text x="758" y="587" class="finding-title">前端通知模块和“点通知跳转”的组件互相 i…</text>
+  <text x="758" y="606" class="finding-meta">frontend/src/stores/notificatio…:14 · 需方案</text>
+</g>
+<g class="node finding" data-id="MNT-B9294" data-module="frontend" data-severity="medium">
+  <title>MNT-B9294 · [medium] [u03]
+简述：前端有四个模块已经没人用了，合计近 800 行：一个录音 composable（只有它自己的测试在用）、一个聊天截图工具、一个反调试工具，还有一个只被复制走逻辑的语音转写 API。读代码的人会以为这些能力还在生效。
+详细问题：4 个前端模块无任何生产引用（合计 791 行），其中一个只被自己的测试引用
+证据：对 frontend/src 下 170 个 js/vue 模块（排除 __tests__，入口 main.js/App.vue）建 import 图：useVoiceRecorder.js（466 行）唯一引用为 composables/__tests__/useVoiceRecorder.test.js:2；utils/captureChatShareScreenshot.js（220 行）`export async function captureChatShareScreenshot(container, selectedIds)` 在 :128，全仓 0 调用；utils/antiDebug.js（93 行）仅被 utils/logger.js:4 的注释提到（“生产环境 console.* 被 antiDebug 吞掉”）；api/asr.js（12 行）`transcribeAudio` 0 调用，同一 multipart 逻辑被 api/voiceCall.js:1-13 复制实现。另 entries/quick-main.js、entries/launcher-main.js 是 Vite 多页入口，属正常。
+影响：四个死模块 + 一个为死代码保绿的测试，让“录音/截图/反调试/ASR”四个能力在代码库里看起来仍然存在；新人改 ASR 时可能改到 asr.js 而线上实际走 voiceCall.js。
+修复：删除这 4 个模块与对应测试；若截图或录音功能仍计划上线，先建 issue 再从历史提交取回。</title>
+  <rect x="744" y="630" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="744" y="630" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="758" y="649" class="finding-id">MNT-B9294 · [u03]</text>
+  <text x="758" y="669" class="finding-title">前端有四个模块已经没人用了，合计近 800…</text>
+  <text x="758" y="688" class="finding-meta">frontend/src/composables/useVoi…:1 · 需方案</text>
+</g>
+<g class="node finding" data-id="PRF-D16A1" data-module="frontend" data-severity="medium">
+  <title>PRF-D16A1 · [medium] [u06]
+简述：聊天记录越长，打开会话和收到新消息时越卡，因为每次都要重建整条时间线并重排全部消息。
+详细问题：ChatPage 无虚拟滚动，messageTimeline 全量重建 + 每次变更全量 sort
+证据：`messageTimeline` computed（第 650-720 行）在 messages 每次变更时全量重建，对每条消息执行 `expandAssistantForDisplay`（:640-648，含 stripInnerThoughts 正则）并 push 分组标记；`mergePolledMessages`（:965-1041）发现变化后调用 `sortMessagesInTimelineOrder()` 对全量数组排序（:961-963）；模板第 73 行 `&lt;template v-for=&quot;item in messageTimeline&quot; :key=&quot;item._key&quot;&gt;` 直接渲染全部条目，没有虚拟滚动或窗口化。
+影响：n 条消息时每次增量更新都是 O(n) 重建 + O(n log n) 排序 + O(n) 的 VDOM diff 与布局；消息到几千条后（loadOlderMessages 无上限，见 P10）滚动与发送都会掉帧，流式回复结束的回填也会触发一次全量重算。
+修复：引入虚拟滚动并按 key 增量更新，避免每次变更全量重建与全量排序。</title>
+  <rect x="744" y="712" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="744" y="712" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="758" y="731" class="finding-id">PRF-D16A1 · [u06]</text>
+  <text x="758" y="751" class="finding-title">聊天记录越长，打开会话和收到新消息时越卡，…</text>
+  <text x="758" y="770" class="finding-meta">frontend/src/pages/ChatPage.vue:650 · 需方案</text>
+</g>
+<g class="node finding" data-id="PRF-F4602" data-module="frontend" data-severity="medium">
+  <title>PRF-F4602 · [medium] [u06]
+简述：聊天窗口每 10 秒重新下载最近 50 条消息，即使一条新消息都没有；窗口切到后台也照旧。
+详细问题：会话轮询固定拉取最近 50 条全文且无增量游标，隐藏窗口也不停止
+证据：常量 MESSAGE_PAGE_SIZE=50（:484）、NORMAL_POLL_MS=10000（:589）、FAST_POLL_MS=2000（:587）；`pollCurrentConversationMessages(force)`（:1197-1231）每次 `const page = await getMessages(convId, { limit: MESSAGE_PAGE_SIZE }, { silent: true })`（:1203），请求只带 limit 没有 afterSeq/游标；`startConversationPolling()`（:1182-1187）用 10s setInterval，只在 onUnmounted 清理（:801-808），全文件无 visibilitychange 处理；`scheduleOpeningPollBurst`（:1150-1155）额外追加 600/1500/3500ms 三次；QuickChatPage.vue:363-372 同样是 10s setInterval 调 loadMessages(convId)。
+影响：单个前台聊天窗口每分钟 6 次 × 50 条完整消息（含 MEDIUMTEXT 正文，见 P05）≈ 每分钟 300 条正文的下载与 JSON 解析；桌宠/快捷聊常驻时后台窗口也在轮询，多窗口并存时请求量与主进程解析开销成倍叠加，是弱网下消息延迟与电量消耗的主要来源。
+修复：改成增量拉取（afterSeq/游标）+ 页面不可见时暂停或降频轮询。</title>
+  <rect x="744" y="794" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="744" y="794" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="758" y="813" class="finding-id">PRF-F4602 · [u06]</text>
+  <text x="758" y="833" class="finding-title">聊天窗口每 10 秒重新下载最近 50 条…</text>
+  <text x="758" y="852" class="finding-meta">frontend/src/pages/ChatPage.vue:1203 · 需方案</text>
+</g>
+<g class="node finding" data-id="SEC-CA474" data-module="frontend" data-severity="medium">
+  <title>SEC-CA474 · [medium] [u09]
+简述：客户端安装更新包前只比对一个同样来自更新服务器的校验值，等于自己给自己盖章；一旦更新服务器被控，就会静默装上任意程序。
+详细问题：自动更新只校验同源清单里的 sha512，清单签名校验默认关闭
+证据：frontend/electron/updater/updater.js:81-90 async function verifyManifestOrThrow(ymlText, ymlUrl, apiOrigin) { const publicKeyBase64 = resolveManifestPublicKey(); if (!publicKeyBase64) { logger.warn(&apos;updater&apos;, &apos;latest.yml signature check disabled: no updateManifestPublicKey&apos;); return } … } ⇒ 无公钥时直接跳过验签；frontend/.env.production.cloud 中 VITE_LIANYU_UPDATE_PUBKEY 被注释掉（注释：留空 = 客户端暂不强制验签）；:57 的 sha512 取自同一份 latest.yml，:333 verifyInstallerSha512 只比对两者一致性；frontend/package.json:82 signAndEditExecutable: false ⇒ 安装包无 Authenticode 签名。
+影响：控制更新源（对象存储凭据、4443 端口服务、发布流水线）即可推送任意安装包，客户端下次检查更新即静默下载安装；TLS 证书固定只能防中间人，防不了源端被改或内鬼。
+修复：按既定三步走完成强制验签：发布 .sig、填充公钥、把缺公钥从“跳过”改为“拒绝更新”。</title>
+  <rect x="744" y="876" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="744" y="876" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="758" y="895" class="finding-id">SEC-CA474 · [u09]</text>
+  <text x="758" y="915" class="finding-title">客户端安装更新包前只比对一个同样来自更新服…</text>
+  <text x="758" y="934" class="finding-meta">frontend/electron/updater/updat…:81 · 需方案</text>
+</g>
+<g class="node finding" data-id="MNT-66CE2" data-module="frontend" data-severity="low">
+  <title>MNT-66CE2 · [low] [u06]
+简述：三个聊天页面各自复制了一段“把消息时间转成毫秒、再渲染成时间分隔条”的小函数，文本完全一样；哪天要改分隔条规则（比如跨天显示日期），必须记得三个文件都改。
+详细问题：消息时间解析/分隔条格式化在 3 个页面各写一份
+证据：ChatPage.vue:1556-1565、GroupChatPage.vue:883-892、QuickChatPage.vue:157-166 三处的 `function parseMessageTime(msg) { const ts = msg?.createdAt || msg?._time; if (!ts) return Date.now(); const ms = new Date(ts).getTime(); return Number.isNaN(ms) ? Date.now() : ms }` 与 `function formatTimeDivider(ms) { return formatSmartTime(ms, { t, locale: locale.value }) }` 逐字相同；ChatPage.vue:1567-1569 还多一份同实现的 formatTime。
+影响：分隔条策略（脏时间回退、跨天格式、locale 透传）被拆成三份，修改时容易只改一处，导致三个页面时间显示不一致；新增页面还会继续复制第四份。
+修复：把 parseMessageTime / formatTimeDivider 提到 frontend/src/utils/messageTimeline.js，三个页面改成 import。</title>
+  <rect x="744" y="958" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="744" y="958" width="5" height="74" rx="2" fill="#475467"/>
+  <text x="758" y="977" class="finding-id">MNT-66CE2 · [u06]</text>
+  <text x="758" y="997" class="finding-title">三个聊天页面各自复制了一段“把消息时间转成…</text>
+  <text x="758" y="1016" class="finding-meta">frontend/src/pages/ChatPage.vue:1556 · 可直接修</text>
+</g>
+<g class="node finding" data-id="PRF-2EAFA" data-module="frontend" data-severity="low">
+  <title>PRF-2EAFA · [low] [u06]
+简述：往上翻聊天记录时消息数组只增不减，翻得越多前端内存越大、越卡。
+详细问题：loadOlderMessages 每页 50 条前插且无上限，messages 数组无限增长
+证据：`loadOlderMessages`（第 908-949 行）以 MESSAGE_PAGE_SIZE=50 分页把更早消息 unshift 进 `messages.value`，没有总条数上限、也没有回收旧页；同一数组同时被 `messageTimeline`（:650-720）全量重建与 `sortMessagesInTimelineOrder`（:961-963）全量排序使用，切换会话时（onUnmounted/会话切换逻辑）才整体替换。
+影响：长时间连续上翻后 messages 可达数千条，与 P08 的全量重建/排序叠加，内存与帧率持续恶化；桌面端常驻窗口不会因切页释放，属于缓慢累积的泄漏式增长。
+修复：给会话消息数组设定保留上限并配套「向上翻页」的窗口化策略。</title>
+  <rect x="744" y="1040" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="744" y="1040" width="5" height="74" rx="2" fill="#475467"/>
+  <text x="758" y="1059" class="finding-id">PRF-2EAFA · [u06]</text>
+  <text x="758" y="1079" class="finding-title">往上翻聊天记录时消息数组只增不减，翻得越多…</text>
+  <text x="758" y="1098" class="finding-meta">frontend/src/pages/ChatPage.vue:908 · 需方案</text>
+</g>
+<g class="node finding" data-id="SEC-6B08B" data-module="frontend" data-severity="low">
+  <title>SEC-6B08B · [low] [u10]
+简述：页面一旦被人塞进恶意脚本，这个脚本能用 eval 拼载荷，还能把读到的内容发到任意外部网站。
+详细问题：渲染进程 CSP 允许 unsafe-eval，且 connect-src 放开到任意 https 域名
+证据：frontend/index.html:7 &lt;meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;default-src &apos;self&apos;; script-src &apos;self&apos; &apos;unsafe-eval&apos;; … connect-src &apos;self&apos; https: wss:; object-src &apos;none&apos;; base-uri &apos;self&apos;; frame-ancestors &apos;none&apos;&quot;&gt;；frontend/launcher.html:7 同样的 script-src &apos;unsafe-eval&apos;。渲染进程内存中持有登录 token（frontend/src/utils/secureToken.js），并可通过 preload 暴露的 IPC 调用主进程能力。
+影响：任何 DOM XSS（社区/评论渲染、第三方依赖、未来新增富文本）都会放大为可 eval 任意代码、可把页面内容与渲染进程内 token 发往任意 https 主机的完整接管。
+修复：去掉 unsafe-eval，把 connect-src 收紧到实际使用的 API/更新域名。</title>
+  <rect x="744" y="1122" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="744" y="1122" width="5" height="74" rx="2" fill="#475467"/>
+  <text x="758" y="1141" class="finding-id">SEC-6B08B · [u10]</text>
+  <text x="758" y="1161" class="finding-title">页面一旦被人塞进恶意脚本，这个脚本能用 e…</text>
+  <text x="758" y="1180" class="finding-meta">frontend/index.html:7 · 可直接修</text>
+</g>
+<g class="node finding" data-id="REL-F9370" data-module="dependencies" data-severity="medium">
+  <title>REL-F9370 · [medium] [u07]
+简述：按项目文档跑 Python 测试会直接报错跑不起来，只有先手工装好虚拟环境才行，所以这道门禁在新机器和 CI 上是失效的。
+详细问题：`pytest -q backend-agent` 在干净环境 100% 失败：缺 pythonpath，只有 .venv 能跑
+证据：Gap：AGENTS.md §4 要求 `cd backend-agent &amp;&amp; pytest` 全绿。Current：在仓库根跑 `pytest -q backend-agent` → 48 个 collection error，全部是 `ModuleNotFoundError: No module named &apos;app&apos;`（`from app.main import app`）；`cd backend-agent &amp;&amp; pytest -q` 同样失败（全局解释器 Python 3.11）。pyproject.toml L30-32 只有 `asyncio_mode = &quot;auto&quot;` 与 `testpaths = [&quot;tests&quot;]`，没有 `pythonpath`；backend-agent 下也没有 conftest.py。只有 `backend-agent/.venv/Scripts/python.exe -m pytest -q` 能跑通（1157 passed），因为 `.venv/Lib/site-packages/_editable_impl_lianyu_agent.pth` 里写着 backend-agent 的绝对路径（即曾做过 `pip install -e .`）。Proposed：让门禁不依赖机器上残留的 .venv。Why：现在任何人都无法从干净检出复现测试结果，CI 要么红要么跳过，回归保护实际不存在。
+影响：换机器或 CI 按文档跑测试会 100% 失败，容易被当成“代码坏了”；反过来也可能被忽略成“环境问题”，导致 Python 侧 1157 个用例长期不在门禁里跑。
+修复：让 pytest 从仓库根就能导入 app 包，并固定解释器版本。</title>
+  <rect x="1092" y="220" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="1092" y="220" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="1106" y="239" class="finding-id">REL-F9370 · [u07]</text>
+  <text x="1106" y="259" class="finding-title">按项目文档跑 Python 测试会直接报错…</text>
+  <text x="1106" y="278" class="finding-meta">backend-agent/pyproject.toml:30 · 可直接修</text>
+</g>
+<g class="node finding" data-id="MNT-10A82" data-module="dependencies" data-severity="low">
+  <title>MNT-10A82 · [low] [u10]
+简述：管理后台的 package.json 里装了表格库、图表库、路由和一套图标，但后台一共只有十个源文件的壳子，这四样东西一次都没被 import 过；每次装依赖都要多下一批包，也给升级维护增加无谓的负担。
+详细问题：admin 声明了 4 个从未被引用的依赖
+证据：admin/package.json:10 单行 dependencies 含 `@element-plus/icons-vue`、`@tanstack/vue-table`、`echarts`、`vue-router`（以及实际在用的 axios/element-plus/pinia/vue）；在 admin/src 与 admin/electron 内 grep 这四个包名命中数为 0。admin 前端总共 10 个 src 文件（App.vue 16 行、pages/ManagementPage.vue 16 行、components/DataTable.vue 6 行、menu.js 9 行、api.js 10 行、stores/session.js 3 行等）。
+影响：多装 4 个未使用的包（含 echarts 这类体积较大的库），安装/审计/升级都要为它们付出成本；也让人误以为后台已有图表与路由能力。
+修复：从 admin/package.json 移除这四个依赖并更新 lockfile；若后台确实要做图表/路由，另开任务再接。</title>
+  <rect x="1092" y="302" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="1092" y="302" width="5" height="74" rx="2" fill="#475467"/>
+  <text x="1106" y="321" class="finding-id">MNT-10A82 · [u10]</text>
+  <text x="1106" y="341" class="finding-title">管理后台的 package.json 里装…</text>
+  <text x="1106" y="360" class="finding-meta">admin/package.json:10 · 需方案</text>
+</g>
+<g class="node finding" data-id="REL-BC684" data-module="dependencies" data-severity="low">
+  <title>REL-BC684 · [low] [u10]
+简述：管理后台只有一个 8 行的菜单测试，而且脚本允许“一个测试都没有也算通过”，所以后台登录态和接口出错不会被任何门禁拦住。
+详细问题：admin 控制台仅 1 个菜单测试，且 `--passWithNoTests` 让空套件也变绿
+证据：`&quot;test&quot;: &quot;vitest --passWithNoTests&quot;`；`admin/src/__tests__/menu.test.js` 只有 8 行、仅断言菜单 id；`admin/src/api.js`（token 存 localStorage、adminLogin/adminLogout/getOverview）、`admin/src/stores/session.js`（单行 pinia 持久化 token）没有任何测试。实跑 `npm --prefix admin test` 直接失败：`&apos;vitest&apos; 不是内部或外部命令`（admin 未安装依赖），说明该命令在本地/CI 都没有真正执行过。
+影响：`--passWithNoTests` 让“没有测试”也返回成功，管理后台的登录态过期、权限接口 401/403、列表加载失败等改动静默通过门禁；一旦线上后台登录异常，没有任何用例能先一步发现。
+修复：去掉“空套件也算过”的退路，并给后台登录/接口补最小用例。</title>
+  <rect x="1092" y="384" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="1092" y="384" width="5" height="74" rx="2" fill="#475467"/>
+  <text x="1106" y="403" class="finding-id">REL-BC684 · [u10]</text>
+  <text x="1106" y="423" class="finding-title">管理后台只有一个 8 行的菜单测试，而且脚…</text>
+  <text x="1106" y="442" class="finding-meta">admin/package.json:9 · 需方案</text>
+</g>
+<g class="node finding" data-id="MNT-BEAD5" data-module="scripts" data-severity="medium">
+  <title>MNT-BEAD5 · [medium] [未映射]
+简述：脚本目录自己写了一条规矩“根目录只放常用脚本，一次性的放 diag/ 或 ops/”，但根目录实际堆了 94 个条目、23 个云部署脚本，还有几对只差一个数字的重复脚本；想知道“部署到底该跑哪个”只能逐个点开看。
+详细问题：scripts/ 根目录膨胀且违反自身 README 约定，存在成对重复脚本
+证据：scripts/README.md:18 `新增一次性排障脚本请放入 diag/ 或 ops/，避免堆在根目录。`；实际 `ls scripts | wc -l` = 94 个条目、132 个跟踪文件，根目录 23 个 `_cloud_*.py` 共 1779 行；成对重复：scripts/diag/_diag_community_feed.py 与 _diag_community_feed2.py、scripts/diag/_fix_gateway_connect.py / _fix_gateway_network.py / _fix_gateway_order.py、scripts/gen_pet_fixed_voices.py 与 scripts/diag/_gen_pet_fixed_voices.py、scripts/_repair_flyway_v34.py 与 scripts/ops/_repair_flyway_v34_mark_applied.py。
+影响：部署与排障入口不可枚举：94 个根目录条目里混着只用过一次的迁移脚本，`_fix_gateway_*` 三个变体哪个是最终版无从判断；新人容易跑错脚本或重复实现已有的云部署逻辑。
+修复：按 README 约定把一次性脚本移入 diag/ops（或直接删除已完成的），合并重复变体，并在 CI 里限制根目录条目数。</title>
+  <rect x="1440" y="220" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="1440" y="220" width="5" height="74" rx="2" fill="#dc6803"/>
+  <text x="1454" y="239" class="finding-id">MNT-BEAD5 · [未映射]</text>
+  <text x="1454" y="259" class="finding-title">脚本目录自己写了一条规矩“根目录只放常用脚…</text>
+  <text x="1454" y="278" class="finding-meta">scripts/README.md:18 · 需方案</text>
+</g>
+<g class="node finding" data-id="SEC-AFEFF" data-module=".github" data-severity="low">
+  <title>SEC-AFEFF · [low] [u10]
+简述：构建流水线用的第三方组件没有锁定版本，依赖漏洞扫描报错也不会让构建失败，等于没人管。
+详细问题：CI 以可变 tag 引用第三方 Action，依赖漏洞扫描失败不阻断流水线
+证据：.github/workflows/ci.yml:14/28/45 actions/checkout@v4、:15 actions/setup-java@v4、:29 actions/setup-node@v4、:48 google/osv-scanner-action/osv-scanner-action@v2.0.3 全部按 tag/分支引用；:47 continue-on-error: true 使依赖漏洞扫描失败不影响 job 结论。
+影响：上游 action 仓库被打新 tag 或劫持时，CI 会执行攻击者代码并接触仓库令牌与发布凭据；osv-scanner 的告警被吞掉，已知漏洞依赖可以长期留在主干。
+修复：Actions 固定到 commit SHA，漏洞扫描改为阻断（或至少单独出 job 并告警到人）。</title>
+  <rect x="1788" y="220" width="300" height="74" rx="8" class="finding-box"/>
+  <rect x="1788" y="220" width="5" height="74" rx="2" fill="#475467"/>
+  <text x="1802" y="239" class="finding-id">SEC-AFEFF · [u10]</text>
+  <text x="1802" y="259" class="finding-title">构建流水线用的第三方组件没有锁定版本，依赖…</text>
+  <text x="1802" y="278" class="finding-meta">.github/workflows/ci.yml:48 · 可直接修</text>
+</g>
+</svg>
+</div>
+</body>
+</html>

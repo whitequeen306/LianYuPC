@@ -596,14 +596,15 @@ export default {
         RITUAL: '儀式'
       },
       flows: {
-        wake: '對話喚醒',
-        write: '抽取寫入',
-        index: '索引 · 召回',
-        emotion: '情緒加權',
-        relation: '關係權重',
-        diary: '日記沉澱',
-        inject: '注入 prompt',
-        topic: '當前話題'
+        inputHippo: '對話輸入 → 海馬體',
+        hippoLtm: '寫入長期記憶',
+        ltmCore: '檢索中樞調取',
+        coreOutput: '生成回覆',
+        ltmLimbic: '情緒加權',
+        ltmRelation: '關係權重',
+        limbicOutput: '情緒 → 表達',
+        relationLtm: '關係回流',
+        introspectLtm: '日記沉澱'
       }
     }
   },

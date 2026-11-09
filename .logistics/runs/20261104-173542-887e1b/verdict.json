@@ -1,0 +1,346 @@
+{
+  "schemaVersion": 2,
+  "runId": "20261104-173542-887e1b",
+  "generatedAt": "2026-11-04T09:51:20.009Z",
+  "coverage": {
+    "expected": [
+      "correctness"
+    ],
+    "received": [
+      "correctness"
+    ],
+    "missing": [],
+    "complete": true
+  },
+  "findings": [
+    {
+      "id": "COR-A93ED",
+      "expert": "correctness",
+      "module": "backend/lianyu-admin",
+      "section": "contracts",
+      "severity": "high",
+      "confidence": "high",
+      "title": "公开更新解析接口对「永远为空」的产物列调用 Map.of，任何已发布版本都会 NPE 500",
+      "file": "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/ReleaseResolverService.java",
+      "line": 21,
+      "evidence": "ReleaseResolverService.java:21：if (inRollout(((Number) row.get(\"id\")).longValue(), subject)) return Map.of(\"version\", row.get(\"version\"), \"url\", row.get(\"package_url\"), \"sha512\", row.get(\"sha512\"), \"size\", row.get(\"package_size\"), \"mandatory\", row.get(\"mandatory\"), \"notes\", row.get(\"notes\"));\njava.util.Map.of 对 null 值直接抛 NullPointerException。触发面比「没填 notes」更大：全仓 grep package_url 只有 V51__admin_management_schema.sql:84-88 的 DDL（package_url/sha512/package_size/notes 均可空）和这一行 SELECT，没有任何 INSERT/UPDATE 写这三个产物列；ReleaseUploadService.java:29-33 的 createUpload 只返回预签名 staging 地址，不把 objectKey 回写 app_release。\n路径：POST /api/admin/v1/releases 建版本（ReleaseController.java:20 在 body 无 notes 时显式传 null）→ transition ready→published（ReleaseService.java:41-49 的 allowed 只校验状态机，不校验产物）→ GET /api/public/admin-release?channel=stable → 第一条候选记录即抛 NPE → 500（NPE 无 message，日志只有栈）。",
+      "impact": "任何已发布/灰度版本都会让这个公开接口 100% 500，管理端的发布通道拿不到可解析的版本元数据；同时暴露「状态机允许无产物发布」这一根因——即使修掉 NPE，返回的 url/sha512/size 也是空值。仓库内目前没有调用方（grep admin-release 只命中 controller 自身），所以影响是整条发布通道不可用，而不是线上客户端立即崩溃。",
+      "kind": "plan",
+      "fix": {
+        "summary": "让解析接口容忍空值，把「产物未就绪不得发布」补成状态机约束，并补上产物回写路径（三者缺一，接口仍然返回空 url）。",
+        "steps": [
+          "把 Map.of 换成 LinkedHashMap（或对四个可空列显式归一），无产物时返回 200 与可判定的空语义，而不是抛 NPE。",
+          "ReleaseService.transition 在 ready→published 前校验 package_url/sha512/package_size 非空，缺失时抛带可读原因的 IllegalStateException。",
+          "补上「上传完成回写 app_release」的写入路径：createUpload 目前只发预签名，没有完成回调把 objectKey/sha512/size 落到版本行。",
+          "补集成测试覆盖「无 notes + 无产物」的 published 行，确保接口 200 且字段为空而不是 500。"
+        ],
+        "files": [
+          "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/ReleaseResolverService.java",
+          "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/ReleaseService.java",
+          "backend/lianyu-admin/src/main/java/com/lianyu/admin/release/ReleaseUploadService.java"
+        ],
+        "tests": [
+          "ReleaseResolverServiceTest：package_url/sha512/notes 为 NULL 的 published 行 resolve 返回 200",
+          "ReleaseServiceTest：ready→published 在缺少 package_url/sha512 时被拒绝"
+        ]
+      }
+    },
+    {
+      "id": "COR-9E0EF",
+      "expert": "correctness",
+      "module": "backend-agent",
+      "section": "data-integrity",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "memory_outbox 认领没有租约，进程中途退出后行永久停在 RUNNING、记忆永不投影",
+      "file": "backend-agent/app/memory/relay.py",
+      "line": 41,
+      "evidence": "_claim（relay.py:41-48）：\"UPDATE memory_outbox SET status = %s WHERE id = %s AND status = %s\"（只置 RUNNING，不写 claimed_at，也不看 updated_at）。\ndrain_once 取数（relay.py:118-121）：\"WHERE status = %s AND next_attempt_at <= NOW() ORDER BY id ASC LIMIT %s\"，status 只传 STATUS_PENDING。\n自动回收不存在：main.py:54-65 的 _relay_loop 每轮只调 drain_once；requeue_stuck 只挂在 main.py:967-971 的 POST /agent/memory/relay/requeue（手工）。V54__memory_outbox.sql:23 有 updated_at ON UPDATE CURRENT_TIMESTAMP，但没有任何代码按它判定超时。",
+      "impact": "UPSERT 过程要跑 embedding + Milvus insert，是滚动更新/超时/OOM 最常打断的一段。已认领行永久 RUNNING：drain 取不到、也不会转 DEAD，对应 memory_meta.milvus_vec_id 保持 NULL —— 用户表现为「这段对话记住了但永远想不起来」，且没有自愈路径，只能人工调 /agent/memory/relay/requeue。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把认领改成带租约的原子更新，并在 drain 时回收超租约的 RUNNING 行。",
+        "steps": [
+          "认领时同时写 claimed_at（或用 updated_at 作为租约起点），保持单条 UPDATE ... WHERE status=PENDING 的原子性。",
+          "drain 取数条件放宽为「PENDING 且到期」∪「RUNNING 且 updated_at 早于租约阈值」，回收时先 CAS 回 PENDING 再重新认领。",
+          "回收也要计入 attempts 并按上限转 DEAD，避免同一条永远在租约回收里打转。",
+          "补测试：模拟认领后进程中断（不调用 _mark），下一轮 drain 必须把该行重新拾起。"
+        ],
+        "files": [
+          "backend-agent/app/memory/relay.py",
+          "backend-agent/tests/test_memory_relay.py"
+        ],
+        "tests": [
+          "test_memory_relay：RUNNING 超租约被回收并完成投影",
+          "test_memory_relay：反复超租约的行最终转 DEAD"
+        ]
+      }
+    },
+    {
+      "id": "COR-98AFD",
+      "expert": "correctness",
+      "module": "backend-agent",
+      "section": "logic",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "requeue_stuck 不重置 attempts，被重排的死信在下一次失败时立刻回到 DEAD",
+      "file": "backend-agent/app/memory/relay.py",
+      "line": 207,
+      "evidence": "requeue_stuck（relay.py:207-221）只执行 \"UPDATE memory_outbox SET status = %s WHERE id = %s\" 与 \"UPDATE memory_outbox SET next_attempt_at = NOW() WHERE id = %s\"，全程不碰 attempts / last_error；选行条件为 \"WHERE status IN (%s, %s) AND updated_at <= DATE_SUB(NOW(), INTERVAL 10 MINUTE)\"（DEAD + 卡住的 RUNNING）。\n_retry_or_dead（relay.py:163-172）：attempts = int(row.get(\"attempts\") or 0) + 1; if attempts >= cap: await _mark(outbox_id, STATUS_DEAD, ...)。\nDEAD 行的 attempts 必然 >= relay_max_attempts，重排后第一次处理失败就以 attempts+1 命中 cap 再次置 DEAD。",
+      "impact": "「把死信重新排队」对 DEAD 行是无效动作：运维修好 Milvus 后调 /agent/memory/relay/requeue，行被重新拾起、失败一次立刻回 DEAD 并保留原 last_error，日志刷一轮 error，实际一条都修不回来。这条路径还抵消了上面 9E0EF 的人工兜底。",
+      "kind": "direct",
+      "fix": {
+        "summary": "重排 DEAD 行时把 attempts 归零、清空 last_error，让它重新拥有完整重试预算；RUNNING 行按「卡住回收」语义单独处理（可保留计数）。",
+        "steps": [
+          "requeue_stuck 里对 status=DEAD 的行执行 SET status=PENDING, attempts=0, last_error=NULL, next_attempt_at=NOW()。",
+          "status=RUNNING 的行仍按超时回收，是否重置 attempts 需明确口径并在注释里写清。",
+          "补一条测试：DEAD(attempts>=cap) 行被重排后失败一次应进入 PENDING（attempts=1）而不是立刻 DEAD。"
+        ],
+        "files": [
+          "backend-agent/app/memory/relay.py",
+          "backend-agent/tests/test_memory_relay.py"
+        ],
+        "tests": [
+          "test_memory_relay：requeue_stuck 后 DEAD 行重新获得完整重试预算"
+        ]
+      }
+    },
+    {
+      "id": "COR-5B124",
+      "expert": "correctness",
+      "module": "backend/lianyu-service",
+      "section": "data-integrity",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "消息 seq 只靠 Redis 计数器、无 DB 回填，计数丢失后撞 uk_conv_seq 使该会话永久无法发消息",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+      "line": 483,
+      "evidence": "reserveSeqBlock（ConversationService.java:483-487）：Long lastSeq = redisTemplate.opsForValue().increment(SEQ_KEY_PREFIX + conversationId, safeCount); return lastSeq != null ? lastSeq : safeCount;\n全仓 msg_seq:* 只有 increment 与 delete（ConversationService.java:226 删除会话、:243 清空消息、CharacterService.java:298 删角色），没有任何从 message 表 max(seq) 回填的逻辑；MessageMapper 里的 MAX(seq) 只用于统计查询。\nV1__init_schema.sql:54：UNIQUE KEY uk_conv_seq (conversation_id, seq)。\n同款重复实现：GroupChatService.java:104 与 VoiceCallService.java:62 各自持有 SEQ_KEY_PREFIX，\"msg_seq:\" 前缀共 4 处常量。",
+      "impact": "seq 的权威来源是 Redis、持久化来源是 MySQL，两者没有对齐机制。redis 卷重建 / 换实例 / FLUSHDB / 运维清理 msg_seq:* 之后，新消息从 1 开始与历史消息撞唯一键 → messageMapper.insert 抛 DuplicateKeyException → 该会话此后所有发送 500，只有「清空聊天记录」（连带删消息与键）才能恢复；群聊与语音通话各自复制了一份同样的风险。",
+      "kind": "plan",
+      "fix": {
+        "summary": "让 seq 以数据库为准：取号前用一次条件初始化保证计数器不小于 max(seq)，并对撞键做一次回填重试；三处重复实现收敛为一个分配器。",
+        "steps": [
+          "把「increment」换成「键不存在时先 SET max(seq) 再 INCR」的原子操作（Lua 或 SETNX+INCR），避免回填与取号之间的竞态。",
+          "捕获 DuplicateKeyException：回填计数器到 max(seq) 后重试一次，仍失败再向上抛。",
+          "把 ConversationService / GroupChatService / VoiceCallService 的三份 seq 逻辑收敛到单一 SeqAllocator。",
+          "补测试：删除 msg_seq:* 键后继续插入历史会话消息，必须成功且单调递增。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/ConversationService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/GroupChatService.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/VoiceCallService.java"
+        ],
+        "tests": [
+          "SeqAllocator 单测：计数器缺失时以 max(seq) 续号",
+          "集成测试：撞 uk_conv_seq 后一次重试成功"
+        ]
+      }
+    },
+    {
+      "id": "COR-CB2EE",
+      "expert": "correctness",
+      "module": "backend/lianyu-service",
+      "section": "data-integrity",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "关系状态是无乐观锁的读改写，并发回合丢更新、relationship_event 与分数快照分叉",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+      "line": 132,
+      "evidence": "recordUserTurn（RelationshipStateService.java:107-134）：RelationshipState state = loadOrCreateState(...) → applyEvents(state, events, now)（循环内逐条 persistEvent(event) 写 relationship_event）→ relationshipStateMapper.updateById(state)；方法上没有 @Transactional。\nrecordAssistantTurn（:153-165）与 decayAll（:174-188）同样以 updateById(state) 收尾。\n实体 RelationshipState（backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/RelationshipState.java:12-34）没有 version 字段，项目也未启用 OptimisticLockerInnerInterceptor。\n（编辑更正：MyBatis-Plus updateById 默认只更新非空字段，不是严格意义上的「整行覆盖」；但快照里所有非空分数与时间戳都会以旧值写回，丢更新结论不变。）",
+      "impact": "同一 (user_id, character_id) 上的并发写入（用户连发两条、recordUserTurn 与 recordAssistantTurn 交错、衰减任务与实时回合撞同一行）会后写者用旧快照抹掉前者的分数与时间戳；而 relationship_event 已按各自批次落库 → 「事件日志里两次受伤，状态里 last_injury_at 只剩一个」，RelationshipPhaseResolver 依据的分数与事件历史开始漂移，且没有事务保证事件与状态半写时的一致性。",
+      "kind": "plan",
+      "fix": {
+        "summary": "给 relationship_state 加乐观锁并对读改写加重试，或改成增量 UPDATE；同时把「写事件 + 更新状态」收进同一事务。",
+        "steps": [
+          "增加 version 列与 @Version，启用 OptimisticLockerInnerInterceptor；updateById 冲突时重读重算（有界重试 2-3 次）。",
+          "或改用增量 SQL（SET trust_score = trust_score + ?），避免用内存快照覆盖并发写入。",
+          "给 recordUserTurn/recordAssistantTurn 加 @Transactional，保证 relationship_event 与状态快照同生共死。",
+          "补并发测试：两个线程同时 recordUserTurn，最终分数等于两次增量之和。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+          "backend/lianyu-dao/src/main/java/com/lianyu/dao/entity/RelationshipState.java"
+        ],
+        "tests": [
+          "RelationshipStateServiceConcurrencyTest：并发回合不丢分数增量"
+        ]
+      }
+    },
+    {
+      "id": "COR-C74EC",
+      "expert": "correctness",
+      "module": "backend/lianyu-service",
+      "section": "state",
+      "severity": "low",
+      "confidence": "high",
+      "title": "衰减轮转队列会被「未满一天」的活跃行长期占住，其余行当天不结算",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java",
+      "line": 176,
+      "evidence": "decayAll（RelationshipStateService.java:174-188）：selectList(... .isNotNull(RelationshipState::getLastInteractionAt).orderByAsc(RelationshipState::getLastDecayAt).last(\"LIMIT \" + DECAY_BATCH_LIMIT))，DECAY_BATCH_LIMIT=500（:43），调度为 RelationshipDecayScheduler。\napplyDecay（:190-227）：long days = ChronoUnit.DAYS.between(anchor, now); if (days < 1) { return false; } —— 该分支不写 lastDecayAt，行留在队首。\nV56__relationship_presence_and_milestones.sql:47-50 只新增 last_decay_at 列，不回填；MySQL 升序 NULL 排最前。",
+      "impact": "「结算过的行排到队尾」这个轮转前提只在 applyDecay 返回 true 时成立。最近 24 小时内活跃过的行每轮都被扫到、返回 false、lastDecayAt 仍为 NULL，继续占据 LIMIT 批前排；这类行达到 500 条时整批空转，其余沉默用户当天一分不掉。影响是衰减被推迟（不是永久饿死），所以定 low，但它让注释里「按 last_decay_at 轮转修好了 936 行只有 502 行轮到」的修复只对非活跃行生效。",
+      "kind": "plan",
+      "fix": {
+        "summary": "把「扫描推进」与「是否真正衰减」解耦：扫描过的行也要写下 lastDecayAt（或单独的 last_decay_check_at），保证队列前进。",
+        "steps": [
+          "在 days < 1 的分支里也写 lastDecayAt（或 last_decay_check_at），语义改成「上次检查时间」。",
+          "或取数时排除最近 24 小时已检查过的行（WHERE last_decay_at IS NULL OR last_decay_at <= NOW() - INTERVAL 1 DAY）。",
+          "补测试：一批全是 1 小时内活跃行时，第二轮取数应推进到后面的行。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/relationship/RelationshipStateService.java"
+        ],
+        "tests": [
+          "RelationshipDecayTest：活跃行不阻塞沉默行的结算"
+        ]
+      }
+    },
+    {
+      "id": "COR-CF259",
+      "expert": "correctness",
+      "module": "frontend/shared",
+      "section": "contracts",
+      "severity": "low",
+      "confidence": "medium",
+      "title": "SSE 折叠器与整流解析器对「同帧 content+replace」的优先级相反，隐式契约无测试锁定",
+      "file": "frontend/shared/sseParser.js",
+      "line": 93,
+      "evidence": "createSseAccumulator.feed（frontend/shared/sseParser.js:93-99）：if (applied.content) { fullContent += applied.content } 之后 if (typeof applied.replace === 'string') { fullContent = applied.replace } —— content 被覆盖丢弃。\n同文件 parseSseStream（:66-71）顺序相反：先 out.replace = applied.replace，再 out.content += applied.content。\n文件头（:17）声明「pieces/replace/content/error 四字段同帧出现时全部生效（与 Java 写入顺序一致）」。\n第三种语义在 Java：AgentSseParser.parseJson（backend/lianyu-web/.../AgentSseParser.java:79-93）每帧只取一个字段，优先级 content > replace > error。\n当前生产者不构成触发：stream_chat.py:42-50 的 sse_content / sse_replace / sse_error 各发单字段；ConversationService.java:363-372 的 beforeStreamComplete 同帧只发 replace + pieces（不含 content）。",
+      "impact": "暂无用户可见错误输出，所以定 low/medium 置信度。风险在于这是无测试锁定的隐式契约：一旦有人让某一帧同时带 replace 与 content（例如语言门重写后紧接一个 token），渲染端会丢掉该帧增量、桥接端则把增量拼在整段替换之前，两条消费路径给出不同文本；Java 侧又会因单字段优先级再产生第三种结果。",
+      "kind": "plan",
+      "fix": {
+        "summary": "先把「replace 是整段重置、同帧 content 是重置后的追加」钉成语义，再让两个折叠实现共用同一段逻辑并用单测锁定。",
+        "steps": [
+          "抽出单一 applyEvent(state, applied) 函数，createSseAccumulator 与 parseSseStream 都调用它。",
+          "在文件头写清优先级（建议：replace 先重置，再追加同帧 content），并修正与 Java 单字段解析的差异说明。",
+          "补单测：同一帧 {\"replace\":\"A\",\"content\":\"B\"} 在两个消费端都得到 \"AB\"。"
+        ],
+        "files": [
+          "frontend/shared/sseParser.js",
+          "src/utils/assistantStreamDrain.js"
+        ],
+        "tests": [
+          "sseParser 单测：同帧 replace+content 的两个消费端结果一致"
+        ]
+      }
+    },
+    {
+      "id": "COR-D7877",
+      "expert": "correctness",
+      "module": "backend-agent",
+      "section": "architecture",
+      "severity": "low",
+      "confidence": "high",
+      "title": "Python 写库白名单被 writer 的裸 UPDATE 绕过，write.py 声明的「唯一写入口」不成立",
+      "file": "backend-agent/app/memory/writer.py",
+      "line": 193,
+      "evidence": "writer.py:193-204（_update_meta）：await cur.execute(\"UPDATE memory_meta SET memory_type = %s, importance = %s, source_msg_ids = %s, source_hash = %s WHERE id = %s\", ...)\nwriter.py:211-220（_replace_and_enqueue）：await cur.execute(\"UPDATE memory_meta SET summary = %s, memory_type = %s, importance = %s, source_msg_ids = %s, source_hash = %s, milvus_vec_id = NULL WHERE id = %s\", ...)\napp/write.py:44-52 的 _ALLOWED_UPDATES 只放行 \"update memory_meta set milvus_vec_id = %s where id = %s\" 与三类 \"update memory_outbox ...\" 前缀；_assert_allowed 仅在 execute_write / insert_returning_id 内调用（write.py:84-103），而 transaction()（write.py:70-82）直接把裸 aiomysql 游标 yield 给调用方。",
+      "impact": "不会立即写错数据（这两条 UPDATE 本身是业务需要的），但 write.py 文档承诺的「唯一写库入口 + 表级白名单 + UPDATE/DELETE 一律拒绝」实际不成立：任何按白名单收窄 DB 账号权限、或按 _ALLOWED_UPDATES 做静态审查的动作都会与运行行为冲突；后续在 writer 里新增一条越界 UPDATE 也不会有任何拦截。",
+      "kind": "plan",
+      "fix": {
+        "summary": "二选一钉死口径：要么把这些 UPDATE 登记进白名单并统一走 execute_write，要么明确「agent 可写 memory_meta/memory_outbox 的指定列」并删掉误导性的白名单描述。",
+        "steps": [
+          "若保留白名单：把 writer 的两条 UPDATE 前缀加入 _ALLOWED_UPDATES，writer 改用 execute_write。",
+          "若不保留：把 transaction() 改成返回受控游标（包装 execute 做校验），或直接删除白名单并改写文档。",
+          "补一条测试：白名单外的 UPDATE 必须抛 WriteNotAllowed（当前 writer 路径会通过）。"
+        ],
+        "files": [
+          "backend-agent/app/write.py",
+          "backend-agent/app/memory/writer.py"
+        ],
+        "tests": [
+          "test_write_guard：writer 的 UPDATE 走白名单校验"
+        ]
+      }
+    },
+    {
+      "id": "COR-5CA37",
+      "expert": "correctness",
+      "module": "backend/lianyu-common",
+      "section": "edge-cases",
+      "severity": "medium",
+      "confidence": "high",
+      "title": "图片像素上限在解码之后才校验，8MB 内的大尺寸 PNG 在解码阶段就 OOM",
+      "file": "backend/lianyu-common/src/main/java/com/lianyu/common/util/ImageUploadValidator.java",
+      "line": 44,
+      "evidence": "ImageUploadValidator.java:44-53：BufferedImage image = decodeImage(raw); if (image == null) {...} int width = image.getWidth(); int height = image.getHeight(); if (width <= 0 || height <= 0 || width > MAX_DIMENSION || height > MAX_DIMENSION) {...}\ndecodeImage（:86-91）内部就是 ImageIO.read(new ByteArrayInputStream(raw))；MAX_BYTES=8MB（:24）只限制字节数，MAX_DIMENSION=8192（:25）在解码之后才生效。\n调用方：FileStorageService.java:60 与 :92（头像/图片上传走同一条重编码路径）。",
+      "impact": "一个 8MB 以内的 PNG 可以声明 20000×20000（4 亿像素，ARGB 约 1.6GB），ImageIO.read 先按声明尺寸分配像素缓冲 → 在第 50 行的尺寸校验之前抛 OutOfMemoryError（不是 BusinessException，GlobalExceptionHandler 接不住），请求 500，并瞬时吃掉共享堆，影响同进程其他上传/请求。MAX_DIMENSION 因此不构成防护。",
+      "kind": "plan",
+      "fix": {
+        "summary": "解码前先从文件头读尺寸并做像素上限校验，解码阶段再用受限策略，避免按声明尺寸一次性分配。",
+        "steps": [
+          "新增 readImageHeader(raw) 解析 PNG IHDR / JPEG SOFn / GIF LSD / WebP VP8X，得到 width/height 后先判 MAX_DIMENSION 与总像素上限。",
+          "解码改用 ImageReader + 目标尺寸/子采样，或对超限图直接拒绝，不要走 ImageIO.read 全量解码。",
+          "捕获 OutOfMemoryError 之外不可行，因此前置校验是唯一可靠手段；补测试用构造的巨型头 PNG 断言被拒。"
+        ],
+        "files": [
+          "backend/lianyu-common/src/main/java/com/lianyu/common/util/ImageUploadValidator.java",
+          "backend/lianyu-service/src/main/java/com/lianyu/service/storage/FileStorageService.java"
+        ],
+        "tests": [
+          "ImageUploadValidatorTest：声明 20000×20000 的 PNG 在解码前被拒绝",
+          "ImageUploadValidatorTest：正常 1024×1024 PNG 仍通过"
+        ]
+      }
+    },
+    {
+      "id": "COR-0802C",
+      "expert": "correctness",
+      "module": "backend/lianyu-service",
+      "section": "concurrency",
+      "severity": "low",
+      "confidence": "medium",
+      "title": "会话摘要的 Redis 读改写没有并发保护，lastSummarizedSeq 可能回退并重复合并",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/SessionSummaryService.java",
+      "line": 88,
+      "evidence": "@Async public void maybeMergeAsync(...)（SessionSummaryService.java:50-53）→ maybeMerge（:55-97）：state = loadState(conversationId) → pending = loadPendingMessages(conversationId, state.getLastSummarizedSeq(), windowOldestSeq) → merger.merge(...)（模型调用，秒级）→ saveState(conversationId, next)，全程无锁、无 CAS、无版本比较；状态对象只含 text/lastSeq/updatedAt。\nloadState（:105-118）在键缺失或解析失败时返回空状态（不是 null），因此 :74 的 if (state == null) 与 formatForPrompt:41 的同类判断都是死分支（另转 maintainability）。",
+      "impact": "同一会话两个回合并发时，后写者可能拿更旧的 pending 集合覆盖更靠后的 lastSeq：lastSummarizedSeq 回退 → 同一批消息被再次合并进摘要（模型调用浪费、摘要文本重复膨胀），用户可见表现为摘要里出现重复段落。需要两个回合在秒级窗口内并发，所以定 low/medium 置信度。",
+      "kind": "plan",
+      "fix": {
+        "summary": "落库前做比较写（仅当新 lastSeq 不小于现存值），并用会话级锁把同一 conversationId 的合并串行化。",
+        "steps": [
+          "saveState 前重读一次 lastSeq，若新 lastSeq <= 现存值则放弃写入。",
+          "用 Redis SETNX（session:summary:lock:<id>，短 TTL）串行化同一会话的合并，拿不到锁直接跳过本轮。",
+          "补并发测试：两个线程同时 maybeMerge，lastSummarizedSeq 只前进不回退。"
+        ],
+        "files": [
+          "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/SessionSummaryService.java"
+        ],
+        "tests": [
+          "SessionSummaryServiceTest：并发合并后 lastSummarizedSeq 单调不减"
+        ]
+      }
+    }
+  ],
+  "deferred": [
+    {
+      "from": "correctness",
+      "expert": "security",
+      "file": "backend/lianyu-common/src/main/java/com/lianyu/common/util/ImageUploadValidator.java",
+      "lines": "28-60",
+      "summary": "上传图片的像素上限只在解码之后校验（已作为 COR-5CA37 报边界条件），但「解码前置限额取多大、是否需要账号级配额/解压炸弹防护」属安全策略，需安全专家单独定级。"
+    },
+    {
+      "from": "correctness",
+      "expert": "reliability",
+      "file": "backend/lianyu-web/src/main/java/com/lianyu/web/agent/AgentStreamBridge.java",
+      "lines": "97-141",
+      "summary": "流的三种收尾（finish 正常、fail 上游异常、abort 客户端断开）最终都汇入 callback.onComplete(content, error)：finishSseError 传 BusinessException（SseChatStreamHelper.java:81-84），abort 传 null 错误（AgentStreamBridge.java:127-141），上游只能靠 error 是否为 null 区分「成功」「异常」「客户端断开」三态；请可靠性专家确认这三种失败是否可观测、是否会被误判为成功。"
+    },
+    {
+      "from": "correctness",
+      "expert": "maintainability",
+      "file": "backend/lianyu-dao/src/main/resources/db/migration/V55__agent_capability_audit.sql",
+      "lines": "15",
+      "summary": "agent_capability_audit 表在能力层删除（2026-10-25）后，全仓 Java/Python/SQL 再无任何读写引用（只有这条 CREATE TABLE），疑似死表，请维护性专家确认是否可下线。"
+    },
+    {
+      "from": "correctness",
+      "expert": "maintainability",
+      "file": "backend/lianyu-service/src/main/java/com/lianyu/service/conversation/SessionSummaryService.java",
+      "lines": "74,41",
+      "summary": "loadState 在键缺失/解析失败时都返回空状态对象、从不返回 null，因此 maybeMerge:74 与 formatForPrompt:41 的 if (state == null) 都是死代码，属死分支清理。"
+    }
+  ],
+  "dropped": []
+}
