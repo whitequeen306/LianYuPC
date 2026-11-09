@@ -324,6 +324,11 @@ export function buildBrainGraph({
     list = [...list, ...mockMemories]
   }
 
+  // 记忆少的时候四个星团会缩成四个小点，整张图空得像没数据。
+  // 按条数补一档尺寸：十来条时节点和簇半径各放大约 1.4×，60 条以上不再放大。
+  // 只放大「画出来的大小」，不改 importance / strength 这些真数据。
+  const densityScale = list.length >= 60 ? 1 : Math.min(1.7, 1 + (60 - list.length) / 45)
+
   const nameById = new Map()
   for (const c of Array.isArray(characters) ? characters : []) {
     if (c && c.id != null) nameById.set(String(c.id), c.name || c.characterName || '')
@@ -388,7 +393,12 @@ export function buildBrainGraph({
       (a, b) => b.importance - a.importance || b.at - a.at || String(a.id).localeCompare(String(b.id))
     )
     const count = sortedMembers.length
-    const spread = central ? Math.min(44, 14 + Math.sqrt(count) * 4.2) : Math.min(128, 28 + Math.sqrt(count) * 6.4)
+    // 展开半径给一个下限：只有三四条记忆时也铺开成一小片星云，
+    // 否则节点全挤在圆心上，看上去像一颗大灯泡而不是星团。
+    const baseSpread = central
+      ? Math.max(34, Math.min(44, 14 + Math.sqrt(count) * 4.2))
+      : Math.max(62, Math.min(128, 28 + Math.sqrt(count) * 6.4))
+    const spread = baseSpread * densityScale
     const cluster = {
       id,
       sector,
@@ -445,8 +455,11 @@ export function buildBrainGraph({
               pos[2] + (rng() - 0.5) * (central ? 40 : 64)
             ],
         size: isBottomFan
-          ? 0.8 + memory.importance * 1.2
-          : (1.25 + memory.importance * 2.6) * (0.62 + 0.38 * memory.strength) * (memory.pinned ? 1.35 : 1)
+          ? (0.8 + memory.importance * 1.2) * densityScale
+          : (1.25 + memory.importance * 2.6) *
+            densityScale *
+            (0.62 + 0.38 * memory.strength) *
+            (memory.pinned ? 1.35 : 1)
       }
       cluster.memberIds.push(node.id)
       memoryNodes.push(node)

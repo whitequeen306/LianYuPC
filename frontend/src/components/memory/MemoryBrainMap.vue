@@ -833,11 +833,51 @@ function processIntro(now) {
   if (introCursor >= INTRO_STEPS.length && elapsed > 4600) introStart = -1
 }
 
+/* 星空底噪：一张与数据无关的静态星场。
+   例图那种「星域感」主要来自背景里成千上万个微小光点，而不是记忆本身；
+   所以这部分必须固定存在，记忆只有十几条时画面才不会空成四团光。
+   用屏幕坐标 + 一点点视差跟随相机，比放进 3D 里便宜得多。 */
+const STARFIELD = (() => {
+  const rng = mulberry32(hashString('memory-starfield'))
+  const stars = []
+  const count = 640
+  for (let i = 0; i < count; i += 1) {
+    stars.push({
+      x: rng(),
+      y: rng(),
+      r: 0.4 + rng() * 1.1,
+      a: 0.1 + rng() * 0.28,
+      warm: rng() < 0.22,
+      depth: 0.3 + rng() * 0.7
+    })
+  }
+  return stars
+})()
+
+function drawStarfield(width, height) {
+  if (!ctx) return
+  const yawShift = Math.sin(camera.yaw) * 26
+  const pitchShift = Math.sin(camera.pitch) * 16
+  ctx.globalCompositeOperation = 'lighter'
+  for (const star of STARFIELD) {
+    const x = (star.x * width + yawShift * star.depth + width) % width
+    const y = (star.y * height + pitchShift * star.depth + height) % height
+    ctx.fillStyle = star.warm
+      ? `rgba(255, 224, 178, ${star.a})`
+      : `rgba(206, 224, 255, ${star.a})`
+    ctx.beginPath()
+    ctx.arc(x, y, star.r, 0, TAU)
+    ctx.fill()
+  }
+  ctx.globalCompositeOperation = 'source-over'
+}
+
 function render(now) {
   const { width, height } = viewport
   if (!width || !height) return
 
   drawBackground()
+  drawStarfield(width, height)
 
   pickables.length = 0
   const labels = []
@@ -1245,6 +1285,7 @@ function render(now) {
 
   /* 簇标签贴近各自的 hub；小簇默认不占字，悬停/选中时再显示，避免标签网。 */
   labelBoxes.length = 0
+  reserveOverlayBoxes()
   const orderedClusterLabels = [...clusterLabels].sort((a, b) => {
     const aFocused = a.cluster.id === focusedClusterId ? 1 : 0
     const bFocused = b.cluster.id === focusedClusterId ? 1 : 0
@@ -1577,6 +1618,30 @@ function boxOverlaps(box, pad = 3) {
 
 function reserveBox(box) {
   if (box) labelBoxes.push(box)
+}
+
+/**
+ * 图例、工具条、右侧面板、底部回放条都是 DOM 覆盖层，画布并不知道它们占了哪儿。
+ * 不预留的话，脑区标签会直接压在「检索中枢」那几行图例上，字叠在一起谁也读不清。
+ * 这里把它们的实际矩形登记成占位盒，标签就会自己让开。
+ */
+function reserveOverlayBoxes() {
+  const root = rootRef.value
+  const canvas = canvasRef.value
+  if (!root || !canvas) return
+  const origin = canvas.getBoundingClientRect()
+  for (const selector of ['.brain-legend', '.brain-tools', '.brain-panel', '.brain-scrub']) {
+    const el = root.querySelector(selector)
+    if (!el) continue
+    const rect = el.getBoundingClientRect()
+    if (!rect.width || !rect.height) continue
+    labelBoxes.push({
+      x1: rect.left - origin.left,
+      y1: rect.top - origin.top,
+      x2: rect.right - origin.left,
+      y2: rect.bottom - origin.top
+    })
+  }
 }
 
 /**
