@@ -11,6 +11,7 @@ describe('voiceCallPets', () => {
     expect(VOICE_CALL_PET_IDS).toContain('ganyu')
     expect(VOICE_CALL_PET_IDS).toContain('ayaka')
     expect(VOICE_CALL_PET_IDS).toContain('erii_uesugi')
+    expect(VOICE_CALL_PET_IDS).toContain('kafka')
     expect(VOICE_CALL_PET_IDS).not.toContain('kurumi')
   })
 
@@ -21,6 +22,7 @@ describe('voiceCallPets', () => {
     expect(isVoiceCallPet('klee')).toBe(true)
     expect(isVoiceCallPet('Ganyu')).toBe(true)
     expect(isVoiceCallPet('erii_uesugi')).toBe(true)
+    expect(isVoiceCallPet('Kafka')).toBe(true)
     expect(isVoiceCallPet('kurumi')).toBe(false)
     expect(isVoiceCallPet('')).toBe(false)
     expect(isVoiceCallPet(null)).toBe(false)

@@ -13,6 +13,8 @@ export const VOICE_CALL_PET_IDS = Object.freeze([
   'hu_tao',
   'furina',
   'noelle',
+  // 2026-11-09 广场新增卡芙卡（音色已注册）；漏加会让聊天页不显示通话入口
+  'kafka',
 ])
 
 export function isVoiceCallPet(petId) {

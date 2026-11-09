@@ -65,6 +65,10 @@ public class VoiceCallService {
     /**
      * Voice-call allowlist: must have realtimeVoices mapping (HTTP fallback uses voices).
      * Keep in sync with frontend {@code voiceCallPets.js}.
+     * <p>
+     * 2026-11-09 补 kafka：实时模型退役后通话本来就走 HTTP 逐句合成，
+     * 只要音色注册过（{@code hasVoice}）就够用；漏登记会让广场新增的角色
+     * 既看不到入口、直接调接口还会 403「当前角色暂不支持语音通话」。
      */
     private static final Set<String> VOICE_CALL_PET_IDS = Set.of(
             "klee",
@@ -79,7 +83,8 @@ public class VoiceCallService {
             "nahida",
             "hu_tao",
             "furina",
-            "noelle"
+            "noelle",
+            "kafka"
     );
 
     private final ConversationMapper conversationMapper;
