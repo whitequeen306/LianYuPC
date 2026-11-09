@@ -27,6 +27,7 @@ class PetVoiceRegistryTest {
     private static final String[] PETS = {
             "klee", "ganyu", "ayaka", "raiden", "elysia", "erii_uesugi",
             "yae_miko", "kokomi", "shenhe", "nahida", "hu_tao", "furina", "noelle",
+            "kafka",
     };
 
     private static PetVoiceRegistry load() {
@@ -36,7 +37,7 @@ class PetVoiceRegistryTest {
     }
 
     @Test
-    void loadsAllThirteenPetVoices() {
+    void loadsAllRegisteredPetVoices() {
         PetVoiceRegistry registry = load();
         for (String pet : PETS) {
             assertTrue(registry.hasVoice(pet), "缺少音色: " + pet);

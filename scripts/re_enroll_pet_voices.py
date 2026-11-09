@@ -112,6 +112,12 @@ PLAN: list[tuple[str, str, list[Path]]] = [
      # 2026-10-23「原神语音收录-诺艾尔」（BV1et4y1M7rY，11.9 分钟）里 552.0s 起 18 秒：
      # 平坦度 0.030、有声 67%、F0 298Hz（全片中位数 298Hz）
      [VC / "noelle-bili18s-mono.wav", VC / "noelle-vc-source-mono.wav"]),
+    ("kafka",       "lykafka",
+     # 2026-11-09「［崩坏星穹铁道］卡芙卡 角色语音收录（从米游社wiki录制）」
+     # （BV18s421A7d6，4.0 分钟）转单声道后，pick_from_video.py 在 108.0s 起选出 18 秒：
+     # 平坦度 0.043、有声 63%、F0 218Hz（全片中位数 220Hz，差 1%）。
+     # 备选：115.0s（同一批台词里得分最高，F0 212Hz）、29.0s（F0 238Hz，语气更亮）。
+     [VC / "kafka-bili18s-mono.wav"]),
 ]
 
 

@@ -155,6 +155,7 @@ public final class CharacterSquareCatalog {
         ));
         CharacterSquareCatalogGenshin.register(map);
         CharacterSquareCatalogHonkai.register(map);
+        CharacterSquareCatalogStarRail.register(map);
         CharacterSquareCatalogDal.register(map);
         CharacterSquareCatalogBlueArchive.register(map);
         CharacterSquareCatalogReZero.register(map);
