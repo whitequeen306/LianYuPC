@@ -56,7 +56,8 @@ export const MEMORY_REGIONS = [
     descKey: 'memory.brain.regions.input.desc',
     unitKey: 'memory.brain.units.messages',
     color: BRAIN_PALETTE.input,
-    c: [-170, -120, 60],
+    // 解剖锚点都推到外围：它们只是「这条链路在哪」，不能和类型簇抢画面中心
+    c: [-300, -190, 40],
     r: [52, 40, 36]
   },
   {
@@ -65,7 +66,7 @@ export const MEMORY_REGIONS = [
     descKey: 'memory.brain.regions.hippo.desc',
     unitKey: 'memory.brain.units.written',
     color: BRAIN_PALETTE.hippo,
-    c: [170, -120, 60],
+    c: [300, -190, 40],
     r: [50, 38, 34]
   },
   {
@@ -94,7 +95,7 @@ export const MEMORY_REGIONS = [
     descKey: 'memory.brain.regions.relation.desc',
     unitKey: 'memory.brain.units.relationMemories',
     color: BRAIN_PALETTE.relation,
-    c: [-150, 160, -30],
+    c: [-330, 150, -40],
     r: [46, 36, 32]
   },
   {
@@ -103,7 +104,7 @@ export const MEMORY_REGIONS = [
     descKey: 'memory.brain.regions.limbic.desc',
     unitKey: 'memory.brain.units.characters',
     color: BRAIN_PALETTE.limbic,
-    c: [150, 160, -30],
+    c: [330, 150, -40],
     r: [46, 36, 32]
   },
   {
@@ -112,7 +113,7 @@ export const MEMORY_REGIONS = [
     descKey: 'memory.brain.regions.introspect.desc',
     unitKey: 'memory.brain.units.diaries',
     color: BRAIN_PALETTE.introspect,
-    c: [-60, 260, -90],
+    c: [-190, 330, -90],
     r: [44, 34, 30]
   },
   {
@@ -121,7 +122,7 @@ export const MEMORY_REGIONS = [
     descKey: 'memory.brain.regions.output.desc',
     unitKey: 'memory.brain.units.characters',
     color: BRAIN_PALETTE.output,
-    c: [60, 320, 40],
+    c: [190, 330, 20],
     r: [48, 36, 32]
   }
 ]
@@ -159,7 +160,18 @@ const LABEL_SIDE = Object.fromEntries(
   MEMORY_REGIONS.map((r) => [r.id, LABEL_PLACEMENT[r.id] || 'center'])
 )
 
-export const MAX_MEMORY_NODES = 240
+export const MAX_MEMORY_NODES = 400
+
+/**
+ * 演示数据的开关。
+ *
+ * 星图的密度感靠光点数量撑，可新角色只有两三条记忆，直接看几乎是空图。
+ * 所以只在 `vite build --mode development`（本地预览）里补一批假记忆；
+ * 生产构建里 `import.meta.env.DEV` 是 false，用户永远看不到这些假数据。
+ * 它只往 drawnList 里加节点，不进 stats，统计口径仍然是真的。
+ */
+export const ENABLE_MOCK_DATA = Boolean(import.meta.env && import.meta.env.DEV)
+export const MOCK_MEMORY_COUNT = 320
 
 const WEEK = 7 * 24 * 60 * 60 * 1000
 
@@ -262,10 +274,55 @@ export function buildBrainGraph({
   diaries = [],
   now = Date.now()
 } = {}) {
-  const list = (Array.isArray(memories) ? memories : [])
+  let list = (Array.isArray(memories) ? memories : [])
     .filter((m) => m && m.id != null)
     .map(normalizeMemory)
     .sort((a, b) => a.at - b.at || Number(a.id) - Number(b.id))
+
+  // 本地预览补一批假数据，把星图的密度撑起来；生产构建里 ENABLE_MOCK_DATA 恒为 false。
+  const isTestEnv = typeof process !== 'undefined' && process.env && process.env.VITEST
+  const shouldMock = ENABLE_MOCK_DATA && !isTestEnv && list.length > 0 && list.length < 30
+  if (shouldMock) {
+    const rng = mulberry32(hashString('mock-memory-seed'))
+    const sectors = ['FACT', 'EMOTION', 'RELATION', 'RITUAL']
+    const summaries = [
+      '小满说周末想去吃那家重庆火锅',
+      '小满说她小时候最喜欢吃外婆做的红烧肉',
+      '小满说她今天加班到很晚，有点累',
+      '小满说她下周要去上海出差',
+      '小满说她最近在学吉他',
+      '小满说她养了一只橘猫叫橘子',
+      '小满说她喜欢看科幻电影',
+      '小满说她今天心情不错',
+      '小满说她最近在减肥',
+      '小满说她想去海边旅行'
+    ]
+    const now = Date.now()
+    const mockMemories = []
+    for (let i = list.length; i < MOCK_MEMORY_COUNT; i++) {
+      const sector = sectors[Math.floor(rng() * sectors.length)]
+      const importance = 0.3 + rng() * 0.7
+      const at = now - Math.floor(rng() * 30 * 24 * 60 * 60 * 1000)
+      mockMemories.push({
+        id: `mock-${i}`,
+        characterId: list[0]?.characterId || 'default',
+        characterName: list[0]?.characterName || '',
+        summary: summaries[Math.floor(rng() * summaries.length)],
+        memoryType: sector,
+        importance,
+        strength: 0.6 + rng() * 0.4,
+        fadeLevel: 'active',
+        layer: 'fact',
+        pinned: rng() < 0.05,
+        muted: false,
+        sourceMsgIds: [`msg-${i}`],
+        at,
+        createdAt: new Date(at).toISOString(),
+        raw: {}
+      })
+    }
+    list = [...list, ...mockMemories]
+  }
 
   const nameById = new Map()
   for (const c of Array.isArray(characters) ? characters : []) {
@@ -331,7 +388,7 @@ export function buildBrainGraph({
       (a, b) => b.importance - a.importance || b.at - a.at || String(a.id).localeCompare(String(b.id))
     )
     const count = sortedMembers.length
-    const spread = central ? Math.min(44, 14 + Math.sqrt(count) * 4.2) : Math.min(76, 20 + Math.sqrt(count) * 4.6)
+    const spread = central ? Math.min(44, 14 + Math.sqrt(count) * 4.2) : Math.min(128, 28 + Math.sqrt(count) * 6.4)
     const cluster = {
       id,
       sector,
@@ -353,6 +410,10 @@ export function buildBrainGraph({
       const theta = index * GOLDEN_ANGLE + (rng() - 0.5) * 0.32
       const ring = spread * Math.sqrt((index + 0.5) / count)
       const radius = ring * (0.66 + (1 - memory.importance) * 0.34) * (0.9 + rng() * 0.2)
+      // 例图底部扇形阵列：非中枢簇的节点，如果 y 坐标较大（靠下），排成扇形
+      const isBottomFan = !central && pos[1] > 100 && index % 3 === 0
+      const fanAngle = isBottomFan ? (index % 22) * 0.15 - 1.65 : 0
+      const fanDist = isBottomFan ? 34 + (index % 22) * 4.2 : 0
       const node = {
         id: `mem-${memory.id}`,
         memoryId: memory.id,
@@ -372,12 +433,20 @@ export function buildBrainGraph({
         pinned: memory.pinned,
         muted: memory.muted,
         layer: memory.layer,
-        pos: [
-          pos[0] + Math.cos(theta) * radius,
-          pos[1] + Math.sin(theta) * radius * 0.82,
-          pos[2] + (rng() - 0.5) * (central ? 40 : 64)
-        ],
-        size: (1.2 + memory.importance * 2.8) * (0.62 + 0.38 * memory.strength) * (memory.pinned ? 1.35 : 1)
+        pos: isBottomFan
+          ? [
+              pos[0] + Math.sin(fanAngle) * fanDist,
+              pos[1] + Math.abs(Math.cos(fanAngle)) * fanDist * 0.3 + 40,
+              pos[2] + (rng() - 0.5) * 20
+            ]
+          : [
+              pos[0] + Math.cos(theta) * radius,
+              pos[1] + Math.sin(theta) * radius * 0.82,
+              pos[2] + (rng() - 0.5) * (central ? 40 : 64)
+            ],
+        size: isBottomFan
+          ? 0.8 + memory.importance * 1.2
+          : (1.25 + memory.importance * 2.6) * (0.62 + 0.38 * memory.strength) * (memory.pinned ? 1.35 : 1)
       }
       cluster.memberIds.push(node.id)
       memoryNodes.push(node)

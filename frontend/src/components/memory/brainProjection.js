@@ -71,7 +71,9 @@ export function projectPoint(point, camera, viewport) {
   const scale = inFront ? (CAMERA_FOV / denom) * base * zoom : 0
   return {
     x: width / 2 + x2 * scale + panX,
-    y: height / 2 - y1 * scale + panY,
+    // 注意：本项目的 3D 坐标系约定是「y 向下为正」（屏幕坐标系），
+    // 所以这里用 + y1 * scale，而不是标准 3D 图形的 - y1 * scale。
+    y: height / 2 + y1 * scale + panY,
     scale,
     depth: z2,
     visible: inFront && scale > 0.02

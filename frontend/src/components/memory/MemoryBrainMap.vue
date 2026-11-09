@@ -219,6 +219,8 @@ import {
   MEMORY_SECTORS,
   buildBrainGraph,
   buildTimeline,
+  hashString,
+  mulberry32,
   scoreRecall,
   toTimestamp
 } from './memoryBrainModel'
@@ -342,6 +344,8 @@ const floaters = []
 const flowSegments = new Map()
 const sectorSpines = shallowRef([])
 const clusterSpines = shallowRef([])
+// 类型枢纽之间的编织线：只做结构感，不承担语义
+const meshEdges = shallowRef([])
 const memoryEdges = shallowRef([])
 const relatedEdges = shallowRef([])
 const highlight = ref(new Set())
@@ -405,6 +409,25 @@ function rebuildGraph({ intro = false } = {}) {
     return parent ? [{ id: cluster.id, cluster, sectorHub: parent, from: parent.pos, to: cluster.pos }] : []
   })
   const nodesById = new Map(next.memoryNodes.map((node) => [node.id, node]))
+  // 编织层：类型枢纽之间互相连一层极淡的网，中段才不会空成一片黑。
+  // 这不是编出来的记忆关联（真实关联只走 relatedEdges），是「同属一个长期记忆库」的结构线。
+  const hubsForMesh = [...next.sectorHubs, ...next.clusters.map((cluster) => ({ id: cluster.id, pos: cluster.pos, color: cluster.color }))]
+  meshEdges.value = []
+  for (let i = 0; i < hubsForMesh.length; i += 1) {
+    for (let j = i + 1; j < hubsForMesh.length; j += 1) {
+      const a = hubsForMesh[i]
+      const b = hubsForMesh[j]
+      const mid = [(a.pos[0] + b.pos[0]) / 2, (a.pos[1] + b.pos[1]) / 2, (a.pos[2] + b.pos[2]) / 2]
+      const center = next.regionMap.get('ltm')?.c || [0, 0, 0]
+      // 控制点向长期记忆库收一点：所有线都穿同一点会糊成一个结
+      const control = [
+        mid[0] * 0.62 + center[0] * 0.38,
+        mid[1] * 0.62 + center[1] * 0.38 - 26,
+        mid[2] * 0.62 + center[2] * 0.38
+      ]
+      meshEdges.value.push({ id: `${a.id}-${b.id}`, a: a.pos, b: b.pos, control, colorA: a.color, colorB: b.color })
+    }
+  }
   memoryEdges.value = next.clusters.flatMap((cluster) => {
     const members = cluster.memberIds.map((id) => nodesById.get(id)).filter(Boolean)
     const edgeLimit = Math.min(members.length, Math.max(4, Math.ceil(Math.sqrt(members.length) * 2.2)))
@@ -595,13 +618,48 @@ function spriteFor(hex) {
 function glow(x, y, radius, hex, alpha) {
   if (!ctx || radius <= 0.15 || alpha <= 0.004) return
   const sprite = spriteFor(hex)
-  const size = radius * 7.2
+  const size = radius * 9.6
   // 用完立刻还原：后面的描边、文字都是 source-over 直接画，
   // 残留的 globalAlpha 会把它们一起调暗（标签发灰就是这个原因）
   const prevAlpha = ctx.globalAlpha
   ctx.globalAlpha = Math.min(1, alpha)
   ctx.drawImage(sprite, x - size / 2, y - size / 2, size, size)
   ctx.globalAlpha = prevAlpha
+}
+
+/**
+ * 多层光晕：例图的关键节点光晕是 80-150px 的多层渐变。
+ * 核心白点 → 内层亮黄 → 中层透明金 → 外层环境光。
+ */
+function glowMulti(x, y, radius, hex, alpha) {
+  if (!ctx || radius <= 0.15 || alpha <= 0.004) return
+  const { r, g, b } = parseColor(hex)
+  // 外层环境光
+  const outerSize = radius * 12
+  const outerGradient = ctx.createRadialGradient(x, y, 0, x, y, outerSize / 2)
+  outerGradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${alpha * 0.12})`)
+  outerGradient.addColorStop(0.3, `rgba(${r}, ${g}, ${b}, ${alpha * 0.05})`)
+  outerGradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`)
+  ctx.fillStyle = outerGradient
+  ctx.fillRect(x - outerSize / 2, y - outerSize / 2, outerSize, outerSize)
+
+  // 中层光晕
+  const midSize = radius * 6
+  const midGradient = ctx.createRadialGradient(x, y, 0, x, y, midSize / 2)
+  midGradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${alpha * 0.4})`)
+  midGradient.addColorStop(0.4, `rgba(${r}, ${g}, ${b}, ${alpha * 0.15})`)
+  midGradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`)
+  ctx.fillStyle = midGradient
+  ctx.fillRect(x - midSize / 2, y - midSize / 2, midSize, midSize)
+
+  // 内层亮核
+  const innerSize = radius * 3
+  const innerGradient = ctx.createRadialGradient(x, y, 0, x, y, innerSize / 2)
+  innerGradient.addColorStop(0, `rgba(255, 255, 255, ${alpha * 0.9})`)
+  innerGradient.addColorStop(0.3, `rgba(${r}, ${g}, ${b}, ${alpha * 0.7})`)
+  innerGradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`)
+  ctx.fillStyle = innerGradient
+  ctx.fillRect(x - innerSize / 2, y - innerSize / 2, innerSize, innerSize)
 }
 
 function mutedAlpha(alpha, muted) {
@@ -630,11 +688,55 @@ function drawBackground() {
   ctx.fillStyle = backgroundCache
   ctx.fillRect(0, 0, width, height)
 
+  // 星云感：例图背景有淡淡的紫色/蓝色星云渐变，不是纯黑
+  const nebula1 = ctx.createRadialGradient(
+    width * 0.3,
+    height * 0.25,
+    0,
+    width * 0.3,
+    height * 0.25,
+    width * 0.4
+  )
+  nebula1.addColorStop(0, 'rgba(169, 139, 255, 0.062)')
+  nebula1.addColorStop(0.5, 'rgba(169, 139, 255, 0.026)')
+  nebula1.addColorStop(1, 'rgba(169, 139, 255, 0)')
+  ctx.fillStyle = nebula1
+  ctx.fillRect(0, 0, width, height)
+
+  const nebula2 = ctx.createRadialGradient(
+    width * 0.75,
+    height * 0.7,
+    0,
+    width * 0.75,
+    height * 0.7,
+    width * 0.35
+  )
+  nebula2.addColorStop(0, 'rgba(111, 219, 192, 0.042)')
+  nebula2.addColorStop(0.5, 'rgba(111, 219, 192, 0.016)')
+  nebula2.addColorStop(1, 'rgba(111, 219, 192, 0)')
+  ctx.fillStyle = nebula2
+  ctx.fillRect(0, 0, width, height)
+
+  // 中轴赤道附近再垫一层暖光，让「中枢在上、记忆库居中」的纵向层次有落点
+  const nebula3 = ctx.createRadialGradient(
+    width * 0.5,
+    height * 0.52,
+    0,
+    width * 0.5,
+    height * 0.52,
+    width * 0.3
+  )
+  nebula3.addColorStop(0, 'rgba(255, 214, 160, 0.035)')
+  nebula3.addColorStop(0.6, 'rgba(255, 214, 160, 0.012)')
+  nebula3.addColorStop(1, 'rgba(255, 214, 160, 0)')
+  ctx.fillStyle = nebula3
+  ctx.fillRect(0, 0, width, height)
+
   // 底部扇形微光：参考例图里长期记忆库下方有一圈向外散开的点阵
   const fanY = height * 0.86
   const fanGradient = ctx.createRadialGradient(width * 0.5, fanY, 0, width * 0.5, fanY, width * 0.34)
-  fanGradient.addColorStop(0, 'rgba(244, 166, 181, 0.05)')
-  fanGradient.addColorStop(0.5, 'rgba(244, 166, 181, 0.018)')
+  fanGradient.addColorStop(0, 'rgba(244, 166, 181, 0.08)')
+  fanGradient.addColorStop(0.5, 'rgba(244, 166, 181, 0.03)')
   fanGradient.addColorStop(1, 'rgba(244, 166, 181, 0)')
   ctx.fillStyle = fanGradient
   ctx.fillRect(0, fanY - height * 0.2, width, height * 0.2)
@@ -741,25 +843,31 @@ function render(now) {
   const labels = []
   const fadeFor = (depth) => depthFade(depth)
 
-  /* 底部扇形点阵：参考例图里长期记忆库下方向外散开的微光点。 */
+  /* 底部扇形记忆库：例图里记忆库是一面巨大的锥形点阵 —— 上方收成一点、下方铺开成扇面。
+     这里在 3D 里画长期记忆库下方的一段圆锥，跟着相机一起转，不会像贴图一样漂。
+     要的是密度不是亮度：单个点很小很淡，靠数量铺出扇面。 */
   const ltmRegion = graph.value.regionMap.get('ltm')
-  const ltmPoint = ltmRegion ? projectPoint(ltmRegion.c, camera, viewport) : null
-  if (ltmPoint && ltmPoint.visible) {
+  if (ltmRegion) {
     ctx.globalCompositeOperation = 'lighter'
-    const fanCenterX = ltmPoint.x
-    const fanCenterY = ltmPoint.y + ltmPoint.scale * 40
-    for (const sector of MEMORY_SECTORS) {
-      const count = Math.min(22, Math.max(6, Math.ceil((stats.value.bySector[sector.id] || 0) * 1.6)))
-      const baseAngle = ((sector.angle - 90) * Math.PI) / 180
-      for (let i = 0; i < count; i += 1) {
-        const spread = (i - (count - 1) / 2) * 0.09
-        const dist = (34 + i * 5.4) * ltmPoint.scale
-        const x = fanCenterX + Math.cos(baseAngle + spread) * dist
-        const y = fanCenterY + Math.sin(baseAngle + spread) * dist * 0.42 + i * 1.1
-        const r = (1.1 + (i % 3) * 0.3) * ltmPoint.scale
-        const alpha = (0.05 + (i % 4) * 0.014) * (focusedRegion.value === 'ltm' ? 1.5 : 1)
-        glow(x, y, r, sector.color, alpha)
-      }
+    const sectorById = new Map(MEMORY_SECTORS.map((sector) => [sector.id, sector]))
+    const leftColor = sectorById.get('FACT')?.color || '#ffd166'
+    const rightColor = sectorById.get('EMOTION')?.color || '#ff8fab'
+    const total = Math.max(1, stats.value.total)
+    const count = Math.min(560, Math.max(180, Math.ceil(total * 1.7)))
+    const rng = mulberry32(hashString('memory-library-fan'))
+    for (let i = 0; i < count; i += 1) {
+      const depth = 92 + Math.sqrt((i + 0.5) / count) * 180
+      const angle = rng() * TAU
+      const spread = depth * (0.55 + rng() * 0.5)
+      const pos3 = [
+        ltmRegion.c[0] + Math.cos(angle) * spread,
+        ltmRegion.c[1] + depth * 0.92,
+        ltmRegion.c[2] + Math.sin(angle) * spread * 0.6
+      ]
+      const point = projectPoint(pos3, camera, viewport)
+      if (!point.visible) continue
+      const color = pos3[0] < ltmRegion.c[0] ? leftColor : rightColor
+      glow(point.x, point.y, 0.7 + (i % 3) * 0.25, color, 0.09 + (i % 4) * 0.022)
     }
     ctx.globalCompositeOperation = 'source-over'
   }
@@ -835,6 +943,9 @@ function render(now) {
   )
   const activeNode = hover.value?.kind === 'memory' ? hover.value.node : selectedNode
   const focusedClusterId = activeNode?.clusterId || ''
+  // 只是划过某颗星时，别把其余三簇整片熄掉：那种「整张图突然黑掉」的反馈比高亮本身更抢眼。
+  // 真正收敛全图只在「选中一条记忆」时发生。
+  const hoverOnly = Boolean(hover.value?.kind === 'memory' && !selectedNode)
   const clusterViews = graph.value.clusters.map((cluster) => {
     const members = nodes.filter((item) => item.node.clusterId === cluster.id && item.point.visible)
     const hub = projectPoint(cluster.pos, camera, viewport)
@@ -857,7 +968,7 @@ function render(now) {
     if (!view.members.length) continue
     const focused = focusedClusterId === view.cluster.id
     const dimmed = Boolean(focusedClusterId && !focused)
-    const alpha = dimmed ? 0.006 : focused ? 0.11 : 0.042
+    const alpha = dimmed ? (hoverOnly ? 0.02 : 0.006) : focused ? 0.11 : 0.042
     ctx.save()
     ctx.translate(view.cx, view.cy)
     ctx.scale(1, 0.82)
@@ -874,31 +985,74 @@ function render(now) {
 
   const clusterLabels = clusterViews.filter((view) => !view.cluster.central && view.hub.visible)
 
-  /* 簇 hub：中心到少量语义簇的主干止于这里，不再穿过整张图直达每颗记忆。 */
+  /* 簇 hub：中心到少量语义簇的主干止于这里，不再穿过整张图直达每颗记忆。
+     用多层光晕让 hub 更醒目，像例图里的关键节点。 */
   for (const view of clusterViews) {
     if (!view.hub.visible) continue
     const focused = focusedClusterId === view.cluster.id
     const dimmed = Boolean(focusedClusterId && !focused)
-    const radius = Math.min(4.2, 2.2 + Math.sqrt(view.cluster.count) * 0.24)
-    glow(view.hub.x, view.hub.y, radius * 1.35, view.cluster.color, dimmed ? 0.02 : focused ? 0.48 : 0.2)
+    const radius = Math.min(6.5, 3.2 + Math.sqrt(view.cluster.count) * 0.32)
+    glowMulti(view.hub.x, view.hub.y, radius * 1.5, view.cluster.color, dimmed ? (hoverOnly ? 0.16 : 0.03) : focused ? 0.58 : 0.32)
     ctx.beginPath()
     ctx.arc(view.hub.x, view.hub.y, radius, 0, TAU)
-    ctx.fillStyle = rgba(view.cluster.color, dimmed ? 0.12 : 0.64)
+    ctx.fillStyle = rgba(view.cluster.color, dimmed ? (hoverOnly ? 0.42 : 0.12) : 0.72)
     ctx.fill()
     ctx.beginPath()
-    ctx.arc(view.hub.x, view.hub.y, Math.max(1, radius * 0.32), 0, TAU)
-    ctx.fillStyle = 'rgba(255,255,255,0.9)'
+    ctx.arc(view.hub.x, view.hub.y, Math.max(1, radius * 0.38), 0, TAU)
+    ctx.fillStyle = 'rgba(255,255,255,0.92)'
     ctx.fill()
   }
 
-  /* 第一层：中枢（检索，在顶部）→ 类型枢纽，是金字塔的主光束，要粗要亮。 */
+  /* 第一层：中枢（检索，在顶部）→ 类型枢纽，是金字塔的主光束，要粗要亮。
+     例图里这些线像光纤一样发光，所以加 glow 叠加。 */
   for (const edge of sectorSpines.value) {
     const from = projectPoint(edge.from, camera, viewport)
     const to = projectPoint(edge.to, camera, viewport)
     if (!from.visible || !to.visible) continue
     const focused = activeNode?.sector === edge.sectorHub.sector
-    const alpha = focusedClusterId ? (focused ? 0.52 : 0.01) : 0.32
-    drawBeam(from, to, '#fff1c9', edge.sectorHub.color, alpha, { arrow: false })
+    const alpha = focusedClusterId ? (focused ? 0.62 : hoverOnly ? 0.14 : 0.02) : 0.42
+    // 主光束先垫一层宽而淡的辉光：例图里这几根线是整张图的光纤主干
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.strokeStyle = rgba('#fff1c9', alpha * 0.16)
+    ctx.lineWidth = 10
+    ctx.beginPath()
+    ctx.moveTo(from.x, from.y)
+    ctx.lineTo(to.x, to.y)
+    ctx.stroke()
+    drawBeam(from, to, '#fff1c9', edge.sectorHub.color, alpha * 1.5, { arrow: false })
+    // 沿线加发光点，模拟光纤效果
+    const segments = 8
+    for (let i = 1; i < segments; i++) {
+      const t = i / segments
+      const x = from.x + (to.x - from.x) * t
+      const y = from.y + (to.y - from.y) * t
+      const fade = Math.sin(t * Math.PI)
+      glow(x, y, 0.9, edge.sectorHub.color, alpha * fade * 0.35)
+    }
+  }
+
+  /* 编织层：类型枢纽彼此相连，做出例图中间那片「网」。刻意画得极淡，
+     读起来是背景的组织感，而不是某条具体记忆的关联。 */
+  for (const edge of meshEdges.value) {
+    const a = projectPoint(edge.a, camera, viewport)
+    const b = projectPoint(edge.b, camera, viewport)
+    const c = projectPoint(edge.control, camera, viewport)
+    if (!a.visible || !b.visible || !c.visible) continue
+    const alpha = focusedClusterId ? (hoverOnly ? 0.05 : 0.012) : 0.08
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.strokeStyle = rgba(edge.colorA, alpha * 0.9)
+    ctx.lineWidth = 1.6
+    ctx.beginPath()
+    ctx.moveTo(a.x, a.y)
+    ctx.quadraticCurveTo(c.x, c.y, b.x, b.y)
+    ctx.stroke()
+    ctx.strokeStyle = rgba(edge.colorB, alpha * 1.6)
+    ctx.lineWidth = 0.55
+    ctx.beginPath()
+    ctx.moveTo(a.x, a.y)
+    ctx.quadraticCurveTo(c.x, c.y, b.x, b.y)
+    ctx.stroke()
+    ctx.globalCompositeOperation = 'source-over'
   }
 
   for (const edge of clusterSpines.value) {
@@ -906,30 +1060,39 @@ function render(now) {
     const to = projectPoint(edge.to, camera, viewport)
     if (!from.visible || !to.visible) continue
     const focused = focusedClusterId === edge.cluster.id
-    const alpha = focusedClusterId ? (focused ? 0.5 : 0.015) : 0.24
+    const alpha = focusedClusterId ? (focused ? 0.6 : hoverOnly ? 0.11 : 0.02) : 0.32
     ctx.globalCompositeOperation = 'source-over'
     ctx.strokeStyle = rgba(edge.cluster.color, alpha)
-    ctx.lineWidth = focused ? 1.35 : 0.95
+    ctx.lineWidth = focused ? 1.5 : 1.1
     ctx.beginPath()
     ctx.moveTo(from.x, from.y)
     ctx.lineTo(to.x, to.y)
     ctx.stroke()
+    // 加发光点
+    const segments = 6
+    for (let i = 1; i < segments; i++) {
+      const t = i / segments
+      const x = from.x + (to.x - from.x) * t
+      const y = from.y + (to.y - from.y) * t
+      const fade = Math.sin(t * Math.PI)
+      glow(x, y, 0.7, edge.cluster.color, alpha * fade * 0.3)
+    }
     ctx.globalCompositeOperation = 'lighter'
   }
 
   for (const { sectorHub, point } of sectorHubViews) {
     if (!point.visible) continue
     const focused = activeNode?.sector === sectorHub.sector
-    const radius = Math.min(5.5, 3.1 + Math.sqrt(sectorHub.count) * 0.27)
-    glow(point.x, point.y, radius * 1.35, sectorHub.color, focused ? 0.44 : 0.3)
+    const radius = Math.min(7, 4 + Math.sqrt(sectorHub.count) * 0.32)
+    glowMulti(point.x, point.y, radius * 1.5, sectorHub.color, focused ? 0.55 : 0.38)
     ctx.beginPath()
     ctx.arc(point.x, point.y, radius + 2.2, 0, TAU)
-    ctx.strokeStyle = rgba(sectorHub.color, focused ? 0.58 : 0.4)
-    ctx.lineWidth = 0.9
+    ctx.strokeStyle = rgba(sectorHub.color, focused ? 0.65 : 0.45)
+    ctx.lineWidth = 1
     ctx.stroke()
     ctx.beginPath()
     ctx.arc(point.x, point.y, radius, 0, TAU)
-    ctx.fillStyle = rgba(sectorHub.color, 0.9)
+    ctx.fillStyle = rgba(sectorHub.color, 0.92)
     ctx.fill()
     ctx.beginPath()
     ctx.arc(point.x, point.y, Math.max(1, radius * 0.34), 0, TAU)
@@ -938,25 +1101,49 @@ function render(now) {
   }
 
   const edgeGroups = new Map()
+  // 画线前必须清掉阴影：之前给标签设的 shadowColor/shadowBlur 会跟着每条 stroke 一起画，
+  // 一条亮线底下垫一层暗影，远看就是一根根黑刺。
+  ctx.shadowBlur = 0
+  ctx.shadowColor = 'transparent'
   for (const edge of memoryEdges.value) {
     if (!edgeGroups.has(edge.clusterId)) edgeGroups.set(edge.clusterId, [])
     edgeGroups.get(edge.clusterId).push(edge)
   }
-  for (const [clusterId, edges] of edgeGroups) {
-    const focused = focusedClusterId === clusterId
-    const alpha = focusedClusterId ? (focused ? 0.22 : 0.006) : compact.value ? 0.035 : 0.07
+  // `trim`：只画这条线靠节点那一小段。全员都从簇心拉一根长线，远端的成员会拖出
+  // 一把「黑刺」，把星团画成蒲公英；短须才是树突的质感。
+  const strokeEdges = (list, color, alpha, width, trim = 1) => {
+    if (!list.length) return
     ctx.beginPath()
-    for (const edge of edges) {
-      if (!edge.representative && !focused) continue
+    for (const edge of list) {
       const from = projectPoint(edge.from, camera, viewport)
       const to = projectPoint(edge.to, camera, viewport)
       if (!from.visible || !to.visible) continue
-      ctx.moveTo(from.x, from.y)
+      const x0 = from.x + (to.x - from.x) * (1 - trim)
+      const y0 = from.y + (to.y - from.y) * (1 - trim)
+      ctx.moveTo(x0, y0)
       ctx.lineTo(to.x, to.y)
     }
-    ctx.strokeStyle = rgba(edges[0]?.cluster.color || '#9fb8d8', alpha)
-    ctx.lineWidth = 0.55
+    ctx.strokeStyle = rgba(color, alpha)
+    ctx.lineWidth = width
     ctx.stroke()
+  }
+
+  for (const [clusterId, edges] of edgeGroups) {
+    const focused = focusedClusterId === clusterId
+    const dim = Boolean(focusedClusterId && !focused)
+    const color = edges[0]?.cluster.color || '#9fb8d8'
+    // 归属边是「这颗星属于这一簇」的事实，全员都画；重要成员更亮更粗，构成主次。
+    const strong = edges.filter((edge) => edge.representative)
+    const weak = edges.filter((edge) => !edge.representative)
+    const alpha = dim ? (hoverOnly ? 0.07 : 0.006) : focused ? 0.34 : compact.value ? 0.13 : 0.2
+
+    // 光纤感：宽而淡的光晕 + 细而亮的芯，两遍叠出「会发光的线」
+    // 注意参数顺序是 (list, color, alpha, width, trim) —— 别把颜色写成透明度，
+    // parseColor(0.2) 会退化成黑色，整片星团就会被画成蒲公英。
+    strokeEdges(weak, color, alpha * 0.26, 2, 0.3)
+    strokeEdges(weak, color, alpha * 0.85, 0.55, 0.3)
+    strokeEdges(strong, color, alpha * 0.5, 2.8, 1)
+    strokeEdges(strong, color, alpha * 1.5, 0.95, 1)
 
     const activeEdge = edges.find((edge) => String(edge.node.memoryId) === String(activeNode?.memoryId))
     if (activeEdge) {
@@ -982,7 +1169,7 @@ function render(now) {
       String(edge.fromId) === String(activeNode?.memoryId) || String(edge.toId) === String(activeNode?.memoryId)
     ctx.save()
     ctx.setLineDash([2, 3])
-    ctx.strokeStyle = `rgba(220, 235, 255, ${isFocused ? 0.62 : focusedClusterId ? 0.018 : 0.16})`
+    ctx.strokeStyle = `rgba(220, 235, 255, ${isFocused ? 0.62 : focusedClusterId ? (hoverOnly ? 0.09 : 0.018) : 0.16})`
     ctx.lineWidth = isFocused ? 1 : 0.65
     ctx.beginPath()
     ctx.moveTo(from.x, from.y)
@@ -1005,18 +1192,20 @@ function render(now) {
     const base = depthFade(point.depth)
     const strength = Number.isFinite(node.strength) ? node.strength : 1
     // 静音是「别再提了」，不是「没有过」：留在图上，但暗到不会先被看见。
+    // 别的簇在「划过」时只压四成，在「选中」时压到一成——别让一次划过把整张星图熄掉。
+    const dimFactor = dimmed ? (node.clusterId !== focusedClusterId && hoverOnly ? 0.42 : 0.12) : 1
     const alpha = mutedAlpha(
-      dimmed ? base * 0.12 : base * (0.62 + node.importance * 0.28) * (0.58 + 0.42 * strength),
+      dimmed ? base * dimFactor : base * (0.62 + node.importance * 0.28) * (0.58 + 0.42 * strength),
       node.muted
     )
     const radius = Math.max(1.25, node.size * point.scale * (node.muted ? 0.78 : 1))
 
     // 大光圈：参考例图里每颗记忆都是一颗带 halo 的星
-    glow(point.x, point.y, radius * (isSelected || isHovered ? 3.2 : 2.2), node.color, alpha * 0.92)
+    glowMulti(point.x, point.y, radius * (isSelected || isHovered ? 3.2 : 2.1), node.color, alpha * 0.82)
     ctx.globalCompositeOperation = 'source-over'
     ctx.beginPath()
     ctx.arc(point.x, point.y, Math.max(0.95, radius * 0.74), 0, TAU)
-    ctx.fillStyle = rgba(node.color, dimmed ? 0.22 : 0.55 + 0.4 * strength)
+    ctx.fillStyle = rgba(node.color, dimmed ? (hoverOnly ? 0.38 : 0.22) : 0.55 + 0.4 * strength)
     ctx.fill()
     ctx.beginPath()
     ctx.arc(point.x, point.y, Math.max(0.42, radius * 0.3), 0, TAU)
@@ -1065,20 +1254,27 @@ function render(now) {
     const focused = view.cluster.id === focusedClusterId
     if (view.cluster.count < 2 && !focused) continue
     const sectorName = t(view.cluster.nameKey)
-    const text = [sectorName, view.cluster.characterName].filter(Boolean).join(' · ')
+    // 数字用统计口径（全量），不用画出来的节点数：截断后两者会不一致，同一屏里对不上很怪
+    const sectorTotal = stats.value.bySector?.[view.cluster.sector] ?? view.cluster.count
+    const text = [sectorName, String(sectorTotal)].filter(Boolean).join(' · ')
     const lx = clamp(view.hub.x, 44, viewport.width - 44)
-    const ly = Math.max(14, view.cy - view.rx * 0.82 + 8)
-    const size = compact.value ? 8 : 9.5
-    const box = textBox(text, lx, ly, { size, weight: focused ? 700 : 600 })
-    const padded = { x1: box.x1 - 6, y1: box.y1 - 4, x2: box.x2 + 6, y2: box.y2 + 4 }
+    // 标签挂在簇的正下方：挂在簇上方会被大量光点压住，也会和别的簇串味
+    const ly = Math.min(viewport.height - 16, view.cy + Math.min(view.rx * 0.78, 104) + 10)
+    const size = compact.value ? 10.5 : 12.5
+    const box = textBox(text, lx, ly, { size, weight: 700 })
+    const padded = { x1: box.x1 - 8, y1: box.y1 - 5, x2: box.x2 + 8, y2: box.y2 + 5 }
     if (boxOverlaps(padded, 3)) continue
+    ctx.save()
+    ctx.shadowColor = rgba(view.cluster.color, 0.55)
+    ctx.shadowBlur = 14
     drawLabelText(text, lx, ly, {
-      color: view.cluster.color,
-      alpha: focusedClusterId && !focused ? 0.22 : focused ? 1 : 0.86,
+      color: '#f4f8ff',
+      alpha: focusedClusterId && !focused ? (hoverOnly ? 0.55 : 0.22) : focused ? 1 : 0.92,
       size,
-      weight: focused ? 700 : 600,
-      plate: focused
+      weight: 700,
+      plate: true
     })
+    ctx.restore()
     reserveBox(padded)
   }
 
@@ -1096,9 +1292,9 @@ function render(now) {
     const orb = Math.max(4.5, radius * 0.28)
     const breathe = reducedMotion.value || !region.lit ? 1 : 1 + Math.sin(now * 0.0016 + region.c[0]) * 0.04
 
-    // 大光晕
-    glow(point.x, point.y, orb * 3.2 * breathe, region.color, (lit ? 0.28 : 0.08) * base)
-    glow(point.x, point.y, orb * 1.3, '#ffffff', (lit ? 0.24 : 0.08) * base)
+    // 大光晕：用多层光晕，像例图里的关键节点
+    glowMulti(point.x, point.y, orb * 3.2 * breathe, region.color, (lit ? 0.32 : 0.1) * base)
+    glowMulti(point.x, point.y, orb * 1.3, '#ffffff', (lit ? 0.28 : 0.1) * base)
     // 外圈光环
     ctx.globalCompositeOperation = 'source-over'
     ctx.beginPath()
@@ -1126,6 +1322,8 @@ function render(now) {
   ctx.globalCompositeOperation = 'source-over'
   const hoveredRegionId = hover.value?.kind === 'region' ? hover.value.id : ''
   for (const { region, point, radius, dimmed } of labels.sort((a, b) => b.point.depth - a.point.depth)) {
+    // 空的脑区不挂字：0 条的标签只会和别的标签抢位置
+    if (!region.count) continue
     const labelAlpha = dimmed ? 0.16 : region.lit ? 0.95 : 0.5
     const name = t(region.nameKey)
     const nameSize = compact.value ? 11 : 13
@@ -1138,6 +1336,10 @@ function render(now) {
       const labelY = point.y - 10
       const nameBox = textBox(name, point.x, labelY, { size: nameSize, weight: 700 })
       if (boxOverlaps(nameBox)) continue
+      // 发光标签：例图里核心标签带同色光晕
+      ctx.save()
+      ctx.shadowColor = rgba(region.color, labelAlpha * 0.6)
+      ctx.shadowBlur = 12
       drawLabelText(name, point.x, labelY, {
         color: '#f2f6ff',
         alpha: labelAlpha,
@@ -1145,6 +1347,7 @@ function render(now) {
         weight: 700,
         plate: true
       })
+      ctx.restore()
       reserveBox(nameBox)
       const countY = labelY + nameSize + 3
       const countBox = textBox(String(region.count), point.x, countY, { size: countSize })
@@ -1315,7 +1518,13 @@ function render(now) {
       continue
     }
     const point = projectPoint(region.c, camera, viewport)
-    const radius = (12 + progress * 44) * point.scale
+    // 相机转到脑区背后时 scale 会变成负数，ellipse 收到负半径会直接抛 IndexSizeError，
+    // 一抛整帧后面的绘制全部作废（表现为画面卡在上一帧、像是"画不出来"）。
+    if (!point.visible || point.scale <= 0) {
+      pulses.splice(i, 1)
+      continue
+    }
+    const radius = Math.max(0.5, (12 + progress * 44) * point.scale)
     ctx.globalCompositeOperation = 'source-over'
     ctx.strokeStyle = rgba(pulse.color, (1 - progress) * 0.32 * pulse.strength)
     ctx.lineWidth = 1.1

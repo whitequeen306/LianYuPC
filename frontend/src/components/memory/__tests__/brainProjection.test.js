@@ -54,16 +54,21 @@ describe('projectPoint', () => {
     expect(doubled.x - VIEWPORT.width / 2).toBeCloseTo((single.x - VIEWPORT.width / 2) * 2)
   })
 
-  it('默认相机下所有脑区都投影在画布内（含 10% 余量）', () => {
+  it('默认相机下所有脑区都可见，且保持金字塔的纵向次序', () => {
     const camera = createCamera()
-    for (const region of MEMORY_REGIONS) {
-      const point = projectPoint(region.c, camera, VIEWPORT)
-      expect(point.visible).toBe(true)
-      expect(point.x).toBeGreaterThan(VIEWPORT.width * -0.1)
-      expect(point.x).toBeLessThan(VIEWPORT.width * 1.1)
-      expect(point.y).toBeGreaterThan(VIEWPORT.height * -0.1)
-      expect(point.y).toBeLessThan(VIEWPORT.height * 1.1)
+    const points = new Map(
+      MEMORY_REGIONS.map((region) => [region.id, projectPoint(region.c, camera, VIEWPORT)])
+    )
+    for (const [id, point] of points) {
+      expect(point.visible, `${id} 不该被判成相机背后`).toBe(true)
+      expect(Number.isFinite(point.x)).toBe(true)
+      expect(Number.isFinite(point.y)).toBe(true)
     }
+    // 布局是「检索中枢在上、长期记忆库居中、表达输出在下」的金字塔。
+    // 取景由 frameGraph() 按内容包围盒自适应，所以这里只锁次序，不锁像素位置。
+    expect(points.get('core').y).toBeLessThan(points.get('ltm').y)
+    expect(points.get('ltm').y).toBeLessThan(points.get('output').y)
+    expect(points.get('core').y).toBeLessThan(points.get('input').y)
   })
 })
 
