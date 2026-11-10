@@ -23,6 +23,8 @@ package com.lianyu.service.agent;
  * @param groupMaxPieces 群聊单轮气泡上限
  * @param groupOtherCharacters 群聊其他角色描述行
  * @param groupMention   群聊 @ 上下文
+ * @param voiceMaxReplyChars 语音通话单句字数上限（Python 用它渲染 voice_call_instruction，
+ *                       Java 不再持有这段强制话术）
  */
 public record PromptAssemblyRequest(
         long userId,
@@ -45,5 +47,6 @@ public record PromptAssemblyRequest(
         String extraSystemSuffix,
         int groupMaxPieces,
         String groupOtherCharacters,
-        String groupMention) {
+        String groupMention,
+        int voiceMaxReplyChars) {
 }

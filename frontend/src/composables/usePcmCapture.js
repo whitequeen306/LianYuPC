@@ -23,11 +23,15 @@ export function usePcmCapture() {
   let speechStartedAt = 0
   let lastSpeechAt = 0
   let silenceArmed = false
+  /** 上一帧是否在说话：用来产出 vad 的 start/end 边沿（每段话各一次，不是每帧）。 */
+  let wasSpeaking = false
   let vad = VAD_PROFILES.loose
   /** @type {((pcm: ArrayBuffer, meta: { peak: number }) => void) | null} */
   let onFrame = null
   /** @type {(() => void) | null} */
   let onEndpoint = null
+  /** @type {((edge: { phase: 'start' | 'end' }) => void) | null} */
+  let onSpeechEdge = null
 
   function resolveVad(name) {
     if (name === false || name === 'off') return null
@@ -52,6 +56,7 @@ export function usePcmCapture() {
     vadProfile = 'loose',
     onFrame: frameCb,
     onEndpoint: endpointCb,
+    onSpeechEdge: edgeCb,
   } = {}) {
     if (active) return
     active = true
@@ -59,9 +64,11 @@ export function usePcmCapture() {
     vad = resolveVad(vadProfile)
     onFrame = typeof frameCb === 'function' ? frameCb : null
     onEndpoint = typeof endpointCb === 'function' ? endpointCb : null
+    onSpeechEdge = typeof edgeCb === 'function' ? edgeCb : null
     speechStartedAt = 0
     lastSpeechAt = 0
     silenceArmed = false
+    wasSpeaking = false
 
     await ensureStream()
     const Ctx = window.AudioContext || window.webkitAudioContext
@@ -82,11 +89,21 @@ export function usePcmCapture() {
       const now = performance.now()
       if (level >= threshold) {
         speaking.value = true
+        // vad.start：一段话只发一次，服务端据此进入 USER_SPEAKING（思考期插话依赖它）
+        if (vad && !wasSpeaking) {
+          wasSpeaking = true
+          onSpeechEdge?.({ phase: 'start' })
+        }
         if (!speechStartedAt) speechStartedAt = now
         lastSpeechAt = now
         silenceArmed = true
       } else {
         speaking.value = false
+        // vad.end：静音满 silenceMs 才算这段说完（不是一帧安静就发）
+        if (vad && wasSpeaking && (now - lastSpeechAt) >= (vad.silenceMs || 650)) {
+          wasSpeaking = false
+          onSpeechEdge?.({ phase: 'end' })
+        }
         if (
           silenceArmed
           && speechStartedAt
@@ -118,8 +135,10 @@ export function usePcmCapture() {
     recording.value = false
     speaking.value = false
     audioLevel.value = 0
+    wasSpeaking = false
     onFrame = null
     onEndpoint = null
+    onSpeechEdge = null
     try {
       worklet?.port && (worklet.port.onmessage = null)
       worklet?.disconnect()

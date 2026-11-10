@@ -87,6 +87,7 @@ public class AgentPromptAssemblyAdapter implements PromptAssemblyPort {
         body.put("groupMaxPieces", request.groupMaxPieces());
         body.put("groupOtherCharacters", nvl(request.groupOtherCharacters()));
         body.put("groupMention", nvl(request.groupMention()));
+        body.put("voiceMaxReplyChars", request.voiceMaxReplyChars());
         if (request.characterId() != null) {
             body.put("characterId", request.characterId());
         }

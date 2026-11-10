@@ -106,9 +106,27 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
                         state.call.clientEndpoint();
                     }
                 }
+                case "vad" -> {
+                    // 客户端 VAD 边沿（start/end）：服务端状态机据此进入 USER_SPEAKING，
+                    // 思考期插话与之后的冷场计时都依赖它
+                    if (state.call != null) {
+                        state.call.onVad(root.path("phase").asText(""));
+                    }
+                }
+                case "play.drained" -> {
+                    // 客户端播放队列排空：SPEAKING → LISTENING，麦克风重新放行
+                    if (state.call != null) {
+                        state.call.onPlayDrained(root.path("seq").asLong(0));
+                    }
+                }
+                case "call.metrics" -> {
+                    if (state.call != null) {
+                        state.call.onClientMetrics(root);
+                    }
+                }
                 case "barge_in" -> {
                     if (state.call != null) {
-                        state.call.bargeIn();
+                        state.call.bargeIn(root.path("preRollMs").asInt(0));
                     }
                 }
                 case "ping" -> send(session, event("pong", n -> {
@@ -177,6 +195,9 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
                 send(session, error("BAD_REQUEST", "缺少 conversationId"));
                 return;
             }
+            // 客户端能力声明只做记录：服务端不依赖它也能工作，老客户端缺 vad/drained 时
+            // 靠状态机的空端点回收与字节估算兜底。
+            String clientCaps = capsOf(root);
             authRateLimiter.checkRateLimit("rate:voice-call:", String.valueOf(state.userId),
                     120, Duration.ofMinutes(1), "语音通话过于频繁，请稍后再试");
             state.call = new VoiceCallDuplexSession(
@@ -186,6 +207,12 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
             send(session, event("session.started", n -> {
                 n.put("mode", "call");
                 n.put("conversationId", conversationId);
+                // 协议版本 + 服务端能力：客户端据此决定是否镜像 call.state / 走 barge pre-roll。
+                // 不认识的客户端会忽略这些附加字段。
+                n.put("protocol", 1);
+                var caps = n.putArray("caps");
+                caps.add("call.state");
+                caps.add("barge.preroll");
                 n.put("ttsMode", target.isLocal() ? "local_sovits" : "realtime");
                 if (target.isLocal()) {
                     n.put("endpoint", target.endpoint() == null ? "" : target.endpoint());
@@ -193,6 +220,10 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
                     n.put("refText", target.refText() == null ? "" : target.refText());
                 }
             }));
+            // 会话建立即下发一次全量状态（seq=0），客户端不必等第一次迁移才有镜像
+            state.call.announceState();
+            log.info("Voice duplex call started user={} conv={} clientCaps={}",
+                    state.userId, conversationId, clientCaps);
             return;
         }
         send(session, error("BAD_REQUEST", "未知 mode"));
@@ -227,6 +258,22 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
             n.put("code", code);
             n.put("message", message);
         });
+    }
+
+    /** 客户端声明的能力列表（数组形态优先，其次逗号串），只用于日志。 */
+    private static String capsOf(JsonNode root) {
+        JsonNode caps = root.path("caps");
+        if (caps.isArray()) {
+            StringBuilder sb = new StringBuilder();
+            for (JsonNode c : caps) {
+                if (sb.length() > 0) {
+                    sb.append(',');
+                }
+                sb.append(c.asText(""));
+            }
+            return sb.toString();
+        }
+        return caps.isTextual() ? caps.asText("") : "";
     }
 
     private void send(WebSocketSession session, String json) {

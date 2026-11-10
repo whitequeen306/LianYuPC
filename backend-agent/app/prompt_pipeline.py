@@ -290,6 +290,8 @@ async def assemble_turn_prompt(
     group_mention: str = "",
     # 调用方后缀（Java 不再拼接任何 prompt 文本，仅透传产品侧动态块）
     extra_system_suffix: str = "",
+    # 语音通话单句字数上限：Java 只传配置事实，强制话术文案在本目录 prompts/ 下
+    voice_max_reply_chars: int = 0,
     prefetch_real_world: bool = True,
     use_internal_data: bool = True,
 ) -> str:
@@ -378,6 +380,17 @@ async def assemble_turn_prompt(
         from app.proactive_context import build_proactive_real_world_block
 
         prompt += await build_proactive_real_world_block(settings)
+
+    # 语音通话强制话术：原先长在 Java `VoiceCallService.buildVoiceAiRequest` 里（规则 5 裸文案）。
+    # 现在文案住 prompts/，Java 只传「单句字数上限」这个事实；48 与 Java 配置默认值一致，
+    # 0 只出现在没传该字段的调用方（旧客户端/单测），按默认值兜底而不是渲染出「不超过 0 字」。
+    if scene_key == "VOICE_CALL":
+        from app.prompts.loader import render_prompt
+
+        prompt += render_prompt(
+            "voice_call_instruction",
+            max_reply_chars=voice_max_reply_chars or 48,
+        )
 
     if extra_system_suffix:
         prompt += extra_system_suffix

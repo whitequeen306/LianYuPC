@@ -3,6 +3,7 @@ package com.lianyu.service.voice;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.lianyu.service.ai.AsrService;
+import com.lianyu.service.ai.AsrSession;
 import com.lianyu.service.ai.AsrStreamClient;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,7 +19,7 @@ public class VoiceDictationSession {
     private final VoiceEventSink sink;
     private final ObjectMapper objectMapper;
     private final AsrService asrService;
-    private final AsrStreamClient.Session asr;
+    private final AsrSession asr;
     private final AtomicBoolean closed = new AtomicBoolean(false);
     /** Single-flight: Zipformer endpoint and client VAD both may fire. */
     private final AtomicBoolean finalizing = new AtomicBoolean(false);

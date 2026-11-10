@@ -7,6 +7,13 @@ import { createTurnTailGate } from '@/composables/voiceTurnTail'
 import { shouldReuseVoiceSocket } from '@/composables/voiceSocket'
 import * as logger from '@/utils/logger'
 
+/** pre-roll 环形缓冲：只留最近 1.5s，打断时按序回灌给 ASR。 */
+const PREROLL_MS = 1500
+/** 40ms 一帧 / 16kHz / s16le：1.5s 约 48KB；上限只防异常长帧把内存撑爆。 */
+const PREROLL_MAX_BYTES = 96 * 1024
+/** 回灌只取「像人声」的帧：把静音/底噪灌进 ASR 只会拖慢首条 partial。 */
+const PREROLL_PEAK_MIN = 0.12
+
 /**
  * Duplex voice session over /ws/voice.
  */
@@ -16,6 +23,8 @@ export function useVoiceDuplex() {
   const partialText = ref('')
   const phase = ref('idle')
   const lastError = ref('')
+  /** 服务端权威状态镜像（call.state）。空串 = 服务端没开协议，退回旧事件推导。 */
+  const callState = ref('')
 
   const {
     recording,
@@ -37,6 +46,21 @@ export function useVoiceDuplex() {
   const BARGE_PEAK_THRESHOLD = 0.28
   const BARGE_HOT_FRAMES_REQUIRED = 4
 
+  /** call.state 序号：只接受更新的帧，乱序/重复直接丢。 */
+  let stateSeq = -1
+  /** 最近一帧 tts.audio 的 seq，play.drained 时回传给服务端对账。 */
+  let lastAudioSeq = 0
+
+  /** @type {{ pcm: ArrayBuffer, peak: number, at: number }[]} */
+  let preRollFrames = []
+  let preRollBytes = 0
+  /** 本段话的起点（performance.now）；回灌从这个时刻之后取。 */
+  let speechStartedAt = 0
+  /** 打断时刻：用来量「打断后多久出第一条 partial」。 */
+  let bargeAtMs = 0
+  let turnStartedPerf = 0
+  let firstAudioReported = false
+
   /**
    * turn.done 只代表服务端不再产音频；本地还压着 2-5 秒尾音。
    * 这段时间必须保持 speaking，否则 maybeBargeIn 的 phase 判断会直接返回，
@@ -47,6 +71,9 @@ export function useVoiceDuplex() {
     onIdle: () => {
       resetBargeState()
       phase.value = 'idle'
+      // 本地真播完了：服务端状态机据此把 SPEAKING 收回 LISTENING 并放行麦克风。
+      // 不发这一帧的话，麦克风要等服务端按字节估算排空才恢复。
+      sendJson({ type: 'play.drained', seq: lastAudioSeq })
     },
   })
 
@@ -62,9 +89,64 @@ export function useVoiceDuplex() {
     bargeHotFrames = 0
   }
 
+  function resetPreRoll() {
+    preRollFrames = []
+    preRollBytes = 0
+    speechStartedAt = 0
+  }
+
+  function pushPreRoll(pcm, peak) {
+    if (!pcm) return
+    const now = performance.now()
+    preRollFrames.push({ pcm, peak: peak || 0, at: now })
+    preRollBytes += pcm.byteLength || 0
+    const cutoff = now - PREROLL_MS
+    while (
+      preRollFrames.length > 0
+      && (preRollFrames[0].at < cutoff || preRollBytes > PREROLL_MAX_BYTES)
+    ) {
+      preRollBytes -= preRollFrames[0].pcm.byteLength || 0
+      preRollFrames.shift()
+    }
+  }
+
+  /**
+   * 把打断前那半句补回给 ASR。
+   *
+   * 必须紧跟在 barge_in 之后、实时帧之前发（同一 WS 保序）：服务端这时状态已切到
+   * LISTENING，回灌帧会被正常送去识别；不发的话「打断前说的 1 秒」永远进不了 ASR。
+   */
+  function flushPreRoll() {
+    const frames = preRollFrames
+    const from = speechStartedAt || (performance.now() - PREROLL_MS)
+    resetPreRoll()
+    if (!ws || ws.readyState !== WebSocket.OPEN) return 0
+    let sent = 0
+    for (const f of frames) {
+      if (f.at < from) continue
+      if (f.peak < PREROLL_PEAK_MIN) continue
+      ws.send(f.pcm)
+      sent += 1
+    }
+    return sent
+  }
+
+  /**
+   * 打断门控只认服务端状态机（call.state）：THINKING / SPEAKING 都能打断。
+   * 服务端没开协议时退回旧逻辑（只在朗读期、且已 arm 时才允许）。
+   */
   function maybeBargeIn(meta) {
-    if (!bargeArmed || phase.value !== 'speaking') return
-    if (Date.now() < bargeGraceUntil) return
+    const st = callState.value
+    let allowed
+    if (st) {
+      allowed = st === 'SPEAKING' || st === 'THINKING'
+      // 回声保护只针对朗读期：THINKING 没有外放，不存在回声
+      if (allowed && st === 'SPEAKING' && Date.now() < bargeGraceUntil) return
+    } else {
+      allowed = bargeArmed && phase.value === 'speaking'
+      if (allowed && Date.now() < bargeGraceUntil) return
+    }
+    if (!allowed) return
     const peak = meta?.peak || 0
     if (peak <= BARGE_PEAK_THRESHOLD) {
       bargeHotFrames = 0
@@ -72,16 +154,36 @@ export function useVoiceDuplex() {
     }
     bargeHotFrames += 1
     if (bargeHotFrames < BARGE_HOT_FRAMES_REQUIRED) return
+    triggerBarge()
+  }
+
+  function triggerBarge() {
     resetBargeState()
     turnTail.stop()
     playback?.clear()
-    sendJson({ type: 'barge_in' })
+    bargeAtMs = performance.now()
+    sendJson({ type: 'barge_in', preRollMs: PREROLL_MS })
+    const backfilled = flushPreRoll()
     phase.value = 'listening'
+    if (callState.value) callState.value = 'LISTENING'
+    logger.info('voice', `barge_in preRollFrames=${backfilled}`)
   }
 
   function sendJson(obj) {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(obj))
+    }
+  }
+
+  function applyStatePhase(st) {
+    if (st === 'SPEAKING' || st === 'BACKCHANNEL') {
+      phase.value = 'speaking'
+    } else if (st === 'THINKING') {
+      phase.value = 'thinking'
+    } else if (st === 'LISTENING' || st === 'USER_SPEAKING' || st === 'INTERRUPTED') {
+      phase.value = 'listening'
+    } else if (st === 'CLOSED') {
+      phase.value = 'idle'
     }
   }
 
@@ -108,6 +210,13 @@ export function useVoiceDuplex() {
         sampleRate: 24000,
       })
       noteSpeakingStarted()
+      if (mode.value === 'call') {
+        // 本地合成是异步的：tts.done 可能先到并把 phase 复位，这里补挂一次排空监视，
+        // 否则服务端永远等不到 play.drained（麦克风一直关着）。
+        phase.value = 'speaking'
+        turnTail.stop()
+        turnTail.settle()
+      }
     } catch (e) {
       lastError.value = '本地语音合成失败'
     }
@@ -121,26 +230,48 @@ export function useVoiceDuplex() {
       return
     }
     const type = msg.type
-    if (type === 'asr.partial') {
+    if (type === 'call.state') {
+      const seq = Number(msg.seq ?? 0)
+      if (seq >= stateSeq) {
+        stateSeq = seq
+        callState.value = String(msg.state || '')
+        applyStatePhase(callState.value)
+      }
+    } else if (type === 'asr.partial') {
       partialText.value = String(msg.text || '')
-      if (mode.value === 'call') phase.value = 'listening'
+      if (mode.value === 'call') {
+        phase.value = 'listening'
+        if (bargeAtMs && partialText.value) {
+          const cost = Math.round(performance.now() - bargeAtMs)
+          bargeAtMs = 0
+          sendJson({ type: 'call.metrics', bargeToPartialMs: cost })
+        }
+      }
     } else if (type === 'asr.final') {
       partialText.value = String(msg.text || '')
     } else if (type === 'turn.start') {
       // 新回合开始：上一回合的尾音排空监视必须撤销，否则它会在新回合中把状态压回 idle。
       turnTail.stop()
       phase.value = 'thinking'
+      turnStartedPerf = performance.now()
+      firstAudioReported = false
     } else if (type === 'llm.delta') {
       phase.value = 'thinking'
     } else if (type === 'tts.audio') {
       turnTail.stop()
       phase.value = 'speaking'
+      const seq = Number(msg.seq ?? 0)
+      if (seq) lastAudioSeq = seq
       if (!playback) playback = createPcmPlayback({ sampleRate: msg.sampleRate || 24000 })
       playback.enqueueBase64Audio(msg.base64, {
         mime: msg.mime || 'audio/pcm',
         sampleRate: msg.sampleRate || 24000,
       })
       noteSpeakingStarted()
+      if (!firstAudioReported && turnStartedPerf) {
+        firstAudioReported = true
+        sendJson({ type: 'call.metrics', firstAudioMs: Math.round(performance.now() - turnStartedPerf) })
+      }
     } else if (type === 'tts.local') {
       turnTail.stop()
       phase.value = 'speaking'
@@ -264,16 +395,38 @@ export function useVoiceDuplex() {
     partialText.value = ''
     turnTail.stop()
     phase.value = 'idle'
+    callState.value = ''
+    stateSeq = -1
+    lastAudioSeq = 0
+    bargeAtMs = 0
+    turnStartedPerf = 0
+    firstAudioReported = false
+    resetPreRoll()
     playback = createPcmPlayback({ sampleRate: 24000 })
     // 同 dictation：先确保拿到了真实 apiOrigin 再拼 wss 地址。
     await ensureApiOriginReady()
     await connect()
-    sendJson({ type: 'session.start', mode: 'call', conversationId })
+    // caps 是能力协商：服务端据此决定是否回 call.state / 接受 pre-roll 打断。
+    // 老服务端会忽略该字段，行为退回旧协议。
+    sendJson({
+      type: 'session.start',
+      mode: 'call',
+      conversationId,
+      caps: ['call.state', 'barge.preroll', 'vad.edge'],
+    })
     await startPcmStream({
       vadProfile,
       onFrame: (pcm, meta) => {
-        if (ws?.readyState === WebSocket.OPEN) ws.send(pcm)
+        // 先判定打断：命中时 flushPreRoll 回灌历史帧，当前帧随后按实时帧发，不会重复
         maybeBargeIn(meta)
+        pushPreRoll(pcm, meta?.peak || 0)
+        if (ws?.readyState === WebSocket.OPEN) ws.send(pcm)
+      },
+      onSpeechEdge: ({ phase: edge }) => {
+        if (edge === 'start') {
+          speechStartedAt = performance.now()
+        }
+        sendJson({ type: 'vad', phase: edge })
       },
       onEndpoint: () => sendJson({ type: 'endpoint' }),
     })
@@ -287,7 +440,10 @@ export function useVoiceDuplex() {
     playback?.clear()
     playback = null
     resetBargeState()
+    resetPreRoll()
     phase.value = 'idle'
+    callState.value = ''
+    stateSeq = -1
     partialText.value = ''
     mode.value = ''
     if (ws) {
@@ -299,11 +455,7 @@ export function useVoiceDuplex() {
   }
 
   function bargeIn() {
-    turnTail.stop()
-    playback?.clear()
-    sendJson({ type: 'barge_in' })
-    phase.value = 'listening'
-    resetBargeState()
+    triggerBarge()
   }
 
   return {
@@ -311,6 +463,7 @@ export function useVoiceDuplex() {
     mode,
     partialText,
     phase,
+    callState,
     lastError,
     recording,
     audioLevel,

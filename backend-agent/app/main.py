@@ -598,6 +598,8 @@ class PromptAssembleBody(BaseModel):
     group_mention: str = Field(default="", alias="groupMention")
     # 调用方额外 system 后缀（Java 不再拼接任何 prompt 文本）
     extra_system_suffix: str = Field(default="", alias="extraSystemSuffix")
+    # 语音通话单句字数上限（Java 只传这个事实，强制话术住在 prompts/voice_call_instruction.md）
+    voice_max_reply_chars: int = Field(default=0, alias="voiceMaxReplyChars")
     # 主动开口前的真实环境块（时间 + 天气）
     prefetch_real_world: bool = Field(default=True, alias="prefetchRealWorld")
 
@@ -725,6 +727,7 @@ async def prompt_assemble(
             group_other_characters=body.group_other_characters,
             group_mention=body.group_mention,
             extra_system_suffix=body.extra_system_suffix,
+            voice_max_reply_chars=body.voice_max_reply_chars,
             prefetch_real_world=body.prefetch_real_world,
             use_internal_data=body.use_internal_data,
         )

@@ -162,6 +162,25 @@ public class ChatTurnFacade {
             String extraSystemSuffix,
             ChatTurnGroupExtras groupExtras
     ) {
+        return assembleSystemPrompt(scene, userId, conversationId, character, userInputForLang,
+                lastUserMessageForMemory, extraSystemSuffix, groupExtras, 0);
+    }
+
+    /**
+     * 带「语音通话单句字数上限」事实的重载：VOICE_CALL 的强制话术住在 Python prompts/，
+     * Java 只传配置数值，不再拼任何 prompt 文案。
+     */
+    public String assembleSystemPrompt(
+            ChatTurnScene scene,
+            Long userId,
+            Long conversationId,
+            Character character,
+            String userInputForLang,
+            String lastUserMessageForMemory,
+            String extraSystemSuffix,
+            ChatTurnGroupExtras groupExtras,
+            int voiceMaxReplyChars
+    ) {
         String outputLanguage = outputLanguageService.resolveForRequest(userId, userInputForLang);
         boolean includeTime = scene.includeTime();
         String timeFact = includeTime ? timeTool.readCurrentTimeFact() : null;
@@ -195,7 +214,8 @@ public class ChatTurnFacade {
                 extraSystemSuffix,
                 groupExtras == null ? 0 : groupExtras.maxPieces(),
                 groupExtras == null ? "" : groupExtras.otherCharactersLine(),
-                groupExtras == null ? "" : groupExtras.mentionCtx());
+                groupExtras == null ? "" : groupExtras.mentionCtx(),
+                voiceMaxReplyChars);
         String prompt;
         try {
             prompt = promptAssemblyPort.assembleIfEnabled(request);

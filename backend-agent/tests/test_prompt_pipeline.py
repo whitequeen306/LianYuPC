@@ -138,6 +138,55 @@ async def test_proactive_prefetch_can_be_disabled():
     assert "你是小雨" in prompt or prompt
 
 
+# ─────────────────────────── 语音通话强制话术（原 Java voiceSuffix） ───────────────────────────
+
+
+async def test_voice_call_appends_instruction_with_configured_limit():
+    """VOICE_CALL 必须追加强制话术，且字数上限来自 Java 传的配置事实。"""
+    prompt = await assemble_turn_prompt(
+        user_id=1,
+        character_name="小雨",
+        settings=BASE_SETTINGS,
+        prompt_template="你是{{char}}。",
+        output_language="zh",
+        scene="VOICE_CALL",
+        voice_max_reply_chars=36,
+        use_internal_data=False,
+    )
+    assert prompt.count("=== 语音通话（强制） ===") == 1
+    assert "不超过 36 字" in prompt
+    assert "<|cut|>" in prompt and "<|pause|>" in prompt and "<|join|>" in prompt
+    assert "{max_reply_chars}" not in prompt
+
+
+async def test_voice_call_instruction_uses_default_limit_when_missing():
+    """没传上限时按 Java 配置默认值 48 兜底，不能渲染成「不超过 0 字」。"""
+    prompt = await assemble_turn_prompt(
+        user_id=1,
+        character_name="小雨",
+        settings=BASE_SETTINGS,
+        prompt_template="你是{{char}}。",
+        output_language="zh",
+        scene="VOICE_CALL",
+        use_internal_data=False,
+    )
+    assert "不超过 48 字" in prompt
+
+
+async def test_non_voice_scenes_do_not_get_voice_instruction():
+    prompt = await assemble_turn_prompt(
+        user_id=1,
+        character_name="小雨",
+        settings=BASE_SETTINGS,
+        prompt_template="你是{{char}}。",
+        output_language="zh",
+        scene="SINGLE",
+        voice_max_reply_chars=36,
+        use_internal_data=False,
+    )
+    assert "语音通话（强制）" not in prompt
+
+
 # ─────────────────────────── 消息组装：preparedMessages 分支 ───────────────────────────
 
 

@@ -28,7 +28,7 @@ class AgentPromptAssemblyAdapterTest {
         return new PromptAssemblyRequest(7L, 51L, 53L, "甘雨", Map.of("city", "上海"), null,
                 "SINGLE", "zh", "full", true, null, true, true, 1, "",
                 Map.of("chat", true, "memory", true, "recent", true, "diary", true),
-                "你好", "\n\n后缀", 0, "", "");
+                "你好", "\n\n后缀", 0, "", "", 0);
     }
 
     private AgentRuntimeClient client() {
@@ -96,6 +96,8 @@ class AgentPromptAssemblyAdapterTest {
         assertTrue(body.containsKey("toolHint"));
         assertEquals("你好", body.get("lastUserMessage"));
         assertEquals("\n\n后缀", body.get("extraSystemSuffix"));
+        // 语音通话字数上限是 Java → Python 的事实（文案本身在 Python prompts/）
+        assertEquals(0, body.get("voiceMaxReplyChars"));
     }
 
     @Test
@@ -103,7 +105,7 @@ class AgentPromptAssemblyAdapterTest {
         PromptAssemblyRequest request = new PromptAssemblyRequest(
                 7L, 51L, 53L, "甘雨", Map.of(), null,
                 "SINGLE", "zh", "full", true, null, true, true, 1, "",
-                Map.of("chat", false), null, null, 0, null, null);
+                Map.of("chat", false), null, null, 0, null, null, 0);
         Map<String, Object> body = AgentPromptAssemblyAdapter.bodyOf(request);
         assertEquals("", body.get("lastUserMessage"));
         assertEquals("", body.get("extraSystemSuffix"));

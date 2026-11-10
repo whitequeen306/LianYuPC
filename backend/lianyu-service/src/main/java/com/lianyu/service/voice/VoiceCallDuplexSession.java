@@ -1,8 +1,10 @@
 package com.lianyu.service.voice;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.lianyu.common.util.UserInputSanitizer;
+import com.lianyu.service.ai.AsrSession;
 import com.lianyu.service.ai.AsrStreamClient;
 import com.lianyu.service.agent.TtsPort;
 import com.lianyu.service.ai.InnerThoughtFilter;
@@ -10,6 +12,7 @@ import com.lianyu.service.conversation.VoiceCallService;
 import com.lianyu.service.dto.AiChatRequest;
 import java.util.Base64;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -46,13 +49,27 @@ public class VoiceCallDuplexSession {
      */
     private final Object sendLock = new Object();
 
+    /** 通话状态机：麦克风门控、打断、排空的唯一事实来源（客户端 phase 只做展示）。 */
+    private final CallStateMachine callState = new CallStateMachine();
+    /**
+     * 回合代数。barge/close 时自增，让旧回合的 TTS 线程与迟到音频立刻失效 ——
+     * 否则被打断的那一句会继续合成/下发，用户体感就是「打断了它还在说」。
+     */
+    private final AtomicLong turnEpoch = new AtomicLong();
+    /** 24kHz / s16le / mono：48 字节 = 1ms，用于没有 play.drained 时估算排空时刻。 */
+    private static final int PCM_BYTES_PER_MS = 48;
+    /** 本回合已下发的 PCM 字节数（每回合清零）。 */
+    private final AtomicLong turnAudioBytes = new AtomicLong();
+    /** 下发音频帧序号，客户端 play.drained 回传它便于日志对账。 */
+    private final AtomicLong audioSeq = new AtomicLong();
+
     private final VoiceEventSink sink;
     private final ObjectMapper objectMapper;
     private final long userId;
     private final long conversationId;
     private final VoiceCallService voiceCallService;
     private final VoiceSynthesisService voiceSynthesisService;
-    private final AsrStreamClient.Session asr;
+    private final AsrSession asr;
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicBoolean turnBusy = new AtomicBoolean(false);
     private final AtomicBoolean audioSent = new AtomicBoolean(false);
@@ -63,8 +80,6 @@ public class VoiceCallDuplexSession {
     private volatile long lastTurnAtMs = 0L;
     /** 去重时间窗：commit 超时与定稿到达之间实测只差 77ms，3s 足够宽裕。 */
     private static final long DEDUP_WINDOW_MS = 3000L;
-    /** 本轮是否已放行麦克风（真人插话）；回合结束复位。 */
-    private final AtomicBoolean bargeInAllowed = new AtomicBoolean(false);
     private final AtomicReference<java.util.concurrent.CompletableFuture<?>> llmFuture = new AtomicReference<>();
     /**
      * 上一个回合还没收尾时，用户又说完一句 —— 先把文本存这里，等当前回合结束立刻接上。
@@ -219,19 +234,104 @@ public class VoiceCallDuplexSession {
             return;
         }
         lastPcmAtMs = System.currentTimeMillis();
-        // 角色正在出声时不把麦克风转给 ASR：外放时喇叭里的声音会被当成「用户说的话」，
-        // 线上表现就是用户下一句变成刚才那段的重复（转写出一堆重复文字）。
-        // 真人插话由 barge_in 放行 —— 那条路已要求持续高音量，不会被回声误触。
-        if (turnBusy.get() && !bargeInAllowed.get()) {
+        // 门控交给状态机：角色出声（SPEAKING/BACKCHANNEL）时麦克风不进 ASR ——
+        // 外放的声音会被当成「用户说的话」，线上表现就是下一句转写出一堆重复文字。
+        // 打断所需的 pre-roll 由客户端在 barge_in 后回灌，不依赖服务端保帧。
+        if (!callState.micForwarded()) {
             return;
         }
         asr.sendPcm(pcm);
     }
 
-    public void bargeIn() {
-        bargeInAllowed.set(true);
+    /**
+     * 真人插话（客户端 VAD 判定后发来）。
+     *
+     * <p>{@code preRollMs} 是客户端回灌的历史语音长度，这里只用于日志：回灌帧到达时
+     * 状态已切到 LISTENING，走正常 {@link #onPcm} 即可，服务端不需要自己留音频。
+     */
+    public void bargeIn(int preRollMs) {
+        if (closed.get() || !callState.canBargeIn()) {
+            log.info("Voice duplex barge ignored conv={} state={}", conversationId, callState.state());
+            return;
+        }
+        emitState(callState.on(CallStateMachine.Event.BARGE_IN, "barge_in"));
+        // 先作废在途回合（LLM + 已排队的 TTS 音频），再放行麦克风。
+        turnEpoch.incrementAndGet();
         cancelInFlightTurn();
-        emitJson("turn.cancelled", n -> {
+        // **必须清去重基线**：pre-roll 回灌的正是被打断那半句之前的话，
+        // 不清的话 isDuplicateOfLastTurn 会把它当成上一轮重复直接丢掉（线上「打断后没反应」）。
+        lastTurnText = "";
+        lastTurnAtMs = 0L;
+        emitJson("turn.cancelled", n -> n.put("preRollMs", preRollMs));
+        emitState(callState.on(CallStateMachine.Event.TURN_CANCELLED, "barge_in"));
+        log.info("Voice duplex barge conv={} preRollMs={}", conversationId, preRollMs);
+    }
+
+    /**
+     * 客户端 VAD 边沿。
+     *
+     * <p>{@code start} 用于两件事：驱动 LISTENING → USER_SPEAKING（否则服务端只知道
+     * 引擎端点，思考期插话无法生效）；若上一刻是 THINKING，说明用户等不及回答开口了，
+     * 立刻取消在途回合。{@code end} 把 USER_SPEAKING 收回 THINKING。
+     */
+    public void onVad(String phase) {
+        if (closed.get()) {
+            return;
+        }
+        if ("start".equals(phase)) {
+            CallStateMachine.Transition t = callState.on(CallStateMachine.Event.VAD_START, "vad.start");
+            if (t.changed() && t.from() == CallStateMachine.State.THINKING) {
+                turnEpoch.incrementAndGet();
+                cancelInFlightTurn();
+                emitJson("turn.cancelled", n -> n.put("reason", "user_speaking"));
+            }
+            emitState(t);
+        } else if ("end".equals(phase)) {
+            emitState(callState.on(CallStateMachine.Event.VAD_END, "vad.end"));
+        }
+    }
+
+    /**
+     * 客户端上报「播放队列已排空」。
+     *
+     * <p>只有 SPEAKING 才受理：其他状态下的 drained 可能来自上一回合的迟到帧，
+     * 受理会把状态误推成 LISTENING、提前放行麦克风（回声被当成用户说话）。
+     */
+    public void onPlayDrained(long seq) {
+        if (closed.get()) {
+            return;
+        }
+        CallStateMachine.Transition t = callState.on(CallStateMachine.Event.PLAY_DRAINED, "play.drained");
+        if (t.changed()) {
+            log.info("Voice duplex play drained conv={} seq={} serverAudioSeq={}",
+                    conversationId, seq, audioSeq.get());
+            emitState(t);
+        }
+    }
+
+    /**
+     * 客户端链路指标（P0 只落日志）：用来回答「打断后多久出第一条 partial」。
+     */
+    public void onClientMetrics(JsonNode metrics) {
+        if (metrics == null) {
+            return;
+        }
+        log.info("Voice duplex client metrics conv={} firstAudioMs={} bargeToPartialMs={} underruns={} droppedMs={}",
+                conversationId,
+                metrics.path("firstAudioMs").asLong(-1),
+                metrics.path("bargeToPartialMs").asLong(-1),
+                metrics.path("underruns").asLong(-1),
+                metrics.path("droppedMs").asLong(-1));
+    }
+
+    /** 会话建立后先下发一次全量状态，客户端不必等第一次迁移才有镜像。 */
+    public void announceState() {
+        CallStateMachine.State s = callState.state();
+        long seq = callState.seq();
+        emitJson("call.state", n -> {
+            n.put("seq", seq);
+            n.put("state", s.name());
+            n.put("reason", "session.start");
         });
     }
 
@@ -321,6 +421,9 @@ public class VoiceCallDuplexSession {
                 now - sessionStartedAtMs,
                 textLen);
         if (text == null) {
+            // 空端点（引擎的纯静音规则会周期性触发）：没有可开回合的文本，
+            // 把 THINKING 收回 LISTENING，否则客户端会一直显示「正在想」。
+            forceListening("empty_endpoint");
             return;
         }
         try {
@@ -339,8 +442,40 @@ public class VoiceCallDuplexSession {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
+        turnEpoch.incrementAndGet();
         cancelInFlightTurn();
         asr.close();
+    }
+
+    /**
+     * 把状态收回 LISTENING（异常/空文本等收尾路径）。
+     *
+     * <p>状态机只认事件：THINKING 用 TURN_CANCELLED 收回，SPEAKING 用 PLAY_DRAINED 收回；
+     * 其余状态本来就能收麦克风，不需要迁移。
+     */
+    private void forceListening(String reason) {
+        CallStateMachine.State s = callState.state();
+        if (s == CallStateMachine.State.SPEAKING) {
+            emitState(callState.on(CallStateMachine.Event.PLAY_DRAINED, reason));
+        } else if (s == CallStateMachine.State.THINKING
+                || s == CallStateMachine.State.USER_SPEAKING
+                || s == CallStateMachine.State.INTERRUPTED) {
+            emitState(callState.on(CallStateMachine.Event.TURN_CANCELLED, reason));
+        }
+    }
+
+    /** 状态迁移的唯一出口：只在真的变了时下发 {@code call.state}。 */
+    private void emitState(CallStateMachine.Transition t) {
+        if (t == null || !t.changed()) {
+            return;
+        }
+        log.info("Voice duplex state conv={} seq={} {}->{} reason={}",
+                conversationId, t.seq(), t.from(), t.to(), t.reason());
+        emitJson("call.state", n -> {
+            n.put("seq", t.seq());
+            n.put("state", t.to().name());
+            n.put("reason", t.reason() == null ? "" : t.reason());
+        });
     }
 
     /** 去掉标点/空白后的字数（回声尾巴常常只剩标点加一两个字）。 */
@@ -406,12 +541,18 @@ public class VoiceCallDuplexSession {
         String userText = UserInputSanitizer.sanitizeChatMessage(
                 rawText == null ? "" : rawText).storedText();
         if (userText.isBlank()) {
+            if (!turnBusy.get()) {
+                forceListening("blank_text");
+            }
             return;
         }
         // 噪声过滤：定稿只剩一两个字（回声尾巴、咳嗽、桌面杂音）不值得开一整回合。
         if (meaningfulLength(userText) < 2) {
             log.info("Voice duplex skip noise conv={} len={} text={}",
                     conversationId, userText.length(), abbreviate(userText));
+            if (!turnBusy.get()) {
+                forceListening("noise");
+            }
             return;
         }
         // 同一句话的重复触发：commit 超时先拿中间结果开了回合、定稿随后才到（线上实测差 77ms），
@@ -419,6 +560,9 @@ public class VoiceCallDuplexSession {
         if (isDuplicateOfLastTurn(userText)) {
             log.info("Voice duplex skip duplicate conv={} len={} text={}",
                     conversationId, userText.length(), abbreviate(userText));
+            if (!turnBusy.get()) {
+                forceListening("duplicate");
+            }
             return;
         }
         if (!turnBusy.compareAndSet(false, true)) {
@@ -428,14 +572,20 @@ public class VoiceCallDuplexSession {
                     conversationId, userText.length());
             return;
         }
+        long epoch = turnEpoch.incrementAndGet();
         lastTurnText = userText;
         lastTurnAtMs = System.currentTimeMillis();
         turnStartedAtMs = System.currentTimeMillis();
-        // 每个回合开始时关闭麦克风：这一轮要出声，外放回声不能被当成用户在说话。
-        // 真人插话会走 bargeIn() 重新打开。
-        bargeInAllowed.set(false);
         llmFirstDeltaAtMs = 0L;
         firstAudioAtMs = 0L;
+        turnAudioBytes.set(0);
+        audioSent.set(false);
+        // 用户说完 → THINKING。老客户端不发 vad 边沿，这里先补一次「开始说话」，
+        // 否则从 LISTENING 直接来端点时状态机不会迁移，客户端看不到「正在想」。
+        if (callState.state() == CallStateMachine.State.LISTENING) {
+            emitState(callState.on(CallStateMachine.Event.ASR_PARTIAL, "turn_begin"));
+        }
+        emitState(callState.on(CallStateMachine.Event.ENDPOINT, "turn_begin"));
         emitJson("asr.final", n -> n.put("text", userText));
         emitJson("turn.start", n -> n.put("userText", userText));
         log.info("Voice duplex timing conv={} stage=turn_start userLen={}", conversationId, userText.length());
@@ -451,13 +601,12 @@ public class VoiceCallDuplexSession {
             // 这样第一句的合成不必等整段回复结束，播完一句时下一句通常已就绪。
             SentenceSplitter splitter = new SentenceSplitter();
             BlockingQueue<SentenceSplitter.Segment> ttsQueue = new LinkedBlockingQueue<>();
-            Thread ttsWorker = target.isLocal() ? null : startTtsPipeline(ttsQueue);
+            Thread ttsWorker = target.isLocal() ? null : startTtsPipeline(ttsQueue, epoch);
             try {
                 StringBuilder full = new StringBuilder();
                 synchronized (sentenceLock) {
                     llmEmitBuf.setLength(0);
                 }
-                audioSent.set(false);
 
                 long persistStart = System.currentTimeMillis();
                 voiceCallService.persistUserTurn(userId, conversationId, userText);
@@ -467,7 +616,7 @@ public class VoiceCallDuplexSession {
                         conversationId, System.currentTimeMillis() - persistStart);
 
                 var future = voiceCallService.streamVoiceReply(userId, aiRequest, delta -> {
-                    if (delta == null || delta.isEmpty() || closed.get()) {
+                    if (delta == null || delta.isEmpty() || closed.get() || epoch != turnEpoch.get()) {
                         return;
                     }
                     markLlmFirstDelta();
@@ -484,7 +633,7 @@ public class VoiceCallDuplexSession {
                 });
                 llmFuture.set(future);
                 String rawReply = future.join();
-                if (closed.get() || Thread.currentThread().isInterrupted()) {
+                if (closed.get() || epoch != turnEpoch.get() || Thread.currentThread().isInterrupted()) {
                     return;
                 }
 
@@ -497,7 +646,7 @@ public class VoiceCallDuplexSession {
                 voiceCallService.persistAssistantTurn(userId, conversationId, spoken);
 
                 if (target.isLocal()) {
-                    emitLocalTts(spoken);
+                    emitLocalTts(spoken, epoch);
                 } else {
                     // 收尾：把切分器里剩余的半句也送去合成，然后等 TTS 线程把队列吃完。
                     for (SentenceSplitter.Segment seg : splitter.flush()) {
@@ -505,14 +654,23 @@ public class VoiceCallDuplexSession {
                     }
                     ttsQueue.offer(TTS_SENTINEL);
                     joinQuietly(ttsWorker, 180_000);
+                    if (epoch != turnEpoch.get()) {
+                        return;
+                    }
                     if (!audioSent.get()) {
                         emitError("TTS_ERROR", "语音合成失败，请稍后再试");
+                        forceListening("tts_error");
                     } else {
                         emitJson("tts.done", n -> {
                         });
+                        // 正常由客户端 play.drained 收回 LISTENING；丢包/老客户端收不到时按字节估算兜底
+                        scheduleDrainEstimate(epoch);
                     }
                 }
 
+                if (epoch != turnEpoch.get()) {
+                    return;
+                }
                 String reply = spoken;
                 long totalMs = System.currentTimeMillis() - turnStartedAtMs;
                 log.info("Voice duplex timing conv={} stage=turn_done totalMs={} firstAudioMs={}",
@@ -521,17 +679,24 @@ public class VoiceCallDuplexSession {
                     n.put("userText", userText);
                     n.put("replyText", reply);
                 });
+            } catch (CancellationException e) {
+                // 打断/思考期插话会主动 cancel：这是预期路径，不是错误
+                log.info("Voice duplex turn cancelled conv={}", conversationId);
             } catch (Exception e) {
                 log.warn("Voice duplex turn failed: {}", e.toString());
                 emitError("TURN_ERROR", "角色暂时无法回复，请稍后再试");
+                forceListening("turn_error");
             } finally {
-                llmFuture.set(null);
-                bargeInAllowed.set(false);
-                turnBusy.set(false);
-                // 收尾后再接力：期间用户说的话现在才处理，保证「说过的话一定被回应」。
-                String queued = pendingUserText.getAndSet(null);
-                if (queued != null && !closed.get()) {
-                    startTurn(queued);
+                // 只有「本回合仍是当前回合」才做收尾：被打断后新回合可能已经开跑，
+                // 旧线程再清 turnBusy / llmFuture 会把新回合的状态搅坏。
+                if (epoch == turnEpoch.get()) {
+                    llmFuture.set(null);
+                    turnBusy.set(false);
+                    // 收尾后再接力：期间用户说的话现在才处理，保证「说过的话一定被回应」。
+                    String queued = pendingUserText.getAndSet(null);
+                    if (queued != null && !closed.get()) {
+                        startTurn(queued);
+                    }
                 }
             }
         }, "voice-call-duplex");
@@ -543,7 +708,7 @@ public class VoiceCallDuplexSession {
         return target;
     }
 
-    private void emitLocalTts(String spoken) {
+    private void emitLocalTts(String spoken, long epoch) {
         if (spoken == null || spoken.isBlank()) {
             return;
         }
@@ -558,6 +723,9 @@ public class VoiceCallDuplexSession {
         });
         emitJson("tts.done", n -> {
         });
+        // 本地音色由客户端合成，服务端没有 PCM 字节可算时长：按字数粗估兜底。
+        // 老客户端不发 play.drained，没有这个兜底会永久停在 SPEAKING（麦克风一直关着）。
+        scheduleDrainAfter(epoch, Math.max(1500, spoken.length() * 220L) + 1500, "drain_local_estimate");
     }
 
     /**
@@ -586,11 +754,12 @@ public class VoiceCallDuplexSession {
      * {@link SentenceSplitter#SENTENCE_PAUSE_MS} 等时长的静音，把边界补齐。
      * 回合最后一段的 {@code pauseAfterMs} 是 0，不会拖慢 {@code turn.done}。
      */
-    private Thread startTtsPipeline(BlockingQueue<SentenceSplitter.Segment> queue) {
+    private Thread startTtsPipeline(BlockingQueue<SentenceSplitter.Segment> queue, long epoch) {
         Thread ttsThread = new Thread(() -> {
             try {
                 int pendingGapMs = 0;
-                while (!closed.get()) {
+                // epoch 变化 = 这一回合被打断：立刻停手，别把旧的句子继续合成出来
+                while (!closed.get() && epoch == turnEpoch.get()) {
                     SentenceSplitter.Segment segment = queue.poll(200, TimeUnit.MILLISECONDS);
                     if (segment == null) {
                         continue;
@@ -598,10 +767,13 @@ public class VoiceCallDuplexSession {
                     if (segment == TTS_SENTINEL) {
                         return;
                     }
-                    if (pendingGapMs > 0 && !closed.get()) {
-                        sendAudio(PcmFrameAssembler.silence(pendingGapMs), "audio/pcm");
+                    if (epoch != turnEpoch.get()) {
+                        return;
                     }
-                    streamSentence(segment.text());
+                    if (pendingGapMs > 0 && !closed.get()) {
+                        sendAudio(PcmFrameAssembler.silence(pendingGapMs), "audio/pcm", epoch);
+                    }
+                    streamSentence(segment.text(), epoch);
                     pendingGapMs = jitteredPause(segment.pauseAfterMs());
                 }
             } catch (InterruptedException e) {
@@ -614,7 +786,7 @@ public class VoiceCallDuplexSession {
     }
 
     /** 合成一句并把 PCM 块直接下发；等这一句的流结束（或超时）再返回。 */
-    private void streamSentence(String sentence) {
+    private void streamSentence(String sentence, long epoch) {
         java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
         log.info("Voice duplex TTS sentence conv={} len={} elapsedMs={}",
                 conversationId, sentence.length(), System.currentTimeMillis() - turnStartedAtMs);
@@ -622,13 +794,13 @@ public class VoiceCallDuplexSession {
         // 高低字节对调（听感=电子杂音）。这里统一拼成样本对齐的定长帧再下发。
         PcmFrameAssembler assembler = new PcmFrameAssembler();
         PcmFrameAssembler.FrameConsumer emit = (array, offset, length) -> {
-            if (length <= 0) {
+            if (length <= 0 || epoch != turnEpoch.get()) {
                 return;
             }
             if (audioSent.compareAndSet(false, true)) {
                 markFirstAudio();
             }
-            sendAudio(java.util.Arrays.copyOfRange(array, offset, offset + length), "audio/pcm");
+            sendAudio(java.util.Arrays.copyOfRange(array, offset, offset + length), "audio/pcm", epoch);
         };
         voiceCallService.streamSynthesizeForTarget(target, sentence, new TtsPort.TtsChunkSink() {
             @Override
@@ -728,6 +900,51 @@ public class VoiceCallDuplexSession {
         long llmMs = llmFirstDeltaAtMs == 0L ? -1 : firstAudioAtMs - llmFirstDeltaAtMs;
         log.info("Voice duplex timing conv={} stage=tts_first_audio ms={} afterLlmMs={}",
                 conversationId, firstAudioAtMs - turnStartedAtMs, llmMs);
+        emitState(callState.on(CallStateMachine.Event.FIRST_AUDIO, "tts_first_audio"));
+    }
+
+    /**
+     * 排空兜底：客户端没有上报 {@code play.drained}（丢包/老客户端）时，
+     * 按「已下发字节 ÷ 48 字节/ms」估算播放结束时刻，到点把 SPEAKING 收回 LISTENING。
+     *
+     * <p>没有这个兜底，一旦 drained 丢失，麦克风会永久关着（用户说什么都没反应），
+     * 只能挂断重拨 —— 这是状态机化之前就存在、但被 turnBusy 顺手掩盖的坑。
+     */
+    private void scheduleDrainEstimate(long epoch) {
+        long bytes = turnAudioBytes.get();
+        if (bytes <= 0 || firstAudioAtMs == 0L) {
+            return;
+        }
+        long playbackMs = bytes / PCM_BYTES_PER_MS;
+        long elapsedMs = System.currentTimeMillis() - firstAudioAtMs;
+        // +300ms：留出「最后一帧到达客户端 + 播放器启动」的余量，宁可晚一点放麦克风
+        long waitMs = Math.max(0, playbackMs - elapsedMs) + 300;
+        log.info("Voice duplex drain estimate armed conv={} playbackMs={} waitMs={}",
+                conversationId, playbackMs, waitMs);
+        scheduleDrainAfter(epoch, waitMs, "drain_estimate");
+    }
+
+    /** 到点若仍是当前回合的 SPEAKING，就收回 LISTENING（客户端 drained 先到则这次是 no-op）。 */
+    private void scheduleDrainAfter(long epoch, long waitMs, String reason) {
+        Thread timer = new Thread(() -> {
+            try {
+                Thread.sleep(waitMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            if (closed.get() || epoch != turnEpoch.get()) {
+                return;
+            }
+            CallStateMachine.Transition t = callState.on(CallStateMachine.Event.PLAY_DRAINED, reason);
+            if (t.changed()) {
+                log.info("Voice duplex drain fallback conv={} reason={} waitMs={}",
+                        conversationId, reason, waitMs);
+                emitState(t);
+            }
+        }, "voice-drain-" + conversationId);
+        timer.setDaemon(true);
+        timer.start();
     }
 
     private void cancelInFlightTurn() {
@@ -738,8 +955,8 @@ public class VoiceCallDuplexSession {
         turnBusy.set(false);
     }
 
-    private void sendAudio(byte[] audio, String mimeHint) {
-        if (audio == null || audio.length == 0 || !sink.isOpen()) {
+    private void sendAudio(byte[] audio, String mimeHint, long epoch) {
+        if (audio == null || audio.length == 0 || !sink.isOpen() || epoch != turnEpoch.get()) {
             return;
         }
         try {
@@ -747,8 +964,10 @@ public class VoiceCallDuplexSession {
             n.put("type", "tts.audio");
             n.put("mime", mimeHint == null || mimeHint.isBlank() ? "audio/pcm" : mimeHint);
             n.put("sampleRate", 24000);
+            n.put("seq", audioSeq.incrementAndGet());
             n.put("base64", Base64.getEncoder().encodeToString(audio));
             String frame = objectMapper.writeValueAsString(n);
+            turnAudioBytes.addAndGet(audio.length);
             synchronized (sendLock) {
                 sink.sendText(frame);
             }
