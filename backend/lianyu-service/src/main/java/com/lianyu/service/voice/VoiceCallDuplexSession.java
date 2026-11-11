@@ -116,6 +116,13 @@ public class VoiceCallDuplexSession {
     private final AtomicInteger idleNudgeCount = new AtomicInteger();
     private volatile long lastNudgeAtMs = 0L;
 
+    /** 通话记忆（P3）节流：有内容的回合计满 3 轮才递一次，避免把闲聊全灌进 episode。 */
+    private static final int MOMENT_INTERVAL_TURNS = 3;
+    /** 比这短的句子没有可记的信息量（"嗯""好"），不值得花一次模型判定。 */
+    private static final int MOMENT_MIN_USER_CHARS = 8;
+    /** 已完成的、用户说了有内容的话的回合数。 */
+    private final AtomicInteger contentTurns = new AtomicInteger();
+
     public VoiceCallDuplexSession(
             VoiceEventSink sink,
             ObjectMapper objectMapper,
@@ -573,6 +580,27 @@ public class VoiceCallDuplexSession {
     }
 
     /**
+     * 通话记忆（P3）：只有「用户说了 ≥8 个字」的回合才计数，每 3 轮递一次。
+     *
+     * <p>开关与「值不值得记」都在 VoiceCallService / Python；这里只做节流 ——
+     * 每一轮都花一次模型判定，既慢又会把寒暄也灌进 episode。
+     */
+    private void maybeRecordVoiceMoment(String userText, String replyText) {
+        String text = userText == null ? "" : userText.trim();
+        if (text.length() < MOMENT_MIN_USER_CHARS) {
+            return;
+        }
+        if (contentTurns.incrementAndGet() % MOMENT_INTERVAL_TURNS != 0) {
+            return;
+        }
+        try {
+            voiceCallService.recordVoiceMoment(userId, conversationId, text, replyText);
+        } catch (Exception e) {
+            log.debug("Voice moment skipped conv={}: {}", conversationId, e.toString());
+        }
+    }
+
+    /**
      * 本回合该用的韵律：开关关着就中性（不发多余参数），查询失败也退回中性。
      *
      * <p>刻意放在工作线程里调用：它要读一次角色状态，不能占着 WebSocket 线程。
@@ -976,6 +1004,7 @@ public class VoiceCallDuplexSession {
                     n.put("userText", userText);
                     n.put("replyText", reply);
                 });
+                maybeRecordVoiceMoment(userText, reply);
             } catch (CancellationException e) {
                 // 打断/思考期插话会主动 cancel：这是预期路径，不是错误
                 log.info("Voice duplex turn cancelled conv={}", conversationId);

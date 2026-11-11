@@ -111,4 +111,73 @@ public class AgentMemoryAdapter implements AgentMemoryPort {
                 root.path("created").asInt(0), root.path("updated").asInt(0));
         return true;
     }
+
+    /**
+     * 通话单轮：把用户原话与角色回复递给 Python，只写 episode。
+     *
+     * <p>与抽取链路分开：这里没有「回退 Java」的语义 —— 写不进去就当这一轮没记，
+     * 绝不能因为记忆影响通话。凭据取用户默认 vault（通话没有 provider 上下文）。
+     */
+    @Override
+    public boolean writeVoiceMomentIfActive(long userId,
+                                            Long conversationId,
+                                            Long characterId,
+                                            String userText,
+                                            String replyText) {
+        if (characterId == null || userText == null || userText.isBlank()) {
+            return false;
+        }
+        if (!client.properties().agentActive()) {
+            return false;
+        }
+
+        String baseUrl;
+        String apiKey;
+        String model;
+        try {
+            VaultEntryResponse vault = vaultService.resolvePreferredUserVault(userId);
+            if (vault == null) {
+                return false;
+            }
+            baseUrl = vault.getBaseUrl();
+            apiKey = vault.getId() != null
+                    ? vaultService.decryptKeyForChat(vault.getId())
+                    : vault.getApiKey();
+            model = vault.getModelDefault();
+        } catch (Exception e) {
+            log.warn("Agent voice moment: vault resolve failed: {}", e.toString());
+            return false;
+        }
+        if (baseUrl == null || baseUrl.isBlank() || apiKey == null || apiKey.isBlank()
+                || model == null || model.isBlank()) {
+            return false;
+        }
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("userId", userId);
+        body.put("characterId", characterId);
+        body.put("conversationId", conversationId);
+        body.put("userText", userText);
+        body.put("replyText", replyText == null ? "" : replyText);
+        body.put("textBaseUrl", baseUrl);
+        body.put("textApiKey", apiKey);
+        body.put("textModel", model);
+
+        try {
+            String response = client.postJson("/agent/memory/moment", userId, body);
+            if (response == null) {
+                return false;
+            }
+            com.fasterxml.jackson.databind.JsonNode root = client.readTree(response);
+            if (root.path("written").asInt(0) > 0) {
+                log.info("Voice moment written: userId={}, characterId={}, conv={}, episodeId={}",
+                        userId, characterId, conversationId, root.path("episodeId").asInt(0));
+                return true;
+            }
+            return false;
+        } catch (Exception e) {
+            log.warn("Agent voice moment failed (ignored): {}", e.toString());
+            return false;
+        }
+    }
 }

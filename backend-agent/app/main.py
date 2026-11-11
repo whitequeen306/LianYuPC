@@ -1122,6 +1122,53 @@ async def memory_extract_write(
     return result
 
 
+class MemoryMomentBody(BaseModel):
+    """通话单轮：只递原话，记不记、记成什么由 Python 判定。"""
+
+    user_id: int = Field(alias="userId")
+    character_id: int = Field(alias="characterId")
+    conversation_id: int | None = Field(default=None, alias="conversationId")
+    user_text: str = Field(default="", alias="userText")
+    reply_text: str = Field(default="", alias="replyText")
+    source_msg_ids: list[int] = []
+    text_base_url: str | None = Field(default=None, alias="textBaseUrl")
+    text_api_key: str | None = Field(default=None, alias="textApiKey")
+    text_model: str | None = Field(default=None, alias="textModel")
+    provider: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+@app.post("/agent/memory/moment")
+async def memory_moment(
+    body: MemoryMomentBody,
+    user_id_header: str | None = Header(default=None, alias="X-User-Id"),
+) -> dict[str, Any]:
+    """通话中轻量写记忆：只写 memory_episode，不写 memory_meta。
+
+    失败恒返回 written=0（Java 是 fire-and-forget，写不进去也不能影响通话）。
+    """
+    if user_id_header and str(body.user_id) != user_id_header:
+        raise HTTPException(status_code=403, detail="user mismatch")
+
+    from app.memory.moment import record_moment
+
+    episode_id = await record_moment(
+        get_gateway(),
+        user_id=body.user_id,
+        character_id=body.character_id,
+        conversation_id=body.conversation_id,
+        user_text=body.user_text,
+        reply_text=body.reply_text,
+        source_msg_ids=list(body.source_msg_ids or []),
+        base_url=body.text_base_url,
+        api_key=body.text_api_key,
+        model=body.text_model,
+        provider=body.provider,
+    )
+    return {"written": 1 if episode_id else 0, "episodeId": episode_id}
+
+
 @app.post("/agent/memory/relay/drain")
 async def memory_relay_drain() -> dict[str, int]:
     """手动触发一次 outbox 投影（运维/排障用）。"""

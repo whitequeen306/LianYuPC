@@ -249,6 +249,36 @@ class VoiceCallDuplexSessionTest {
         }
     }
 
+    @Test
+    void voiceMomentIsHandedOverOnEveryThirdContentTurn() {
+        VoiceCallDuplexSession session = newSession();
+        completeTurn(session, "今天加班到很晚好累");
+        completeTurn(session, "同事还把活都甩给我");
+        // 让第二轮的收尾线程跑完，避免「还没来得及调用」被误当成「没有调用」
+        sleep(200);
+        org.mockito.Mockito.verify(service, never())
+                .recordVoiceMoment(anyLong(), anyLong(), anyString(), anyString());
+
+        completeTurn(session, "我打算周末出去走走");
+        // 第三轮才递一次：把闲聊全灌进 episode 既慢又会淹掉真正有信号的那几句
+        org.mockito.Mockito.verify(service, org.mockito.Mockito.timeout(2000).times(1))
+                .recordVoiceMoment(1L, 2L, "我打算周末出去走走", "好呀，我在呢。");
+    }
+
+    @Test
+    void shortTurnsNeverReachTheMemoryPort() {
+        VoiceCallDuplexSession session = newSession();
+        // 两三个字：能过噪声门槛（≥2）但不够记忆门槛（≥8）
+        completeTurn(session, "好的");
+        completeTurn(session, "在的");
+        completeTurn(session, "行吧");
+
+        sleep(300);
+        // 字数门槛在会话里就挡住：三个短回合连一次模型判定都不该花
+        org.mockito.Mockito.verify(service, never())
+                .recordVoiceMoment(anyLong(), anyLong(), anyString(), anyString());
+    }
+
     private int indexOf(String needle) {
         for (int i = 0; i < sent.size(); i++) {
             if (sent.get(i).contains(needle)) {

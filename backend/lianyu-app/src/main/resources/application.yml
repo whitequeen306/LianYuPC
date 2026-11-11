@@ -278,6 +278,9 @@ lianyu:
       enabled: ${LIANYU_VOICE_CALL_EMOTION_PROSODY_ENABLED:false}
     relationship-context:
       enabled: ${LIANYU_VOICE_CALL_RELATIONSHIP_CONTEXT_ENABLED:false}
+    # P3 记忆：只写 episode（带原话），不写长期事实
+    memory-moment:
+      enabled: ${LIANYU_VOICE_CALL_MEMORY_MOMENT_ENABLED:false}
   session:
     summary:
       enabled: true

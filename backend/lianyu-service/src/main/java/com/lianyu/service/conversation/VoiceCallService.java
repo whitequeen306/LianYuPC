@@ -110,6 +110,7 @@ public class VoiceCallService {
     private final FileStorageService fileStorageService;
     private final VoiceCuePort voiceCuePort;
     private final CharacterStateService characterStateService;
+    private final com.lianyu.service.agent.AgentMemoryPort memoryPort;
 
     @Value("${lianyu.voice-call.max-reply-chars:48}")
     private int maxReplyChars;
@@ -122,6 +123,14 @@ public class VoiceCallService {
      */
     @Value("${lianyu.voice-call.relationship-context.enabled:false}")
     private boolean relationshipContextEnabled;
+
+    /**
+     * P3：通话中的轻量记忆写入（只写 episode）。默认关。
+     *
+     * <p>要不要记、记成什么由 Python 判定；Java 只负责限频后把这一轮的原话递过去。
+     */
+    @Value("${lianyu.voice-call.memory-moment.enabled:false}")
+    private boolean memoryMomentEnabled;
 
     /**
      * 本通通话内最多带入 LLM 的历史句数（user+assistant 各算一句）。
@@ -384,6 +393,32 @@ public class VoiceCallService {
             log.debug("Voice prosody fallback conv={}: {}", conversationId, e.toString());
             return VoiceProsody.NEUTRAL;
         }
+    }
+
+    /**
+     * 通话中轻量写记忆（P3）：只写 episode（带用户原话），不写长期事实。
+     *
+     * <p>限频（每 3 轮 ≤1）与字数门槛在调用方；这里只管「开关 → 取 characterId →
+     * 异步交给 agent」。异步是因为这是一次外部 HTTP + 一次模型判定，
+     * 让它占住回合线程只会让下一句回复变慢。
+     */
+    public void recordVoiceMoment(Long userId, Long conversationId, String userText, String replyText) {
+        if (!memoryMomentEnabled || memoryPort == null || userId == null || conversationId == null) {
+            return;
+        }
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try {
+                Conversation conversation = findOwned(userId, conversationId);
+                Long characterId = conversation.getCharacterId();
+                if (characterId == null) {
+                    return;
+                }
+                memoryPort.writeVoiceMomentIfActive(
+                        userId, conversationId, characterId, userText, replyText);
+            } catch (Exception e) {
+                log.debug("Voice moment skipped conv={}: {}", conversationId, e.toString());
+            }
+        });
     }
 
     @Transactional

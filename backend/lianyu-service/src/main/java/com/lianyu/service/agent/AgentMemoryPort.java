@@ -19,6 +19,20 @@ public interface AgentMemoryPort {
                                     String provider,
                                     String model);
 
+    /**
+     * 通话单轮的轻量写入：只写 episode（带原话），不写长期事实。
+     *
+     * <p>默认 false：没接 agent 的实现（测试替身/未装配）一律不接管，
+     * 调用方无需判断返回值 —— 通话本身不受影响。
+     */
+    default boolean writeVoiceMomentIfActive(long userId,
+                                             Long conversationId,
+                                             Long characterId,
+                                             String userText,
+                                             String replyText) {
+        return false;
+    }
+
     /** 端口用的消息视图（避免 service 层依赖 dao 实体）。 */
     record AgentMemoryMessage(Long id, String role, String content) {
     }
