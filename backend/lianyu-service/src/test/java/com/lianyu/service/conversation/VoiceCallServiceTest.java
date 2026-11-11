@@ -82,6 +82,12 @@ class VoiceCallServiceTest {
     }
 
     @Test
+    void ttsLanguageIsUnsetByDefault() {
+        // 开关默认关：返回 null，TTS 沿用配置里的 Chinese
+        assertThat(voiceCallService.resolveTtsLanguage(1L)).isNull();
+    }
+
+    @Test
     void voicemailJobIsNoOpWhenDisabled() {
         // 开关默认关：连库都不该查（characterMapper 未 mock，查了就会 NPE）
         voiceCallService.processVoiceCallVoicemailJob(

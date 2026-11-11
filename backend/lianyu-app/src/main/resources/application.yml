@@ -291,6 +291,9 @@ lianyu:
     # P3 挂断语音留言：挂断后补一句可播放的话（异步生成/合成/上传）
     voicemail:
       enabled: ${LIANYU_VOICE_CALL_VOICEMAIL_ENABLED:false}
+    # P3 多语言 TTS：按用户输出语言传 language_type（缺省仍 Chinese）
+    multilingual-tts:
+      enabled: ${LIANYU_VOICE_CALL_MULTILINGUAL_TTS_ENABLED:false}
   session:
     summary:
       enabled: true

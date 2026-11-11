@@ -101,11 +101,12 @@ class VoiceCallDuplexSessionTest {
             return CompletableFuture.completedFuture("好呀，我在呢。");
         });
         org.mockito.Mockito.doAnswer(inv -> {
-            com.lianyu.service.agent.TtsPort.TtsChunkSink chunkSink = inv.getArgument(3);
+            com.lianyu.service.agent.TtsPort.TtsChunkSink chunkSink = inv.getArgument(4);
             chunkSink.onChunk(new byte[] {1, 2, 3, 4});
             chunkSink.onDone();
             return null;
-        }).when(service).streamSynthesizeForTarget(any(), anyString(), any(VoiceProsody.class), any());
+        }).when(service).streamSynthesizeForTarget(
+                any(), anyString(), any(VoiceProsody.class), any(), any());
         return new VoiceCallDuplexSession(
                 sink, objectMapper, 1L, 2L, service, asrClient,
                 mock(VoiceSynthesisService.class), options);
@@ -300,7 +301,7 @@ class VoiceCallDuplexSessionTest {
         org.mockito.ArgumentCaptor<VoiceProsody> captor =
                 org.mockito.ArgumentCaptor.forClass(VoiceProsody.class);
         org.mockito.Mockito.verify(service, org.mockito.Mockito.atLeastOnce())
-                .streamSynthesizeForTarget(any(), anyString(), captor.capture(), any());
+                .streamSynthesizeForTarget(any(), anyString(), captor.capture(), any(), any());
         return captor.getValue();
     }
 

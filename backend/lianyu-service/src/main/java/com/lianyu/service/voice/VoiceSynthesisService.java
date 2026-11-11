@@ -67,12 +67,24 @@ public class VoiceSynthesisService {
      * 情绪只是微调，不能把两者混成一个数（否则换个音色情绪映射就全错）。
      */
     public void streamForPet(String petId, String text, double rateMultiplier, TtsPort.TtsChunkSink sink) {
+        streamForPet(petId, text, rateMultiplier, null, sink);
+    }
+
+    /**
+     * 带语种覆盖的流式合成：{@code null} 表示沿用配置里的默认语种。
+     *
+     * <p>语种由调用方按「用户输出语言」决定（P3 多语言 TTS），这里只负责往下传，
+     * 不猜测文本语言 —— 猜错的代价是整句读错音。
+     */
+    public void streamForPet(String petId, String text, double rateMultiplier,
+                             String languageTypeOverride, TtsPort.TtsChunkSink sink) {
         String voice = petVoiceRegistry.resolveHttpVoiceId(petId);
         if (voice == null) {
             log.info("Pet TTS stream skipped: no voice mapping for petId={}", petId);
             return;
         }
-        stream(voice, null, text, petVoiceRegistry.getModel(), null, petId, rateMultiplier, sink);
+        stream(voice, null, text, petVoiceRegistry.getModel(), null, petId,
+                rateMultiplier, languageTypeOverride, sink);
     }
 
     /** 用户自定义音色的流式合成。 */
@@ -110,11 +122,25 @@ public class VoiceSynthesisService {
                         String logLabel,
                         double rateMultiplier,
                         TtsPort.TtsChunkSink sink) {
+        stream(voiceId, apiKeyOverride, text, httpModelOverride, apiBaseUrl, logLabel,
+                rateMultiplier, null, sink);
+    }
+
+    private void stream(String voiceId,
+                        String apiKeyOverride,
+                        String text,
+                        String httpModelOverride,
+                        String apiBaseUrl,
+                        String logLabel,
+                        double rateMultiplier,
+                        String languageTypeOverride,
+                        TtsPort.TtsChunkSink sink) {
         if (sink == null) {
             return;
         }
         TtsPort.SynthesizeRequest request = buildRequest(
-                voiceId, apiKeyOverride, text, httpModelOverride, apiBaseUrl, logLabel, rateMultiplier);
+                voiceId, apiKeyOverride, text, httpModelOverride, apiBaseUrl, logLabel,
+                rateMultiplier, languageTypeOverride);
         if (request != null) {
             ttsPort.streamSynthesize(request, sink);
         }
@@ -128,6 +154,18 @@ public class VoiceSynthesisService {
                                                    String apiBaseUrl,
                                                    String logLabel,
                                                    double rateMultiplier) {
+        return buildRequest(voiceId, apiKeyOverride, text, httpModelOverride, apiBaseUrl,
+                logLabel, rateMultiplier, null);
+    }
+
+    private TtsPort.SynthesizeRequest buildRequest(String voiceId,
+                                                   String apiKeyOverride,
+                                                   String text,
+                                                   String httpModelOverride,
+                                                   String apiBaseUrl,
+                                                   String logLabel,
+                                                   double rateMultiplier,
+                                                   String languageTypeOverride) {
         if (!enabled) {
             log.info("TTS skipped: disabled");
             return null;
@@ -152,8 +190,11 @@ public class VoiceSynthesisService {
         // 语速：只对配置过倍率的音色生效（pet-voices.json 的 rates），其余走模型默认；
         // 情绪倍率再乘在上面，且夹到 DashScope 能接受的区间内。
         Double rate = mergeRate(petVoiceRegistry.getRate(logLabel), rateMultiplier);
+        String language = languageTypeOverride != null && !languageTypeOverride.isBlank()
+                ? languageTypeOverride.trim()
+                : languageType;
         return new TtsPort.SynthesizeRequest(
-                key, apiBaseUrl, model, voiceId.trim(), text.trim(), languageType, logLabel, rate);
+                key, apiBaseUrl, model, voiceId.trim(), text.trim(), language, logLabel, rate);
     }
 
     /** 基础倍率（可能为空）与情绪倍率合并；1.0 视为不调整，别凭空给模型塞参数。 */

@@ -123,6 +123,9 @@ public class VoiceCallDuplexSession {
     /** 已完成的、用户说了有内容的话的回合数。 */
     private final AtomicInteger contentTurns = new AtomicInteger();
 
+    /** 本回合 TTS 语种（null = 沿用配置默认）。每回合解析一次，避免每句查一次缓存。 */
+    private volatile String ttsLanguage;
+
     /** 本回合用户上行的 PCM 字节数（48 字节 = 1ms），用来估算语速做镜像。 */
     private final AtomicLong userTurnPcmBytes = new AtomicLong();
     /** 太少的一段语音算出来的字/秒全是噪声，不参与镜像。 */
@@ -408,6 +411,7 @@ public class VoiceCallDuplexSession {
         firstAudioAtMs = 0L;
         turnStartedAtMs = System.currentTimeMillis();
         emitState(callState.on(CallStateMachine.Event.OPENING_BEGIN, "opening"));
+        ttsLanguage = voiceCallService.resolveTtsLanguage(userId);
         sendClip("pickup", epoch);
 
         Thread worker = new Thread(() -> {
@@ -534,6 +538,7 @@ public class VoiceCallDuplexSession {
         turnAudioBytes.set(0);
         audioSent.set(false);
         emitState(callState.on(CallStateMachine.Event.IDLE_TRIGGER, "idle"));
+        ttsLanguage = voiceCallService.resolveTtsLanguage(userId);
         log.info("Voice duplex idle nudge conv={} count={} silentMs={}",
                 conversationId, idleNudgeCount.get(), silentMs);
         Thread worker = new Thread(() -> speakIdleNudge(epoch), "voice-idle-cue-" + conversationId);
@@ -944,6 +949,7 @@ public class VoiceCallDuplexSession {
         turnStartedAtMs = System.currentTimeMillis();
         // 用户刚说完，冷场计时从现在开始
         listeningSinceMs = turnStartedAtMs;
+        ttsLanguage = voiceCallService.resolveTtsLanguage(userId);
         llmFirstDeltaAtMs = 0L;
         firstAudioAtMs = 0L;
         turnAudioBytes.set(0);
@@ -1180,7 +1186,8 @@ public class VoiceCallDuplexSession {
             }
             sendAudio(java.util.Arrays.copyOfRange(array, offset, offset + length), "audio/pcm", epoch);
         };
-        voiceCallService.streamSynthesizeForTarget(target, sentence, prosody, new TtsPort.TtsChunkSink() {
+        voiceCallService.streamSynthesizeForTarget(target, sentence, prosody, ttsLanguage,
+                new TtsPort.TtsChunkSink() {
             @Override
             public void onChunk(byte[] pcm) {
                 assembler.push(pcm, emit);

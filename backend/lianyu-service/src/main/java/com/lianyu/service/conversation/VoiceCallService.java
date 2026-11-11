@@ -115,6 +115,7 @@ public class VoiceCallService {
     private final CharacterStateService characterStateService;
     private final com.lianyu.service.agent.AgentMemoryPort memoryPort;
     private final com.lianyu.service.relationship.RelationshipStateService relationshipStateService;
+    private final com.lianyu.service.support.OutputLanguageService outputLanguageService;
 
     @Value("${lianyu.voice-call.max-reply-chars:48}")
     private int maxReplyChars;
@@ -155,6 +156,15 @@ public class VoiceCallService {
      */
     @Value("${lianyu.voice-call.voicemail.enabled:false}")
     private boolean voicemailEnabled;
+
+    /**
+     * P3：多语言 TTS（按用户输出语言传 language_type）。默认关，缺省仍是中文。
+     *
+     * <p>已用生产音色对 Japanese / English 做过探针（均能正常合成）；
+     * 音色质量仍需人工试听，因此保留开关便于灰度与回退。
+     */
+    @Value("${lianyu.voice-call.multilingual-tts.enabled:false}")
+    private boolean multilingualTtsEnabled;
 
     /**
      * 本通通话内最多带入 LLM 的历史句数（user+assistant 各算一句）。
@@ -380,6 +390,17 @@ public class VoiceCallService {
     public void streamSynthesizeForTarget(VoiceCallTarget target, String text,
                                           VoiceProsody prosody,
                                           TtsPort.TtsChunkSink sink) {
+        streamSynthesizeForTarget(target, text, prosody, null, sink);
+    }
+
+    /**
+     * 带语种覆盖的流式合成：{@code null} 表示沿用配置默认（中文）。
+     *
+     * <p>只有官方音色吃语种覆盖；自定义音色是用户自己的资产，不替用户改语言。
+     */
+    public void streamSynthesizeForTarget(VoiceCallTarget target, String text,
+                                          VoiceProsody prosody, String languageType,
+                                          TtsPort.TtsChunkSink sink) {
         if (target == null || sink == null) {
             return;
         }
@@ -395,7 +416,30 @@ public class VoiceCallService {
             return;
         }
         if (target.mode() == VoiceCallTarget.Mode.OFFICIAL_PET) {
-            voiceSynthesisService.streamForPet(target.petId(), text, rate, sink);
+            voiceSynthesisService.streamForPet(target.petId(), text, rate, languageType, sink);
+        }
+    }
+
+    /**
+     * 本通电话该用哪种 TTS 语种：开关关着返回 null（沿用配置默认中文）。
+     *
+     * <p>映射只有三档：zh / zh-TW → Chinese，en → English，ja → Japanese。
+     * 其它语言先按中文念 —— 念错语种比念中文更难听。
+     */
+    public String resolveTtsLanguage(Long userId) {
+        if (!multilingualTtsEnabled || outputLanguageService == null || userId == null) {
+            return null;
+        }
+        try {
+            String code = outputLanguageService.resolveForRequest(userId, null);
+            return switch (code == null ? "zh" : code.trim().toLowerCase(Locale.ROOT)) {
+                case "en" -> "English";
+                case "ja" -> "Japanese";
+                default -> "Chinese";
+            };
+        } catch (Exception e) {
+            log.debug("TTS language resolve failed user={}: {}", userId, e.toString());
+            return null;
         }
     }
 
