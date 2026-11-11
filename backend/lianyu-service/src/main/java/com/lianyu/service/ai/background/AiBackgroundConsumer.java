@@ -91,6 +91,7 @@ public class AiBackgroundConsumer {
             case CITY_CHANGE_FOLLOWUP -> proactiveMessageService.sendCityChangeFollowUp(
                     task.userId(), task.previousCity(), task.newCity());
             case VOICE_CALL_SUMMARY -> voiceCallService.processVoiceCallSummaryJob(task);
+            case VOICE_CALL_VOICEMAIL -> voiceCallService.processVoiceCallVoicemailJob(task);
             default -> log.warn("AI background unknown type: {}", task.type());
         }
     }

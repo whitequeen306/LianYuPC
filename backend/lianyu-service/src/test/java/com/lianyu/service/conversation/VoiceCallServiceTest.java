@@ -80,4 +80,12 @@ class VoiceCallServiceTest {
 
         assertThat(voiceCallService.trySendCallInvite(1L, 2L, character)).isNull();
     }
+
+    @Test
+    void voicemailJobIsNoOpWhenDisabled() {
+        // 开关默认关：连库都不该查（characterMapper 未 mock，查了就会 NPE）
+        voiceCallService.processVoiceCallVoicemailJob(
+                com.lianyu.service.ai.background.AiBackgroundTask
+                        .voiceCallVoicemail(1L, 2L, 3L));
+    }
 }

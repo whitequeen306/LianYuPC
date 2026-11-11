@@ -149,6 +149,14 @@ public class VoiceCallService {
     private long callInviteMinGapHours;
 
     /**
+     * P3：挂断语音留言（角色挂断后补一句可播放的话）。默认关。
+     *
+     * <p>需要「生成文案 → 合成 → 上传」三步，全部异步，失败只少一条留言。
+     */
+    @Value("${lianyu.voice-call.voicemail.enabled:false}")
+    private boolean voicemailEnabled;
+
+    /**
      * 本通通话内最多带入 LLM 的历史句数（user+assistant 各算一句）。
      * 仅当前通话有效；挂断摘要写入后，旧 turn 不再参与任何上下文。
      */
@@ -708,6 +716,11 @@ public class VoiceCallService {
             aiBackgroundPublisher.publish(AiBackgroundTask.voiceCallSummary(
                     userId, conversationId, assistantMsg.getId(), transcript));
         }
+        if (voicemailEnabled) {
+            // 留言是异步的：挂断接口不该等一次模型生成 + 一次 TTS + 一次上传
+            aiBackgroundPublisher.publish(AiBackgroundTask.voiceCallVoicemail(
+                    userId, conversationId, character.getId()));
+        }
 
         memoryWriter.enqueueSummary(conversationId, character.getId(), userId, null, null);
         log.info("Voice call ended: convId={}, durationSec={}, summaryLen={}",
@@ -746,6 +759,51 @@ public class VoiceCallService {
         patch.setContextContent("（用户和角色进行了语音通话（" + summary + "））");
         messageMapper.updateById(patch);
         log.info("Voice call summary refined: messageId={}, summaryLen={}", msg.getId(), summary.length());
+    }
+
+    /**
+     * MQ 消费：挂断语音留言 —— 生成一句告别 → 合成 → 上传 → 落一条可播放消息。
+     *
+     * <p>任何一步失败都只少一条留言：挂断接口已经把结果返回给用户了，
+     * 这条异步链路上不能再抛错，也不能重试打扰。
+     */
+    public void processVoiceCallVoicemailJob(AiBackgroundTask task) {
+        if (!voicemailEnabled || task == null || task.userId() == null
+                || task.conversationId() == null || task.characterId() == null) {
+            return;
+        }
+        try {
+            Character character = characterMapper.selectById(task.characterId());
+            if (character == null) {
+                return;
+            }
+            String text = generateVoiceCue(task.userId(), task.conversationId(), "voicemail");
+            if (text == null || text.isBlank()) {
+                return;
+            }
+            VoiceCallTarget target = resolveCallTarget(task.userId(), character);
+            TtsPort.SynthesizedAudio audio = synthesizeForTarget(target, text);
+            if (audio == null || audio.bytes() == null || audio.bytes().length == 0) {
+                return;
+            }
+            // 本地音色没有服务端合成，target 为 null 时这里已经返回；petId 只用于对象路径
+            String petId = target.petId() != null ? target.petId() : "custom";
+            String objectKey = fileStorageService.uploadChatVoiceBytes(
+                    petId, audio.bytes(), audio.mimeType());
+            Message msg = new Message();
+            msg.setSeq(nextSeq(task.conversationId()));
+            msg.setConversationId(task.conversationId());
+            msg.setRole("ASSISTANT");
+            msg.setCharacterId(character.getId());
+            msg.setContent(text);
+            msg.setAudioUrl(fileStorageService.resolvePublicUrl(objectKey));
+            msg.setCreatedAt(java.time.LocalDateTime.now());
+            messageMapper.insert(msg);
+            log.info("Voice call voicemail stored conv={} bytes={}",
+                    task.conversationId(), audio.bytes().length);
+        } catch (Exception e) {
+            log.warn("Voice call voicemail failed conv={}: {}", task.conversationId(), e.toString());
+        }
     }
 
     public String resolveVoicePetId(Character character) {

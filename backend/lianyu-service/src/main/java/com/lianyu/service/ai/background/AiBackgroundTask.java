@@ -87,4 +87,12 @@ public record AiBackgroundTask(
                 userId, conversationId, null, null, null, messageId, null,
                 null, null, null, null, null, null, transcript, null);
     }
+
+    /** 挂断语音留言：文案由 Python 的 voice cue 生成，任务里只需要「谁的哪通电话」。 */
+    public static AiBackgroundTask voiceCallVoicemail(Long userId, Long conversationId, Long characterId) {
+        return new AiBackgroundTask(
+                AiBackgroundJobType.VOICE_CALL_VOICEMAIL,
+                userId, conversationId, characterId, null, null, null, null,
+                null, null, null, null, null, null, null, null);
+    }
 }

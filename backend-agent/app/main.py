@@ -777,6 +777,7 @@ async def voice_cue(
         "opening": ("voice_cue_opening", "（电话接通了，你先开口。）", 32),
         "idle": ("voice_cue_idle", "（电话里安静了一会儿，你主动说一句。）", 24),
         "invite": ("voice_cue_invite", "（你想约 TA 通个电话，先说一句探探。）", 28),
+        "voicemail": ("voice_cue_voicemail", "（电话刚挂断，留一句给 TA 听。）", 28),
     }
     cue = cues.get(kind)
     if cue is None:

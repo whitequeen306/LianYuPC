@@ -288,6 +288,9 @@ lianyu:
     call-invite:
       enabled: ${LIANYU_VOICE_CALL_CALL_INVITE_ENABLED:false}
       min-gap-hours: ${LIANYU_VOICE_CALL_CALL_INVITE_MIN_GAP_HOURS:72}
+    # P3 挂断语音留言：挂断后补一句可播放的话（异步生成/合成/上传）
+    voicemail:
+      enabled: ${LIANYU_VOICE_CALL_VOICEMAIL_ENABLED:false}
   session:
     summary:
       enabled: true

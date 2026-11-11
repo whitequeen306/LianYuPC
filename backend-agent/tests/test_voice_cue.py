@@ -98,6 +98,21 @@ def test_invite_cue_uses_invite_prompt(monkeypatch):
     assert fake.calls[0]["lane_name"] == "voice-cue-invite"
 
 
+def test_voicemail_cue_uses_voicemail_prompt(monkeypatch):
+    fake = FakeGateway(content="早点睡，明天再聊。")
+    captured = {}
+    _patch_prompt(monkeypatch, captured)
+    monkeypatch.setattr("app.main.get_gateway", lambda: fake)
+
+    response = client.post("/agent/voice/cue", json=dict(PAYLOAD, kind="voicemail"))
+
+    assert response.status_code == 200
+    assert response.json()["text"] == "早点睡，明天再聊。"
+    system = fake.calls[0]["messages"][0]["content"]
+    assert "挂断留言" in system
+    assert fake.calls[0]["lane_name"] == "voice-cue-voicemail"
+
+
 def test_unknown_kind_returns_empty_without_model_call(monkeypatch):
     fake = FakeGateway()
     captured = {}
