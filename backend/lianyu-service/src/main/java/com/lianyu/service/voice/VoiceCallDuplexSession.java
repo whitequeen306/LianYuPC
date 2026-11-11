@@ -100,6 +100,11 @@ public class VoiceCallDuplexSession {
     private volatile long llmFirstDeltaAtMs;
     private volatile long firstAudioAtMs;
     private final VoiceCallTarget target;
+    private final VoiceCallOptions options;
+
+    /** 语气词 clip 的兜底时长：客户端缺文件时按它插静音，绝不阻断。 */
+    private static final java.util.Map<String, Integer> CLIP_FALLBACK_MS = java.util.Map.of(
+            "pickup", 900, "ack", 500, "hmm", 450, "laugh", 900, "sigh", 800, "breath", 500);
 
     public VoiceCallDuplexSession(
             VoiceEventSink sink,
@@ -109,12 +114,26 @@ public class VoiceCallDuplexSession {
             VoiceCallService voiceCallService,
             AsrStreamClient asrStreamClient,
             VoiceSynthesisService voiceSynthesisService) {
+        this(sink, objectMapper, userId, conversationId, voiceCallService, asrStreamClient,
+                voiceSynthesisService, VoiceCallOptions.defaults());
+    }
+
+    public VoiceCallDuplexSession(
+            VoiceEventSink sink,
+            ObjectMapper objectMapper,
+            long userId,
+            long conversationId,
+            VoiceCallService voiceCallService,
+            AsrStreamClient asrStreamClient,
+            VoiceSynthesisService voiceSynthesisService,
+            VoiceCallOptions options) {
         this.sink = sink;
         this.objectMapper = objectMapper;
         this.userId = userId;
         this.conversationId = conversationId;
         this.voiceCallService = voiceCallService;
         this.voiceSynthesisService = voiceSynthesisService;
+        this.options = options == null ? VoiceCallOptions.defaults() : options;
         this.target = voiceCallService.resolveAndAssertCallTarget(userId, conversationId);
         this.asr = asrStreamClient.open(new AsrStreamClient.Listener() {
             @Override
@@ -333,6 +352,128 @@ public class VoiceCallDuplexSession {
             n.put("state", s.name());
             n.put("reason", "session.start");
         });
+    }
+
+    /**
+     * 接通后的主动开场：先给一声「接起电话」的语气词（0 延迟），再并行生成一句
+     * contextual 开场白走 TTS。
+     *
+     * <p>用户先开口 = 立即取消：VAD start / barge 会自增回合代数并取消在途回合，
+     * 本方法的工作线程看到代数变化就静默退出，不落库、不出声。
+     */
+    public void startOpening() {
+        if (!options.openingEnabled() || closed.get()) {
+            return;
+        }
+        if (!turnBusy.compareAndSet(false, true)) {
+            return;
+        }
+        long epoch = turnEpoch.incrementAndGet();
+        audioSent.set(false);
+        turnAudioBytes.set(0);
+        firstAudioAtMs = 0L;
+        turnStartedAtMs = System.currentTimeMillis();
+        emitState(callState.on(CallStateMachine.Event.OPENING_BEGIN, "opening"));
+        sendClip("pickup", epoch);
+
+        Thread worker = new Thread(() -> {
+            String text = null;
+            try {
+                text = voiceCallService.generateVoiceCue(userId, conversationId, "opening");
+            } catch (Exception e) {
+                log.debug("Voice opening cue skipped conv={}: {}", conversationId, e.toString());
+            }
+            if (text == null || text.isBlank()) {
+                log.info("Voice opening cue empty conv={}", conversationId);
+                finishOpeningSilently(epoch);
+                return;
+            }
+            if (closed.get() || epoch != turnEpoch.get()) {
+                // 用户先开口了：不落库、不出声
+                return;
+            }
+            try {
+                String spoken = InnerThoughtFilter.strip(
+                        SentenceSplitter.stripPauseMarkers(text.trim()));
+                if (spoken.isBlank()) {
+                    finishOpeningSilently(epoch);
+                    return;
+                }
+                spoken = voiceCallService.clampReply(spoken);
+                String openingText = spoken;
+                voiceCallService.persistAssistantTurn(userId, conversationId, openingText);
+                emitJson("turn.start", n -> {
+                    n.put("userText", "");
+                    n.put("kind", "opening");
+                });
+                if (!synthesizeWhole(openingText, epoch)) {
+                    return;
+                }
+                emitJson("turn.done", n -> {
+                    n.put("replyText", openingText);
+                    n.put("kind", "opening");
+                });
+                log.info("Voice opening delivered conv={} len={}", conversationId, openingText.length());
+            } catch (Exception e) {
+                log.warn("Voice opening failed conv={}: {}", conversationId, e.toString());
+                forceListening("opening_error");
+            } finally {
+                if (epoch == turnEpoch.get()) {
+                    turnBusy.set(false);
+                }
+            }
+        }, "voice-opening-" + conversationId);
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    /** 开场拿不到文案：安静回到听，别让客户端一直停在「正在想」。 */
+    private void finishOpeningSilently(long epoch) {
+        if (closed.get() || epoch != turnEpoch.get()) {
+            return;
+        }
+        turnBusy.set(false);
+        if (callState.state() == CallStateMachine.State.SPEAKING) {
+            // pickup clip 可能已经在播：给它播完的时间再放麦克风
+            scheduleDrainAfter(epoch, 1500, "opening_empty");
+        } else {
+            forceListening("opening_empty");
+        }
+    }
+
+    /**
+     * 把一段完整文本走「切句 → 逐句 TTS → tts.done」流程（开场/冷场等脚本化台词）。
+     *
+     * @return false 表示被打断或 TTS 失败（调用方不要再发 turn.done）
+     */
+    private boolean synthesizeWhole(String text, long epoch) {
+        if (target.isLocal()) {
+            emitLocalTts(text, epoch);
+            return epoch == turnEpoch.get();
+        }
+        SentenceSplitter splitter = new SentenceSplitter();
+        BlockingQueue<SentenceSplitter.Segment> queue = new LinkedBlockingQueue<>();
+        Thread ttsWorker = startTtsPipeline(queue, epoch);
+        for (SentenceSplitter.Segment seg : splitter.accept(text)) {
+            queue.offer(seg);
+        }
+        for (SentenceSplitter.Segment seg : splitter.flush()) {
+            queue.offer(seg);
+        }
+        queue.offer(TTS_SENTINEL);
+        joinQuietly(ttsWorker, 120_000);
+        if (epoch != turnEpoch.get()) {
+            return false;
+        }
+        if (!audioSent.get()) {
+            emitError("TTS_ERROR", "语音合成失败，请稍后再试");
+            forceListening("tts_error");
+            return false;
+        }
+        emitJson("tts.done", n -> {
+        });
+        scheduleDrainEstimate(epoch);
+        return true;
     }
 
     /**
@@ -773,6 +914,12 @@ public class VoiceCallDuplexSession {
                     if (pendingGapMs > 0 && !closed.get()) {
                         sendAudio(PcmFrameAssembler.silence(pendingGapMs), "audio/pcm", epoch);
                     }
+                    if (segment.isClip()) {
+                        // 语气词走预录 clip：不经过 TTS 往返，毫秒级出声
+                        sendClip(segment.text(), epoch);
+                        pendingGapMs = 0;
+                        continue;
+                    }
                     streamSentence(segment.text(), epoch);
                     pendingGapMs = jitteredPause(segment.pauseAfterMs());
                 }
@@ -955,8 +1102,43 @@ public class VoiceCallDuplexSession {
         turnBusy.set(false);
     }
 
+    /**
+     * 下发一个预录语气词。
+     *
+     * <p>只对官方音色（有 pet 固定语音库）发 {@code tts.clip}；自定义/本地音色没有这套音频，
+     * 按 {@code fallbackMs} 插等长静音，保证这一句的节奏不变、也绝不阻断。
+     */
+    private void sendClip(String kind, long epoch) {
+        if (!options.clipEnabled() || epoch != turnEpoch.get() || closed.get()) {
+            return;
+        }
+        int fallbackMs = CLIP_FALLBACK_MS.getOrDefault(kind, 600);
+        String petId = target.petId();
+        if (petId == null || petId.isBlank()) {
+            sendAudio(PcmFrameAssembler.silence(fallbackMs), "audio/pcm", epoch);
+            return;
+        }
+        if (audioSent.compareAndSet(false, true)) {
+            markFirstAudio();
+        }
+        long seq = audioSeq.incrementAndGet();
+        // 排空估算把 clip 的时长也算进去（服务端没有它的 PCM 字节）
+        turnAudioBytes.addAndGet((long) fallbackMs * PCM_BYTES_PER_MS);
+        emitJson("tts.clip", n -> {
+            n.put("petId", petId);
+            n.put("kind", kind);
+            n.put("fallbackMs", fallbackMs);
+            n.put("seq", seq);
+        });
+    }
+
     private void sendAudio(byte[] audio, String mimeHint, long epoch) {
         if (audio == null || audio.length == 0 || !sink.isOpen() || epoch != turnEpoch.get()) {
+            return;
+        }
+        long seq = audioSeq.incrementAndGet();
+        turnAudioBytes.addAndGet(audio.length);
+        if (options.binaryAudio() && sendAudioBinary(audio, seq)) {
             return;
         }
         try {
@@ -964,15 +1146,40 @@ public class VoiceCallDuplexSession {
             n.put("type", "tts.audio");
             n.put("mime", mimeHint == null || mimeHint.isBlank() ? "audio/pcm" : mimeHint);
             n.put("sampleRate", 24000);
-            n.put("seq", audioSeq.incrementAndGet());
+            n.put("seq", seq);
             n.put("base64", Base64.getEncoder().encodeToString(audio));
             String frame = objectMapper.writeValueAsString(n);
-            turnAudioBytes.addAndGet(audio.length);
             synchronized (sendLock) {
                 sink.sendText(frame);
             }
         } catch (Exception e) {
             log.debug("send audio failed: {}", e.toString());
+        }
+    }
+
+    /**
+     * 下行二进制音频帧（需要客户端 caps 含 {@code binary.audio}）。
+     *
+     * <pre>
+     *   0-1  'L','Y'   2 version=1   3 type=0x01(PCM16)   4 flags   5 headerLen=16
+     *   6-7  reserved  8-11 seq      12-15 sampleRate     16.. s16le payload
+     * </pre>
+     *
+     * @return false 表示 sink 不支持二进制，调用方回退 base64 JSON
+     */
+    private boolean sendAudioBinary(byte[] audio, long seq) {
+        java.nio.ByteBuffer frame = java.nio.ByteBuffer.allocate(16 + audio.length);
+        frame.put((byte) 'L').put((byte) 'Y')
+                .put((byte) 1)
+                .put((byte) 0x01)
+                .put((byte) 0)
+                .put((byte) 16)
+                .put((byte) 0).put((byte) 0)
+                .putInt((int) seq)
+                .putInt(24000)
+                .put(audio);
+        synchronized (sendLock) {
+            return sink.sendBinary(frame.array());
         }
     }
 

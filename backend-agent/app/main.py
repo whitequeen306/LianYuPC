@@ -737,6 +737,78 @@ async def prompt_assemble(
     return {"systemPrompt": prompt}
 
 
+# ─────────────────────────── 语音通话：脚本化台词（开场/冷场） ───────────────────────────
+
+
+class VoiceCueBody(BaseModel):
+    """Java 只传事实与凭据；台词 prompt 与模型调用都住在这里。"""
+
+    user_id: int = Field(alias="userId")
+    character_id: int | None = Field(default=None, alias="characterId")
+    conversation_id: int | None = Field(default=None, alias="conversationId")
+    character_name: str = Field(default="", alias="characterName")
+    settings: dict[str, Any] = {}
+    kind: str = "opening"
+    text_base_url: str = Field(alias="textBaseUrl")
+    text_api_key: str = Field(alias="textApiKey")
+    text_model: str = Field(default="", alias="textModel")
+
+    model_config = {"populate_by_name": True}
+
+
+@app.post("/agent/voice/cue")
+async def voice_cue(
+    body: VoiceCueBody,
+    user_id_header: str | None = Header(default=None, alias="X-User-Id"),
+) -> dict[str, Any]:
+    """语音通话开场（P1）。返回 {text}；失败返回 {error}，Java 侧静默跳过。
+
+    上下文（时间/记忆/情绪/关系）由 assemble_turn_prompt 自己读库：
+    Java 不拼任何话术，只告诉 Python「谁、哪通电话、哪种 cue」。
+    """
+    if user_id_header and str(body.user_id) != user_id_header:
+        raise HTTPException(status_code=403, detail="user mismatch")
+    kind = (body.kind or "").strip().lower()
+    if kind != "opening":
+        # 冷场主动是 P2：未实现时返回空串，Java 按「没有台词」处理
+        return {"text": ""}
+    try:
+        from app.prompt_pipeline import assemble_turn_prompt
+        from app.prompts.loader import render_prompt
+
+        system = await assemble_turn_prompt(
+            user_id=body.user_id,
+            character_id=body.character_id,
+            conversation_id=body.conversation_id,
+            character_name=body.character_name,
+            settings=body.settings,
+            prompt_template=None,
+            scene="VOICE_CALL",
+            output_language="zh",
+            voice_max_reply_chars=48,
+            use_internal_data=True,
+        )
+        system += render_prompt("voice_cue_opening", max_chars=32)
+        result = await get_gateway().chat_messages(
+            base_url=body.text_base_url,
+            api_key=body.text_api_key,
+            model=body.text_model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": "（电话接通了，你先开口。）"},
+            ],
+            temperature=0.85,
+            max_tokens=120,
+            provider=None,
+            lane_name="voice-cue",
+        )
+    except Exception as exc:  # noqa: BLE001 - 失败返回错误码，Java 静默跳过开场
+        logger.warning("voice cue failed: %s", exc)
+        return {"error": "cue_failed"}
+    text = (result.content or "").strip()
+    return {"text": text}
+
+
 # ─────────────────────────── 图片消息回合（两段式） ───────────────────────────
 
 

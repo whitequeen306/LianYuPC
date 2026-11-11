@@ -12,10 +12,18 @@ const hoisted = vi.hoisted(() => {
   const capture = { onFrame: null, onSpeechEdge: null, onEndpoint: null }
   const playback = {
     enqueued: [],
+    urls: [],
+    pcm: [],
     cleared: 0,
     playing: false,
     enqueueBase64Audio(base64, opts = {}) {
       this.enqueued.push({ base64, ...opts })
+    },
+    enqueueUrl(url, opts = {}) {
+      this.urls.push({ url, ...opts })
+    },
+    enqueuePcmBytes(bytes, rate) {
+      this.pcm.push({ bytes, rate })
     },
     clear() {
       this.cleared += 1
@@ -130,6 +138,8 @@ describe('useVoiceDuplex protocol', () => {
     hoisted.playback.cleared = 0
     hoisted.playback.playing = false
     hoisted.playback.enqueued.length = 0
+    hoisted.playback.urls.length = 0
+    hoisted.playback.pcm.length = 0
     globalThis.WebSocket = FakeWebSocket
   })
 
@@ -201,5 +211,34 @@ describe('useVoiceDuplex protocol', () => {
     const drained = ws.jsonSent().filter((m) => m.type === 'play.drained')
     expect(drained.length).toBe(1)
     expect(drained[0].seq).toBe(11)
+  })
+
+  it('tts.clip 走统一播放队列并带 fallbackMs', async () => {
+    const { ws } = await startCall()
+    ws.emit({ type: 'tts.clip', petId: 'ganyu', kind: 'laugh', fallbackMs: 900, seq: 5 })
+
+    const clip = hoisted.playback.urls.at(-1)
+    expect(clip.url).toContain('pet/voice/ganyu/laugh.wav')
+    expect(clip.fallbackMs).toBe(900)
+  })
+
+  it('二进制音频帧按头解析后入队 PCM', async () => {
+    const { ws } = await startCall()
+    const frame = new ArrayBuffer(16 + 4)
+    const view = new DataView(frame)
+    view.setUint8(0, 0x4c)
+    view.setUint8(1, 0x59)
+    view.setUint8(2, 1)
+    view.setUint8(3, 1)
+    view.setUint8(5, 16)
+    view.setUint32(8, 42)
+    view.setUint32(12, 24000)
+    new Uint8Array(frame, 16).set([1, 2, 3, 4])
+
+    ws.onmessage?.({ data: frame })
+
+    const pcm = hoisted.playback.pcm.at(-1)
+    expect(pcm.rate).toBe(24000)
+    expect(Array.from(pcm.bytes)).toEqual([1, 2, 3, 4])
   })
 })

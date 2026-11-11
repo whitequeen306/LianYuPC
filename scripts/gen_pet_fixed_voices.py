@@ -167,12 +167,35 @@ def _char_len(text: str) -> int:
     return len(text.replace(" ", "").replace("\u3000", ""))
 
 
+# 通话内语气词（P1）：叹气/笑/呼吸/接起电话等。与 LINES 分开维护，
+# 因为它们是「声音表情」而不是台词；同一句按角色音色读出来就各不相同。
+# 客户端缺文件时按服务端下发的 fallbackMs 插静音，绝不会断流。
+CLIP_LINES: dict[str, str] = {
+    "pickup": "嗯，我在。",
+    "ack": "嗯。",
+    "hmm": "唔……",
+    "laugh": "呵。",
+    "sigh": "唉……",
+    "breath": "……",
+}
+
+
+def all_lines(pet_id: str) -> dict[str, str]:
+    merged = dict(LINES[pet_id])
+    for kind, text in CLIP_LINES.items():
+        merged.setdefault(kind, text)
+    return merged
+
+
 def validate_lines() -> None:
     bad: list[str] = []
     for pet_id, kinds in LINES.items():
         for kind, text in kinds.items():
             if _char_len(text) < 1:
                 bad.append(f"{pet_id}/{kind}: empty")
+    for kind, text in CLIP_LINES.items():
+        if _char_len(text) < 1:
+            bad.append(f"clip/{kind}: empty")
     if bad:
         raise SystemExit("LINES invalid:\n  " + "\n  ".join(bad))
 
@@ -269,7 +292,7 @@ def main() -> int:
             continue
         out_dir = OUT_ROOT / pet_id
         out_dir.mkdir(parents=True, exist_ok=True)
-        for kind, text in lines.items():
+        for kind, text in all_lines(pet_id).items():
             if only_kinds is not None and kind not in only_kinds:
                 continue
             out_path = out_dir / f"{kind}.wav"

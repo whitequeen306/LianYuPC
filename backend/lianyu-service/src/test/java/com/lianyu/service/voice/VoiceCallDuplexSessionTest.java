@@ -50,15 +50,20 @@ class VoiceCallDuplexSessionTest {
 
     private AsrStreamClient.Listener asrListener;
     private AsrSession asrSession;
+    private VoiceCallService service;
 
     private VoiceCallDuplexSession newSession() {
+        return newSession(VoiceCallOptions.defaults());
+    }
+
+    private VoiceCallDuplexSession newSession(VoiceCallOptions options) {
         asrSession = mock(AsrSession.class);
         AsrStreamClient asrClient = mock(AsrStreamClient.class);
         when(asrClient.open(any())).thenAnswer(inv -> {
             asrListener = inv.getArgument(0);
             return asrSession;
         });
-        VoiceCallService service = mock(VoiceCallService.class);
+        service = mock(VoiceCallService.class);
         when(service.resolveAndAssertCallTarget(anyLong(), anyLong()))
                 .thenReturn(new VoiceCallTarget(
                         VoiceCallTarget.Mode.CUSTOM_LOCAL,
@@ -68,7 +73,37 @@ class VoiceCallDuplexSessionTest {
         when(service.streamVoiceReply(anyLong(), any(), any()))
                 .thenReturn(CompletableFuture.completedFuture("好呀，我在呢。"));
         return new VoiceCallDuplexSession(
-                sink, objectMapper, 1L, 2L, service, asrClient, mock(VoiceSynthesisService.class));
+                sink, objectMapper, 1L, 2L, service, asrClient,
+                mock(VoiceSynthesisService.class), options);
+    }
+
+    /** 官方音色目标（有 pet 固定语音库），用于 clip / 开场用例。 */
+    private VoiceCallDuplexSession newPetSession(VoiceCallOptions options) {
+        asrSession = mock(AsrSession.class);
+        AsrStreamClient asrClient = mock(AsrStreamClient.class);
+        when(asrClient.open(any())).thenAnswer(inv -> {
+            asrListener = inv.getArgument(0);
+            return asrSession;
+        });
+        service = mock(VoiceCallService.class);
+        when(service.resolveAndAssertCallTarget(anyLong(), anyLong()))
+                .thenReturn(new VoiceCallTarget(
+                        VoiceCallTarget.Mode.OFFICIAL_PET,
+                        "ganyu", "voice-1", "voice-1", "key",
+                        null, null, null, "model-http", "model-realtime"));
+        when(service.clampReply(anyString())).thenAnswer(inv -> inv.getArgument(0));
+        when(service.generateVoiceCue(anyLong(), anyLong(), anyString()))
+                .thenReturn("我刚回来，你等很久了吗？");
+        // 非本地音色走服务端 TTS：给一小段 PCM，让管线完整收尾
+        org.mockito.Mockito.doAnswer(inv -> {
+            com.lianyu.service.agent.TtsPort.TtsChunkSink chunkSink = inv.getArgument(2);
+            chunkSink.onChunk(new byte[] {1, 2, 3, 4});
+            chunkSink.onDone();
+            return null;
+        }).when(service).streamSynthesizeForTarget(any(), anyString(), any());
+        return new VoiceCallDuplexSession(
+                sink, objectMapper, 1L, 2L, service, asrClient,
+                mock(VoiceSynthesisService.class), options);
     }
 
     /** 跑完一个完整回合：ASR 文本 → 端点 → 本地音色回合并进入 SPEAKING。 */
@@ -150,5 +185,32 @@ class VoiceCallDuplexSessionTest {
         session.onPlayDrained(3);
         await(() -> sent.stream().anyMatch(
                 m -> m.contains("\"type\":\"call.state\"") && m.contains("\"LISTENING\"")));
+    }
+
+    @Test
+    void openingSendsPickupClipAndSpeaksTheCueOnce() {
+        VoiceCallDuplexSession session = newPetSession(new VoiceCallOptions(false, true, true));
+        session.startOpening();
+
+        await(() -> sent.stream().anyMatch(
+                m -> m.contains("\"type\":\"tts.clip\"") && m.contains("\"pickup\"")));
+        await(() -> sent.stream().anyMatch(
+                m -> m.contains("\"type\":\"turn.done\"") && m.contains("\"opening\"")));
+
+        // 开场白必须落库，下一轮历史才接得上
+        org.mockito.Mockito.verify(service).persistAssistantTurn(1L, 2L, "我刚回来，你等很久了吗？");
+        // pickup clip 必须早于开场白的 TTS 音频
+        int clipAt = indexOf("\"type\":\"tts.clip\"");
+        int turnAt = indexOf("\"type\":\"turn.start\"");
+        assertTrue(clipAt >= 0 && turnAt > clipAt, "pickup 必须先出声");
+    }
+
+    private int indexOf(String needle) {
+        for (int i = 0; i < sent.size(); i++) {
+            if (sent.get(i).contains(needle)) {
+                return i;
+            }
+        }
+        return -1;
     }
 }

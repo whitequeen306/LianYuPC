@@ -38,6 +38,8 @@ class AgentVoiceAdaptersTest {
     private AgentRuntimeClient client;
     private AgentVoiceEnrollmentAdapter enrollmentAdapter;
     private AgentTtsAdapter ttsAdapter;
+    private com.lianyu.service.ai.ApiKeyVaultService vaultService;
+    private AgentVoiceCueAdapter cueAdapter;
 
     @BeforeEach
     void setUp() {
@@ -45,6 +47,8 @@ class AgentVoiceAdaptersTest {
         when(client.readTree(anyString())).thenAnswer(inv -> om.readTree((String) inv.getArgument(0)));
         enrollmentAdapter = new AgentVoiceEnrollmentAdapter(client);
         ttsAdapter = new AgentTtsAdapter(client);
+        vaultService = mock(com.lianyu.service.ai.ApiKeyVaultService.class);
+        cueAdapter = new AgentVoiceCueAdapter(client, vaultService);
     }
 
     // ── 音色注册 ──
@@ -219,5 +223,32 @@ class AgentVoiceAdaptersTest {
     void adaptersImplementPorts() {
         assertTrue(VoiceEnrollmentPort.class.isAssignableFrom(AgentVoiceEnrollmentAdapter.class));
         assertTrue(TtsPort.class.isAssignableFrom(AgentTtsAdapter.class));
+        assertTrue(com.lianyu.service.agent.VoiceCuePort.class
+                .isAssignableFrom(AgentVoiceCueAdapter.class));
+    }
+
+    // ── 语音通话开场台词 ──
+
+    @Test
+    void cueReturnsTextFromAgent() {
+        when(client.properties()).thenReturn(new AgentRuntimeProperties("http://agent:8001"));
+        when(vaultService.resolvePreferredUserVault(23L)).thenReturn(
+                com.lianyu.service.dto.VaultEntryResponse.builder()
+                        .provider("dashscope").baseUrl("https://fake/v1")
+                        .apiKey("k").modelDefault("m").build());
+        when(client.postJson(eq("/agent/voice/cue"), eq(23L), anyMap()))
+                .thenReturn("{\"text\":\"我在呢，今天想聊点什么？\"}");
+        String text = cueAdapter.generateCue(
+                23L, 51L, 53L, "甘雨", java.util.Map.of(), "opening");
+        assertEquals("我在呢，今天想聊点什么？", text);
+        verify(client).postJson(eq("/agent/voice/cue"), eq(23L), anyMap());
+    }
+
+    @Test
+    void cueFailureReturnsNullSoCallKeepsGoing() {
+        when(client.properties()).thenReturn(new AgentRuntimeProperties("http://agent:8001"));
+        when(vaultService.resolvePreferredUserVault(anyLong())).thenReturn(null);
+        assertNull(cueAdapter.generateCue(23L, 51L, 53L, "甘雨", java.util.Map.of(), "opening"));
+        verify(client, never()).postJson(anyString(), anyLong(), anyMap());
     }
 }

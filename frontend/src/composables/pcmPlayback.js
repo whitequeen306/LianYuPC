@@ -1,6 +1,10 @@
 /**
  * Low-latency audio playback queue.
  * Supports raw PCM16 LE and encoded formats (mp3/wav) via decodeAudioData.
+ *
+ * 所有入队都走**同一条链**：语气词 clip 需要先 fetch + decodeAudioData 才能排期，
+ * 若不排队，紧跟其后的 PCM 帧会先被 schedule —— 听感就是「语气词被台词盖掉」。
+ * clear() 用代数隔离：清空后，旧链里尚未执行的排期一律作废。
  */
 export function createPcmPlayback({ sampleRate = 24000 } = {}) {
   let ctx = null
@@ -8,6 +12,14 @@ export function createPcmPlayback({ sampleRate = 24000 } = {}) {
   let playing = false
   /** @type {Promise<void>} */
   let chain = Promise.resolve()
+  /** 清空代数：clear() 后旧任务全部失效。 */
+  let gen = 0
+  /**
+   * 已入队但尚未排期的任务数（clip 要 fetch+decode，PCM 走微任务）。
+   * isPlaying() 必须把它算进去，否则「刚 enqueue 还没排期」会被当成已播完，
+   * 尾音门会提前 idle、麦克风在角色还在出声时被放行。
+   */
+  let pendingTasks = 0
   /**
    * 上一帧多出来的半字节（0 或 1 个字节）。
    *
@@ -41,6 +53,12 @@ export function createPcmPlayback({ sampleRate = 24000 } = {}) {
     return buf
   }
 
+  function silenceBuffer(ms) {
+    const audioCtx = ensureCtx()
+    const length = Math.max(1, Math.floor((audioCtx.sampleRate * ms) / 1000))
+    return audioCtx.createBuffer(1, length, audioCtx.sampleRate)
+  }
+
   function schedule(buf) {
     const audioCtx = ensureCtx()
     const src = audioCtx.createBufferSource()
@@ -57,6 +75,23 @@ export function createPcmPlayback({ sampleRate = 24000 } = {}) {
     }
   }
 
+  /** 把一次排期放进同一条链；clear() 之后旧任务直接丢弃。 */
+  function enqueueTask(task) {
+    const myGen = gen
+    pendingTasks += 1
+    chain = chain
+      .then(async () => {
+        if (myGen !== gen) return
+        await task()
+      })
+      .catch(() => {
+        // 单个片段失败不阻断后续音频
+      })
+      .finally(() => {
+        if (myGen === gen) pendingTasks = Math.max(0, pendingTasks - 1)
+      })
+  }
+
   function base64ToBytes(base64) {
     const raw = atob(base64)
     const bytes = new Uint8Array(raw.length)
@@ -64,20 +99,24 @@ export function createPcmPlayback({ sampleRate = 24000 } = {}) {
     return bytes
   }
 
-  function enqueueBase64Pcm(base64, rate = sampleRate) {
-    if (!base64) return
-    let bytes = base64ToBytes(base64)
+  function enqueueBytes(bytes, rate = sampleRate) {
+    if (!bytes || bytes.length === 0) return
+    let merged = bytes
     if (pcmCarry && pcmCarry.length) {
-      const merged = new Uint8Array(pcmCarry.length + bytes.length)
+      merged = new Uint8Array(pcmCarry.length + bytes.length)
       merged.set(pcmCarry, 0)
       merged.set(bytes, pcmCarry.length)
-      bytes = merged
     }
-    const evenLen = bytes.length - (bytes.length % 2)
-    pcmCarry = evenLen < bytes.length ? bytes.subarray(evenLen) : null
+    const evenLen = merged.length - (merged.length % 2)
+    pcmCarry = evenLen < merged.length ? merged.subarray(evenLen) : null
     if (evenLen === 0) return
-    const buf = int16ToAudioBuffer(bytes.subarray(0, evenLen), rate)
-    schedule(buf)
+    const buf = int16ToAudioBuffer(merged.subarray(0, evenLen), rate)
+    enqueueTask(() => schedule(buf))
+  }
+
+  function enqueueBase64Pcm(base64, rate = sampleRate) {
+    if (!base64) return
+    enqueueBytes(base64ToBytes(base64), rate)
   }
 
   /**
@@ -94,22 +133,51 @@ export function createPcmPlayback({ sampleRate = 24000 } = {}) {
     }
     const bytes = base64ToBytes(base64)
     const copy = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
-    chain = chain
-      .then(async () => {
+    enqueueTask(async () => {
+      const audioCtx = ensureCtx()
+      if (audioCtx.state === 'suspended') {
+        await audioCtx.resume().catch(() => {})
+      }
+      const buf = await audioCtx.decodeAudioData(copy)
+      schedule(buf)
+    })
+  }
+
+  /**
+   * 预录语气词 / 任意音频文件：与 PCM 走同一条队列，顺序严格按入队次序。
+   * 文件缺失或解码失败时按 fallbackMs 插等长静音 —— 绝不阻断后续音频。
+   */
+  function enqueueUrl(url, { fallbackMs = 0 } = {}) {
+    if (!url) {
+      if (fallbackMs > 0) {
+        const buf = silenceBuffer(fallbackMs)
+        enqueueTask(() => schedule(buf))
+      }
+      return
+    }
+    enqueueTask(async () => {
+      try {
+        const resp = await fetch(url)
+        if (!resp || !resp.ok) throw new Error(`clip_http_${resp ? resp.status : 0}`)
+        const data = await resp.arrayBuffer()
         const audioCtx = ensureCtx()
         if (audioCtx.state === 'suspended') {
           await audioCtx.resume().catch(() => {})
         }
-        const buf = await audioCtx.decodeAudioData(copy)
+        const buf = await audioCtx.decodeAudioData(data)
         schedule(buf)
-      })
-      .catch(() => {
-        // ignore decode failures for a single chunk
-      })
+      } catch {
+        if (fallbackMs > 0) {
+          schedule(silenceBuffer(fallbackMs))
+        }
+      }
+    })
   }
 
   function clear() {
+    gen += 1
     chain = Promise.resolve()
+    pendingTasks = 0
     pcmCarry = null
     if (ctx) {
       const old = ctx
@@ -121,8 +189,8 @@ export function createPcmPlayback({ sampleRate = 24000 } = {}) {
   }
 
   function isPlaying() {
-    return playing || (ctx != null && ctx.currentTime < nextTime)
+    return playing || pendingTasks > 0 || (ctx != null && ctx.currentTime < nextTime)
   }
 
-  return { enqueueBase64Pcm, enqueueBase64Audio, clear, isPlaying }
+  return { enqueueBase64Pcm, enqueuePcmBytes: enqueueBytes, enqueueBase64Audio, enqueueUrl, clear, isPlaying }
 }

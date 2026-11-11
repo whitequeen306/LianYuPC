@@ -10,6 +10,7 @@ import com.lianyu.service.voice.VoiceSynthesisService;
 import com.lianyu.service.auth.AuthRateLimiter;
 import com.lianyu.service.conversation.VoiceCallService;
 import com.lianyu.service.voice.VoiceCallDuplexSession;
+import com.lianyu.service.voice.VoiceCallOptions;
 import com.lianyu.service.voice.VoiceDictationSession;
 import com.lianyu.service.voice.VoiceEventSink;
 import java.io.IOException;
@@ -41,6 +42,16 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
 
     @Value("${lianyu.voice.duplex.enabled:true}")
     private boolean duplexEnabled;
+
+    /** P1 开关：默认关，部署 .env 验收后逐项打开（AGENTS §3.4）。 */
+    @Value("${lianyu.voice-call.binary-audio.enabled:false}")
+    private boolean binaryAudioEnabled;
+
+    @Value("${lianyu.voice-call.clip.enabled:false}")
+    private boolean clipEnabled;
+
+    @Value("${lianyu.voice-call.opening.enabled:false}")
+    private boolean openingEnabled;
 
     private final Map<String, SessionState> states = new ConcurrentHashMap<>();
 
@@ -177,6 +188,23 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
             }
 
             @Override
+            public boolean sendBinary(byte[] payload) {
+                if (!session.isOpen()) {
+                    // 已关闭：当作已处理，避免退回 base64 再失败一次
+                    return true;
+                }
+                try {
+                    synchronized (session) {
+                        session.sendMessage(new BinaryMessage(payload));
+                    }
+                    return true;
+                } catch (IOException e) {
+                    log.debug("voice ws binary send failed: {}", e.toString());
+                    return false;
+                }
+            }
+
+            @Override
             public boolean isOpen() {
                 return session.isOpen();
             }
@@ -195,24 +223,35 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
                 send(session, error("BAD_REQUEST", "缺少 conversationId"));
                 return;
             }
-            // 客户端能力声明只做记录：服务端不依赖它也能工作，老客户端缺 vad/drained 时
-            // 靠状态机的空端点回收与字节估算兜底。
+            // 客户端能力声明：老客户端缺 vad/drained 时靠状态机空端点回收与字节估算兜底，
+            // 只有 binary.audio 需要双向协商（配置开 + 客户端声明才切二进制帧）。
             String clientCaps = capsOf(root);
+            boolean binaryAudio = binaryAudioEnabled && hasCap(root, "binary.audio");
+            VoiceCallOptions options = new VoiceCallOptions(binaryAudio, clipEnabled, openingEnabled);
             authRateLimiter.checkRateLimit("rate:voice-call:", String.valueOf(state.userId),
                     120, Duration.ofMinutes(1), "语音通话过于频繁，请稍后再试");
             state.call = new VoiceCallDuplexSession(
                     sink, objectMapper, state.userId, conversationId,
-                    voiceCallService, asrStreamClient, voiceSynthesisService);
+                    voiceCallService, asrStreamClient, voiceSynthesisService, options);
             var target = state.call.getTarget();
             send(session, event("session.started", n -> {
                 n.put("mode", "call");
                 n.put("conversationId", conversationId);
-                // 协议版本 + 服务端能力：客户端据此决定是否镜像 call.state / 走 barge pre-roll。
-                // 不认识的客户端会忽略这些附加字段。
+                // 协议版本 + 服务端能力：客户端据此决定是否镜像 call.state / 走 barge pre-roll /
+                // 播放 tts.clip / 按二进制帧收音频。不认识的客户端会忽略这些附加字段。
                 n.put("protocol", 1);
                 var caps = n.putArray("caps");
                 caps.add("call.state");
                 caps.add("barge.preroll");
+                if (clipEnabled) {
+                    caps.add("clip");
+                }
+                if (binaryAudio) {
+                    caps.add("binary.audio");
+                }
+                if (options.openingEnabled()) {
+                    caps.add("opening");
+                }
                 n.put("ttsMode", target.isLocal() ? "local_sovits" : "realtime");
                 if (target.isLocal()) {
                     n.put("endpoint", target.endpoint() == null ? "" : target.endpoint());
@@ -222,8 +261,11 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
             }));
             // 会话建立即下发一次全量状态（seq=0），客户端不必等第一次迁移才有镜像
             state.call.announceState();
-            log.info("Voice duplex call started user={} conv={} clientCaps={}",
-                    state.userId, conversationId, clientCaps);
+            // P1 开场：pickup clip + 异步 cue；开关默认关，用户先开口会自动取消
+            state.call.startOpening();
+            log.info("Voice duplex call started user={} conv={} clientCaps={} opening={} clip={} binary={}",
+                    state.userId, conversationId, clientCaps,
+                    options.openingEnabled(), options.clipEnabled(), options.binaryAudio());
             return;
         }
         send(session, error("BAD_REQUEST", "未知 mode"));
@@ -274,6 +316,27 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
             return sb.toString();
         }
         return caps.isTextual() ? caps.asText("") : "";
+    }
+
+    /** 客户端是否声明了某个能力（数组或逗号串）。 */
+    private static boolean hasCap(JsonNode root, String cap) {
+        JsonNode caps = root.path("caps");
+        if (caps.isArray()) {
+            for (JsonNode c : caps) {
+                if (cap.equals(c.asText(""))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (caps.isTextual()) {
+            for (String item : caps.asText("").split(",")) {
+                if (cap.equals(item.trim())) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private void send(WebSocketSession session, String json) {

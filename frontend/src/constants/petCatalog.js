@@ -290,9 +290,13 @@ export function petHasInteractiveVoice(petOrId) {
   return pet?.voiceSource === 'vc'
 }
 
-/** click | run — 打包在 public/pet/voice/<id>/ 下的固定短句 */
+/** click | run | pickup | ack | hmm | laugh | sigh | breath — 打包在 public/pet/voice/<id>/ 下的固定短句 */
+const FIXED_VOICE_KINDS = new Set([
+  'click', 'run', 'pickup', 'ack', 'hmm', 'laugh', 'sigh', 'breath',
+])
+
 export function getPetFixedVoiceUrl(petId, kind) {
-  if (!petId || (kind !== 'click' && kind !== 'run')) return ''
+  if (!petId || !FIXED_VOICE_KINDS.has(kind)) return ''
   return resolveStaticAsset(`pet/voice/${petId}/${kind}.wav`)
 }
 

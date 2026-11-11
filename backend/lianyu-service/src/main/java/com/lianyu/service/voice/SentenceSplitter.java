@@ -60,9 +60,16 @@ public final class SentenceSplitter {
      */
     static final String JOIN_TOKEN = "<|join|>";
 
+    /** 语气词标记：不送 TTS，直接下发预录 clip（叹气/笑/呼吸）。 */
+    static final String SIGH_TOKEN = "<|sigh|>";
+    static final String LAUGH_TOKEN = "<|laugh|>";
+    static final String BREATH_TOKEN = "<|breath|>";
+    private static final String[] CLIP_TOKENS = {SIGH_TOKEN, LAUGH_TOKEN, BREATH_TOKEN};
+
     /** 所有 marker 里最长的长度：字幕剥离时用它判断"尾部是不是半截 marker"。 */
-    static final int MAX_MARKER_LEN =
-            Math.max(PAUSE_TOKEN.length(), Math.max(CUT_TOKEN.length(), JOIN_TOKEN.length()));
+    static final int MAX_MARKER_LEN = Math.max(
+            Math.max(PAUSE_TOKEN.length(), Math.max(CUT_TOKEN.length(), JOIN_TOKEN.length())),
+            Math.max(SIGH_TOKEN.length(), Math.max(LAUGH_TOKEN.length(), BREATH_TOKEN.length())));
 
     private static final String STRONG_ENDERS = "。！？!?\n";
 
@@ -139,18 +146,33 @@ public final class SentenceSplitter {
     private final StringBuilder buffer = new StringBuilder();
     private boolean firstCommitSent;
 
-    /** 匹配三种朗读控制标记（大小写/内部空格容错）。 */
+    /** 匹配所有朗读控制标记（大小写/内部空格容错）。 */
     private static final java.util.regex.Pattern MARKER_PATTERN = java.util.regex.Pattern.compile(
-            "<\\|\\s*(pause|cut|join)\\s*\\|>",
+            "<\\|\\s*(pause|cut|join|sigh|laugh|breath)\\s*\\|>",
             java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /** 片段类型：文本走 TTS，CLIP 走预录语气词（不进模型、不进字幕）。 */
+    public enum Kind {
+        TEXT,
+        CLIP
+    }
 
     /**
      * 一个可合成片段。
      *
-     * @param text         送进 TTS 的文本（marker 与内心独白已剥掉）
+     * @param text         文本片段：送进 TTS 的文本（marker 与内心独白已剥掉）；
+     *                     CLIP 片段：语气词 kind（{@code sigh/laugh/breath}）
      * @param pauseAfterMs 这个片段之后应插多长的静音；回合最后一片为 0
+     * @param kind         文本 or 预录语气词
      */
-    public record Segment(String text, int pauseAfterMs) {
+    public record Segment(String text, int pauseAfterMs, Kind kind) {
+        public Segment(String text, int pauseAfterMs) {
+            this(text, pauseAfterMs, Kind.TEXT);
+        }
+
+        public boolean isClip() {
+            return kind == Kind.CLIP;
+        }
     }
 
     /** 喂一段 LLM 增量，返回这段之后**已经完整、可以立刻合成**的片段（可能为空）。 */
@@ -162,6 +184,13 @@ public final class SentenceSplitter {
         List<Segment> segments = new ArrayList<>(2);
         while (true) {
             dropLeadingMarkers();
+            // 0 位的语气词标记：立刻产出一个 CLIP 片段，不必等文本
+            String clip = leadingClipKind();
+            if (clip != null) {
+                buffer.delete(0, clipToken(clip).length());
+                segments.add(new Segment(clip, 0, Kind.CLIP));
+                continue;
+            }
             int cut = nextCutOutsideParens(buffer.toString(), firstCommitSent);
             if (cut <= 0) {
                 break;
@@ -181,10 +210,27 @@ public final class SentenceSplitter {
     /** 回合结束：把剩下的文本整段作为最后一片吐出（可能为空；之后不再需要停顿）。 */
     public List<Segment> flush() {
         List<Segment> segments = new ArrayList<>(1);
-        dropLeadingMarkers();
-        if (buffer.length() > 0) {
+        while (true) {
+            dropLeadingMarkers();
+            String clip = leadingClipKind();
+            if (clip != null) {
+                buffer.delete(0, clipToken(clip).length());
+                segments.add(new Segment(clip, 0, Kind.CLIP));
+                continue;
+            }
+            if (buffer.length() == 0) {
+                break;
+            }
+            int nextClip = indexOfClipToken(buffer.toString());
+            if (nextClip >= 0) {
+                String piece = buffer.substring(0, nextClip);
+                buffer.delete(0, nextClip);
+                addClean(segments, piece, 0);
+                continue;
+            }
             addClean(segments, buffer.toString(), 0);
             buffer.setLength(0);
+            break;
         }
         firstCommitSent = false;
         return segments;
@@ -198,8 +244,9 @@ public final class SentenceSplitter {
      * 该回合后续全部堆到 flush 才合成。这是按句流水线里一处真实的卡顿源。
      */
     private void dropLeadingMarkers() {
-        // 三种标记都要清：任意一种停在 0 位都会命中 nextCommitEnd 的
+        // 三种控制标记都要清：任意一种停在 0 位都会命中 nextCommitEnd 的
         // "marker == 0 → return -1" 分支，导致该回合后续全部堆到 flush 才合成。
+        // 语气词标记不在此列：它要变成 CLIP 片段，由 accept/flush 显式取走。
         boolean dropped = true;
         while (dropped) {
             dropped = false;
@@ -210,6 +257,33 @@ public final class SentenceSplitter {
                 }
             }
         }
+    }
+
+    /** 0 位是否是语气词标记；是则返回 clip kind（sigh/laugh/breath）。 */
+    private String leadingClipKind() {
+        String buf = buffer.toString();
+        for (String token : CLIP_TOKENS) {
+            if (buf.startsWith(token)) {
+                return token.substring(2, token.length() - 2);
+            }
+        }
+        return null;
+    }
+
+    private static String clipToken(String kind) {
+        return "<|" + kind + "|>";
+    }
+
+    /** 最早出现的语气词标记下标；没有返回 -1。 */
+    private static int indexOfClipToken(String buf) {
+        int best = -1;
+        for (String token : CLIP_TOKENS) {
+            int i = buf.indexOf(token);
+            if (i >= 0 && (best < 0 || i < best)) {
+                best = i;
+            }
+        }
+        return best;
     }
 
     /** marker 与括号内心独白都不进 TTS、不进聊天记录。 */
@@ -357,6 +431,8 @@ public final class SentenceSplitter {
         int hard = minPositive(
                 indexOfToken(buf, CUT_TOKEN, MIN_CUT_TEXT),
                 indexOfToken(buf, PAUSE_TOKEN, 1),
+                // 语气词标记与 pause 同级：前面只要有 1 个字就可以切（"嗯<|sigh|>"）
+                clipIndexAtLeastOne(buf),
                 partial);
         if (hard > 0) {
             return hard;
@@ -417,13 +493,28 @@ public final class SentenceSplitter {
         while (i >= 0) {
             if (buf.startsWith(CUT_TOKEN, i)
                     || buf.startsWith(PAUSE_TOKEN, i)
-                    || buf.startsWith(JOIN_TOKEN, i)) {
+                    || buf.startsWith(JOIN_TOKEN, i)
+                    || startsWithClipToken(buf, i)) {
                 i = buf.indexOf("<|", i + 2);
                 continue;
             }
             return i <= 0 ? 0 : i;
         }
         return -1;
+    }
+
+    private static boolean startsWithClipToken(String buf, int index) {
+        for (String token : CLIP_TOKENS) {
+            if (buf.startsWith(token, index)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int clipIndexAtLeastOne(String buf) {
+        int idx = indexOfClipToken(buf);
+        return idx >= 1 ? idx : -1;
     }
 
     /**

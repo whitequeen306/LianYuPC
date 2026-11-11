@@ -5,6 +5,7 @@ import { usePcmCapture } from '@/composables/usePcmCapture'
 import { createPcmPlayback } from '@/composables/pcmPlayback'
 import { createTurnTailGate } from '@/composables/voiceTurnTail'
 import { shouldReuseVoiceSocket } from '@/composables/voiceSocket'
+import { getPetFixedVoiceUrl } from '@/constants/petCatalog'
 import * as logger from '@/utils/logger'
 
 /** pre-roll 环形缓冲：只留最近 1.5s，打断时按序回灌给 ASR。 */
@@ -187,6 +188,33 @@ export function useVoiceDuplex() {
     }
   }
 
+  function reportFirstAudio() {
+    if (firstAudioReported || !turnStartedPerf) return
+    firstAudioReported = true
+    sendJson({ type: 'call.metrics', firstAudioMs: Math.round(performance.now() - turnStartedPerf) })
+  }
+
+  /**
+   * 下行二进制音频帧（服务端 caps 含 binary.audio 时才走这条路）：
+   * `'L','Y',ver,type,flags,headerLen=16,rsv,rsv,seq,sampleRate,payload`。
+   */
+  function handleBinaryAudio(buffer) {
+    if (mode.value !== 'call' || !buffer || buffer.byteLength <= 16) return
+    const view = new DataView(buffer)
+    if (view.getUint8(0) !== 0x4c || view.getUint8(1) !== 0x59) return
+    const headerLen = view.getUint8(5)
+    if (headerLen < 16 || buffer.byteLength <= headerLen) return
+    const seq = view.getUint32(8)
+    const rate = view.getUint32(12) || 24000
+    if (!playback) playback = createPcmPlayback({ sampleRate: rate })
+    playback.enqueuePcmBytes(new Uint8Array(buffer, headerLen), rate)
+    if (seq) lastAudioSeq = seq
+    turnTail.stop()
+    phase.value = 'speaking'
+    noteSpeakingStarted()
+    reportFirstAudio()
+  }
+
   async function playLocalTts(msg) {
     const api = typeof window !== 'undefined' ? window.electronAPI : null
     if (!api?.synthesizeLocalTts) {
@@ -268,10 +296,18 @@ export function useVoiceDuplex() {
         sampleRate: msg.sampleRate || 24000,
       })
       noteSpeakingStarted()
-      if (!firstAudioReported && turnStartedPerf) {
-        firstAudioReported = true
-        sendJson({ type: 'call.metrics', firstAudioMs: Math.round(performance.now() - turnStartedPerf) })
-      }
+      reportFirstAudio()
+    } else if (type === 'tts.clip') {
+      // 预录语气词：与 PCM 走同一条播放队列，缺文件按 fallbackMs 插静音
+      turnTail.stop()
+      phase.value = 'speaking'
+      const seq = Number(msg.seq ?? 0)
+      if (seq) lastAudioSeq = seq
+      if (!playback) playback = createPcmPlayback({ sampleRate: 24000 })
+      const url = getPetFixedVoiceUrl(String(msg.petId || ''), String(msg.kind || ''))
+      playback.enqueueUrl(url, { fallbackMs: Number(msg.fallbackMs || 0) })
+      noteSpeakingStarted()
+      reportFirstAudio()
     } else if (type === 'tts.local') {
       turnTail.stop()
       phase.value = 'speaking'
@@ -346,6 +382,11 @@ export function useVoiceDuplex() {
         fail(new Error('语音通道连接被关闭'))
       }
       socket.onmessage = (ev) => {
+        // 二进制帧只可能是下行 PCM（服务端协商了 binary.audio）
+        if (ev.data instanceof ArrayBuffer) {
+          handleBinaryAudio(ev.data)
+          return
+        }
         if (typeof ev.data !== 'string') {
           return
         }
@@ -412,7 +453,7 @@ export function useVoiceDuplex() {
       type: 'session.start',
       mode: 'call',
       conversationId,
-      caps: ['call.state', 'barge.preroll', 'vad.edge'],
+      caps: ['call.state', 'barge.preroll', 'vad.edge', 'binary.audio', 'clip'],
     })
     await startPcmStream({
       vadProfile,

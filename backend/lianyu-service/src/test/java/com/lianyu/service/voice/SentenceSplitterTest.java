@@ -315,4 +315,45 @@ class SentenceSplitterTest {
             assertEquals(false, t.contains("cut"), "片段里不能残留标记：" + t);
         }
     }
+
+    // ── 语气词 clip：sigh / laugh / breath ──
+
+    @Test
+    void clipMarkerYieldsClipSegmentAfterText() {
+        SentenceSplitter splitter = new SentenceSplitter();
+        List<SentenceSplitter.Segment> seg = splitter.accept("我好累啊。<|sigh|>不过没事。");
+        assertEquals(List.of("我好累啊。", "sigh"), texts(seg));
+        assertEquals(SentenceSplitter.Kind.TEXT, seg.get(0).kind());
+        assertEquals(SentenceSplitter.Kind.CLIP, seg.get(1).kind());
+        // 语气词片段自身不带额外停顿：它的时长由音频文件决定
+        assertEquals(0, seg.get(1).pauseAfterMs());
+    }
+
+    @Test
+    void leadingClipMarkerDoesNotWaitForText() {
+        SentenceSplitter splitter = new SentenceSplitter();
+        List<SentenceSplitter.Segment> seg = splitter.accept("<|laugh|>今天真开心。");
+        assertEquals(List.of("laugh", "今天真开心。"), texts(seg));
+        assertEquals(SentenceSplitter.Kind.CLIP, seg.get(0).kind());
+    }
+
+    @Test
+    void flushEmitsClipMarkerAtTail() {
+        SentenceSplitter splitter = new SentenceSplitter();
+        assertTrue(splitter.accept("嗯<|breath|>").isEmpty() == false);
+        List<SentenceSplitter.Segment> seg = splitter.flush();
+        // accept 里 marker 前的「嗯」已切出，flush 把尾部 clip 补上（若已切出则为空）
+        for (SentenceSplitter.Segment s : seg) {
+            assertEquals(SentenceSplitter.Kind.CLIP, s.kind());
+        }
+    }
+
+    @Test
+    void clipMarkersAreStrippedFromCaptionsAndPersistedText() {
+        assertEquals("好。走吧", SentenceSplitter.stripPauseMarkers("好。<|sigh|>走吧"));
+        assertEquals("好。走吧", SentenceSplitter.stripPauseMarkers("好。<|LAUGH|>走吧"));
+        assertEquals("好。走吧", SentenceSplitter.stripPauseMarkers("好。<|breath|>走吧"));
+        // 字幕流式下发只剥完整标记：半截前缀留给下一个 delta（不能少字）
+        assertEquals("好。<|si", SentenceSplitter.stripCompleteMarkers("好。<|si"));
+    }
 }

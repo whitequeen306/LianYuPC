@@ -262,6 +262,13 @@ lianyu:
     max-reply-chars: 48
     history-limit: 8
     max-tokens: 512
+    # P1 自动能力：代码默认关，部署 .env 按验收结果逐项打开（AGENTS §3.4）
+    opening:
+      enabled: ${LIANYU_VOICE_CALL_OPENING_ENABLED:false}
+    clip:
+      enabled: ${LIANYU_VOICE_CALL_CLIP_ENABLED:false}
+    binary-audio:
+      enabled: ${LIANYU_VOICE_CALL_BINARY_AUDIO_ENABLED:false}
   session:
     summary:
       enabled: true

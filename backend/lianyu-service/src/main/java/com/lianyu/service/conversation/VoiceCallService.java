@@ -21,6 +21,7 @@ import com.lianyu.service.agent.AgentTextStreamPort;
 import com.lianyu.service.ai.ApiKeyVaultService;
 import com.lianyu.service.ai.AsrService;
 import com.lianyu.service.agent.TtsPort;
+import com.lianyu.service.agent.VoiceCuePort;
 import com.lianyu.service.ai.InnerThoughtFilter;
 import com.lianyu.service.ai.PetVoiceRegistry;
 import com.lianyu.service.ai.background.AiBackgroundPublisher;
@@ -104,6 +105,7 @@ public class VoiceCallService {
     private final AiBackgroundPublisher aiBackgroundPublisher;
     private final CustomVoiceService customVoiceService;
     private final FileStorageService fileStorageService;
+    private final VoiceCuePort voiceCuePort;
 
     @Value("${lianyu.voice-call.max-reply-chars:48}")
     private int maxReplyChars;
@@ -417,6 +419,32 @@ public class VoiceCallService {
             return spoken.substring(0, maxReplyChars).trim();
         }
         return spoken;
+    }
+
+    /**
+     * 语音通话开场/冷场台词（P1 只接 {@code opening}）。
+     *
+     * <p>Java 只装配事实（谁、哪个会话、什么场景）；文案与模型调用在 Python。
+     * 任何失败都返回 null —— 开场生成不出来只损失一句问候，不能影响整通电话。
+     */
+    public String generateVoiceCue(Long userId, Long conversationId, String kind) {
+        if (voiceCuePort == null || userId == null || conversationId == null) {
+            return null;
+        }
+        try {
+            Conversation conversation = findOwned(userId, conversationId);
+            Character character = characterMapper.selectById(conversation.getCharacterId());
+            if (character == null) {
+                return null;
+            }
+            String text = voiceCuePort.generateCue(
+                    userId, character.getId(), conversationId, character.getName(),
+                    character.getSettings(), kind);
+            return text == null || text.isBlank() ? null : text.trim();
+        } catch (Exception e) {
+            log.debug("Voice cue skipped conv={} kind={}: {}", conversationId, kind, e.toString());
+            return null;
+        }
     }
 
     /**
