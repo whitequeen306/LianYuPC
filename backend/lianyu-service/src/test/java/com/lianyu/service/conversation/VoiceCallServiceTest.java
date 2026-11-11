@@ -43,4 +43,41 @@ class VoiceCallServiceTest {
 
         assertThat(voiceCallService.resolveVoicePetId(character)).isNull();
     }
+
+    @Test
+    void callInviteIsOffByDefault() {
+        Character character = new Character();
+        character.setSourceTemplateId(7L);
+        // 开关默认关：打扰类能力不满足条件时连音色都不必查
+        assertThat(voiceCallService.trySendCallInvite(1L, 2L, character)).isNull();
+    }
+
+    @Test
+    void callInviteSkipsCharacterWithoutCallVoice() {
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                voiceCallService, "callInviteEnabled", true);
+        Character character = new Character();
+
+        assertThat(voiceCallService.trySendCallInvite(1L, 2L, character)).isNull();
+    }
+
+    @Test
+    void callInviteSkipsDoNotDisturb() {
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                voiceCallService, "callInviteEnabled", true);
+        Character character = new Character();
+        character.setSourceTemplateId(7L);
+        CharacterSquareTemplate template = new CharacterSquareTemplate();
+        template.setSlug("raiden");
+        when(squareTemplateMapper.selectById(7L)).thenReturn(template);
+        when(petVoiceRegistry.hasVoice("raiden")).thenReturn(true);
+        // start == end 表示全天免打扰
+        java.util.Map<String, Object> settings = new java.util.HashMap<>();
+        settings.put("doNotDisturbEnabled", true);
+        settings.put("dndStartMinutes", 0);
+        settings.put("dndEndMinutes", 0);
+        character.setSettings(settings);
+
+        assertThat(voiceCallService.trySendCallInvite(1L, 2L, character)).isNull();
+    }
 }

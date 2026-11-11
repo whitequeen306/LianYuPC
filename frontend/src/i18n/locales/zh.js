@@ -324,6 +324,7 @@ export default {
     loadMore: '加载更早消息',
     noMessages: '还没有消息，打个招呼吧',
     typing: '{name}正在回复中...',
+    callInviteAccept: '接听',
     scrollToBottom: '回到底部',
     export: '导出',
     exporting: '正在整理聊天记录…',

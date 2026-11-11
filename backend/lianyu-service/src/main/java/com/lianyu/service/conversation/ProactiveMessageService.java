@@ -136,6 +136,9 @@ public class ProactiveMessageService {
     /** Strangler 接缝：AGENT 模式下生成段委托 backend-agent；OFF/SHADOW 走原链路。 */
     private final AgentRuntimePort agentRuntime;
 
+    /** 主动来电邀请的判定与落库都在通话域：消息标记、周限、音色能力都在那边。 */
+    private final VoiceCallService voiceCallService;
+
     /**
      * 额度熔断：用户 key 欠费/失效时，主动关怀自动停摆，不必等每轮失败。
      *
@@ -242,6 +245,20 @@ public class ProactiveMessageService {
             throw new BusinessException(ErrorCode.CHARACTER_NOT_FOUND);
         }
         conversationService.ensureCharacterAvailableForProactive(character);
+
+        // P3：先看这一轮要不要改成「来电邀请」——省一次文字生成，也避免既发文字又发邀请。
+        // 条件不满足（开关关/免打扰/关系太生/本周已邀过/刚通过话）时返回 null，照常走文字。
+        MessageResponse invite = voiceCallService.trySendCallInvite(userId, conversationId, character);
+        if (invite != null) {
+            proactiveUnrepliedThrottle.recordProactiveSent(conversationId);
+            notificationService.notifyProactiveMessage(
+                    userId,
+                    conversationId,
+                    character.getId(),
+                    character.getName(),
+                    invite.getContent());
+            return List.of(invite);
+        }
 
         List<Message> history = conversationService.getRecentMessages(conversationId, contextWindow);
         CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);

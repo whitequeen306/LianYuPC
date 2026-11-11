@@ -284,6 +284,10 @@ lianyu:
     # P3 语速镜像：用户说得多快，角色跟到多快（±5%）
     rate-mirror:
       enabled: ${LIANYU_VOICE_CALL_RATE_MIRROR_ENABLED:false}
+    # P3 主动来电邀请：只发卡片，点开才进通话
+    call-invite:
+      enabled: ${LIANYU_VOICE_CALL_CALL_INVITE_ENABLED:false}
+      min-gap-hours: ${LIANYU_VOICE_CALL_CALL_INVITE_MIN_GAP_HOURS:72}
   session:
     summary:
       enabled: true

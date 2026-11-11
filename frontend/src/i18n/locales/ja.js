@@ -319,6 +319,7 @@ export default {
     loadMore: 'さらに読み込む',
     noMessages: 'まだメッセージがありません。挨拶してみましょう',
     typing: '{name}が返信中...',
+    callInviteAccept: '応答する',
     export: '書き出し',
     exporting: 'チャット履歴を準備中…',
     exportSuccess: 'チャット履歴を書き出しました',

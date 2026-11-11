@@ -372,6 +372,7 @@ export default {
     loadMore: '載入更早訊息',
     noMessages: '還沒有訊息，打個招呼吧',
     typing: '{name}正在回覆中...',
+    callInviteAccept: '接聽',
     export: '匯出',
     exporting: '正在整理聊天記錄…',
     exportSuccess: '聊天記錄已匯出',

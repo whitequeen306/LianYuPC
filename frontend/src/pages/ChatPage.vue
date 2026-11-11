@@ -80,6 +80,15 @@
               {{ item.content }}
             </span>
           </div>
+          <div v-else-if="item.type === 'call-invite'" class="msg-call-invite" :data-msg-id="item.id">
+            <span class="msg-call-invite__text">
+              <el-icon :size="14"><Phone /></el-icon>
+              <span>{{ item.content }}</span>
+            </span>
+            <button type="button" class="msg-call-invite__accept" @click="openVoiceCall">
+              {{ t('chat.callInviteAccept') }}
+            </button>
+          </div>
           <div
             v-else
             class="gal-log__item"
@@ -365,7 +374,7 @@ import {
 } from '@/utils/exportChatTranscript'
 import { isElectronApp } from '@/utils/electron'
 import { stripInnerThoughts, resolveShowInnerThoughts } from '@/utils/innerThoughtFilter'
-import { isVoiceCallTurnMessage, isVoiceCallSummaryMessage } from '@/constants/voiceCallMarkers'
+import { isVoiceCallTurnMessage, isVoiceCallSummaryMessage, isVoiceCallInviteMessage } from '@/constants/voiceCallMarkers'
 import { isVoiceCallPet } from '@/constants/voiceCallPets'
 
 function petIdFromAudioUrl(audioUrl) {
@@ -669,6 +678,26 @@ const messageTimeline = computed(() => {
         content: msg.content || '语音通话',
         createdAt: msg.createdAt,
         _key: `voice-call-${msg.id || msg._tempId || ms}`
+      })
+      prevMs = ms
+      continue
+    }
+
+    if (isVoiceCallInviteMessage(msg)) {
+      const ms = parseMessageTime(msg)
+      if (prevMs != null && ms - prevMs > TIME_GAP_MS) {
+        items.push({
+          type: 'time',
+          _key: `time-${ms}`,
+          label: formatTimeDivider(ms)
+        })
+      }
+      items.push({
+        type: 'call-invite',
+        id: msg.id,
+        content: msg.content || '',
+        createdAt: msg.createdAt,
+        _key: `call-invite-${msg.id || msg._tempId || ms}`
       })
       prevMs = ms
       continue
@@ -1802,6 +1831,54 @@ function formatTime(ts) {
 .gal-chat--compact .msg-voice-call-record span {
   font-size: 12px;
   padding: 5px 12px;
+}
+
+/* 主动来电邀请：角色先说一句，右侧给一个「接听」，点了才真的开麦 */
+.msg-call-invite {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  max-width: min(86%, 460px);
+  margin: $space-2 0;
+  padding: 8px 10px 8px 14px;
+  border-radius: $radius-lg;
+  background: rgba($color-bg-surface, 0.92);
+  border: 1px solid rgba($color-pink-rgb, 0.35);
+  backdrop-filter: blur(8px);
+  flex-shrink: 0;
+
+  &__text {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-size: $font-size-sm;
+    color: var(--ly-text-secondary);
+
+    span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  &__accept {
+    appearance: none;
+    border: none;
+    flex-shrink: 0;
+    padding: 5px 14px;
+    border-radius: $radius-full;
+    background: $color-pink-primary;
+    color: #fff;
+    font-size: $font-size-sm;
+    cursor: pointer;
+    transition: filter 0.2s ease;
+
+    &:hover {
+      filter: brightness(1.06);
+    }
+  }
 }
 
 .gal-load-more {

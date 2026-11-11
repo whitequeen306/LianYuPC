@@ -82,6 +82,22 @@ def test_idle_cue_uses_idle_prompt(monkeypatch):
     assert fake.calls[0]["lane_name"] == "voice-cue-idle"
 
 
+def test_invite_cue_uses_invite_prompt(monkeypatch):
+    fake = FakeGateway(content="现在方便接个电话吗？")
+    captured = {}
+    _patch_prompt(monkeypatch, captured)
+    monkeypatch.setattr("app.main.get_gateway", lambda: fake)
+
+    response = client.post("/agent/voice/cue", json=dict(PAYLOAD, kind="invite"))
+
+    assert response.status_code == 200
+    assert response.json()["text"] == "现在方便接个电话吗？"
+    system = fake.calls[0]["messages"][0]["content"]
+    assert "来电邀请" in system
+    assert "最多 28 个字" in system
+    assert fake.calls[0]["lane_name"] == "voice-cue-invite"
+
+
 def test_unknown_kind_returns_empty_without_model_call(monkeypatch):
     fake = FakeGateway()
     captured = {}

@@ -66,6 +66,9 @@ public class VoiceCallService {
     private static final String SEQ_KEY_PREFIX = "msg_seq:";
     private static final String VOICE_CALL_TURN_MARKER = "system/voice-call-turn";
     private static final String VOICE_CALL_SUMMARY_MARKER = "system/voice-call-summary";
+    /** 主动来电邀请：只发卡片，不自动开麦（P3 可选，默认关）。 */
+    private static final String VOICE_CALL_INVITE_MARKER = "system/voice-call-invite";
+    private static final String CALL_INVITE_KEY_PREFIX = "voice-invite:";
     /**
      * Voice-call allowlist: must have realtimeVoices mapping (HTTP fallback uses voices).
      * Keep in sync with frontend {@code voiceCallPets.js}.
@@ -111,6 +114,7 @@ public class VoiceCallService {
     private final VoiceCuePort voiceCuePort;
     private final CharacterStateService characterStateService;
     private final com.lianyu.service.agent.AgentMemoryPort memoryPort;
+    private final com.lianyu.service.relationship.RelationshipStateService relationshipStateService;
 
     @Value("${lianyu.voice-call.max-reply-chars:48}")
     private int maxReplyChars;
@@ -131,6 +135,18 @@ public class VoiceCallService {
      */
     @Value("${lianyu.voice-call.memory-moment.enabled:false}")
     private boolean memoryMomentEnabled;
+
+    /**
+     * P3：主动来电邀请（只落一张邀请卡片，点开才进通话）。默认关。
+     *
+     * <p>打扰类能力，条件从严：关系阶段过 TESTING、非免打扰、距上次通话 ≥
+     * {@link #callInviteMinGapHours} 小时、每个角色每周最多一次。
+     */
+    @Value("${lianyu.voice-call.call-invite.enabled:false}")
+    private boolean callInviteEnabled;
+
+    @Value("${lianyu.voice-call.call-invite.min-gap-hours:72}")
+    private long callInviteMinGapHours;
 
     /**
      * 本通通话内最多带入 LLM 的历史句数（user+assistant 各算一句）。
@@ -560,6 +576,93 @@ public class VoiceCallService {
             log.debug("Voice cue skipped conv={} kind={}: {}", conversationId, kind, e.toString());
             return null;
         }
+    }
+
+    /**
+     * 主动来电邀请（P3 可选）：全部条件都满足时落一张邀请卡片并返回它；否则返回 null。
+     *
+     * <p>只发卡片，不自动开麦 —— 用户点了才进通话。任一条不满足就静默退回普通主动文字，
+     * 不解释也不重试（打扰类能力宁可少发）。
+     */
+    public MessageResponse trySendCallInvite(Long userId, Long conversationId, Character character) {
+        if (!callInviteEnabled || userId == null || conversationId == null || character == null) {
+            return null;
+        }
+        if (resolveVoicePetId(character) == null) {
+            return null;
+        }
+        if (com.lianyu.service.character.CharacterPreferenceResolver.isDoNotDisturbActive(character)) {
+            return null;
+        }
+        try {
+            com.lianyu.service.relationship.RelationshipSnapshot snapshot =
+                    relationshipStateService.getSnapshot(userId, character.getId());
+            if (snapshot == null
+                    || snapshot.phase() == com.lianyu.service.relationship.RelationshipPhase.TESTING) {
+                return null;
+            }
+        } catch (Exception e) {
+            log.debug("Call invite skipped: relationship unavailable conv={}: {}",
+                    conversationId, e.toString());
+            return null;
+        }
+        if (lastCallWithinGap(conversationId)) {
+            return null;
+        }
+        String slotKey = CALL_INVITE_KEY_PREFIX + userId + ":" + character.getId();
+        Boolean acquired = redisTemplate.opsForValue()
+                .setIfAbsent(slotKey, "1", java.time.Duration.ofDays(7));
+        if (!Boolean.TRUE.equals(acquired)) {
+            return null;
+        }
+        String text = generateVoiceCue(userId, conversationId, "invite");
+        if (text == null || text.isBlank()) {
+            // 没生成出来就不打扰；把额度还回去，别让一次失败占掉一整周
+            redisTemplate.delete(slotKey);
+            return null;
+        }
+        try {
+            Message invite = new Message();
+            invite.setSeq(nextSeq(conversationId));
+            invite.setConversationId(conversationId);
+            invite.setRole("ASSISTANT");
+            invite.setCharacterId(character.getId());
+            invite.setContent(text);
+            invite.setAudioUrl(VOICE_CALL_INVITE_MARKER);
+            invite.setCreatedAt(java.time.LocalDateTime.now());
+            messageMapper.insert(invite);
+            log.info("Voice call invite sent: conv={}, character={}, len={}",
+                    conversationId, character.getId(), text.length());
+            return MessageResponse.builder()
+                    .id(invite.getId())
+                    .seq(invite.getSeq())
+                    .conversationId(conversationId)
+                    .role(invite.getRole())
+                    .characterId(character.getId())
+                    .content(text)
+                    .audioUrl(VOICE_CALL_INVITE_MARKER)
+                    .createdAt(invite.getCreatedAt())
+                    .build();
+        } catch (Exception e) {
+            redisTemplate.delete(slotKey);
+            log.warn("Voice call invite failed conv={}: {}", conversationId, e.toString());
+            return null;
+        }
+    }
+
+    /** 距上一次通话不足 minGap 就不邀请：刚聊过的人不需要被叫。 */
+    private boolean lastCallWithinGap(Long conversationId) {
+        List<Message> summaries = messageMapper.selectList(new LambdaQueryWrapper<Message>()
+                .eq(Message::getConversationId, conversationId)
+                .eq(Message::getAudioUrl, VOICE_CALL_SUMMARY_MARKER)
+                .orderByDesc(Message::getSeq)
+                .last("LIMIT 1"));
+        if (summaries == null || summaries.isEmpty()) {
+            return false;
+        }
+        java.time.LocalDateTime at = summaries.get(0).getCreatedAt();
+        return at != null && at.isAfter(java.time.LocalDateTime.now()
+                .minusHours(Math.max(0, callInviteMinGapHours)));
     }
 
     /**

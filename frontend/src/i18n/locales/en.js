@@ -324,6 +324,7 @@ export default {
     loadMore: 'Load earlier messages',
     noMessages: 'No messages yet — say hello',
     typing: '{name} is replying...',
+    callInviteAccept: 'Answer',
     export: 'Export',
     exporting: 'Preparing chat history…',
     exportSuccess: 'Chat history exported',
