@@ -194,21 +194,19 @@ class VoiceCallDuplexSessionTest {
     }
 
     @Test
-    void openingSendsPickupClipAndSpeaksTheCueOnce() {
+    void openingSpeaksTheCueWithoutPickupClip() {
         VoiceCallDuplexSession session = newPetSession(new VoiceCallOptions(false, true, true));
         session.startOpening();
 
-        await(() -> sent.stream().anyMatch(
-                m -> m.contains("\"type\":\"tts.clip\"") && m.contains("\"pickup\"")));
         await(() -> sent.stream().anyMatch(
                 m -> m.contains("\"type\":\"turn.done\"") && m.contains("\"opening\"")));
 
         // 开场白必须落库，下一轮历史才接得上
         org.mockito.Mockito.verify(service).persistAssistantTurn(1L, 2L, "我刚回来，你等很久了吗？");
-        // pickup clip 必须早于开场白的 TTS 音频
-        int clipAt = indexOf("\"type\":\"tts.clip\"");
-        int turnAt = indexOf("\"type\":\"turn.start\"");
-        assertTrue(clipAt >= 0 && turnAt > clipAt, "pickup 必须先出声");
+        // 不再垫一句 pickup：接通后直接说开场白，避免"嗯，我在"与开场白重复
+        assertTrue(sent.stream().noneMatch(
+                m -> m.contains("\"type\":\"tts.clip\"") && m.contains("\"pickup\"")),
+                "不该再发 pickup clip");
     }
 
     @Test
@@ -334,14 +332,5 @@ class VoiceCallDuplexSessionTest {
         VoiceProsody prosody = runTurnAndCaptureProsody(
                 withRateMirror(true), 8_000, "我打算周末出去走走");
         org.junit.jupiter.api.Assertions.assertEquals(1.0, prosody.rate(), 1e-9);
-    }
-
-    private int indexOf(String needle) {
-        for (int i = 0; i < sent.size(); i++) {
-            if (sent.get(i).contains(needle)) {
-                return i;
-            }
-        }
-        return -1;
     }
 }

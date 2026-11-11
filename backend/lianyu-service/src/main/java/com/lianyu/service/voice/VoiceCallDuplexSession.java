@@ -412,7 +412,8 @@ public class VoiceCallDuplexSession {
         turnStartedAtMs = System.currentTimeMillis();
         emitState(callState.on(CallStateMachine.Event.OPENING_BEGIN, "opening"));
         ttsLanguage = voiceCallService.resolveTtsLanguage(userId);
-        sendClip("pickup", epoch);
+        // 不再发 pickup（"嗯，我在"）：它与开场白语义重复，实测听起来像电话录音的占位音。
+        // 接通到首句之间的 1-1.5s 交给通话界面的「接通中」状态，不再用一句垫场话填空。
 
         Thread worker = new Thread(() -> {
             String text = null;
