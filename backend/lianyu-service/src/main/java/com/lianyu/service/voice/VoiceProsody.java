@@ -24,6 +24,23 @@ public record VoiceProsody(double rate, double pitch, double volumeDb, double pa
     private static final double RATE_MAX = 1.12;
     private static final double PAUSE_MIN = 0.75;
     private static final double PAUSE_MAX = 1.45;
+    /** 语速镜像与情绪倍率叠加后的总区间：再宽就会听出「换了个人在念」。 */
+    private static final double MIRROR_RATE_MIN = 0.80;
+    private static final double MIRROR_RATE_MAX = 1.20;
+
+    /**
+     * 语速镜像（P3）：用户说得多快，她就跟到多快。
+     *
+     * <p>只动 {@link #rate()}，不动停顿 —— 停顿是情绪的表达（难过时慢慢说），
+     * 跟着语速变会把那份情绪抹掉。
+     */
+    public VoiceProsody withRateFactor(double factor) {
+        if (!Double.isFinite(factor) || factor == 1.0) {
+            return this;
+        }
+        double mirrored = clampRange(rate * factor, MIRROR_RATE_MIN, MIRROR_RATE_MAX);
+        return new VoiceProsody(round(mirrored), pitch, volumeDb, pauseScale);
+    }
 
     /**
      * 按情绪与强度（0-100）映射成韵律参数。

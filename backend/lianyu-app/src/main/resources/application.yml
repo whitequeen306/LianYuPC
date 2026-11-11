@@ -281,6 +281,9 @@ lianyu:
     # P3 记忆：只写 episode（带原话），不写长期事实
     memory-moment:
       enabled: ${LIANYU_VOICE_CALL_MEMORY_MOMENT_ENABLED:false}
+    # P3 语速镜像：用户说得多快，角色跟到多快（±5%）
+    rate-mirror:
+      enabled: ${LIANYU_VOICE_CALL_RATE_MIRROR_ENABLED:false}
   session:
     summary:
       enabled: true

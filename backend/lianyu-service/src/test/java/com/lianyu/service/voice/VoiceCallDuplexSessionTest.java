@@ -94,7 +94,12 @@ class VoiceCallDuplexSessionTest {
         when(service.clampReply(anyString())).thenAnswer(inv -> inv.getArgument(0));
         when(service.generateVoiceCue(anyLong(), anyLong(), anyString()))
                 .thenReturn("我刚回来，你等很久了吗？");
-        // 非本地音色走服务端 TTS：给一小段 PCM，让管线完整收尾
+        when(service.streamVoiceReply(anyLong(), any(), any())).thenAnswer(inv -> {
+            // 真实链路里 delta 回调才是切句的输入源；只返回 future 会让 TTS 队列空转
+            java.util.function.Consumer<String> onDelta = inv.getArgument(2);
+            onDelta.accept("好呀，我在呢。");
+            return CompletableFuture.completedFuture("好呀，我在呢。");
+        });
         org.mockito.Mockito.doAnswer(inv -> {
             com.lianyu.service.agent.TtsPort.TtsChunkSink chunkSink = inv.getArgument(3);
             chunkSink.onChunk(new byte[] {1, 2, 3, 4});
@@ -277,6 +282,57 @@ class VoiceCallDuplexSessionTest {
         // 字数门槛在会话里就挡住：三个短回合连一次模型判定都不该花
         org.mockito.Mockito.verify(service, never())
                 .recordVoiceMoment(anyLong(), anyLong(), anyString(), anyString());
+    }
+
+    private static VoiceCallOptions withRateMirror(boolean enabled) {
+        return new VoiceCallOptions(false, false, false, false, false,
+                VoiceCallOptions.DEFAULT_IDLE_MS, VoiceCallOptions.DEFAULT_IDLE_MIN_GAP_MS, enabled);
+    }
+
+    /** 跑完一轮并把这一轮送给 TTS 的韵律参数抓出来。 */
+    private VoiceProsody runTurnAndCaptureProsody(VoiceCallOptions options, int pcmBytes, String text) {
+        VoiceCallDuplexSession session = newPetSession(options);
+        session.onPcm(new byte[pcmBytes]);
+        asrListener.onPartial(text);
+        asrListener.onEndpoint();
+        await(() -> sent.stream().anyMatch(m -> m.contains("\"type\":\"tts.done\"")));
+
+        org.mockito.ArgumentCaptor<VoiceProsody> captor =
+                org.mockito.ArgumentCaptor.forClass(VoiceProsody.class);
+        org.mockito.Mockito.verify(service, org.mockito.Mockito.atLeastOnce())
+                .streamSynthesizeForTarget(any(), anyString(), captor.capture(), any());
+        return captor.getValue();
+    }
+
+    @Test
+    void rateMirrorSpeedsUpWhenUserTalksFast() {
+        // 0.5s 语音里说了 9 个字 ≈ 18 字/秒：属于「急着说」，角色应当跟上
+        VoiceProsody prosody = runTurnAndCaptureProsody(
+                withRateMirror(true), 24_000, "我打算周末出去走走");
+        assertTrue(prosody.rate() > 1.0, "说得急，角色语速应当略快: " + prosody.rate());
+    }
+
+    @Test
+    void rateMirrorSlowsDownWhenUserTalksSlowly() {
+        // 2s 语音里只有 5 个字 = 2.5 字/秒：属于「慢慢说」
+        VoiceProsody prosody = runTurnAndCaptureProsody(
+                withRateMirror(true), 96_000, "我在听你说");
+        assertTrue(prosody.rate() < 1.0, "说得慢，角色语速应当略缓: " + prosody.rate());
+    }
+
+    @Test
+    void rateMirrorOffKeepsNeutralProsody() {
+        VoiceProsody prosody = runTurnAndCaptureProsody(
+                withRateMirror(false), 24_000, "我打算周末出去走走");
+        org.junit.jupiter.api.Assertions.assertEquals(1.0, prosody.rate(), 1e-9);
+    }
+
+    @Test
+    void tooShortSpeechIsNotMirrored() {
+        // 0.17s 的样本算出来的字/秒全是噪声，不参与镜像
+        VoiceProsody prosody = runTurnAndCaptureProsody(
+                withRateMirror(true), 8_000, "我打算周末出去走走");
+        org.junit.jupiter.api.Assertions.assertEquals(1.0, prosody.rate(), 1e-9);
     }
 
     private int indexOf(String needle) {

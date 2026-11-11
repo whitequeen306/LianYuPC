@@ -66,6 +66,10 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
     @Value("${lianyu.voice-call.idle-nudge.min-gap-ms:" + VoiceCallOptions.DEFAULT_IDLE_MIN_GAP_MS + "}")
     private long idleNudgeMinGapMs;
 
+    /** P3 语速镜像：按用户本轮语速微调角色语速（默认关）。 */
+    @Value("${lianyu.voice-call.rate-mirror.enabled:false}")
+    private boolean rateMirrorEnabled;
+
     private final Map<String, SessionState> states = new ConcurrentHashMap<>();
 
     @Override
@@ -243,7 +247,7 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
             VoiceCallOptions options = new VoiceCallOptions(
                     binaryAudio, clipEnabled, openingEnabled,
                     idleNudgeEnabled, emotionProsodyEnabled,
-                    idleNudgeMs, idleNudgeMinGapMs);
+                    idleNudgeMs, idleNudgeMinGapMs, rateMirrorEnabled);
             authRateLimiter.checkRateLimit("rate:voice-call:", String.valueOf(state.userId),
                     120, Duration.ofMinutes(1), "语音通话过于频繁，请稍后再试");
             state.call = new VoiceCallDuplexSession(

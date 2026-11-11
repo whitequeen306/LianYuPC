@@ -57,4 +57,30 @@ class VoiceProsodyTest {
             }
         }
     }
+
+    @Test
+    void rateMirrorOnlyTouchesRate() {
+        VoiceProsody sad = VoiceProsody.resolve("难过", 80);
+        VoiceProsody faster = sad.withRateFactor(1.05);
+
+        assertTrue(faster.rate() > sad.rate(), "快语速应当把 rate 抬起来");
+        assertEquals(sad.pauseScale(), faster.pauseScale(), "停顿属于情绪，不能被语速改掉");
+        assertEquals(sad.pitch(), faster.pitch());
+        assertEquals(sad.volumeDb(), faster.volumeDb());
+    }
+
+    @Test
+    void rateMirrorKeepsNeutralUntouched() {
+        assertEquals(VoiceProsody.NEUTRAL, VoiceProsody.NEUTRAL.withRateFactor(1.0));
+        assertEquals(VoiceProsody.NEUTRAL, VoiceProsody.NEUTRAL.withRateFactor(Double.NaN));
+    }
+
+    @Test
+    void rateMirrorClampsWhenStackedOnEmotion() {
+        // 兴奋 already 拉满 1.12：再叠 1.05 不能无限往上跑
+        VoiceProsody excited = VoiceProsody.resolve("兴奋", 100);
+        assertTrue(excited.withRateFactor(1.05).rate() <= 1.20);
+        VoiceProsody tired = VoiceProsody.resolve("疲惫", 100);
+        assertTrue(tired.withRateFactor(0.95).rate() >= 0.80);
+    }
 }

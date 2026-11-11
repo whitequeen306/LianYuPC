@@ -13,6 +13,7 @@ package com.lianyu.service.voice;
  * @param emotionProsodyEnabled 按角色情绪微调语速与停顿（数值映射在 Java，情绪判定在 Python/DB）
  * @param idleMs               静音多久算冷场
  * @param idleMinGapMs         两次冷场主动之间的最小间隔
+ * @param rateMirrorEnabled    语速镜像：按用户本轮说话的语速微调角色语速（±5%）
  */
 public record VoiceCallOptions(
         boolean binaryAudio,
@@ -21,7 +22,8 @@ public record VoiceCallOptions(
         boolean idleNudgeEnabled,
         boolean emotionProsodyEnabled,
         long idleMs,
-        long idleMinGapMs) {
+        long idleMinGapMs,
+        boolean rateMirrorEnabled) {
 
     /** 冷场阈值：12s 是「对方还在，只是没说话」与「以为掉线」的分界。 */
     public static final long DEFAULT_IDLE_MS = 12_000L;
@@ -32,7 +34,19 @@ public record VoiceCallOptions(
     /** P1 及更早的三参构造：新增能力默认关，行为保持不变。 */
     public VoiceCallOptions(boolean binaryAudio, boolean clipEnabled, boolean openingEnabled) {
         this(binaryAudio, clipEnabled, openingEnabled, false, false,
-                DEFAULT_IDLE_MS, DEFAULT_IDLE_MIN_GAP_MS);
+                DEFAULT_IDLE_MS, DEFAULT_IDLE_MIN_GAP_MS, false);
+    }
+
+    /** P2 的七参构造：P3 新增的语速镜像默认关。 */
+    public VoiceCallOptions(boolean binaryAudio,
+                            boolean clipEnabled,
+                            boolean openingEnabled,
+                            boolean idleNudgeEnabled,
+                            boolean emotionProsodyEnabled,
+                            long idleMs,
+                            long idleMinGapMs) {
+        this(binaryAudio, clipEnabled, openingEnabled, idleNudgeEnabled, emotionProsodyEnabled,
+                idleMs, idleMinGapMs, false);
     }
 
     public static VoiceCallOptions defaults() {

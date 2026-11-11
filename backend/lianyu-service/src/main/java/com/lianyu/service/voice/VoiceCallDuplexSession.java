@@ -123,6 +123,17 @@ public class VoiceCallDuplexSession {
     /** 已完成的、用户说了有内容的话的回合数。 */
     private final AtomicInteger contentTurns = new AtomicInteger();
 
+    /** 本回合用户上行的 PCM 字节数（48 字节 = 1ms），用来估算语速做镜像。 */
+    private final AtomicLong userTurnPcmBytes = new AtomicLong();
+    /** 太少的一段语音算出来的字/秒全是噪声，不参与镜像。 */
+    private static final int MIRROR_MIN_SPEECH_BYTES = 19_200;
+    /** 正常中文朗读约 4-5 字/秒：6 以上算急，3 以下算缓。 */
+    private static final double MIRROR_FAST_CPS = 6.0;
+    private static final double MIRROR_SLOW_CPS = 3.0;
+    private static final double MIRROR_MAX_FACTOR = 1.05;
+    private static final double MIRROR_MIN_FACTOR = 0.95;
+    private static final int PCM_BYTES_PER_SECOND = 48_000;
+
     public VoiceCallDuplexSession(
             VoiceEventSink sink,
             ObjectMapper objectMapper,
@@ -278,6 +289,7 @@ public class VoiceCallDuplexSession {
             return;
         }
         asr.sendPcm(pcm);
+        userTurnPcmBytes.addAndGet(pcm.length);
     }
 
     /**
@@ -601,6 +613,37 @@ public class VoiceCallDuplexSession {
     }
 
     /**
+     * 语速镜像（P3）：按用户本轮的字/秒微调角色语速，最多 ±5%。
+     *
+     * <p>只改 rate、不改停顿：停顿是情绪的一部分（难过时慢慢说），跟着语速动会把它抹平。
+     * 语音太短（<0.4s）或字数太少时不镜像 —— 那点样本算出来的 cps 全是噪声。
+     */
+    private VoiceProsody applyRateMirror(VoiceProsody prosody, String userText, long speechBytes) {
+        if (!options.rateMirrorEnabled() || speechBytes < MIRROR_MIN_SPEECH_BYTES) {
+            return prosody;
+        }
+        int chars = meaningfulLength(userText);
+        if (chars < 2) {
+            return prosody;
+        }
+        double seconds = speechBytes / (double) PCM_BYTES_PER_SECOND;
+        double cps = chars / seconds;
+        double factor;
+        if (cps >= MIRROR_FAST_CPS) {
+            factor = MIRROR_MAX_FACTOR;
+        } else if (cps <= MIRROR_SLOW_CPS) {
+            factor = MIRROR_MIN_FACTOR;
+        } else {
+            double t = (cps - MIRROR_SLOW_CPS) / (MIRROR_FAST_CPS - MIRROR_SLOW_CPS);
+            factor = MIRROR_MIN_FACTOR + t * (MIRROR_MAX_FACTOR - MIRROR_MIN_FACTOR);
+        }
+        log.info("Voice rate mirror conv={} chars={} ms={} cps={} factor={}",
+                conversationId, chars, speechBytes / PCM_BYTES_PER_MS,
+                String.format("%.2f", cps), String.format("%.3f", factor));
+        return prosody.withRateFactor(factor);
+    }
+
+    /**
      * 本回合该用的韵律：开关关着就中性（不发多余参数），查询失败也退回中性。
      *
      * <p>刻意放在工作线程里调用：它要读一次角色状态，不能占着 WebSocket 线程。
@@ -894,6 +937,8 @@ public class VoiceCallDuplexSession {
             return;
         }
         long epoch = turnEpoch.incrementAndGet();
+        // 取走本轮语音长度：语速镜像要用，取走后下一轮重新累计
+        final long speechBytes = userTurnPcmBytes.getAndSet(0);
         lastTurnText = userText;
         lastTurnAtMs = System.currentTimeMillis();
         turnStartedAtMs = System.currentTimeMillis();
@@ -923,7 +968,7 @@ public class VoiceCallDuplexSession {
             //  · ttsQueue  —— 句子按序排队；TTS 线程取一句、合成一句、喂给客户端
             // 这样第一句的合成不必等整段回复结束，播完一句时下一句通常已就绪。
             // 韵律在**本线程**取（要读角色状态），不占 WebSocket 线程。
-            VoiceProsody prosody = prosodyForReply();
+            VoiceProsody prosody = applyRateMirror(prosodyForReply(), userText, speechBytes);
             SentenceSplitter splitter = new SentenceSplitter(prosody.pauseScale());
             BlockingQueue<SentenceSplitter.Segment> ttsQueue = new LinkedBlockingQueue<>();
             Thread ttsWorker = target.isLocal() ? null : startTtsPipeline(ttsQueue, epoch, prosody);
