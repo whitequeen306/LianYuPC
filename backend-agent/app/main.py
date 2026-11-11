@@ -600,6 +600,8 @@ class PromptAssembleBody(BaseModel):
     extra_system_suffix: str = Field(default="", alias="extraSystemSuffix")
     # 语音通话单句字数上限（Java 只传这个事实，强制话术住在 prompts/voice_call_instruction.md）
     voice_max_reply_chars: int = Field(default=0, alias="voiceMaxReplyChars")
+    # 关系块显式开关（Java 传事实；缺省时 Python 按场景默认推断）
+    include_relationship: bool | None = Field(default=None, alias="includeRelationship")
     # 主动开口前的真实环境块（时间 + 天气）
     prefetch_real_world: bool = Field(default=True, alias="prefetchRealWorld")
 
@@ -728,6 +730,7 @@ async def prompt_assemble(
             group_mention=body.group_mention,
             extra_system_suffix=body.extra_system_suffix,
             voice_max_reply_chars=body.voice_max_reply_chars,
+            include_relationship=body.include_relationship,
             prefetch_real_world=body.prefetch_real_world,
             use_internal_data=body.use_internal_data,
         )
@@ -761,7 +764,7 @@ async def voice_cue(
     body: VoiceCueBody,
     user_id_header: str | None = Header(default=None, alias="X-User-Id"),
 ) -> dict[str, Any]:
-    """语音通话开场（P1）。返回 {text}；失败返回 {error}，Java 侧静默跳过。
+    """语音通话的短句 cue（opening / idle）。返回 {text}；失败返回 {error}，Java 侧静默跳过。
 
     上下文（时间/记忆/情绪/关系）由 assemble_turn_prompt 自己读库：
     Java 不拼任何话术，只告诉 Python「谁、哪通电话、哪种 cue」。
@@ -769,9 +772,15 @@ async def voice_cue(
     if user_id_header and str(body.user_id) != user_id_header:
         raise HTTPException(status_code=403, detail="user mismatch")
     kind = (body.kind or "").strip().lower()
-    if kind != "opening":
-        # 冷场主动是 P2：未实现时返回空串，Java 按「没有台词」处理
+    # 每种 cue 的提示词、用户话头与字数上限都归 Python；未知 kind 直接返回空串
+    cues = {
+        "opening": ("voice_cue_opening", "（电话接通了，你先开口。）", 32),
+        "idle": ("voice_cue_idle", "（电话里安静了一会儿，你主动说一句。）", 24),
+    }
+    cue = cues.get(kind)
+    if cue is None:
         return {"text": ""}
+    prompt_name, user_line, max_chars = cue
     try:
         from app.prompt_pipeline import assemble_turn_prompt
         from app.prompts.loader import render_prompt
@@ -788,22 +797,22 @@ async def voice_cue(
             voice_max_reply_chars=48,
             use_internal_data=True,
         )
-        system += render_prompt("voice_cue_opening", max_chars=32)
+        system += render_prompt(prompt_name, max_chars=max_chars)
         result = await get_gateway().chat_messages(
             base_url=body.text_base_url,
             api_key=body.text_api_key,
             model=body.text_model,
             messages=[
                 {"role": "system", "content": system},
-                {"role": "user", "content": "（电话接通了，你先开口。）"},
+                {"role": "user", "content": user_line},
             ],
             temperature=0.85,
             max_tokens=120,
             provider=None,
-            lane_name="voice-cue",
+            lane_name=f"voice-cue-{kind}",
         )
-    except Exception as exc:  # noqa: BLE001 - 失败返回错误码，Java 静默跳过开场
-        logger.warning("voice cue failed: %s", exc)
+    except Exception as exc:  # noqa: BLE001 - 失败返回错误码，Java 静默跳过
+        logger.warning("voice cue failed kind=%s: %s", kind, exc)
         return {"error": "cue_failed"}
     text = (result.content or "").strip()
     return {"text": text}

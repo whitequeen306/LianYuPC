@@ -25,6 +25,8 @@ package com.lianyu.service.agent;
  * @param groupMention   群聊 @ 上下文
  * @param voiceMaxReplyChars 语音通话单句字数上限（Python 用它渲染 voice_call_instruction，
  *                       Java 不再持有这段强制话术）
+ * @param includeRelationship 是否带入关系上下文块（场景默认 + 部署开关共同决定；
+ *                       Python 收到显式值就不再按场景默认推断）
  */
 public record PromptAssemblyRequest(
         long userId,
@@ -48,5 +50,6 @@ public record PromptAssemblyRequest(
         int groupMaxPieces,
         String groupOtherCharacters,
         String groupMention,
-        int voiceMaxReplyChars) {
+        int voiceMaxReplyChars,
+        boolean includeRelationship) {
 }

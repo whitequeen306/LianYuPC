@@ -57,18 +57,28 @@ public class VoiceSynthesisService {
      * 而是按块回调，让客户端能边收边播。参数解析与降级完全一致。
      */
     public void streamForPet(String petId, String text, TtsPort.TtsChunkSink sink) {
+        streamForPet(petId, text, 1.0, sink);
+    }
+
+    /**
+     * 带语速倍率的流式合成（语音通话的情绪韵律）。
+     *
+     * <p>{@code rateMultiplier} 只乘在该音色的基础倍率上：音色本身的快慢是产品配置，
+     * 情绪只是微调，不能把两者混成一个数（否则换个音色情绪映射就全错）。
+     */
+    public void streamForPet(String petId, String text, double rateMultiplier, TtsPort.TtsChunkSink sink) {
         String voice = petVoiceRegistry.resolveHttpVoiceId(petId);
         if (voice == null) {
             log.info("Pet TTS stream skipped: no voice mapping for petId={}", petId);
             return;
         }
-        stream(voice, null, text, petVoiceRegistry.getModel(), null, petId, sink);
+        stream(voice, null, text, petVoiceRegistry.getModel(), null, petId, rateMultiplier, sink);
     }
 
     /** 用户自定义音色的流式合成。 */
     public void streamWithVoice(String voiceId, String apiKeyOverride, String text,
                                 String httpModel, String apiBaseUrl, TtsPort.TtsChunkSink sink) {
-        stream(voiceId, apiKeyOverride, text, httpModel, apiBaseUrl, "custom", sink);
+        stream(voiceId, apiKeyOverride, text, httpModel, apiBaseUrl, "custom", 1.0, sink);
     }
 
     /** 用户自定义音色（用户 Key + 自定义 base）。 */
@@ -88,7 +98,7 @@ public class VoiceSynthesisService {
                                                 String apiBaseUrl,
                                                 String logLabel) {
         TtsPort.SynthesizeRequest request = buildRequest(
-                voiceId, apiKeyOverride, text, httpModelOverride, apiBaseUrl, logLabel);
+                voiceId, apiKeyOverride, text, httpModelOverride, apiBaseUrl, logLabel, 1.0);
         return request == null ? null : ttsPort.synthesize(request);
     }
 
@@ -98,12 +108,13 @@ public class VoiceSynthesisService {
                         String httpModelOverride,
                         String apiBaseUrl,
                         String logLabel,
+                        double rateMultiplier,
                         TtsPort.TtsChunkSink sink) {
         if (sink == null) {
             return;
         }
         TtsPort.SynthesizeRequest request = buildRequest(
-                voiceId, apiKeyOverride, text, httpModelOverride, apiBaseUrl, logLabel);
+                voiceId, apiKeyOverride, text, httpModelOverride, apiBaseUrl, logLabel, rateMultiplier);
         if (request != null) {
             ttsPort.streamSynthesize(request, sink);
         }
@@ -115,7 +126,8 @@ public class VoiceSynthesisService {
                                                    String text,
                                                    String httpModelOverride,
                                                    String apiBaseUrl,
-                                                   String logLabel) {
+                                                   String logLabel,
+                                                   double rateMultiplier) {
         if (!enabled) {
             log.info("TTS skipped: disabled");
             return null;
@@ -137,10 +149,22 @@ public class VoiceSynthesisService {
         String model = httpModelOverride != null && !httpModelOverride.isBlank()
                 ? httpModelOverride.trim()
                 : petVoiceRegistry.getModel();
-        // 语速：只对配置过倍率的音色生效（pet-voices.json 的 rates），其余走模型默认
-        Double rate = petVoiceRegistry.getRate(logLabel);
+        // 语速：只对配置过倍率的音色生效（pet-voices.json 的 rates），其余走模型默认；
+        // 情绪倍率再乘在上面，且夹到 DashScope 能接受的区间内。
+        Double rate = mergeRate(petVoiceRegistry.getRate(logLabel), rateMultiplier);
         return new TtsPort.SynthesizeRequest(
                 key, apiBaseUrl, model, voiceId.trim(), text.trim(), languageType, logLabel, rate);
+    }
+
+    /** 基础倍率（可能为空）与情绪倍率合并；1.0 视为不调整，别凭空给模型塞参数。 */
+    private Double mergeRate(Double baseRate, double rateMultiplier) {
+        boolean adjust = Math.abs(rateMultiplier - 1.0) > 0.001;
+        if (baseRate == null && !adjust) {
+            return null;
+        }
+        double base = baseRate == null ? 1.0 : baseRate;
+        double merged = base * (adjust ? rateMultiplier : 1.0);
+        return Math.max(0.5, Math.min(2.0, merged));
     }
 
     private String resolveApiKey() {

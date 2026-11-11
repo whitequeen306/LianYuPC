@@ -96,11 +96,11 @@ class VoiceCallDuplexSessionTest {
                 .thenReturn("我刚回来，你等很久了吗？");
         // 非本地音色走服务端 TTS：给一小段 PCM，让管线完整收尾
         org.mockito.Mockito.doAnswer(inv -> {
-            com.lianyu.service.agent.TtsPort.TtsChunkSink chunkSink = inv.getArgument(2);
+            com.lianyu.service.agent.TtsPort.TtsChunkSink chunkSink = inv.getArgument(3);
             chunkSink.onChunk(new byte[] {1, 2, 3, 4});
             chunkSink.onDone();
             return null;
-        }).when(service).streamSynthesizeForTarget(any(), anyString(), any());
+        }).when(service).streamSynthesizeForTarget(any(), anyString(), any(VoiceProsody.class), any());
         return new VoiceCallDuplexSession(
                 sink, objectMapper, 1L, 2L, service, asrClient,
                 mock(VoiceSynthesisService.class), options);
@@ -203,6 +203,50 @@ class VoiceCallDuplexSessionTest {
         int clipAt = indexOf("\"type\":\"tts.clip\"");
         int turnAt = indexOf("\"type\":\"turn.start\"");
         assertTrue(clipAt >= 0 && turnAt > clipAt, "pickup 必须先出声");
+    }
+
+    @Test
+    void idleNudgeSpeaksOnceWhenTheCallFallsSilent() {
+        // 静音 250ms 就触发；间隔设成 60s，保证这一通只会主动这一次（限频逻辑另有保护）
+        VoiceCallDuplexSession session = newPetSession(
+                new VoiceCallOptions(false, true, false, true, false, 250, 60_000));
+
+        await(() -> sent.stream().anyMatch(
+                m -> m.contains("\"type\":\"turn.done\"") && m.contains("\"idle\"")));
+
+        org.mockito.Mockito.verify(service, times(1)).generateVoiceCue(1L, 2L, "idle");
+        org.mockito.Mockito.verify(service).persistAssistantTurn(1L, 2L, "我刚回来，你等很久了吗？");
+    }
+
+    @Test
+    void idleNudgeIsCancelledWhenUserSpeaksFirst() {
+        VoiceCallDuplexSession session = newPetSession(
+                new VoiceCallOptions(false, true, false, true, false, 100, 60_000));
+        // 让 idle 台词生成得慢一点，好在它返回前插一句「用户开口」
+        when(service.generateVoiceCue(anyLong(), anyLong(), anyString())).thenAnswer(inv -> {
+            Thread.sleep(600);
+            return "在吗？";
+        });
+
+        // 等到状态机进入 THINKING（说明 idle 已经触发、正在生成）
+        await(() -> sent.stream().anyMatch(
+                m -> m.contains("\"type\":\"call.state\"") && m.contains("\"THINKING\"")));
+        session.onVad("start");
+        await(() -> sent.stream().anyMatch(m -> m.contains("\"turn.cancelled\"")));
+
+        sleep(800);
+        assertTrue(sent.stream().noneMatch(
+                m -> m.contains("\"type\":\"turn.done\"") && m.contains("\"idle\"")),
+                "用户先开口时冷场台词必须作废");
+        org.mockito.Mockito.verify(service, never()).persistAssistantTurn(anyLong(), anyLong(), anyString());
+    }
+
+    private static void sleep(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private int indexOf(String needle) {

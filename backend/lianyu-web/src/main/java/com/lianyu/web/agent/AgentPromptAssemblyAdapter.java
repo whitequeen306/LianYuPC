@@ -88,6 +88,8 @@ public class AgentPromptAssemblyAdapter implements PromptAssemblyPort {
         body.put("groupOtherCharacters", nvl(request.groupOtherCharacters()));
         body.put("groupMention", nvl(request.groupMention()));
         body.put("voiceMaxReplyChars", request.voiceMaxReplyChars());
+        // 关系块开关也当事实传：Python 收到显式值就不再按场景默认猜
+        body.put("includeRelationship", request.includeRelationship());
         if (request.characterId() != null) {
             body.put("characterId", request.characterId());
         }

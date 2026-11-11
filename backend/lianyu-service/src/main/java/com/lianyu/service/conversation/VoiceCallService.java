@@ -7,6 +7,7 @@ import com.lianyu.common.exception.BusinessException;
 import com.lianyu.common.util.UserInputSanitizer;
 import com.lianyu.dao.entity.Character;
 import com.lianyu.dao.entity.CharacterSquareTemplate;
+import com.lianyu.dao.entity.CharacterState;
 import com.lianyu.dao.entity.Conversation;
 import com.lianyu.dao.entity.Message;
 import com.lianyu.dao.entity.UserCustomVoice;
@@ -26,6 +27,7 @@ import com.lianyu.service.ai.InnerThoughtFilter;
 import com.lianyu.service.ai.PetVoiceRegistry;
 import com.lianyu.service.ai.background.AiBackgroundPublisher;
 import com.lianyu.service.ai.background.AiBackgroundTask;
+import com.lianyu.service.character.CharacterStateService;
 import com.lianyu.service.dto.AiChatRequest;
 import com.lianyu.service.dto.ChatResult;
 import com.lianyu.service.dto.MessageDto;
@@ -41,6 +43,7 @@ import com.lianyu.service.voice.CustomVoiceProviders;
 import com.lianyu.service.voice.CustomVoiceService;
 import com.lianyu.service.voice.SentenceSplitter;
 import com.lianyu.service.voice.VoiceCallTarget;
+import com.lianyu.service.voice.VoiceProsody;
 import com.lianyu.service.voice.VoiceSynthesisService;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -106,9 +109,19 @@ public class VoiceCallService {
     private final CustomVoiceService customVoiceService;
     private final FileStorageService fileStorageService;
     private final VoiceCuePort voiceCuePort;
+    private final CharacterStateService characterStateService;
 
     @Value("${lianyu.voice-call.max-reply-chars:48}")
     private int maxReplyChars;
+
+    /**
+     * P2：通话回合是否带入关系上下文 + 上一通摘要。默认关，部署侧按验收结果打开。
+     *
+     * <p>关系块由 Python 组装（`_SCENES_RELATIONSHIP` 已含 VOICE_CALL），Java 只把
+     * 「这次要不要带」这个事实传给 prompt 层。
+     */
+    @Value("${lianyu.voice-call.relationship-context.enabled:false}")
+    private boolean relationshipContextEnabled;
 
     /**
      * 本通通话内最多带入 LLM 的历史句数（user+assistant 各算一句）。
@@ -322,9 +335,22 @@ public class VoiceCallService {
      */
     public void streamSynthesizeForTarget(VoiceCallTarget target, String text,
                                           TtsPort.TtsChunkSink sink) {
+        streamSynthesizeForTarget(target, text, VoiceProsody.NEUTRAL, sink);
+    }
+
+    /**
+     * 带情绪韵律的流式合成。
+     *
+     * <p>只有官方音色吃语速倍率；自定义音色的参数是用户自己的资产，不替用户改。
+     * 韵律的数值映射在 {@link VoiceProsody}，这里只负责往下传。
+     */
+    public void streamSynthesizeForTarget(VoiceCallTarget target, String text,
+                                          VoiceProsody prosody,
+                                          TtsPort.TtsChunkSink sink) {
         if (target == null || sink == null) {
             return;
         }
+        double rate = prosody == null ? 1.0 : prosody.rate();
         if (target.mode() == VoiceCallTarget.Mode.CUSTOM_DASHSCOPE) {
             voiceSynthesisService.streamWithVoice(
                     target.httpVoiceId() != null ? target.httpVoiceId() : target.realtimeVoiceId(),
@@ -336,7 +362,27 @@ public class VoiceCallService {
             return;
         }
         if (target.mode() == VoiceCallTarget.Mode.OFFICIAL_PET) {
-            voiceSynthesisService.streamForPet(target.petId(), text, sink);
+            voiceSynthesisService.streamForPet(target.petId(), text, rate, sink);
+        }
+    }
+
+    /**
+     * 取「此刻该用什么声音」：情绪名与强度来自角色状态（事实），映射成数值在 {@link VoiceProsody}。
+     *
+     * <p>任何异常都退回中性韵律 —— 语调只是锦上添花，不能因为一次查询失败让整句没声。
+     */
+    public VoiceProsody resolveProsody(Long userId, Long conversationId) {
+        try {
+            Conversation conversation = findOwned(userId, conversationId);
+            CharacterState state = characterStateService.getOrCreate(conversation.getCharacterId(), userId);
+            if (state == null) {
+                return VoiceProsody.NEUTRAL;
+            }
+            int intensity = state.getEmotionIntensity() == null ? 50 : state.getEmotionIntensity();
+            return VoiceProsody.resolve(state.getCurrentEmotion(), intensity);
+        } catch (Exception e) {
+            log.debug("Voice prosody fallback conv={}: {}", conversationId, e.toString());
+            return VoiceProsody.NEUTRAL;
         }
     }
 
@@ -392,7 +438,41 @@ public class VoiceCallService {
         int msgLimit = clampHistoryMessageLimit(historyLimit);
         List<Message> history = recentVoiceCallTurnsInCurrentCall(conversationId, msgLimit);
         history = trimCurrentUserTurn(history, userText);
+        history = withPreviousCallSummary(conversationId, history);
         return buildVoiceAiRequest(userId, conversationId, character, history, userText, userVault);
+    }
+
+    /**
+     * 把上一通电话的摘要插到历史最前面，让这一通能接上上次的话题。
+     *
+     * <p>只取最近一条、且限制在 7 天内：更久以前的通话细节角色本来也不该记得那么清，
+     * 塞进去只会挤占本通的热上下文。开关关着时完全不动历史（保持 P1 行为）。
+     */
+    private List<Message> withPreviousCallSummary(Long conversationId, List<Message> history) {
+        if (!relationshipContextEnabled || history == null) {
+            return history;
+        }
+        try {
+            Message summary = messageMapper.selectOne(new LambdaQueryWrapper<Message>()
+                    .eq(Message::getConversationId, conversationId)
+                    .eq(Message::getAudioUrl, VOICE_CALL_SUMMARY_MARKER)
+                    .orderByDesc(Message::getSeq)
+                    .last("LIMIT 1"));
+            if (summary == null || summary.getId() == null) {
+                return history;
+            }
+            if (summary.getCreatedAt() != null
+                    && summary.getCreatedAt().isBefore(java.time.LocalDateTime.now().minusDays(7))) {
+                return history;
+            }
+            List<Message> merged = new ArrayList<>(history.size() + 1);
+            merged.add(summary);
+            merged.addAll(history);
+            return merged;
+        } catch (Exception e) {
+            log.debug("Voice call last-summary lookup skipped conv={}: {}", conversationId, e.toString());
+            return history;
+        }
     }
 
     public java.util.concurrent.CompletableFuture<String> streamVoiceReply(

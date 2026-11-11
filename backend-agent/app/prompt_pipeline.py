@@ -28,7 +28,7 @@ Java `ChatTurnScene` 的方法即事实，这里逐条对应：
     includeProactiveRealWorld: PROACTIVE
     enableChatTools          : SINGLE, GROUP, DIARY, PROACTIVE
     includeMemory            : 非 VOICE_CALL
-    includeRelationship      : SINGLE, PROACTIVE, MOMENTS, DIARY
+    includeRelationship      : SINGLE, PROACTIVE, MOMENTS, DIARY, VOICE_CALL（VOICE_CALL 由 Java 开关叠加）
     includeSessionSummary    : SINGLE, PROACTIVE
     afterBase 其余            : MOMENTS/DIARY=style_only, VOICE_CALL=time_only, GROUP=none
 """
@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 _SCENES_TIME_CITY_GOODNIGHT = frozenset({"SINGLE", "PROACTIVE"})
 _SCENES_TIME = _SCENES_TIME_CITY_GOODNIGHT | {"VOICE_CALL"}
 _SCENES_TOOLS = frozenset({"SINGLE", "GROUP", "DIARY", "PROACTIVE"})
-_SCENES_RELATIONSHIP = frozenset({"SINGLE", "PROACTIVE", "MOMENTS", "DIARY"})
+_SCENES_RELATIONSHIP = frozenset({"SINGLE", "PROACTIVE", "MOMENTS", "DIARY", "VOICE_CALL"})
 _SCENES_SESSION = frozenset({"SINGLE", "PROACTIVE"})
 
 MODE_REAL = "real"
@@ -78,11 +78,18 @@ def scene_enable_tools(scene: str) -> bool:
     return scene in _SCENES_TOOLS
 
 
-def scene_include_flags(scene: str) -> dict[str, bool]:
-    """记忆/关系/会话摘要是否参与（对齐 Java 三个 include* 方法）。"""
+def scene_include_flags(scene: str, include_relationship: bool | None = None) -> dict[str, bool]:
+    """记忆/关系/会话摘要是否参与（对齐 Java 三个 include* 方法）。
+
+    ``include_relationship`` 是 Java 传来的显式事实（P2 起语音通话按部署开关决定
+    要不要带关系块）；传 None 时按场景默认推断，保持旧行为。
+    """
+    relationship = scene in _SCENES_RELATIONSHIP
+    if include_relationship is not None:
+        relationship = relationship and include_relationship
     return {
         "include_memory": scene != "VOICE_CALL",
-        "include_relationship": scene in _SCENES_RELATIONSHIP,
+        "include_relationship": relationship,
         "include_session": scene in _SCENES_SESSION,
     }
 
@@ -292,6 +299,8 @@ async def assemble_turn_prompt(
     extra_system_suffix: str = "",
     # 语音通话单句字数上限：Java 只传配置事实，强制话术文案在本目录 prompts/ 下
     voice_max_reply_chars: int = 0,
+    # 关系块显式开关（None = 按场景默认）；语音通话由 Java 的部署开关决定
+    include_relationship: bool | None = None,
     prefetch_real_world: bool = True,
     use_internal_data: bool = True,
 ) -> str:
@@ -310,6 +319,7 @@ async def assemble_turn_prompt(
             city=city,
             last_user_message=last_user_message,
             session_summary=session_summary,
+            include_relationship=include_relationship,
         )
 
     # 记忆块硬顶：先压「记忆 + 关系 + 摘要」，再挂场景卡与浮现提示。
@@ -411,6 +421,7 @@ async def _fill_internal_data(
     city: str | None,
     last_user_message: str | None,
     session_summary: str | None,
+    include_relationship: bool | None = None,
 ) -> tuple[str, str, str | None]:
     """Python 自读记忆/情绪/城市。**已显式传入的块优先**，不覆盖。"""
     from app.data_readers import (
@@ -425,7 +436,7 @@ async def _fill_internal_data(
             user_id,
             character_id or 0,
             conversation_id,
-            **scene_include_flags(scene),
+            **scene_include_flags(scene, include_relationship=include_relationship),
             last_user_message=last_user_message,
             session_summary_override=session_summary,
             lang=output_language or "zh",

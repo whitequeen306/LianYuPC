@@ -65,13 +65,30 @@ def test_opening_uses_voice_call_scene_and_task_prompt(monkeypatch):
     assert len(fake.calls[0]["messages"]) == 2
 
 
+def test_idle_cue_uses_idle_prompt(monkeypatch):
+    fake = FakeGateway(content="你刚才说到哪了来着？")
+    captured = {}
+    _patch_prompt(monkeypatch, captured)
+    monkeypatch.setattr("app.main.get_gateway", lambda: fake)
+
+    response = client.post("/agent/voice/cue", json=dict(PAYLOAD, kind="idle"))
+
+    assert response.status_code == 200
+    assert response.json()["text"] == "你刚才说到哪了来着？"
+    assert captured["scene"] == "VOICE_CALL"
+    system = fake.calls[0]["messages"][0]["content"]
+    assert "通话冷场" in system
+    assert "最多 24 个字" in system
+    assert fake.calls[0]["lane_name"] == "voice-cue-idle"
+
+
 def test_unknown_kind_returns_empty_without_model_call(monkeypatch):
     fake = FakeGateway()
     captured = {}
     _patch_prompt(monkeypatch, captured)
     monkeypatch.setattr("app.main.get_gateway", lambda: fake)
 
-    body = dict(PAYLOAD, kind="idle")
+    body = dict(PAYLOAD, kind="weird")
     response = client.post("/agent/voice/cue", json=body)
 
     assert response.status_code == 200

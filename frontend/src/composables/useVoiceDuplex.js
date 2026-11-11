@@ -14,6 +14,21 @@ const PREROLL_MS = 1500
 const PREROLL_MAX_BYTES = 96 * 1024
 /** 回灌只取「像人声」的帧：把静音/底噪灌进 ASR 只会拖慢首条 partial。 */
 const PREROLL_PEAK_MIN = 0.12
+/** 通话中掉线后的重连等待：1s 足够让服务端释放旧会话，又短到用户以为只是卡了一下。 */
+const RECONNECT_DELAY_MS = 1000
+/** session.start 的能力协商：服务端据此决定回 call.state / 接受 pre-roll / 二进制音频。 */
+const CALL_CAPS = ['call.state', 'barge.preroll', 'vad.edge', 'binary.audio', 'clip']
+/** P2 的两个客户端实验开关（默认关，测好再改成常开）。 */
+const RECONNECT_FLAG_KEY = 'lianyu.voice.reconnect'
+const GAIN_FLAG_KEY = 'lianyu.voice.gain'
+
+function voiceFlagEnabled(key) {
+  try {
+    return globalThis.localStorage?.getItem(key) === '1'
+  } catch {
+    return false
+  }
+}
 
 /**
  * Duplex voice session over /ws/voice.
@@ -61,6 +76,21 @@ export function useVoiceDuplex() {
   let bargeAtMs = 0
   let turnStartedPerf = 0
   let firstAudioReported = false
+
+  /** P2：通话中掉线重连（本地开关，默认关）。 */
+  let reconnectEnabled = false
+  let reconnectUsed = false
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let reconnectTimer = null
+  let callConversationId = 0
+  /** stop() 主动收尾时置真，onclose 就不会把它当成掉线。 */
+  let stopping = false
+  /** 响度归一出力（本地开关，默认关）。 */
+  let gainEnabled = false
+
+  function createPlayback(sampleRate = 24000) {
+    return createPcmPlayback({ sampleRate, gainEnabled })
+  }
 
   /**
    * turn.done 只代表服务端不再产音频；本地还压着 2-5 秒尾音。
@@ -206,7 +236,7 @@ export function useVoiceDuplex() {
     if (headerLen < 16 || buffer.byteLength <= headerLen) return
     const seq = view.getUint32(8)
     const rate = view.getUint32(12) || 24000
-    if (!playback) playback = createPcmPlayback({ sampleRate: rate })
+    if (!playback) playback = createPlayback(rate)
     playback.enqueuePcmBytes(new Uint8Array(buffer, headerLen), rate)
     if (seq) lastAudioSeq = seq
     turnTail.stop()
@@ -232,7 +262,7 @@ export function useVoiceDuplex() {
         lastError.value = '本地语音合成失败，请检查 GPT-SoVITS 是否已启动'
         return
       }
-      if (!playback) playback = createPcmPlayback({ sampleRate: 24000 })
+      if (!playback) playback = createPlayback(24000)
       playback.enqueueBase64Audio(result.base64, {
         mime: result.mime || 'audio/wav',
         sampleRate: 24000,
@@ -290,7 +320,7 @@ export function useVoiceDuplex() {
       phase.value = 'speaking'
       const seq = Number(msg.seq ?? 0)
       if (seq) lastAudioSeq = seq
-      if (!playback) playback = createPcmPlayback({ sampleRate: msg.sampleRate || 24000 })
+      if (!playback) playback = createPlayback(msg.sampleRate || 24000)
       playback.enqueueBase64Audio(msg.base64, {
         mime: msg.mime || 'audio/pcm',
         sampleRate: msg.sampleRate || 24000,
@@ -303,7 +333,7 @@ export function useVoiceDuplex() {
       phase.value = 'speaking'
       const seq = Number(msg.seq ?? 0)
       if (seq) lastAudioSeq = seq
-      if (!playback) playback = createPcmPlayback({ sampleRate: 24000 })
+      if (!playback) playback = createPlayback(24000)
       const url = getPetFixedVoiceUrl(String(msg.petId || ''), String(msg.kind || ''))
       playback.enqueueUrl(url, { fallbackMs: Number(msg.fallbackMs || 0) })
       noteSpeakingStarted()
@@ -324,6 +354,33 @@ export function useVoiceDuplex() {
       lastError.value = String(msg.message || '语音会话错误')
     }
     onEvent?.(msg)
+  }
+
+  /**
+   * 通话中掉线只重连一次：历史在 DB，ASR/TTS 由服务端会话重建；
+   * 再失败就提示断开，避免无限重连把服务端打得都是半截会话。
+   */
+  function scheduleReconnect() {
+    if (reconnectTimer) return
+    logger.warn('voice', 'call socket dropped, reconnecting once')
+    reconnectTimer = setTimeout(async () => {
+      reconnectTimer = null
+      if (stopping || mode.value !== 'call') return
+      try {
+        await connect()
+        sendJson({ type: 'session.start', mode: 'call', conversationId: callConversationId, caps: CALL_CAPS })
+        stateSeq = -1
+        callState.value = ''
+        phase.value = 'listening'
+        lastError.value = ''
+        onEvent?.({ type: 'session.reconnected' })
+        logger.info('voice', 'call reconnected')
+      } catch (e) {
+        lastError.value = '语音连接已断开'
+        logger.warn('voice', `reconnect failed: ${e?.message || e}`)
+        await stop()
+      }
+    }, RECONNECT_DELAY_MS)
   }
 
   async function connect() {
@@ -378,8 +435,15 @@ export function useVoiceDuplex() {
       }
       socket.onerror = () => fail(new Error('语音通道连接失败'))
       socket.onclose = () => {
+        const wasConnected = connected.value
         connected.value = false
         fail(new Error('语音通道连接被关闭'))
+        // ready 之后再掉线 = 通话中途断网：重连一次，别让用户手动挂断重拨
+        if (wasConnected && mode.value === 'call' && !stopping
+            && reconnectEnabled && !reconnectUsed && ws === socket) {
+          reconnectUsed = true
+          scheduleReconnect()
+        }
       }
       socket.onmessage = (ev) => {
         // 二进制帧只可能是下行 PCM（服务端协商了 binary.audio）
@@ -442,8 +506,18 @@ export function useVoiceDuplex() {
     bargeAtMs = 0
     turnStartedPerf = 0
     firstAudioReported = false
+    // P2 客户端开关：默认关，测好再改成常开
+    stopping = false
+    reconnectEnabled = voiceFlagEnabled(RECONNECT_FLAG_KEY)
+    gainEnabled = voiceFlagEnabled(GAIN_FLAG_KEY)
+    reconnectUsed = false
+    callConversationId = conversationId
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
     resetPreRoll()
-    playback = createPcmPlayback({ sampleRate: 24000 })
+    playback = createPlayback(24000)
     // 同 dictation：先确保拿到了真实 apiOrigin 再拼 wss 地址。
     await ensureApiOriginReady()
     await connect()
@@ -453,7 +527,7 @@ export function useVoiceDuplex() {
       type: 'session.start',
       mode: 'call',
       conversationId,
-      caps: ['call.state', 'barge.preroll', 'vad.edge', 'binary.audio', 'clip'],
+      caps: CALL_CAPS,
     })
     await startPcmStream({
       vadProfile,
@@ -467,6 +541,8 @@ export function useVoiceDuplex() {
         if (edge === 'start') {
           speechStartedAt = performance.now()
         }
+        // 响度 ducking（默认关）：用户开口时把角色音量压下去
+        playback?.setDucked?.(edge === 'start')
         sendJson({ type: 'vad', phase: edge })
       },
       onEndpoint: () => sendJson({ type: 'endpoint' }),
@@ -475,6 +551,11 @@ export function useVoiceDuplex() {
   }
 
   async function stop() {
+    stopping = true
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
     sendJson({ type: 'session.end' })
     await stopPcmStream()
     turnTail.stop()

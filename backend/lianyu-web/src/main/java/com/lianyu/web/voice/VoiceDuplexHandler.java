@@ -53,6 +53,19 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
     @Value("${lianyu.voice-call.opening.enabled:false}")
     private boolean openingEnabled;
 
+    /** P2 开关：冷场主动开口与情绪韵律，默认关（AGENTS §3.4）。 */
+    @Value("${lianyu.voice-call.idle-nudge.enabled:false}")
+    private boolean idleNudgeEnabled;
+
+    @Value("${lianyu.voice-call.emotion-prosody.enabled:false}")
+    private boolean emotionProsodyEnabled;
+
+    @Value("${lianyu.voice-call.idle-nudge.idle-ms:" + VoiceCallOptions.DEFAULT_IDLE_MS + "}")
+    private long idleNudgeMs;
+
+    @Value("${lianyu.voice-call.idle-nudge.min-gap-ms:" + VoiceCallOptions.DEFAULT_IDLE_MIN_GAP_MS + "}")
+    private long idleNudgeMinGapMs;
+
     private final Map<String, SessionState> states = new ConcurrentHashMap<>();
 
     @Override
@@ -227,7 +240,10 @@ public class VoiceDuplexHandler extends AbstractWebSocketHandler {
             // 只有 binary.audio 需要双向协商（配置开 + 客户端声明才切二进制帧）。
             String clientCaps = capsOf(root);
             boolean binaryAudio = binaryAudioEnabled && hasCap(root, "binary.audio");
-            VoiceCallOptions options = new VoiceCallOptions(binaryAudio, clipEnabled, openingEnabled);
+            VoiceCallOptions options = new VoiceCallOptions(
+                    binaryAudio, clipEnabled, openingEnabled,
+                    idleNudgeEnabled, emotionProsodyEnabled,
+                    idleNudgeMs, idleNudgeMinGapMs);
             authRateLimiter.checkRateLimit("rate:voice-call:", String.valueOf(state.userId),
                     120, Duration.ofMinutes(1), "语音通话过于频繁，请稍后再试");
             state.call = new VoiceCallDuplexSession(

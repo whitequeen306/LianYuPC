@@ -6,10 +6,13 @@
  * 若不排队，紧跟其后的 PCM 帧会先被 schedule —— 听感就是「语气词被台词盖掉」。
  * clear() 用代数隔离：清空后，旧链里尚未执行的排期一律作废。
  */
-export function createPcmPlayback({ sampleRate = 24000 } = {}) {
+export function createPcmPlayback({ sampleRate = 24000, gainEnabled = false, duckDb = -12 } = {}) {
   let ctx = null
   let nextTime = 0
   let playing = false
+  /** 响度节点（默认关）：开着时所有排期都经它落到 destination，便于统一 duck。 */
+  let gainNode = null
+  let ducked = false
   /** @type {Promise<void>} */
   let chain = Promise.resolve()
   /** 清空代数：clear() 后旧任务全部失效。 */
@@ -59,11 +62,36 @@ export function createPcmPlayback({ sampleRate = 24000 } = {}) {
     return audioCtx.createBuffer(1, length, audioCtx.sampleRate)
   }
 
+  /**
+   * 响度归一 / ducking 的落点：音量统一从 GainNode 走，避免每帧改 BufferSource。
+   * 只有显式开启时才会创建节点（老浏览器/测试环境没有 createGain 也不受影响）。
+   */
+  function ensureGain(audioCtx) {
+    if (!gainEnabled) return null
+    if (!gainNode) {
+      gainNode = audioCtx.createGain()
+      gainNode.gain.value = 1
+      gainNode.connect(audioCtx.destination)
+    }
+    return gainNode
+  }
+
+  function applyGain() {
+    if (!gainNode) return
+    gainNode.gain.value = ducked ? Math.pow(10, duckDb / 20) : 1
+  }
+
   function schedule(buf) {
     const audioCtx = ensureCtx()
     const src = audioCtx.createBufferSource()
     src.buffer = buf
-    src.connect(audioCtx.destination)
+    const gain = ensureGain(audioCtx)
+    if (gain) {
+      applyGain()
+      src.connect(gain)
+    } else {
+      src.connect(audioCtx.destination)
+    }
     const startAt = Math.max(audioCtx.currentTime + 0.02, nextTime)
     src.start(startAt)
     nextTime = startAt + buf.duration
@@ -73,6 +101,12 @@ export function createPcmPlayback({ sampleRate = 24000 } = {}) {
         playing = false
       }
     }
+  }
+
+  /** 用户开口时把角色音量压下去（默认关，需 gainEnabled）。 */
+  function setDucked(on) {
+    ducked = !!on
+    applyGain()
   }
 
   /** 把一次排期放进同一条链；clear() 之后旧任务直接丢弃。 */
@@ -179,6 +213,7 @@ export function createPcmPlayback({ sampleRate = 24000 } = {}) {
     chain = Promise.resolve()
     pendingTasks = 0
     pcmCarry = null
+    gainNode = null
     if (ctx) {
       const old = ctx
       ctx = null
@@ -192,5 +227,13 @@ export function createPcmPlayback({ sampleRate = 24000 } = {}) {
     return playing || pendingTasks > 0 || (ctx != null && ctx.currentTime < nextTime)
   }
 
-  return { enqueueBase64Pcm, enqueuePcmBytes: enqueueBytes, enqueueBase64Audio, enqueueUrl, clear, isPlaying }
+  return {
+    enqueueBase64Pcm,
+    enqueuePcmBytes: enqueueBytes,
+    enqueueBase64Audio,
+    enqueueUrl,
+    setDucked,
+    clear,
+    isPlaying,
+  }
 }

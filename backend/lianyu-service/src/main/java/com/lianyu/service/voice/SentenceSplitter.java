@@ -146,6 +146,22 @@ public final class SentenceSplitter {
     private final StringBuilder buffer = new StringBuilder();
     private boolean firstCommitSent;
 
+    /**
+     * 句间停顿缩放（情绪韵律用）：难过/疲惫拉长到 1.3，兴奋收紧到 0.8。
+     *
+     * <p>放在切分器里而不是调用方，是因为停顿长度本来就是切分决策的一部分；
+     * 调用方只需按情绪传一个倍率。
+     */
+    private final double pauseScale;
+
+    public SentenceSplitter() {
+        this(1.0);
+    }
+
+    public SentenceSplitter(double pauseScale) {
+        this.pauseScale = pauseScale > 0 ? pauseScale : 1.0;
+    }
+
     /** 匹配所有朗读控制标记（大小写/内部空格容错）。 */
     private static final java.util.regex.Pattern MARKER_PATTERN = java.util.regex.Pattern.compile(
             "<\\|\\s*(pause|cut|join|sigh|laugh|breath)\\s*\\|>",
@@ -202,7 +218,7 @@ public final class SentenceSplitter {
             firstCommitSent = true;
             int pause = semanticCut ? CUT_MARKER_MS
                     : (pauseCut ? PAUSE_MARKER_MS : pauseForEnding(piece));
-            addClean(segments, piece, pause);
+            addClean(segments, piece, scaledPause(pause));
         }
         return segments;
     }
@@ -292,6 +308,14 @@ public final class SentenceSplitter {
         if (!text.isBlank()) {
             out.add(new Segment(text, pauseAfterMs));
         }
+    }
+
+    /** 按情绪韵律缩放停顿；下限 30ms，避免倍率把它压成 0 造成连读。 */
+    private int scaledPause(int ms) {
+        if (ms <= 0) {
+            return 0;
+        }
+        return Math.max(30, (int) Math.round(ms * pauseScale));
     }
 
     /** 按片段末尾标点决定停顿长度。 */

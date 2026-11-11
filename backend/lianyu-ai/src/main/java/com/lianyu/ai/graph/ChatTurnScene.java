@@ -13,8 +13,10 @@ public enum ChatTurnScene {
     VOICE_CALL;
 
     public boolean includeRelationship() {
-        // VOICE_CALL：只要人设 system + 近期通话句，不塞关系状态/工具结果，压低首包延迟
-        return this == SINGLE || this == PROACTIVE || this == MOMENTS || this == DIARY;
+        // VOICE_CALL 的关系块从 P2 起可带（由 lianyu.voice-call.relationship-context.enabled 打开）；
+        // 默认仍由 facade 关掉以压低首包延迟 —— 这里保留场景口径，开关在调用点叠加。
+        return this == SINGLE || this == PROACTIVE || this == MOMENTS || this == DIARY
+                || this == VOICE_CALL;
     }
 
     public boolean includeSessionSummary() {

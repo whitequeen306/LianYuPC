@@ -12,28 +12,51 @@ class FakeBufferSource {
     this.buffer = null
     this.startedAt = null
     this.onended = null
+    this.target = null
   }
 
-  connect() {}
+  connect(node) {
+    this.target = node
+  }
 
   start(at) {
     this.startedAt = at
     FakeAudioContext.started.push(this.buffer)
+    FakeAudioContext.sources.push(this)
   }
 
   stop() {}
 }
 
+class FakeGainNode {
+  constructor() {
+    this.gain = { value: 1 }
+    this.connectedTo = null
+  }
+
+  connect(node) {
+    this.connectedTo = node
+  }
+}
+
 class FakeAudioContext {
   static started = []
   static instances = []
+  static sources = []
 
   constructor(opts = {}) {
     this.sampleRate = opts.sampleRate || 44100
     this.currentTime = 0
     this.state = 'running'
     this.destination = {}
+    this.gainNodes = []
     FakeAudioContext.instances.push(this)
+  }
+
+  createGain() {
+    const node = new FakeGainNode()
+    this.gainNodes.push(node)
+    return node
   }
 
   createBuffer(channels, length, rate) {
@@ -186,6 +209,59 @@ describe('createPcmPlayback 的统一队列（clip + PCM）', () => {
     await flush()
 
     expect(FakeAudioContext.started.length).toBe(0)
+  })
+})
+
+describe('createPcmPlayback 的响度节点（默认关）', () => {
+  beforeEach(() => {
+    FakeAudioContext.started = []
+    FakeAudioContext.instances = []
+    FakeAudioContext.sources = []
+    vi.stubGlobal('window', { AudioContext: FakeAudioContext })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('默认不创建 GainNode，PCM 直接落 destination', async () => {
+    const pb = createPcmPlayback({ sampleRate: 24000 })
+    pb.enqueueBase64Pcm('AQIDBA==')
+    await flush()
+
+    const ctx = FakeAudioContext.instances[0]
+    expect(ctx.gainNodes.length).toBe(0)
+    expect(FakeAudioContext.sources[0].target).toBe(ctx.destination)
+  })
+
+  it('开启后 PCM 经过 GainNode，duck 时压低音量', async () => {
+    const pb = createPcmPlayback({ sampleRate: 24000, gainEnabled: true })
+    pb.enqueueBase64Pcm('AQIDBA==')
+    await flush()
+
+    const ctx = FakeAudioContext.instances[0]
+    expect(ctx.gainNodes.length).toBe(1)
+    const gain = ctx.gainNodes[0]
+    // 节点出口是 destination，音源入口是 GainNode
+    expect(gain.connectedTo).toBe(ctx.destination)
+    expect(FakeAudioContext.sources[0].target).toBe(gain)
+
+    pb.setDucked(true)
+    expect(gain.gain.value).toBeCloseTo(Math.pow(10, -12 / 20), 5)
+    pb.setDucked(false)
+    expect(gain.gain.value).toBe(1)
+  })
+
+  it('clear() 之后重新开麦会建新的 GainNode', async () => {
+    const pb = createPcmPlayback({ sampleRate: 24000, gainEnabled: true })
+    pb.enqueueBase64Pcm('AQIDBA==')
+    await flush()
+    pb.clear()
+    pb.enqueueBase64Pcm('AQIDBA==')
+    await flush()
+
+    expect(FakeAudioContext.instances.length).toBe(2)
+    expect(FakeAudioContext.instances[1].gainNodes.length).toBe(1)
   })
 })
 

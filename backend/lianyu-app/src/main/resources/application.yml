@@ -269,6 +269,15 @@ lianyu:
       enabled: ${LIANYU_VOICE_CALL_CLIP_ENABLED:false}
     binary-audio:
       enabled: ${LIANYU_VOICE_CALL_BINARY_AUDIO_ENABLED:false}
+    # P2 主动/关系/韵律，同样代码默认关
+    idle-nudge:
+      enabled: ${LIANYU_VOICE_CALL_IDLE_NUDGE_ENABLED:false}
+      idle-ms: ${LIANYU_VOICE_CALL_IDLE_NUDGE_IDLE_MS:12000}
+      min-gap-ms: ${LIANYU_VOICE_CALL_IDLE_NUDGE_MIN_GAP_MS:45000}
+    emotion-prosody:
+      enabled: ${LIANYU_VOICE_CALL_EMOTION_PROSODY_ENABLED:false}
+    relationship-context:
+      enabled: ${LIANYU_VOICE_CALL_RELATIONSHIP_CONTEXT_ENABLED:false}
   session:
     summary:
       enabled: true

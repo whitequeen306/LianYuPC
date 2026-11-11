@@ -19,6 +19,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
@@ -106,6 +107,15 @@ public class VoiceCallDuplexSession {
     private static final java.util.Map<String, Integer> CLIP_FALLBACK_MS = java.util.Map.of(
             "pickup", 900, "ack", 500, "hmm", 450, "laugh", 900, "sigh", 800, "breath", 500);
 
+    /** 每通电话最多主动两次：再多就从「陪你」变成「缠你」。 */
+    private static final int MAX_IDLE_NUDGES = 2;
+    /** 冷场检查的轮询间隔：500ms 足够准，且用户一开口下一拍就能取消。 */
+    private static final long IDLE_POLL_MS = 500L;
+    /** 进入 LISTENING / 用户住口 / 用户开口的时刻：冷场计时从最后一次「有人说话」算起。 */
+    private volatile long listeningSinceMs = System.currentTimeMillis();
+    private final AtomicInteger idleNudgeCount = new AtomicInteger();
+    private volatile long lastNudgeAtMs = 0L;
+
     public VoiceCallDuplexSession(
             VoiceEventSink sink,
             ObjectMapper objectMapper,
@@ -182,6 +192,7 @@ public class VoiceCallDuplexSession {
             }
         });
         prewarmTts();
+        startIdleWatcher();
     }
 
     /**
@@ -298,6 +309,8 @@ public class VoiceCallDuplexSession {
             return;
         }
         if ("start".equals(phase)) {
+            // 用户开口：冷场计时归零，正在生成的 idle 台词会因代数变化而作废
+            listeningSinceMs = System.currentTimeMillis();
             CallStateMachine.Transition t = callState.on(CallStateMachine.Event.VAD_START, "vad.start");
             if (t.changed() && t.from() == CallStateMachine.State.THINKING) {
                 turnEpoch.incrementAndGet();
@@ -306,6 +319,8 @@ public class VoiceCallDuplexSession {
             }
             emitState(t);
         } else if ("end".equals(phase)) {
+            // 住口 = 静默开始计时的起点
+            listeningSinceMs = System.currentTimeMillis();
             emitState(callState.on(CallStateMachine.Event.VAD_END, "vad.end"));
         }
     }
@@ -406,7 +421,7 @@ public class VoiceCallDuplexSession {
                     n.put("userText", "");
                     n.put("kind", "opening");
                 });
-                if (!synthesizeWhole(openingText, epoch)) {
+                if (!synthesizeWhole(openingText, epoch, prosodyForReply())) {
                     return;
                 }
                 emitJson("turn.done", n -> {
@@ -442,18 +457,151 @@ public class VoiceCallDuplexSession {
     }
 
     /**
+     * 冷场主动开口（P2）：安静超过 {@link VoiceCallOptions#idleMs()} 时，让角色轻轻递一句话。
+     *
+     * <p>为什么用轮询而不是定时器：静默起点会被「用户开口 / 角色说完 / 用户插话」反复刷新，
+     * 定时器每刷新一次都要取消重建；500ms 轮一次更简单，用户一开口最迟半秒就会错过触发。
+     *
+     * <p>三重闸门：每通最多 {@link #MAX_IDLE_NUDGES} 次、两次之间不小于
+     * {@link VoiceCallOptions#idleMinGapMs()}、只在 LISTENING 且回合空闲时才敢开口。
+     */
+    private void startIdleWatcher() {
+        if (!options.idleNudgeEnabled()) {
+            return;
+        }
+        Thread watcher = new Thread(() -> {
+            while (!closed.get()) {
+                try {
+                    Thread.sleep(IDLE_POLL_MS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                maybeIdleNudge();
+            }
+        }, "voice-idle-" + conversationId);
+        watcher.setDaemon(true);
+        watcher.start();
+    }
+
+    private void maybeIdleNudge() {
+        if (closed.get() || turnBusy.get()) {
+            return;
+        }
+        if (callState.state() != CallStateMachine.State.LISTENING) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        long silentMs = now - listeningSinceMs;
+        if (silentMs < options.idleMs()) {
+            return;
+        }
+        if (idleNudgeCount.get() >= MAX_IDLE_NUDGES) {
+            return;
+        }
+        if (lastNudgeAtMs > 0 && now - lastNudgeAtMs < options.idleMinGapMs()) {
+            return;
+        }
+        if (!turnBusy.compareAndSet(false, true)) {
+            return;
+        }
+        idleNudgeCount.incrementAndGet();
+        lastNudgeAtMs = now;
+        listeningSinceMs = now;
+        long epoch = turnEpoch.incrementAndGet();
+        turnStartedAtMs = now;
+        llmFirstDeltaAtMs = 0L;
+        firstAudioAtMs = 0L;
+        turnAudioBytes.set(0);
+        audioSent.set(false);
+        emitState(callState.on(CallStateMachine.Event.IDLE_TRIGGER, "idle"));
+        log.info("Voice duplex idle nudge conv={} count={} silentMs={}",
+                conversationId, idleNudgeCount.get(), silentMs);
+        Thread worker = new Thread(() -> speakIdleNudge(epoch), "voice-idle-cue-" + conversationId);
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    private void speakIdleNudge(long epoch) {
+        try {
+            String text = voiceCallService.generateVoiceCue(userId, conversationId, "idle");
+            if (text == null || text.isBlank()) {
+                // Python 可能按关系阶段决定「这次不必开口」（TESTING）—— 静默退回听
+                finishIdleSilently(epoch);
+                return;
+            }
+            if (closed.get() || epoch != turnEpoch.get()) {
+                return;
+            }
+            String spoken = InnerThoughtFilter.strip(
+                    SentenceSplitter.stripPauseMarkers(text.trim()));
+            if (spoken.isBlank()) {
+                finishIdleSilently(epoch);
+                return;
+            }
+            spoken = voiceCallService.clampReply(spoken);
+            String idleText = spoken;
+            voiceCallService.persistAssistantTurn(userId, conversationId, idleText);
+            emitJson("turn.start", n -> {
+                n.put("userText", "");
+                n.put("kind", "idle");
+            });
+            if (!synthesizeWhole(idleText, epoch, prosodyForReply())) {
+                return;
+            }
+            emitJson("turn.done", n -> {
+                n.put("replyText", idleText);
+                n.put("kind", "idle");
+            });
+            log.info("Voice duplex idle delivered conv={} len={}", conversationId, idleText.length());
+        } catch (Exception e) {
+            log.warn("Voice duplex idle failed conv={}: {}", conversationId, e.toString());
+            forceListening("idle_error");
+        } finally {
+            if (epoch == turnEpoch.get()) {
+                turnBusy.set(false);
+            }
+        }
+    }
+
+    private void finishIdleSilently(long epoch) {
+        if (closed.get() || epoch != turnEpoch.get()) {
+            return;
+        }
+        turnBusy.set(false);
+        forceListening("idle_empty");
+    }
+
+    /**
+     * 本回合该用的韵律：开关关着就中性（不发多余参数），查询失败也退回中性。
+     *
+     * <p>刻意放在工作线程里调用：它要读一次角色状态，不能占着 WebSocket 线程。
+     */
+    private VoiceProsody prosodyForReply() {
+        if (!options.emotionProsodyEnabled()) {
+            return VoiceProsody.NEUTRAL;
+        }
+        try {
+            return voiceCallService.resolveProsody(userId, conversationId);
+        } catch (Exception e) {
+            log.debug("Voice prosody skipped conv={}: {}", conversationId, e.toString());
+            return VoiceProsody.NEUTRAL;
+        }
+    }
+
+    /**
      * 把一段完整文本走「切句 → 逐句 TTS → tts.done」流程（开场/冷场等脚本化台词）。
      *
      * @return false 表示被打断或 TTS 失败（调用方不要再发 turn.done）
      */
-    private boolean synthesizeWhole(String text, long epoch) {
+    private boolean synthesizeWhole(String text, long epoch, VoiceProsody prosody) {
         if (target.isLocal()) {
             emitLocalTts(text, epoch);
             return epoch == turnEpoch.get();
         }
-        SentenceSplitter splitter = new SentenceSplitter();
+        SentenceSplitter splitter = new SentenceSplitter(prosody.pauseScale());
         BlockingQueue<SentenceSplitter.Segment> queue = new LinkedBlockingQueue<>();
-        Thread ttsWorker = startTtsPipeline(queue, epoch);
+        Thread ttsWorker = startTtsPipeline(queue, epoch, prosody);
         for (SentenceSplitter.Segment seg : splitter.accept(text)) {
             queue.offer(seg);
         }
@@ -610,6 +758,10 @@ public class VoiceCallDuplexSession {
         if (t == null || !t.changed()) {
             return;
         }
+        if (t.to() == CallStateMachine.State.LISTENING) {
+            // 回到「听」= 又一段静默的起点（角色刚说完，用户还没开口）
+            listeningSinceMs = System.currentTimeMillis();
+        }
         log.info("Voice duplex state conv={} seq={} {}->{} reason={}",
                 conversationId, t.seq(), t.from(), t.to(), t.reason());
         emitJson("call.state", n -> {
@@ -717,6 +869,8 @@ public class VoiceCallDuplexSession {
         lastTurnText = userText;
         lastTurnAtMs = System.currentTimeMillis();
         turnStartedAtMs = System.currentTimeMillis();
+        // 用户刚说完，冷场计时从现在开始
+        listeningSinceMs = turnStartedAtMs;
         llmFirstDeltaAtMs = 0L;
         firstAudioAtMs = 0L;
         turnAudioBytes.set(0);
@@ -740,9 +894,11 @@ public class VoiceCallDuplexSession {
             //  · splitter  —— 在 LLM 还在吐字时就切出完整句子
             //  · ttsQueue  —— 句子按序排队；TTS 线程取一句、合成一句、喂给客户端
             // 这样第一句的合成不必等整段回复结束，播完一句时下一句通常已就绪。
-            SentenceSplitter splitter = new SentenceSplitter();
+            // 韵律在**本线程**取（要读角色状态），不占 WebSocket 线程。
+            VoiceProsody prosody = prosodyForReply();
+            SentenceSplitter splitter = new SentenceSplitter(prosody.pauseScale());
             BlockingQueue<SentenceSplitter.Segment> ttsQueue = new LinkedBlockingQueue<>();
-            Thread ttsWorker = target.isLocal() ? null : startTtsPipeline(ttsQueue, epoch);
+            Thread ttsWorker = target.isLocal() ? null : startTtsPipeline(ttsQueue, epoch, prosody);
             try {
                 StringBuilder full = new StringBuilder();
                 synchronized (sentenceLock) {
@@ -895,7 +1051,8 @@ public class VoiceCallDuplexSession {
      * {@link SentenceSplitter#SENTENCE_PAUSE_MS} 等时长的静音，把边界补齐。
      * 回合最后一段的 {@code pauseAfterMs} 是 0，不会拖慢 {@code turn.done}。
      */
-    private Thread startTtsPipeline(BlockingQueue<SentenceSplitter.Segment> queue, long epoch) {
+    private Thread startTtsPipeline(BlockingQueue<SentenceSplitter.Segment> queue, long epoch,
+                                    VoiceProsody prosody) {
         Thread ttsThread = new Thread(() -> {
             try {
                 int pendingGapMs = 0;
@@ -920,7 +1077,7 @@ public class VoiceCallDuplexSession {
                         pendingGapMs = 0;
                         continue;
                     }
-                    streamSentence(segment.text(), epoch);
+                    streamSentence(segment.text(), epoch, prosody);
                     pendingGapMs = jitteredPause(segment.pauseAfterMs());
                 }
             } catch (InterruptedException e) {
@@ -933,7 +1090,7 @@ public class VoiceCallDuplexSession {
     }
 
     /** 合成一句并把 PCM 块直接下发；等这一句的流结束（或超时）再返回。 */
-    private void streamSentence(String sentence, long epoch) {
+    private void streamSentence(String sentence, long epoch, VoiceProsody prosody) {
         java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
         log.info("Voice duplex TTS sentence conv={} len={} elapsedMs={}",
                 conversationId, sentence.length(), System.currentTimeMillis() - turnStartedAtMs);
@@ -949,7 +1106,7 @@ public class VoiceCallDuplexSession {
             }
             sendAudio(java.util.Arrays.copyOfRange(array, offset, offset + length), "audio/pcm", epoch);
         };
-        voiceCallService.streamSynthesizeForTarget(target, sentence, new TtsPort.TtsChunkSink() {
+        voiceCallService.streamSynthesizeForTarget(target, sentence, prosody, new TtsPort.TtsChunkSink() {
             @Override
             public void onChunk(byte[] pcm) {
                 assembler.push(pcm, emit);

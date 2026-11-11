@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -52,6 +53,9 @@ public class ChatTurnFacade {
     private final TimeTool timeTool;
     private final ToolManager toolManager;
     private final com.lianyu.service.character.CharacterChatBehaviorResolver behaviorResolver;
+
+    @Value("${lianyu.voice-call.relationship-context.enabled:false}")
+    private boolean relationshipContextEnabled;
 
     // ─────────────────────────── 主聊天回合 ───────────────────────────
 
@@ -215,7 +219,8 @@ public class ChatTurnFacade {
                 groupExtras == null ? 0 : groupExtras.maxPieces(),
                 groupExtras == null ? "" : groupExtras.otherCharactersLine(),
                 groupExtras == null ? "" : groupExtras.mentionCtx(),
-                voiceMaxReplyChars);
+                voiceMaxReplyChars,
+                includeRelationshipFact(scene));
         String prompt;
         try {
             prompt = promptAssemblyPort.assembleIfEnabled(request);
@@ -241,6 +246,20 @@ public class ChatTurnFacade {
             return "time_only";
         }
         return "none";
+    }
+
+    /**
+     * 关系上下文的事实开关：场景默认（{@link ChatTurnScene#includeRelationship()}）+ 语音通话的部署开关。
+     *
+     * <p>通话默认不带关系块是刻意的：多一次关系查询就多一段首句延迟。
+     * P2 起由 {@code lianyu.voice-call.relationship-context.enabled} 逐项打开，
+     * Java 只决定「带不带」，块里的文案仍在 Python。
+     */
+    private boolean includeRelationshipFact(ChatTurnScene scene) {
+        if (!scene.includeRelationship()) {
+            return false;
+        }
+        return scene != ChatTurnScene.VOICE_CALL || relationshipContextEnabled;
     }
 
     // ─────────────────────────── 命令 → 原始输入 ───────────────────────────

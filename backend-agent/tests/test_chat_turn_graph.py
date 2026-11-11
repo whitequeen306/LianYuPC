@@ -48,9 +48,11 @@ def test_scene_flags_align_with_java():
 
     assert scene_include_flags("VOICE_CALL") == {
         "include_memory": False,
-        "include_relationship": False,
+        "include_relationship": True,
         "include_session": False,
     }
+    # Java 的 voice-call.relationship-context 开关关着时会显式传 False
+    assert scene_include_flags("VOICE_CALL", include_relationship=False)["include_relationship"] is False
     assert scene_include_flags("SINGLE") == {
         "include_memory": True,
         "include_relationship": True,

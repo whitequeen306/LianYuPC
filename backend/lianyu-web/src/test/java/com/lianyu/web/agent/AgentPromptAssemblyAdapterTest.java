@@ -28,7 +28,7 @@ class AgentPromptAssemblyAdapterTest {
         return new PromptAssemblyRequest(7L, 51L, 53L, "甘雨", Map.of("city", "上海"), null,
                 "SINGLE", "zh", "full", true, null, true, true, 1, "",
                 Map.of("chat", true, "memory", true, "recent", true, "diary", true),
-                "你好", "\n\n后缀", 0, "", "", 0);
+                "你好", "\n\n后缀", 0, "", "", 0, true);
     }
 
     private AgentRuntimeClient client() {
@@ -105,7 +105,7 @@ class AgentPromptAssemblyAdapterTest {
         PromptAssemblyRequest request = new PromptAssemblyRequest(
                 7L, 51L, 53L, "甘雨", Map.of(), null,
                 "SINGLE", "zh", "full", true, null, true, true, 1, "",
-                Map.of("chat", false), null, null, 0, null, null, 0);
+                Map.of("chat", false), null, null, 0, null, null, 0, true);
         Map<String, Object> body = AgentPromptAssemblyAdapter.bodyOf(request);
         assertEquals("", body.get("lastUserMessage"));
         assertEquals("", body.get("extraSystemSuffix"));

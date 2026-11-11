@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
  *  · 本地播放排空后上报 play.drained。
  */
 
+const CALL_CAPS_EXPECTED = ['call.state', 'barge.preroll', 'vad.edge', 'binary.audio', 'clip']
+
 const hoisted = vi.hoisted(() => {
   const capture = { onFrame: null, onSpeechEdge: null, onEndpoint: null }
   const playback = {
@@ -240,5 +242,35 @@ describe('useVoiceDuplex protocol', () => {
     const pcm = hoisted.playback.pcm.at(-1)
     expect(pcm.rate).toBe(24000)
     expect(Array.from(pcm.bytes)).toEqual([1, 2, 3, 4])
+  })
+
+  it('开关关着时掉线不重连（默认最保守）', async () => {
+    const { ws } = await startCall()
+    ws.close()
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+    expect(hoisted.sockets.length).toBe(1)
+  })
+
+  it('开关打开后掉线 1s 重连一次并重发 session.start', async () => {
+    globalThis.localStorage = { getItem: (k) => (k === 'lianyu.voice.reconnect' ? '1' : null) }
+    try {
+      const { ws } = await startCall()
+      expect(hoisted.sockets.length).toBe(1)
+
+      ws.close() // 模拟通话中途断网
+      const ws2 = await until(() => hoisted.sockets[1], 3000)
+      ws2.open()
+      ws2.emit({ type: 'ready' })
+
+      const start = await until(
+        () => ws2.jsonSent().find((m) => m.type === 'session.start'),
+        2000,
+      )
+      expect(start.mode).toBe('call')
+      expect(start.conversationId).toBe(42)
+      expect(start.caps).toEqual(CALL_CAPS_EXPECTED)
+    } finally {
+      delete globalThis.localStorage
+    }
   })
 })
