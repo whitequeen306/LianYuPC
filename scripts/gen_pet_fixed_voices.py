@@ -36,7 +36,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 OUT_ROOT = ROOT / "frontend" / "public" / "pet" / "voice"
 PET_VOICES = ROOT / "backend" / "lianyu-service" / "src" / "main" / "resources" / "pet-voices.json"
 SYNTH_URL = "https://dashscope.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer"
@@ -176,7 +176,9 @@ CLIP_LINES: dict[str, str] = {
     "hmm": "唔……",
     "laugh": "呵。",
     "sigh": "唉……",
-    "breath": "……",
+    # 不能写纯省略号：DashScope 判「Please ensure input text is valid」（无可读字符），
+    # 所以给一个能读出气声的字，听感上仍是换气而不是叹气。
+    "breath": "呼——",
 }
 
 
