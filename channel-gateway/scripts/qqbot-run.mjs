@@ -3,7 +3,7 @@
 //   QQBOT WS 网关 → 事件（openid + 文本）→ bindings.json → 予念 /messages → 回复
 //
 // 跑法（Windows PowerShell）：
-//   $env:QQ_APPID  = '1906414199'
+//   $env:QQ_APPID  = '<AppID>'
 //   $env:QQ_SECRET = '<AppSecret>'
 //   $env:LIANYU_API_ORIGIN = 'https://downloadlianyu.asia'
 //   $env:LIANYU_TOKEN = '<该用户的 lianyu-token>'
