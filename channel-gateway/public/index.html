@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>予念 · QQ 托管网关</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0f1115;
+        --panel: #171a21;
+        --line: #262b36;
+        --text: #e8edf6;
+        --muted: #8b96a8;
+        --accent: #6aa8ff;
+        --ok: #4ade80;
+        --warn: #fbbf24;
+        --err: #f87171;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 24px;
+        font: 14px/1.6 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      .sub { color: var(--muted); margin-bottom: 20px; }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
+      th { color: var(--muted); font-weight: 500; }
+      code { font-family: Consolas, monospace; font-size: 12px; color: var(--muted); }
+      button {
+        background: #202634; color: var(--text); border: 1px solid var(--line);
+        border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 13px;
+      }
+      button:hover { border-color: var(--accent); }
+      button.primary { background: var(--accent); color: #08111f; border-color: transparent; font-weight: 600; }
+      button.danger:hover { border-color: var(--err); color: var(--err); }
+      input {
+        background: #0e1117; color: var(--text); border: 1px solid var(--line);
+        border-radius: 8px; padding: 7px 10px; font-size: 13px; min-width: 180px;
+      }
+      .pill { padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line); }
+      .phase-online { color: var(--ok); border-color: var(--ok); }
+      .phase-waiting_login, .phase-starting, .phase-connecting { color: var(--warn); border-color: var(--warn); }
+      .phase-error { color: var(--err); border-color: var(--err); }
+      .phase-stopped { color: var(--muted); }
+      .banner { border-color: var(--warn); color: var(--warn); }
+      .banner.ok { border-color: var(--ok); color: var(--ok); }
+      .muted { color: var(--muted); }
+      #qrWrap { display: none; position: fixed; inset: 0; background: #000a; place-items: center; }
+      #qrWrap.show { display: grid; }
+      #qrCard { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 20px; text-align: center; }
+      #qrCard img { width: 260px; height: 260px; image-rendering: pixelated; background: #fff; border-radius: 8px; }
+      #logs { white-space: pre-wrap; font-family: Consolas, monospace; font-size: 12px; color: #b9c4d6; max-height: 320px; overflow: auto; }
+      .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>予念 · QQ 托管网关</h1>
+    <div class="sub">W1 PoC：一套 NapCat shell 托管多个 QQ 号 · 扫码登录 · 入向回显</div>
+
+    <div id="health" class="panel banner">检查中…</div>
+
+    <div class="panel">
+      <div class="row">
+        <input id="newKey" placeholder="账号键（可空，自动生成）" />
+        <input id="newNote" placeholder="备注（如 用户1001 / 角色小予）" />
+        <button class="primary" onclick="createAccount()">新增并启动</button>
+        <button onclick="load()">刷新</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <table>
+        <thead>
+          <tr>
+            <th>账号</th><th>状态</th><th>QQ</th><th>端口(WS/WebUI)</th><th>最近入向</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="rows"><tr><td colspan="6" class="muted">加载中…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <div class="row" style="justify-content: space-between">
+        <strong>日志</strong><span id="logKey" class="muted">未选择</span>
+      </div>
+      <div id="logs" class="muted">点某行的「日志」查看。</div>
+    </div>
+
+    <div id="qrWrap" onclick="closeQr()">
+      <div id="qrCard" onclick="event.stopPropagation()">
+        <div id="qrTitle" style="margin-bottom: 12px"></div>
+        <img id="qrImg" alt="QQ 登录二维码" />
+        <div class="muted" style="margin-top: 10px; font-size: 12px">用手机 QQ 扫码，登录后本页 3 秒内自动刷新</div>
+        <div style="margin-top: 12px"><button onclick="closeQr()">关闭</button></div>
+      </div>
+    </div>
+
+    <script>
+      const state = { accounts: [], logsFor: '' }
+      const token = new URLSearchParams(location.search).get('token') || ''
+
+      async function api(path, options = {}) {
+        const headers = { ...(options.headers || {}) }
+        if (token) headers['x-gateway-token'] = token
+        if (options.body) headers['content-type'] = 'application/json'
+        const res = await fetch(path, { ...options, headers })
+        const text = await res.text()
+        let body = null
+        try { body = text ? JSON.parse(text) : null } catch { body = { raw: text } }
+        if (!res.ok) throw new Error(body?.error || res.status)
+        return body
+      }
+
+      function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+      }
+
+      async function loadHealth() {
+        const el = document.getElementById('health')
+        try {
+          const h = await api('/api/health')
+          if (h.ok) {
+            el.className = 'panel banner ok'
+            el.textContent = `就绪 · 数据目录 ${h.dataRoot} · 账号 ${h.accounts}`
+          } else {
+            el.className = 'panel banner'
+            el.innerHTML = '前置未就绪：<br>' + h.problems.map((p) => `· ${esc(p.detail)}`).join('<br>')
+          }
+        } catch (err) {
+          el.className = 'panel banner'
+          el.textContent = `健康检查失败：${err.message}`
+        }
+      }
+
+      async function load() {
+        await loadHealth()
+        try {
+          const { accounts } = await api('/api/accounts')
+          state.accounts = accounts
+          render()
+        } catch (err) {
+          document.getElementById('rows').innerHTML = `<tr><td colspan="6" class="muted">读取失败：${esc(err.message)}</td></tr>`
+        }
+        if (state.logsFor) loadLogs(state.logsFor, true)
+      }
+
+      function render() {
+        const rows = document.getElementById('rows')
+        if (!state.accounts.length) {
+          rows.innerHTML = '<tr><td colspan="6" class="muted">还没有账号，先「新增并启动」。</td></tr>'
+          return
+        }
+        rows.innerHTML = state.accounts
+          .map((a) => {
+            const last = a.messages && a.messages.length ? a.messages[a.messages.length - 1] : null
+            const lastText = last ? `${esc(last.from)}：${esc(last.text || '（图片/非文本）')}` : '<span class="muted">—</span>'
+            const qrBtn = a.phase === 'waiting_login' && a.hasQrcode
+              ? `<button onclick="showQr('${esc(a.key)}')">二维码</button>`
+              : ''
+            const toggle = a.phase === 'stopped' || a.phase === 'error'              ? `<button class="primary" onclick="act('${esc(a.key)}','start')">启动</button>`
+              : `<button onclick="act('${esc(a.key)}','stop')">停止</button>`
+            return `<tr>
+              <td><strong>${esc(a.key)}</strong><br><span class="muted">${esc(a.note)}</span></td>
+              <td><span class="pill phase-${esc(a.phase)}">${esc(a.phase)}</span>${a.lastError ? `<br><span class="muted" title="${esc(a.lastError)}">${esc(a.lastError.slice(0, 40))}</span>` : ''}</td>
+              <td>${esc(a.uin || a.selfId || '—')}</td>
+              <td><code>${a.wsPort}/${a.webuiPort}</code></td>
+              <td>${lastText}</td>
+              <td class="actions">${toggle}${qrBtn}<button onclick="loadLogs('${esc(a.key)}')">日志</button><button class="danger" onclick="removeAccount('${esc(a.key)}')">删除</button></td>
+            </tr>`
+          })
+          .join('')
+      }
+
+      async function createAccount() {
+        const key = document.getElementById('newKey').value.trim()
+        const note = document.getElementById('newNote').value.trim()
+        const body = { note }
+        if (key) body.key = key
+        try {
+          await api('/api/accounts', { method: 'POST', body: JSON.stringify(body) })
+          document.getElementById('newKey').value = ''
+          document.getElementById('newNote').value = ''
+          await load()
+        } catch (err) {
+          alert(`创建失败：${err.message}`)
+        }
+      }
+
+      async function act(key, action) {
+        try {
+          await api(`/api/accounts/${encodeURIComponent(key)}/${action}`, { method: 'POST' })
+          await load()
+        } catch (err) {
+          alert(`${action} 失败：${err.message}`)
+        }
+      }
+
+      async function removeAccount(key) {
+        if (!confirm(`删除 ${key}？登录态与配置会被一起清掉，且不可恢复。`)) return
+        try {
+          await api(`/api/accounts/${encodeURIComponent(key)}`, { method: 'DELETE' })
+          if (state.logsFor === key) state.logsFor = ''
+          await load()
+        } catch (err) {
+          alert(`删除失败：${err.message}`)
+        }
+      }
+
+      function showQr(key) {
+        document.getElementById('qrTitle').textContent = `扫码登录 · ${key}`
+        document.getElementById('qrImg').src = `/api/accounts/${encodeURIComponent(key)}/qrcode.png?t=${Date.now()}`
+        document.getElementById('qrWrap').classList.add('show')
+      }
+
+      function closeQr() {
+        document.getElementById('qrWrap').classList.remove('show')
+      }
+
+      async function loadLogs(key, silent = false) {
+        if (!silent) state.logsFor = key
+        try {
+          const { lines } = await api(`/api/accounts/${encodeURIComponent(key)}/logs?tail=200`)
+          document.getElementById('logKey').textContent = key
+          const el = document.getElementById('logs')
+          el.className = ''
+          el.textContent = lines.join('\n') || '（暂无日志）'
+          el.scrollTop = el.scrollHeight
+        } catch (err) {
+          if (!silent) document.getElementById('logs').textContent = `读取日志失败：${err.message}`
+        }
+      }
+
+      load()
+      setInterval(load, 3000)
+    </script>
+  </body>
+</html>

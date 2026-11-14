@@ -1,0 +1,17 @@
+{
+  "name": "@lianyu/channel-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "QQ 云端托管网关（W1 PoC）：一套 NapCat shell 托管多个 QQ 号，扫码登录 + OneBot 回显",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  }
+}
