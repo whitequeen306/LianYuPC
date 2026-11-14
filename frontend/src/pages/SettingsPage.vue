@@ -69,6 +69,13 @@
           </div>
           <el-button text :icon="Promotion" @click="goWechatBridge">前往配置</el-button>
         </div>
+        <div class="desktop-settings__row">
+          <div>
+            <div class="desktop-settings__label">QQ 聊天</div>
+            <div class="desktop-settings__hint">用手机 QQ 和予念角色聊天，电脑关着也能回</div>
+          </div>
+          <el-button text :icon="ChatDotRound" @click="goQqChat">前往配置</el-button>
+        </div>
         <div v-if="desktopForm.showDesktopPet" class="desktop-settings__pet-block">
           <div class="desktop-settings__label">桌宠角色</div>
           <div class="desktop-settings__hint">选择关闭主窗口后在桌面显示的角色形象；带「语音」标记的支持截图问候与点击/拖跑常驻语音</div>
@@ -379,7 +386,7 @@ import { getModelQuota } from '@/api/ai'
 import { PET_CATALOG, getPetPreviewUrl, petHasInteractiveVoice } from '@/constants/petCatalog'
 
 const { t } = useI18n()
-import { Plus, Edit, Delete, RefreshRight, Loading, Connection, Promotion, ArrowLeft, Download, FolderOpened, WarningFilled } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, RefreshRight, Loading, Connection, Promotion, ArrowLeft, Download, FolderOpened, WarningFilled, ChatDotRound } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const providersStore = useProvidersStore()
@@ -389,6 +396,7 @@ const settingsStore = useSettingsStore()
 const quota = ref(null)
 const router = useRouter()
 const goWechatBridge = () => router.push('/app/wechat-bridge')
+const goQqChat = () => router.push('/app/qq-chat')
 const goAbout = () => router.push('/app/about')
 const goBack = () => router.push('/app')
 const isElectron = isElectronApp()

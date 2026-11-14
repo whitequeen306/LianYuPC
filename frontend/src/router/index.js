@@ -17,8 +17,8 @@ const routes = [
   { path: '/memory', redirect: '/app/memory' },
   { path: '/profile', redirect: '/app/profile' },
   { path: '/settings', redirect: '/app/settings' },
-  { path: '/qq-bridge', redirect: '/app/qq-bridge' },
   { path: '/wechat-bridge', redirect: '/app/wechat-bridge' },
+  { path: '/qq-chat', redirect: '/app/qq-chat' },
   { path: '/about', redirect: '/app/about' },
   {
     path: '/login',
@@ -139,6 +139,12 @@ const routes = [
         name: 'WechatBridge',
         component: () => import('@/pages/WechatBridgePage.vue'),
         meta: { titleKey: 'routes.wechatBridge', hideDock: true }
+      },
+      {
+        path: 'qq-chat',
+        name: 'QqChat',
+        component: () => import('@/pages/QqChatPage.vue'),
+        meta: { titleKey: 'routes.qqChat', hideDock: true }
       },
       {
         path: 'about',
