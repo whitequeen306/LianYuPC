@@ -11,7 +11,7 @@ import re
 import logging
 from dataclasses import dataclass
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Mapping
 
 from app.config import get_settings
 from app.resilience import GatewayBusinessError, GatewayError
@@ -192,6 +192,7 @@ class ModelGateway:
         max_tokens: int,
         provider: str | None = None,
         lane_name: str = "interactive",
+        extra: Mapping[str, Any] | None = None,
     ) -> GatewayResult:
         messages: list[dict[str, Any]] = []
         if system:
@@ -213,6 +214,8 @@ class ModelGateway:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if extra:
+            payload.update(dict(extra))
         return await self._post_chat(base_url, api_key, payload, provider=provider, lane_name=lane_name)
 
     async def chat_sync(

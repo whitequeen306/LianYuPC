@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     multimodal_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     multimodal_api_key: str = ""
     multimodal_model: str = "qwen3.7-flash"
+    # 思考模式开关："" 不传（按模型默认）、"off" 传 enable_thinking=false、"on" 传 true。
+    # 推理型多模态模型（qwen3.7-flash / deepseek-v4.1-flash 默认态）看一张小图能烧掉
+    # 700~3600 个 reasoning token，实测 5.7~32s；关掉后 1.2~2.2s。
+    multimodal_thinking: str = ""
     multimodal_max_tokens: int = 800
     multimodal_describe_max_tokens: int = 420
 

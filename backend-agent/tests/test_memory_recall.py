@@ -575,3 +575,22 @@ async def test_common_bigram_only_match_is_dropped(monkeypatch):
     monkeypatch.setattr(recall_mod, "fetch_all", fake_fetch_all_hit)
     rows = await recall_mod.load_candidates(3, 7, "加班")
     assert [row["id"] for row in rows] == [1]
+
+
+@pytest.mark.asyncio
+async def test_only_matching_rows_reach_the_candidate_pool(monkeypatch):
+    seen: list[str] = []
+
+    async def fake_fetch(sql, params):
+        seen.append(sql)
+        return []
+
+    monkeypatch.setattr(recall_mod, "fetch_all", fake_fetch)
+
+    await recall_mod.load_candidates(3, 7, "加班")
+    assert any("HAVING rel > 0" in sql for sql in seen)
+
+    seen.clear()
+    await recall_mod.load_candidates(3, 7, "")
+    # 没话题时保留按重要度兜底的行为，不能一刀切成空
+    assert seen and all("HAVING rel > 0" not in sql for sql in seen)

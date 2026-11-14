@@ -56,6 +56,21 @@ def parse_vision_analysis(raw: str) -> VisionAnalysisResult:
     )
 
 
+def vision_thinking_extra() -> dict[str, object]:
+    """多模态「思考模式」开关（配置项 MULTIMODAL_THINKING）。
+
+    推理型视觉模型默认会先想几百到几千个 reasoning token 才开口：同一张 240x160 的图，
+    qwen3.7-flash 实测 5.7~32s、deepseek-v4.1-flash 默认态 1.9~3.2s，关掉后 1.2~2.2s。
+    识图任务只要客观描述，不需要长推理，所以生产默认关。
+    """
+    raw = (get_settings().multimodal_thinking or "").strip().lower()
+    if raw in ("off", "false", "0", "no"):
+        return {"enable_thinking": False}
+    if raw in ("on", "true", "1", "yes"):
+        return {"enable_thinking": True}
+    return {}
+
+
 async def analyze_image(
     gateway: ModelGateway,
     *,
@@ -73,6 +88,7 @@ async def analyze_image(
             parts=[ImagePart(png_base64=image_png_base64)],
             temperature=0.1,
             max_tokens=max_tokens,
+            extra=vision_thinking_extra(),
         )
     except GatewayError as exc:
         raise ValueError(f"vision analysis failed: {exc}") from exc

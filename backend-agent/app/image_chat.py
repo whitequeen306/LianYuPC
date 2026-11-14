@@ -20,7 +20,11 @@ import logging
 from app.config import get_settings
 from app.gateway import ImagePart, ModelGateway, ModelGatewayError
 from app.resilience import GatewayError
-from app.vision import VISION_ANALYSIS_JSON_INSTRUCTION, parse_vision_analysis
+from app.vision import (
+    VISION_ANALYSIS_JSON_INSTRUCTION,
+    parse_vision_analysis,
+    vision_thinking_extra,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +74,7 @@ async def chat_with_image(
             parts=[ImagePart(png_base64=image_png_base64)],
             temperature=0.1,
             max_tokens=settings.multimodal_describe_max_tokens,
+            extra=vision_thinking_extra(),
         )
         analysis = parse_vision_analysis(vision_result.content or "")
     except Exception as exc:  # noqa: BLE001 - 识图失败按业务错误返回

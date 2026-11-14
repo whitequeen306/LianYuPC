@@ -1,4 +1,4 @@
-﻿# LianYu-PC Docker Compose锛堜簯绔細api-gateway + backend + 涓棿浠讹紱鍓嶇浠?Electron 鏈湴鎵撳寘锛?
+# LianYu-PC Docker Compose锛堜簯绔細api-gateway + backend + 涓棿浠讹紱鍓嶇浠?Electron 鏈湴鎵撳寘锛?
 #
 # 涓€閿惎鍔紙API 缃戝叧 + 鍚庣 + 鍏ㄩ儴涓棿浠讹級:
 #   docker compose up -d --build
@@ -107,6 +107,7 @@ services:
       LIANYU_AGENT_MULTIMODAL_BASE_URL: ${MULTIMODAL_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       LIANYU_AGENT_MULTIMODAL_API_KEY: ${MULTIMODAL_API_KEY:-${DASHSCOPE_API_KEY:-}}
       LIANYU_AGENT_MULTIMODAL_MODEL: ${MULTIMODAL_MODEL:-qwen3.7-flash}
+      LIANYU_AGENT_MULTIMODAL_THINKING: ${MULTIMODAL_THINKING:-}
       LIANYU_AGENT_SHADOW_MODE: ${LIANYU_AGENT_SHADOW_MODE:-false}
       # 鍙鏁版嵁璁块棶锛堟€荤翰 D7锛夛細memory_search / get_my_recent_life 闇€瑕?
       LIANYU_AGENT_MYSQL_HOST: mysql
@@ -165,6 +166,7 @@ services:
       LIANYU_AGENT_MULTIMODAL_BASE_URL: ${MULTIMODAL_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       LIANYU_AGENT_MULTIMODAL_API_KEY: ${MULTIMODAL_API_KEY:-${DASHSCOPE_API_KEY:-}}
       LIANYU_AGENT_MULTIMODAL_MODEL: ${MULTIMODAL_MODEL:-qwen3.7-flash}
+      LIANYU_AGENT_MULTIMODAL_THINKING: ${MULTIMODAL_THINKING:-}
       LIANYU_AGENT_SHADOW_MODE: ${LIANYU_AGENT_SHADOW_MODE:-false}
       LIANYU_AGENT_MYSQL_HOST: mysql
       LIANYU_AGENT_MYSQL_PORT: "3306"
