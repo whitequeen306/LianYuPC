@@ -124,7 +124,7 @@ Electron 主进程          服务端 Java                  Python backend-agent
 | `AGENTS.md` | 本文件 |
 | `docker-compose.yml` | 服务编排（**注意**：本地端口覆盖在 gitignored 的 override 里） |
 | `.env.example` | 环境变量模板（部署 SSH 口令等） |
-| `channel-gateway/` | QQ 云端托管网关（W1 PoC：一机多号、扫码、回显；**NapCat 上游 2026-11-12 已关停**，协议端待换，见其 README） |
+| `channel-gateway/` | 渠道网关：**当前生产走 QQ 官方机器人**（`src/qqbot/`，云端 7×24、不持用户凭据）；OneBot/NapCat 那条 PoC 引擎已停服，代码留档不启用。见 [`docs/qq-official-bot-zh.md`](docs/qq-official-bot-zh.md) |
 
 ### 5.2 客户端 `frontend/`
 | 路径 | 作用 |
@@ -146,8 +146,10 @@ Electron 主进程          服务端 Java                  Python backend-agent
 | `lianyu-service/.../graph/ChatTurnFacade.java` | 回合外层适配器：取事实 → 交给 Python → 回结果（**不在这里拼 prompt**） |
 | `lianyu-service/.../tools/` | `ToolManager`（开关事实）、`TimeTool`/`WeatherTool`/…（内置只读工具） |
 | `lianyu-service/.../character/CharacterPreferenceResolver.java` | 角色偏好（免打扰 / 内心独白） |
-| `lianyu-dao/src/main/resources/db/migration/` | Flyway 迁移（当前最新 `V55`） |
-| `lianyu-security/.../SaTokenConfig.java` | 鉴权拦截范围（`/api/**`；`/internal/**` 不在其中） |
+| `lianyu-service/.../qq/QqChannelService.java` | 外部渠道身份：绑定码签发/绑定/解绑/回合（openid → userId+characterId） |
+| `lianyu-web/.../filter/InternalSignatureFilter.java` | `/internal/**` 的 HMAC 签名闸（fail-closed；secret 未配=503） |
+| `lianyu-dao/src/main/resources/db/migration/` | Flyway 迁移（当前最新 `V61`） |
+| `lianyu-security/.../SaTokenConfig.java` | 鉴权拦截范围（`/api/**`；`/internal/**` 不在其中 → 由签名闸兜底） |
 
 ### 5.4 模型运行时 `backend-agent/`
 | 路径 | 作用 |
@@ -241,6 +243,7 @@ MinIO。事后抽查用 `cd frontend && node scripts/electron-release.mjs --veri
 | 怀疑 Release 上是原生包 / 上传被截断 | `cd frontend && node scripts/electron-release.mjs --verify-only <ver>`（不达标会列出实际 MB） |
 | 更新器不提示新版本 | MinIO `updates/latest.yml` 的 version/sha512；`_upload_update_assets.py` 是否成功；客户端证书指纹 |
 | Java 侧棘轮红 | 新代码里是否出现 prompt 文本/模型调用；应搬去 Python。规则 5 报「未登记」就搬走或登记进 `scripts/java_bare_prompt_allowlist.txt`；报「已失效」说明迁完了没删条目 |
+| QQ 里机器人不回话 | `docker logs lianyu-qqbot`：没有 `已就绪` = WS 没连上（查事件订阅是否选了 WebSocket）；只回引导语 = `qq_channel_binding` 里没这条 openid；`401` = 网关与后端 secret 不一致；**时有时无 = 起了两个网关实例抢事件** |
 
 ---
 

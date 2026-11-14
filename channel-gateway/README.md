@@ -1,4 +1,22 @@
-# channel-gateway · QQ 云端托管网关（W1 PoC）
+# channel-gateway · 渠道网关
+
+## 当前生产：QQ 官方机器人（方案 B，2026-11-14 已真号跑通）
+
+```text
+手机 QQ ──腾讯 WS 网关──▶ 本目录 src/qqbot/ ──HMAC 签名──▶ 后端 /internal/qq/* ──▶ 予念回合
+```
+
+网关**不持有任何用户凭据**：openid → `(userId, characterId, conversationId)` 的解析与绑定都在
+Java + MySQL（`qq_channel_binding` / `qq_bind_code`）。用户在 App 里生成 6 位码，在 QQ 里发给机器人即完成绑定。
+
+```bash
+QQ_APPID=... QQ_SECRET=... QQ_GATEWAY_SECRET=... LIANYU_API_ORIGIN=http://127.0.0.1:8080 \
+  node scripts/qqbot-run.mjs          # 加 --echo 只验「腾讯→我→腾讯」，不碰云端、不烧模型
+```
+
+架构、开放平台配置、官方限制与踩过的坑：[`docs/qq-official-bot-zh.md`](../docs/qq-official-bot-zh.md)。
+
+## 历史：NapCat + OneBot 11 的一机多号托管（引擎已停服，代码留档不启用）
 
 一台 Windows 云主机上托管多个 QQ 号：**一套协议端 shell，多个独立 workdir**，每个号扫码登录后通过 OneBot 11 收消息，W1 阶段只做「收到什么回什么」，用来证明「云端常驻 → QQ 收发」这条链路成立。
 
@@ -48,7 +66,9 @@ $env:DATA_ROOT           = ".\\.data\\qq-gateway"
 node scripts/simulate-qq.mjs --from OPENID-1 --user 421 --character 1002 --token <token> --text "我下周三是有什么事来着？"
 ```
 
-> 安全边界：PoC 的 `bindings.json` 明文存用户 token（`local/` 与 `.data/` 均已 gitignore）。正式版必须换成服务端票据——见 `docs/qq-milky-runbook-zh.md` 的 W3 项（`/internal/**` 目前不在 SaToken 拦截范围，只靠内网隔离）。
+> 安全边界：这条 PoC 路径的 `bindings.json` 明文存用户 token（`local/` 与 `.data/` 均已 gitignore）。
+> **生产已改掉**：官方机器人通道走 `src/qqbot/` + `/internal/qq/*`，网关不持凭据、绑定在后端
+> （`InternalSignatureFilter` 做 HMAC 校验，未签名一律 401）。
 
 ## 为什么不是「把桌面端 napcatHost.js 改成多实例」
 
