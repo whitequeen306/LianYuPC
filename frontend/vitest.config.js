@@ -11,7 +11,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    // src 工具 + electron 主进程模块（napcatRuntime/qqBridge 等）的就近单测；
+    // src 工具 + electron 主进程模块（wechatBridge/desktopObserver 等）的就近单测；
     // electron 主进程代码同为产品代码，纳入测试覆盖，测试文件与其被测模块同目录
     include: [
       'src/**/__tests__/**/*.test.js',

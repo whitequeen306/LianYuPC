@@ -51,24 +51,6 @@ import {
 import { prepareGreetingPayload } from './greetingAudio.js'
 import { readLastChatModel, writeLastChatModel } from './lastChatModelStore.js'
 import { performApiRequest, isAllowedEgressUrl, egressLimiter } from './apiProxy.js'
-import {
-  startQqBridge,
-  stopQqBridge,
-  getQqBridgeStatus,
-  fanoutQqProactive,
-} from './qqBridge/qqBridge.js'
-import { createQqBridgeCoordinator } from './qqBridge/qqBridgeCoordinator.js'
-import {
-  readQqBridgeSettings,
-  writeQqBridgeSettings,
-} from './qqBridge/qqBridgeSettings.js'
-import {
-  startNapCatHost,
-  stopNapCatHost,
-  getNapCatHostStatus,
-  isQqntReady,
-} from './napcatRuntime/napcatHost.js'
-import { wipeNapCatInstall } from './napcatRuntime/napcatRelease.js'
 import { createWechatBridgeCoordinator } from './wechatBridge/wechatBridgeCoordinator.js'
 import {
   readWechatBridgeSettings,
@@ -558,29 +540,6 @@ function resolveDistPath(...segments) {
   return path.join(resolveDistRoot(), ...segments)
 }
 
-const qqBridgeCoordinator = createQqBridgeCoordinator({
-  getWindows: () => [mainWindow, launcherWindow],
-  Notification,
-  showMainWindow,
-  log: (...args) => log(args.join(' ')),
-  readQqBridgeSettings,
-  writeQqBridgeSettings,
-  startNapCatHost,
-  stopNapCatHost,
-  getNapCatHostStatus,
-  startQqBridge,
-  stopQqBridge,
-  getQqBridgeStatus,
-  resolveDesktopAuthToken,
-  resolveApiOrigin,
-  performApiRequest,
-  BrowserWindow,
-  shell,
-  isAllowedExternalUrl,
-  resolveDistPath,
-  logger,
-})
-
 const wechatBridgeCoordinator = createWechatBridgeCoordinator({
   getWindows: () => [mainWindow, launcherWindow],
   log: (...args) => log(args.join(' ')),
@@ -923,11 +882,6 @@ function handleProactiveMessageNotification(payload = {}) {
     if (!result?.ok) log(`[wechatBridge] proactive skip: ${result?.reason || 'unknown'}`)
   }).catch((e) => {
     log(`[wechatBridge] proactive fanout error: ${e?.message || e}`)
-  })
-  void fanoutQqProactive(payload || {}).then((result) => {
-    if (!result?.ok) log(`[qqBridge] proactive skip: ${result?.reason || 'unknown'}`)
-  }).catch((e) => {
-    log(`[qqBridge] proactive fanout error: ${e?.message || e}`)
   })
   if (!isMainWindowInBackground()) return
 
@@ -1871,10 +1825,7 @@ function closeFocusedQuickChat() {
 function quitApplication(options = {}) {
   const force = options.force === true
   isQuitting = true
-  stopQqBridge()
-  stopNapCatHost()
   void wechatBridgeCoordinator.stopHost({ persist: false })
-  qqBridgeCoordinator.dispose()
   closeCharacterPicker()
   if (quickChatShell && !quickChatShell.isDestroyed()) quickChatShell.destroy()
   quickChatShell = null
@@ -1888,15 +1839,6 @@ function quitApplication(options = {}) {
   }
   app.quit()
 }
-
-const pushQqBridgeStatus = (status) => qqBridgeCoordinator.pushQqBridgeStatus(status)
-const pushQqHostStatus = (status) => qqBridgeCoordinator.pushQqHostStatus(status)
-const pushQqHostDownload = (progress) => qqBridgeCoordinator.pushQqHostDownload(progress)
-const ensureBridgeBinding = (args) => qqBridgeCoordinator.ensureBridgeBinding(args)
-const makeNapCatBridgeStarter = () => qqBridgeCoordinator.makeNapCatBridgeStarter()
-const autoStartQqBridgeIfNeeded = () => qqBridgeCoordinator.autoStartQqBridgeIfNeeded()
-const autoStartNapCatHostIfNeeded = () => qqBridgeCoordinator.autoStartNapCatHostIfNeeded()
-const openQqLoginWindow = () => qqBridgeCoordinator.openQqLoginWindow()
 
 /**
  * 独立图片查看器窗口（微信/QQ 风格）。
@@ -2423,48 +2365,6 @@ function registerIpcHandlers() {
     return writeLastChatModel(payload || {})
   })
 
-  ipcMain.handle('desktop:get-qq-bridge-settings', (event) => {
-    if (!guardTrusted(event)) return null
-    return readQqBridgeSettings()
-  })
-
-  ipcMain.handle('desktop:set-qq-bridge-settings', (event, partial) => {
-    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
-    const next = writeQqBridgeSettings(partial || {})
-    return { ok: true, settings: next }
-  })
-
-  ipcMain.handle('desktop:start-qq-bridge', async (event, override) => {
-    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
-    const base = readQqBridgeSettings()
-    const settings = override && typeof override === 'object' ? { ...base, ...override } : base
-    if (!settings.enabled) return { ok: false, reason: 'disabled' }
-    if (!settings.binding?.conversationId && !settings.binding?.characterId) return { ok: false, reason: 'no_conversation' }
-    const authToken = await resolveDesktopAuthToken()
-    if (!authToken) {
-      log('start-qq-bridge: no auth token in main process')
-      return { ok: false, reason: 'not_logged_in' }
-    }
-    const started = startQqBridge({
-      apiOrigin: resolveApiOrigin(),
-      authToken,
-      settings,
-      onStatus: (status) => pushQqBridgeStatus(status),
-    })
-    return started ? { ok: true } : { ok: false, reason: 'start_failed' }
-  })
-
-  ipcMain.handle('desktop:stop-qq-bridge', (event) => {
-    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
-    stopQqBridge()
-    return { ok: true }
-  })
-
-  ipcMain.handle('desktop:get-qq-bridge-status', (event) => {
-    if (!guardTrusted(event)) return { state: 'unknown', selfId: '' }
-    return getQqBridgeStatus()
-  })
-
   ipcMain.handle('desktop:get-wechat-bridge-settings', (event) => {
     if (!guardTrusted(event)) return null
     return readWechatBridgeSettings()
@@ -2509,46 +2409,6 @@ function registerIpcHandlers() {
   ipcMain.handle('desktop:get-wechat-host-status', (event) => {
     if (!guardTrusted(event)) return { state: 'stopped', running: false }
     return wechatBridgeCoordinator.getStatus()
-  })
-
-  // 按角色自动获取/绑定会话号：指定 characterId 时 find/create 该角色的 SINGLE 会话；
-  // 不指定则按 ensureBridgeBinding 默认（首个 SINGLE/首个角色）。结果写回 binding 并返回。
-  ipcMain.handle('desktop:qq-bridge-resolve-conversation', async (event, characterId) => {
-    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
-    const authToken = await resolveDesktopAuthToken()
-    if (!authToken) return { ok: false, reason: 'not_logged_in' }
-    const result = await ensureBridgeBinding({
-      apiOrigin: resolveApiOrigin(),
-      authToken,
-      characterId: characterId || undefined,
-    })
-    if (!result?.conversationId) return { ok: false, reason: 'resolve_failed' }
-    const prev = readQqBridgeSettings()
-    writeQqBridgeSettings({
-      binding: {
-        ...(prev.binding || {}),
-        conversationId: result.conversationId,
-        ...(result.characterId ? { characterId: result.characterId } : {}),
-      },
-    })
-    log(`[resolve-conversation] bound conversation ${result.conversationId}` + (result.characterId ? ` (character ${result.characterId})` : ''))
-    return { ok: true, ...result }
-  })
-
-  // 查看桥接日志：从全局日志（logs/app.log + 轮转 + 旧 startup.log）读取，
-  // 过滤只留桥接相关行（qqBridge/napcatHost/resolve-conversation/ensureBridgeBinding 标签），
-  // 尾部返回 500 条。
-  ipcMain.handle('desktop:qq-bridge-get-logs', (event) => {
-    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
-    try {
-      const content = logger.getLogContent(50000)
-      const all = content ? content.split(/\r?\n/).filter(Boolean) : []
-      const bridgeRe = /\[(qqBridge|napcatHost|resolve-conversation|ensureBridgeBinding)\]/
-      const lines = all.filter((l) => bridgeRe.test(l))
-      return { ok: true, lines: lines.slice(-500) }
-    } catch (e) {
-      return { ok: false, reason: 'read_failed', error: e?.message || String(e) }
-    }
   })
 
   // ---- 全局日志 IPC ----
@@ -2643,61 +2503,6 @@ function registerIpcHandlers() {
       refText: payload?.refText,
       authToken: token,
     })
-  })
-
-  ipcMain.handle('desktop:start-qq-host', async (event, override) => {
-    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
-    if (override && typeof override === 'object' && override.hosting) {
-      writeQqBridgeSettings({ hosting: override.hosting })
-    }
-    const settings = readQqBridgeSettings()
-    if (settings.hosting?.mode !== 'auto') return { ok: false, reason: 'not_auto_mode' }
-    if (!settings.hosting?.consented) return { ok: false, reason: 'not_consented' }
-    // QQNT 预检：未装则直接返回 qqnt_not_found，不进 startNapCatHost——否则会先白下
-    // 28MB NapCat，再到 resolveLaunchTarget 抛「QQ install dir not found」被吞成
-    // 误导性的 start_failed「请检查网络」。预检让用户拿到「请先安装 QQNT」的明确引导。
-    if (!isQqntReady()) return { ok: false, reason: 'qqnt_not_found' }
-    const started = await startNapCatHost({
-      settings,
-      onStatus: (status) => pushQqHostStatus(status),
-      onDownload: (progress) => pushQqHostDownload(progress),
-      bridgeStarter: makeNapCatBridgeStarter(),
-    })
-    return started ? { ok: true } : { ok: false, reason: 'start_failed' }
-  })
-
-  ipcMain.handle('desktop:stop-qq-host', async (event) => {
-    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
-    await stopNapCatHost()
-    return { ok: true }
-  })
-
-  ipcMain.handle('desktop:get-qq-host-status', (event) => {
-    if (!guardTrusted(event)) return { state: 'stopped' }
-    return getNapCatHostStatus()
-  })
-
-  // 升级/重装：停止 → 清空安装根与残件 → 用最新设置重新拉起（重下最新发行）
-  ipcMain.handle('desktop:reinstall-qq-host', async (event) => {
-    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
-    // QQNT 预检：未装则不 stop/wipe（避免删掉已有 NapCat 却仍跑不起来），直接引导安装。
-    if (!isQqntReady()) return { ok: false, reason: 'qqnt_not_found' }
-    // 必须 await：stop 会中断进行中的下载并等待 .part 写流关闭，否则 wipe 撞未释放句柄
-    await stopNapCatHost()
-    wipeNapCatInstall()
-    const settings = readQqBridgeSettings()
-    const started = await startNapCatHost({
-      settings,
-      onStatus: (status) => pushQqHostStatus(status),
-      onDownload: (progress) => pushQqHostDownload(progress),
-      bridgeStarter: makeNapCatBridgeStarter(),
-    })
-    return started ? { ok: true } : { ok: false, reason: 'reinstall_failed' }
-  })
-
-  ipcMain.handle('desktop:open-qq-login-window', (event) => {
-    if (!guardTrusted(event)) return { ok: false, reason: 'untrusted_sender' }
-    return openQqLoginWindow()
   })
 
   ipcMain.handle('desktop:notify-window-changed', (event) => {
@@ -3044,8 +2849,6 @@ app.whenReady().then(() => {
   }
   startupMainProfiler.mark('readAuthSession:done')
 
-  void autoStartQqBridgeIfNeeded()
-  void autoStartNapCatHostIfNeeded()
   void wechatBridgeCoordinator.autoStartIfNeeded()
 
   // 电源事件：唤醒后通知窗口切换检测

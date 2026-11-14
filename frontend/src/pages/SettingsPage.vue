@@ -64,13 +64,6 @@
         </div>
         <div class="desktop-settings__row">
           <div>
-            <div class="desktop-settings__label">QQ 桥接（beta）</div>
-            <div class="desktop-settings__hint">让 QQ 消息转发给云端 AI 并自动回复</div>
-          </div>
-          <el-button text :icon="Promotion" @click="goQqBridge">前往配置</el-button>
-        </div>
-        <div class="desktop-settings__row">
-          <div>
             <div class="desktop-settings__label">微信 ClawBot</div>
             <div class="desktop-settings__hint">用手机微信 ClawBot 与已绑定的予念角色聊天</div>
           </div>
@@ -395,7 +388,6 @@ const settingsStore = useSettingsStore()
 // 额度熔断状态：null = 还没拉到（不显示横幅），后端不可用也保持 null，不打扰用户
 const quota = ref(null)
 const router = useRouter()
-const goQqBridge = () => router.push('/app/qq-bridge')
 const goWechatBridge = () => router.push('/app/wechat-bridge')
 const goAbout = () => router.push('/app/about')
 const goBack = () => router.push('/app')

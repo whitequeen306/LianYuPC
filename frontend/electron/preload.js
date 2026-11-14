@@ -114,38 +114,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('desktop:auth-session-updated', handler)
   },
   notifyQuickChatReady: () => ipcRenderer.send('desktop:quick-chat-ready'),
-  getQqBridgeSettings: () => ipcRenderer.invoke('desktop:get-qq-bridge-settings'),
-  setQqBridgeSettings: (partial) => ipcRenderer.invoke('desktop:set-qq-bridge-settings', partial),
-  startQqBridge: (override) => ipcRenderer.invoke('desktop:start-qq-bridge', override),
-  stopQqBridge: () => ipcRenderer.invoke('desktop:stop-qq-bridge'),
-  getQqBridgeStatus: () => ipcRenderer.invoke('desktop:get-qq-bridge-status'),
-  resolveQqBridgeConversation: (characterId) => ipcRenderer.invoke('desktop:qq-bridge-resolve-conversation', characterId),
-  getQqBridgeLogs: () => ipcRenderer.invoke('desktop:qq-bridge-get-logs'),
-  onQqBridgeStatus: (callback) => {
-    const handler = (_event, payload) => callback(payload)
-    ipcRenderer.on('desktop:qq-bridge-status', handler)
-    return () => ipcRenderer.removeListener('desktop:qq-bridge-status', handler)
-  },
-  onQqBridgeAlert: (callback) => {
-    const handler = (_event, payload) => callback(payload)
-    ipcRenderer.on('desktop:qq-bridge-alert', handler)
-    return () => ipcRenderer.removeListener('desktop:qq-bridge-alert', handler)
-  },
-  startQqHost: (override) => ipcRenderer.invoke('desktop:start-qq-host', override),
-  stopQqHost: () => ipcRenderer.invoke('desktop:stop-qq-host'),
-  reinstallQqHost: () => ipcRenderer.invoke('desktop:reinstall-qq-host'),
-  getQqHostStatus: () => ipcRenderer.invoke('desktop:get-qq-host-status'),
-  onQqHostStatus: (callback) => {
-    const handler = (_event, payload) => callback(payload)
-    ipcRenderer.on('desktop:qq-host-status', handler)
-    return () => ipcRenderer.removeListener('desktop:qq-host-status', handler)
-  },
-  onQqHostDownload: (callback) => {
-    const handler = (_event, payload) => callback(payload)
-    ipcRenderer.on('desktop:qq-host-download', handler)
-    return () => ipcRenderer.removeListener('desktop:qq-host-download', handler)
-  },
-  openQqLoginWindow: () => ipcRenderer.invoke('desktop:open-qq-login-window'),
   getWechatBridgeSettings: () => ipcRenderer.invoke('desktop:get-wechat-bridge-settings'),
   setWechatBridgeSettings: (partial) => ipcRenderer.invoke('desktop:set-wechat-bridge-settings', partial),
   startWechatHost: () => ipcRenderer.invoke('desktop:start-wechat-host'),

@@ -35,25 +35,8 @@ export default {
     memory: '记忆',
     profile: '个人资料',
     settings: '设置',
-    qqBridge: 'QQ 桥接（beta）',
     wechatBridge: '微信 ClawBot',
     about: '关于'
-  },
-  qqBridge: {
-    desc: '让本地 NapCat 收到的 QQ 消息转发给云端 AI，再把回复发回 QQ',
-    notElectron: 'QQ 桥接（beta）仅在桌面客户端可用。',
-    mode: { title: '托管模式', auto: '自动', manual: '手动', hint: '自动：应用下载并运行 NapCat，扫码即用；手动：自行运行 NapCat 后填连接参数' },
-    consent: { title: 'QQ 自动托管授权', body: '开启后，应用会从 NapCat 官方 GitHub 下载 NapCat 运行时到本机并自动配置启动，随后弹出扫码窗口登录 QQ。登录态保存在本地 NapCat，重启无需重扫。', confirm: '我已了解，开启', cancel: '取消' },
-    host: { title: 'NapCat 运行时', start: '启动托管', stop: '停止托管', cancel: '取消', login: '登录QQ', version: '版本', token: '令牌', selfId: '当前QQ', noSelfId: '未登录', repair: '修复运行时', loginFailed: '打开登录窗失败，请确认运行时已就绪', startFailed: '启动失败，请检查网络后重试', stopFailed: '停止失败，请重试', reinstall: '升级运行时', upgradeHint: '检测到新版本 {latest}（当前 {installed}）', reinstallConfirm: '将停止当前运行时、删除旧版本并重新下载最新版，确认继续？', reinstallOk: '已开始升级，请等待下载完成', reinstallFailed: '升级失败，请重试或检查网络' },
-    bridge: { title: '桥接状态', start: '启动桥接', stop: '停止桥接', selfId: '机器人QQ', startFailed: '启动桥接失败，请重试', startOk: '桥接已启动', stopFailed: '停止桥接失败，请重试' },
-    status: { title: '运行状态' },
-    binding: { title: '消息路由', character: 'AI 角色', characterPlaceholder: '选择 AI 角色', characterEmpty: '暂无角色，请先在 YuNian App 内创建', characterHint: '选定角色后，桥接为每个 QQ 用户自动匹配该角色的专属会话（无需手填会话号）；清空上下文后会话失效时自动重建，不受影响。', provider: '文本 Provider', providerPlaceholder: '请选择已配置的文本 Provider', providerHint: '必须选择自己的文本 Provider；平台内置聊天模型已下线。', providerRequired: '请先选择文本 Provider（须在设置中添加配置）', model: '文本模型', modelPlaceholder: '选择或填写模型名', modelHint: '留空则用该 Provider 的默认模型。', conversationId: '云端会话', conversationIdHint: '首次启动桥接时会自动绑定最近的单聊会话（全自动）；如需改用其他 AI 角色，可在上方下拉中选择。', convPlaceholder: '选择云端会话', convEmpty: '暂无云端会话', convCreate: '立即创建默认会话', convCreateOk: '已创建并绑定默认会话', convCreateFail: '创建会话失败，请稍后重试', noCharacter: '请先在 YuNian App 内创建角色', currentlyBound: '当前绑定', singleFallback: '单聊 #{id}', allowMode: '放行模式', allowModeAllowlist: '白名单（默认拒绝）', allowModeOpen: '开放（任何人）', openModeWarning: '⚠️ 开放模式会导致 AI 认错人、上下文错乱', openModeWarningDesc: '任何人都能触发 AI 回复，不同 QQ 用户的消息会混在一起，AI 可能认错人、记错上下文。强烈建议改回白名单模式，在下方填入你自己的 QQ 号（私聊白名单）和群号（群白名单），多个用英文逗号分隔。', emptyAllowlistWarning: '白名单为空：当前没有 QQ 消息会被转发到 AI。在下方添加 QQ 号/群号以放行。', allowUsers: '私聊白名单（QQ号）', allowGroups: '群白名单（群号）', allowHint: '白名单模式下留空 = 不放行任何人；多个用英文逗号分隔', save: '保存路由', saved: '路由已保存', pickByCharacter: '按角色名获取会话', pickCharacterTitle: '选择 AI 角色', pickCharacterHint: '查找或新建该角色的单聊会话并绑定', pickConfirm: '获取并绑定', pickOk: '已绑定该角色的会话', pickFail: '获取会话失败，请稍后重试' },
-    reply: { title: '回复设置', segmentDelay: '分段发送延迟', segmentDelayHint: 'AI 回复拆成多条逐条发送的条间间隔，0 为不延迟（毫秒）', segmentJitter: '随机抖动', segmentJitterHint: '在分段延迟基础上附加 0~该值的随机量，让间隔不固定以降低风控，0 为不抖动（毫秒）', fallback: '兜底回复', fallbackHint: '云端异常/超时时代替 AI 回复的内容，留空则不兜底', suffix: '回复带角色尾缀', suffixHint: '开启后 QQ 回复末尾附“（本次回复由虚拟角色:角色名回复）”；关闭则不带尾缀', save: '保存', saved: '已保存', applyHint: '保存后对下条消息生效（无需重启桥接）' },
-    logs: { title: '桥接日志', open: '查看日志', refresh: '刷新', empty: '暂无日志', loadFail: '读取日志失败', autoRecoverHint: '会话失效时自动重解析并重试（已启用）', all: '全部', success: '成功', fail: '失败', autoRefresh: '自动刷新', count: '共 {n} 条' },
-    ws: { title: 'NapCat 连接（手动模式）', wsUrl: 'WebSocket 地址', accessToken: '访问令牌', hint: '仅手动模式需要填写；自动托管时由运行时自动写入并连接', save: '保存连接', saved: '连接已保存' },
-    download: { label: '下载进度', title: '下载 NapCat 运行时', hint: '下载中请勿关闭窗口，完成后将自动继续', cancel: '取消下载', phase: { preparing: '准备中', downloading: '下载中', extracting: '解压中', done: '完成' } },
-    state: { stopped: '已停止', 'resolving-release': '解析发行中', downloading: '下载中', extracting: '解压中', 'writing-config': '写入配置中', launching: '启动中', running: '运行中', reconnecting: '重连中', restarting: '重启中', error: '错误', connecting: '连接中', connected: '已连接', ready: '已就绪', disconnected: '已断开' },
-    reason: { not_auto_mode: '请先在上方开启自动托管', not_consented: '请先完成 QQ 托管授权', start_failed: '启动失败，请检查网络后重试', reinstall_failed: '重装失败，请重试或检查网络', not_running: '运行时未就绪，请先启动托管', no_conversation: '请先在下方「消息路由」选择会话', not_logged_in: '请先登录予念账号', disabled: '桥接已被禁用', qqnt_not_found: '未检测到 QQ 桌面版（QQNT），请先安装后再启用自动托管：https://im.qq.com/index/', exception: '操作异常，请重试', unknown: '操作失败，请重试' }
   },
   wechatBridge: {
     desc: '用手机微信里的 ClawBot 与已绑定的予念角色聊天。电脑微信常常看不到入口，请用手机扫码。本机不安装 Node，也不运行 OpenClaw 自带大脑。',

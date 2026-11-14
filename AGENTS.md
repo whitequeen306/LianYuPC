@@ -13,7 +13,7 @@
 
 | 维度 | 事实 |
 |---|---|
-| 客户端 | Electron + Vue 3 + Vite（`frontend/`），托盘驻留、快捷聊天、桌宠、QQ 桥 |
+| 客户端 | Electron + Vue 3 + Vite（`frontend/`），托盘驻留、快捷聊天、桌宠、微信 ClawBot 桥 |
 | 服务端 | Spring Boot 3 多模块（`backend/`，JDK 17），鉴权/事务/落库/通知 |
 | 模型运行时 | Python FastAPI + LangGraph（`backend-agent/`），prompt 组装 / 模型调用 / 工具循环 |
 | 存储 | MySQL + Redis + RabbitMQ + Milvus + MinIO |
@@ -124,6 +124,7 @@ Electron 主进程          服务端 Java                  Python backend-agent
 | `AGENTS.md` | 本文件 |
 | `docker-compose.yml` | 服务编排（**注意**：本地端口覆盖在 gitignored 的 override 里） |
 | `.env.example` | 环境变量模板（部署 SSH 口令等） |
+| `channel-gateway/` | QQ 云端托管网关（W1 PoC：一机多号、扫码、回显；**NapCat 上游 2026-11-12 已关停**，协议端待换，见其 README） |
 
 ### 5.2 客户端 `frontend/`
 | 路径 | 作用 |
@@ -255,7 +256,9 @@ MinIO。事后抽查用 `cd frontend && node scripts/electron-release.mjs --veri
 | `docs/refactor-2026-10/production-rollout.md` | 生产上线流程 |
 | `docs/security-coupling-map-zh.md` | 安全耦合面（凭据/出站/审计） |
 | `docs/reusable-capabilities/electron-client-hardening-zh.md` | Electron 安全加固与红队验收 |
-| `docs/qq-bridge-zh.md` | QQ 桥接（NapCat）设计与运维 |
+| `docs/qq-bridge-zh.md` | **历史文档**：桌面端 QQ 桥接已整块下线（2026-11），仅作决策与教训留档；新方向见 `channel-gateway/README.md` |
+| `docs/qq-milky-runbook-zh.md` | Lagrange.Milky 单号跑通手册：Signer Token 申请、签名服务 `.org` 域名、QGP/bind 的限制与验收步骤 |
+| `docs/qq-official-bot-zh.md` | **当前 QQ 主链路**：QQ 官方机器人（AppID/AppSecret + WebSocket）接予念，已真号跑通「换入口不丢记忆」；含平台配置、跑法、官方限制与已踩的坑 |
 
 ---
 

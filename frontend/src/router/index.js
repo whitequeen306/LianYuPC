@@ -135,12 +135,6 @@ const routes = [
         meta: { titleKey: 'routes.settings', hideDock: true }
       },
       {
-        path: 'qq-bridge',
-        name: 'QqBridge',
-        component: () => import('@/pages/QqBridgePage.vue'),
-        meta: { titleKey: 'routes.qqBridge', hideDock: true }
-      },
-      {
         path: 'wechat-bridge',
         name: 'WechatBridge',
         component: () => import('@/pages/WechatBridgePage.vue'),

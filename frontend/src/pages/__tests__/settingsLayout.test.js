@@ -30,13 +30,15 @@ describe('SettingsPage layout', () => {
     expect(providerIndex).toBeLessThan(visionIndex)
   })
 
-  test('places WeChat ClawBot under the QQ bridge row', () => {
+  test('keeps the WeChat ClawBot entry inside the desktop quick entry block', () => {
     const source = readFileSync(settingsPagePath, 'utf8')
-    const qqIndex = source.indexOf('goQqBridge')
+    const desktopIndex = source.indexOf('<!-- Desktop quick entry -->')
     const wechatIndex = source.indexOf('goWechatBridge')
-    expect(qqIndex).toBeGreaterThan(-1)
-    expect(wechatIndex).toBeGreaterThan(qqIndex)
+    expect(desktopIndex).toBeGreaterThan(-1)
+    expect(wechatIndex).toBeGreaterThan(desktopIndex)
     expect(source).toContain('微信 ClawBot')
+    // QQ 桥接（NapCat 托管）已整块下线：入口不得回归
+    expect(source).not.toContain('goQqBridge')
   })
 
   test('explains paused proactive messages without offering a switch', () => {

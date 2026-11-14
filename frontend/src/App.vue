@@ -26,7 +26,6 @@ import { useSettingsStore } from '@/stores/settings'
 import { isElectronRuntime } from '@/utils/runtime'
 import { getElectronAPI } from '@/utils/electron'
 import { syncElectronTitleBar } from '@/utils/electronCaption'
-import { ElMessageBox } from 'element-plus'
 import AppUpdateDialog from '@/components/AppUpdateDialog.vue'
 import AppUpdatePrompt from '@/components/AppUpdatePrompt.vue'
 import InAppMessageToastHost from '@/components/InAppMessageToastHost.vue'
@@ -112,28 +111,6 @@ function applyCaptionMetrics(metrics) {
   }
 }
 
-/** QQ 桥接掉线/被踢弹窗（软件内 ElMessageBox 弹窗）
- *  main.js 通过 IPC desktop:qq-bridge-alert 推送（同时会发系统通知，此处仅处理软件内弹窗）。
- *  同类型弹窗 30s 防抖，避免重启期间 WS 抖动刷屏。 */
-const qqAlertTitles = {
-  kicked: 'QQ 已掉线',
-  disconnected: 'QQ 桥接掉线',
-  not_logged_in: 'QQ 未登录',
-  restart_failed: 'NapCat 重启失败',
-}
-let qqAlertLastTs = {}
-let qqAlertUnsub = null
-function handleQqBridgeAlert({ type, message }) {
-  if (!type || !message) return
-  const now = Date.now()
-  if (qqAlertLastTs[type] && now - qqAlertLastTs[type] < 30000) return
-  qqAlertLastTs[type] = now
-  ElMessageBox.alert(message, qqAlertTitles[type] || 'QQ 桥接提醒', {
-    confirmButtonText: '知道了',
-    type: type === 'restart_failed' ? 'error' : 'warning',
-  }).catch(() => {})
-}
-
 onMounted(async () => {
   if (isElectron) {
     syncElectronCaptionClass(!isLauncherSurface.value && !isQuickChatSurface.value)
@@ -146,8 +123,6 @@ onMounted(async () => {
     applyCaptionMetrics(metrics)
     api?.onCaptionMetrics?.(applyCaptionMetrics)
     syncElectronChrome()
-    // QQ 桥接掉线/被踢弹窗
-    qqAlertUnsub = api?.onQqBridgeAlert?.(handleQqBridgeAlert)
   }
 
   if (userStore.isLoggedIn && !userStore.userId && !isLauncherSurface.value) {
@@ -163,7 +138,6 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  qqAlertUnsub?.()
   if (transitionTimer) { clearTimeout(transitionTimer); transitionTimer = null }
 })
 
