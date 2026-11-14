@@ -307,6 +307,52 @@ public class FileStorageService {
     }
 
     /**
+     * 存一张「从别处拿到的」聊天图片（QQ 渠道从腾讯 CDN 下载后转存）。
+     *
+     * <p>为什么需要它：识图链路只读对象存储里的字节（见 VisionMessageBuilder），
+     * 不会去请求外部 URL；所以外部图片必须先落进来，拿到 objectKey 才能进回合。
+     * 校验口径与 {@link #uploadChatImage(MultipartFile)} 保持一致。
+     */
+    public String uploadChatImageBytes(byte[] bytes, String contentType) {
+        if (bytes == null || bytes.length == 0) {
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.BAD_REQUEST, "图片数据为空");
+        }
+        if (bytes.length > CHAT_IMAGE_MAX_BYTES) {
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.BAD_REQUEST, "图片大小不能超过 5MB");
+        }
+        String mime = (contentType == null || contentType.isBlank())
+                ? "image/jpeg" : contentType.trim().toLowerCase();
+        if (!CHAT_IMAGE_TYPES.contains(mime)) {
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.BAD_REQUEST, "仅支持 JPG / PNG / WebP / GIF 图片");
+        }
+        String ext = mime.contains("png") ? ".png"
+                : mime.contains("webp") ? ".webp"
+                : mime.contains("gif") ? ".gif" : ".jpg";
+        String objectName = CHAT_IMAGE_PATH + UUID.randomUUID().toString().replace("-", "") + ext;
+        try {
+            minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(minioConfig.getBucket())
+                            .object(objectName)
+                            .stream(new java.io.ByteArrayInputStream(bytes), bytes.length, -1)
+                            .contentType(mime)
+                            .build()
+            );
+            log.info("Chat image uploaded from channel: {} ({} bytes)", objectName, bytes.length);
+            return objectName;
+        } catch (com.lianyu.common.exception.BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Chat image (channel) upload failed", e);
+            throw new com.lianyu.common.exception.BusinessException(
+                    com.lianyu.common.base.ErrorCode.UPLOAD_FAILED, "图片上传失败，请稍后再试");
+        }
+    }
+
+    /**
      * Upload server-generated chat voice (TTS). Returns object key for DB storage.
      * {@code petId} is embedded in the path for client playback-rate lookup.
      */

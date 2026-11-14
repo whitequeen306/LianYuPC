@@ -50,17 +50,20 @@ public class QqChannelService {
     private final CharacterMapper characterMapper;
     private final ConversationService conversationService;
     private final ApiKeyVaultService apiKeyVaultService;
+    private final com.lianyu.service.storage.FileStorageService fileStorageService;
 
     public QqChannelService(QqChannelBindingMapper bindingMapper,
                             QqBindCodeMapper codeMapper,
                             CharacterMapper characterMapper,
                             ConversationService conversationService,
-                            ApiKeyVaultService apiKeyVaultService) {
+                            ApiKeyVaultService apiKeyVaultService,
+                            com.lianyu.service.storage.FileStorageService fileStorageService) {
         this.bindingMapper = bindingMapper;
         this.codeMapper = codeMapper;
         this.characterMapper = characterMapper;
         this.conversationService = conversationService;
         this.apiKeyVaultService = apiKeyVaultService;
+        this.fileStorageService = fileStorageService;
     }
 
     // ---------------------------------------------------------------- 绑定码
@@ -173,8 +176,13 @@ public class QqChannelService {
 
     /**
      * 网关收到一条 QQ 消息后调这里：解析身份 → 选模型 → 跑一个完整回合 → 返回要发回去的文本。
+     *
+     * <p>{@code imageBase64} 是 QQ 那边发来的图片/表情包。腾讯只给限时 URL，网关下载后交给我们；
+     * 这里转存到对象存储拿到 objectKey 再塞进 {@code imageUrl}，因为识图链路只读自己的对象存储，
+     * 不会去请求外部地址（也就不用为此开新的出站面）。
      */
-    public TurnResult turn(String channel, String externalId, String text) {
+    public TurnResult turn(String channel, String externalId, String text,
+                           String imageBase64, String imageContentType) {
         QqChannelBinding binding = bindingMapper.selectOne(new LambdaQueryWrapper<QqChannelBinding>()
                 .eq(QqChannelBinding::getChannel, channel)
                 .eq(QqChannelBinding::getExternalId, externalId)
@@ -193,13 +201,32 @@ public class QqChannelService {
         request.setProvider(vault.getProvider());
         request.setModel(vault.getModelDefault());
         request.setContent(text);
+        storeIncomingImage(request, imageBase64, imageContentType);
 
         MessageResponse reply = conversationService.sendMessage(binding.getUserId(), binding.getConversationId(), request);
         return TurnResult.builder()
                 .conversationId(binding.getConversationId())
                 .characterId(binding.getCharacterId())
                 .reply(reply == null ? "" : reply.getContent())
+                .imageUrl(reply == null ? null : fileStorageService.resolvePublicUrl(reply.getImageUrl()))
                 .build();
+    }
+
+    /** 把 QQ 发来的图片落进我们自己的对象存储；失败只记日志，不挡这一轮对话。 */
+    private void storeIncomingImage(SendMessageRequest request, String imageBase64, String imageContentType) {
+        if (imageBase64 == null || imageBase64.isBlank()) {
+            return;
+        }
+        try {
+            byte[] bytes = java.util.Base64.getDecoder().decode(imageBase64);
+            String objectKey = fileStorageService.uploadChatImageBytes(bytes, imageContentType);
+            request.setImageUrl(objectKey);
+        } catch (IllegalArgumentException e) {
+            log.warn("qq image base64 解码失败，按纯文本继续");
+        } catch (RuntimeException e) {
+            // 5MB 超限、格式不支持都在这里；用户那句话还得回，所以不往外抛。
+            log.warn("qq image 转存失败，按纯文本继续: {}", e.getMessage());
+        }
     }
 
     // ---------------------------------------------------------------- 内部
@@ -288,5 +315,7 @@ public class QqChannelService {
         private Long conversationId;
         private Long characterId;
         private String reply;
+        /** 角色这一轮要是带了图（imageUrl 非空），网关会再发一条富媒体消息。 */
+        private String imageUrl;
     }
 }

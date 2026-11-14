@@ -25,7 +25,12 @@ public class InternalQqController {
 
     @PostMapping("/turn")
     public Result<QqChannelService.TurnResult> turn(@Valid @RequestBody InternalQqTurnRequest request) {
-        return Result.ok(qqChannelService.turn(request.getChannel(), request.getExternalId(), request.getText()));
+        return Result.ok(qqChannelService.turn(
+                request.getChannel(),
+                request.getExternalId(),
+                request.getText(),
+                request.getImageBase64(),
+                request.getImageContentType()));
     }
 
     @PostMapping("/bind")

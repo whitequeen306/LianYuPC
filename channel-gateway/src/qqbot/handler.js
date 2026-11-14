@@ -4,6 +4,8 @@
 // 予念那边要的是 (userId, characterId)。绑定关系现在存在后端库里（qq_channel_binding），
 // 网关只负责「把 openid 和一句话交给后端，把答案发回 QQ」，不存凭据、不存对话。
 
+import { IMAGE_PLACEHOLDER, cleanText, pickImage } from './media.js';
+
 // 同一条消息可能因重连被重投，reply 一次就够。
 const DEDUPE_LIMIT = 200;
 
@@ -27,7 +29,7 @@ export function looksLikeBindCode(text) {
   return /^\d{6}$/.test(String(text || '').replace(/\s+/g, ''));
 }
 
-export function createQqBotHandler({ api, backend, log = () => {}, maxReplyChars = 1500 }) {
+export function createQqBotHandler({ api, backend, log = () => {}, maxReplyChars = 1500, fetchImage = null }) {
   const seen = [];
   const seenSet = new Set();
 
@@ -53,8 +55,26 @@ export function createQqBotHandler({ api, backend, log = () => {}, maxReplyChars
     }
   }
 
-  async function attemptBind(channel, externalId, text) {
-    const code = String(text).replace(/\s+/g, '');
+  /**
+   * 角色这一轮如果带了图，就再发一条富媒体消息（msg_seq=2，文字占 1）。
+   * 图发不出去不该影响文字已经送达的事实，所以这里只记日志。
+   */
+  async function sendImageIfAny(event, imageUrl) {
+    const url = String(imageUrl || '').trim();
+    if (!url) return;
+    try {
+      if (event.kind === 'group') {
+        await api.sendGroupImage(event.groupOpenid, url, { msgId: event.msgId, msgSeq: 2 });
+      } else {
+        await api.sendC2CImage(event.openid, url, { msgId: event.msgId, msgSeq: 2 });
+      }
+      log(`[qqbot] 已回图片 ${url.slice(0, 80)}`);
+    } catch (err) {
+      log(`[qqbot] 图片发送失败：${err.message}`);
+    }
+  }
+
+  async function attemptBind(channel, externalId, text) {    const code = String(text).replace(/\s+/g, '');
     const result = await backend.bind({ channel, externalId, code });
     return `绑好了。接下来你发的话，会由「${result.characterName}」回你。`;
   }
@@ -64,8 +84,10 @@ export function createQqBotHandler({ api, backend, log = () => {}, maxReplyChars
       if (!event || !event.openid) return { skipped: 'no_openid' };
       if (!firstTime(event.msgId)) return { skipped: 'duplicate' };
 
-      const text = String(event.text || '').trim();
-      if (!text) return { skipped: 'empty' };
+      const text = cleanText(event.text);
+      const image = pickImage(event);
+      // 纯图片消息的 content 是空的，但它是用户真实说的一句话（发给你看），不能当噪声丢掉。
+      if (!text && !image) return { skipped: 'empty' };
 
       const channel = channelOf(event);
       const externalId = conversationKey(event);
@@ -84,7 +106,28 @@ export function createQqBotHandler({ api, backend, log = () => {}, maxReplyChars
       }
 
       try {
-        const result = await backend.turn({ channel, externalId, text });
+        // 图片走腾讯 CDN 的限时 URL（带 rkey），这里下载成 base64 交给后端转存：
+        // 网关不做持久化，后端只认自己对象存储里的 key（识图也是从那里读字节）。
+        const payload = { channel, externalId, text: text || IMAGE_PLACEHOLDER };
+        if (image) {
+          if (fetchImage) {
+            try {
+              const fetched = await fetchImage(image.url);
+              if (fetched?.base64) {
+                payload.imageBase64 = fetched.base64;
+                payload.imageContentType = fetched.contentType || image.contentType;
+              } else {
+                log('[qqbot] 图片下载为空，按纯文本继续');
+              }
+            } catch (err) {
+              log(`[qqbot] 图片下载失败（按纯文本继续）：${err.message}`);
+            }
+          } else {
+            log('[qqbot] 未配置图片下载器，图片按纯文本处理');
+          }
+        }
+
+        const result = await backend.turn(payload);
         const reply = String(result.reply || '').trim();
         if (!reply) {
           await send(event, FALLBACK_REPLY);
@@ -92,6 +135,7 @@ export function createQqBotHandler({ api, backend, log = () => {}, maxReplyChars
         }
         await send(event, reply);
         log(`[qqbot] 已回 ${reply.length} 字（conv=${result.conversationId}）`);
+        await sendImageIfAny(event, result.imageUrl);
         return { replied: true, chars: reply.length };
       } catch (err) {
         if (err.code === 9003) {

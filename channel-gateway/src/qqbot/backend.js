@@ -107,8 +107,13 @@ export function createBackendClient({
     origin: apiOrigin,
 
     /** 跑一个回合：后端负责解析身份、选模型、落库、返回要发回 QQ 的文本。 */
-    async turn({ channel, externalId, text }) {
-      const data = await call('/internal/qq/turn', { channel, externalId, text });
+    async turn({ channel, externalId, text, imageBase64, imageContentType }) {
+      const body = { channel, externalId, text };
+      if (imageBase64) {
+        body.imageBase64 = imageBase64;
+        body.imageContentType = imageContentType || 'image/jpeg';
+      }
+      const data = await call('/internal/qq/turn', body);
       return { reply: String((data && data.reply) || ''), conversationId: data && data.conversationId };
     },
 

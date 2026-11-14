@@ -12,6 +12,7 @@
 //
 // 只想验证「QQ 能通到服务」时加 --echo：不碰云端，收到什么就原样回。
 
+import https from 'node:https';
 import process from 'node:process';
 import { createQqBotApi } from '../src/qqbot/api.js';
 import { createQqBotGateway } from '../src/qqbot/gateway.js';
@@ -56,6 +57,52 @@ const backend = echo
       insecureTls: env.LIANYU_INSECURE_TLS === '1',
     });
 
+// QQ 图片给的是一个带 rkey 的限时 URL（multimedia.nt.qq.com.cn），我们这里只取字节，
+// 落库由后端负责（它要按对象存储的 key 走识图链路）。限制 5MB 与后端同一口径。
+const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+function fetchImageBytes(url, redirects = 0) {
+  return new Promise((resolve, reject) => {
+    if (redirects > 3) {
+      reject(new Error('too_many_redirects'));
+      return;
+    }
+    const req = https.get(url, { timeout: 10_000 }, (res) => {
+      const status = res.statusCode || 0;
+      if (status >= 300 && status < 400 && res.headers.location) {
+        res.resume();
+        resolve(fetchImageBytes(new URL(res.headers.location, url).toString(), redirects + 1));
+        return;
+      }
+      if (status !== 200) {
+        res.resume();
+        reject(new Error(`http_${status}`));
+        return;
+      }
+      const contentType = String(res.headers['content-type'] || 'image/jpeg').split(';')[0].trim();
+      const chunks = [];
+      let size = 0;
+      res.on('data', (chunk) => {
+        size += chunk.length;
+        if (size > IMAGE_MAX_BYTES) {
+          req.destroy(new Error('image_too_large'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      res.on('end', () => {
+        if (!chunks.length) {
+          reject(new Error('empty_body'));
+          return;
+        }
+        resolve({ base64: Buffer.concat(chunks).toString('base64'), contentType });
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+  });
+}
+
 const handler = echo
   ? {
       async handle(event) {
@@ -66,14 +113,30 @@ const handler = echo
         return { replied: true };
       },
     }
-  : createQqBotHandler({ api, backend, log });
+  : createQqBotHandler({ api, backend, log, fetchImage: fetchImageBytes });
+
+// 图片/表情包不在 content 里，而是走 attachments（content_type 区分）。线上排查时
+// 我们只想知道「这条消息到底带了什么」，所以打一行摘要；要看全貌设 QQ_LOG_RAW=1。
+function logAttachments(type, event) {
+  const data = event?.raw || {};
+  const attachments = data.attachments;
+  if (Array.isArray(attachments) && attachments.length > 0) {
+    const kinds = attachments.map((item) => item?.content_type || '?').join(',');
+    log(`[qqbot] 附件 ${type} content_type=${kinds} ${JSON.stringify(attachments).slice(0, 600)}`);
+  } else if (env.QQ_LOG_RAW === '1') {
+    log(`[qqbot] 原始事件 ${type} ${JSON.stringify(data).slice(0, 800)}`);
+  }
+}
 
 const gateway = createQqBotGateway({
   appId,
   apiBase,
   accessToken: () => current,
   onLog: log,
-  onEvent: (_type, event) => handler.handle(event),
+  onEvent: (type, event) => {
+    logAttachments(type, event);
+    return handler.handle(event);
+  },
 });
 
 gateway.start().catch((err) => log(`[qqbot] 启动失败：${err.message}`));
