@@ -1,17 +1,13 @@
 // QQ 官方机器人 → 予念 的一条链路（本地/云上都可跑）。
 //
-//   QQBOT WS 网关 → 事件（openid + 文本）→ bindings.json → 予念 /messages → 回复
+//   QQBOT WS 网关 → 事件（openid + 文本）→ /internal/qq/turn → 予念回合 → 回复
 //
 // 跑法（Windows PowerShell）：
 //   $env:QQ_APPID  = '<AppID>'
 //   $env:QQ_SECRET = '<AppSecret>'
-//   $env:LIANYU_API_ORIGIN = 'https://downloadlianyu.asia'
-//   $env:LIANYU_TOKEN = '<该用户的 lianyu-token>'
-//   $env:LIANYU_PROVIDER = 'dashscope'
-//   $env:LIANYU_MODEL = 'qwen-plus'
-//   $env:LIANYU_INSECURE_TLS = '1'
-//   $env:DATA_ROOT = 'local/qq-bot-data'
-//   $env:DEFAULT_CHARACTER_ID = '1002'
+//   $env:QQ_GATEWAY_SECRET = '<与服务端 lianyu.qq.gateway-secret 同一个值>'
+//   $env:LIANYU_API_ORIGIN = 'http://127.0.0.1:8080'   # 云上同机部署时直连
+//   $env:LIANYU_INSECURE_TLS = '0'
 //   node channel-gateway/scripts/qqbot-run.mjs
 //
 // 只想验证「QQ 能通到服务」时加 --echo：不碰云端，收到什么就原样回。
@@ -20,7 +16,7 @@ import process from 'node:process';
 import { createQqBotApi } from '../src/qqbot/api.js';
 import { createQqBotGateway } from '../src/qqbot/gateway.js';
 import { createQqBotHandler } from '../src/qqbot/handler.js';
-import { createLianyuClient } from '../src/lianyu.js';
+import { createBackendClient } from '../src/qqbot/backend.js';
 
 const env = process.env;
 const echo = process.argv.includes('--echo');
@@ -32,13 +28,12 @@ if (!appId || !clientSecret) {
   console.error('[qqbot] 缺 QQ_APPID / QQ_SECRET（开放平台 → 开发设置 → 查看手动连接参数）');
   process.exit(2);
 }
-if (!echo && (!env.LIANYU_TOKEN || !env.DEFAULT_CHARACTER_ID)) {
-  console.error('[qqbot] 缺 LIANYU_TOKEN 或 DEFAULT_CHARACTER_ID（只想验通道就加 --echo）');
+if (!echo && !env.QQ_GATEWAY_SECRET) {
+  console.error('[qqbot] 缺 QQ_GATEWAY_SECRET（要与后端 lianyu.qq.gateway-secret 一致；只想验通道就加 --echo）');
   process.exit(2);
 }
 
 const apiBase = env.QQ_API_BASE || 'https://api.bot.qq.com';
-const dataRoot = env.DATA_ROOT || 'local/qq-bot-data';
 const api = createQqBotApi({ appId, clientSecret, apiBase });
 
 // gateway 每次要 token 都读这个变量；定时刷新，长跑不重启。
@@ -53,12 +48,11 @@ setInterval(() => {
     .catch((err) => log(`[qqbot] 续 token 失败：${err.message}`));
 }, 10 * 60_000).unref();
 
-const lianyu = echo
+const backend = echo
   ? null
-  : createLianyuClient({
+  : createBackendClient({
       apiOrigin: env.LIANYU_API_ORIGIN || 'https://downloadlianyu.asia',
-      provider: env.LIANYU_PROVIDER || 'dashscope',
-      model: env.LIANYU_MODEL || 'qwen-plus',
+      secret: env.QQ_GATEWAY_SECRET,
       insecureTls: env.LIANYU_INSECURE_TLS === '1',
     });
 
@@ -72,14 +66,7 @@ const handler = echo
         return { replied: true };
       },
     }
-  : createQqBotHandler({
-      api,
-      lianyu,
-      token: env.LIANYU_TOKEN,
-      defaultCharacterId: Number(env.DEFAULT_CHARACTER_ID),
-      dataRoot,
-      log,
-    });
+  : createQqBotHandler({ api, backend, log });
 
 const gateway = createQqBotGateway({
   appId,
@@ -93,5 +80,5 @@ gateway.start().catch((err) => log(`[qqbot] 启动失败：${err.message}`));
 log(
   echo
     ? '[qqbot] echo 模式已启动：在 QQ 里给机器人发一句话，会原样回给你'
-    : `[qqbot] 已启动：appId=${appId} 角色=${env.DEFAULT_CHARACTER_ID} 绑定=${dataRoot}/bindings.json`,
+    : `[qqbot] 已启动：appId=${appId} 后端=${backend.origin}（无用户凭据，身份由后端解析）`,
 );

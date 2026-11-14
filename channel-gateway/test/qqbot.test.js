@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import crypto from 'node:crypto';
+import http from 'node:http';
 
 import { createQqBotApi } from '../src/qqbot/api.js';
 import {
@@ -14,12 +13,13 @@ import {
   stripMention,
 } from '../src/qqbot/gateway.js';
 import {
-  createQqBotHandler,
+  UNBOUND_HINT,
+  channelOf,
   conversationKey,
-  normalizeConversationId,
-  replyText,
+  createQqBotHandler,
+  looksLikeBindCode,
 } from '../src/qqbot/handler.js';
-import { createBindingStore } from '../src/binding.js';
+import { createBackendClient, signHeaders } from '../src/qqbot/backend.js';
 
 function jsonResponse(body, status = 200) {
   return {
@@ -28,6 +28,43 @@ function jsonResponse(body, status = 200) {
     json: async () => body,
     text: async () => JSON.stringify(body),
   };
+}
+
+// 起一个真的 HTTP 服务器：签名是「网关 ↔ Java」之间的契约，
+// 用假的 fetch 测不到 header 到底写成什么样。
+async function startServer(respond) {
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    const chunks = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8');
+      const body = raw ? JSON.parse(raw) : null;
+      requests.push({ url: req.url, method: req.method, headers: req.headers, body, raw });
+      const { status = 200, payload } = respond({ url: req.url, body, headers: req.headers, raw });
+      res.writeHead(status, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(payload));
+    });
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  return {
+    origin: `http://127.0.0.1:${port}`,
+    requests,
+    close: () => new Promise((resolve) => server.close(resolve)),
+  };
+}
+
+function verifySignature(secret, request) {
+  const bodyHash = crypto.createHash('sha256').update(request.raw ?? '').digest('hex');
+  const canonical = [
+    request.headers['x-qq-ts'],
+    request.headers['x-qq-nonce'],
+    request.method,
+    request.url,
+    bodyHash,
+  ].join('\n');
+  return crypto.createHmac('sha256', secret).update(canonical).digest('hex');
 }
 
 test('buildIdentify 用官方口径：token 前缀 QQBot、intents 1<<25、无分片 [0,1]', () => {
@@ -157,120 +194,157 @@ test('conversationKey：群聊按「群 + 成员」隔离，不同群友不共�
   );
 });
 
-test('handler：首条消息建绑定并回 C2C；重复 msg_id 只回一次', async () => {
-  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gw-qqbot-'));
+test('channelOf / looksLikeBindCode：渠道名与绑定码判定', () => {
+  assert.equal(channelOf({ kind: 'c2c' }), 'qqbot-c2c');
+  assert.equal(channelOf({ kind: 'group' }), 'qqbot-group');
+  assert.equal(looksLikeBindCode('123456'), true);
+  assert.equal(looksLikeBindCode(' 12 34 56 '), true);
+  assert.equal(looksLikeBindCode('12345'), false);
+  assert.equal(looksLikeBindCode('今天天气不错'), false);
+});
+
+test('signHeaders：口径固定为 HMAC(ts\\nnonce\\nMETHOD\\npath\\nsha256(body))', () => {
+  const secret = 's3cret';
+  const headers = signHeaders({
+    secret,
+    method: 'POST',
+    path: '/internal/qq/turn',
+    body: '{"a":1}',
+    timestamp: 1700000000000,
+    nonce: 'abcd',
+  });
+  const bodyHash = crypto.createHash('sha256').update('{"a":1}').digest('hex');
+  const canonical = `1700000000000\nabcd\nPOST\n/internal/qq/turn\n${bodyHash}`;
+  const expected = crypto.createHmac('sha256', secret).update(canonical).digest('hex');
+  assert.equal(headers['x-qq-sign'], expected);
+  assert.equal(headers['x-qq-ts'], '1700000000000');
+  assert.equal(headers['x-qq-nonce'], 'abcd');
+});
+
+test('backend.turn：打 /internal/qq/turn，签名可被服务端复算，返回 data.reply', async () => {
+  const server = await startServer(() => ({ payload: { code: 200, data: { reply: '在呢', conversationId: 953 } } }));
+  try {
+    const client = createBackendClient({ apiOrigin: server.origin, secret: 'k' });
+    const result = await client.turn({ channel: 'qqbot-c2c', externalId: 'U1', text: '在吗' });
+    assert.deepEqual(result, { reply: '在呢', conversationId: 953 });
+
+    const req = server.requests[0];
+    assert.equal(req.url, '/internal/qq/turn');
+    assert.deepEqual(req.body, { channel: 'qqbot-c2c', externalId: 'U1', text: '在吗' });
+    assert.equal(req.headers['x-qq-sign'], verifySignature('k', req));
+  } finally {
+    await server.close();
+  }
+});
+
+test('backend.turn：后端返回非 200 code 时抛出带 code 的错误（handler 靠它分辨未绑定）', async () => {
+  const server = await startServer(() => ({ payload: { code: 9003, message: '这个 QQ 号还没绑定角色' } }));
+  try {
+    const client = createBackendClient({ apiOrigin: server.origin, secret: 'k' });
+    await assert.rejects(() => client.turn({ channel: 'qqbot-c2c', externalId: 'U1', text: '在吗' }), (err) => {
+      assert.equal(err.code, 9003);
+      assert.match(err.message, /还没绑定角色/);
+      return true;
+    });
+  } finally {
+    await server.close();
+  }
+});
+
+test('handler：未绑定时回引导语，不发正文', async () => {
   const sent = [];
-  const seenConv = [];
+  const api = {
+    sendC2C: async (openid, content) => sent.push({ openid, content }),
+    sendGroup: async () => assert.fail('不该走群'),
+  };
+  const backend = {
+    turn: async () => {
+      const err = new Error('这个 QQ 号还没绑定角色');
+      err.code = 9003;
+      throw err;
+    },
+  };
+  const handler = createQqBotHandler({ api, backend });
+  assert.deepEqual(await handler.handle({ kind: 'c2c', openid: 'U1', text: '在吗', msgId: 'm1' }), {
+    unbound: true,
+  });
+  assert.equal(sent[0].content, UNBOUND_HINT);
+});
+
+test('handler：发 6 位绑定码就绑上，并回角色名；重复 msg_id 只回一次', async () => {
+  const sent = [];
+  const bindCalls = [];
   const api = {
     sendC2C: async (openid, content, opts) => sent.push({ openid, content, opts }),
     sendGroup: async () => assert.fail('不该走群'),
   };
-  const lianyu = {
-    // 真实接口返回的是会话对象，不是 id 字符串：这里照真实形状，防止又把对象塞进 URL。
-    ensureConversation: async (_t, characterId) => ({ id: 953, characterId, characterName: '小满' }),
-    // 真实 /messages 返回的是整条消息对象，正文在 content 上。
-    sendText: async (_t, conv, text) => {
-      seenConv.push(conv);
-      return { id: 147320, seq: 5, role: 'ASSISTANT', content: `收到：${text}`, tokens: 2792 };
+  const backend = {
+    bind: async (args) => {
+      bindCalls.push(args);
+      return { characterName: '小满', conversationId: 953 };
     },
+    turn: async () => assert.fail('绑定码不该走回合'),
   };
-  const handler = createQqBotHandler({ api, lianyu, token: 'tk', defaultCharacterId: 1002, dataRoot });
+  const handler = createQqBotHandler({ api, backend });
+  const event = { kind: 'c2c', openid: 'U1', text: '123456', msgId: 'm1' };
 
-  const event = { kind: 'c2c', openid: 'U1', text: '在吗', msgId: 'm1' };
-  assert.deepEqual(await handler.handle(event), { replied: true, chars: 5 });
-  assert.deepEqual(sent[0], { openid: 'U1', content: '收到：在吗', opts: { msgId: 'm1' } });
-  assert.deepEqual(seenConv, [953], 'sendText 必须拿到数字 id，不能是会话对象');
+  assert.deepEqual(await handler.handle(event), { bound: true });
+  assert.deepEqual(bindCalls[0], { channel: 'qqbot-c2c', externalId: 'U1', code: '123456' });
+  assert.match(sent[0].content, /小满/);
 
-  // 同一条消息被重投：不再回复
   assert.deepEqual(await handler.handle(event), { skipped: 'duplicate' });
   assert.equal(sent.length, 1);
-
-  // 绑定落盘：再次进来复用同一 conversationId
-  const binding = handler.bindings.get('qqbot-c2c', 'U1');
-  assert.equal(binding.characterId, 1002);
-  assert.equal(binding.conversationId, 953);
 });
 
-test('handler：会话对象缺 id 时明确报 conversation_id_missing，不发消息', async () => {
-  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gw-qqbot-'));
-  const api = {
-    sendC2C: async () => assert.fail('缺会话 id 时不该发消息'),
-    sendGroup: async () => assert.fail('不该走群'),
-  };
-  const lianyu = { ensureConversation: async () => ({ characterId: 1002 }), sendText: async () => 'x' };
-  const handler = createQqBotHandler({ api, lianyu, token: 'tk', defaultCharacterId: 1002, dataRoot });
-  await assert.rejects(
-    () => handler.handle({ kind: 'c2c', openid: 'U9', text: '在吗', msgId: 'm9' }),
-    /conversation_id_missing/,
-  );
-});
-
-test('handler：历史绑定里存成会话对象时自愈成数字 id，且不重新建会话', async () => {
-  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gw-qqbot-'));
-  createBindingStore(dataRoot).upsert('qqbot-c2c', 'U2', {
-    characterId: 1002,
-    conversationId: { id: 953, characterName: '小满', mode: 'SINGLE' },
-  });
-  const seenConv = [];
-  const api = { sendC2C: async () => {}, sendGroup: async () => assert.fail('不该走群') };
-  const lianyu = {
-    ensureConversation: async () => assert.fail('已有会话时不该再建'),
-    sendText: async (_t, conv) => {
-      seenConv.push(conv);
-      return '还记得';
-    },
-  };
-  const handler = createQqBotHandler({ api, lianyu, token: 'tk', defaultCharacterId: 1002, dataRoot });
-  await handler.handle({ kind: 'c2c', openid: 'U2', text: '在吗', msgId: 'm2' });
-
-  assert.deepEqual(seenConv, [953]);
-  assert.equal(handler.bindings.get('qqbot-c2c', 'U2').conversationId, 953);
-});
-
-test('replyText：从消息对象里取正文，绝不让 "[object Object]" 发到 QQ', () => {
-  assert.equal(replyText({ id: 1, content: '拔智齿。' }), '拔智齿。');
-  assert.equal(replyText('直接是字符串'), '直接是字符串');
-  assert.equal(replyText({ id: 1 }), '');
-  assert.equal(replyText(null), '');
-});
-
-test('handler：回复体缺 content 时按 empty_reply 跳过，不发 "[object Object]"', async () => {
-  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gw-qqbot-'));
-  const api = {
-    sendC2C: async () => assert.fail('没有正文就不该发消息'),
-    sendGroup: async () => assert.fail('不该走群'),
-  };
-  const lianyu = {
-    ensureConversation: async () => ({ id: 953 }),
-    sendText: async () => ({ id: 1, seq: 2 }),
-  };
-  const handler = createQqBotHandler({ api, lianyu, token: 'tk', defaultCharacterId: 1002, dataRoot });
-  assert.deepEqual(await handler.handle({ kind: 'c2c', openid: 'U3', text: '在吗', msgId: 'm3' }), {
-    skipped: 'empty_reply',
-  });
-});
-
-test('normalizeConversationId：数字/字符串/对象都能收敛，非法值给 null', () => {
-  assert.equal(normalizeConversationId(953), 953);
-  assert.equal(normalizeConversationId('953'), 953);
-  assert.equal(normalizeConversationId({ id: 953 }), 953);
-  assert.equal(normalizeConversationId({ characterId: 1002 }), null);
-  assert.equal(normalizeConversationId('conv-1002'), null);
-  assert.equal(normalizeConversationId(0), null);
-  assert.equal(normalizeConversationId(null), null);
-});
-
-test('handler：群聊回复走 sendGroup，且绑定键含群维度', async () => {
-  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gw-qqbot-'));
+test('handler：绑定码不对时不能吞掉这句话，继续按普通消息回', async () => {
   const sent = [];
+  const api = { sendC2C: async (_o, content) => sent.push(content), sendGroup: async () => {} };
+  const backend = {
+    bind: async () => {
+      const err = new Error('绑定码不对，或者已经被用过了');
+      err.code = 9001;
+      throw err;
+    },
+    turn: async () => ({ reply: '那就当你在跟我报数吧', conversationId: 953 }),
+  };
+  const handler = createQqBotHandler({ api, backend });
+  const result = await handler.handle({ kind: 'c2c', openid: 'U1', text: '000000', msgId: 'm2' });
+  assert.equal(result.replied, true);
+  assert.deepEqual(sent, ['那就当你在跟我报数吧']);
+});
+
+test('handler：群聊走 sendGroup，并把「群 + 成员」当外部身份', async () => {
+  const sent = [];
+  const seen = [];
   const api = {
     sendC2C: async () => assert.fail('不该走单聊'),
     sendGroup: async (gid, content, opts) => sent.push({ gid, content, opts }),
   };
-  const lianyu = { ensureConversation: async () => ({ id: 954 }), sendText: async () => '群里也在' };
-  const handler = createQqBotHandler({ api, lianyu, token: 'tk', defaultCharacterId: 1002, dataRoot });
+  const backend = {
+    turn: async (args) => {
+      seen.push(args);
+      return { reply: '群里也在', conversationId: 954 };
+    },
+  };
+  const handler = createQqBotHandler({ api, backend });
+  const result = await handler.handle({ kind: 'group', openid: 'M1', groupOpenid: 'G1', text: '大家好', msgId: 'gm1' });
 
-  await handler.handle({ kind: 'group', openid: 'M1', groupOpenid: 'G1', text: '大家好', msgId: 'gm1' });
+  assert.equal(result.replied, true);
+  assert.deepEqual(seen[0], { channel: 'qqbot-group', externalId: 'G1:M1', text: '大家好' });
   assert.deepEqual(sent[0], { gid: 'G1', content: '群里也在', opts: { msgId: 'gm1' } });
-  assert.equal(handler.bindings.get('qqbot-group', 'G1:M1').conversationId, 954);
+});
+
+test('handler：没配模型把后端的人话转给用户，而不是回兜底文案', async () => {
+  const sent = [];
+  const api = { sendC2C: async (_o, content) => sent.push(content), sendGroup: async () => {} };
+  const backend = {
+    turn: async () => {
+      const err = new Error('你还没在予念里配置文本模型，配好之后我就能在这儿回你了');
+      err.code = 4004;
+      throw err;
+    },
+  };
+  const handler = createQqBotHandler({ api, backend });
+  await handler.handle({ kind: 'c2c', openid: 'U1', text: '在吗', msgId: 'm3' });
+  assert.match(sent[0], /配置文本模型/);
 });

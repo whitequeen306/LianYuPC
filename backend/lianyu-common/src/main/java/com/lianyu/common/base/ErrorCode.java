@@ -53,6 +53,11 @@ public enum ErrorCode {
     // 群聊 8xxx
     GROUP_FULL(8001, "群聊成员已满"),
     NOT_GROUP_MEMBER(8002, "你不是该群聊成员"),
+
+    // QQ 渠道 9xxx
+    QQ_BIND_CODE_INVALID(9001, "绑定码不对，或者已经被用过了"),
+    QQ_BIND_CODE_EXPIRED(9002, "绑定码过期了，请在予念里重新生成一个"),
+    QQ_CHANNEL_NOT_BOUND(9003, "这个 QQ 号还没绑定角色"),
     ;
 
     private final int code;

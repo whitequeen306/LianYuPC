@@ -1,44 +1,33 @@
-// 事件 → 绑定 → 予念 → 回复。
+// 事件 → 予念 → 回复。
 //
 // 这里是整条链的接缝：QQ 那边给的是 openid（不是 QQ 号，也不跨 bot 通用），
-// 予念这边要的是 (userId, characterId)。bindings.json 就是这两者的桥。
-// 记忆、人设、关系全在予念库里，换入口不换记忆——所以这里刻意不存任何对话内容。
-
-import { createBindingStore } from '../binding.js';
+// 予念那边要的是 (userId, characterId)。绑定关系现在存在后端库里（qq_channel_binding），
+// 网关只负责「把 openid 和一句话交给后端，把答案发回 QQ」，不存凭据、不存对话。
 
 // 同一条消息可能因重连被重投，reply 一次就够。
 const DEDUPE_LIMIT = 200;
+
+// 未绑定时的引导语。用户第一次跟机器人说话都会看到这句，所以要能照着做。
+export const UNBOUND_HINT =
+  '这个 QQ 号还没绑定角色。打开予念 → 角色设置 →「在 QQ 里聊」→ 生成 6 位绑定码，发给我就行。';
+
+export const FALLBACK_REPLY = '（我这会儿有点接不上，稍后再发一次？）';
+
+export function channelOf(event) {
+  return event.kind === 'group' ? 'qqbot-group' : 'qqbot-c2c';
+}
 
 export function conversationKey(event) {
   // 群聊里每个人各聊各的：把群维度一起拼进去，避免两个群友共用一个角色会话。
   return event.kind === 'group' ? `${event.groupOpenid}:${event.openid}` : event.openid;
 }
 
-// /messages 的响应体是「整条消息」，回复正文在 content 上；字符串则原样返回。
-export function replyText(reply) {
-  if (reply == null) return '';
-  if (typeof reply === 'string') return reply;
-  if (typeof reply === 'object') return typeof reply.content === 'string' ? reply.content : '';
-  return String(reply);
+/** 像绑定码吗：6 位纯数字。用户复制粘贴带空格也算。 */
+export function looksLikeBindCode(text) {
+  return /^\d{6}$/.test(String(text || '').replace(/\s+/g, ''));
 }
 
-// 会话 id 有两种历史形态：数字（正确）与会话对象（早期把 ensureConversation 的返回值直接落了库）。// 这里统一收敛成数字，顺便把已经写坏的 bindings.json 自愈掉，不必让用户手工删文件。
-export function normalizeConversationId(value) {
-  const raw = value && typeof value === 'object' ? value.id : value;
-  const id = Number(raw);
-  return Number.isFinite(id) && id > 0 ? id : null;
-}
-
-export function createQqBotHandler({
-  api,
-  lianyu,
-  token,
-  defaultCharacterId,
-  dataRoot,
-  log = () => {},
-  maxReplyChars = 1500,
-}) {
-  const bindings = createBindingStore(dataRoot);
+export function createQqBotHandler({ api, backend, log = () => {}, maxReplyChars = 1500 }) {
   const seen = [];
   const seenSet = new Set();
 
@@ -54,44 +43,23 @@ export function createQqBotHandler({
     return true;
   }
 
-  async function resolveBinding(event) {
-    const channel = event.kind === 'group' ? 'qqbot-group' : 'qqbot-c2c';
-    const externalId = conversationKey(event);
-    const existing = bindings.get(channel, externalId);
-    const existingConversationId = normalizeConversationId(existing && existing.conversationId);
-    if (existing && existing.characterId && existingConversationId) {
-      // 老数据里可能存着会话对象：认出来就顺手改回数字，避免每条消息都走一次修复。
-      if (existing.conversationId !== existingConversationId) {
-        const healed = bindings.upsert(channel, externalId, { conversationId: existingConversationId });
-        return { channel, externalId, binding: healed };
-      }
-      return { channel, externalId, binding: existing };
+  async function send(event, content) {
+    const text = String(content || '').slice(0, maxReplyChars);
+    if (!text) return;
+    if (event.kind === 'group') {
+      await api.sendGroup(event.groupOpenid, text, { msgId: event.msgId });
+    } else {
+      await api.sendC2C(event.openid, text, { msgId: event.msgId });
     }
+  }
 
-    const characterId = (existing && existing.characterId) || defaultCharacterId;
-    if (!characterId) throw new Error('no_character_bound');
-
-    // 会话只有在第一次时才建；换入口（NapCat → 官方 bot）时沿用同一个 conversationId 更好，
-    // 但那需要用户手动迁移，这里按「同角色→已存在的 SINGLE 会话」复用。
-    // 注意 ensureConversation 返回的是会话对象（{id, characterId, …}），落库要的是数字 id：
-    // 直接把对象塞进 URL 会变成 /api/conversation/[object Object]/messages → 400。
-    let conversationId = existingConversationId;
-    if (!conversationId) {
-      const conversation = await lianyu.ensureConversation(token, characterId, 'QQ');
-      conversationId = normalizeConversationId(conversation);
-    }
-    if (!conversationId) throw new Error('conversation_id_missing');
-    const binding = bindings.upsert(channel, externalId, {
-      characterId,
-      conversationId,
-      userId: existing?.userId,
-    });
-    return { channel, externalId, binding };
+  async function attemptBind(channel, externalId, text) {
+    const code = String(text).replace(/\s+/g, '');
+    const result = await backend.bind({ channel, externalId, code });
+    return `绑好了。接下来你发的话，会由「${result.characterName}」回你。`;
   }
 
   return {
-    bindings,
-
     async handle(event) {
       if (!event || !event.openid) return { skipped: 'no_openid' };
       if (!firstTime(event.msgId)) return { skipped: 'duplicate' };
@@ -99,22 +67,48 @@ export function createQqBotHandler({
       const text = String(event.text || '').trim();
       if (!text) return { skipped: 'empty' };
 
-      const { binding } = await resolveBinding(event);
-      log(`[qqbot] ${event.kind} ${event.openid} → user=${binding.userId || '?'} char=${binding.characterId}`);
+      const channel = channelOf(event);
+      const externalId = conversationKey(event);
 
-      const reply = await lianyu.sendText(token, binding.conversationId, text);
-      // /messages 返回的是整条消息对象（{id, seq, content, tokens, …}），不是字符串；
-      // 直接 String() 会得到 "[object Object]" 并原样发到 QQ 里。
-      const content = String(replyText(reply) ?? '').slice(0, maxReplyChars);
-      if (!content) return { skipped: 'empty_reply' };
-
-      if (event.kind === 'group') {
-        await api.sendGroup(event.groupOpenid, content, { msgId: event.msgId });
-      } else {
-        await api.sendC2C(event.openid, content, { msgId: event.msgId });
+      // 6 位数字优先当绑定码：这样老用户也能靠再发一个码换角色。
+      // 绑定失败（码不对/过期）就让这句话继续走正常回合，不吞掉用户的话。
+      if (looksLikeBindCode(text)) {
+        try {
+          const confirmation = await attemptBind(channel, externalId, text);
+          await send(event, confirmation);
+          log(`[qqbot] 绑定成功 ${channel} ${externalId.slice(0, 4)}***`);
+          return { bound: true };
+        } catch (err) {
+          log(`[qqbot] 绑定失败（按普通消息继续）：${err.message}`);
+        }
       }
-      log(`[qqbot] 已回 ${content.length} 字（conv=${binding.conversationId}）`);
-      return { replied: true, chars: content.length };
+
+      try {
+        const result = await backend.turn({ channel, externalId, text });
+        const reply = String(result.reply || '').trim();
+        if (!reply) {
+          await send(event, FALLBACK_REPLY);
+          return { skipped: 'empty_reply' };
+        }
+        await send(event, reply);
+        log(`[qqbot] 已回 ${reply.length} 字（conv=${result.conversationId}）`);
+        return { replied: true, chars: reply.length };
+      } catch (err) {
+        if (err.code === 9003) {
+          await send(event, UNBOUND_HINT);
+          log(`[qqbot] 未绑定：${channel} ${externalId.slice(0, 4)}***`);
+          return { unbound: true };
+        }
+        // 后端把「没配模型」这类人话放在 message 里，直接转给用户比吞掉有用。
+        if (err.code === 4004 || err.code === 4001) {
+          await send(event, err.message);
+          log(`[qqbot] 后端拒绝：${err.code} ${err.message}`);
+          return { backendError: err.code };
+        }
+        await send(event, FALLBACK_REPLY);
+        log(`[qqbot] 回合失败：${err.code || ''} ${err.message}`);
+        return { failed: true };
+      }
     },
   };
 }
