@@ -13,6 +13,12 @@
 **有效**的做法：把 6 帧作为 6 张独立的图按顺序一起送，模型直接答「红色圆形从左向右
 水平移动，第 1 帧在左、第 6 帧到右侧」。所以这里拆帧、不再拼条。
 
+**怎么判断「会动」**：不看 content_type、不看魔数，直接问图片自己有几帧（Pillow 的
+`n_frames`）。GIF / APNG / 动画 WebP 它都答得出来，静态图回 1。原先按魔数只认 image/gif，
+遇到 APNG、动画 WebP 就会当成静态图、又退回「只看到第一帧」。
+`n_frames`）。GIF / APNG / 动画 WebP 它都答得出来，静态图回 1。原先按魔数只认 image/gif，
+遇到 APNG、动画 WebP 就会当成静态图、又退回「只看到第一帧」。
+
 其它格式（静态图文）原样透传，不重建、不加说明，省 token。
 """
 
@@ -72,7 +78,7 @@ def sniff_mime(data: bytes) -> str:
 def split_frames(
     data: bytes, *, max_frames: int = MAX_FRAMES, max_side: int = MAX_FRAME_SIDE
 ) -> list[bytes] | None:
-    """多帧 GIF → N 张独立 PNG。单帧或解码失败返回 None（调用方原样透传）。"""
+    """多帧图（GIF / APNG / 动画 WebP）→ N 张独立 PNG。单帧或解码失败返回 None（调用方原样透传）。"""
     try:
         from PIL import Image  # 延迟导入：没有 Pillow 时整条链路仍能跑静态图
     except ImportError:  # pragma: no cover - 依赖缺失时降级
@@ -101,23 +107,21 @@ def split_frames(
 
 
 def prepare_vision_frames(raw_base64: str) -> VisionFrames:
-    """给视觉模型准备图：多帧 GIF 拆成 N 张；其余原样透传。永不抛异常。"""
-    single = VisionFrames(images=(VisionImage(base64=raw_base64),))
+    """给视觉模型准备图：多帧图拆成 N 张；其余原样透传。永不抛异常。"""
     data = _decode(raw_base64)
     if not data:
-        return single
+        return VisionFrames(images=(VisionImage(base64=raw_base64),))
     mime = sniff_mime(data)
-    if mime != "image/gif":
-        return VisionFrames(images=(VisionImage(base64=raw_base64, mime=mime),))
+    # 不信 mime、也不信 content_type：直接问图片有几帧（GIF / APNG / 动画 WebP 都覆盖）
     frames = split_frames(data)
-    if not frames:
-        return VisionFrames(images=(VisionImage(base64=raw_base64, mime=mime),))
-    return VisionFrames(
-        images=tuple(
-            VisionImage(base64=base64.b64encode(png).decode()) for png in frames
-        ),
-        hint=_ANIMATION_HINT.format(n=len(frames)),
-    )
+    if frames:
+        return VisionFrames(
+            images=tuple(
+                VisionImage(base64=base64.b64encode(png).decode()) for png in frames
+            ),
+            hint=_ANIMATION_HINT.format(n=len(frames)),
+        )
+    return VisionFrames(images=(VisionImage(base64=raw_base64, mime=mime),))
 
 
 __all__ = [

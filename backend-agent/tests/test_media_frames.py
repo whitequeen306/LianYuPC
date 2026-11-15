@@ -72,3 +72,46 @@ def test_prepare_never_raises_on_garbage(bad):
     prepared = prepare_vision_frames(bad)
     assert len(prepared.images) == 1
     assert prepared.hint is None
+
+
+def _animated(fmt: str, frames: int = 5) -> bytes:
+    imgs = []
+    for i in range(frames):
+        img = Image.new("RGB", (80, 40), (255, 255, 255))
+        d = ImageDraw.Draw(img)
+        x = 5 + i * 12
+        d.ellipse((x, 10, x + 15, 25), fill=(20, 90, 200))
+        imgs.append(img)
+    buf = io.BytesIO()
+    imgs[0].save(
+        buf,
+        format=fmt,
+        save_all=True,
+        append_images=imgs[1:],
+        duration=100,
+        loop=0,
+    )
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize("fmt,mime", [("PNG", "image/png"), ("WEBP", "image/webp")])
+def test_prepare_splits_apng_and_animated_webp(fmt, mime):
+    """不信 mime、问帧数：APNG 与动画 WebP 也必须被拆开，否则又会「只看到第一帧」。"""
+    raw = _animated(fmt)
+    assert sniff_mime(raw) == mime
+    if getattr(Image.open(io.BytesIO(raw)), "n_frames", 1) <= 1:
+        pytest.skip(f"Pillow 的 {fmt} 编码器不支持动画")
+
+    prepared = prepare_vision_frames(base64.b64encode(raw).decode())
+    assert len(prepared.images) == 5
+    assert all(img.mime == "image/png" for img in prepared.images)
+    assert prepared.hint and "5 张" in prepared.hint
+
+
+def test_prepare_static_png_stays_single():
+    buf = io.BytesIO()
+    Image.new("RGB", (16, 16), (1, 2, 3)).save(buf, format="PNG")
+    prepared = prepare_vision_frames(base64.b64encode(buf.getvalue()).decode())
+    assert len(prepared.images) == 1
+    assert prepared.images[0].mime == "image/png"
+    assert prepared.hint is None
