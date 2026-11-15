@@ -139,7 +139,32 @@ docker run -d --name lianyu-qqbot --restart unless-stopped --network host \
 | 改完文件整片乱码 / 提交标题带 `﻿` | PowerShell 5.1 按 GBK 读 UTF-8，`Set-Content` 又加 BOM | 文本一律用编辑器工具改，提交信息文件也用无 BOM 方式写 |
 | 消息时有时无 | 同一个 bot 起了两个网关实例抢事件 | 切环境前先杀旧进程/旧容器 |
 
-## 9. 还没做的
+## 9. 表情包：先说话，再甩一张图
+
+角色能在回完文字后补发一张图。三个环节各归其位：
+
+| 环节 | 在哪 | 做什么 |
+|---|---|---|
+| 素材是事实 | `character_sticker` 表 + `StickerService.candidatesFor()` | 按角色取候选（≤20 张），并附上图片字节（≤8 张、单张 ≤200KB） |
+| 发不发、发哪张 | Python `app/sticker_review.py` | 让视觉模型看着候选图 + 当前两句对话，选一张或者一张都不发 |
+| 落库与投递 | `ConversationService.saveAssistantReplies()`（图挂最后一段）+ 网关 `sendImageIfAny()` | 图只跟着最后一句走，QQ 侧当普通图片发 |
+
+选择顺序（`choose_sticker()`）：
+
+1. 用户明确要图（「发个表情包」「来张图」）→ 记 `explicit`，**即使模型说别发也照样发一张**；
+2. 视觉复核给出结论 → 按结论发/不发；
+3. 复核不可用（没配视觉模型、模型报错、候选没带字节）→ 退回情绪词表（`app/stickers.py`）。
+
+开关：`LIANYU_AGENT_STICKER_REVIEW_ENABLED` / `_MAX_CANDIDATES` / `_MAX_TOKENS`（生产三个都在 agent 容器里）。
+日志：每轮一行 `sticker.chosen source=review|keywords url=… explicit=… reason=…`，或 `sticker.skipped … reason=…`。
+
+已知限制：
+
+- 每轮最多 1 张，且与文字共用「同一用户消息最多回 4 条」的额度；
+- 流式回合（桌面端聊天）目前不落 sticker，只有非流式回合（QQ 渠道）会把图存进 `message.image_url`；
+- 图必须公网可达：网关会用后端域名把 `/api/public/files/...` 补成绝对 URL，再走官方「先上传换 file_info」两步发图。
+
+## 10. 还没做的
 
 1. **主动消息**：用户没说话时角色先开口（官方叫「互动召回」，需申请额度，且用户可在 QQ 里关掉）。
 2. **一个 QQ 绑多个角色 / 会话内切换**：现在一个外部身份只对应一个角色。
