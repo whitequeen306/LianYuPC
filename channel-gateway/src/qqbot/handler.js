@@ -58,10 +58,20 @@ export function createQqBotHandler({ api, backend, log = () => {}, maxReplyChars
   /**
    * 角色这一轮如果带了图，就再发一条富媒体消息（msg_seq=2，文字占 1）。
    * 图发不出去不该影响文字已经送达的事实，所以这里只记日志。
+   *
+   * 后端给的是站内路径（`/api/public/files/...`），腾讯要的是绝对 URL，
+   * 这里用网关已知的后端地址补全——不把域名写死在任何一端的配置里。
    */
   async function sendImageIfAny(event, imageUrl) {
-    const url = String(imageUrl || '').trim();
-    if (!url) return;
+    const raw = String(imageUrl || '').trim();
+    if (!raw) return;
+    const url = /^https?:\/\//i.test(raw)
+      ? raw
+      : `${String(backend.origin || '').replace(/\/+$/, '')}${raw.startsWith('/') ? '' : '/'}${raw}`;
+    if (!/^https?:\/\//i.test(url)) {
+      log(`[qqbot] 图片地址不可用，跳过：${raw.slice(0, 80)}`);
+      return;
+    }
     try {
       if (event.kind === 'group') {
         await api.sendGroupImage(event.groupOpenid, url, { msgId: event.msgId, msgSeq: 2 });

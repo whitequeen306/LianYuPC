@@ -462,6 +462,10 @@ class ChatTurnInspectBody(BaseModel):
     extra_system_suffix: str = Field(default="", alias="extraSystemSuffix")
     prefetch_real_world: bool = Field(default=True, alias="prefetchRealWorld")
     expected_language: str | None = Field(default=None, alias="expectedLanguage")
+    # 角色自带的表情包候选：有没有图是 Java 的事实（character_sticker 表），
+    # 挑哪张是这边的判断（见 app/stickers.py），两边都不越界。
+    stickers: list[dict[str, Any]] = []
+    last_sticker_url: str | None = Field(default=None, alias="lastStickerUrl")
     provider: str | None = None
     base_url: str = Field(default="", alias="baseUrl")
     api_key: str = Field(default="", alias="apiKey")
@@ -520,6 +524,14 @@ async def chat_turn_inspect(
         "content": state.get("content") or "",
     }
     payload.update(_usage_of(state))
+    if body.invoke:
+        from app.stickers import pick_sticker
+
+        sticker = pick_sticker(
+            payload["content"], body.stickers, last_url=body.last_sticker_url
+        )
+        if sticker:
+            payload["sticker"] = sticker
     return payload
 
 

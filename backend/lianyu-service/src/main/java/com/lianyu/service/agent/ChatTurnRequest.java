@@ -59,6 +59,12 @@ public class ChatTurnRequest {
     String extraSystemSuffix;
     boolean prefetchRealWorld;
 
+    /**
+     * 角色自带的表情包候选（url / emotion / tags）。**只是事实**：
+     * 哪些图存在归 Java，挑哪张归 Python（见 {@code app/stickers.py}）。
+     */
+    List<Map<String, String>> stickers;
+
     // ── 模型与凭据（由 web 侧适配器解析 vault 后填入） ──
     String provider;
     String model;

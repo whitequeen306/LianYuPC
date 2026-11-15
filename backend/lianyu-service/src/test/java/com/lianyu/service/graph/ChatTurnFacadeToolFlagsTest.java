@@ -67,7 +67,7 @@ class ChatTurnFacadeToolFlagsTest {
         when(behaviorResolver.resolve(any())).thenReturn(
                 new CharacterChatBehavior(3, true, 60, 0.5, 55, 65, "gentle"));
         when(chatTurnPort.invoke(any())).thenAnswer((inv) -> new ChatTurnOutcome(
-                "sys", List.of(), "好呀", 10, 5, 15));
+                "sys", List.of(), "好呀", 10, 5, 15, null));
     }
 
     /** 老角色 settings 里可能还残留 desktopEnabled=true（列保留、不再读），不该影响任何开关。 */

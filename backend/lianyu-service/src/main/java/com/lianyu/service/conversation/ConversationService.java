@@ -88,6 +88,12 @@ public class ConversationService {
     private final OutputLanguageService outputLanguageService;
     private final CharacterStateService characterStateService;
     private final RelationshipStateService relationshipStateService;
+    /**
+     * 角色表情包候选（可为 null：单测直接 new 这个服务时不关心表情包）。
+     * 用字段注入而不是构造参数，避免动 {@code @RequiredArgsConstructor} 的既有签名。
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lianyu.service.sticker.StickerService stickerService;
     private final ProactiveUnrepliedThrottle proactiveUnrepliedThrottle;
     private final TimeTool timeTool;
     private final SessionSummaryService sessionSummaryService;
@@ -292,6 +298,7 @@ public class ConversationService {
                 .imageUrl(hasImage ? turn.userMsg().getImageUrl() : null)
                 .currentUserMsgId(turn.userMsg().getId())
                 .historyMessages(history)
+                .stickers(stickerCandidates(character))
                 .streaming(false)
                 .build());
 
@@ -301,7 +308,8 @@ public class ConversationService {
         }
 
         List<MessageResponse> replies = saveAssistantReplies(
-                conversationId, character, chatResult.getContent(), chatResult.getTotalTokens());
+                conversationId, character, chatResult.getContent(), chatResult.getTotalTokens(),
+                chatResult.getStickerUrl());
         relationshipStateService.recordAssistantTurn(userId, character.getId(), conversationId, replies);
 
         memoryWriter.enqueueSummary(conversationId, character.getId(), userId,
@@ -425,6 +433,7 @@ public class ConversationService {
                 .imageUrl(hasImage ? turn.userMsg().getImageUrl() : null)
                 .currentUserMsgId(turn.userMsg().getId())
                 .historyMessages(history)
+                .stickers(stickerCandidates(character))
                 .streaming(true)
                 .build(), callback);
     }
@@ -683,9 +692,21 @@ public class ConversationService {
                                                        Character character,
                                                        String fullContent,
                                                        Integer tokens) {
+        return saveAssistantReplies(conversationId, character, fullContent, tokens, null);
+    }
+
+    /**
+     * @param stickerUrl 本轮模型侧挑中的表情包（公网路径）：挂在**最后一条**回复上，
+     *                   这样它排在文字后面，气泡顺序与发送顺序一致。
+     */
+    private List<MessageResponse> saveAssistantReplies(Long conversationId,
+                                                       Character character,
+                                                       String fullContent,
+                                                       Integer tokens,
+                                                       String stickerUrl) {
         CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
         return saveAssistantRepliesLimited(conversationId, character, fullContent, tokens,
-                behavior.maxRepliesPerTurn());
+                behavior.maxRepliesPerTurn(), stickerUrl);
     }
 
     List<MessageResponse> saveAssistantRepliesLimited(Long conversationId,
@@ -693,6 +714,24 @@ public class ConversationService {
                                                               String fullContent,
                                                               Integer tokens,
                                                               int maxPiecesForSplit) {
+        return saveAssistantRepliesLimited(conversationId, character, fullContent, tokens,
+                maxPiecesForSplit, null);
+    }
+
+    /** 表情包候选：图归 Java，挑哪张归 Python；没有表情包服务时就是空列表。 */
+    private List<Map<String, String>> stickerCandidates(Character character) {
+        if (stickerService == null || character == null) {
+            return List.of();
+        }
+        return stickerService.candidatesFor(character.getId());
+    }
+
+    List<MessageResponse> saveAssistantRepliesLimited(Long conversationId,
+                                                              Character character,
+                                                              String fullContent,
+                                                              Integer tokens,
+                                                              int maxPiecesForSplit,
+                                                              String stickerUrl) {
         CharacterChatBehavior behavior = chatBehaviorResolver.resolve(character);
         int capped = Math.max(1, Math.min(Math.max(1, maxPiecesForSplit), behavior.maxRepliesPerTurn()));
         AssistantReplyService.ProcessedReply processed = assistantReplyService.process(fullContent, capped);
@@ -724,6 +763,9 @@ public class ConversationService {
             assistantMsg.setCharacterId(characterId);
             assistantMsg.setContent(cleanedPieces.get(i));
             assistantMsg.setTokens(i == 0 ? tokens : null);
+            if (i == cleanedPieces.size() - 1 && stickerUrl != null && !stickerUrl.isBlank()) {
+                assistantMsg.setImageUrl(stickerUrl);
+            }
             messageMapper.insert(assistantMsg);
             saved.add(toMessageResponse(assistantMsg));
         }

@@ -33,6 +33,8 @@ public class ChatTurnCommand {
     /** 若非空则跳过内部 history→MessageDto 转换，直接使用。 */
     List<MessageDto> preparedMessages;
     String extraSystemSuffix;
+    /** 角色自带的表情包候选（url/emotion/tags），由 Python 侧挑一张随回复带回。 */
+    List<Map<String, String>> stickers;
     ChatTurnGroupExtras groupExtras;
     boolean streaming;
     StreamTokenConsumer streamSink;

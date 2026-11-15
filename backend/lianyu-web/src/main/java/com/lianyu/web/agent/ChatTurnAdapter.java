@@ -125,7 +125,8 @@ public class ChatTurnAdapter implements ChatTurnPort {
                 root.path("content").asText(""),
                 intOrNull(root.path("promptTokens")),
                 intOrNull(root.path("completionTokens")),
-                intOrNull(root.path("totalTokens")));
+                intOrNull(root.path("totalTokens")),
+                root.path("sticker").asText(""));
     }
 
     private static Integer intOrNull(JsonNode node) {
@@ -192,6 +193,8 @@ public class ChatTurnAdapter implements ChatTurnPort {
         body.put("extraSystemSuffix", nullToEmpty(request.getExtraSystemSuffix()));
         body.put("prefetchRealWorld", request.isPrefetchRealWorld());
         body.put("expectedLanguage", request.getExpectedLanguage());
+        // 表情包候选：图是 Java 的事实（character_sticker），挑哪张由 Python 决定
+        body.put("stickers", request.getStickers() == null ? List.of() : request.getStickers());
         body.put("provider", request.getProvider());
         body.put("baseUrl", credentials.baseUrl());
         body.put("apiKey", credentials.apiKey());

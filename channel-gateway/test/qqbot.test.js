@@ -334,6 +334,25 @@ test('handler：群聊走 sendGroup，并把「群 + 成员」当外部身份', 
   assert.deepEqual(sent[0], { gid: 'G1', content: '群里也在', opts: { msgId: 'gm1' } });
 });
 
+test('handler：站内表情包路径补成绝对 URL 后再交给 QQ', async () => {
+  const images = [];
+  const api = {
+    sendC2C: async () => {},
+    sendGroup: async () => {},
+    sendC2CImage: async (openid, url, opts) => images.push({ openid, url, opts }),
+  };
+  const backend = {
+    origin: 'https://downloadlianyu.asia',
+    turn: async () => ({ reply: '给你一个', conversationId: 953, imageUrl: '/api/public/files/stickers/happy.png' }),
+  };
+  const handler = createQqBotHandler({ api, backend });
+  await handler.handle({ kind: 'c2c', openid: 'U1', text: '开心', msgId: 'img1' });
+
+  assert.equal(images.length, 1);
+  assert.equal(images[0].url, 'https://downloadlianyu.asia/api/public/files/stickers/happy.png');
+  assert.equal(images[0].opts.msgSeq, 2);
+});
+
 test('handler：没配模型把后端的人话转给用户，而不是回兜底文案', async () => {
   const sent = [];
   const api = { sendC2C: async (_o, content) => sent.push(content), sendGroup: async () => {} };

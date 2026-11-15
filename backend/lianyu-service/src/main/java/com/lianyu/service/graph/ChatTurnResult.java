@@ -13,6 +13,8 @@ public class ChatTurnResult {
     Integer completionTokens;
     Integer totalTokens;
     String imageDescription;
+    /** 本轮模型侧挑中的表情包（公网路径）；非空时落到 ASSISTANT 消息的 image_url。 */
+    String stickerUrl;
 
     public ChatResult toChatResult() {
         return ChatResult.builder()

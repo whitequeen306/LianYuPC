@@ -78,6 +78,7 @@ public class ChatTurnFacade {
                 .promptTokens(outcome.promptTokens())
                 .completionTokens(outcome.completionTokens())
                 .totalTokens(outcome.totalTokens())
+                .stickerUrl(outcome.sticker())
                 .build();
     }
 
@@ -309,6 +310,7 @@ public class ChatTurnFacade {
                 .groupOtherCharacters(groupExtras == null ? "" : groupExtras.otherCharactersLine())
                 .groupMention(groupExtras == null ? "" : groupExtras.mentionCtx())
                 .extraSystemSuffix(command.getExtraSystemSuffix())
+                .stickers(command.getStickers())
                 .prefetchRealWorld(true)
                 .provider(command.getProvider())
                 .model(command.getModel())
