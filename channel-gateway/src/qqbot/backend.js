@@ -114,7 +114,11 @@ export function createBackendClient({
         body.imageContentType = imageContentType || 'image/jpeg';
       }
       const data = await call('/internal/qq/turn', body);
-      return { reply: String((data && data.reply) || ''), conversationId: data && data.conversationId };
+      return {
+        reply: String((data && data.reply) || ''),
+        conversationId: data && data.conversationId,
+        imageUrl: data && data.imageUrl,
+      };
     },
 
     /** 用绑定码把外部身份绑到角色上。 */

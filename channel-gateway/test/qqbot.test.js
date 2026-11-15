@@ -221,12 +221,14 @@ test('signHeaders：口径固定为 HMAC(ts\\nnonce\\nMETHOD\\npath\\nsha256(bod
   assert.equal(headers['x-qq-nonce'], 'abcd');
 });
 
-test('backend.turn：打 /internal/qq/turn，签名可被服务端复算，返回 data.reply', async () => {
-  const server = await startServer(() => ({ payload: { code: 200, data: { reply: '在呢', conversationId: 953 } } }));
+test('backend.turn：签名可被复算，并把本轮表情包路径一并带回网关', async () => {
+  const server = await startServer(() => ({
+    payload: { code: 200, data: { reply: '在呢', conversationId: 953, imageUrl: '/api/public/files/chat-images/s.png' } },
+  }));
   try {
     const client = createBackendClient({ apiOrigin: server.origin, secret: 'k' });
     const result = await client.turn({ channel: 'qqbot-c2c', externalId: 'U1', text: '在吗' });
-    assert.deepEqual(result, { reply: '在呢', conversationId: 953 });
+    assert.deepEqual(result, { reply: '在呢', conversationId: 953, imageUrl: '/api/public/files/chat-images/s.png' });
 
     const req = server.requests[0];
     assert.equal(req.url, '/internal/qq/turn');

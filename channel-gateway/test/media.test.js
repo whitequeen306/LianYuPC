@@ -145,7 +145,7 @@ test('handler：回复里带图就再发一条富媒体（msg_seq=2），失败�
   assert.equal(result.replied, true);
 });
 
-test('api.sendC2CImage：先换 file_info 再发 msg_type=7', async () => {
+test('api.sendC2CImage：站内自签证书不走 URL 上传，图片字节直接转 file_info', async () => {
   const calls = [];
   const api = createQqBotApi({
     appId: '1',
@@ -160,10 +160,16 @@ test('api.sendC2CImage：先换 file_info 再发 msg_type=7', async () => {
     },
   });
 
-  await api.sendC2CImage('u1', 'https://cdn/x.png', { msgId: 'm0' });
+  await api.sendC2CImage('u1', { data: Buffer.from('png bytes'), fileName: 'happy.png' }, { msgId: 'm0' });
   const upload = calls.find((c) => c.url.includes('/v2/users/u1/files'));
   const message = calls.find((c) => c.url.includes('/v2/users/u1/messages'));
-  assert.deepEqual(upload.body, { file_type: 1, url: 'https://cdn/x.png', srv_send_msg: false });
+  assert.deepEqual(upload.body, {
+    file_type: 1,
+    file_name: 'happy.png',
+    file_data: Buffer.from('png bytes').toString('base64'),
+    srv_send_msg: false,
+  });
+  assert.equal(upload.body.url, undefined);
   assert.equal(message.body.msg_type, 7);
   assert.deepEqual(message.body.media, { file_info: 'FI' });
   assert.equal(message.body.msg_id, 'm0');

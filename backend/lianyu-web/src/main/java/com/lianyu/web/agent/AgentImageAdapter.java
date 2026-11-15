@@ -76,7 +76,8 @@ public class AgentImageAdapter implements AgentImagePort {
                 intOrNull(root, "promptTokens"),
                 intOrNull(root, "completionTokens"),
                 intOrNull(root, "totalTokens"),
-                root.path("imageDescription").asText(""));
+                root.path("imageDescription").asText(""),
+                root.path("sticker").asText(""));
     }
 
     @Override

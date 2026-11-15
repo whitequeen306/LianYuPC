@@ -129,6 +129,7 @@ public class ChatTurnFacade {
                 .completionTokens(result.completionTokens())
                 .totalTokens(result.totalTokens())
                 .imageDescription(result.imageDescription())
+                .stickerUrl(result.sticker())
                 .build();
     }
 

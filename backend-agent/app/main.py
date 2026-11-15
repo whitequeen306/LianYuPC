@@ -854,6 +854,9 @@ class ChatImageBody(BaseModel):
     provider: str | None = None
     temperature: float = 0.8
     max_tokens: int = 1024
+    # 和文字回合同一口径：候选是 Java 的事实，是否发、发哪张由这里挑。
+    stickers: list[dict[str, Any]] = []
+    last_sticker_url: str | None = Field(default=None, alias="lastStickerUrl")
 
     model_config = {"populate_by_name": True}
 
@@ -875,7 +878,7 @@ async def chat_image(
     if not vision_base or not vision_key:
         return {"error": "no_vision_credentials"}
 
-    return await chat_with_image(
+    result = await chat_with_image(
         get_gateway(),
         image_png_base64=body.image_png_base64,
         vision_base_url=vision_base,
@@ -890,6 +893,13 @@ async def chat_image(
         max_tokens=body.max_tokens,
         provider=body.provider,
     )
+    if "content" in result and body.stickers:
+        from app.stickers import pick_sticker
+
+        sticker = pick_sticker(result["content"], body.stickers, last_url=body.last_sticker_url)
+        if sticker:
+            result["sticker"] = sticker
+    return result
 
 
 # ─────────────────────────── 通用阻塞文本回合 ───────────────────────────

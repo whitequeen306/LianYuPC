@@ -92,7 +92,7 @@ public class AgentBlockingAdapter implements AgentBlockingPort {
             Integer completionTokens = intOrNull(root, "completionTokens");
             Integer totalTokens = intOrNull(root, "totalTokens");
             return new com.lianyu.service.agent.AgentChatResult(
-                    content, promptTokens, completionTokens, totalTokens, null);
+                    content, promptTokens, completionTokens, totalTokens, null, null);
         } catch (Exception e) {
             log.warn("Agent blocking failed ({}), fallback to Java", e.toString());
             return null;

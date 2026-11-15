@@ -9,6 +9,9 @@
 //
 // 腾讯在这条链上只是快递员：内容从哪来、记不记得用户，全在我们自己的库里。
 
+import http from 'node:http';
+import https from 'node:https';
+
 const DEFAULT_API_BASE = 'https://api.bot.qq.com';
 
 // 官方：有效期 7200s；到期前 60s 内重新获取会拿到新值、旧值仍有 60s 缓冲。
@@ -99,26 +102,71 @@ export function createQqBotApi({ appId, clientSecret, apiBase = DEFAULT_API_BASE
       return post(`/v2/groups/${encodeURIComponent(groupOpenid)}/messages`, payload);
     },
 
-    // 富媒体（图片）：官方要两步——先把公网 URL 换成 file_info，再发 msg_type=7。
-    // URL 上传让腾讯自己去下载转存，我们不必实现分片；file_info 有 ttl，拿到就用。
-    async sendC2CImage(openid, url, { msgId, msgSeq = 2, eventId } = {}) {
-      const fileInfo = await uploadImage(`/v2/users/${encodeURIComponent(openid)}/files`, url);
-      return sendMedia(`/v2/users/${encodeURIComponent(openid)}/messages`, fileInfo, { msgId, msgSeq, eventId });
+    // 富媒体（图片）：官方要两步——先把图字节换成 file_info，再发 msg_type=7。
+    // URL 上传在自签 HTTPS 的站内图上会失败（实测 40093007），所以站内图先下载再直传。
+    // file_info 有 ttl，拿到就用。
+    async sendC2CImage(openid, source, options = {}) {
+      const fileInfo = await uploadImage(`/v2/users/${encodeURIComponent(openid)}/files`, source);
+      return sendMedia(`/v2/users/${encodeURIComponent(openid)}/messages`, fileInfo, options);
     },
 
-    async sendGroupImage(groupOpenid, url, { msgId, msgSeq = 2, eventId } = {}) {
-      const fileInfo = await uploadImage(`/v2/groups/${encodeURIComponent(groupOpenid)}/files`, url);
-      return sendMedia(`/v2/groups/${encodeURIComponent(groupOpenid)}/messages`, fileInfo, { msgId, msgSeq, eventId });
+    async sendGroupImage(groupOpenid, source, options = {}) {
+      const fileInfo = await uploadImage(`/v2/groups/${encodeURIComponent(groupOpenid)}/files`, source);
+      return sendMedia(`/v2/groups/${encodeURIComponent(groupOpenid)}/messages`, fileInfo, options);
     },
   };
 
-  /** 图片 URL → file_info。单聊/群聊端点不互通，所以路径由调用方给。 */
-  async function uploadImage(path, url) {
-    const body = await post(path, { file_type: 1, url, srv_send_msg: false });
+  /**
+   * 图片字节 → file_info。腾讯 URL 上传会下载我们的自签 HTTPS 图片失败
+   * （实测 40093007），而同一域名的接口在网关里本来就不信这张证书。
+   * 因此把「下载我自己的图」留在这里，再用官方二进制直传上传（≤5MB）。
+   * 单聊/群聊端点不互通，所以路径由调用方给。
+   */
+  async function uploadImage(path, source) {
+    const { data, fileName } = source && typeof source === 'object'
+      ? source
+      : await downloadImage(String(source));
+    const body = await post(path, {
+      file_type: 1,
+      file_name: fileName || 'sticker.png',
+      file_data: Buffer.isBuffer(data) ? data.toString('base64') : String(data || ''),
+      srv_send_msg: false,
+    });
     // 官方示例里 file_info 就在顶层；有的实现包在 data 里，两种都吃。
     const fileInfo = (body && body.file_info) || (body && body.data && body.data.file_info) || '';
     if (!fileInfo) throw new Error('image_upload_no_file_info');
     return fileInfo;
+  }
+
+  /** 只下载站内公开图片；不接收 QQ 那边的地址，避免把它变成新的外部下载面。 */
+  function downloadImage(url) {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return Promise.reject(new Error('image_url_not_http'));
+    }
+    const transport = parsed.protocol === 'https:' ? https : http;
+    return new Promise((resolve, reject) => {
+      const req = transport.get(parsed, { timeout: 15000, rejectUnauthorized: false }, (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          reject(new Error(`image_http_${res.statusCode}`));
+          return;
+        }
+        const chunks = [];
+        let size = 0;
+        res.on('data', (chunk) => {
+          size += chunk.length;
+          if (size > 5 * 1024 * 1024) {
+            req.destroy(new Error('image_too_large'));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        res.on('end', () => resolve({ data: Buffer.concat(chunks), fileName: 'sticker.png' }));
+      });
+      req.on('timeout', () => req.destroy(new Error('image_download_timeout')));
+      req.on('error', reject);
+    });
   }
 
   function sendMedia(path, fileInfo, { msgId, msgSeq, eventId }) {

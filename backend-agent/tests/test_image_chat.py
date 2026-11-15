@@ -134,3 +134,33 @@ def test_context_handles_missing_intent():
 
 def test_png_fixture_is_decodable():
     assert base64.b64decode(PNG_B64)[:4] == b"\x89PNG"
+
+
+@pytest.mark.asyncio
+async def test_image_turn_selects_sticker_from_own_reply():
+    """图片消息的台词不是用户原话，不能再拿 [图片] 占位去判断该发什么表情。"""
+    from types import SimpleNamespace
+
+    from app import main as main_mod
+
+    async def fake_chat_with_image(*_args, **_kwargs):
+        return {"content": "哈哈，这也太好笑了。", "imageDescription": "一张梗图"}
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(main_mod, "chat_with_image", fake_chat_with_image)
+    monkeypatch.setattr(main_mod, "get_settings", lambda: SimpleNamespace(
+        multimodal_base_url=VISION_BASE, multimodal_api_key="vk", multimodal_model="vl",
+    ))
+    monkeypatch.setattr(main_mod, "get_gateway", lambda: object())
+    try:
+        body = main_mod.ChatImageBody(
+            userId=421,
+            imagePngBase64=PNG_B64,
+            textBaseUrl=TEXT_BASE,
+            textApiKey="tk",
+            stickers=[{"url": "laugh.png", "emotion": "laugh"}],
+        )
+        result = await main_mod.chat_image(body, user_id_header="421")
+        assert result["sticker"] == "laugh.png"
+    finally:
+        monkeypatch.undo()

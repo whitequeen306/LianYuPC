@@ -11,9 +11,10 @@ public record AgentChatResult(
         Integer promptTokens,
         Integer completionTokens,
         Integer totalTokens,
-        String imageDescription) {
+        String imageDescription,
+        String sticker) {
 
     public static AgentChatResult ofContent(String content) {
-        return new AgentChatResult(content, null, null, null, null);
+        return new AgentChatResult(content, null, null, null, null, null);
     }
 }
