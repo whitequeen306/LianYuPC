@@ -103,6 +103,14 @@
           <el-form-item :label="t('characterSettings.showInnerThoughts')">
             <el-switch v-model="form.showInnerThoughts" />
           </el-form-item>
+          <el-form-item :label="t('characterSettings.stickerFrequency')">
+            <el-radio-group v-model="form.stickerFrequency" size="small">
+              <el-radio-button value="never">{{ t('characterSettings.stickerNever') }}</el-radio-button>
+              <el-radio-button value="normal">{{ t('characterSettings.stickerNormal') }}</el-radio-button>
+              <el-radio-button value="frequent">{{ t('characterSettings.stickerFrequent') }}</el-radio-button>
+            </el-radio-group>
+            <div class="field-hint">{{ t('characterSettings.stickerFrequencyHint') }}</div>
+          </el-form-item>
           <el-form-item :label="t('characterSettings.blocked')">
             <el-switch v-model="form.blocked" />
           </el-form-item>
@@ -317,6 +325,8 @@ const form = reactive({
   useGlobalChatBackground: true,
   proactiveEnabled: true,
   showInnerThoughts: true,
+  // 表情包频率：never / normal / frequent（角色设置里可调，缺省 normal）
+  stickerFrequency: 'normal',
   // 「言出法随」角色级闸门：默认关闭，显式打开才允许这个角色动用户的电脑
   doNotDisturbEnabled: true,
   blocked: false,
@@ -376,6 +386,10 @@ function populateForm(settings) {
   form.useGlobalChatBackground = settings.useGlobalChatBackground ?? true
   form.proactiveEnabled = settings.proactiveEnabled ?? true
   form.showInnerThoughts = settings.showInnerThoughts ?? true
+  // 三档只认这三个值，其余（含老角色没配过）一律回正常
+  form.stickerFrequency = ['never', 'frequent'].includes(settings.stickerFrequency)
+    ? settings.stickerFrequency
+    : 'normal'
   // 缺省 false：老角色不因为升级就突然获得操控电脑的权限
   form.doNotDisturbEnabled = settings.doNotDisturbEnabled ?? true
   form.blocked = settings.blocked ?? false
@@ -525,6 +539,7 @@ async function handleSave() {
       useGlobalChatBackground: form.useGlobalChatBackground,
       proactiveEnabled: form.proactiveEnabled,
       showInnerThoughts: form.showInnerThoughts,
+      stickerFrequency: form.stickerFrequency,
       doNotDisturbEnabled: form.doNotDisturbEnabled,
       dndStartMinutes: clampMinutes(form.dndStartMinutes),
       dndEndMinutes: clampMinutes(form.dndEndMinutes),
