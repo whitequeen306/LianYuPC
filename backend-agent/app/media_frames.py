@@ -33,6 +33,8 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 MAX_FRAMES = 6
+MAX_FRAMES_SMALL = 12
+SMALL_SIDE = 200
 MAX_FRAME_SIDE = 360
 _ANIMATION_HINT = (
     "这是同一段动图/表情包按时间顺序抽取的 {n} 张静帧（第 1 张是最早的）。"
@@ -78,7 +80,12 @@ def sniff_mime(data: bytes) -> str:
 def split_frames(
     data: bytes, *, max_frames: int = MAX_FRAMES, max_side: int = MAX_FRAME_SIDE
 ) -> list[bytes] | None:
-    """多帧图（GIF / APNG / 动画 WebP）→ N 张独立 PNG。单帧或解码失败返回 None（调用方原样透传）。"""
+    """多帧图（GIF / APNG / 动画 WebP）→ N 张独立 PNG。单帧或解码失败返回 None（调用方原样透传）。
+
+    小尺寸（宽高都 ≤ SMALL_SIDE，多是表情包）放宽到 MAX_FRAMES_SMALL 帧：这类动图常见
+    40~90 帧、动作集中在后段（「第 60 帧才倒下」），只抽 6 帧会漏掉关键瞬间；尺寸小，
+    多送几帧的 token 代价有限。照片/大图仍按 MAX_FRAMES，避免 token 爆炸。
+    """
     try:
         from PIL import Image  # 延迟导入：没有 Pillow 时整条链路仍能跑静态图
     except ImportError:  # pragma: no cover - 依赖缺失时降级
@@ -90,7 +97,10 @@ def split_frames(
         total = int(getattr(img, "n_frames", 1))
         if total <= 1:
             return None
-        count = min(max_frames, total)
+        limit = max_frames
+        if img.width <= SMALL_SIDE and img.height <= SMALL_SIDE:
+            limit = max(max_frames, MAX_FRAMES_SMALL)
+        count = min(limit, total)
         picks = [round(i * (total - 1) / max(1, count - 1)) for i in range(count)]
         out: list[bytes] = []
         for idx in dict.fromkeys(picks):

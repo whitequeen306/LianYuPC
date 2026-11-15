@@ -8,10 +8,10 @@ from PIL import Image, ImageDraw
 from app.media_frames import prepare_vision_frames, sniff_mime, split_frames
 
 
-def _gif(frames: int = 8) -> bytes:
+def _gif(frames: int = 8, size: tuple[int, int] = (120, 60)) -> bytes:
     imgs = []
     for i in range(frames):
-        img = Image.new("RGB", (120, 60), (255, 255, 255))
+        img = Image.new("RGB", size, (255, 255, 255))
         d = ImageDraw.Draw(img)
         x = 10 + i * 10
         d.ellipse((x, 20, x + 20, 40), fill=(200, 30, 30))
@@ -35,13 +35,27 @@ def test_sniff_mime_recognises_gif_png_jpeg():
     assert sniff_mime(buf.getvalue()) == "image/png"
 
 
-def test_split_frames_gives_six_pngs():
-    frames = split_frames(_gif())
+def test_split_frames_gives_one_png_per_frame():
+    frames = split_frames(_gif(8))
     assert frames is not None
-    assert len(frames) == 6
+    assert len(frames) == 8
     for png in frames:
         img = Image.open(io.BytesIO(png))
         assert img.format == "PNG"
+
+
+def test_small_sticker_can_use_twelve_frames():
+    """表情包常见几十帧、动作在后段，小尺寸放宽到 12 帧。"""
+    frames = split_frames(_gif(20, (120, 60)))
+    assert frames is not None
+    assert len(frames) == 12
+
+
+def test_large_animation_stays_at_six_frames():
+    """照片尺寸的动图仍只抽 6 帧，避免 token 爆炸。"""
+    frames = split_frames(_gif(20, (400, 400)))
+    assert frames is not None
+    assert len(frames) == 6
 
 
 def test_split_frames_skips_single_frame_gif():
@@ -50,11 +64,11 @@ def test_split_frames_skips_single_frame_gif():
     assert split_frames(buf.getvalue()) is None
 
 
-def test_prepare_animated_gif_returns_six_images_with_hint():
-    prepared = prepare_vision_frames(base64.b64encode(_gif()).decode())
-    assert len(prepared.images) == 6
+def test_prepare_animated_gif_splits_and_hints():
+    prepared = prepare_vision_frames(base64.b64encode(_gif(8)).decode())
+    assert len(prepared.images) == 8
     assert all(img.mime == "image/png" for img in prepared.images)
-    assert prepared.hint and "6 张" in prepared.hint
+    assert prepared.hint and "8 张" in prepared.hint
     Image.open(io.BytesIO(base64.b64decode(prepared.images[0].base64)))
 
 

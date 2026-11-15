@@ -84,6 +84,6 @@ async def test_analyze_image_splits_animated_gif_into_frames(monkeypatch):
     await vision_mod.analyze_image(_Gateway(), image_png_base64=gif_b64, max_tokens=128)
 
     parts = captured["parts"]
-    assert len(parts) == 7  # 1 句说明 + 6 帧
-    assert "6 张" in parts[0].text
+    assert len(parts) == 9  # 1 句说明 + 8 帧（60x40 属小尺寸，放宽到 12 帧上限）
+    assert "8 张" in parts[0].text
     assert all(getattr(p, "mime", None) == "image/png" for p in parts[1:])
