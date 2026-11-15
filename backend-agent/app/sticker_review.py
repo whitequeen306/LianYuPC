@@ -188,9 +188,19 @@ async def choose_sticker(
         )
         if decision is not None:
             if decision.url:
+                logger.info(
+                    "sticker.chosen source=review url=%s explicit=%s reason=%s",
+                    decision.url, explicit, decision.reason,
+                )
                 return decision.url
             if not explicit:
+                logger.info("sticker.skipped source=review explicit=False reason=%s", decision.reason)
                 return None
             logger.info("sticker review declined but user asked explicitly: %s", decision.reason)
 
-    return pick_sticker(material, stickers, last_url=last_url, explicit=explicit)
+    chosen = pick_sticker(material, stickers, last_url=last_url, explicit=explicit)
+    logger.info(
+        "sticker.chosen source=keywords url=%s explicit=%s review=%s",
+        chosen, explicit, "on" if review_enabled and gateway is not None else "off",
+    )
+    return chosen
