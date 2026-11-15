@@ -156,7 +156,20 @@ docker run -d --name lianyu-qqbot --restart unless-stopped --network host \
 3. 复核不可用（没配视觉模型、模型报错、候选没带字节）→ 退回情绪词表（`app/stickers.py`）。
 
 开关：`LIANYU_AGENT_STICKER_REVIEW_ENABLED` / `_MAX_CANDIDATES` / `_MAX_TOKENS`（生产三个都在 agent 容器里）。
-日志：每轮一行 `sticker.chosen source=review|keywords url=… explicit=… reason=…`，或 `sticker.skipped … reason=…`。
+日志：每轮一行 `sticker.chosen source=review|keywords url=… explicit=… frequency=… reason=…`，或 `sticker.skipped … reason=…`。
+
+### 9.1 频率三档（角色设置）
+
+角色设置里的「表情包频率」存 `character.settings.stickerFrequency`，与免打扰/内心独白同一套 JSON，
+不需要迁移；解析只有一处：`CharacterPreferenceResolver.stickerFrequency()`。
+
+| 档位 | 值 | 行为 |
+|---|---|---|
+| 从不发 | `never` | 直接不发，**连用户点名要也不发**，且不跑复核（用户自己关的） |
+| 正常 | `normal` | 默认：复核判断 + 词表阈值 2 分 |
+| 非常爱发 | `frequent` | 复核提示追加「勉强贴得上就发」，词表阈值降到 1 分（只命中标签也发） |
+
+改档位后下一轮就生效（每轮都从角色设置里读），不需要重启服务。
 
 已知限制：
 
