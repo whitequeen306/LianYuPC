@@ -525,10 +525,12 @@ async def chat_turn_inspect(
     }
     payload.update(_usage_of(state))
     if body.invoke:
-        from app.stickers import pick_sticker
+        from app.stickers import pick_sticker, sticker_material
 
         sticker = pick_sticker(
-            payload["content"], body.stickers, last_url=body.last_sticker_url
+            sticker_material(state.get("user_text"), payload["content"]),
+            body.stickers,
+            last_url=body.last_sticker_url,
         )
         if sticker:
             payload["sticker"] = sticker

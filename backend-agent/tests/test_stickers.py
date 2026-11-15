@@ -3,7 +3,7 @@
 只验证「词表命中 → 选哪张」这条确定性规则；模型调用与 Java 传参不在这一层。
 """
 
-from app.stickers import pick_sticker
+from app.stickers import pick_sticker, sticker_material
 
 PACK = [
     {"url": "/api/public/files/stickers/happy.png", "emotion": "happy", "tags": "开心,好耶"},
@@ -65,3 +65,20 @@ def test_short_text_never_sends():
 def test_empty_pack():
     assert pick_sticker("哈哈", []) is None
     assert pick_sticker("哈哈", None) is None
+
+
+def test_user_text_carries_the_emotion():
+    """角色台词常是短句（「真好。」），情绪在用户那句里——两个人都要看。"""
+    material = sticker_material("我今天特别开心！！！", "真好。")
+    assert pick_sticker(material, PACK) == PACK[0]["url"]
+
+
+def test_plain_chat_stays_quiet():
+    material = sticker_material("明天上午九点在三楼会议室。", "（把手机倒扣在桌上）")
+    assert pick_sticker(material, PACK) is None
+
+
+def test_tired_user_gets_sleepy_sticker():
+    pack = [{"url": "sleepy.png", "emotion": "sleepy"}]
+    material = sticker_material("好累啊，眼睛都睁不开了", "那早点休息。")
+    assert pick_sticker(material, pack) == "sleepy.png"
