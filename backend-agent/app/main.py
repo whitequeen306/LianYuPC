@@ -525,12 +525,21 @@ async def chat_turn_inspect(
     }
     payload.update(_usage_of(state))
     if body.invoke:
-        from app.stickers import pick_sticker, sticker_material
+        from app.sticker_review import choose_sticker
 
-        sticker = pick_sticker(
-            sticker_material(state.get("user_text"), payload["content"]),
-            body.stickers,
+        settings_snapshot = get_settings()
+        sticker = await choose_sticker(
+            get_gateway(),
+            base_url=settings_snapshot.multimodal_base_url,
+            api_key=settings_snapshot.multimodal_api_key,
+            model=settings_snapshot.multimodal_model,
+            user_text=state.get("user_text"),
+            reply=payload["content"],
+            candidates=body.stickers,
             last_url=body.last_sticker_url,
+            review_enabled=settings_snapshot.sticker_review_enabled,
+            max_candidates=settings_snapshot.sticker_review_max_candidates,
+            max_tokens=settings_snapshot.sticker_review_max_tokens,
         )
         if sticker:
             payload["sticker"] = sticker
@@ -894,9 +903,21 @@ async def chat_image(
         provider=body.provider,
     )
     if "content" in result and body.stickers:
-        from app.stickers import pick_sticker
+        from app.sticker_review import choose_sticker
 
-        sticker = pick_sticker(result["content"], body.stickers, last_url=body.last_sticker_url)
+        sticker = await choose_sticker(
+            get_gateway(),
+            base_url=vision_base,
+            api_key=vision_key,
+            model=vision_model,
+            user_text=None,
+            reply=result["content"],
+            candidates=body.stickers,
+            last_url=body.last_sticker_url,
+            review_enabled=settings.sticker_review_enabled,
+            max_candidates=settings.sticker_review_max_candidates,
+            max_tokens=settings.sticker_review_max_tokens,
+        )
         if sticker:
             result["sticker"] = sticker
     return result

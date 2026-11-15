@@ -72,6 +72,10 @@ public class ConversationService {
     private static final String SEQ_KEY_PREFIX = "msg_seq:";
     private static final String GROUP_TURN_KEY_PREFIX = "group_chat:turn:";
     private static final String SCENE_KEY_PREFIX = "scene:";
+    /** 一轮最多给 Python 几张带字节的表情包：视觉复核看 8 张就够，再多只是烧 token。 */
+    private static final int MAX_STICKER_IMAGES_WITH_BYTES = 8;
+    /** 单张上限：表情包是 240×240 PNG（几 KB），超这个数说明不是正常素材。 */
+    private static final int MAX_STICKER_BYTES = 200 * 1024;
     private final ConversationMapper conversationMapper;
     private final MessageMapper messageMapper;
     private final GroupMemberMapper groupMemberMapper;
@@ -723,7 +727,56 @@ public class ConversationService {
         if (stickerService == null || character == null) {
             return List.of();
         }
-        return stickerService.candidatesFor(character.getId());
+        return withStickerImages(stickerService.candidatesFor(character.getId()));
+    }
+
+    /**
+     * 给候选补上图片字节（base64）。
+     *
+     * <p>为什么要给字节：Python 侧现在要「发之前先让视觉模型看一眼」，而它不抓外网
+     * （出站白名单只给模型网关）。图本来就在我们的对象存储里，读字节这一步是事实访问，
+     * 留在 Java 更合规；Python 只负责判断。
+     *
+     * <p>失败一律降级：读不到就只给 URL，词表兜底路径照旧能用。
+     */
+    List<Map<String, String>> withStickerImages(List<Map<String, String>> candidates) {        if (candidates == null || candidates.isEmpty()) {
+            return candidates == null ? List.of() : candidates;
+        }
+        List<Map<String, String>> enriched = new ArrayList<>(candidates.size());
+        int attached = 0;
+        for (Map<String, String> candidate : candidates) {
+            Map<String, String> copy = new LinkedHashMap<>(candidate);
+            if (attached < MAX_STICKER_IMAGES_WITH_BYTES) {
+                String base64 = readStickerBase64(candidate.get("url"));
+                if (base64 != null) {
+                    copy.put("imageBase64", base64);
+                    attached++;
+                }
+            }
+            enriched.add(copy);
+        }
+        return enriched;
+    }
+
+    private String readStickerBase64(String url) {
+        if (url == null || url.isBlank()) {
+            return null;
+        }
+        try {
+            String objectKey = FileStorageService.extractObjectKey(url.trim());
+            if (objectKey == null) {
+                return null;
+            }
+            byte[] bytes = fileStorageService.readObjectBytes(objectKey);
+            if (bytes == null || bytes.length == 0 || bytes.length > MAX_STICKER_BYTES) {
+                return null;
+            }
+            return java.util.Base64.getEncoder().encodeToString(bytes);
+        } catch (RuntimeException e) {
+            // 表情包读不到不该影响这一轮对话（词表路径只需要 URL）
+            log.debug("Sticker bytes unavailable: {}", url);
+            return null;
+        }
     }
 
     List<MessageResponse> saveAssistantRepliesLimited(Long conversationId,

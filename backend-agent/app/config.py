@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     multimodal_max_tokens: int = 800
     multimodal_describe_max_tokens: int = 420
 
+    # 表情包发送前的视觉复核（见 app/sticker_review.py）：让视觉模型先看一眼候选图，
+    # 再决定这一轮发哪张、或者一张都别发。关掉就退回纯词表（app/stickers.py）。
+    sticker_review_enabled: bool = True
+    # 一次最多给模型看几张：候选 20 张全塞进去既烧 token 又摊薄注意力。
+    sticker_review_max_candidates: int = 8
+    # 复核只要一个 JSON（send/index/reason），不需要长输出。
+    sticker_review_max_tokens: int = 160
+
     # 出站超时红线（SsrfPinningClientFactory 语义的 Python 等价物）：
     # connect 15s / read 60s / write 30s / pool 30s —— 与 Java 侧一致
     outbound_timeout: tuple[float, float, float, float] = (15.0, 60.0, 30.0, 30.0)

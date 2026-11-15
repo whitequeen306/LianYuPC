@@ -33,6 +33,26 @@ MIN_SCORE = 2
 # 兜底：文本本身极短（「嗯」「哦」）时不发图，避免每句都甩图。
 MIN_TEXT_CHARS = 2
 
+# 用户**明确要图**的说法。命中这些词时不再等情绪词凑分：
+# 人家都开口点名了，还按「情绪不够明确」憋着，就是对着干。
+EXPLICIT_REQUEST_KEYWORDS: tuple[str, ...] = (
+    "表情包",
+    "发表情",
+    "发个表情",
+    "发一个表情",
+    "来个表情",
+    "来张表情",
+    "甩个表情",
+    "挑个表情",
+    "给个表情",
+    "发张图",
+    "发个图",
+    "来张图",
+    "来个图",
+    "发图",
+    "甩张图",
+)
+
 
 def _score(text: str, sticker: Mapping[str, Any]) -> int:
     emotion = str(sticker.get("emotion") or "").strip().lower()
@@ -59,19 +79,66 @@ def sticker_material(user_text: str | None, reply: str | None) -> str:
     return "\n".join(part for part in (user_text or "", reply or "") if part)
 
 
+def wants_sticker(text: str | None) -> bool:
+    """用户是否在**明确要求**发表情包/发图。
+
+    与情绪打分是两条独立通路：情绪打分回答「他现在的情绪配不配一张图」，
+    这里回答「他已经开口要了」。后者不该被阈值挡住。
+    """
+    if not text:
+        return False
+    return any(keyword in text for keyword in EXPLICIT_REQUEST_KEYWORDS)
+
+
 def pick_sticker(
     text: str,
     stickers: Iterable[Mapping[str, Any]] | None,
     *,
     last_url: str | None = None,
     min_score: int = MIN_SCORE,
+    explicit: bool | None = None,
 ) -> str | None:
-    """按回复文本挑一张表情包，返回公网 URL；不该发就返回 None。"""
-    if not text or not stickers:
+    """按回复文本挑一张表情包，返回公网 URL；不该发就返回 None。
+
+    `explicit=True`（用户点名要图）时跳过阈值与最短文本限制：先按情绪线索挑，没有线索
+    就按 sort_order 取第一张；只剩刚发过的那一张时也照发——「再发一张」的语境下，
+    重复一次比干脆不发更接近用户的期待。
+    """
+    if not stickers:
+        return None
+    if explicit is None:
+        explicit = wants_sticker(text)
+    if explicit:
+        # 先看有没有情绪线索（「气死我了，发个表情包」→ 生气那张），没有就按顺序取第一张。
+        best: tuple[int, int, str] | None = None
+        fallback: str | None = None
+        for index, sticker in enumerate(stickers):
+            url = str(sticker.get("url") or "").strip()
+            if not url:
+                continue
+            if fallback is None and url != last_url:
+                fallback = url
+            score = _score(text or "", sticker)
+            if score <= 0:
+                continue
+            if last_url and url == last_url:
+                continue
+            if best is None or score > best[0]:
+                best = (score, index, url)
+        if best is not None:
+            return best[2]
+        if fallback is not None:
+            return fallback
+        for sticker in stickers:
+            url = str(sticker.get("url") or "").strip()
+            if url:
+                return url
+        return None
+
+    if not text:
         return None
     if len(text.strip()) < MIN_TEXT_CHARS:
         return None
-
     scored: list[tuple[int, int, Mapping[str, Any]]] = []
     for index, sticker in enumerate(stickers):
         url = str(sticker.get("url") or "").strip()

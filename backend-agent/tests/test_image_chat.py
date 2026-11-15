@@ -150,6 +150,8 @@ async def test_image_turn_selects_sticker_from_own_reply():
     monkeypatch.setattr(main_mod, "chat_with_image", fake_chat_with_image)
     monkeypatch.setattr(main_mod, "get_settings", lambda: SimpleNamespace(
         multimodal_base_url=VISION_BASE, multimodal_api_key="vk", multimodal_model="vl",
+        # 复核开关：这里没有真网关，走词表兜底即可
+        sticker_review_enabled=False, sticker_review_max_candidates=8, sticker_review_max_tokens=160,
     ))
     monkeypatch.setattr(main_mod, "get_gateway", lambda: object())
     try:

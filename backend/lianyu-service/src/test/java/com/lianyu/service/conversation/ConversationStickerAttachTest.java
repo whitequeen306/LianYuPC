@@ -29,7 +29,9 @@ import com.lianyu.service.storage.FileStorageService;
 import com.lianyu.service.support.OutputLanguageService;
 import com.lianyu.service.tools.TimeTool;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -116,8 +118,7 @@ class ConversationStickerAttachTest {
     }
 
     @Test
-    void noStickerKeepsMessagesClean() {
-        Character character = new Character();
+    void noStickerKeepsMessagesClean() {        Character character = new Character();
         character.setId(1002L);
         when(chatBehaviorResolver.resolve(any())).thenReturn(
                 new CharacterChatBehavior(3, true, 60, 0.5, 55, 65, "gentle"));
@@ -135,5 +136,33 @@ class ConversationStickerAttachTest {
 
         assertEquals(1, inserted.size());
         assertNull(inserted.get(0).getImageUrl());
+    }
+
+    @Test
+    void stickerBytesAreAttachedForVisionReview() {
+        when(fileStorageService.readObjectBytes("chat-images/a.png")).thenReturn(new byte[]{1, 2, 3});
+        Map<String, String> candidate = new LinkedHashMap<>();
+        candidate.put("url", "/api/public/files/chat-images/a.png");
+        candidate.put("emotion", "happy");
+
+        List<Map<String, String>> enriched = service.withStickerImages(List.of(candidate));
+
+        assertEquals(1, enriched.size());
+        assertEquals("AQID", enriched.get(0).get("imageBase64"));
+        assertEquals("happy", enriched.get(0).get("emotion"), "原有字段不能被覆盖掉");
+    }
+
+    @Test
+    void unreadableStickerStillSurvivesWithoutBytes() {
+        when(fileStorageService.readObjectBytes("chat-images/b.png"))
+                .thenThrow(new IllegalStateException("minio down"));
+        Map<String, String> candidate = new LinkedHashMap<>();
+        candidate.put("url", "/api/public/files/chat-images/b.png");
+
+        List<Map<String, String>> enriched = service.withStickerImages(List.of(candidate));
+
+        assertEquals(1, enriched.size());
+        assertNull(enriched.get(0).get("imageBase64"), "读不到字节就只给 URL，词表兜底照旧能用");
+        assertEquals("/api/public/files/chat-images/b.png", enriched.get(0).get("url"));
     }
 }
