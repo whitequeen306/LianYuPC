@@ -85,6 +85,33 @@ def test_emotion_block_comes_after_reply_rules(golden):
     assert reply_at < emotion_at < guard_at
 
 
+def test_speech_rule_follows_reply_rules(golden):
+    """「每条回复至少一句说出口的话」必须紧跟在回复规则之后、且在动态尾之前。"""
+    prompt = render(golden, "zh", True, True, True)
+    reply_at = prompt.index("回复规则：")
+    speech_at = prompt.index("【说话方式 · 硬性】")
+    memory_at = prompt.index("关于用户的记忆")
+    assert reply_at < speech_at < memory_at
+    assert "至少要有一句说出口的话" in prompt
+    assert "括号里的内容不能单独构成一条回复" in prompt
+
+
+def test_speech_rule_covers_all_output_languages(golden):
+    """四语都要有这条硬约束，不能只写中文。"""
+    from app.reply_speech_rule import render_speech_rule, rule_languages
+
+    assert rule_languages() == ["en", "ja", "zh", "zh-TW"]
+    for lang, marker in (
+        ("zh", "至少要有一句说出口的话"),
+        ("zh-TW", "至少要有一句說出口的話"),
+        ("en", "at least one spoken line"),
+        ("ja", "口に出した台詞"),
+    ):
+        assert marker in render_speech_rule(lang)
+    # 未知语言回落简体中文，不能返回空串（否则整条规则静默消失）
+    assert render_speech_rule("fr") == render_speech_rule("zh")
+
+
 def test_guard_block_is_always_last(golden):
     for tools in (True, False):
         prompt = render(golden, "zh", tools, True, True)

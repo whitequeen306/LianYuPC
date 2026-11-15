@@ -35,6 +35,7 @@ from app.prompt_assembly import (
 from app.tools.time_tool import read_current_time_fact
 from app.prompt_fragments import fragment
 from app.reply_rules import render_reply_rules
+from app.reply_speech_rule import render_speech_rule
 from app.rule_templates import render_output_language_rules
 
 MEMORY_HEADER = "\n\n=== 关于用户的记忆（最新权威信息） ===\n"
@@ -122,6 +123,8 @@ def build_system_prompt(
     output_rules = render_output_language_rules(output_language)
     if reply_rules.strip():
         prompt += "\n\n" + reply_rules
+    # 「每条回复至少一句说出口的话」——旧 Java 文案没进装配，见 reply_speech_rule 头注
+    prompt += render_speech_rule(output_language)
     if output_rules.strip():
         prompt += "\n\n" + output_rules
 

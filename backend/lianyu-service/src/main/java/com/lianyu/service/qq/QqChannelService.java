@@ -203,12 +203,13 @@ public class QqChannelService {
         request.setContent(text);
         storeIncomingImage(request, imageBase64, imageContentType);
 
-        MessageResponse reply = conversationService.sendMessage(binding.getUserId(), binding.getConversationId(), request);
+        ConversationService.ChannelTurn reply = conversationService.sendChannelTurn(
+                binding.getUserId(), binding.getConversationId(), request);
         return TurnResult.builder()
                 .conversationId(binding.getConversationId())
                 .characterId(binding.getCharacterId())
-                .reply(reply == null ? "" : reply.getContent())
-                .imageUrl(reply == null ? null : fileStorageService.resolvePublicUrl(reply.getImageUrl()))
+                .reply(reply.fullText() == null ? "" : reply.fullText())
+                .imageUrl(reply.imageUrl() == null ? null : fileStorageService.resolvePublicUrl(reply.imageUrl()))
                 .build();
     }
 

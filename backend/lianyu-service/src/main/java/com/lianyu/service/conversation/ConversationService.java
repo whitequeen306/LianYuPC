@@ -263,7 +263,20 @@ public class ConversationService {
         log.info("Conversation messages cleared (row kept): id={}, mode={}", conversationId, conversation.getMode());
     }
 
+    /**
+     * 一轮非流式对话的完整结果。
+     *
+     * <p>落库时会按换行把回复拆成多条「气泡」（见 {@code saveAssistantRepliesLimited}），而 IM 通道
+     * （QQ/微信）一条消息只能发一段文本，所以通道侧需要的是 {@code fullText} 整段，而不是首段；
+     * 表情包图片挂在最后一段上，也只会在 {@code imageUrl} 里出现。</p>
+     */
+    public record ChannelTurn(String fullText, MessageResponse first, String imageUrl) {}
+
     public MessageResponse sendMessage(Long userId, Long conversationId, SendMessageRequest request) {
+        return sendChannelTurn(userId, conversationId, request).first();
+    }
+
+    public ChannelTurn sendChannelTurn(Long userId, Long conversationId, SendMessageRequest request) {
         requireUserTextProvider(request);
         Conversation conversation = findOwned(userId, conversationId);
         Character character = characterMapper.selectById(conversation.getCharacterId());
@@ -330,7 +343,20 @@ public class ConversationService {
             );
         }
 
-        return replies.isEmpty() ? null : replies.get(0);
+        return channelTurnOf(chatResult, replies);
+    }
+
+    /**
+     * 把「模型整段文本 + 落库分段」拼成通道要的结果：整段给 IM 发，图片取最后一段上的。
+     *
+     * <p>单独抽出来是为了能被单测直接盯住：之前这里直接返回首段，导致 QQ 里只看到前半句、
+     * 表情包也随最后一段一起丢掉。</p>
+     */
+    static ChannelTurn channelTurnOf(ChatTurnResult chatResult, List<MessageResponse> replies) {
+        return new ChannelTurn(
+                chatResult == null ? null : chatResult.getContent(),
+                replies == null || replies.isEmpty() ? null : replies.get(0),
+                replies == null || replies.isEmpty() ? null : replies.get(replies.size() - 1).getImageUrl());
     }
 
     public SseEmitter sendMessageStream(Long userId, Long conversationId, SendMessageRequest request) {

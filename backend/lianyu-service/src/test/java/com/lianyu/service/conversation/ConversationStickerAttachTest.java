@@ -22,6 +22,7 @@ import com.lianyu.service.character.CharacterChatBehaviorResolver;
 import com.lianyu.service.character.CharacterStateService;
 import com.lianyu.service.dto.MessageResponse;
 import com.lianyu.service.graph.ChatTurnFacade;
+import com.lianyu.service.graph.ChatTurnResult;
 import com.lianyu.service.memory.MemoryWriter;
 import com.lianyu.service.notification.NotificationService;
 import com.lianyu.service.relationship.RelationshipStateService;
@@ -90,6 +91,33 @@ class ConversationStickerAttachTest {
                 proactiveUnrepliedThrottle,
                 timeTool,
                 sessionSummaryService);
+    }
+
+    @Test
+    void channelTurnCarriesWholeReplyAndLastPieceImage() {
+        MessageResponse first = MessageResponse.builder().content("好呀").build();
+        MessageResponse last = MessageResponse.builder()
+                .content("给你一个")
+                .imageUrl("/api/public/files/stickers/happy.png")
+                .build();
+
+        ConversationService.ChannelTurn turn = ConversationService.channelTurnOf(
+                ChatTurnResult.builder().content("好呀\n给你一个").build(),
+                List.of(first, last));
+
+        assertEquals("好呀\n给你一个", turn.fullText(), "IM 通道要整段，不是首段");
+        assertEquals("好呀", turn.first().getContent(), "首段仍留给 App 侧沿用");
+        assertEquals("/api/public/files/stickers/happy.png", turn.imageUrl(), "图片挂在最后一段上");
+    }
+
+    @Test
+    void channelTurnSurvivesEmptyReplies() {
+        ConversationService.ChannelTurn turn = ConversationService.channelTurnOf(
+                ChatTurnResult.builder().content("").build(), List.of());
+
+        assertNull(turn.first());
+        assertNull(turn.imageUrl());
+        assertEquals("", turn.fullText());
     }
 
     @Test
