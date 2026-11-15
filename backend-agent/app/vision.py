@@ -9,13 +9,14 @@ import logging
 from dataclasses import dataclass
 
 from app.config import get_settings
-from app.media_frames import prepare_vision_image
+from app.media_frames import prepare_vision_frames
 from app.resilience import GatewayError
 from app.gateway import (
     GatewayResult,
     ImagePart,
     ModelGateway,
     ModelGatewayError,
+    Part,
     TextPart,
     extract_json_object,
 )
@@ -80,8 +81,10 @@ async def analyze_image(
 ) -> VisionAnalysisResult:
     """Stage 1：视觉 JSON 分析（temperature 0.1 / maxTokens 与 Java 一致）。"""
     settings = get_settings()
-    prepared = prepare_vision_image(image_png_base64)
-    parts = [ImagePart(png_base64=prepared.base64, mime=prepared.mime)]
+    prepared = prepare_vision_frames(image_png_base64)
+    parts: list[Part] = [
+        ImagePart(png_base64=img.base64, mime=img.mime) for img in prepared.images
+    ]
     if prepared.hint:
         parts.insert(0, TextPart(text=prepared.hint))
     try:

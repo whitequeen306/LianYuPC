@@ -19,7 +19,7 @@ import logging
 
 from app.config import get_settings
 from app.gateway import ImagePart, ModelGateway, ModelGatewayError, TextPart
-from app.media_frames import prepare_vision_image
+from app.media_frames import prepare_vision_frames
 from app.resilience import GatewayError
 from app.vision import (
     VISION_ANALYSIS_JSON_INSTRUCTION,
@@ -66,8 +66,8 @@ async def chat_with_image(
         return {"error": "missing_image"}
 
     # Stage 1：视觉 JSON 分析（temperature 0.1，与 Java 一致）
-    prepared = prepare_vision_image(image_png_base64)
-    parts = [ImagePart(png_base64=prepared.base64, mime=prepared.mime)]
+    prepared = prepare_vision_frames(image_png_base64)
+    parts = [ImagePart(png_base64=img.base64, mime=img.mime) for img in prepared.images]
     if prepared.hint:
         parts.insert(0, TextPart(text=prepared.hint))
     try:

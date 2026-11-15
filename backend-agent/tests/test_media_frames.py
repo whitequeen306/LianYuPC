@@ -1,11 +1,11 @@
-"""动图帧条：GIF 只被看到第一帧时，模型会说「静止的圆点」。"""
+"""动图拆帧：GIF 只被看到第一帧时，模型会说「静止的圆点」。"""
 import base64
 import io
 
 import pytest
 from PIL import Image, ImageDraw
 
-from app.media_frames import prepare_vision_image, sniff_mime, tile_frames
+from app.media_frames import prepare_vision_frames, sniff_mime, split_frames
 
 
 def _gif(frames: int = 8) -> bytes:
@@ -35,41 +35,40 @@ def test_sniff_mime_recognises_gif_png_jpeg():
     assert sniff_mime(buf.getvalue()) == "image/png"
 
 
-def test_tile_frames_returns_six_frame_sheet():
-    out = tile_frames(_gif())
-    assert out is not None
-    png, frames = out
-    assert frames == 6
-    sheet = Image.open(io.BytesIO(png))
-    assert sheet.format == "PNG"
-    # 3 列 2 行
-    assert sheet.width % 3 == 0
-    assert sheet.height % 2 == 0
+def test_split_frames_gives_six_pngs():
+    frames = split_frames(_gif())
+    assert frames is not None
+    assert len(frames) == 6
+    for png in frames:
+        img = Image.open(io.BytesIO(png))
+        assert img.format == "PNG"
 
 
-def test_tile_frames_skips_single_frame_gif():
+def test_split_frames_skips_single_frame_gif():
     buf = io.BytesIO()
     Image.new("RGB", (32, 32), (9, 9, 9)).save(buf, format="GIF")
-    assert tile_frames(buf.getvalue()) is None
+    assert split_frames(buf.getvalue()) is None
 
 
-def test_prepare_animated_gif_becomes_png_with_hint():
-    prepared = prepare_vision_image(base64.b64encode(_gif()).decode())
-    assert prepared.mime == "image/png"
-    assert prepared.hint and "6 帧" in prepared.hint
-    # 帧条真的能解码
-    Image.open(io.BytesIO(base64.b64decode(prepared.base64)))
+def test_prepare_animated_gif_returns_six_images_with_hint():
+    prepared = prepare_vision_frames(base64.b64encode(_gif()).decode())
+    assert len(prepared.images) == 6
+    assert all(img.mime == "image/png" for img in prepared.images)
+    assert prepared.hint and "6 张" in prepared.hint
+    Image.open(io.BytesIO(base64.b64decode(prepared.images[0].base64)))
 
 
-def test_prepare_static_jpeg_passes_through():
+def test_prepare_static_jpeg_passes_through_untouched():
     raw = _jpeg()
-    prepared = prepare_vision_image(base64.b64encode(raw).decode())
-    assert prepared.mime == "image/jpeg"
+    prepared = prepare_vision_frames(base64.b64encode(raw).decode())
+    assert len(prepared.images) == 1
+    assert prepared.images[0].mime == "image/jpeg"
     assert prepared.hint is None
-    assert base64.b64decode(prepared.base64) == raw
+    assert base64.b64decode(prepared.images[0].base64) == raw
 
 
 @pytest.mark.parametrize("bad", ["", "not-base64!!", base64.b64encode(b"hello").decode()])
 def test_prepare_never_raises_on_garbage(bad):
-    prepared = prepare_vision_image(bad)
-    assert prepared.base64 == bad
+    prepared = prepare_vision_frames(bad)
+    assert len(prepared.images) == 1
+    assert prepared.hint is None
