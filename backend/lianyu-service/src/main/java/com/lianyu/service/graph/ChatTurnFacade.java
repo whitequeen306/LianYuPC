@@ -312,6 +312,7 @@ public class ChatTurnFacade {
                 .groupMention(groupExtras == null ? "" : groupExtras.mentionCtx())
                 .extraSystemSuffix(command.getExtraSystemSuffix())
                 .stickers(command.getStickers())
+                .stickerFrequency(CharacterPreferenceResolver.stickerFrequency(character))
                 .prefetchRealWorld(true)
                 .provider(command.getProvider())
                 .model(command.getModel())

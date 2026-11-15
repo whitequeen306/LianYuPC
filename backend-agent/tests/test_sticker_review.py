@@ -10,7 +10,12 @@ from __future__ import annotations
 import pytest
 
 from app.gateway import GatewayResult
-from app.sticker_review import choose_sticker, review_sticker
+from app.sticker_review import (
+    REVIEW_SYSTEM_FREQUENT,
+    choose_sticker,
+    normalize_frequency,
+    review_sticker,
+)
 from app.stickers import pick_sticker, wants_sticker
 
 STICKERS = [
@@ -205,3 +210,60 @@ async def test_choose_without_candidates_returns_none():
         )
         is None
     )
+
+
+# ── 频率档位（角色设置：从不发 / 正常 / 非常爱发）──
+
+
+def test_normalize_frequency_aliases():
+    assert normalize_frequency("never") == "never"
+    assert normalize_frequency("OFF") == "never"
+    assert normalize_frequency(0) == "never"
+    assert normalize_frequency("Frequent") == "frequent"
+    assert normalize_frequency(2) == "frequent"
+    # 未知/空值退回正常，别让写错的配置把角色的表情静音
+    assert normalize_frequency("随便") == "normal"
+    assert normalize_frequency(None) == "normal"
+
+
+@pytest.mark.asyncio
+async def test_frequency_never_sends_nothing_even_when_asked():
+    gateway = FakeGateway('{"send": true, "index": 0}')
+    url = await choose_sticker(
+        gateway, base_url="https://v", api_key="k", model="m",
+        user_text="给我发个表情包", reply="好。", candidates=with_images(STICKERS),
+        frequency="never",
+    )
+    assert url is None
+    # 用户关掉了就是关掉了，连复核都不该跑
+    assert gateway.calls == []
+
+
+@pytest.mark.asyncio
+async def test_frequency_frequent_relaxes_review_prompt():
+    gateway = FakeGateway('{"send": true, "index": 0}')
+    await choose_sticker(
+        gateway, base_url="https://v", api_key="k", model="m",
+        user_text="今天好累", reply="（叹气）", candidates=with_images(STICKERS),
+        frequency="frequent",
+    )
+    assert REVIEW_SYSTEM_FREQUENT in gateway.calls[0]["system"]
+
+
+@pytest.mark.asyncio
+async def test_frequency_frequent_lowers_lexicon_threshold():
+    # 只命中标签（1 分）：正常档不发，「非常爱发」档发。
+    # 特意选一个既不是情绪词、也不是短句的说法，避免 reply 里的情绪词把分数顶上去。
+    only_tag = [{"url": "/api/public/files/c.png", "emotion": "calm", "tags": "窗台"}]
+    assert pick_sticker("窗台", only_tag) is None
+    url = await choose_sticker(
+        None, user_text="窗台", reply="……", candidates=only_tag, frequency="frequent",
+    )
+    assert url == "/api/public/files/c.png"
+
+
+@pytest.mark.asyncio
+async def test_frequency_normal_keeps_threshold():
+    only_tag = [{"url": "/api/public/files/c.png", "emotion": "calm", "tags": "窗台"}]
+    url = await choose_sticker(None, user_text="窗台", reply="……", candidates=only_tag)
+    assert url is None

@@ -65,6 +65,9 @@ public class ChatTurnRequest {
      */
     List<Map<String, String>> stickers;
 
+    /** 表情包频率（never / normal / frequent），来自角色设置，缺省 normal。 */
+    String stickerFrequency;
+
     // ── 模型与凭据（由 web 侧适配器解析 vault 后填入） ──
     String provider;
     String model;

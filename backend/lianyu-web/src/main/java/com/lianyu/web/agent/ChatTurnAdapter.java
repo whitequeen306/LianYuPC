@@ -195,6 +195,8 @@ public class ChatTurnAdapter implements ChatTurnPort {
         body.put("expectedLanguage", request.getExpectedLanguage());
         // 表情包候选：图是 Java 的事实（character_sticker），挑哪张由 Python 决定
         body.put("stickers", request.getStickers() == null ? List.of() : request.getStickers());
+        body.put("stickerFrequency", request.getStickerFrequency() == null
+                ? "normal" : request.getStickerFrequency());
         body.put("provider", request.getProvider());
         body.put("baseUrl", credentials.baseUrl());
         body.put("apiKey", credentials.apiKey());

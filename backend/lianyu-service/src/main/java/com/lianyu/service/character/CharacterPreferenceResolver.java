@@ -19,6 +19,12 @@ public final class CharacterPreferenceResolver {
     public static final String KEY_DND_START_MINUTES = "dndStartMinutes";
     public static final String KEY_DND_END_MINUTES = "dndEndMinutes";
     public static final String KEY_SHOW_INNER_THOUGHTS = "showInnerThoughts";
+    /** 表情包频率：never（从不发）/ normal（正常）/ frequent（非常爱发）。 */
+    public static final String KEY_STICKER_FREQUENCY = "stickerFrequency";
+
+    public static final String STICKER_FREQUENCY_NEVER = "never";
+    public static final String STICKER_FREQUENCY_NORMAL = "normal";
+    public static final String STICKER_FREQUENCY_FREQUENT = "frequent";
 
     private static final int DEFAULT_DND_START = 23 * 60;
     private static final int DEFAULT_DND_END = 8 * 60;
@@ -55,6 +61,27 @@ public final class CharacterPreferenceResolver {
         return resolveBoolean(settings, KEY_SHOW_INNER_THOUGHTS, true);
     }
 
+    /** 表情包频率，未知值一律回退 normal —— 配置写错不该让角色突然变成哑巴。 */
+    public static String stickerFrequency(Character character) {
+        return stickerFrequency(character != null ? character.getSettings() : null);
+    }
+
+    public static String stickerFrequency(Map<String, Object> settings) {
+        if (settings == null) {
+            return STICKER_FREQUENCY_NORMAL;
+        }
+        Object raw = settings.get(KEY_STICKER_FREQUENCY);
+        if (raw == null) {
+            return STICKER_FREQUENCY_NORMAL;
+        }
+        String value = String.valueOf(raw).trim().toLowerCase();
+        return switch (value) {
+            case STICKER_FREQUENCY_NEVER, "off", "none", "0" -> STICKER_FREQUENCY_NEVER;
+            case STICKER_FREQUENCY_FREQUENT, "often", "high", "2" -> STICKER_FREQUENCY_FREQUENT;
+            default -> STICKER_FREQUENCY_NORMAL;
+        };
+    }
+
     public static void applyCreationDefaults(Map<String, Object> settings) {
         if (settings == null) {
             return;
@@ -63,6 +90,7 @@ public final class CharacterPreferenceResolver {
         settings.putIfAbsent(KEY_DND_START_MINUTES, DEFAULT_DND_START);
         settings.putIfAbsent(KEY_DND_END_MINUTES, DEFAULT_DND_END);
         settings.putIfAbsent(KEY_SHOW_INNER_THOUGHTS, true);
+        settings.putIfAbsent(KEY_STICKER_FREQUENCY, STICKER_FREQUENCY_NORMAL);
     }
 
     public static boolean resolveBoolean(Map<String, Object> settings, String key, boolean fallback) {

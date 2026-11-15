@@ -30,6 +30,9 @@ EMOTION_KEYWORDS: dict[str, tuple[str, ...]] = {
 # 阈值：一个情绪词（2 分）就够；只有标签命中（1 分）不发。
 MIN_SCORE = 2
 
+# 「非常爱发」档位的阈值：标签命中（1 分）也发，让话痨角色有图可甩。
+MIN_SCORE_FREQUENT = 1
+
 # 兜底：文本本身极短（「嗯」「哦」）时不发图，避免每句都甩图。
 MIN_TEXT_CHARS = 2
 

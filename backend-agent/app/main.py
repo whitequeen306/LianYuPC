@@ -466,6 +466,8 @@ class ChatTurnInspectBody(BaseModel):
     # 挑哪张是这边的判断（见 app/stickers.py），两边都不越界。
     stickers: list[dict[str, Any]] = []
     last_sticker_url: str | None = Field(default=None, alias="lastStickerUrl")
+    # 角色设置里的表情包频率：never / normal / frequent（缺省 normal）
+    sticker_frequency: str = Field(default="normal", alias="stickerFrequency")
     provider: str | None = None
     base_url: str = Field(default="", alias="baseUrl")
     api_key: str = Field(default="", alias="apiKey")
@@ -540,6 +542,7 @@ async def chat_turn_inspect(
             review_enabled=settings_snapshot.sticker_review_enabled,
             max_candidates=settings_snapshot.sticker_review_max_candidates,
             max_tokens=settings_snapshot.sticker_review_max_tokens,
+            frequency=body.sticker_frequency,
         )
         if sticker:
             payload["sticker"] = sticker
@@ -866,6 +869,7 @@ class ChatImageBody(BaseModel):
     # 和文字回合同一口径：候选是 Java 的事实，是否发、发哪张由这里挑。
     stickers: list[dict[str, Any]] = []
     last_sticker_url: str | None = Field(default=None, alias="lastStickerUrl")
+    sticker_frequency: str = Field(default="normal", alias="stickerFrequency")
 
     model_config = {"populate_by_name": True}
 
@@ -917,6 +921,7 @@ async def chat_image(
             review_enabled=settings.sticker_review_enabled,
             max_candidates=settings.sticker_review_max_candidates,
             max_tokens=settings.sticker_review_max_tokens,
+            frequency=body.sticker_frequency,
         )
         if sticker:
             result["sticker"] = sticker

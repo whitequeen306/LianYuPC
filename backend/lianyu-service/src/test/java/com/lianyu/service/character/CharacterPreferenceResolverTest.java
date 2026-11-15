@@ -1,5 +1,6 @@
 package com.lianyu.service.character;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -40,5 +41,22 @@ class CharacterPreferenceResolverTest {
         assertFalse(settings.containsKey("desktopEnabled"));
         assertTrue(settings.containsKey(CharacterPreferenceResolver.KEY_DO_NOT_DISTURB));
         assertTrue(settings.containsKey(CharacterPreferenceResolver.KEY_SHOW_INNER_THOUGHTS));
+        assertTrue(settings.containsKey(CharacterPreferenceResolver.KEY_STICKER_FREQUENCY));
+    }
+
+    @Test
+    void stickerFrequency_defaultsToNormal() {
+        assertEquals("normal", CharacterPreferenceResolver.stickerFrequency((Map<String, Object>) null));
+        assertEquals("normal", CharacterPreferenceResolver.stickerFrequency(Map.of()));
+        assertEquals("normal", CharacterPreferenceResolver.stickerFrequency(Map.of("stickerFrequency", "???")));
+    }
+
+    @Test
+    void stickerFrequency_readsThreeTiers() {
+        assertEquals("never", CharacterPreferenceResolver.stickerFrequency(Map.of("stickerFrequency", "never")));
+        assertEquals("frequent",
+                CharacterPreferenceResolver.stickerFrequency(Map.of("stickerFrequency", "Frequent")));
+        assertEquals("never", CharacterPreferenceResolver.stickerFrequency(Map.of("stickerFrequency", "off")));
+        assertEquals("frequent", CharacterPreferenceResolver.stickerFrequency(Map.of("stickerFrequency", 2)));
     }
 }

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from app.gateway import ImagePart, ModelGateway, TextPart, extract_json_object
-from app.stickers import pick_sticker, sticker_material, wants_sticker
+from app.stickers import MIN_SCORE_FREQUENT, pick_sticker, sticker_material, wants_sticker
 from app.vision import vision_thinking_extra
 
 logger = logging.getLogger(__name__)
@@ -26,6 +26,31 @@ REVIEW_SYSTEM = (
     "（按顺序编号）。你的任务不是描述图片，而是判断此刻发哪一张不会显得答非所问："
     "情绪对得上、场合不别扭。宁愿一张都不发，也不要发一张和对话无关的图。"
 )
+
+# 角色设定里「表情包频率」为「爱发」时追加给复核模型的说明：同一条标准，换一个松紧度。
+REVIEW_SYSTEM_FREQUENT = (
+    "这个角色很爱发表情包，是它表达情绪的主要方式。只要有一张勉强贴得上，就发出去；"
+    "只有明显会让人误会或完全无关时才说别发。"
+)
+
+# 表情包频率档位（与 App 里「从不发 / 正常 / 非常爱发」一一对应，存 character.settings.stickerFrequency）
+FREQUENCY_NEVER = "never"
+FREQUENCY_NORMAL = "normal"
+FREQUENCY_FREQUENT = "frequent"
+
+_FREQUENCY_ALIASES = {
+    "never": FREQUENCY_NEVER,
+    "off": FREQUENCY_NEVER,
+    "none": FREQUENCY_NEVER,
+    "0": FREQUENCY_NEVER,
+    "normal": FREQUENCY_NORMAL,
+    "default": FREQUENCY_NORMAL,
+    "1": FREQUENCY_NORMAL,
+    "frequent": FREQUENCY_FREQUENT,
+    "often": FREQUENCY_FREQUENT,
+    "high": FREQUENCY_FREQUENT,
+    "2": FREQUENCY_FREQUENT,
+}
 
 REVIEW_INSTRUCTION = """当前对话
 用户：{user_text}
@@ -46,6 +71,17 @@ class ReviewDecision:
     url: str | None
     reason: str
     explicit_request: bool
+
+
+def normalize_frequency(value: object) -> str:
+    """把角色设定里的频率值收敛成三档之一。未知值一律当「正常」，别让配置错误静音表情。"""
+    if isinstance(value, (int, float)):
+        text = str(int(value))
+    elif isinstance(value, str):
+        text = value.strip().lower()
+    else:
+        return FREQUENCY_NORMAL
+    return _FREQUENCY_ALIASES.get(text, FREQUENCY_NORMAL)
 
 
 def _b64(sticker: Mapping[str, Any]) -> str:
@@ -89,6 +125,7 @@ async def review_sticker(
     last_url: str | None = None,
     max_candidates: int = 8,
     max_tokens: int = 160,
+    frequency: str = FREQUENCY_NORMAL,
 ) -> ReviewDecision | None:
     """把带字节的候选图交给视觉模型复核。
 
@@ -117,12 +154,16 @@ async def review_sticker(
     for sticker, encoded in picked:
         parts.append(ImagePart(png_base64=encoded, mime=_mime(sticker)))
 
+    system = REVIEW_SYSTEM
+    if frequency == FREQUENCY_FREQUENT:
+        system = f"{REVIEW_SYSTEM}\n\n{REVIEW_SYSTEM_FREQUENT}"
+
     try:
         result = await gateway.chat(
             base_url=base_url,
             api_key=api_key,
             model=model,
-            system=REVIEW_SYSTEM,
+            system=system,
             parts=parts,
             temperature=0.2,
             max_tokens=max_tokens,
@@ -161,14 +202,23 @@ async def choose_sticker(
     review_enabled: bool = True,
     max_candidates: int = 8,
     max_tokens: int = 160,
+    frequency: str = FREQUENCY_NORMAL,
 ) -> str | None:
     """决定这一轮发哪张表情包（None = 不发）。
 
     顺序：用户点名要图 → 复核（若可用）→ 词表兜底。用户点名时即使模型说「别发」，
     也退回词表给他发一张：他已经开口要了，装没听见最糟。
+
+    `frequency` 来自角色设置（从不发 / 正常 / 非常爱发）：
+    「从不发」直接返回不发（用户点名也不发，这是他自己设的）；
+    「非常爱发」把复核标准放宽、词表阈值降到 1 分。
     """
     stickers = list(candidates or [])
     if not stickers:
+        return None
+    level = normalize_frequency(frequency)
+    if level == FREQUENCY_NEVER:
+        logger.info("sticker.skipped source=frequency reason=never")
         return None
     explicit = wants_sticker(user_text)
     material = sticker_material(user_text, reply)
@@ -185,22 +235,33 @@ async def choose_sticker(
             last_url=last_url,
             max_candidates=max_candidates,
             max_tokens=max_tokens,
+            frequency=level,
         )
         if decision is not None:
             if decision.url:
                 logger.info(
-                    "sticker.chosen source=review url=%s explicit=%s reason=%s",
-                    decision.url, explicit, decision.reason,
+                    "sticker.chosen source=review url=%s explicit=%s frequency=%s reason=%s",
+                    decision.url, explicit, level, decision.reason,
                 )
                 return decision.url
             if not explicit:
-                logger.info("sticker.skipped source=review explicit=False reason=%s", decision.reason)
+                logger.info(
+                    "sticker.skipped source=review explicit=False frequency=%s reason=%s",
+                    decision.reason, level,
+                )
                 return None
             logger.info("sticker review declined but user asked explicitly: %s", decision.reason)
 
-    chosen = pick_sticker(material, stickers, last_url=last_url, explicit=explicit)
+    min_score = MIN_SCORE_FREQUENT if level == FREQUENCY_FREQUENT else None
+    chosen = pick_sticker(
+        material,
+        stickers,
+        last_url=last_url,
+        explicit=explicit,
+        **({"min_score": min_score} if min_score is not None else {}),
+    )
     logger.info(
-        "sticker.chosen source=keywords url=%s explicit=%s review=%s",
-        chosen, explicit, "on" if review_enabled and gateway is not None else "off",
+        "sticker.chosen source=keywords url=%s explicit=%s frequency=%s review=%s",
+        chosen, explicit, level, "on" if review_enabled and gateway is not None else "off",
     )
     return chosen
