@@ -85,7 +85,7 @@ export default {
     faqProactiveQ: 'Can it message me first?',
     faqProactiveA: 'No. Official bots only reply; starting a conversation requires extra quota, and you can turn proactive messages off in QQ anyway.',
     faqGroupQ: 'Does it work in groups?',
-    faqGroupA: 'Yes: add the bot to a group (you must be the owner) and @-mention it. Everyone in the group keeps their own character and their own memory.',
+    faqGroupA: 'Yes: add the bot to a group (you must be the owner) and mention it when you talk. Everyone in the group keeps their own character and their own memory.',
     faqAuditQ: 'Is chat content moderated?',
     faqAuditA: 'Yes. This runs on the official Tencent channel, so content is moderated — the upside is no random ban like a throwaway account.',
     errorGeneric: 'Something went wrong, please retry'

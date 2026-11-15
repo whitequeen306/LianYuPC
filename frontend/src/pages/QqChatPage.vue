@@ -485,11 +485,38 @@ onBeforeUnmount(() => {
 }
 
 .qq-steps {
+  counter-reset: qq-step;
   margin: 0;
-  padding-left: 18px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   font-size: 12.5px;
-  line-height: 1.9;
-  opacity: 0.8;
+  line-height: 1.7;
+}
+
+.qq-steps li {
+  counter-increment: qq-step;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  opacity: 0.82;
+}
+
+/* 序号自己画：全局 reset 把 ol 的 marker 关了 */
+.qq-steps li::before {
+  content: counter(qq-step);
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  opacity: 0.9;
 }
 
 .qq-empty {
@@ -523,6 +550,16 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
+}
+
+/* 不让 radio-group 被挤压：挤压时最后一个按钮的文字会溢出色块 */
+.qq-binding__freq :deep(.el-radio-group) {
+  flex: 0 0 auto;
+}
+
+.qq-binding__freq :deep(.el-radio-button__inner) {
+  padding: 7px 13px;
+  white-space: nowrap;
 }
 
 .qq-binding__freq-label {

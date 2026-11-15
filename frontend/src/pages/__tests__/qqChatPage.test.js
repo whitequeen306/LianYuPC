@@ -58,4 +58,19 @@ describe('qqChat i18n', () => {
       }
     }
   })
+
+  test('copy avoids characters vue-i18n reads as syntax', () => {
+    // @ 会被当成 linked key；花括号只在已知插值处允许，否则会编译失败、页面白屏
+    const allowedPlaceholders = /\{(names|name|time)\}/g
+    for (const [name, locale] of Object.entries(locales)) {
+      for (const [key, value] of Object.entries(locale.qqChat)) {
+        const text = String(value)
+        expect(text.includes('@'), `${name}.qqChat.${key} 含 @`).toBe(false)
+        expect(
+          /[{}]/.test(text.replace(allowedPlaceholders, '')),
+          `${name}.qqChat.${key} 含未声明插值`
+        ).toBe(false)
+      }
+    }
+  })
 })
