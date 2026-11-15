@@ -9,6 +9,7 @@ import logging
 from dataclasses import dataclass
 
 from app.config import get_settings
+from app.media_frames import prepare_vision_image
 from app.resilience import GatewayError
 from app.gateway import (
     GatewayResult,
@@ -79,13 +80,17 @@ async def analyze_image(
 ) -> VisionAnalysisResult:
     """Stage 1：视觉 JSON 分析（temperature 0.1 / maxTokens 与 Java 一致）。"""
     settings = get_settings()
+    prepared = prepare_vision_image(image_png_base64)
+    parts = [ImagePart(png_base64=prepared.base64, mime=prepared.mime)]
+    if prepared.hint:
+        parts.insert(0, TextPart(text=prepared.hint))
     try:
         result: GatewayResult = await gateway.chat(
             base_url=settings.multimodal_base_url,
             api_key=settings.multimodal_api_key,
             model=settings.multimodal_model,
             system=VISION_ANALYSIS_JSON_INSTRUCTION,
-            parts=[ImagePart(png_base64=image_png_base64)],
+            parts=parts,
             temperature=0.1,
             max_tokens=max_tokens,
             extra=vision_thinking_extra(),

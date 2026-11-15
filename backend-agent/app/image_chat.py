@@ -18,7 +18,8 @@ from __future__ import annotations
 import logging
 
 from app.config import get_settings
-from app.gateway import ImagePart, ModelGateway, ModelGatewayError
+from app.gateway import ImagePart, ModelGateway, ModelGatewayError, TextPart
+from app.media_frames import prepare_vision_image
 from app.resilience import GatewayError
 from app.vision import (
     VISION_ANALYSIS_JSON_INSTRUCTION,
@@ -65,13 +66,17 @@ async def chat_with_image(
         return {"error": "missing_image"}
 
     # Stage 1：视觉 JSON 分析（temperature 0.1，与 Java 一致）
+    prepared = prepare_vision_image(image_png_base64)
+    parts = [ImagePart(png_base64=prepared.base64, mime=prepared.mime)]
+    if prepared.hint:
+        parts.insert(0, TextPart(text=prepared.hint))
     try:
         vision_result = await gateway.chat(
             base_url=vision_base_url,
             api_key=vision_api_key,
             model=vision_model,
             system=VISION_ANALYSIS_JSON_INSTRUCTION,
-            parts=[ImagePart(png_base64=image_png_base64)],
+            parts=parts,
             temperature=0.1,
             max_tokens=settings.multimodal_describe_max_tokens,
             extra=vision_thinking_extra(),

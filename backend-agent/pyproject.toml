@@ -24,6 +24,8 @@ dependencies = [
     # 会把召回预算整个吃掉）。onnxruntime 与 tokenizers 加起来约 60MB，不含 torch
     "onnxruntime>=1.20",
     "tokenizers>=0.20",
+    # 动图帧条：QQ 传来的动图表情包是 GIF，视觉模型只看第一帧；拼成帧条才看得出动作
+    "pillow>=11",
 ]
 
 [dependency-groups]
