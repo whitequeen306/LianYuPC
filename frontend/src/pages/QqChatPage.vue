@@ -465,66 +465,111 @@ onBeforeUnmount(() => {
 })
 </script>
 
-<style scoped>
+<style lang="scss" scoped>
 .qq-chat-page {
-  padding-bottom: 48px;
+  max-width: $narrow-page-max;
+  padding-bottom: $space-12;
+}
+
+/* 页面骨架沿用 WeChat 桥那套：全局只 reset 了字重，标题字号必须在这里给，
+   否则 h2 会退回浏览器默认的 1.5em 粗黑，看着像排版炸了。 */
+.page-header {
+  margin-bottom: $space-10;
+}
+
+.page-title {
+  font-size: $font-size-2xl;
+  font-weight: $font-weight-bold;
+  color: $color-text-primary;
+  margin-bottom: $space-2;
+}
+
+.page-desc {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  max-width: 46ch;
+}
+
+.section + .section {
+  margin-top: $space-12;
+}
+
+.section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $space-4;
+  margin-bottom: $space-5;
+}
+
+.section-title {
+  font-size: $font-size-lg;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+  margin-bottom: $space-1;
+}
+
+.section-desc {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  max-width: 46ch;
 }
 
 .qq-status {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 14px 18px;
-  margin-bottom: 20px;
+  gap: $space-4;
+  padding: $space-3 $space-5;
+  margin-bottom: $space-6;
   border-left: 3px solid transparent;
 }
 
 .qq-status--warn {
-  border-left-color: #e6a23c;
+  border-left-color: $color-warning;
 }
 
 .qq-status--idle {
-  border-left-color: rgba(var(--accent-rgb, 120, 120, 255), 0.7);
+  border-left-color: rgba($color-pink-rgb, 0.7);
 }
 
 .qq-status--ok {
-  border-left-color: #67c23a;
+  border-left-color: $color-success;
 }
 
 .qq-status__title {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
 }
 
 .qq-status__hint {
-  font-size: 12.5px;
-  opacity: 0.66;
-  margin-top: 4px;
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+  margin-top: $space-1;
 }
 
 .qq-card {
-  padding: 18px 20px;
+  padding: $space-5 $space-6;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: $space-4;
 }
 
 .qq-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: $space-4;
 }
 
 .qq-row__title {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
 }
 
 .qq-row__hint {
-  font-size: 12px;
-  opacity: 0.62;
+  font-size: $font-size-xs;
+  color: $color-text-muted;
   margin-top: 2px;
 }
 
@@ -537,42 +582,42 @@ onBeforeUnmount(() => {
 }
 
 .qq-qr {
-  border: 1px dashed rgba(var(--accent-rgb, 120, 120, 255), 0.35);
-  border-radius: 12px;
-  padding: 16px;
+  border: 1px dashed rgba($color-pink-rgb, 0.35);
+  border-radius: $radius-lg;
+  padding: $space-4;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: $space-3;
 }
 
 /* 二维码用浅底：深色主题下直接放透明 PNG 会扫不出来 */
 .qq-qr__image {
   width: 280px;
   height: 280px;
-  border-radius: 10px;
+  border-radius: $radius-md;
   background: #fff;
-  padding: 8px;
+  padding: $space-2;
 }
 
 .qq-qr__meta {
   display: flex;
   align-items: center;
-  gap: 16px;
-  font-size: 12px;
-  opacity: 0.72;
+  gap: $space-4;
+  font-size: $font-size-xs;
+  color: $color-text-muted;
 }
 
 .qq-qr__state--waiting {
-  color: #e6a23c;
+  color: $color-warning;
 }
 
 .qq-qr__state--done {
-  color: #67c23a;
+  color: $color-success;
 }
 
 .qq-qr__state--expired {
-  color: #f56c6c;
+  color: $color-error;
 }
 
 .qq-steps {
@@ -582,37 +627,37 @@ onBeforeUnmount(() => {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-size: 12.5px;
-  line-height: 1.7;
+  gap: $space-2;
+  font-size: $font-size-sm;
+  line-height: $line-height-relaxed;
+  color: $color-text-secondary;
 }
 
 .qq-steps li {
   counter-increment: qq-step;
   display: flex;
-  gap: 8px;
+  gap: $space-2;
   align-items: flex-start;
-  opacity: 0.82;
 }
 
 /* 序号自己画：全局 reset 把 ol 的 marker 关了 */
 .qq-steps li::before {
   content: counter(qq-step);
   flex: 0 0 auto;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   margin-top: 2px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  font-size: 10px;
-  line-height: 16px;
+  background: rgba($color-pink-rgb, 0.16);
+  color: $color-text-primary;
+  font-size: 11px;
+  line-height: 18px;
   text-align: center;
-  opacity: 0.9;
 }
 
 .qq-empty {
-  font-size: 13px;
-  opacity: 0.6;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
   margin: 0;
 }
 

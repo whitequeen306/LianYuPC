@@ -5,6 +5,7 @@
 // 网关只负责「把 openid 和一句话交给后端，把答案发回 QQ」，不存凭据、不存对话。
 
 import { IMAGE_PLACEHOLDER, cleanText, pickImage } from './media.js';
+import { splitReply } from './replySplit.js';
 
 // 同一条消息可能因重连被重投，reply 一次就够。
 const DEDUPE_LIMIT = 200;
@@ -29,7 +30,16 @@ export function looksLikeBindCode(text) {
   return /^\d{6}$/.test(String(text || '').replace(/\s+/g, ''));
 }
 
-export function createQqBotHandler({ api, backend, log = () => {}, maxReplyChars = 1500, fetchImage = null }) {
+export function createQqBotHandler({
+  api,
+  backend,
+  log = () => {},
+  maxReplyChars = 1500,
+  fetchImage = null,
+  // 一条用户消息最多回几条文字气泡（腾讯口径：单聊 4 条、群聊 5 条，图片也占一条）。
+  maxBubbles = 2,
+  bubbleDelayMs = 700,
+}) {
   const seen = [];
   const seenSet = new Set();
 
@@ -45,15 +55,17 @@ export function createQqBotHandler({ api, backend, log = () => {}, maxReplyChars
     return true;
   }
 
-  async function send(event, content) {
+  async function send(event, content, msgSeq = 1) {
     const text = String(content || '').slice(0, maxReplyChars);
     if (!text) return;
     if (event.kind === 'group') {
-      await api.sendGroup(event.groupOpenid, text, { msgId: event.msgId });
+      await api.sendGroup(event.groupOpenid, text, { msgId: event.msgId, msgSeq });
     } else {
-      await api.sendC2C(event.openid, text, { msgId: event.msgId });
+      await api.sendC2C(event.openid, text, { msgId: event.msgId, msgSeq });
     }
   }
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   /**
    * 角色这一轮如果带了图，就再发一条富媒体消息（msg_seq=2，文字占 1）。
@@ -62,7 +74,7 @@ export function createQqBotHandler({ api, backend, log = () => {}, maxReplyChars
    * 后端给的是站内路径（`/api/public/files/...`），腾讯要的是绝对 URL，
    * 这里用网关已知的后端地址补全——不把域名写死在任何一端的配置里。
    */
-  async function sendImageIfAny(event, imageUrl) {
+  async function sendImageIfAny(event, imageUrl, msgSeq = 2) {
     const raw = String(imageUrl || '').trim();
     if (!raw) return;
     const url = /^https?:\/\//i.test(raw)
@@ -74,9 +86,9 @@ export function createQqBotHandler({ api, backend, log = () => {}, maxReplyChars
     }
     try {
       if (event.kind === 'group') {
-        await api.sendGroupImage(event.groupOpenid, url, { msgId: event.msgId, msgSeq: 2 });
+        await api.sendGroupImage(event.groupOpenid, url, { msgId: event.msgId, msgSeq });
       } else {
-        await api.sendC2CImage(event.openid, url, { msgId: event.msgId, msgSeq: 2 });
+        await api.sendC2CImage(event.openid, url, { msgId: event.msgId, msgSeq });
       }
       log(`[qqbot] 已回图片 ${url.slice(0, 80)}`);
     } catch (err) {
@@ -148,10 +160,19 @@ export function createQqBotHandler({ api, backend, log = () => {}, maxReplyChars
           await send(event, FALLBACK_REPLY);
           return { skipped: 'empty_reply' };
         }
-        await send(event, reply);
-        log(`[qqbot] 已回 ${reply.length} 字（conv=${result.conversationId}）`);
-        await sendImageIfAny(event, result.imageUrl);
-        return { replied: true, chars: reply.length };
+        // 一段话拆成几条气泡发：手机 QQ 里的真人不会把三五句塞进一条消息。
+        // msg_seq 从 1 递增（同一条用户消息里重复的 seq 会被腾讯去重拒掉），
+        // 图片接在文字之后，占下一个 seq。
+        const bubbles = splitReply(reply, maxBubbles);
+        for (let i = 0; i < bubbles.length; i += 1) {
+          if (i > 0 && bubbleDelayMs > 0) await sleep(bubbleDelayMs);
+          await send(event, bubbles[i], i + 1);
+        }
+        log(
+          `[qqbot] 已回 ${reply.length} 字 / ${bubbles.length} 条（conv=${result.conversationId}）`,
+        );
+        await sendImageIfAny(event, result.imageUrl, bubbles.length + 1);
+        return { replied: true, chars: reply.length, bubbles: bubbles.length };
       } catch (err) {
         if (err.code === 9003) {
           await send(event, UNBOUND_HINT);

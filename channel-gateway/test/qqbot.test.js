@@ -333,7 +333,7 @@ test('handler：群聊走 sendGroup，并把「群 + 成员」当外部身份', 
 
   assert.equal(result.replied, true);
   assert.deepEqual(seen[0], { channel: 'qqbot-group', externalId: 'G1:M1', text: '大家好' });
-  assert.deepEqual(sent[0], { gid: 'G1', content: '群里也在', opts: { msgId: 'gm1' } });
+  assert.deepEqual(sent[0], { gid: 'G1', content: '群里也在', opts: { msgId: 'gm1', msgSeq: 1 } });
 });
 
 test('handler：站内表情包路径补成绝对 URL 后再交给 QQ', async () => {

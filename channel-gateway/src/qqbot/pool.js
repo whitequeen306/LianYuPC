@@ -22,6 +22,7 @@ export function createBotPool({
   fetchImpl,
   wsFactory,
   handlerFactory = createQqBotHandler,
+  handlerOptions = {},
   gatewayFactory = createQqBotGateway,
   apiFactory = createQqBotApi,
   now = () => Date.now(),
@@ -42,7 +43,7 @@ export function createBotPool({
       fetchImpl,
       now,
     });
-    const handler = handlerFactory({ api, backend, log, fetchImage });
+    const handler = handlerFactory({ api, backend, log, fetchImage, ...handlerOptions });
     const gateway = gatewayFactory({
       appId: account.appId,
       apiBase,

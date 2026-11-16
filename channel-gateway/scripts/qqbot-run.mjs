@@ -40,7 +40,12 @@ if (env.QQ_POOL === '1' || (!appId && env.QQ_GATEWAY_SECRET)) {
     secret: env.QQ_GATEWAY_SECRET,
     insecureTls: env.LIANYU_INSECURE_TLS === '1',
   });
-  const pool = createBotPool({ backend: poolBackend, log, fetchImage: fetchImageBytes });
+  const pool = createBotPool({
+    backend: poolBackend,
+    log,
+    fetchImage: fetchImageBytes,
+    handlerOptions: bubbleOptions(env),
+  });
   await pool.start();
   log(`[qqbot] 连接池已启动：后端 ${poolBackend.origin}，当前 ${pool.size()} 个机器人`);
   const shutdown = () => {
@@ -86,6 +91,18 @@ const backend = echo
       secret: env.QQ_GATEWAY_SECRET,
       insecureTls: env.LIANYU_INSECURE_TLS === '1',
     });
+
+// 一条用户消息最多回几条文字气泡 + 气泡之间停多久。
+// 腾讯的限制是「单聊 4 条 / 群聊 5 条」（图片也占一条），所以默认 2 条文字留足余量，
+// 真正需要一口气说三段时用 QQ_MAX_BUBBLES 调，别超过 3（还要给表情包留位置）。
+function bubbleOptions(env) {
+  const maxBubbles = Number(env.QQ_MAX_BUBBLES || 2);
+  const bubbleDelayMs = Number(env.QQ_BUBBLE_DELAY_MS || 700);
+  return {
+    maxBubbles: Number.isFinite(maxBubbles) && maxBubbles > 0 ? Math.min(3, maxBubbles) : 2,
+    bubbleDelayMs: Number.isFinite(bubbleDelayMs) && bubbleDelayMs >= 0 ? bubbleDelayMs : 700,
+  };
+}
 
 // QQ 图片给的是一个带 rkey 的限时 URL（multimedia.nt.qq.com.cn），我们这里只取字节，
 // 落库由后端负责（它要按对象存储的 key 走识图链路）。限制 5MB 与后端同一口径。
@@ -143,7 +160,7 @@ const handler = echo
         return { replied: true };
       },
     }
-  : createQqBotHandler({ api, backend, log, fetchImage: fetchImageBytes });
+  : createQqBotHandler({ api, backend, log, fetchImage: fetchImageBytes, ...bubbleOptions(env) });
 
 // 图片/表情包不在 content 里，而是走 attachments（content_type 区分）。线上排查时
 // 我们只想知道「这条消息到底带了什么」，所以打一行摘要；要看全貌设 QQ_LOG_RAW=1。
