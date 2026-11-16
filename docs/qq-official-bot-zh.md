@@ -185,3 +185,69 @@ docker run -d --name lianyu-qqbot --restart unless-stopped --network host \
 4. **可观测**：只有 stdout 日志，缺回复耗时、失败率、`trace_id` 关联；线上目前靠 `docker logs`。
 5. **网关单点**：一个 bot 一条 WS 连接；要扩容得用 shard + 多实例，且事件分片后处理要无状态。
 6. **桌面端入口未发版**：`#/app/qq-chat` 现在只在本地构建里，用户装的客户端还没有。
+
+---
+
+## 11. 每人一个机器人：扫码连接（方案 1，2026-11-16 上线）
+
+§1–§10 写的是**一个公共机器人**（「甘雨」）服务所有人：用户只需要发一个 6 位绑定码。
+上线后改成**用户自己建一个机器人**，他手机 QQ 里显示的是他自己起的名字（「小满」「某某」），
+我们服务的是这些机器人背后的用户。
+
+### 11.1 为什么换
+
+| 维度 | 公共机器人 | 每人一个（现在） |
+|---|---|---|
+| QQ 里显示的名字/头像 | 固定「甘雨」，所有人一样 | 用户自己起的，能叫角色名 |
+| 用户动作 | 发 6 位码 | 扫码（10 秒，腾讯页面上就能建号） |
+| 我们的凭据风险 | 只有我们自己的一把 secret | 存的是**用户自己的** secret，泄露就是他的号 |
+| 封号/内容风险 | 全平台共担一个号 | 各担各的，一个被封不影响别人 |
+| 连接数 | 1 条 | 每个 bot 一条 WS（见 §11.6 规模提醒） |
+
+### 11.2 扫码协议（从官方 SDK 反查，不用装 SDK）
+
+1. `POST https://q.qq.com/lite/create_bind_task`，body `{key: base64(32 随机字节)}` → `{task_id}`。
+   这个 `key` 是我们临时生成的 AES 钥匙，**只留在后端内存**。
+2. 把 `https://q.qq.com/qqbot/openclaw/connect.html?task_id=<id>&source=yuni-pc&_wv=2` 画成二维码。
+3. `POST https://q.qq.com/lite/poll_bind_result`，body `{task_id}` →
+   `{status: 0|1|2|3, bot_appid, bot_encrypt_secret, user_openid}`（0 NONE / 1 PENDING / 2 COMPLETED / 3 EXPIRED）。
+4. COMPLETED 时用第 1 步的钥匙解 `bot_encrypt_secret`：AES-256-GCM，payload = `base64(IV(12)+ciphertext+tag(16))`。
+
+拿到 `appId / appSecret / user_openid` 之后，这个用户和这个机器人的关系就确定了 ——
+**6 位绑定码整个删掉了**，因为腾讯在扫码那一刻就把「谁在说话」告诉了我们。
+
+### 11.3 凭据放哪
+
+`qq_bot_account`（V62）：`user_id / app_id / app_secret_cipher / external_openid / character_id / status`。
+`app_secret_cipher` 是 Jasypt 加密后的密文，**只有 Java 能解**；网关要发消息时调
+`POST /internal/qq/token`（签名内网接口）换 access_token，secret 不出后端。
+
+> 重新扫同一个 bot 会**重置它的 secret**，旧 token 立刻失效 —— 所以 `completed` 时必须覆盖密文，
+> 且网关侧遇到 401 要强制换 token 重试（已经这么做了，见 §11.5）。
+
+### 11.4 连接池（`channel-gateway/src/qqbot/pool.js`）
+
+网关不再只知道一个 bot：它每 30 秒 `POST /internal/qq/accounts` 拉一次「谁该在线」，多退少补。
+
+- 新增账号 → 起一条 WS；账号消失（用户解绑）→ 停掉那条 WS。
+- 换绑角色 → 只更新 `characterId`，**不重开连接**（换了连接用户正在打的字就断了）。
+- 后端抖动 → 只记日志，保留现有连接（不能让一次 502 把所有人踢下线）。
+- 单个机器人连不上 → 只影响它自己，失败项先从 `live` 摘掉，下一轮 30 秒自动重试。
+
+启动形态：`QQ_POOL=1` + `QQ_GATEWAY_SECRET`，容器 `lianyu-qqbot-pool`。
+
+### 11.5 踩过的坑（都已加测试）
+
+1. **`onEvent` 签名错位**：`gateway` 是 `onEvent(type, event)`，池子里写成 `(event) => handler.handle(event)`，
+   handler 收到的是字符串 `"C2C_MESSAGE_CREATE"` → `event.openid` 为空 → 每条消息被**静默丢弃**。
+   现象是「WS 明明在线、事件也打出来了，就是不回」。现在缺 openid 会打日志。
+2. **token 是 Promise**：`accessToken()` 没 await 就拼进请求头 → `QQBot [object Promise]` → 401。
+3. **一个挂全挂**：某 bot 启动失败让整个 node 进程退出（其它用户跟着掉线），现在被 catch 隔离。
+4. **重连不排队**：401 之后不再重试 → 用户在 QQ 里永远看到「连接中」，现在退避重排队。
+5. **nginx 缓存 upstream IP**：重建 backend 后全站 502，`nginx -s reload` 才恢复（见 `AGENTS.md` §7）。
+
+### 11.6 规模提醒
+
+一个 bot 一条 WS 连接，池子是**单进程**。几百个 bot 以内没问题；再往上要 shard + 多实例，
+且事件分片后处理必须无状态（目前 handler 的 msgId 去重环在内存里，届时得换 Redis）。
+
