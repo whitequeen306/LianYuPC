@@ -56,7 +56,7 @@ export default {
     step2: '用手機 QQ 掃一下，可以順手新建一個機器人（建議取成角色名）',
     step3: '掃完回到這裡，機器人就能替你回話了',
     qrTitle: 'QR Code',
-    qrHint: '10 分鐘內有效；掃碼頁右下角能新建機器人',
+    qrHint: '兩分鐘內有效，過期會自動換一張；掃碼頁右下角能新建機器人',
     qrGenerate: '產生 QR Code',
     qrRegenerate: '換一張',
     qrWaiting: '等你掃碼…',

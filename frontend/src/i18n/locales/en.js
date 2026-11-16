@@ -55,7 +55,7 @@ export default {
     step2: 'Scan it with phone QQ — you can create a new bot right there (name it after the character)',
     step3: 'Come back here and the bot starts replying for you',
     qrTitle: 'QR code',
-    qrHint: 'Valid for 10 minutes; you can create a new bot from the scan page',
+    qrHint: 'Valid for two minutes, auto-refreshed when it expires; you can create a new bot from the scan page',
     qrGenerate: 'Show QR code',
     qrRegenerate: 'New code',
     qrWaiting: 'Waiting for you to scan…',

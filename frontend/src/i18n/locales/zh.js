@@ -55,7 +55,7 @@ export default {
     step2: '手机 QQ 扫一下，可以顺手新建一个机器人（建议起成角色名）',
     step3: '扫完回到这里，机器人就能替你回话了',
     qrTitle: '二维码',
-    qrHint: '10 分钟内有效；扫码页右下角能新建机器人',
+    qrHint: '两分钟内有效，过期会自动换一张；扫码页右下角能新建机器人',
     qrGenerate: '生成二维码',
     qrRegenerate: '换一张',
     qrWaiting: '等你扫码…',
