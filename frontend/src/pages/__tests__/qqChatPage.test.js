@@ -48,10 +48,12 @@ describe('QqChatPage', () => {
   })
 
   test('back button never becomes a silent no-op', () => {
-    // 桌面端整页载入时历史里没有上一页，裸 router.back() 点了没反应（线上报过）
-    expect(source).toContain("import { resolveBack } from '@/utils/navBack'")
-    expect(source).toContain('resolveBack(window.history.state)')
+    // 桌面端整页载入时历史里没有上一页，裸 router.back() 点了没反应（线上报过两次）。
+    // 现在统一走 navigateBack：先试 back，没走就 push 兜底。
+    expect(source).toContain("import { navigateBack } from '@/utils/navBack'")
+    expect(source).toContain('navigateBack(router, window.history.state)')
     expect(source).not.toMatch(/function goBack\(\)\s*\{\s*router\.back\(\)\s*\}/)
+    expect(source).not.toMatch(/function goBack\(\)\s*\{\s*const next = resolveBack/)
   })
 
   test('answers the four questions users actually ask', () => {

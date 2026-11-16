@@ -182,7 +182,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, RefreshRight } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
-import { resolveBack } from '@/utils/navBack'
+import { navigateBack } from '@/utils/navBack'
 import { listCharacters, updateCharacter } from '@/api/character'
 import { listVaults } from '@/api/ai'
 import {
@@ -263,14 +263,11 @@ const status = computed(() => {
 // 这个页面的入口在「设置」里，返回就该回设置。
 // 不能只靠 router.back()：桌面端启动恢复（prepareAuthRoute 的 router.replace）与
 // 主进程 loadRoute 整页载入都会让历史里没有上一页，back() 是静默空操作，
-// 用户点了像没反应（「返回无效」就是这么来的）。判断逻辑见 utils/navBack.js。
+// 用户点了像没反应（「返回无效」就是这么来的）。
+// 实测还有更糟的一种：state.back 有值、back() 仍然不动 —— 所以统一走 navigateBack，
+// 它会「先试 back，没走就 push 兜底」，保证一定离开当前页。判断见 utils/navBack.js。
 function goBack() {
-  const next = resolveBack(window.history.state)
-  if (next.type === 'back') {
-    router.back()
-    return
-  }
-  router.push(next.path)
+  navigateBack(router, window.history.state)
 }
 
 function formatTime(value) {

@@ -283,7 +283,7 @@ import {
 } from '@/api/character'
 import { clearConversationMessages, listConversations } from '@/api/conversation'
 import { resolveMediaUrl } from '@/utils/media'
-import { resolveBack } from '@/utils/navBack'
+import { navigateBack } from '@/utils/navBack'
 import CharacterAvatarImg from '@/components/CharacterAvatarImg.vue'
 import { normalizeHex } from '@/utils/themeColor'
 
@@ -595,13 +595,9 @@ function sanitizeBackgroundKey(value) {
 
 function goBack() {
   // history.length > 1 不可靠：桌面端整页载入后仍可能是 2，但没有真正的业务上一页，
-  // back() 会变成静默空操作。统一用 utils/navBack 判断（看 history.state.back）。
-  const next = resolveBack(window.history.state, '/app/characters')
-  if (next.type === 'back') {
-    router.back()
-    return
-  }
-  router.push(next.path)
+  // back() 会变成静默空操作。统一走 utils/navBack 的 navigateBack（先试 back，
+  // 没走就 push 兜底）—— 光看 history.state.back 也不够，实测有 back 有值却退不动的情况。
+  navigateBack(router, window.history.state, '/app/characters')
 }
 
 function triggerBgUpload() {
