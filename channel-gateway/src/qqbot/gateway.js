@@ -116,9 +116,19 @@ export function createQqBotGateway({
     }, every);
   }
 
+  async function sendHandshake() {
+    const token = await accessToken();
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (mode === 'resume' && sessionId && seq != null) {
+      ws.send(JSON.stringify(buildResume(token, { sessionId, seq })));
+    } else {
+      ws.send(JSON.stringify(buildIdentify(token)));
+    }
+  }
+
   async function fetchGatewayUrl() {
     const res = await fetchImpl(`${base}/gateway`, {
-      headers: { Authorization: `QQBot ${accessToken()}` },
+      headers: { Authorization: `QQBot ${await accessToken()}` },
     });
     const body = (await res.json().catch(() => null)) || {};
     if (!res.ok || !body.url) throw new Error(`gateway_url_failed_${res.status}:${body.message || ''}`);
@@ -141,11 +151,9 @@ export function createQqBotGateway({
     switch (frame.op) {
       case 10: // Hello
         heartbeatIntervalMs = (frame.d && frame.d.heartbeat_interval) || 30_000;
-        if (mode === 'resume' && sessionId && seq != null) {
-          ws.send(JSON.stringify(buildResume(accessToken(), { sessionId, seq })));
-        } else {
-          ws.send(JSON.stringify(buildIdentify(accessToken())));
-        }
+        // accessToken 可能是异步的（连接池里走后端换 token），必须 await 再拼 identify，
+        // 否则会把 "[object Promise]" 当成 token 发上去，腾讯回 401。
+        sendHandshake().catch((err) => onLog(`[qqbot] 握手失败：${err && err.message}`));
         startHeartbeat();
         break;
       case 0: // Dispatch

@@ -85,8 +85,14 @@ export function createBotPool({
         if (live.has(appId)) continue;
         const entry = { ...build(account), appId, characterId: account.characterId, lastError: null, since: now() };
         live.set(appId, entry);
-        entry.gateway.start();
         log(`[pool] 启动机器人 ${appId}（角色 ${account.characterId}）`);
+        // 一个机器人连不上（token 过期、被平台封禁…）不能拖垮整个进程：
+        // 池子里还有别人的机器人，挂掉要能自愈。
+        Promise.resolve(entry.gateway.start()).catch((err) => {
+          const message = err?.message || String(err);
+          entry.lastError = message;
+          log(`[pool] 机器人 ${appId} 启动失败：${message}`);
+        });
       }
     } catch (err) {
       log(`[pool] 同步账号失败：${err?.message || err}`);
@@ -126,6 +132,8 @@ export function createBotPool({
         appId: entry.appId,
         characterId: entry.characterId,
         since: entry.since,
+        // 起不来的机器人留在池子里等下次同步重试，但要让外面看得见「它为什么不在线」。
+        lastError: entry.lastError,
       }));
     },
 

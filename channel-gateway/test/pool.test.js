@@ -133,3 +133,41 @@ test('事件交给 handler，异常被吞掉不炸池子', async () => {
   assert.ok(Array.isArray(handlers[0].handled));
   pool.stop();
 });
+
+test('单个机器人起不来不影响池子里其它机器人', async () => {
+  // 线上真事：token 被平台判 401 时，旧代码让整个 node 进程退出，
+  // 别人家的机器人跟着全掉线。这里锁住「一个失败、其余照常」。
+  const backend = fakeBackend([
+    { appId: 'bad', characterId: 1 },
+    { appId: 'good', characterId: 2 },
+  ]);
+  const logs = [];
+  const started = [];
+  const pool = createBotPool({
+    backend,
+    log: (line) => logs.push(line),
+    pollMs: 1_000_000,
+    apiFactory: ({ appId }) => ({ appId, accessToken: async () => `tok-${appId}` }),
+    gatewayFactory: ({ appId }) => ({
+      start() {
+        if (appId === 'bad') return Promise.reject(new Error('gateway_url_failed_401'));
+        started.push(appId);
+        return Promise.resolve();
+      },
+      stop() {},
+    }),
+    handlerFactory: () => ({ handle: async () => {} }),
+  });
+
+  await pool.start();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  // 先把池子停掉再做断言：断言失败时若还留着 30s 轮询定时器，node --test 会挂住不退出。
+  const status = pool.status();
+  pool.stop();
+
+  assert.deepEqual(started, ['good']);
+  assert.equal(status.length, 2, '失败的机器人仍留在池子里等下次同步重试');
+  assert.ok(logs.some((l) => l.includes('启动失败：gateway_url_failed_401')));
+  assert.equal(status.find((s) => s.appId === 'bad').lastError, 'gateway_url_failed_401');
+});
