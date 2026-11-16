@@ -18,15 +18,24 @@ const DEFAULT_API_BASE = 'https://api.bot.qq.com';
 // 我们提前 5 分钟换，避免正卡在边界上被 401 打断一轮对话。
 const EXPIRY_MARGIN_MS = 5 * 60_000;
 
-export function createQqBotApi({ appId, clientSecret, apiBase = DEFAULT_API_BASE, fetchImpl = fetch, now = () => Date.now() }) {
+export function createQqBotApi({ appId, clientSecret, tokenProvider, apiBase = DEFAULT_API_BASE, fetchImpl = fetch, now = () => Date.now() }) {
   if (!appId) throw new Error('app_id_required');
-  if (!clientSecret) throw new Error('client_secret_required');
+  // 两种模式：自带 secret（单账号脚本）或只带 tokenProvider（连接池，secret 留在 Java）。
+  if (!clientSecret && !tokenProvider) throw new Error('client_secret_required');
   const base = apiBase.replace(/\/+$/, '');
 
   let cached = null; // { token, expiresAt }
 
   async function accessToken({ force = false } = {}) {
     if (!force && cached && cached.expiresAt - EXPIRY_MARGIN_MS > now()) return cached.token;
+
+    if (tokenProvider) {
+      const got = await tokenProvider({ force });
+      const ttlSeconds = Number(got && got.expiresInSeconds);
+      const ttl = Number.isFinite(ttlSeconds) && ttlSeconds > 0 ? ttlSeconds * 1000 : 7_200_000;
+      cached = { token: got.accessToken, expiresAt: now() + ttl };
+      return cached.token;
+    }
 
     const res = await fetchImpl(`${base}/app/getAppAccessToken`, {
       method: 'POST',

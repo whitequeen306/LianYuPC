@@ -125,5 +125,30 @@ export function createBackendClient({
     async bind({ channel, externalId, code }) {
       return call('/internal/qq/bind', { channel, externalId, code });
     },
+
+    /** 后端视角的「该连哪些机器人」：只有 appId/角色/openid，没有凭据。 */
+    async accounts() {
+      const data = await call('/internal/qq/accounts', {});
+      return Array.isArray(data) ? data : [];
+    },
+
+    /** 按 appId 换短期 accessToken：appSecret 留在库里，不经过网关。 */
+    async token(appId) {
+      const data = await call('/internal/qq/token', { appId });
+      if (!data || !data.accessToken) throw new Error('token_missing');
+      return {
+        accessToken: String(data.accessToken),
+        expiresInSeconds: Number(data.expiresInSeconds || 7200),
+      };
+    },
+
+    /** 把连接失败的原因回写，App 页面上能看到「为什么它不理我」。 */
+    async report({ appId, error }) {
+      try {
+        await call('/internal/qq/report', { appId, error: error == null ? null : String(error).slice(0, 200) });
+      } catch {
+        // 上报失败不该影响连接本身
+      }
+    },
   };
 }
