@@ -19,19 +19,32 @@ describe('QqChatPage', () => {
     expect(source).toContain("t('qqChat.statusOk', { names })")
   })
 
-  test('walks the user to the bot before asking for the code', () => {
-    expect(source).toContain("t('qqChat.botName')")
-    expect(source).toContain("t('qqChat.step1')")
-    expect(source).toContain("t('qqChat.step2')")
-    expect(source).toContain("t('qqChat.step3')")
-    // 顺序不能反：先告诉人去哪找机器人，再发码
-    expect(source.indexOf("t('qqChat.step1')")).toBeLessThan(source.indexOf('qq-code__value'))
+  test('connects by QR, not by a 6-digit code', () => {
+    expect(source).toContain('startQqBotTask')
+    expect(source).toContain("QRCode.toDataURL")
+    expect(source).toContain('qq-qr__image')
+    // 扫码这一步要排在「选角色」之后，用户先知道自己在给谁扫码
+    expect(source.indexOf("t('qqChat.character')")).toBeLessThan(source.indexOf('qq-qr__image'))
+    // 6 位码入口已经从页面退役
+    expect(source).not.toContain('issueQqBindCode')
+    expect(source).not.toContain('qq-code__value')
   })
 
-  test('sticker frequency is adjustable in place, on the binding card', () => {
+  test('binds the freshly scanned bot to the chosen character automatically', () => {
+    expect(source).toContain("pollQqBotTask(")
+    expect(source).toContain("result.status === 'completed'")
+    expect(source).toContain('bindQqBotCharacter(result.appId, characterId.value)')
+  })
+
+  test('sticker frequency is adjustable in place, on the account card', () => {
     expect(source).toContain("t('qqChat.stickerFreq')")
     expect(source).toContain('@update:model-value="value => onChangeFrequency(item, value)"')
     expect(source).toContain('settings: { stickerFrequency: value }')
+  })
+
+  test('disconnecting removes the credentials, with a confirm step', () => {
+    expect(source).toContain("t('qqChat.disconnectConfirm'")
+    expect(source).toContain('removeQqBotAccount(item.appId)')
   })
 
   test('answers the four questions users actually ask', () => {
@@ -70,6 +83,17 @@ describe('qqChat i18n', () => {
           /[{}]/.test(text.replace(allowedPlaceholders, '')),
           `${name}.qqChat.${key} 含未声明插值`
         ).toBe(false)
+      }
+    }
+  })
+
+  test('every key the page uses exists in all locales', () => {
+    const used = new Set()
+    for (const match of source.matchAll(/t\('qqChat\.([A-Za-z0-9_]+)'/g)) used.add(match[1])
+    expect(used.size).toBeGreaterThan(20)
+    for (const [name, locale] of Object.entries(locales)) {
+      for (const key of used) {
+        expect(locale.qqChat[key], `${name} 缺 qqChat.${key}`).toBeTruthy()
       }
     }
   })

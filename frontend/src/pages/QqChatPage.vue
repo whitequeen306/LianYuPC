@@ -23,7 +23,7 @@
       >{{ status.action.label }}</el-button>
     </div>
 
-    <!-- ② 连接：找到机器人 → 发码 → 完成 -->
+    <!-- ② 扫码连接：用自己的机器人，扫一下就好 -->
     <section class="section stagger-item">
       <div class="section-header">
         <div>
@@ -32,14 +32,6 @@
         </div>
       </div>
       <div class="glass qq-card">
-        <div class="qq-bot">
-          <div class="qq-bot__avatar">予</div>
-          <div class="qq-bot__text">
-            <div class="qq-row__title">{{ t('qqChat.botName') }}</div>
-            <div class="qq-row__hint">{{ t('qqChat.botHint') }}</div>
-          </div>
-        </div>
-
         <ol class="qq-steps">
           <li>{{ t('qqChat.step1') }}</li>
           <li>{{ t('qqChat.step2') }}</li>
@@ -69,55 +61,76 @@
 
         <div class="qq-row">
           <div class="qq-row__label">
-            <div class="qq-row__title">{{ t('qqChat.codeTitle') }}</div>
-            <div class="qq-row__hint">{{ t('qqChat.codeHint') }}</div>
+            <div class="qq-row__title">{{ t('qqChat.qrTitle') }}</div>
+            <div class="qq-row__hint">{{ t('qqChat.qrHint') }}</div>
           </div>
           <el-button
             type="primary"
-            :loading="issuing"
+            :loading="starting"
             :disabled="!characterId"
-            @click="onIssue"
-          >{{ bindCode ? t('qqChat.regenerate') : t('qqChat.generate') }}</el-button>
+            @click="onStartQr"
+          >{{ qrImage ? t('qqChat.qrRegenerate') : t('qqChat.qrGenerate') }}</el-button>
         </div>
 
-        <div v-if="bindCode" class="qq-code">
-          <div class="qq-code__value">{{ bindCode.code }}</div>
-          <div class="qq-code__meta">
-            <span>{{ t('qqChat.character') }}：{{ bindCode.characterName }}</span>
+        <div v-if="qrImage" class="qq-qr">
+          <img class="qq-qr__image" :src="qrImage" :alt="t('qqChat.qrTitle')" />
+          <div class="qq-qr__meta">
+            <span class="qq-qr__state" :class="`qq-qr__state--${qrState}`">
+              {{ qrStateText }}
+            </span>
             <span>{{ t('qqChat.expiresIn', { time: countdownText }) }}</span>
-            <el-button text type="primary" @click="copyCode">{{ copied ? t('qqChat.copied') : t('qqChat.copy') }}</el-button>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- ③ 已连接的角色：显示是谁在回话，并把表情包频率就地可调 -->
+    <!-- ③ 已连接的机器人：显示是谁在回话，表情包频率就地可调 -->
     <section class="section stagger-item">
       <div class="section-header">
         <div>
-          <h2 class="section-title">{{ t('qqChat.listTitle') }}</h2>
-          <p class="section-desc">{{ t('qqChat.listHint') }}</p>
+          <h2 class="section-title">{{ t('qqChat.accountsTitle') }}</h2>
+          <p class="section-desc">{{ t('qqChat.accountsHint') }}</p>
         </div>
-        <el-button text :icon="RefreshRight" :loading="loadingList" @click="loadBindings">
+        <el-button text :icon="RefreshRight" :loading="loadingList" @click="loadAccounts">
           {{ t('qqChat.refresh') }}
         </el-button>
       </div>
       <div class="glass qq-card">
-        <p v-if="!bindings.length" class="qq-empty">{{ t('qqChat.listEmpty') }}</p>
-        <div v-for="item in bindings" :key="item.id" class="qq-binding">
+        <p v-if="!accounts.length" class="qq-empty">{{ t('qqChat.accountsEmpty') }}</p>
+        <div v-for="item in accounts" :key="item.appId" class="qq-binding">
           <div class="qq-binding__head">
             <div>
-              <div class="qq-row__title">{{ item.characterName }}</div>
+              <div class="qq-row__title">{{ item.botName || item.appId }}</div>
               <div class="qq-row__hint">
-                {{ channelLabel(item.channel) }} · {{ maskExternalId(item.externalId) }}
-                <template v-if="item.updatedAt"> · {{ t('qqChat.boundAt', { time: formatTime(item.updatedAt) }) }}</template>
+                <template v-if="item.characterName">{{ t('qqChat.roleLabel', { name: item.characterName }) }}</template>
+                <template v-else>{{ t('qqChat.accountNoCharacter') }}</template>
               </div>
             </div>
-            <el-button type="danger" plain size="small" :loading="removingId === item.id" @click="onUnbind(item)">
-              {{ t('qqChat.unbind') }}
-            </el-button>
+            <div class="qq-binding__actions">
+              <el-select
+                :model-value="item.characterId"
+                size="small"
+                :placeholder="t('qqChat.accountBindCharacter')"
+                class="qq-select--sm"
+                @update:model-value="value => onBindCharacter(item, value)"
+              >
+                <el-option
+                  v-for="opt in characterOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+              <el-button
+                type="danger"
+                plain
+                size="small"
+                :loading="removingAppId === item.appId"
+                @click="onDisconnect(item)"
+              >{{ t('qqChat.disconnect') }}</el-button>
+            </div>
           </div>
-          <div class="qq-binding__freq">
+          <div v-if="item.characterId" class="qq-binding__freq">
             <div class="qq-binding__freq-label">
               <span>{{ t('qqChat.stickerFreq') }}</span>
               <span class="qq-row__hint">{{ t('qqChat.stickerFreqHint') }}</span>
@@ -168,9 +181,16 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, RefreshRight } from '@element-plus/icons-vue'
+import QRCode from 'qrcode'
 import { listCharacters, updateCharacter } from '@/api/character'
 import { listVaults } from '@/api/ai'
-import { issueQqBindCode, listQqBindings, unbindQq } from '@/api/qq'
+import {
+  bindQqBotCharacter,
+  listQqBotAccounts,
+  pollQqBotTask,
+  removeQqBotAccount,
+  startQqBotTask,
+} from '@/api/qq'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -179,27 +199,39 @@ const characters = ref([])
 const characterOptions = ref([])
 const characterLoading = ref(false)
 const characterId = ref('')
-const issuing = ref(false)
-const bindCode = ref(null)
-const copied = ref(false)
-const bindings = ref([])
+const starting = ref(false)
+const accounts = ref([])
 const loadingList = ref(false)
-const removingId = ref(null)
+const removingAppId = ref(null)
 const savingFrequencyId = ref(null)
 const hasModel = ref(true)
 const now = ref(Date.now())
-let tickTimer = null
 
-// 绑定码只有 10 分钟，倒计时让用户知道「现在就得发」。
+// 扫码状态：idle → waiting → done / expired
+const qrImage = ref('')
+const qrState = ref('idle')
+const qrTask = ref(null)
+let tickTimer = null
+let pollTimer = null
+
+const POLL_MS = 2000
+
 const countdownText = computed(() => {
-  if (!bindCode.value?.expiresAt) return '--:--'
-  const left = Math.max(0, new Date(bindCode.value.expiresAt).getTime() - now.value)
+  if (!qrTask.value?.ttlSeconds) return '--:--'
+  const expiredAt = (qrTask.value.createdAt || 0) + qrTask.value.ttlSeconds * 1000
+  const left = Math.max(0, expiredAt - now.value)
   const mm = String(Math.floor(left / 60000)).padStart(2, '0')
   const ss = String(Math.floor((left % 60000) / 1000)).padStart(2, '0')
   return `${mm}:${ss}`
 })
 
-// 状态条是三段式：没模型 → 没绑定 → 已连上。先说卡点，再说下一步该点哪。
+const qrStateText = computed(() => {
+  if (qrState.value === 'done') return t('qqChat.qrDone')
+  if (qrState.value === 'expired') return t('qqChat.qrExpired')
+  return t('qqChat.qrWaiting')
+})
+
+// 状态条是三段式：没模型 → 没连机器人 → 已连上。先说卡点，再说下一步该点哪。
 const status = computed(() => {
   if (!hasModel.value) {
     return {
@@ -209,15 +241,16 @@ const status = computed(() => {
       action: { label: t('qqChat.statusNoModelAction'), to: () => router.push('/app/settings') },
     }
   }
-  if (!bindings.value.length) {
+  const bound = accounts.value.filter((item) => item.characterId)
+  if (!bound.length) {
     return {
       tone: 'idle',
       title: t('qqChat.statusIdle'),
       hint: t('qqChat.statusIdleHint'),
-      action: { label: t('qqChat.statusIdleAction'), to: () => onIssue() },
+      action: { label: t('qqChat.statusIdleAction'), to: () => onStartQr() },
     }
   }
-  const names = bindings.value.map((item) => item.characterName).filter(Boolean).join('、')
+  const names = bound.map((item) => item.characterName).filter(Boolean).join('、')
   return {
     tone: 'ok',
     title: t('qqChat.statusOk', { names }),
@@ -228,17 +261,6 @@ const status = computed(() => {
 
 function goBack() {
   router.back()
-}
-
-function channelLabel(channel) {
-  if (channel === 'qqbot-group') return t('qqChat.channelGroup')
-  return t('qqChat.channelC2c')
-}
-
-// openid 是腾讯给的标识，不是 QQ 号；只露头尾够用户认出是哪一个。
-function maskExternalId(externalId = '') {
-  if (externalId.length <= 8) return externalId
-  return `${externalId.slice(0, 4)}***${externalId.slice(-4)}`
 }
 
 function formatTime(value) {
@@ -276,47 +298,90 @@ async function loadModelState() {
     const vaults = await listVaults()
     hasModel.value = Array.isArray(vaults) ? vaults.length > 0 : true
   } catch {
-    // 查不到就别吓用户：状态条退回「没绑定」这一档
+    // 查不到就别吓用户：状态条退回「没连接」这一档
     hasModel.value = true
   }
 }
 
-async function loadBindings() {
+async function loadAccounts() {
   loadingList.value = true
   try {
-    const list = await listQqBindings({ silent: true })
-    bindings.value = Array.isArray(list) ? list : []
+    const list = await listQqBotAccounts({ silent: true })
+    accounts.value = Array.isArray(list) ? list : []
   } catch {
-    bindings.value = []
+    accounts.value = []
   } finally {
     loadingList.value = false
   }
 }
 
-async function onIssue() {
+function stopPolling() {
+  if (pollTimer) clearTimeout(pollTimer)
+  pollTimer = null
+}
+
+async function pollOnce(taskId) {
+  let result = null
+  try {
+    result = await pollQqBotTask(taskId)
+  } catch {
+    // 网络抖一下就再试，不打断用户
+    pollTimer = setTimeout(() => pollOnce(taskId), POLL_MS)
+    return
+  }
+  if (!result) return
+  if (result.status === 'pending') {
+    pollTimer = setTimeout(() => pollOnce(taskId), POLL_MS)
+    return
+  }
+  if (result.status === 'expired' || result.status === 'unknown') {
+    qrState.value = 'expired'
+    return
+  }
+  if (result.status === 'completed') {
+    qrState.value = 'done'
+    // 扫码时已经选了角色：直接绑上，用户不用再点一次。
+    if (result.appId && characterId.value) {
+      try {
+        await bindQqBotCharacter(result.appId, characterId.value)
+      } catch (err) {
+        ElMessage.error(err?.message || t('qqChat.errorGeneric'))
+      }
+    }
+    await loadAccounts()
+    ElMessage.success(t('qqChat.qrDoneName', { name: result.botName || result.appId }))
+  }
+}
+
+async function onStartQr() {
   if (!characterId.value) {
     ElMessage.warning(t('qqChat.characterPlaceholder'))
     return
   }
-  issuing.value = true
+  starting.value = true
+  stopPolling()
   try {
-    bindCode.value = await issueQqBindCode(characterId.value)
-    copied.value = false
-    now.value = Date.now()
+    const task = await startQqBotTask('yuni-pc')
+    if (!task?.qrUrl) throw new Error('no_qr')
+    qrTask.value = { ...task, createdAt: Date.now() }
+    qrState.value = 'waiting'
+    qrImage.value = await QRCode.toDataURL(task.qrUrl, { width: 280, margin: 1 })
+    pollOnce(task.taskId)
   } catch (err) {
     ElMessage.error(err?.message || t('qqChat.errorGeneric'))
   } finally {
-    issuing.value = false
+    starting.value = false
   }
 }
 
-async function copyCode() {
-  if (!bindCode.value?.code) return
+async function onBindCharacter(item, value) {
+  if (!item?.appId || !value) return
   try {
-    await navigator.clipboard.writeText(bindCode.value.code)
-    copied.value = true
-  } catch {
-    copied.value = false
+    await bindQqBotCharacter(item.appId, value)
+    await loadAccounts()
+    ElMessage.success(t('qqChat.bindCharacterDone'))
+  } catch (err) {
+    ElMessage.error(err?.message || t('qqChat.errorGeneric'))
   }
 }
 
@@ -338,32 +403,32 @@ async function onChangeFrequency(item, value) {
   }
 }
 
-async function onUnbind(item) {
+async function onDisconnect(item) {
   try {
     await ElMessageBox.confirm(
-      t('qqChat.unbindConfirm', { name: item.characterName }),
-      t('qqChat.unbind'),
+      t('qqChat.disconnectConfirm', { name: item.botName || item.appId }),
+      t('qqChat.disconnect'),
       { type: 'warning' },
     )
   } catch {
     return
   }
-  removingId.value = item.id
+  removingAppId.value = item.appId
   try {
-    await unbindQq(item.id)
-    ElMessage.success(t('qqChat.unbindDone'))
-    await loadBindings()
+    await removeQqBotAccount(item.appId)
+    ElMessage.success(t('qqChat.disconnectDone'))
+    await loadAccounts()
   } catch (err) {
     ElMessage.error(err?.message || t('qqChat.errorGeneric'))
   } finally {
-    removingId.value = null
+    removingAppId.value = null
   }
 }
 
 onMounted(() => {
   loadCharacters()
   loadModelState()
-  loadBindings()
+  loadAccounts()
   tickTimer = setInterval(() => {
     now.value = Date.now()
   }, 1000)
@@ -372,6 +437,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (tickTimer) clearInterval(tickTimer)
   tickTimer = null
+  stopPolling()
 })
 </script>
 
@@ -420,24 +486,6 @@ onBeforeUnmount(() => {
   gap: 14px;
 }
 
-.qq-bot {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.qq-bot__avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
-  display: grid;
-  place-items: center;
-  font-size: 18px;
-  font-weight: 700;
-  background: rgba(var(--accent-rgb, 120, 120, 255), 0.18);
-  color: rgb(var(--accent-rgb, 120, 120, 255));
-}
-
 .qq-row {
   display: flex;
   align-items: center;
@@ -460,28 +508,47 @@ onBeforeUnmount(() => {
   width: 220px;
 }
 
-.qq-code {
+.qq-select--sm {
+  width: 130px;
+}
+
+.qq-qr {
   border: 1px dashed rgba(var(--accent-rgb, 120, 120, 255), 0.35);
   border-radius: 12px;
   padding: 16px;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 10px;
 }
 
-.qq-code__value {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 34px;
-  letter-spacing: 8px;
-  font-weight: 700;
+/* 二维码用浅底：深色主题下直接放透明 PNG 会扫不出来 */
+.qq-qr__image {
+  width: 280px;
+  height: 280px;
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px;
 }
 
-.qq-code__meta {
+.qq-qr__meta {
   display: flex;
   align-items: center;
   gap: 16px;
   font-size: 12px;
   opacity: 0.72;
+}
+
+.qq-qr__state--waiting {
+  color: #e6a23c;
+}
+
+.qq-qr__state--done {
+  color: #67c23a;
+}
+
+.qq-qr__state--expired {
+  color: #f56c6c;
 }
 
 .qq-steps {
@@ -542,6 +609,13 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  flex-wrap: wrap;
+}
+
+.qq-binding__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .qq-binding__freq {
