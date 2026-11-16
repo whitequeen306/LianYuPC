@@ -181,11 +181,16 @@ export function createQqBotGateway({
           reconnectAttempt = 0;
           onLog('[qqbot] 会话已恢复');
         } else {
+          // 线上排查用：先看得到「腾讯到底有没有投递」，再看 normalizeEvent 认不认。
+          // 这条日志量小（只有真实事件），但能把「没收到」和「收到但丢了」区分开。
+          onLog(`[qqbot] 事件 ${frame.t || '(无类型)'}`);
           const event = normalizeEvent(frame.t, frame.d);
           if (event) {
             Promise.resolve(onEvent(frame.t, event)).catch((err) =>
               onLog(`[qqbot] 处理事件失败：${err && err.message}`),
             );
+          } else {
+            onLog(`[qqbot] 事件 ${frame.t || '(无类型)'} 未识别，已忽略`);
           }
         }
         break;
