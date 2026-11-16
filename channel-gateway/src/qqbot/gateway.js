@@ -127,9 +127,18 @@ export function createQqBotGateway({
   }
 
   async function fetchGatewayUrl() {
-    const res = await fetchImpl(`${base}/gateway`, {
-      headers: { Authorization: `QQBot ${await accessToken()}` },
-    });
+    const attempt = async (force) =>
+      fetchImpl(`${base}/gateway`, {
+        headers: { Authorization: `QQBot ${await accessToken({ force })}` },
+      });
+
+    let res = await attempt(false);
+    // 腾讯在「重新扫码/重置 secret」之后会立刻让旧 access_token 失效，
+    // 而我们本地还缓存着它 —— 一次 401 说明缓存脏了，强制换一次再试。
+    if (res.status === 401) {
+      onLog('[qqbot] token 被判失效，强制刷新后重试');
+      res = await attempt(true);
+    }
     const body = (await res.json().catch(() => null)) || {};
     if (!res.ok || !body.url) throw new Error(`gateway_url_failed_${res.status}:${body.message || ''}`);
     return body.url;
@@ -141,7 +150,13 @@ export function createQqBotGateway({
     const delay = Math.min(30_000, 1000 * 2 ** Math.min(reconnectAttempt - 1, 5));
     onLog(`[qqbot] ${delay}ms 后重连（${reason}，下次用 ${mode}）`);
     setTimeout(() => {
-      if (!closedByUser) start().catch((err) => onLog(`[qqbot] 重连失败：${err && err.message}`));
+      if (closedByUser) return;
+      // 重连本身也可能失败（token 脏了、网络抖）。失败要再排一次队，
+      // 否则这条机器人会一直静默离线，直到有人重启容器。
+      start().catch((err) => {
+        onLog(`[qqbot] 重连失败：${err && err.message}`);
+        scheduleReconnect('retry_after_failure');
+      });
     }, delay);
   }
 

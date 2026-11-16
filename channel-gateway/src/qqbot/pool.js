@@ -91,7 +91,9 @@ export function createBotPool({
         Promise.resolve(entry.gateway.start()).catch((err) => {
           const message = err?.message || String(err);
           entry.lastError = message;
-          log(`[pool] 机器人 ${appId} 启动失败：${message}`);
+          log(`[pool] 机器人 ${appId} 启动失败：${message}（下一轮同步重试）`);
+          // 起不来就先摘掉：留在 live 里会挡住下一轮同步，这条机器人永远没人再试。
+          live.delete(appId);
         });
       }
     } catch (err) {

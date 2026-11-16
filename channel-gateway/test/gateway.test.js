@@ -88,3 +88,29 @@ test('建连用的 /gateway 也把异步 token 等出来', async () => {
   assert.equal(calls[0].headers.Authorization, 'QQBot slow-token');
   gateway.stop();
 });
+
+test('token 被判 401 时强制刷新一次再重试（重新扫码会作废旧 token）', async () => {
+  const seen = [];
+  let issued = 0;
+  const gateway = createQqBotGateway({
+    appId: 'a1',
+    apiBase: 'https://api.bot.qq.com',
+    accessToken: async ({ force } = {}) => {
+      if (force || issued === 0) issued += 1;
+      return `tok-${issued}`;
+    },
+    fetchImpl: async (url, init) => {
+      const auth = init?.headers?.Authorization;
+      seen.push(auth);
+      if (seen.length === 1) return { ok: false, status: 401, json: async () => ({ message: 'AccessToken无效或过期' }) };
+      return { ok: true, status: 200, json: async () => ({ url: 'wss://fake/ws' }) };
+    },
+    wsFactory: (url) => new FakeWs(url),
+    onEvent: () => {},
+  });
+
+  await gateway.start();
+
+  assert.deepEqual(seen, ['QQBot tok-1', 'QQBot tok-2'], '第二次必须带新 token');
+  gateway.stop();
+});
