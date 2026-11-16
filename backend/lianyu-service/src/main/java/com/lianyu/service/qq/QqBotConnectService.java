@@ -39,6 +39,12 @@ public class QqBotConnectService {
 
     private static final String CHANNEL_C2C = "qqbot-c2c";
     private static final Duration TASK_TTL = Duration.ofMinutes(15);
+    /**
+     * 二维码本身能活多久：腾讯那边大约两分钟就换一次 task_id，
+     * 旧码再扫就是「无效」。倒计时必须按这个显示，否则用户会对着死码干等。
+     * TASK_TTL 仍然代表「我们这边还记得这个 task」的时长，比二维码宽松。
+     */
+    private static final Duration QR_TTL = Duration.ofMinutes(2);
     private static final int MAX_PENDING = 500;
 
     private final QqBotConnectClient connectClient;
@@ -73,7 +79,7 @@ public class QqBotConnectService {
         log.info("QQ bot bind task created: userId={}, taskId={}, pending={}",
                 userId, abbreviate(task.taskId()), PENDING.size());
         return new TaskView(task.taskId(), connectClient.connectUrl(task.taskId(), source),
-                TASK_TTL.toSeconds());
+                QR_TTL.toSeconds());
     }
 
     /**

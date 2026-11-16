@@ -335,7 +335,13 @@ async function pollOnce(taskId) {
     return
   }
   if (result.status === 'expired' || result.status === 'unknown') {
-    qrState.value = 'expired'
+    // 腾讯那边 task_id 大约两分钟就换一次，用户拿着旧码扫只会看到「无效」。
+    // 只要面板还开着、还在等扫码，就自动换一张新的，而不是让用户对着死码发呆。
+    if (qrState.value === 'waiting') {
+      await renewQr()
+    } else {
+      qrState.value = 'expired'
+    }
     return
   }
   if (result.status === 'completed') {
@@ -350,6 +356,24 @@ async function pollOnce(taskId) {
     }
     await loadAccounts()
     ElMessage.success(t('qqChat.qrDoneName', { name: result.botName || result.appId }))
+  }
+}
+
+/**
+ * 换一张新码（腾讯 ~2 分钟轮换 task_id，过期后旧码扫不出来）。
+ * 失败时退回「已过期」状态，让用户看到明确的结论而不是空等。
+ */
+async function renewQr() {
+  stopPolling()
+  try {
+    const task = await startQqBotTask('yuni-pc')
+    if (!task?.qrUrl) throw new Error('no_qr')
+    qrTask.value = { ...task, createdAt: Date.now() }
+    qrImage.value = await QRCode.toDataURL(task.qrUrl, { width: 280, margin: 1 })
+    qrState.value = 'waiting'
+    pollOnce(task.taskId)
+  } catch {
+    qrState.value = 'expired'
   }
 }
 
