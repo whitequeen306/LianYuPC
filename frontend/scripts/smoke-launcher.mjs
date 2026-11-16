@@ -58,10 +58,17 @@ const extraArgs = (process.env.SMOKE_ELECTRON_ARGS || '')
 if (extraArgs.length) {
   console.log(`smoke-launcher: extra electron args: ${extraArgs.join(' ')}`)
 }
+// 这个冒烟必须真的拉起 Electron 主进程。如果环境里继承了 ELECTRON_RUN_AS_NODE，
+// electron.exe 会退化成 Node 去执行 main.js —— 报的错会是 `Cannot read properties of
+// undefined (reading 'setAppUserModelId')`，看起来像代码 bug，其实是环境变量。
+// 从 Electron 内置终端、某些 IDE 与 CI runner 启动打包时都可能带上它，所以这里主动摘掉。
+const smokeEnv = { ...process.env }
+delete smokeEnv.ELECTRON_RUN_AS_NODE
+
 const result = spawnSync(electronBin, [...extraArgs, mainEntry], {
   cwd: path.join(root, 'dist-electron'),
   env: {
-    ...process.env,
+    ...smokeEnv,
     LIANYU_LAUNCHER_SMOKE: '1',
     LIANYU_API_ORIGIN: cloudEnv.VITE_LIANYU_API_ORIGIN || process.env.LIANYU_API_ORIGIN || '',
     LIANYU_CERT_FINGERPRINT: cloudEnv.VITE_LIANYU_CERT_FINGERPRINT || process.env.LIANYU_CERT_FINGERPRINT || '',
