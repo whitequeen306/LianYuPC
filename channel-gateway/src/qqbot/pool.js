@@ -49,7 +49,10 @@ export function createBotPool({
       accessToken: () => api.accessToken(),
       fetchImpl,
       wsFactory,
-      onEvent: (event) => {
+      // gateway 的签名是 onEvent(type, event)：这里第一个参数是事件名字符串，
+      // 真正要处理的是第二个。线上踩过——只传一个参数时 handler 收到的是
+      // "C2C_MESSAGE_CREATE" 这个字符串，openid 为空，于是每条消息都被静默丢掉。
+      onEvent: (_type, event) => {
         handler.handle(event).catch((err) => log(`[pool] ${account.appId} 处理事件失败：${err?.message || err}`));
       },
       onLog: (line) => log(`[pool:${account.appId}] ${line}`),

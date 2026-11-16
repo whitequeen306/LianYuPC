@@ -36,6 +36,8 @@ function harness(accounts) {
         appId,
         started: false,
         stopped: false,
+        // 记下 pool 传进来的 onEvent，测试里用 gateway 自己的签名（type, event）去调它。
+        onEvent,
         start() {
           entry.started = true;
         },
@@ -125,12 +127,20 @@ test('后端抖动时保留现有连接，不把在线机器人踢下线', async
 });
 
 test('事件交给 handler，异常被吞掉不炸池子', async () => {
-  const { pool, handlers } = harness([{ appId: 'a1', characterId: 1 }]);
+  const { pool, handlers, gateways } = harness([{ appId: 'a1', characterId: 1 }]);
   await pool.start();
 
-  // 这里只验证 handler 被调用一次（真实 onEvent 在 gatewayFactory 里接上）
+  // 线上真事故：pool 里写成 onEvent: (event) => handler.handle(event)，
+  // 而 gateway 的签名是 (type, event) —— handler 收到的是 "C2C_MESSAGE_CREATE"
+  // 这个字符串，openid 为空，于是每条消息都被静默丢掉。
+  // 这里按 gateway 的真实签名调用，锁住「handler 拿到的必须是事件对象」。
+  const event = { kind: 'c2c', openid: 'u1', text: '你好呀', msgId: 'm1' };
+  gateways[0].onEvent('C2C_MESSAGE_CREATE', event);
+  await new Promise((resolve) => setImmediate(resolve));
+
   assert.equal(handlers.length, 1);
-  assert.ok(Array.isArray(handlers[0].handled));
+  assert.deepEqual(handlers[0].handled, [event]);
+
   pool.stop();
 });
 

@@ -91,7 +91,12 @@ export function createQqBotHandler({ api, backend, log = () => {}, maxReplyChars
 
   return {
     async handle(event) {
-      if (!event || !event.openid) return { skipped: 'no_openid' };
+      // 这条以前是静默 return：线上连接池把事件名当事件对象传进来时，
+      // 每条消息都「正常」跳过，日志里一条线索都没有。缺 openid 属于接线错误，必须喊出来。
+      if (!event || typeof event !== 'object' || !event.openid) {
+        log('[qqbot] 事件缺少 openid，已丢弃（检查 onEvent 的参数是不是事件对象）');
+        return { skipped: 'no_openid' };
+      }
       if (!firstTime(event.msgId)) return { skipped: 'duplicate' };
 
       const text = cleanText(event.text);
