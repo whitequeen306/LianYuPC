@@ -283,6 +283,7 @@ import {
 } from '@/api/character'
 import { clearConversationMessages, listConversations } from '@/api/conversation'
 import { resolveMediaUrl } from '@/utils/media'
+import { resolveBack } from '@/utils/navBack'
 import CharacterAvatarImg from '@/components/CharacterAvatarImg.vue'
 import { normalizeHex } from '@/utils/themeColor'
 
@@ -593,11 +594,14 @@ function sanitizeBackgroundKey(value) {
 }
 
 function goBack() {
-  if (window.history.length > 1) {
+  // history.length > 1 不可靠：桌面端整页载入后仍可能是 2，但没有真正的业务上一页，
+  // back() 会变成静默空操作。统一用 utils/navBack 判断（看 history.state.back）。
+  const next = resolveBack(window.history.state, '/app/characters')
+  if (next.type === 'back') {
     router.back()
     return
   }
-  router.push('/app/characters')
+  router.push(next.path)
 }
 
 function triggerBgUpload() {

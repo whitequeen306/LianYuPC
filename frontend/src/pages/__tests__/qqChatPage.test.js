@@ -47,6 +47,13 @@ describe('QqChatPage', () => {
     expect(source).toContain('removeQqBotAccount(item.appId)')
   })
 
+  test('back button never becomes a silent no-op', () => {
+    // 桌面端整页载入时历史里没有上一页，裸 router.back() 点了没反应（线上报过）
+    expect(source).toContain("import { resolveBack } from '@/utils/navBack'")
+    expect(source).toContain('resolveBack(window.history.state)')
+    expect(source).not.toMatch(/function goBack\(\)\s*\{\s*router\.back\(\)\s*\}/)
+  })
+
   test('answers the four questions users actually ask', () => {
     for (const key of ['faqNoReplyQ', 'faqProactiveQ', 'faqGroupQ', 'faqAuditQ']) {
       expect(source).toContain(`t('qqChat.${key}')`)
