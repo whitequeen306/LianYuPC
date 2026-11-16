@@ -58,6 +58,8 @@ public enum ErrorCode {
     QQ_BIND_CODE_INVALID(9001, "绑定码不对，或者已经被用过了"),
     QQ_BIND_CODE_EXPIRED(9002, "绑定码过期了，请在予念里重新生成一个"),
     QQ_CHANNEL_NOT_BOUND(9003, "这个 QQ 号还没绑定角色"),
+    QQ_BOT_TASK_UNKNOWN(9004, "这个二维码已经失效了，请在予念里重新生成"),
+    QQ_BOT_ACCOUNT_NOT_FOUND(9005, "没找到这个机器人，可能已经解绑了"),
     ;
 
     private final int code;

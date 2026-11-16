@@ -143,9 +143,32 @@ public class QqChannelService {
                 .build();
     }
 
+    /**
+     * 扫码确身份后的直接绑定（BYO 路径没有 6 位码）。
+     *
+     * <p>openid 在扫码那一刻由腾讯给出，已经等价于「谁是发送者」，所以这里不需要
+     * 任何一次性凭证；调用方（{@code QqBotConnectService}）保证 externalId 来自
+     * 腾讯返回的 {@code user_openid}。
+     */
+    @Transactional
+    public BindingView bindDirect(String channel, String externalId, Long userId, Long characterId) {
+        ConversationResponse conversation = conversationService.create(userId, singleConversation(characterId));
+        QqChannelBinding binding = upsertBinding(channel, externalId, userId, characterId, conversation.getId());
+        log.info("QQ channel bound directly: channel={}, externalId={}, userId={}, characterId={}",
+                channel, mask(externalId), userId, characterId);
+        return BindingView.builder()
+                .id(binding.getId())
+                .channel(binding.getChannel())
+                .externalId(binding.getExternalId())
+                .characterId(binding.getCharacterId())
+                .characterName(conversation.getCharacterName())
+                .conversationId(binding.getConversationId())
+                .updatedAt(binding.getUpdatedAt())
+                .build();
+    }
+
     @Transactional(readOnly = true)
-    public List<BindingView> listBindings(Long userId) {
-        return bindingMapper.selectList(new LambdaQueryWrapper<QqChannelBinding>()
+    public List<BindingView> listBindings(Long userId) {        return bindingMapper.selectList(new LambdaQueryWrapper<QqChannelBinding>()
                         .eq(QqChannelBinding::getUserId, userId)
                         .orderByDesc(QqChannelBinding::getUpdatedAt))
                 .stream()
@@ -169,6 +192,20 @@ public class QqChannelService {
         int removed = bindingMapper.delete(new LambdaQueryWrapper<QqChannelBinding>()
                 .eq(QqChannelBinding::getId, bindingId)
                 .eq(QqChannelBinding::getUserId, userId));
+        return removed > 0;
+    }
+
+    /**
+     * 按外部身份解绑（BYO 路径换号/解绑机器人时用：没有 bindingId 在手）。
+     */
+    @Transactional
+    public boolean unbindExternal(String channel, String externalId) {
+        int removed = bindingMapper.delete(new LambdaQueryWrapper<QqChannelBinding>()
+                .eq(QqChannelBinding::getChannel, channel)
+                .eq(QqChannelBinding::getExternalId, externalId));
+        if (removed > 0) {
+            log.info("QQ channel unbound: channel={}, externalId={}", channel, mask(externalId));
+        }
         return removed > 0;
     }
 
