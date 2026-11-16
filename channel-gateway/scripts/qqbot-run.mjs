@@ -50,7 +50,7 @@ if (env.QQ_POOL === '1' || (!appId && env.QQ_GATEWAY_SECRET)) {
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
-  setInterval(() => log(`[qqbot] 连接池在线 ${pool.size()} 个机器人`), 30 * 60_000).unref();
+  setInterval(() => log(`[qqbot] 连接池在线 ${pool.size()} 个机器人`), 30 * 60_000);
   // 顶层永久挂起：连接池自己维持生命周期，不再走下面单账号逻辑。
   await new Promise(() => {});
 }

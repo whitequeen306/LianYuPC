@@ -102,7 +102,8 @@ export function createBotPool({
       timer = setInterval(() => {
         sync().catch((err) => log(`[pool] 同步异常：${err?.message || err}`));
       }, pollMs);
-      if (typeof timer.unref === 'function') timer.unref();
+      // 故意不 unref：没有机器人在线时，这个定时器就是进程唯一的存活理由。
+      // 一旦 unref，Node 会因为「没有待处理的事件」直接退出（连接池型网关会莫名掉线）。
     },
 
     stop() {
