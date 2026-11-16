@@ -31,9 +31,25 @@ export function createBotPool({
 
   /** appId → { appId, characterId, api, gateway, handler, lastError, since } */
   const live = new Map();
+  /** appId → 最早可以再试的时间戳（被限流时拉长，避免每轮同步都去撞）。 */
+  const retryAfter = new Map();
+  /** appId → 上一次连接失败的原因（跨「摘掉再重试」存活，恢复后据此清空后端红字）。 */
+  const failures = new Map();
   let timer = null;
   let syncing = false;
   let stopped = true;
+
+  const RATE_LIMIT_COOLDOWN_MS = 120_000;
+
+  /** 把连接失败/恢复回写后端。上报失败不该影响连接本身，所以一律吞掉。 */
+  function report(appId, error) {
+    if (typeof backend.report !== 'function') return;
+    try {
+      Promise.resolve(backend.report({ appId, error })).catch(() => {});
+    } catch {
+      /* 上报是尽力而为 */
+    }
+  }
 
   function build(account) {
     const api = apiFactory({
@@ -47,7 +63,12 @@ export function createBotPool({
     const gateway = gatewayFactory({
       appId: account.appId,
       apiBase,
-      accessToken: () => api.accessToken(),
+      // 必须把 options 透传下去：gateway 在 /gateway 返回 401 时会调
+      // accessToken({ force: true }) 要求换新 token。以前这里写成
+      // `() => api.accessToken()` 把参数吞了，强制刷新变成空操作 ——
+      // 一旦腾讯重置了 appSecret（重新扫码就会），缓存里的旧 token 永远换不掉，
+      // 于是「401 → 声称刷新 → 还是同一个 token → 再 401」死循环，机器人永久离线。
+      accessToken: (options) => api.accessToken(options),
       fetchImpl,
       wsFactory,
       // gateway 的签名是 onEvent(type, event)：这里第一个参数是事件名字符串，
@@ -87,18 +108,36 @@ export function createBotPool({
       // 上线：新扫码进来的机器人。
       for (const [appId, account] of wanted) {
         if (live.has(appId)) continue;
+        // 刚被限流过的机器人先歇一会儿：每 30s 去撞一次限流只会把冷却期续上。
+        const readyAt = retryAfter.get(appId);
+        if (readyAt && readyAt > now()) continue;
         const entry = { ...build(account), appId, characterId: account.characterId, lastError: null, since: now() };
         live.set(appId, entry);
         log(`[pool] 启动机器人 ${appId}（角色 ${account.characterId}）`);
         // 一个机器人连不上（token 过期、被平台封禁…）不能拖垮整个进程：
         // 池子里还有别人的机器人，挂掉要能自愈。
-        Promise.resolve(entry.gateway.start()).catch((err) => {
-          const message = err?.message || String(err);
-          entry.lastError = message;
-          log(`[pool] 机器人 ${appId} 启动失败：${message}（下一轮同步重试）`);
-          // 起不来就先摘掉：留在 live 里会挡住下一轮同步，这条机器人永远没人再试。
-          live.delete(appId);
-        });
+        Promise.resolve(entry.gateway.start())
+          .then(() => {
+            retryAfter.delete(appId);
+            // 连上了就把之前的错误清掉，App 页面不该一直挂着旧红字。
+            if (failures.delete(appId)) report(appId, null);
+          })
+          .catch((err) => {
+            const message = err?.message || String(err);
+            entry.lastError = message;
+            failures.set(appId, message);
+            // 回写后端，用户在 App 里能看到「为什么它没连上」，
+            // 而不是只看到一个绿色的「已连上」然后对着手机干等。
+            report(appId, message);
+            if (err && err.rateLimited) {
+              retryAfter.set(appId, now() + RATE_LIMIT_COOLDOWN_MS);
+              log(`[pool] 机器人 ${appId} 被腾讯限流，${RATE_LIMIT_COOLDOWN_MS / 1000}s 后再试：${message}`);
+            } else {
+              log(`[pool] 机器人 ${appId} 启动失败：${message}（下一轮同步重试）`);
+            }
+            // 起不来就先摘掉：留在 live 里会挡住下一轮同步，这条机器人永远没人再试。
+            live.delete(appId);
+          });
       }
     } catch (err) {
       log(`[pool] 同步账号失败：${err?.message || err}`);

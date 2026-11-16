@@ -61,6 +61,14 @@ describe('QqChatPage', () => {
       expect(source).toContain(`t('qqChat.${key}')`)
     }
   })
+
+  test('surfaces why a scanned bot is still offline instead of showing green', () => {
+    // 线上真事：扫码成功（后端已落库）但网关那条 WS 没连上（腾讯限流 / token 被重置），
+    // 页面只显示绿色的「已连上」，用户对着手机干等四五分钟。
+    expect(source).toContain("t('qqChat.statusFailed'")
+    expect(source).toContain('item.lastError')
+    expect(source).toContain('statusFailedAction')
+  })
 })
 
 describe('qqChat i18n', () => {
@@ -83,7 +91,8 @@ describe('qqChat i18n', () => {
 
   test('copy avoids characters vue-i18n reads as syntax', () => {
     // @ 会被当成 linked key；花括号只在已知插值处允许，否则会编译失败、页面白屏
-    const allowedPlaceholders = /\{(names|name|time)\}/g
+    // error 是「连不上的原因」原文，来自后端 lastError（如 gateway_url_failed_401:…）。
+    const allowedPlaceholders = /\{(names|name|time|error)\}/g
     for (const [name, locale] of Object.entries(locales)) {
       for (const [key, value] of Object.entries(locale.qqChat)) {
         const text = String(value)

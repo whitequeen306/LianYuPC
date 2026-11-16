@@ -140,14 +140,25 @@ export function createQqBotGateway({
       res = await attempt(true);
     }
     const body = (await res.json().catch(() => null)) || {};
-    if (!res.ok || !body.url) throw new Error(`gateway_url_failed_${res.status}:${body.message || ''}`);
+    if (!res.ok || !body.url) {
+      const err = new Error(`gateway_url_failed_${res.status}:${body.message || ''}`);
+      // 40023001 / code 100017 是「调得太勤」，跟凭证无关。把它单独标出来，
+      // 上层据此退避更久，而不是每 30 秒去撞一次限流。
+      if (body.code === 100017 || body.err_code === 40023001) {
+        err.rateLimited = true;
+      }
+      throw err;
+    }
     return body.url;
   }
 
-  function scheduleReconnect(reason) {
+  function scheduleReconnect(reason, { rateLimited = false } = {}) {
     if (closedByUser) return;
     reconnectAttempt += 1;
-    const delay = Math.min(30_000, 1000 * 2 ** Math.min(reconnectAttempt - 1, 5));
+    // 被限流（100017）时指数退避上限拉到 5 分钟：这条路径以前每 30 秒重试一次，
+    // 每次都触发一轮「取 token + /gateway」，反而把限流续上，永远出不来。
+    const ceiling = rateLimited ? 300_000 : 30_000;
+    const delay = Math.min(ceiling, 1000 * 2 ** Math.min(reconnectAttempt - 1, 5));
     onLog(`[qqbot] ${delay}ms 后重连（${reason}，下次用 ${mode}）`);
     setTimeout(() => {
       if (closedByUser) return;
@@ -155,7 +166,7 @@ export function createQqBotGateway({
       // 否则这条机器人会一直静默离线，直到有人重启容器。
       start().catch((err) => {
         onLog(`[qqbot] 重连失败：${err && err.message}`);
-        scheduleReconnect('retry_after_failure');
+        scheduleReconnect('retry_after_failure', { rateLimited: Boolean(err && err.rateLimited) });
       });
     }, delay);
   }

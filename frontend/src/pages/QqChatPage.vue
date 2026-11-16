@@ -105,6 +105,10 @@
                 <template v-if="item.characterName">{{ t('qqChat.roleLabel', { name: item.characterName }) }}</template>
                 <template v-else>{{ t('qqChat.accountNoCharacter') }}</template>
               </div>
+              <!-- 连不上时把原因摊开：以前这里只有一句「已连上」，用户对着手机干等也不知道为什么 -->
+              <div v-if="item.lastError" class="qq-row__error">
+                {{ t('qqChat.accountError', { error: item.lastError }) }}
+              </div>
             </div>
             <div class="qq-binding__actions">
               <el-select
@@ -252,6 +256,17 @@ const status = computed(() => {
     }
   }
   const names = bound.map((item) => item.characterName).filter(Boolean).join('、')
+  // 后端扫码成功了、但网关那条 WebSocket 没连上（腾讯限流、token 被重置…）：
+  // 这时候只显示绿色的「已连上」，用户就会对着手机干等 —— 必须把失败摊出来。
+  const failed = bound.filter((item) => item.lastError)
+  if (failed.length === bound.length) {
+    return {
+      tone: 'warn',
+      title: t('qqChat.statusFailed', { names }),
+      hint: failed[0].lastError,
+      action: { label: t('qqChat.statusFailedAction'), to: () => loadAccounts() },
+    }
+  }
   return {
     tone: 'ok',
     title: t('qqChat.statusOk', { names }),
@@ -578,6 +593,13 @@ onBeforeUnmount(() => {
   font-size: $font-size-xs;
   color: $color-text-muted;
   margin-top: 2px;
+}
+
+.qq-row__error {
+  font-size: $font-size-xs;
+  color: $color-error;
+  margin-top: $space-1;
+  word-break: break-all;
 }
 
 .qq-select {

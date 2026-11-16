@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createBotPool } from '../src/qqbot/pool.js';
 
 function fakeBackend(accounts, { failAccounts = false } = {}) {
-  const state = { accounts, failAccounts, tokenCalls: [] };
+  const state = { accounts, failAccounts, tokenCalls: [], reports: [] };
   return {
     state,
     async accounts() {
@@ -15,6 +15,9 @@ function fakeBackend(accounts, { failAccounts = false } = {}) {
       state.tokenCalls.push(appId);
       return { accessToken: `tok-${appId}`, expiresInSeconds: 7200 };
     },
+    async report({ appId, error }) {
+      state.reports.push({ appId, error });
+    },
   };
 }
 
@@ -23,21 +26,31 @@ function harness(accounts) {
   const gateways = [];
   const handlers = [];
   const logs = [];
+  const apiCalls = [];
   const pool = createBotPool({
     backend,
     log: (line) => logs.push(line),
     pollMs: 1_000_000,
     apiFactory: ({ appId, tokenProvider }) => {
       assert.equal(typeof tokenProvider, 'function');
-      return { appId, accessToken: async () => `tok-${appId}` };
+      const api = {
+        appId,
+        // 记下 gateway 传进来的 options：连接池漏传 force 曾导致强制刷新变成空操作。
+        accessToken: async (options) => {
+          apiCalls.push({ appId, options });
+          return `tok-${appId}`;
+        },
+      };
+      return api;
     },
-    gatewayFactory: ({ appId, onEvent }) => {
+    gatewayFactory: ({ appId, onEvent, accessToken }) => {
       const entry = {
         appId,
         started: false,
         stopped: false,
         // 记下 pool 传进来的 onEvent，测试里用 gateway 自己的签名（type, event）去调它。
         onEvent,
+        accessToken,
         start() {
           entry.started = true;
         },
@@ -54,7 +67,7 @@ function harness(accounts) {
       return entry;
     },
   });
-  return { pool, backend, gateways, handlers, logs };
+  return { pool, backend, gateways, handlers, logs, apiCalls };
 }
 
 test('池子启动后为后端返回的每个机器人各开一条连接', async () => {
@@ -188,4 +201,99 @@ test('单个机器人起不来不影响池子里其它机器人，且下一轮�
 
   assert.equal(size, 2);
   assert.ok(started.includes('bad'));
+});
+
+test('gateway 要强制刷新 token 时，pool 必须把 options 透传下去', async () => {
+  // 线上真事故：pool 里写成 `accessToken: () => api.accessToken()`，把 { force: true } 吞了。
+  // 于是「401 → 强制刷新 → 还是缓存里那个旧 token → 再 401」死循环，
+  // 用户重新扫码后 appSecret 变了，机器人永久离线。这里锁住「参数必须传到底」。
+  const { pool, gateways, apiCalls } = harness([{ appId: 'a1', characterId: 1 }]);
+  await pool.start();
+
+  await gateways[0].accessToken({ force: true });
+  await gateways[0].accessToken();
+
+  pool.stop();
+
+  assert.deepEqual(apiCalls, [
+    { appId: 'a1', options: { force: true } },
+    { appId: 'a1', options: undefined },
+  ]);
+});
+
+test('被腾讯限流时进入冷却，冷却期内不再反复启动（避免把限流窗口续上）', async () => {
+  const backend = fakeBackend([{ appId: 'limited', characterId: 1 }]);
+  const logs = [];
+  let starts = 0;
+  let clock = 1_000_000;
+  const pool = createBotPool({
+    backend,
+    log: (line) => logs.push(line),
+    pollMs: 1_000_000,
+    now: () => clock,
+    apiFactory: ({ appId }) => ({ appId, accessToken: async () => `tok-${appId}` }),
+    gatewayFactory: () => ({
+      start() {
+        starts += 1;
+        const err = new Error('gateway_url_failed_400:接口调用超过频率限制');
+        err.rateLimited = true;
+        return Promise.reject(err);
+      },
+      stop() {},
+    }),
+    handlerFactory: () => ({ handle: async () => {} }),
+  });
+
+  await pool.start();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(starts, 1);
+  assert.ok(logs.some((l) => l.includes('被腾讯限流')), '日志要说清是被限流，而不是含糊的启动失败');
+
+  // 冷却期内（< 120s）再同步，不该再去撞限流。
+  clock += 30_000;
+  await pool.refresh();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(starts, 1, '冷却期内不该重试');
+
+  // 冷却结束后要能自己恢复。
+  clock += 120_000;
+  await pool.refresh();
+  await new Promise((resolve) => setImmediate(resolve));
+  const after = starts;
+  pool.stop();
+  assert.equal(after, 2, '冷却结束后必须再试一次');
+});
+
+test('连不上时把原因回写后端，连上了再把错误清掉', async () => {
+  const backend = fakeBackend([{ appId: 'a1', characterId: 1 }]);
+  let healthy = false;
+  const pool = createBotPool({
+    backend,
+    log: () => {},
+    pollMs: 1_000_000,
+    apiFactory: ({ appId }) => ({ appId, accessToken: async () => `tok-${appId}` }),
+    gatewayFactory: () => ({
+      start() {
+        if (!healthy) return Promise.reject(new Error('gateway_url_failed_401:AccessToken无效或过期'));
+        return Promise.resolve();
+      },
+      stop() {},
+    }),
+    handlerFactory: () => ({ handle: async () => {} }),
+  });
+
+  await pool.start();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(backend.state.reports.length, 1);
+  assert.equal(backend.state.reports[0].appId, 'a1');
+  assert.match(backend.state.reports[0].error, /AccessToken无效或过期/);
+
+  healthy = true;
+  await pool.refresh();
+  await new Promise((resolve) => setImmediate(resolve));
+  pool.stop();
+
+  assert.equal(backend.state.reports.length, 2);
+  assert.equal(backend.state.reports[1].error, null, '连上了要清掉旧错误，别让用户一直看到红字');
 });

@@ -178,7 +178,14 @@ function logAttachments(type, event) {
 const gateway = createQqBotGateway({
   appId,
   apiBase,
-  accessToken: () => current,
+  // 与连接池同一条口径：gateway 在 /gateway 返回 401 时会带 { force: true } 要求换新 token，
+  // 这里必须真的去换，否则「强制刷新」只是嘴上说说，旧 token 永远换不掉。
+  accessToken: async (options) => {
+    if (options && options.force) {
+      current = await api.accessToken({ force: true });
+    }
+    return current;
+  },
   onLog: log,
   onEvent: (type, event) => {
     logAttachments(type, event);

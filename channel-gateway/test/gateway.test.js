@@ -114,3 +114,29 @@ test('token 被判 401 时强制刷新一次再重试（重新扫码会作废旧
   assert.deepEqual(seen, ['QQBot tok-1', 'QQBot tok-2'], '第二次必须带新 token');
   gateway.stop();
 });
+
+test('/gateway 被限流（100017）时错误要标成 rateLimited，供上层退避更久', async () => {
+  // 线上真事：/gateway 大约两次调用就会被限流（40023001），
+  // 而旧代码把它当普通失败，每 30 秒重试一次 —— 每次都把限流窗口续上，永远出不来。
+  const gateway = createQqBotGateway({
+    appId: 'a1',
+    apiBase: 'https://api.bot.qq.com',
+    accessToken: async () => 'tok-1',
+    fetchImpl: async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({ message: '接口调用超过频率限制', code: 100017, err_code: 40023001 }),
+    }),
+    wsFactory: (url) => new FakeWs(url),
+    onEvent: () => {},
+  });
+
+  await assert.rejects(
+    () => gateway.start(),
+    (err) => {
+      assert.equal(err.rateLimited, true);
+      return true;
+    },
+  );
+  gateway.stop();
+});
