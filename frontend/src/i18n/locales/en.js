@@ -347,6 +347,7 @@ export default {
     useGlobalBackground: 'Use global background',
     behavior: 'Interaction preferences',
     proactiveEnabled: 'Allow proactive messages',
+    proactiveEnabledHint: 'When off, they will not start a conversation with you — not in the app, and not on QQ.',
     showInnerThoughts: 'Show parenthetical inner thoughts',
     stickerFrequency: 'Sticker frequency',
     stickerNever: 'Never',

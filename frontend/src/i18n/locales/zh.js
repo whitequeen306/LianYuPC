@@ -347,6 +347,7 @@ export default {
     useGlobalBackground: '使用全局背景',
     behavior: '相处偏好',
     proactiveEnabled: '允许主动消息',
+    proactiveEnabledHint: '关掉之后，她不会主动找你说话；绑了 QQ 也不会从 QQ 上找你。',
     showInnerThoughts: '显示括号心理活动',
     stickerFrequency: '表情包频率',
     stickerNever: '从不发',

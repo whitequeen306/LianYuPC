@@ -395,6 +395,7 @@ export default {
     useGlobalBackground: '使用全域背景',
     behavior: '相處偏好',
     proactiveEnabled: '允許主動訊息',
+    proactiveEnabledHint: '關掉之後，她不會主動找你說話；綁了 QQ 也不會從 QQ 上找你。',
     showInnerThoughts: '顯示括號心理活動',
     stickerFrequency: '表情包頻率',
     stickerNever: '從不發',

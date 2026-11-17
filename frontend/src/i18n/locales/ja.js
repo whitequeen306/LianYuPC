@@ -342,6 +342,7 @@ export default {
     useGlobalBackground: '全体背景を使う',
     behavior: '付き合い方',
     proactiveEnabled: '能動メッセージを許可',
+    proactiveEnabledHint: 'オフにすると、彼女から話しかけてくることはありません（QQ でも同じです）。',
     showInnerThoughts: '括弧の心理描写を表示',
     stickerFrequency: 'スタンプの頻度',
     stickerNever: '送らない',

@@ -99,6 +99,7 @@
         <div class="form-grid two-col">
           <el-form-item :label="t('characterSettings.proactiveEnabled')">
             <el-switch v-model="form.proactiveEnabled" />
+            <div class="field-hint">{{ t('characterSettings.proactiveEnabledHint') }}</div>
           </el-form-item>
           <el-form-item :label="t('characterSettings.showInnerThoughts')">
             <el-switch v-model="form.showInnerThoughts" />
