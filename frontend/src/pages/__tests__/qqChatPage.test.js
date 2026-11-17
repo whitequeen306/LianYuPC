@@ -36,10 +36,10 @@ describe('QqChatPage', () => {
     expect(source).toContain('bindQqBotCharacter(result.appId, characterId.value)')
   })
 
-  test('sticker frequency is adjustable in place, on the account card', () => {
-    expect(source).toContain("t('qqChat.stickerFreq')")
-    expect(source).toContain('@update:model-value="value => onChangeFrequency(item, value)"')
-    expect(source).toContain('settings: { stickerFrequency: value }')
+  // 表情包先搁置：QQ 页不再出现频率开关，避免给用户一个「调了也看不到变化」的旋钮
+  test('sticker frequency control is gone from the QQ page', () => {
+    expect(source).not.toContain('onChangeFrequency')
+    expect(source).not.toContain('stickerFrequency')
   })
 
   test('disconnecting removes the credentials, with a confirm step', () => {

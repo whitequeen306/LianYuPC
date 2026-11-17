@@ -84,7 +84,7 @@
       </div>
     </section>
 
-    <!-- ③ 已连接的机器人：显示是谁在回话，表情包频率就地可调 -->
+    <!-- ③ 已连接的机器人：显示是谁在回话 -->
     <section class="section stagger-item">
       <div class="section-header">
         <div>
@@ -134,22 +134,6 @@
               >{{ t('qqChat.disconnect') }}</el-button>
             </div>
           </div>
-          <div v-if="item.characterId" class="qq-binding__freq">
-            <div class="qq-binding__freq-label">
-              <span>{{ t('qqChat.stickerFreq') }}</span>
-              <span class="qq-row__hint">{{ t('qqChat.stickerFreqHint') }}</span>
-            </div>
-            <el-radio-group
-              :model-value="frequencyOf(item.characterId)"
-              size="small"
-              :disabled="savingFrequencyId === item.characterId"
-              @update:model-value="value => onChangeFrequency(item, value)"
-            >
-              <el-radio-button value="never">{{ t('characterSettings.stickerNever') }}</el-radio-button>
-              <el-radio-button value="normal">{{ t('characterSettings.stickerNormal') }}</el-radio-button>
-              <el-radio-button value="frequent">{{ t('characterSettings.stickerFrequent') }}</el-radio-button>
-            </el-radio-group>
-          </div>
         </div>
       </div>
     </section>
@@ -187,7 +171,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, RefreshRight } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
 import { navigateBack } from '@/utils/navBack'
-import { listCharacters, updateCharacter } from '@/api/character'
+import { listCharacters } from '@/api/character'
 import { listVaults } from '@/api/ai'
 import {
   bindQqBotCharacter,
@@ -208,7 +192,6 @@ const starting = ref(false)
 const accounts = ref([])
 const loadingList = ref(false)
 const removingAppId = ref(null)
-const savingFrequencyId = ref(null)
 const hasModel = ref(true)
 const now = ref(Date.now())
 
@@ -290,12 +273,6 @@ function formatTime(value) {
   if (Number.isNaN(date.getTime())) return ''
   const pad = (n) => String(n).padStart(2, '0')
   return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
-function frequencyOf(id) {
-  const character = characters.value.find((item) => item.id === id)
-  const value = character?.settings?.stickerFrequency
-  return ['never', 'frequent'].includes(value) ? value : 'normal'
 }
 
 async function loadCharacters() {
@@ -428,24 +405,6 @@ async function onBindCharacter(item, value) {
     ElMessage.success(t('qqChat.bindCharacterDone'))
   } catch (err) {
     ElMessage.error(err?.message || t('qqChat.errorGeneric'))
-  }
-}
-
-// 后端 update 会 mergeSettings，所以只送这一个键，不会冲掉背景/免打扰那些设置。
-async function onChangeFrequency(item, value) {
-  if (!item?.characterId || frequencyOf(item.characterId) === value) return
-  savingFrequencyId.value = item.characterId
-  try {
-    const updated = await updateCharacter(item.characterId, { settings: { stickerFrequency: value } })
-    const index = characters.value.findIndex((c) => c.id === item.characterId)
-    if (index >= 0 && updated?.settings) {
-      characters.value[index] = { ...characters.value[index], settings: updated.settings }
-    }
-    ElMessage.success(t('qqChat.stickerFreqSaved'))
-  } catch (err) {
-    ElMessage.error(err?.message || t('qqChat.errorGeneric'))
-  } finally {
-    savingFrequencyId.value = null
   }
 }
 
@@ -714,30 +673,6 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.qq-binding__freq {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-/* 不让 radio-group 被挤压：挤压时最后一个按钮的文字会溢出色块 */
-.qq-binding__freq :deep(.el-radio-group) {
-  flex: 0 0 auto;
-}
-
-.qq-binding__freq :deep(.el-radio-button__inner) {
-  padding: 7px 13px;
-  white-space: nowrap;
-}
-
-.qq-binding__freq-label {
-  display: flex;
-  flex-direction: column;
-  font-size: 13px;
 }
 
 .qq-faq {
