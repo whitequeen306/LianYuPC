@@ -64,15 +64,11 @@ services:
     # 缁曡繃瀹夸富鏈?systemd-resolved 鎶栧姩锛歟mbedded 127.0.0.11 浠嶈В鏋?mysql/redis锛?
     # 鍑虹珯 DeepSeek/DashScope 璧板叕鍏?DNS锛堝疄娴嬪伓鍙?UnknownHost / connect timeout锛?
     dns:
-      - ${LIANYU_DNS_PRIMARY:-223.5.5.5}
-      - ${LIANYU_DNS_SECONDARY:-119.29.29.29}
-      - 114.114.114.114
-      - ${LIANYU_DNS_FALLBACK:-8.8.8.8}
-      - 1.1.1.1
+      - ${LIANYU_DNS_PRIMARY:-119.29.29.29}
+      - ${LIANYU_DNS_SECONDARY:-114.114.114.114}
     dns_opt:
       - timeout:1
       - attempts:2
-      - rotate
     # 浠呯粦瀹氭湰鏈猴紝閬垮厤鍏綉鏄庢枃 HTTP 缁曡繃 TLS 缃戝叧锛堜簯绔粡 api-gateway:443 鍙嶄唬 backend:8080锛?
     ports:
       - "127.0.0.1:${SERVER_PORT:-8080}:8080"
@@ -131,6 +127,12 @@ services:
       LIANYU_AGENT_RELAY_ENABLED: ${LIANYU_AGENT_RELAY_ENABLED:-true}
       LIANYU_AGENT_RERANK_BASE_URL: ${RERANKER_BASE_URL:-https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank}
       TZ: Asia/Shanghai
+    dns:
+      - ${LIANYU_DNS_PRIMARY:-119.29.29.29}
+      - ${LIANYU_DNS_SECONDARY:-114.114.114.114}
+    dns_opt:
+      - timeout:1
+      - attempts:2
     volumes:
       # 鏈湴鍚戦噺妯″瀷锛堢害 24MB锛屽凡 gitignore锛夈€傜洰褰曚笉瀛樺湪鏃跺鍣ㄧ収甯歌捣锛屽悜閲忚矾鑷姩闄嶇骇銆?
       - ./models:/app/models:ro
@@ -186,6 +188,12 @@ services:
       LIANYU_AGENT_RELAY_ENABLED: "false"
       LIANYU_AGENT_RERANK_BASE_URL: ${RERANKER_BASE_URL:-https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank}
       TZ: Asia/Shanghai
+    dns:
+      - ${LIANYU_DNS_PRIMARY:-119.29.29.29}
+      - ${LIANYU_DNS_SECONDARY:-114.114.114.114}
+    dns_opt:
+      - timeout:1
+      - attempts:2
     volumes:
       - ./models:/app/models:ro
     depends_on:

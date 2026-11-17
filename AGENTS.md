@@ -245,6 +245,7 @@ MinIO。事后抽查用 `cd frontend && node scripts/electron-release.mjs --veri
 | Java 侧棘轮红 | 新代码里是否出现 prompt 文本/模型调用；应搬去 Python。规则 5 报「未登记」就搬走或登记进 `scripts/java_bare_prompt_allowlist.txt`；报「已失效」说明迁完了没删条目 |
 | QQ 里机器人不回话 | `docker logs lianyu-qqbot`：没有 `已就绪` = WS 没连上（查事件订阅是否选了 WebSocket）；只回引导语 = `qq_channel_binding` 里没这条 openid；`401` = 网关与后端 secret 不一致；**时有时无 = 起了两个网关实例抢事件** |
 | **重建 backend 后全站 `/api` 502** | nginx 只在启动时解析一次 upstream IP：backend 换容器就换了 IP，`lianyu-api-gateway` 仍打旧 IP → `connect() failed (111: Connection refused) ... 172.18.0.x:8080`。**修法：`docker exec lianyu-api-gateway nginx -s reload`**（不重启容器也行）。部署脚本重建 backend 后必须补这一步；否则用户端 App 全挂，而 QQ 网关走 `127.0.0.1:8080` 仍正常，极易误判成「只是机器人坏了」 |
+| **偶发「对方模型暂时繁忙」/「消息发送失败，请稍后再试」/ 拉取模型失败** | 先看是不是 DNS：`docker exec lianyu-agent-2 python -c "import socket;socket.gethostbyname('api.deepseek.com')"` 连跑几次（或看 agent 日志里的 `[Errno -5] No address associated with hostname`）。2026-11-17 实测这台机器上 `223.5.5.5` 对该域名只有 5/10 成功、`180.76.76.76` 是 0/10，而 `119.29.29.29` 与 `114.114.114.114` 都是 10/10；旧的 `dns_opt: rotate` 会把请求摊到坏上游上 → 容器内解析失败率约 25%，失败计数再把熔断器打开（`breaker ai-upstream|… OPEN`），用户看到的就是「模型繁忙」。**修法：compose 里 backend/agent/agent2 的 `dns` 只留两个好上游、去掉 `rotate`**（改完 `docker compose up -d --no-build <svc>` 让容器重建即可生效，不用重启整台 docker） |
 
 ---
 
