@@ -179,7 +179,7 @@ docker run -d --name lianyu-qqbot --restart unless-stopped --network host \
 
 ## 10. 还没做的
 
-1. **主动消息**：用户没说话时角色先开口（官方叫「互动召回」，需申请额度，且用户可在 QQ 里关掉）。
+1. **主动消息**：已完成（见 §12）；只剩「一个 QQ 绑多个角色 / 会话内切换」这类待办未做。
 2. **一个 QQ 绑多个角色 / 会话内切换**：现在一个外部身份只对应一个角色。
 3. **群聊策略**：群白名单、是否只认 @、群里多角色怎么分（目前群按 `group:member` 各算一个人）。
 4. **可观测**：只有 stdout 日志，缺回复耗时、失败率、`trace_id` 关联；线上目前靠 `docker logs`。
@@ -250,4 +250,65 @@ docker run -d --name lianyu-qqbot --restart unless-stopped --network host \
 
 一个 bot 一条 WS 连接，池子是**单进程**。几百个 bot 以内没问题；再往上要 shard + 多实例，
 且事件分片后处理必须无状态（目前 handler 的 msgId 去重环在内存里，届时得换 Redis）。
+
+---
+
+## 12. 主动消息：予念主动说的那句，也送到 QQ（2026-11-17 上线）
+
+用户在 QQ 里只能被动等角色回话。予念自己本来就有一套主动频率（`ProactiveChatScheduler` →
+`ProactiveMessageService`），这一节说的是：**同一句台词同时送一份到用户自己绑的机器人上**。
+
+### 12.1 为什么不走网关
+
+| 方向 | 谁发起 | 走哪 |
+|---|---|---|
+| 被动回复 | 腾讯告诉我们「有人说话了」 | 网关 → `POST /internal/qq/turn` |
+| **主动消息** | **我们决定说一句话** | **Java 直发** `POST https://api.bot.qq.com/v2/users/{openid}/messages` |
+
+凭据（`app_secret_cipher`）、openid、额度账本本来都在 Java 侧；多绕一跳只会多一处不一致。
+
+**关键差别在报文**：带 `msg_id` 是「回复」（60 分钟被动窗口内、每条用户消息最多 4 条）；
+**不带 `msg_id` 才是主动消息**。两者别混。
+
+### 12.2 谁管得住这条线
+
+主动消息不是新开关，它继承予念已有的全部闸门（都在生成台词之前）：
+
+| 闸门 | 位置 | 效果 |
+|---|---|---|
+| 角色设置「允许主动消息」 | `settings.proactiveEnabled`（`CharacterChatBehaviorResolver`） | `ProactiveChatScheduler` 与 `ProactiveMessageService` 共 6 处提前 return |
+| 拉黑 / 免打扰时段 | `ConversationService.ensureCharacterAvailableForProactive` | 抛 `FORBIDDEN` 被上游接住 |
+| 无文本模型 / 额度耗尽 | `ProactiveMessageService:242-251` | 直接跳过 |
+| 没绑机器人 / 绑的是别的角色 | `QqProactivePushService` | 静默跳过（绝不借用别人的 bot） |
+
+`pushToQq()` 里还**再读一次同一个开关**：调用点本来就在开关之后，这次重复只为「将来有人把调用挪走」时兜底。
+
+### 12.3 额度：保险丝，不是产品频率
+
+- 「多久主动说一次」由角色设置与 `ProactiveChatScheduler` 决定，这里不参与；
+- 这里只有 `lianyu.qq.proactive.daily-cap`（默认 10 条/天）兜住程序跑飞；
+- 腾讯口径：**1000 条/用户/天、单关系 20 条/分钟**（实测连续发 4 条全部 200，不存在「2 条/天」这种单聊硬顶）。
+
+账本在 Redis：`qq:proactive:{userId}:{yyyyMMdd}`，首次写入 `expire 26h`。
+
+### 12.4 失败怎么处理
+
+| 失败类型 | 处理 |
+|---|---|
+| 认证类（401/403/「无效」/token） | 调 `QqBotConnectService.markError` → App 页面能显示「连不上」，用户知道要重扫 |
+| 其它（审核不通过、超频、网络） | 只 `log.warn`，不影响予念里的主动消息 |
+| 任何异常 | **不外抛**：加送的失败不能带崩一次正常的主动问候 |
+
+### 12.5 排查入口
+
+`POST /internal/qq/push {userId, characterId, text}`（要签名）——正式链路不用它，只用于线上验证
+额度、审核、用户侧开关。成功日志长这样：
+
+```
+QQ 主动消息已投递 userId=421 appId=1906428729 msgId=ROBOT1.0_xxx 今日第 1 条 '……'
+QQ 主动消息跳过：今日已发 10 条（上限 10），userId=421
+QQ 主动消息跳过（角色关了主动消息）：userId=421 characterId=1002
+```
+
+**绕不过去的一条**：用户可以在 QQ 客户端关闭「允许主动发送」，关了我们发不出去，只能记 warn。
 
