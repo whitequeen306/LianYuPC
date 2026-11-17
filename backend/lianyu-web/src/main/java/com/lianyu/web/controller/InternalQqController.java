@@ -29,11 +29,16 @@ public class InternalQqController {
 
     private final QqChannelService qqChannelService;
     private final QqBotConnectService qqBotConnectService;
+    private final com.lianyu.service.qq.QqProactivePushService qqProactivePushService;
 
     public record TokenRequest(String appId) {
     }
 
     public record ReportRequest(String appId, String error) {
+    }
+
+    /** 手工验证主动消息通路用（线上排查/回归），正式链路由主动问候自己触发。 */
+    public record PushRequest(Long userId, Long characterId, String text) {
     }
 
     @PostMapping("/turn")
@@ -65,5 +70,21 @@ public class InternalQqController {
     public Result<Boolean> report(@RequestBody ReportRequest request) {
         qqBotConnectService.markError(request.appId(), request.error());
         return Result.ok(true);
+    }
+
+    /**
+     * 主动消息：把一句话送到用户自己的 QQ 机器人上。
+     *
+     * <p>正式链路不需要它——{@code ProactiveMessageService} 在发出主动问候时会自己调
+     * {@code QqProactivePushService}；这里只用于线上排查（额度、审核、开关）时手工验证。
+     */
+    @PostMapping("/push")
+    public Result<PushResult> push(@RequestBody PushRequest request) {
+        boolean sent = qqProactivePushService.push(request.userId(), request.characterId(), request.text());
+        long today = qqProactivePushService.todayCount(request.userId());
+        return Result.ok(new PushResult(sent, today));
+    }
+
+    public record PushResult(boolean sent, long todayCount) {
     }
 }

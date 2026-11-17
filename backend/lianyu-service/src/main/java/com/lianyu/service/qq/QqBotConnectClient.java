@@ -17,6 +17,7 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -38,6 +39,8 @@ public class QqBotConnectClient {
 
     private static final String BIND_HOST = "https://q.qq.com";
     private static final String TOKEN_URL = "https://api.bot.qq.com/app/getAppAccessToken";
+    /** 发消息走 OpenAPI 主域（与取凭证同域，不是 BIND_HOST）。 */
+    private static final String MESSAGE_BASE = "https://api.bot.qq.com";
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
 
@@ -141,6 +144,51 @@ public class QqBotConnectClient {
                     + " message=" + root.path("message").asText(""));
         }
         return new AccessToken(token, root.path("expires_in").asLong(7200));
+    }
+
+    /**
+     * 主动消息：发一条不带 {@code msg_id} 的单聊消息。
+     *
+     * <p>为什么不带 msg_id：带 msg_id 是「回复用户那条消息」，受 60 分钟窗口和每条最多 4 条的约束；
+     * 不带 msg_id 才是「主动触达」，受单聊每天每用户 1000 条、单关系 20 条/分钟的限制。
+     * 这是予念的主动问候能送到 QQ 的唯一通道。
+     *
+     * @return 腾讯返回的消息 id（仅用于日志追踪）
+     */
+    public String sendProactiveC2C(String accessToken, String userOpenid, String content) {
+        String url = MESSAGE_BASE + "/v2/users/" + java.net.URLEncoder.encode(userOpenid, StandardCharsets.UTF_8)
+                + "/messages";
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("content", content);
+        body.put("msg_type", 0);
+        body.put("msg_seq", 1);
+        JsonNode root = postAuthorized(url, accessToken, body);
+        return root.path("id").asText("");
+    }
+
+    private JsonNode postAuthorized(String url, String accessToken, Map<String, Object> body) {
+        try {
+            String payload = objectMapper.writeValueAsString(body);
+            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                    .timeout(REQUEST_TIMEOUT)
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "application/json")
+                    .header("Authorization", "QQBot " + accessToken)
+                    .POST(HttpRequest.BodyPublishers.ofString(payload, StandardCharsets.UTF_8))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            String raw = response.body() == null ? "" : response.body();
+            if (response.statusCode() != 200) {
+                // OpenAPI 失败体是 {err_code, message, trace_id}；原样带出来才能事后查腾讯口径。
+                throw new IllegalStateException("HTTP " + response.statusCode() + " from " + url + ": "
+                        + (raw.length() > 300 ? raw.substring(0, 300) : raw));
+            }
+            return objectMapper.readTree(raw);
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException("request " + url + " failed: " + e.getMessage(), e);
+        }
     }
 
     private JsonNode postJson(String url, Map<String, Object> body) {

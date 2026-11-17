@@ -133,11 +133,21 @@ public class ProactiveMessageService {
     private final CharacterChatBehaviorResolver chatBehaviorResolver;
     private final NotificationService notificationService;
     private final ProactiveUnrepliedThrottle proactiveUnrepliedThrottle;
+
     /** Strangler 接缝：AGENT 模式下生成段委托 backend-agent；OFF/SHADOW 走原链路。 */
     private final AgentRuntimePort agentRuntime;
 
     /** 主动来电邀请的判定与落库都在通话域：消息标记、周限、音色能力都在那边。 */
     private final VoiceCallService voiceCallService;
+
+    /**
+     * 把同一条主动问候也送到 QQ 上（用户绑了自己的机器人时才生效）。
+     *
+     * <p>字段注入而不是构造注入：和 {@link #quotaGuard} 一样，这类有十几个依赖、
+     * 单测大量直接 new 的服务里，加构造参数会牵动所有用例；这里允许为 null。
+     */
+    @Autowired(required = false)
+    private com.lianyu.service.qq.QqProactivePushService qqProactivePush;
 
     /**
      * 额度熔断：用户 key 欠费/失效时，主动关怀自动停摆，不必等每轮失败。
@@ -257,6 +267,7 @@ public class ProactiveMessageService {
                     character.getId(),
                     character.getName(),
                     invite.getContent());
+            pushToQq(userId, character, invite.getContent());
             return List.of(invite);
         }
 
@@ -301,8 +312,26 @@ public class ProactiveMessageService {
                     character.getId(),
                     character.getName(),
                     replies.get(0).getContent());
+            pushToQq(userId, character, replies.get(0).getContent());
         }
         return replies;
+    }
+
+    /**
+     * 同一句主动问候也发到 QQ（用户绑了自己机器人时才有意义）。
+     *
+     * <p>吞掉所有异常：这一步是加送，失败了主动问候本身照样成立，不该连累落库与通知。
+     */
+    private void pushToQq(Long userId, Character character, String content) {
+        if (qqProactivePush == null) {
+            return;
+        }
+        try {
+            qqProactivePush.push(userId, character.getId(), content);
+        } catch (RuntimeException e) {
+            log.warn("QQ 主动消息推送异常（已忽略）userId={} characterId={}：{}",
+                    userId, character.getId(), e.getMessage());
+        }
     }
 
     /**

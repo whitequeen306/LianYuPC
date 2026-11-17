@@ -208,6 +208,27 @@ public class QqBotConnectService {
                 .toList();
     }
 
+    /**
+     * 主动消息用：某个用户自己名下的机器人。
+     *
+     * <p>和 {@link #activeAccounts()} 的区别是只回这个用户的 —— 主动问候是「我的角色找我」，
+     * 绝不能用别人的 bot 发出去。
+     */
+    @Transactional(readOnly = true)
+    public List<InternalAccount> activeAccountsForUser(Long userId) {
+        if (userId == null) {
+            return List.of();
+        }
+        return accountMapper.selectList(new LambdaQueryWrapper<QqBotAccount>()
+                        .eq(QqBotAccount::getUserId, userId)
+                        .eq(QqBotAccount::getStatus, "active")
+                        .isNotNull(QqBotAccount::getCharacterId)
+                        .orderByAsc(QqBotAccount::getId))
+                .stream()
+                .map(a -> new InternalAccount(a.getAppId(), a.getExternalOpenid(), a.getCharacterId()))
+                .toList();
+    }
+
     /** 网关按 appId 换短期 accessToken；secret 在库里加密存放，不经过网络。 */
     public TokenView issueAccessToken(String appId) {
         QqBotAccount account = accountMapper.selectOne(new LambdaQueryWrapper<QqBotAccount>()
