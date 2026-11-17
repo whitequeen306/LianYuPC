@@ -48,7 +48,12 @@ public class QqProactivePushService {
     @Value("${lianyu.qq.proactive.enabled:true}")
     private boolean enabled;
 
-    @Value("${lianyu.qq.proactive.daily-cap:3}")
+    /**
+     * 保险丝，不是产品频率：真正的「多久主动说一次」由角色自己的主动消息设置与
+     * {@code ProactiveChatScheduler} 决定，这里只兜住程序跑飞（例如死循环里反复推）。
+     * 腾讯给的是 1000 条/用户/天，我们离它很远。
+     */
+    @Value("${lianyu.qq.proactive.daily-cap:10}")
     private int dailyCap;
 
     public QqProactivePushService(QqBotConnectService connectService,

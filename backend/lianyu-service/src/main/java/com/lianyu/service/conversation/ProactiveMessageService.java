@@ -326,6 +326,13 @@ public class ProactiveMessageService {
         if (qqProactivePush == null) {
             return;
         }
+        // 「角色设置 → 主动消息」这一个开关是唯一口径：调用点本来就在开关之后，
+        // 这里再读一次，是为了将来有人把调用挪到别处时它照样管得住 QQ 这条线。
+        if (!chatBehaviorResolver.resolve(character).proactiveEnabled()) {
+            log.debug("QQ 主动消息跳过（角色关了主动消息）：userId={} characterId={}",
+                    userId, character.getId());
+            return;
+        }
         try {
             qqProactivePush.push(userId, character.getId(), content);
         } catch (RuntimeException e) {
