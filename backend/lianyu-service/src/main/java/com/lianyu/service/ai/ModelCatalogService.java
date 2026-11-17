@@ -9,9 +9,14 @@ import com.lianyu.common.exception.BusinessException;
 import com.lianyu.common.util.OutboundUrlValidator;
 import com.lianyu.service.dto.ModelEntryDto;
 import com.lianyu.service.dto.VaultEntryResponse;
+import java.net.ConnectException;
+import java.net.NoRouteToHostException;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +44,16 @@ public class ModelCatalogService {
     private static final Duration EMPTY_CACHE_BASE_TTL = Duration.ofMinutes(2);
     private static final Duration CACHE_LOCK_TTL = Duration.ofSeconds(10);
 
+    /**
+     * 拉模型列表的重试参数。
+     *
+     * <p>2026-11-17 实测：这台机器上 `223.5.5.5` 对 `api.deepseek.com` 约 65% 概率回空应答，
+     * docker 内嵌 DNS 又在多个上游之间轮换，容器里的解析失败率约 25%。解析失败是**立即**返回的，
+     * 所以多试两次几乎不花时间，却能把「拉取模型失败」从偶发变成几乎不出现。
+     */
+    private static final int TRANSIENT_ATTEMPTS = 3;
+    private static final long TRANSIENT_BACKOFF_MS = 80;
+
     /** 原子比较删除 Redis 缓存锁的 Lua 脚本（issue #19：避免 GET-then-DELETE 误删他人锁） */
     private static final DefaultRedisScript<Long> RELEASE_LOCK_SCRIPT = new DefaultRedisScript<>(
             "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
@@ -58,9 +73,7 @@ public class ModelCatalogService {
                 .apiKey(apiKey)
                 .build();
         try {
-            return ApiKeyVaultService.isOllamaEndpoint(baseUrl)
-                    ? fetchOllamaModels(transientVault)
-                    : fetchOpenAiCompatibleModels(transientVault, apiKey != null ? apiKey : "");
+            return fetchWithRetry(transientVault, apiKey != null ? apiKey : "", "previewModels");
         } catch (Exception e) {
             if (e instanceof BusinessException be) throw be;
             log.warn("previewModels failed: baseUrl={}, error={}", baseUrl, e.getMessage(), e);
@@ -107,9 +120,7 @@ public class ModelCatalogService {
         try {
             VaultEntryResponse vault = resolveVault(userId, provider);
             List<ModelEntryDto> models;
-            models = ApiKeyVaultService.isOllamaEndpoint(vault.getBaseUrl())
-                    ? fetchOllamaModels(vault)
-                    : fetchOpenAiCompatibleModels(vault, resolveApiKeyForProvider(vault));
+            models = fetchWithRetry(vault, resolveApiKeyForProvider(vault), "fetchModels");
             cacheModels(cacheKey, models);
 
             return models;
@@ -142,6 +153,67 @@ public class ModelCatalogService {
             return vaultService.decryptKeyForChat(vault.getId());
         }
         return vault.getApiKey();
+    }
+
+    /**
+     * 拉模型列表（带一次网络瞬断的重试）。
+     *
+     * <p>只重试「连接类」失败（DNS 解析不了 / 连接被拒 / 连接超时）；401、404 这类由 key 或地址
+     * 决定的错误立刻抛出——重试只会让用户多等几百毫秒还看到同一个错。
+     */
+    private List<ModelEntryDto> fetchWithRetry(VaultEntryResponse vault, String apiKey, String label) {
+        RuntimeException last = null;
+        for (int attempt = 1; attempt <= TRANSIENT_ATTEMPTS; attempt++) {
+            try {
+                return ApiKeyVaultService.isOllamaEndpoint(vault.getBaseUrl())
+                        ? fetchOllamaModels(vault)
+                        : fetchOpenAiCompatibleModels(vault, apiKey);
+            } catch (BusinessException be) {
+                throw be;
+            } catch (RuntimeException e) {
+                last = e;
+                if (attempt >= TRANSIENT_ATTEMPTS || !isTransientNetworkFailure(e)) {
+                    throw e;
+                }
+                log.warn("{} 第 {}/{} 次失败，重试：{}", label, attempt, TRANSIENT_ATTEMPTS, e.toString());
+                sleepQuietly(TRANSIENT_BACKOFF_MS * attempt);
+            }
+        }
+        throw last;
+    }
+
+    /** 顺着 cause 链找连接类异常，并兜住被包成字符串的 DNS 报错。 */
+    private static boolean isTransientNetworkFailure(Throwable error) {
+        Throwable current = error;
+        for (int depth = 0; depth < 6 && current != null; depth++) {
+            if (current instanceof UnknownHostException
+                    || current instanceof ConnectException
+                    || current instanceof NoRouteToHostException
+                    || current instanceof SocketTimeoutException) {
+                return true;
+            }
+            String message = current.getMessage();
+            if (message != null) {
+                String lower = message.toLowerCase(Locale.ROOT);
+                if (lower.contains("unknown host")
+                        || lower.contains("no address associated")
+                        || lower.contains("name or service not known")
+                        || lower.contains("temporary failure in name resolution")
+                        || lower.contains("failed to resolve")) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private static void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private List<ModelEntryDto> parseCachedModels(String cached) throws Exception {
@@ -252,14 +324,6 @@ public class ModelCatalogService {
             redisTemplate.execute(RELEASE_LOCK_SCRIPT, List.of(lockKey), lockValue);
         } catch (Exception e) {
             log.debug("release cache lock failed: {}", e.getMessage());
-        }
-    }
-
-    private void sleepQuietly(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException ignored) {
-            Thread.currentThread().interrupt();
         }
     }
 }

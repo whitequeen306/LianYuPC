@@ -271,6 +271,8 @@ def reset_lanes() -> None:
 _TRANSIENT_MARKERS = (
     "failed to resolve",
     "temporary failure in name resolution",
+    "name or service not known",
+    "no address associated with hostname",
     "connection refused",
     "connect timed out",
     "connect timeout",
@@ -302,12 +304,18 @@ def is_transient_failure(error: BaseException) -> bool:
 async def call_with_transient_retry(
     operation: Callable[[], Awaitable[T]],
     *,
-    max_attempts: int = 2,
+    max_attempts: int = 4,
     label: str = "gateway",
+    backoff_ms: int = 60,
 ) -> T:
     """瞬断重试：仅在 `is_transient_failure` 为真时重试，最多 `max_attempts` 次。
 
-    对齐 Java `callBlockingWithTransientRetry`（maxAttempts=2，仅连接类异常）。
+    为什么是 4 次而不是 2 次（2026-11-17 实测）：这台机器上 `223.5.5.5` 对
+    `api.deepseek.com` 有约 65% 概率回空应答，docker 内嵌 DNS 又在多个上游之间轮换，
+    于是容器里的解析失败率约 25%。解析失败是**立即**返回的（不是超时），所以多试两次
+    几乎不花时间，却能把整体失败率从 25% 压到 1% 以下——对用户就是「偶尔失败」变「基本不失败」。
+
+    读超时/写超时不重试：对端已经开始生成，重试会重复生成、重复扣 token。
     """
     last: BaseException | None = None
     for attempt in range(1, max_attempts + 1):
@@ -317,10 +325,13 @@ async def call_with_transient_retry(
             last = exc
             if attempt >= max_attempts or not is_transient_failure(exc):
                 raise
+            delay_seconds = backoff_ms * (2 ** (attempt - 1)) / 1000
             logger.warning(
-                "%s transient connect failure, retrying (%d/%d): %s",
-                label, attempt, max_attempts, exc,
+                "%s transient connect failure, retrying (%d/%d) in %dms: %s",
+                label, attempt, max_attempts, int(delay_seconds * 1000), exc,
             )
+            if delay_seconds > 0:
+                await asyncio.sleep(delay_seconds)
     assert last is not None
     raise last
 

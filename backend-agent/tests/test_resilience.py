@@ -69,7 +69,7 @@ def test_transient_detection_walks_cause_chain():
         assert is_transient_failure(outer)
 
 
-# ── 重试策略（对齐 callBlockingWithTransientRetry：最多 2 次）──
+# ── 重试策略（2026-11-17 起最多 4 次：DNS 抖动实测 25% 失败率，2 次不够）──
 
 
 @pytest.mark.asyncio
@@ -111,8 +111,25 @@ async def test_retry_gives_up_after_max_attempts():
         raise httpx.ConnectTimeout("connect timed out")
 
     with pytest.raises(httpx.ConnectTimeout):
-        await call_with_transient_retry(always_transient)
-    assert attempts == 2
+        await call_with_transient_retry(always_transient, backoff_ms=1)
+    assert attempts == 4
+
+
+@pytest.mark.asyncio
+async def test_dns_failure_is_retried_like_connect_error():
+    """DNS 解析失败（容器里 25% 概率）必须走重试，不能直接甩给用户。"""
+
+    attempts = 0
+
+    async def dns_hiccup():
+        nonlocal attempts
+        attempts += 1
+        if attempts <= 3:
+            raise httpx.ConnectError("[Errno -2] Name or service not known")
+        return "ok"
+
+    assert await call_with_transient_retry(dns_hiccup, backoff_ms=1) == "ok"
+    assert attempts == 4
 
 
 # ── 熔断状态机 ──

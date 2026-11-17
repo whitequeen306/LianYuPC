@@ -46,6 +46,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @RequiredArgsConstructor
 public class ChatTurnFacade {
 
+    /** 一次没拿到结果时，隔多久再问一次（容器内 DNS 抖动恢复得很快，300ms 足够）。 */
+    private static final long TRANSIENT_RETRY_BACKOFF_MS = 300;
+
     private final ChatTurnPort chatTurnPort;
     private final com.lianyu.service.agent.PromptAssemblyPort promptAssemblyPort;
     private final AgentImagePort agentImagePort;
@@ -65,7 +68,7 @@ public class ChatTurnFacade {
         if (imageUrl != null && !imageUrl.isBlank()) {
             return invokeBlockingImage(command, request, imageUrl);
         }
-        ChatTurnOutcome outcome = chatTurnPort.invoke(request);
+        ChatTurnOutcome outcome = invokeWithRetry(request);
         if (outcome == null) {
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "消息发送失败，请稍后再试");
         }
@@ -109,10 +112,46 @@ public class ChatTurnFacade {
         }
     }
 
+    /**
+     * 端口返回 null = 这一次一个字都没拿到（agent 瞬断 / 容器内 DNS 解析失败 / 响应解析不了）。
+     * 不做重试的话，几十毫秒的网络抖动就会变成用户屏幕上的一句「消息发送失败」。
+     * 只在「完全没拿到结果」时重试一次：已经有内容就不再问第二遍（会重复生成、重复扣 token）。
+     */
+    private ChatTurnOutcome invokeWithRetry(ChatTurnRequest request) {
+        ChatTurnOutcome outcome = chatTurnPort.invoke(request);
+        if (outcome != null) {
+            return outcome;
+        }
+        log.warn("Chat turn invoke returned null, retrying once: userId={}, scene={}",
+                request.getUserId(), request.getScene());
+        sleepQuietly(TRANSIENT_RETRY_BACKOFF_MS);
+        return chatTurnPort.invoke(request);
+    }
+
+    /** 同 {@link #invokeWithRetry}，只是走 assemble（图片回合需要先拼 prompt/messages）。 */
+    private ChatTurnOutcome assembleWithRetry(ChatTurnRequest request) {
+        ChatTurnOutcome assembled = chatTurnPort.assemble(request);
+        if (assembled != null) {
+            return assembled;
+        }
+        log.warn("Chat turn assemble returned null, retrying once: userId={}, scene={}",
+                request.getUserId(), request.getScene());
+        sleepQuietly(TRANSIENT_RETRY_BACKOFF_MS);
+        return chatTurnPort.assemble(request);
+    }
+
+    private static void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     private ChatTurnResult invokeBlockingImage(ChatTurnCommand command,
                                                ChatTurnRequest request,
                                                String imageUrl) {
-        ChatTurnOutcome assembled = chatTurnPort.assemble(request);
+        ChatTurnOutcome assembled = assembleWithRetry(request);
         if (assembled == null) {
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "消息发送失败，请稍后再试");
         }
@@ -137,7 +176,7 @@ public class ChatTurnFacade {
                                          ChatTurnRequest request,
                                          String imageUrl,
                                          AgentStreamCallback callback) {
-        ChatTurnOutcome assembled = chatTurnPort.assemble(request);
+        ChatTurnOutcome assembled = assembleWithRetry(request);
         if (assembled == null) {
             throw new BusinessException(ErrorCode.AI_PROVIDER_ERROR, "图片消息发送失败，请稍后再试");
         }

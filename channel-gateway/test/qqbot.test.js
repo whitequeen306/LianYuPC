@@ -13,6 +13,7 @@ import {
   stripMention,
 } from '../src/qqbot/gateway.js';
 import {
+  FALLBACK_REPLY,
   UNBOUND_HINT,
   channelOf,
   conversationKey,
@@ -368,4 +369,26 @@ test('handler：没配模型把后端的人话转给用户，而不是回兜底�
   const handler = createQqBotHandler({ api, backend });
   await handler.handle({ kind: 'c2c', openid: 'U1', text: '在吗', msgId: 'm3' });
   assert.match(sent[0], /配置文本模型/);
+});
+
+test('handler：模型侧失败不回「消息发送失败，请稍后再试」这种系统口吻', async () => {
+  const sent = [];
+  const logs = [];
+  const api = { sendC2C: async (_o, content) => sent.push(content), sendGroup: async () => {} };
+  const backend = {
+    turn: async () => {
+      // 后端把我们自己的故障包装成 4001，message 是给桌面端看的系统文案
+      const err = new Error('消息发送失败，请稍后再试');
+      err.code = 4001;
+      throw err;
+    },
+  };
+  const handler = createQqBotHandler({ api, backend, log: (line) => logs.push(line) });
+  const result = await handler.handle({ kind: 'c2c', openid: 'U1', text: '在吗', msgId: 'm4' });
+
+  assert.equal(sent[0], FALLBACK_REPLY);
+  assert.doesNotMatch(sent[0], /请稍后再试/);
+  assert.equal(result.failed, true);
+  // 原因必须留在日志里，别悄悄咽掉
+  assert.match(logs.join('\n'), /回合失败：4001/);
 });

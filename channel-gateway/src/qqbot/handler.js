@@ -179,12 +179,15 @@ export function createQqBotHandler({
           log(`[qqbot] 未绑定：${channel} ${externalId.slice(0, 4)}***`);
           return { unbound: true };
         }
-        // 后端把「没配模型」这类人话放在 message 里，直接转给用户比吞掉有用。
-        if (err.code === 4004 || err.code === 4001) {
+        // 4004 = 用户自己该动手的事（没配文本模型），后端给的是人话，转给用户才有用。
+        if (err.code === 4004) {
           await send(event, err.message);
           log(`[qqbot] 后端拒绝：${err.code} ${err.message}`);
           return { backendError: err.code };
         }
+        // 4001/4002/4003（模型调用失败 / 超时 / 限流）是我们这边的问题，
+        // 「消息发送失败，请稍后再试」这种系统口吻只会让用户觉得机器人坏了；
+        // 用角色的兜底台词，真正原因留在日志里。
         await send(event, FALLBACK_REPLY);
         log(`[qqbot] 回合失败：${err.code || ''} ${err.message}`);
         return { failed: true };
